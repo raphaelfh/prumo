@@ -10,13 +10,13 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.llm.validators import anchor_kind, evidence_is_grounded
 from app.models.article import Article
 from app.models.extraction import ExtractionEvidence
-from app.schemas.extraction import PositionV1, parse_position
+from app.schemas.extraction import parse_position
 
 
 class ArticleNotFoundError(Exception):
@@ -40,10 +40,17 @@ async def get_article_project_id(db: AsyncSession, article_id: UUID) -> UUID:
 async def list_article_citations(db: AsyncSession, article_id: UUID) -> list[dict[str, Any]]:
     """Return all v1-shape citations attached to the article (chronological).
 
-    Rows without a parseable PositionV1 anchor are skipped — they predate
-    the citation contract (legacy empty `{}` position) or fail schema
-    validation. Skipping (rather than 500-ing) preserves list semantics
-    for partial-failure cases.
+    Every evidence row is returned — unanchored rows (empty or unparseable
+    ``position``) are included with ``verified=False`` and ``anchorKind=None``
+    rather than skipped. This surfaces hallucination / no-blocks-yet signals
+    to callers without ever raising in the read path.
+
+    Wire shape per item:
+    - ``id``         — UUID string
+    - ``verified``   — True iff position parses to a valid PositionV1 anchor
+    - ``anchorKind`` — "text" | "region" | "hybrid" when verified, else None
+    - ``anchor``     — camelCase anchor dict when verified, else None (omit key)
+    - ``metadata``   — pageNumber / textContent / source (always present)
     """
     rows = (
         (
@@ -60,14 +67,8 @@ async def list_article_citations(db: AsyncSession, article_id: UUID) -> list[dic
     citations: list[dict[str, Any]] = []
     for row in rows:
         position = row.position
-        if not position:
-            continue
-        try:
-            parsed: PositionV1 | None = parse_position(position)
-        except ValidationError:
-            continue
-        if parsed is None:
-            continue
+        verified = evidence_is_grounded(position)
+        kind = anchor_kind(position)
 
         metadata: dict[str, Any] = {}
         if row.page_number is not None:
@@ -82,12 +83,20 @@ async def list_article_citations(db: AsyncSession, article_id: UUID) -> list[dic
         elif row.consensus_decision_id is not None:
             metadata["source"] = "review"
 
-        citations.append(
-            {
-                "id": str(row.id),
-                "anchor": parsed.anchor.model_dump(by_alias=True, exclude_none=True),
-                "metadata": metadata,
-            }
-        )
+        item: dict[str, Any] = {
+            "id": str(row.id),
+            "verified": verified,
+            "anchorKind": kind,
+            "metadata": metadata,
+        }
+        if verified:
+            # parse_position is safe here: evidence_is_grounded already confirmed it parses.
+            parsed = parse_position(position)
+            assert parsed is not None  # guaranteed by evidence_is_grounded
+            item["anchor"] = parsed.anchor.model_dump(by_alias=True, exclude_none=True)
+        else:
+            item["anchor"] = None
+
+        citations.append(item)
 
     return citations

@@ -385,6 +385,204 @@ async def test_build_anchor_empty_blocks_returns_none() -> None:
 
 
 @pytest.mark.asyncio
+async def test_citation_read_service_verified_true_for_anchored_row(
+    db_session_real: AsyncSession,
+) -> None:
+    """An evidence row with a valid PositionV1 is returned with verified=True, anchorKind='text'."""
+    import json
+
+    from app.infrastructure.parsing.base import ParsedBlock
+
+    fresh_article_id = uuid.uuid4()
+    await db_session_real.execute(
+        text(
+            "INSERT INTO public.articles (id, project_id, title, row_version) "
+            "VALUES (:id, :pid, :title, 1)"
+        ),
+        {
+            "id": str(fresh_article_id),
+            "pid": str(SEED.primary_project),
+            "title": "Verified True Test Article",
+        },
+    )
+    await db_session_real.commit()
+
+    file_id = await _insert_article_file(
+        db_session_real,
+        project_id=SEED.primary_project,
+        article_id=fresh_article_id,
+    )
+
+    try:
+        quote = "Beta-blocker therapy reduced all-cause mortality by 34%."
+        repo = ArticleTextBlockRepository(db_session_real)
+        await repo.replace_for_file(
+            file_id,
+            [
+                ParsedBlock(
+                    page_number=5,
+                    block_index=0,
+                    text=quote,
+                    char_start=0,
+                    char_end=len(quote),
+                    bbox={"x": 72.0, "y": 400.0, "width": 380.0, "height": 12.0},
+                    block_type="paragraph",
+                )
+            ],
+        )
+        await db_session_real.commit()
+
+        blocks = await repo.list_ordered_for_file(file_id)
+        pos = build_anchor(quote, blocks)
+        assert pos is not None
+
+        run_id, proposal_id = await _insert_run_and_proposal(
+            db_session_real,
+            project_id=SEED.primary_project,
+            article_id=fresh_article_id,
+        )
+
+        dumped = pos.model_dump(by_alias=True, mode="json")
+        evidence_id = uuid.uuid4()
+        await db_session_real.execute(
+            text(
+                "INSERT INTO public.extraction_evidence "
+                "(id, project_id, article_id, article_file_id, "
+                " run_id, proposal_record_id, "
+                " page_number, text_content, position, created_by) "
+                "VALUES (:id, :pid, :aid, :fid, :rid, :propid, :pg, :tc, CAST(:pos AS jsonb), :cb)"
+            ),
+            {
+                "id": str(evidence_id),
+                "pid": str(SEED.primary_project),
+                "aid": str(fresh_article_id),
+                "fid": str(file_id),
+                "rid": str(run_id),
+                "propid": str(proposal_id),
+                "pg": pos.anchor.range.page,
+                "tc": quote,
+                "pos": json.dumps(dumped),
+                "cb": str(SEED.primary_profile),
+            },
+        )
+        await db_session_real.commit()
+
+        citations = await list_article_citations(db_session_real, fresh_article_id)
+        assert len(citations) == 1
+        c = citations[0]
+        assert c["id"] == str(evidence_id)
+        # verified / anchorKind presence (Task 2.3)
+        assert c["verified"] is True
+        assert c["anchorKind"] == "text"
+        assert "anchor" in c
+        assert c["anchor"]["kind"] == "text"
+    finally:
+        await db_session_real.execute(
+            text("DELETE FROM public.extraction_evidence WHERE article_id = :aid"),
+            {"aid": str(fresh_article_id)},
+        )
+        await db_session_real.commit()
+        await db_session_real.execute(
+            text("DELETE FROM public.extraction_runs WHERE id = :id"),
+            {"id": str(run_id)},
+        )
+        await db_session_real.commit()
+        await _cleanup_file(db_session_real, file_id=file_id)
+        await db_session_real.execute(
+            text("DELETE FROM public.articles WHERE id = :id"),
+            {"id": str(fresh_article_id)},
+        )
+        await db_session_real.commit()
+
+
+@pytest.mark.asyncio
+async def test_citation_read_service_verified_false_for_unanchored_row(
+    db_session_real: AsyncSession,
+) -> None:
+    """An evidence row with position={} is returned verified=False, anchorKind=None, not skipped."""
+    fresh_article_id = uuid.uuid4()
+    await db_session_real.execute(
+        text(
+            "INSERT INTO public.articles (id, project_id, title, row_version) "
+            "VALUES (:id, :pid, :title, 1)"
+        ),
+        {
+            "id": str(fresh_article_id),
+            "pid": str(SEED.primary_project),
+            "title": "Verified False Test Article",
+        },
+    )
+    await db_session_real.commit()
+
+    file_id = await _insert_article_file(
+        db_session_real,
+        project_id=SEED.primary_project,
+        article_id=fresh_article_id,
+    )
+
+    try:
+        run_id, proposal_id = await _insert_run_and_proposal(
+            db_session_real,
+            project_id=SEED.primary_project,
+            article_id=fresh_article_id,
+        )
+
+        evidence_id = uuid.uuid4()
+        # Insert with position={} — the hallucinated / no-blocks-yet case.
+        await db_session_real.execute(
+            text(
+                "INSERT INTO public.extraction_evidence "
+                "(id, project_id, article_id, article_file_id, "
+                " run_id, proposal_record_id, "
+                " page_number, text_content, position, created_by) "
+                "VALUES (:id, :pid, :aid, :fid, :rid, :propid, NULL, :tc, '{}'::jsonb, :cb)"
+            ),
+            {
+                "id": str(evidence_id),
+                "pid": str(SEED.primary_project),
+                "aid": str(fresh_article_id),
+                "fid": str(file_id),
+                "rid": str(run_id),
+                "propid": str(proposal_id),
+                "tc": "This quote was hallucinated by the AI.",
+                "cb": str(SEED.primary_profile),
+            },
+        )
+        await db_session_real.commit()
+
+        citations = await list_article_citations(db_session_real, fresh_article_id)
+        # Must NOT be skipped — the row should be present
+        assert len(citations) == 1, f"Expected 1 citation (not skipped), got {len(citations)}"
+        c = citations[0]
+        assert c["id"] == str(evidence_id)
+        # verified=False, anchorKind=None (unanchored)
+        assert c["verified"] is False
+        assert c["anchorKind"] is None
+        # anchor is absent or None for unanchored rows
+        assert c.get("anchor") is None
+        # metadata still present
+        assert c["metadata"]["textContent"] == "This quote was hallucinated by the AI."
+        # nothing raised — we got here
+    finally:
+        await db_session_real.execute(
+            text("DELETE FROM public.extraction_evidence WHERE article_id = :aid"),
+            {"aid": str(fresh_article_id)},
+        )
+        await db_session_real.commit()
+        await db_session_real.execute(
+            text("DELETE FROM public.extraction_runs WHERE id = :id"),
+            {"id": str(run_id)},
+        )
+        await db_session_real.commit()
+        await _cleanup_file(db_session_real, file_id=file_id)
+        await db_session_real.execute(
+            text("DELETE FROM public.articles WHERE id = :id"),
+            {"id": str(fresh_article_id)},
+        )
+        await db_session_real.commit()
+
+
+@pytest.mark.asyncio
 async def test_citation_read_service_emits_anchored_evidence_camelcase(
     db_session_real: AsyncSession,
 ) -> None:
