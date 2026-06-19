@@ -819,6 +819,9 @@ export const extraction = {
     aiEvidenceClickTitle: 'Click to view evidence',
     aiEvidenceClickAria: 'View evidence for this suggestion',
     evidenceCitedAria: 'Cited evidence',
+    // AISuggestionEvidence – citation highlight
+    evidenceNotLocated: "Couldn't locate in source",
+    evidenceJumpToSource: 'Jump to source in PDF',
 } as const;
 
 export type ExtractionCopy = typeof extraction;

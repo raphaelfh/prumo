@@ -92,7 +92,7 @@ function useCitationHighlightInner(
   if (anchor.kind === 'text') return null;
 
   const pageHeightPts = pageHandle.size.height;
-  const rect = anchor.kind === 'region' ? anchor.rect : anchor.rect;
+  const rect = anchor.rect;
 
   return {
     page,
