@@ -130,17 +130,8 @@ export function SectionAccordion(props: SectionAccordionProps) {
     }
   }, 0);
 
-  const isComplete = totalRequired > 0 && completedRequired === totalRequired;
-
   // Calcular porcentagem de progresso
   const progressPercentage = totalRequired > 0 ? Math.round((completedRequired / totalRequired) * 100) : 0;
-
-  // Determine left border color based on status (semantic tokens flip in dark mode)
-  const borderColor = isComplete
-    ? "border-l-success"
-    : completedRequired > 0
-    ? "border-l-info"
-    : "border-l-border";
 
     // Ref for accordion trigger so chevron can be clicked to open/close
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -156,10 +147,10 @@ export function SectionAccordion(props: SectionAccordionProps) {
       type="single"
       collapsible
       defaultValue={entityType.id}
-      className={cn("bg-card border-l-4", borderColor)}
+      className="border-b border-border/40 last:border-b-0"
     >
       <AccordionItem value={entityType.id} className="border-none group/accordion-item">
-        <div className="px-6 py-4 hover:bg-muted/40 transition-colors duration-75">
+        <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm px-3 py-2 hover:bg-muted/40 transition-colors duration-75">
           <div className="flex items-center gap-3">
             <AccordionPrimitive.Header className="flex flex-1">
               <AccordionPrimitive.Trigger
@@ -170,7 +161,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
               >
                   {/* Title on the left */}
                 <div className="flex items-center gap-3">
-                  <h3 className="font-semibold text-base">{entityType.label}</h3>
+                  <h3 className="font-medium text-[14px]">{entityType.label}</h3>
                   {isMultiple && (
                     <Badge variant="outline" className="text-xs">
                         Multiple ({instances.length})
@@ -233,7 +224,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
           </div>
         </div>
 
-        <AccordionContent className="px-8 pb-8">
+        <AccordionContent className="px-3 pb-4">
           <div className="space-y-6">
             {instances.length === 0 ? (
               <div className="text-center py-8">
