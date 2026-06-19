@@ -538,14 +538,17 @@ def match(
         if not overlapping:
             continue
 
-        # Post-condition: the advertised fold-back invariant MUST hold for every
-        # non-None return — the returned span, sliced from the ORIGINAL page text
-        # and folded, equals the folded matched region.  ``_resolve_original_span``
-        # guarantees this; assert it so this class of bug can never silently
-        # return a span-too-wide again.
-        assert _normalize(original[char_start:char_end]) == _normalize(
+        # Post-condition: the fold-back invariant MUST hold for every non-None
+        # return — the returned span, sliced from the ORIGINAL page text and
+        # folded, equals the folded matched region.  ``_resolve_original_span``
+        # guarantees this for well-formed inputs.  If it does NOT hold (a
+        # degenerate edge case the upstream pipeline cannot produce), degrade
+        # gracefully: treat the quote as unlocatable rather than raising in the
+        # extraction write path.  A non-None return ALWAYS satisfies the invariant.
+        if _normalize(original[char_start:char_end]) != _normalize(
             norm_page[candidate.norm_start : candidate.norm_end]
-        ), "fold-back invariant violated"
+        ):
+            continue
 
         overlap_len = char_end - char_start
         key = (page, char_start, -overlap_len)

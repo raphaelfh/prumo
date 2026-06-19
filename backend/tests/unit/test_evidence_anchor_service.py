@@ -542,3 +542,76 @@ class TestFuzzyDeterminismAndCoverage:
         assert page_text[: first.char_start] == ""  # anchored at the very start
         sliced = page_text[first.char_start : first.char_end]
         assert sliced.startswith("alpha bravo")
+
+
+# ---------------------------------------------------------------------------
+# Graceful degradation — match() must never raise (Fix: graceful post-condition)
+# ---------------------------------------------------------------------------
+
+
+class TestMatchNeverRaises:
+    """The post-condition in ``match`` is now a guarded ``continue`` rather than
+    an ``assert``.  This class pins the contract: ``match(...)`` NEVER raises for
+    any combination of degenerate inputs; it always returns either a
+    fold-back-valid ``AnchorMatch`` or ``None``.
+
+    The defensive branch (invariant violated → skip candidate) cannot be triggered
+    through the public ``match`` API because ``_resolve_original_span`` already
+    returns ``None`` whenever no valid original span satisfies fold-equality.
+    We therefore exercise the contract via a broad sweep of degenerate inputs and
+    assert two properties:
+      1. No call raises any exception.
+      2. Every non-None result satisfies the fold-back invariant.
+    """
+
+    # Degenerate inputs: quotes that stress boundary conditions.
+    DEGENERATE_QUOTES = [
+        "",  # empty
+        "   ",  # whitespace only
+        "\n\t\r",  # only control whitespace
+        "inal result",  # begins mid-ligature-expansion in the fixture below
+        "ﬁ",  # the raw ligature itself (1 original char → 2 normalised)
+        "a" * 5000,  # much longer than any page — no match possible
+        "\x00\x01\xff",  # non-printable / high-byte characters
+        "αβγ",  # non-ASCII entirely absent from the ASCII pages
+        "  leading and trailing  ",  # extra whitespace around real content
+    ]
+
+    BLOCKS = [
+        make_block(1, 0, "aﬁnal result"),
+        make_block(1, 1, "The mitochondria is the powerhouse of the cell."),
+        make_block(2, 0, "Results were significant (p < 0.001)."),
+    ]
+
+    def test_degenerate_quotes_never_raise(self) -> None:
+        for quote in self.DEGENERATE_QUOTES:
+            # Must not raise — any exception (including AssertionError) is a bug.
+            result = match(quote, self.BLOCKS)
+            # Non-None results must satisfy the fold-back invariant.
+            if result is not None:
+                _assert_slice_folds_to_quote(result, self.BLOCKS, quote)
+
+    def test_empty_blocks_never_raise(self) -> None:
+        for quote in self.DEGENERATE_QUOTES:
+            result = match(quote, [])
+            assert result is None  # no blocks → always None
+
+    def test_single_empty_block_never_raise(self) -> None:
+        empty_text_block = [make_block(1, 0, "")]
+        for quote in self.DEGENERATE_QUOTES:
+            result = match(quote, empty_text_block)
+            assert result is None  # empty page text → always None
+
+    def test_real_quote_mid_ligature_returns_none_not_raises(self) -> None:
+        # The canonical degenerate case: a quote that begins on the SECOND
+        # sub-char of a ligature expansion.  The post-condition (now guarded)
+        # would fire here if ``_resolve_original_span`` ever returned a
+        # span that doesn't satisfy fold-equality.  It must return None, not raise.
+        blocks = [make_block(1, 0, "aﬁnal result")]
+        result = match("inal result", blocks)
+        assert result is None  # unrepresentable → unanchored, not an error
+
+    def test_quote_longer_than_page_returns_none_not_raises(self) -> None:
+        blocks = [make_block(1, 0, "Short text.")]
+        result = match("x" * 10_000, blocks)
+        assert result is None

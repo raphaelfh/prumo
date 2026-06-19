@@ -75,7 +75,9 @@ async def list_article_citations(db: AsyncSession, article_id: UUID) -> list[dic
             metadata["pageNumber"] = row.page_number
         if row.text_content is not None:
             metadata["textContent"] = row.text_content
-        # Source attribution — exactly one of these is set (CHECK constraint).
+        # Source attribution — at least one of proposal/reviewer/consensus is set
+        # (workflow_target_present CHECK enforces an OR, not exactly-one);
+        # the if/elif picks the first by priority.
         if row.proposal_record_id is not None:
             metadata["source"] = "ai"
         elif row.reviewer_decision_id is not None:
