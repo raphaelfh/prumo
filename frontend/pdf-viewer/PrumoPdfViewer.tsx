@@ -1,14 +1,17 @@
 import {useEffect, useRef, useState} from 'react';
+import type {StoreApi} from 'zustand';
 import {Viewer} from './primitives/Viewer';
 import {CanvasLayer} from './primitives/CanvasLayer';
 import {TextLayer} from './primitives/TextLayer';
 import {Reader, type ReaderTextBlock} from './primitives/Reader';
+import {CitationLiveRegion} from './primitives/CitationLiveRegion';
 import {Toolbar} from './ui/Toolbar';
 import {SearchBar} from './ui/SearchBar';
 import {LoadingState} from './ui/LoadingState';
 import {ErrorState} from './ui/ErrorState';
 import {useViewerStore} from './core/context';
 import type {PDFSource} from './core/source';
+import type {ViewerState} from './core/state';
 
 export interface PrumoPdfViewerProps {
   source: PDFSource | null;
@@ -23,6 +26,14 @@ export interface PrumoPdfViewerProps {
    */
   readerBlocks?: readonly ReaderTextBlock[];
   readerLoading?: boolean;
+  /**
+   * Optional pre-built store. When provided, the viewer uses this store
+   * instead of creating its own — enabling a parent to share ONE store
+   * between the viewer and a sibling panel (e.g. the AI-suggestion form).
+   * When omitted, the default behaviour (internal store creation) is
+   * unchanged.
+   */
+  store?: StoreApi<ViewerState>;
 }
 
 /**
@@ -39,6 +50,7 @@ export function PrumoPdfViewer({
   toolbar = true,
   readerBlocks,
   readerLoading,
+  store,
 }: PrumoPdfViewerProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -62,9 +74,11 @@ export function PrumoPdfViewer({
 
   return (
     <div ref={rootRef} className={`flex flex-col h-full ${className ?? ''}`} tabIndex={-1}>
-      <Viewer.Root source={source} className="flex flex-col flex-1 min-h-0">
+      <Viewer.Root source={source} store={store} className="flex flex-col flex-1 min-h-0">
         {toolbar && <Toolbar onSearchToggle={() => setSearchOpen((v) => !v)} />}
         <SearchBar open={searchOpen} onClose={() => setSearchOpen(false)} />
+        {/* aria-live region: announces citation jumps to screen readers (canvas + reader mode) */}
+        <CitationLiveRegion />
         <ViewerContent
           readerBlocks={readerBlocks}
           readerLoading={readerLoading}

@@ -65,6 +65,7 @@ import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtraction
 import {useModelManagement} from '@/hooks/extraction/useModelManagement';
 import {usePreserveScroll} from '@/hooks/usePreserveScroll';
 import {t} from '@/lib/copy';
+import {ViewerProvider, createViewerStore} from '@prumo/pdf-viewer';
 
 const SCROLL_CONTAINERS_TO_PRESERVE = [
   // Form panel — actual scroll happens on radix' inner viewport node.
@@ -79,9 +80,18 @@ export default function ExtractionFullScreen() {
   const { projectId, articleId } = useParams();
   const navigate = useNavigate();
 
-    // Load page-bootstrap data using dedicated hook (SRP). Entity types +
-    // instances are NOT read here anymore — they are derived from the
-    // server RunView (runDetail) below via the adapters.
+  // ONE stable viewer store shared between the PDF panel and the form panel.
+  // useState lazy initializer creates the store exactly once per mount —
+  // the React-Compiler-approved pattern (mirrors ViewerProvider's own
+  // internal creation). Both <ExtractionPDFPanel store={viewerStore}> and
+  // <ViewerProvider store={viewerStore}> below point at this instance —
+  // that is the prerequisite for the click-evidence → highlight feature
+  // (Task 4B follow-up).
+  const [viewerStore] = useState(createViewerStore);
+
+  // Load page-bootstrap data using dedicated hook (SRP). Entity types +
+  // instances are NOT read here anymore — they are derived from the
+  // server RunView (runDetail) below via the adapters.
   const {
     article,
     project,
@@ -1148,14 +1158,21 @@ export default function ExtractionFullScreen() {
         </div>
       ) : null}
 
-      {/* Main content */}
+      {/* Main content — wrapped in ViewerProvider so both the PDF viewer and
+          the form panel resolve useViewerStore/useViewerStoreApi to the same
+          store instance. The viewer also receives store={viewerStore} so
+          Viewer.Root forwards it rather than creating a second store.
+          QA-screen shared-store lift is deferred (AssessmentShell passes the
+          viewer as a ReactNode prop; out of scope here). */}
       <div className="flex-1 overflow-hidden">
+        <ViewerProvider store={viewerStore}>
         <ResizablePanelGroup direction="horizontal">
             {/* PDF Viewer (optional) - Extracted to isolated component */}
-          <ExtractionPDFPanel 
-            articleId={articleId || ''} 
-            projectId={projectId || ''} 
+          <ExtractionPDFPanel
+            articleId={articleId || ''}
+            projectId={projectId || ''}
             showPDF={showPDF}
+            store={viewerStore}
           />
 
             {/* Extraction form - Extracted to isolated component */}
@@ -1208,6 +1225,7 @@ export default function ExtractionFullScreen() {
             />
           </ResizablePanel>
         </ResizablePanelGroup>
+        </ViewerProvider>
       </div>
 
       {/* Dialogs */}

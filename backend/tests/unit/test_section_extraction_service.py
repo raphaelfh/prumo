@@ -41,6 +41,9 @@ def service(mock_db, mock_storage):
         patch("app.services.section_extraction_service.PDFProcessor") as mock_pdf,
         patch("app.services.section_extraction_service.ArticleFileRepository") as mock_article_repo,
         patch(
+            "app.services.section_extraction_service.ArticleTextBlockRepository"
+        ) as mock_block_repo,
+        patch(
             "app.services.section_extraction_service.ExtractionEntityTypeRepository"
         ) as mock_entity_repo,
         patch(
@@ -57,7 +60,16 @@ def service(mock_db, mock_storage):
 
         # Mock repositories
         mock_article_repo_instance = MagicMock()
+        # get_latest_pdf is async; return None so _create_suggestions falls
+        # back to position={} (no blocks → safe fallback, no anchor attempt).
+        mock_article_repo_instance.get_latest_pdf = AsyncMock(return_value=None)
         mock_article_repo.return_value = mock_article_repo_instance
+
+        # ArticleTextBlockRepository is instantiated inside _create_suggestions;
+        # mock the class so the constructor returns a proper async mock.
+        mock_block_repo_instance = MagicMock()
+        mock_block_repo_instance.list_ordered_for_file = AsyncMock(return_value=[])
+        mock_block_repo.return_value = mock_block_repo_instance
 
         mock_entity_repo_instance = MagicMock()
         mock_entity_repo.return_value = mock_entity_repo_instance
@@ -270,13 +282,22 @@ class TestSectionExtractionFullFlow:
         )
 
         # Mock SQLAlchemy model class to avoid mapper issues
-        with patch(
-            "app.services.section_extraction_service.ExtractionInstance"
-        ) as mock_instance_class:
+        with (
+            patch(
+                "app.services.section_extraction_service.ExtractionInstance"
+            ) as mock_instance_class,
+            patch(
+                "app.services.section_extraction_service.ArticleTextBlockRepository"
+            ) as mock_blk_repo,
+        ):
             mock_created_instance = MagicMock()
             mock_created_instance.id = uuid4()
             mock_instance_class.return_value = mock_created_instance
             service._instances.create = AsyncMock(return_value=mock_created_instance)
+
+            mock_blk_repo_inst = MagicMock()
+            mock_blk_repo_inst.list_ordered_for_file = AsyncMock(return_value=[])
+            mock_blk_repo.return_value = mock_blk_repo_inst
 
             result = await service.extract_section(
                 project_id=project_id,
@@ -377,13 +398,22 @@ class TestExtractSectionWithExistingRun:
 
         self._wire_pipeline(service, mock_storage, existing_run, entity_type_id)
 
-        with patch(
-            "app.services.section_extraction_service.ExtractionInstance"
-        ) as mock_instance_class:
+        with (
+            patch(
+                "app.services.section_extraction_service.ExtractionInstance"
+            ) as mock_instance_class,
+            patch(
+                "app.services.section_extraction_service.ArticleTextBlockRepository"
+            ) as mock_blk_repo,
+        ):
             inst = MagicMock()
             inst.id = uuid4()
             mock_instance_class.return_value = inst
             service._instances.create = AsyncMock(return_value=inst)
+
+            mock_blk_repo_inst = MagicMock()
+            mock_blk_repo_inst.list_ordered_for_file = AsyncMock(return_value=[])
+            mock_blk_repo.return_value = mock_blk_repo_inst
 
             result = await service.extract_section(
                 project_id=project_id,

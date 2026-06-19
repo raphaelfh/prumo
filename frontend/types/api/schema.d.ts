@@ -178,6 +178,9 @@ export interface paths {
         /**
          * List Article Citations Endpoint
          * @description Return all v1-shape citations attached to ``article_id``.
+         *
+         *     Unanchored rows (hallucinated or pre-ingestion) are included with
+         *     ``verified=False``; anchored rows carry ``verified=True`` + ``anchorKind``.
          */
         get: operations["list_article_citations_endpoint_api_v1_articles__article_id__citations_get"];
         put?: never;
