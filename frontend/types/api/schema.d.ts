@@ -121,6 +121,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/articles/form-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Form Runs
+         * @description Resolve the latest relevant run per article for the extraction form.
+         *
+         *     Per article: returns the latest non-terminal run; falls back to the
+         *     latest finalized run; returns run_id=null when no run exists.
+         *     Cancelled runs are excluded. BOLA-gated via project_id in the body.
+         */
+        post: operations["post_form_runs_api_v1_articles_form_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/articles/{article_id}/active-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Active Run
+         * @description Return the latest non-terminal extraction run for the article.
+         *
+         *     Returns null (data: null) when no active run exists. 404 when the
+         *     article is not found; 403 when the caller is not a project member.
+         */
+        get: operations["get_active_run_api_v1_articles__article_id__active_run_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/articles/{article_id}/citations": {
         parameters: {
             query?: never;
@@ -133,6 +180,98 @@ export interface paths {
          * @description Return all v1-shape citations attached to ``article_id``.
          */
         get: operations["list_article_citations_endpoint_api_v1_articles__article_id__citations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/articles/{article_id}/finalized-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Finalized Run
+         * @description Return the latest finalized extraction run for the article.
+         *
+         *     Returns null (data: null) when no finalized run exists. 404 when the
+         *     article is not found; 403 when the caller is not a project member.
+         */
+        get: operations["get_finalized_run_api_v1_articles__article_id__finalized_run_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/articles/{article_id}/instance-ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Instance Ids
+         * @description Return all extraction_instance ids for the article.
+         *
+         *     404 when article is not found; 403 when caller is not a project member.
+         */
+        get: operations["get_instance_ids_api_v1_articles__article_id__instance_ids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/articles/{article_id}/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Suggestions
+         * @description Return latest AI proposals per (instance, field) with caller-scoped status.
+         *
+         *     Status is derived exclusively from the caller's own reviewer_state rows —
+         *     never another reviewer's (blind boundary, Constraint 3).
+         *     404 when article is not found; 403 when caller is not a project member.
+         */
+        get: operations["get_suggestions_api_v1_articles__article_id__suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/articles/{article_id}/suggestions/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Suggestions History
+         * @description Return AI proposal history for a single (instance, field) coord.
+         *
+         *     Newest-first; no status (history is the raw proposal trail).
+         *     404 when article is not found; 403 when caller is not a project member.
+         */
+        get: operations["get_suggestions_history_api_v1_articles__article_id__suggestions_history_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -767,6 +906,100 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AISuggestionHistoryItem
+         * @description One entry in the proposal history for a single (instance, field) coord.
+         *
+         *     Same shape as AISuggestionItem minus `status` — history is proposal trail only.
+         */
+        AISuggestionHistoryItem: {
+            /** Confidence Score */
+            confidence_score: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            evidence: components["schemas"]["EvidenceResponse"] | null;
+            /**
+             * Field Id
+             * Format: uuid
+             */
+            field_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Instance Id
+             * Format: uuid
+             */
+            instance_id: string;
+            /** Proposed Value */
+            proposed_value: {
+                [key: string]: unknown;
+            };
+            /** Rationale */
+            rationale: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+        };
+        /**
+         * AISuggestionItem
+         * @description A single AI suggestion (latest proposal per coord) with caller-scoped status.
+         */
+        AISuggestionItem: {
+            /** Confidence Score */
+            confidence_score: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            evidence: components["schemas"]["EvidenceResponse"] | null;
+            /**
+             * Field Id
+             * Format: uuid
+             */
+            field_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Instance Id
+             * Format: uuid
+             */
+            instance_id: string;
+            /** Proposed Value */
+            proposed_value: {
+                [key: string]: unknown;
+            };
+            /** Rationale */
+            rationale: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Status */
+            status: string;
+        };
+        /**
+         * AISuggestionsResponse
+         * @description Response for the suggestions endpoint.
+         */
+        AISuggestionsResponse: {
+            /** Count */
+            count: number;
+            /** Suggestions */
+            suggestions: components["schemas"]["AISuggestionItem"][];
+        };
+        /**
          * APIKeyResponse
          * @description Resposta with data de uma API key (sem a key em si).
          */
@@ -810,6 +1043,23 @@ export interface components {
              * @description Dados da resposta
              */
             data?: unknown | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[AISuggestionsResponse] */
+        ApiResponse_AISuggestionsResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["AISuggestionsResponse"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -1217,6 +1467,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[Union[RunSummaryResponse, NoneType]] */
+        ApiResponse_Union_RunSummaryResponse__NoneType__: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["RunSummaryResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[Union[SaveCredentialsResponse, TestConnectionResponse, ListCollectionsResponse, FetchItemsResponse, FetchAttachmentsResponse, DownloadAttachmentResponse, SyncCollectionResponse, SyncStatusResponse, SyncRetryFailedResponse, SyncItemResultsResponse]] */
         ApiResponse_Union_SaveCredentialsResponse__TestConnectionResponse__ListCollectionsResponse__FetchItemsResponse__FetchAttachmentsResponse__DownloadAttachmentResponse__SyncCollectionResponse__SyncStatusResponse__SyncRetryFailedResponse__SyncItemResultsResponse__: {
             /**
@@ -1271,6 +1538,66 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[list[AISuggestionHistoryItem]] */
+        ApiResponse_list_AISuggestionHistoryItem__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: components["schemas"]["AISuggestionHistoryItem"][] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[list[ArticleRunRef]] */
+        ApiResponse_list_ArticleRunRef__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: components["schemas"]["ArticleRunRef"][] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[list[UUID]] */
+        ApiResponse_list_UUID__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: string[] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[list[dict[str, Any]]] */
         ApiResponse_list_dict_str__Any___: {
             /**
@@ -1292,6 +1619,21 @@ export interface components {
              * @description rastreamento
              */
             trace_id?: string | null;
+        };
+        /**
+         * ArticleRunRef
+         * @description Per-article run reference returned by POST /articles/form-runs.
+         *
+         *     ``run_id`` is None when the article has no matching run.
+         */
+        ArticleRunRef: {
+            /**
+             * Article Id
+             * Format: uuid
+             */
+            article_id: string;
+            /** Run Id */
+            run_id: string | null;
         };
         /**
          * BatchSectionResult
@@ -1654,6 +1996,18 @@ export interface components {
             message: string;
         };
         /**
+         * EvidenceResponse
+         * @description Evidence snippet attached to a proposal record.
+         */
+        EvidenceResponse: {
+            /** Page Number */
+            page_number: number | null;
+            /** Proposal Record Id */
+            proposal_record_id: string | null;
+            /** Text Content */
+            text_content: string | null;
+        };
+        /**
          * ExportCancelResponse
          * @description Response do cancelamento do job.
          */
@@ -1909,6 +2263,27 @@ export interface components {
             }[];
             /** Total Results */
             total_results?: number | null;
+        };
+        /**
+         * FormRunsRequest
+         * @description Request body for POST /api/v1/articles/form-runs.
+         *
+         *     Resolves the latest relevant run for each article_id in the batch.
+         *     ``project_id`` is used for BOLA enforcement.
+         */
+        FormRunsRequest: {
+            /** Article Ids */
+            article_ids: string[];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Template Id
+             * Format: uuid
+             */
+            template_id: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2492,10 +2867,70 @@ export interface components {
             validation_schema?: unknown | null;
         };
         /**
+         * RunViewInstance
+         * @description A single extraction instance, sourced from extraction_instances and scoped
+         *     to the run's (article_id, template_id) pair. The ``metadata`` ORM column maps
+         *     to ``metadata_`` on the ORM object; ``validation_alias`` ensures
+         *     ``model_validate(orm_obj)`` reads the right attribute while the JSON output
+         *     key stays ``metadata``.
+         */
+        RunViewInstance: {
+            /** Article Id */
+            article_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Entity Type Id
+             * Format: uuid
+             */
+            entity_type_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Metadata */
+            metadata: {
+                [key: string]: unknown;
+            };
+            /** Parent Instance Id */
+            parent_instance_id: string | null;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Sort Order */
+            sort_order: number;
+            /** Status */
+            status: string;
+            /**
+             * Template Id
+             * Format: uuid
+             */
+            template_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
          * RunViewResponse
-         * @description ``RunDetailResponse`` (run + blind-filtered workflow rows) plus the two
-         *     pieces the run-open form needs server-side: the frozen entity_types tree and
-         *     the caller's current_values. (``instances`` is added in Task 12.)
+         * @description ``RunDetailResponse`` (run + blind-filtered workflow rows) plus the three
+         *     pieces the run-open form needs server-side: the frozen entity_types tree,
+         *     the caller's current_values, and the instances for the run's
+         *     (article_id, template_id) scope.
          */
         RunViewResponse: {
             /** Consensus Decisions */
@@ -2506,6 +2941,8 @@ export interface components {
             decisions: components["schemas"]["ReviewerDecisionResponse"][];
             /** Entity Types */
             entity_types: components["schemas"]["RunViewEntityType"][];
+            /** Instances */
+            instances: components["schemas"]["RunViewInstance"][];
             /** Proposals */
             proposals: components["schemas"]["ProposalRecordResponse"][];
             /** Published States */
@@ -3003,6 +3440,72 @@ export interface operations {
             };
         };
     };
+    post_form_runs_api_v1_articles_form_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FormRunsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_ArticleRunRef__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_active_run_api_v1_articles__article_id__active_run_get: {
+        parameters: {
+            query?: {
+                template_id?: string | null;
+            };
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_Union_RunSummaryResponse__NoneType__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_article_citations_endpoint_api_v1_articles__article_id__citations_get: {
         parameters: {
             query?: never;
@@ -3021,6 +3524,139 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_list_dict_str__Any___"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_finalized_run_api_v1_articles__article_id__finalized_run_get: {
+        parameters: {
+            query?: {
+                template_id?: string | null;
+            };
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_Union_RunSummaryResponse__NoneType__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_instance_ids_api_v1_articles__article_id__instance_ids_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_UUID__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_suggestions_api_v1_articles__article_id__suggestions_get: {
+        parameters: {
+            query?: {
+                instance_ids?: string[];
+                run_id?: string | null;
+            };
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_AISuggestionsResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_suggestions_history_api_v1_articles__article_id__suggestions_history_get: {
+        parameters: {
+            query: {
+                instance_id: string;
+                field_id: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_AISuggestionHistoryItem__"];
                 };
             };
             /** @description Validation Error */

@@ -70,6 +70,7 @@ const RUN_VIEW_FIXTURE: RunViewResponse = {
   published_states: [],
   entity_types: [],
   current_values: [],
+  instances: [],
 };
 
 beforeEach(() => {
