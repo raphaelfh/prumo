@@ -4,44 +4,43 @@ last_reviewed: 2026-06-19
 owner: '@raphaelfh'
 ---
 
-# Structured PDF parsing at ingest with grounded evidence Implementation Plan
+# Structured PDF parsing at ingest Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Decision record: ADR 0011 (structured PDF parsing at ingest).
 
-**Goal:** Replace the lazy `pypdf` raw-text + 15k-truncation + discard path with
-a parse-at-ingest pipeline that persists structured, bbox-bearing blocks into
-the already-migrated `article_text_blocks`, feeds section-aware structured text
-to extraction, and grounds every extracted value to a verifiable source span
-(char range + bbox) so the HITL reviewer can click a value and see it
-highlighted on the page. Accuracy leads; clinical PHI stays in-house.
+**Goal:** Replace the lazy `pypdf` raw-text + discard path with a parse-at-ingest
+pipeline that persists structured, bbox-bearing blocks into the already-migrated
+`article_text_blocks` for every input type (born-digital, scanned, JATS,
+supplementary). This plan stops at a **populated, faithful representation**;
+consuming it (section-aware extraction, evidence anchoring, dead-schema cleanup,
+and the reviewer highlight UI) is the follow-up plan
+`2026-06-19-grounded-extraction-and-hitl-highlight.md`. Accuracy leads; clinical
+PHI stays in-house.
 
-**Architecture:** The target schema and read path already exist
-(`ArticleTextBlock`, `PositionV1` anchors, `parse_position`,
-`citation_read_service.py`). This plan supplies the two missing halves — the
-**populating step** (a parser running at ingest) and the **position writer**
-(evidence anchoring at extraction time) — behind a parser-agnostic adapter so
-the concrete parser is swappable after the bake-off. Parsing runs in the Celery
-worker as a Python library call (no new service); blocks are written through a
-new repository; the table/formula vision pass and a second LLM provider go
-behind the single `build_model()` doorway plus a direct-SDK image adapter
-(forced by the `pydantic-ai < 2` pin). No new tables are required — block status
-rides on the existing `ArticleFile.extraction_status`; only a later cleanup
-migration drops dead columns.
+**Architecture:** The target schema and the eventual read path already exist
+(`ArticleTextBlock`, `PositionV1` anchors, `citation_read_service.py`). This plan
+supplies the **populating step** — a parser running at ingest behind a
+parser-agnostic adapter so the concrete parser is swappable after the bake-off —
+and leaves the **position writer** (evidence anchoring) and all consumption to
+the follow-up plan. Parsing runs in the Celery worker as a Python library call
+(no new service); blocks are written through a new repository; the table/formula
+vision pass and a second LLM provider go behind the single `build_model()`
+doorway plus a direct-SDK image adapter (forced by the `pydantic-ai < 2` pin). No
+new tables are required — block status rides on the existing
+`ArticleFile.extraction_status`.
 
 **Tech Stack:** Python 3.11 + FastAPI + SQLAlchemy 2.0 async + Alembic; Celery +
-Redis worker (`worker_session()` NullPool); pydantic-ai (text extraction) +
-provider image SDK (vision pass); a self-hosted layout parser (Docling or
-MinerU, locked in Phase 0); pytest integration against local Supabase
-(`db_session_real`, project-scoped fixtures); React 19 + pdf.js for the Phase 6
-highlight wiring. Suggested branch: `feat/pdf-structured-ingest`.
+Redis worker (`worker_session()` NullPool); pydantic-ai (text) + provider image
+SDK (vision pass); a self-hosted layout parser (Docling or MinerU, locked in
+Phase 0); pytest integration against local Supabase (`db_session_real`,
+project-scoped fixtures). Suggested branch: `feat/pdf-structured-ingest`.
 
-**Constraints (from the constitution + `.claude/rules/backend.md`):** four-layer
-flow (API → Service → Repository → Model); repositories `flush()` never
-`commit()`; the only singleton is `EventBus`; every Celery DB task uses
-`worker_session()` + `run_task()`; Alembic owns the public schema (revision id
-≤ 32 chars); new/changed tables keep RLS via `is_project_member()`; one provider
-doorway (`build_model()`); no `try/finally` in React-compiled code (use
-`.then/.catch`); integration tests scope queries by `project_id`.
+**Constraints (constitution + `.claude/rules/backend.md`):** four-layer flow
+(API → Service → Repository → Model); repositories `flush()` never `commit()`;
+the only singleton is `EventBus`; every Celery DB task uses `worker_session()` +
+`run_task()`; Alembic owns the public schema (revision id ≤ 32 chars); new/changed
+tables keep RLS via `is_project_member()`; one provider doorway (`build_model()`);
+integration tests scope queries by `project_id`.
 
 ---
 
@@ -53,10 +52,10 @@ doorway (`build_model()`); no `try/finally` in React-compiled code (use
   task; the backbone.
 - **Phase 2 — Source routing: JATS fast-path, OCR, supplementary.**
 - **Phase 3 — Table/formula vision pass + second provider.**
-- **Phase 4 — Extraction reads blocks + evidence anchoring + verification.**
-- **Phase 5 — Backfill, dead-schema cleanup, docs, flip ADR to accepted.**
-- **Phase 6 — Frontend highlight wiring (enabled by Phases 1–4; may be its own
-  plan).**
+
+Consuming the blocks — section-aware extraction, evidence anchoring + verbatim
+verification, backfill/cleanup, and the reviewer highlight UI — is the
+**follow-up plan**: `2026-06-19-grounded-extraction-and-hitl-highlight.md`.
 
 ## File map
 
@@ -73,14 +72,7 @@ doorway (`build_model()`); no `try/finally` in React-compiled code (use
 | `backend/app/llm/vision/table_pass.py` | vision adapter | New: direct provider image SDK call on table/formula regions |
 | `backend/app/core/config.py` | settings | Add `ANTHROPIC_API_KEY`, `ANTHROPIC_DEFAULT_MODEL`, parser/vision toggles |
 | `backend/app/services/api_key_service.py` | BYOK | Learn an `anthropic` key alongside `openai` |
-| `backend/app/services/section_extraction_service.py` | extraction | Read persisted blocks; section-aware assembly (kill 15k truncation); anchor evidence |
-| `backend/app/services/evidence_anchor_service.py` | grounding | New: quote→block match (NFKC + white-space fold) → `PositionV1`; verbatim verify |
-| `backend/app/llm/validators.py` | validation | Extend `evidence_is_plausible` → flag non-verbatim citations |
-| `backend/app/llm/prompts/__init__.py` (+ 3 templates) | prompts | Replace `MAX_PDF_CHARS` prefix-cut with section-aware selection |
-| `backend/alembic/versions/NNNN_drop_dead_article_text.py` | schema | New (Phase 5): drop `text_raw`, `text_html`, `pdf_extracted_text`, `semantic_*` |
-| `frontend/pdf-viewer/*`, `frontend/components/extraction/ai/*` | UI | Phase 6: wire `PositionV1` → canvas highlight + jump-to |
-| `docs/reference/extraction-hitl-architecture.md` | docs | Document the ingest parse + anchoring contract; bump `last_reviewed` |
-| `docs/adr/0011-structured-pdf-parsing-at-ingest.md` | docs | Flip `status: accepted` once Phase 0 locks the parser |
+| `docs/reference/extraction-hitl-architecture.md` | docs | Document the ingest parse + block contract; bump `last_reviewed` |
 
 ---
 
@@ -119,7 +111,7 @@ doorway (`build_model()`); no `try/finally` in React-compiled code (use
   off by product and engineering.
 - [ ] **Step 2:** Update ADR 0011 with the chosen parser + budget and flip its
   `Decision Drivers`/`Validation` notes to reflect the result (keep `status:
-  proposed` until Phase 1 lands the integration).
+  proposed` until the full pipeline lands across both plans).
 
 ---
 
@@ -139,7 +131,8 @@ doorway (`build_model()`); no `try/finally` in React-compiled code (use
 - [ ] **Step 2:** Add a `DocumentParser` Protocol: `parse(pdf_bytes: bytes) ->
   list[ParsedBlock]`. Add a pure helper `assemble_page_text(blocks) ->
   dict[int, str]` that concatenates per page in `block_index` order — the single
-  source of truth for char offsets.
+  source of truth for char offsets (the follow-up plan's assembler + anchorer
+  reuse this).
 - [ ] **Step 3:** Unit-test `assemble_page_text` + offset invariants (every
   block's `text == page_text[char_start:char_end]`).
 
@@ -269,134 +262,35 @@ doorway (`build_model()`); no `try/finally` in React-compiled code (use
 
 ---
 
-## Phase 4 — Extraction reads blocks + evidence anchoring + verification
+## Follow-up plan
 
-### Task 4.1: Section-aware context from blocks (retire the 15k truncation)
-
-**Files:** `backend/app/services/section_extraction_service.py`,
-`backend/app/llm/prompts/__init__.py` (+ `section_extraction`,
-`quality_assessment`, `model_identification` templates)
-
-- [ ] **Step 1:** Failing test: extraction sources text from persisted
-  `article_text_blocks` (not a fresh `pypdf` call); a long document is assembled
-  section-aware so post-15k content (e.g. a Results table) is present in the
-  prompt. If blocks are absent, it falls back to today's lazy `pypdf` path
-  (two-tier until backfill).
-- [ ] **Step 2:** Replace the three `article_text[:MAX_PDF_CHARS]` sites with a
-  block-driven assembler (whole-doc for normal papers; section/budget-aware for
-  outliers). Keep prompt versioning (`content_version`) intact.
-- [ ] **Step 3:** Run → PASS. Commit
-  `feat(extraction): assemble prompts from persisted blocks, drop 15k truncation`.
-
-### Task 4.2: Evidence anchoring service (write PositionV1)
-
-**Files:** `backend/app/services/evidence_anchor_service.py`,
-`backend/app/services/section_extraction_service.py`
-
-- [ ] **Step 1:** Failing test: given a model quote that exists in a block,
-  anchoring writes a `PositionV1` (`TextCitationAnchor` char range, or
-  `HybridCitationAnchor` with the block's `rect`) into
-  `ExtractionEvidence.position`; `text_content`/`page_number` stay denormalized
-  in sync; `parse_position` validates it and `citation_read_service` returns it
-  camelCase. Matching uses Unicode NFKC + white-space folding (not byte equality).
-- [ ] **Step 2:** Implement `EvidenceAnchorService.anchor(evidence, blocks)`;
-  call it where proposals + evidence are recorded (replacing the `position={}`
-  write). Handle quote-spans-blocks (anchor the containing range) and ambiguity
-  (first/nearest match, recorded).
-- [ ] **Step 3:** Run → PASS. Commit `feat(extraction): anchor evidence to source blocks`.
-
-### Task 4.3: Verbatim verification (flag, don't drop)
-
-**Files:** `backend/app/llm/validators.py`
-
-- [ ] **Step 1:** Failing test: a planted hallucinated quote (absent from all
-  blocks) is **flagged** on the evidence (a `verified: false` / reason), not
-  silently dropped and not hard-erroring the run; a genuine quote verifies true.
-  Include OCR-ish edge cases (ligatures, smart quotes) that must still verify
-  under NFKC folding.
-- [ ] **Step 2:** Extend `evidence_is_plausible` (or add `evidence_is_grounded`)
-  to set the verification flag from the anchor result. Surface the flag in the
-  read model for the UI.
-- [ ] **Step 3:** Run → PASS. Commit `feat(extraction): verbatim-verify AI citations`.
-
----
-
-## Phase 5 — Backfill, cleanup, docs
-
-### Task 5.1: Backfill already-ingested articles
-
-- [ ] **Step 1:** A one-off task/script enqueues `parse_article_file_task` for
-  existing `ArticleFile`s lacking blocks (idempotent, batched, rate-limited).
-  Until an article has blocks, extraction uses the lazy fallback (Task 4.1).
-- [ ] **Step 2:** Verify on a sample; commit `chore(parsing): backfill text blocks for existing articles`.
-
-### Task 5.2: Drop dead schema + unused dep
-
-**Files:** `backend/alembic/versions/NNNN_drop_dead_article_text.py`,
-`backend/app/models/article.py`, root `package.json`
-
-- [ ] **Step 1:** Confirm zero readers/writers remain for `ArticleFile.text_raw`,
-  `text_html`, `Article.pdf_extracted_text`, `semantic_abstract_text`,
-  `semantic_fulltext_text` (grep). Write an Alembic migration dropping them
-  (revision id ≤ 32 chars); remove the ORM columns; remove `pdf-lib` from
-  `package.json`.
-- [ ] **Step 2:** `cd backend && alembic upgrade head` locally + roundtrip test;
-  `npm run build` clean. Commit `chore(schema): drop unused article text columns + pdf-lib`.
-
-### Task 5.3: Docs + flip ADR
-
-- [ ] **Step 1:** Update `docs/reference/extraction-hitl-architecture.md` with
-  the ingest-parse step, the block contract, and the anchoring/verification flow;
-  bump `last_reviewed`.
-- [ ] **Step 2:** Flip ADR 0011 `status: accepted` (parser locked in Phase 0,
-  pipeline shipped). Commit `docs(extraction): document structured-ingest pipeline`.
-
----
-
-## Phase 6 — Frontend highlight wiring (enabled; may be a separate plan)
-
-> Backend now writes `PositionV1`; the viewer types (`pdf-viewer/core/citation.ts`)
-> and `Reader.tsx` already model it. This phase is UI-only and can ship on its
-> own branch once Phase 4 lands.
-
-### Task 6.1: Click-to-highlight evidence
-
-- [ ] **Step 1:** Component test: clicking an AI value's evidence
-  (`AISuggestionEvidence.tsx`) scrolls the pdf.js canvas to the page and draws
-  the `RegionCitationAnchor` rect (or selects the `TextCitationAnchor` range in
-  the text layer); a non-grounded (flagged) citation shows a "couldn't locate in
-  source" affordance instead.
-- [ ] **Step 2:** Wire the citation read model → viewer highlight; sync Reader and
-  canvas modes. Run → PASS. Commit `feat(pdf-viewer): highlight evidence in document`.
-
-### Task 6.2: Reviewer can attach a manual highlight as evidence (stretch)
-
-- [ ] **Step 1:** Let a reviewer select text/region in the PDF and attach it to a
-  field as a `human` evidence anchor (writes `PositionV1`). Test + commit.
+Everything that *consumes* the blocks this plan produces lives in
+`docs/superpowers/plans/2026-06-19-grounded-extraction-and-hitl-highlight.md`:
+extraction sourcing from blocks (retiring the 15k truncation), evidence anchoring and
+verbatim verification, the backfill of already-ingested articles, the
+dead-schema/`pdf-lib` cleanup, the reviewer click-to-highlight UI, and flipping
+ADR 0011 to `accepted`. That plan depends on this one having populated
+`article_text_blocks`.
 
 ---
 
 ## Self-Review
 
-- **Spec coverage (the 12 decisions):** all inputs → Phases 1–2 (PDF, OCR, JATS,
-  supplementary); accuracy-leads + humans-read → blocks serve both; pixel-bbox
-  anchoring → Tasks 1.x + 4.2 + 6.1; vision/Claude → Phase 3; cost tradeoff →
+- **Spec coverage (the decisions this plan owns):** all input types → Phases 1–2
+  (PDF, OCR, JATS, supplementary); vision/Claude → Phase 3; cost tradeoff → the
   Phase 0 bake-off + budget gate; extract-once-at-ingest + persist → Phase 1;
   self-host on Railway (PHI) → in-worker parser, no egress except the gated,
-  region-scoped vision call; vision table pass → Task 3.2; JATS fast-path →
-  Task 2.1.
-- **Reuse:** consumes the existing `ArticleTextBlock` + `PositionV1` +
-  `citation_read_service` contract; no new tables (status on
-  `ArticleFile.extraction_status`); the read path is untouched.
-- **Layering/risk:** parser is a library call inside the Celery worker (no new
+  region-scoped vision call. The bbox-anchoring, verbatim-verification, and
+  highlight-UI decisions are delivered by the follow-up plan, on top of the blocks
+  produced here.
+- **Reuse:** writes the existing `ArticleTextBlock` schema; no new tables (status
+  on `ArticleFile.extraction_status`); the read path is untouched.
+- **Layering/risk:** the parser is a library call inside the Celery worker (no new
   service); the only architectural divergence is the direct-SDK vision adapter,
   justified by the `pydantic-ai < 2` pin and isolated in `llm/vision/`. Char
   offsets are per-page in `block_index` order (single source of truth in
-  `assemble_page_text`). Backfill keeps a lazy fallback so nothing breaks during
-  rollout (temporary two-tier).
-- **Gated/live:** Phase 0 needs real (possibly PHI) papers — handle on an
-  approved data surface, not a public bucket. Backfill (Task 5.1) touches the
-  live project's articles — run only with explicit user OK.
-- **Ordering:** Phase 0 gates parser-specific code in Phase 1. Phases 2–3 layer
-  onto Phase 1's service. Phase 4 depends on blocks existing. Phase 6 depends on
-  Phase 4's anchors.
+  `assemble_page_text`, reused downstream).
+- **Gated/live:** Phase 0 needs real (possibly PHI) papers — handle on an approved
+  data surface, not a public bucket.
+- **Ordering:** Phase 0 gates parser-specific code in Phase 1; Phases 2–3 layer
+  onto Phase 1's service. The follow-up plan begins once blocks are populated.

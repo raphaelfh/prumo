@@ -235,8 +235,11 @@ Concretely, respecting the existing layering:
 
 - Schema-landing prerequisite (already merged):
   `docs/superpowers/specs/2026-04-28-pdf-viewer-database-requirements.md`.
-- Implementation plan:
-  `docs/superpowers/plans/2026-06-19-structured-pdf-parsing-at-ingest.md`.
+- Implementation plans:
+  `docs/superpowers/plans/2026-06-19-structured-pdf-parsing-at-ingest.md`
+  (parse at ingest → persist blocks) and
+  `docs/superpowers/plans/2026-06-19-grounded-extraction-and-hitl-highlight.md`
+  (consume blocks → anchor, verify, highlight).
 - Canonical schema and run lifecycle:
   `docs/reference/extraction-hitl-architecture.md`.
 - Target contract in code: `ArticleTextBlock` (`app/models/article.py`),
