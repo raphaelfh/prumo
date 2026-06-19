@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-06-11
+last_reviewed: 2026-06-19
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-05-30 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-06-19 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -144,6 +144,24 @@ which bypasses RLS). Before 0025, SELECT gated only on
 `is_project_member` and blinding lived in frontend JavaScript — the
 exact posture that produced the blind-review leak. Do not reintroduce
 it.
+
+**Manager blind-review (ADR 0012) — a deliberate API-stricter-than-RLS
+split.** Managers are blind by default and reveal peers per kind. The
+policy lives in `projects.settings.managers_see_reviewers`
+(`{extraction, quality_assessment}`, both default `false`), read **live**
+at request time by `extraction_run_read_service.caller_can_see_peers(
+project_id, user_id, kind)`: `consensus` arbitrator → always; `manager` →
+the live per-kind setting; everyone else → `false`; any `finalized` run →
+all. RLS `0025` is intentionally **unchanged** — a manager stays an
+arbitrator and *may* SELECT peer rows at the DB layer, but the API path
+withholds them when the toggle is off. This is sound because manager
+blindness is a bias-control UX policy, not a confidentiality boundary (a
+manager can flip the toggle). The hard boundary — reviewer↔reviewer
+blinding — remains enforced identically at **both** layers, so the
+identical-predicate rule still holds for the case that matters. The toggle
+is written through a focused typed endpoint
+(`PUT …/manager-review-visibility`, manager-only) that sets one kind and
+preserves the other.
 
 ## 4. Conceptual flow
 
@@ -304,10 +322,11 @@ Both flows share the **field-level primitives** but diverge above that:
 | --- | --- | --- |
 | `FieldInput` (typed input per field) | ✅ Yes | `frontend/components/extraction/FieldInput.tsx`. Consumed by both `SectionAccordion` (extraction) and `QASectionAccordion` (QA). |
 | `AssessmentShell` (PDF panel + form panel + header) | ✅ Yes (QA today; extraction page predates it) | `frontend/components/assessment/AssessmentShell.tsx`. |
-| `ExtractionValueService` (find run, load/save values) | ✅ Yes | `frontend/services/extractionValueService.ts`. Both flows use it for read/write. |
+| `ExtractionValueService` (find run, load/save **own** values) | ✅ Yes | `frontend/services/extractionValueService.ts`. Both flows use it for read/write of the caller's own values. It no longer reads peer values — the bespoke `loadValuesForOthers` dual-read was removed (ADR 0012). |
+| `RunReviewerComparison` (server-blinded reviewer compare view) | ✅ Yes | `frontend/components/runs/RunReviewerComparison.tsx`. Both screens render it for the manager/consensus compare surface, fed by `reviewerSummary.decisionsByCoord` (from `/runs/{id}/view`) — no direct Supabase read, blind callers get no peer columns. Gated by `useComparisonPermissions(projectId, userId, kind)`. |
 | `useGlobalQATemplates` / `useExtractionTemplates` | ❌ Distinct | QA needs `kind='quality_assessment'` filter; extraction operates on project clones. |
-| Form panel structure | ❌ Distinct | Extraction supports multi-instance (`cardinality='many'`) + AI suggestions panel; QA is 1:1 per domain. Trying to unify these creates over-engineering. |
-| Header actions | ❌ Distinct | Extraction has AI extraction triggers, view-mode toggle, full export menu. QA has Publish + finalized badge. |
+| Form panel structure | ❌ Distinct | Extraction supports multi-instance (`cardinality='many'`) + AI suggestions panel; QA is 1:1 per domain. Both now carry a per-kind assess/extract↔compare view-mode toggle that swaps in the shared `RunReviewerComparison`. Trying to unify the rest creates over-engineering. |
+| Header actions | ❌ Distinct | Extraction has AI extraction triggers, full export menu; QA has Publish + finalized badge. Both expose the compare view-mode toggle (shown only when the caller may see peers). |
 
 **Rule of thumb:** if you're adding behaviour that touches a *single field*
 (rendering, validation, evidence), put it in the shared primitive
@@ -369,6 +388,11 @@ publish, AI), keep it in the page-specific component.
   effect when this decision was made?" is always answerable.
 - **ConsensusRule** — `unanimous` / `majority` / `arbitrator`. Drives
   when consensus triggers and how it resolves.
+- **managers_see_reviewers** — Per-kind manager blind-review policy on
+  `projects.settings` (`{extraction, quality_assessment}`, both default
+  `false` = managers blind). Read **live** by the API read path
+  (`caller_can_see_peers`), not snapshotted onto the run. See §3 and ADR
+  0012.
 
 ### Legacy (fully removed)
 
@@ -382,10 +406,23 @@ publish, AI), keep it in the page-specific component.
 
   The frontend's `ExtractionValueService`
   (`frontend/services/extractionValueService.ts`) is the single
-  read/write entry point: `findActiveRun` → `loadValuesForUser` /
-  `saveValue` / `acceptProposal` / `rejectValue`. AI extraction
-  auto-advances the Run from PROPOSAL → REVIEW after recording proposals
-  so the form can write decisions immediately.
+  read/write entry point: `findActiveRun` →
+  `saveValue` / `acceptProposal` / `rejectValue`.
+
+  **Stage advance (extraction).** For `kind=extraction`, `PROPOSAL` is a
+  transient seeding stage: the AI writes its proposals there (it is a
+  `PROPOSAL`-only operation) and the proposer can pre-fill values. The
+  collaborative surface — per-reviewer decisions, the "X/N reviewers"
+  counter, the "0% until you accept" progress metric — lives in `REVIEW`.
+  The advance `PROPOSAL → REVIEW` is **orchestrated by the frontend**
+  (`frontend/hooks/extraction/useAutoAdvanceToReview.ts`): it fires once the
+  run has proposals or the reviewer makes a first edit. It is NOT done in the
+  AI section-extraction service, because that path runs once per section on
+  the same run and each call requires `PROPOSAL` — advancing there would break
+  batch extraction (see ADR 0010). `advance_stage` materializes each user's
+  `human` proposals into their own `accept_proposal` decisions on the way in,
+  so typed values survive the transition while AI proposals remain suggestions
+  to accept. "Run AI" is disabled once a run is in `REVIEW`.
 
 ## 7. References
 

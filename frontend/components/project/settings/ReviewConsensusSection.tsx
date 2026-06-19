@@ -8,7 +8,7 @@
  */
 
 import { useState } from 'react';
-import { Info, Layers, RotateCcw, ShieldCheck, Users } from 'lucide-react';
+import { EyeOff, Info, Layers, RotateCcw, ShieldCheck, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -24,7 +24,11 @@ import {
 import { useProjectMembers } from '@/hooks/hitl/useProjectMembers';
 import { useHITLProjectTemplates } from '@/hooks/hitl/useHITLProjectTemplates';
 import { useProjectMemberRole } from '@/hooks/useProjectMemberRole';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useComparisonPermissions } from '@/hooks/shared/useComparisonPermissions';
 import type { HitlConfigPayload } from '@/services/hitlConfigService';
+
+import { ManagerReviewVisibilityToggle } from '@/components/runs/ManagerReviewVisibilityToggle';
 
 import { ConsensusConfigForm } from './ConsensusConfigForm';
 import { TemplateConsensusOverride } from './TemplateConsensusOverride';
@@ -33,8 +37,15 @@ interface ReviewConsensusSectionProps {
   projectId: string;
 }
 
-export function ReviewConsensusSection({ projectId }: ReviewConsensusSectionProps) {
+export function ReviewConsensusSection({
+  projectId,
+}: ReviewConsensusSectionProps) {
   const { isManager } = useProjectMemberRole(projectId);
+  // Self-source the per-kind manager-visibility setting (same hook the QA
+  // configuration uses), so both toggle surfaces share one source of truth
+  // instead of one reading the hook and one a raw project.settings cast.
+  const { userId } = useCurrentUser();
+  const visibilityPerms = useComparisonPermissions(projectId, userId ?? '', 'extraction');
   const projectConfig = useProjectHitlConfig(projectId);
   const upsertProject = useUpsertProjectHitlConfig(projectId);
   const clearProject = useClearProjectHitlConfig(projectId);
@@ -195,6 +206,21 @@ export function ReviewConsensusSection({ projectId }: ReviewConsensusSectionProp
               </Button>
             </div>
           </>
+        )}
+      </SettingsCard>
+
+      <SettingsCard
+        title={t('consensus', 'managerVisibilityCardTitle')}
+        description={t('consensus', 'managerVisibilityCardDesc')}
+        icon={EyeOff}
+      >
+        {visibilityPerms.loading ? null : (
+          <ManagerReviewVisibilityToggle
+            projectId={projectId}
+            kind="extraction"
+            currentValue={visibilityPerms.canSeeOthers}
+            disabled={!visibilityPerms.canManageBlindMode}
+          />
         )}
       </SettingsCard>
 

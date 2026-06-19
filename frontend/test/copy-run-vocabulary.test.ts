@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import copy, { consensus, extraction } from '@/lib/copy';
+import copy, { consensus, extraction, qa } from '@/lib/copy';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -50,13 +50,11 @@ describe('user-facing copy does not leak the internal "Run" entity', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('no longer ships the hardcoded "Run finalized" QA toast', () => {
-    const src = readFileSync(
-      resolve(here, '../pages/QualityAssessmentFullScreen.tsx'),
-      'utf8',
-    );
-    expect(src).not.toContain('Run finalized');
-    expect(src).toContain('Assessment finalized.');
+  it('phrases the QA finalize toast as "Assessment finalized.", never "Run finalized"', () => {
+    // The toast now reads from the copy layer (qa.finalizationSuccess) rather
+    // than an inline literal in the page; assert the copy value directly.
+    expect(qa.finalizationSuccess).toBe('Assessment finalized.');
+    expect(qa.finalizationSuccess).not.toMatch(/\bRun\b/);
   });
 
   it('no longer ships the "Finalize run" labels in the shared consensus panel', () => {

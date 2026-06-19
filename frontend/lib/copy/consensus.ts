@@ -47,6 +47,16 @@ export const consensus = {
     arbitratorHint:
         'A project member who breaks ties or sets the canonical value when reviewers disagree.',
     arbitratorPlaceholder: 'Select an arbitrator…',
+
+    // Manager review visibility (per-kind blind toggle)
+    managerVisibilityCardTitle: 'Manager review visibility',
+    managerVisibilityCardDesc:
+        'Control whether managers see other reviewers while extracting. Reviewers are always blind to each other.',
+    managerVisibilityLabel: "Show other reviewers' responses to managers",
+    managerVisibilityHint:
+        'When off, managers review blind — they only see their own values until they turn this on. Reviewers are always blind to each other.',
+    managerVisibilitySaved: 'Reviewer visibility updated.',
+    managerVisibilityError: 'Could not update reviewer visibility.',
     arbitratorRequired:
         'An arbitrator is required when the rule is "Arbitrator".',
     arbitratorNoEligibleMembers:

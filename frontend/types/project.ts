@@ -121,7 +121,8 @@ export interface ProjectData extends Project {
 }
 
 export interface ProjectSettings {
-  blind_mode?: boolean;
+  /** Per-kind: may a manager see other reviewers' values? Default (absent) = blind. */
+  managers_see_reviewers?: { extraction?: boolean; quality_assessment?: boolean };
   [key: string]: Json | undefined;
 }
 

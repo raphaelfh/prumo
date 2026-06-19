@@ -118,7 +118,9 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
                     <ReviewDetailsSection project={project} onChange={updateProject}/>
                 )}
                 {activeTab === 'team' && <TeamMembersSection projectId={projectId}/>}
-                {activeTab === 'consensus' && <ReviewConsensusSection projectId={projectId}/>}
+                {activeTab === 'consensus' && (
+                    <ReviewConsensusSection projectId={projectId} />
+                )}
                 {activeTab === 'advanced' && (
                     <AdvancedSettingsSection
                         project={project}

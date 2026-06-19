@@ -43,6 +43,13 @@ interface HeaderMoreMenuProps {
    * multi-step orchestration that creates a fresh run.
    */
   runId?: string | null;
+  /**
+   * Whether AI extraction may run. AI seeds proposals only in the PROPOSAL
+   * stage; once the run is in REVIEW it is a one-time-done step (re-running
+   * would be rejected by the backend), so the action is disabled. Defaults to
+   * ``true`` for callers that don't track stage.
+   */
+  canRunAI?: boolean;
   /** Callback after extraction completes. */
   onExtractionComplete?: () => Promise<void>;
     /** Callback to expose extraction state (to render progress in parent) */
@@ -55,6 +62,7 @@ export function HeaderMoreMenu({
   articleId,
   templateId,
   runId,
+  canRunAI = true,
   onExtractionComplete,
   onExtractionStateChange,
 }: HeaderMoreMenuProps) {
@@ -177,7 +185,7 @@ export function HeaderMoreMenu({
           {articleId && templateId && (
             <DropdownMenuItem
               onClick={handleFullAIExtraction}
-              disabled={extractingAI}
+              disabled={extractingAI || !canRunAI}
             >
               <Sparkles className="mr-2 h-4 w-4" />
                 {extractingAI ? t('extraction', 'moreExtractingAI') : t('extraction', 'moreExtractAI')}

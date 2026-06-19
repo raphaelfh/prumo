@@ -24,8 +24,9 @@ import {
   fetchProjectTemplates,
 } from "@/services/qaTemplateService";
 import { t } from "@/lib/copy";
+import type { ReviewKind } from "@/lib/comparison/permissions";
 
-export type HITLKind = "extraction" | "quality_assessment";
+export type HITLKind = ReviewKind;
 
 export interface ProjectTemplate {
   id: string;

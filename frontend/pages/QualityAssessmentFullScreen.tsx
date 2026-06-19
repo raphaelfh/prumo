@@ -20,10 +20,15 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles, Users } from "lucide-react";
 
 import { AssessmentShell } from "@/components/assessment/AssessmentShell";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
+import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
+import type {
+  ComparisonEntityType,
+  ComparisonInstance,
+} from "@/components/runs/RunReviewerComparison";
 import { PrumoPdfViewer, articleFileSource } from "@prumo/pdf-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +54,9 @@ import {
 } from "@/components/runs/HITLStatusBadges";
 import { ConsensusPanel } from "@/components/runs/ConsensusPanel";
 import { HeaderAIActions } from "@/components/hitl/HeaderAIActions";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
+import { t } from "@/lib/copy";
 
 interface FieldKey {
   instanceId: string;
@@ -154,6 +162,25 @@ export default function QualityAssessmentFullScreen() {
   const reviewerProfiles = useRunReviewers(session?.runId ?? null, {
     enabled: !!session?.runId,
   });
+
+  // Assess vs. compare view. Compare renders the shared, server-blinded
+  // RunReviewerComparison (same component the extraction screen uses).
+  const [viewMode, setViewMode] = useState<"assess" | "compare">("assess");
+  const { userId } = useCurrentUser();
+  const permissions = useComparisonPermissions(
+    projectId ?? "",
+    userId ?? "",
+    "quality_assessment",
+  );
+  // Peer values come from the server-blinded runDetail
+  // (reviewerSummary.decisionsByCoord) — no separate fetch. Compare is offered
+  // only when the caller may see peers (manager/consensus, per the live
+  // per-kind setting) AND peers actually exist.
+  const canCompare =
+    permissions.canSeeOthers && reviewerSummary.decisionsByCoord.size > 0;
+  // Never strand the user on the compare view if the toggle disappears
+  // (e.g. peers drop out or the setting flips off).
+  const effectiveViewMode = canCompare ? viewMode : "assess";
 
   // Local input state for the form. Hydrated from the latest proposal per
   // (instance, field) once the Run detail loads.
@@ -326,7 +353,7 @@ export default function QualityAssessmentFullScreen() {
     if (!session) return;
     await advanceMutation.mutateAsync({ target_stage: "finalized" });
     await refetchRun();
-    toast.success("Assessment finalized.");
+    toast.success(t("qa", "finalizationSuccess"));
   };
 
   // Plain-identifier dep so the compiler can track this dep without
@@ -341,10 +368,10 @@ export default function QualityAssessmentFullScreen() {
       // since the new run carries its own seeded proposals.
       setValues({});
       await refetchSession();
-      toast.success("Assessment reopened for revision.");
+      toast.success(t("qa", "reopenSuccess"));
     }).catch((err: unknown) => {
       toast.error(
-        err instanceof Error ? err.message : "Failed to reopen assessment",
+        err instanceof Error ? err.message : t("qa", "reopenError"),
       );
     });
     setReopening(false);
@@ -359,9 +386,7 @@ export default function QualityAssessmentFullScreen() {
       ([, v]) => v !== undefined && v !== null && v !== "",
     );
     if (filled.length === 0) {
-      toast.error(
-        "Fill at least one signaling question before publishing.",
-      );
+      toast.error(t("qa", "publishEmptyError"));
       return;
     }
 
@@ -397,11 +422,11 @@ export default function QualityAssessmentFullScreen() {
 
       await advanceMutation.mutateAsync({ target_stage: "finalized" });
       await refetchRun();
-      toast.success("Assessment published.");
+      toast.success(t("qa", "publishSuccess"));
     };
     await doPublish().catch((err: unknown) => {
       toast.error(
-        err instanceof Error ? err.message : "Failed to publish assessment",
+        err instanceof Error ? err.message : t("qa", "publishError"),
       );
     });
     setPublishing(false);
@@ -409,10 +434,35 @@ export default function QualityAssessmentFullScreen() {
 
   const sortedDomains = domains;
 
+  // Compare-view inputs derived from the QA template tree: one instance per
+  // domain (session.instancesByEntityType), shaped for the shared
+  // RunReviewerComparison. ownValues is the form's `_`-keyed map; decisions
+  // come in `::`-keyed via reviewerSummary — the component bridges the two.
+  const compareEntityTypes: ComparisonEntityType[] = sortedDomains.map(
+    (domain) => ({
+      id: domain.entityType.id,
+      label: domain.entityType.label,
+      fields: domain.fields.map((f) => ({ id: f.id, label: f.label })),
+    }),
+  );
+  const compareInstances: ComparisonInstance[] = sortedDomains
+    .map((domain): ComparisonInstance | null => {
+      const instanceId = session?.instancesByEntityType[domain.entityType.id];
+      return instanceId
+        ? {
+            id: instanceId,
+            entity_type_id: domain.entityType.id,
+            parent_instance_id: null,
+            label: null,
+          }
+        : null;
+    })
+    .filter((i): i is ComparisonInstance => i !== null);
+
   if (!projectId || !articleId || !templateId) {
     return (
       <div className="p-8 text-center text-muted-foreground">
-        Missing route parameters.
+        {t("qa", "missingRouteParams")}
       </div>
     );
   }
@@ -421,7 +471,7 @@ export default function QualityAssessmentFullScreen() {
     resolvedTemplate === null || sessionLoading || templateLoading;
   const error =
     resolvedTemplate?.kind === "missing"
-      ? `Quality-Assessment template ${templateId} not found. The link may be stale — pick a template from the list and try again.`
+      ? t("qa", "templateNotFound").replace("{{templateId}}", templateId ?? "")
       : (sessionError ?? templateError);
 
   const header = (
@@ -431,23 +481,23 @@ export default function QualityAssessmentFullScreen() {
           variant="ghost"
           size="sm"
           onClick={() => navigate(`/projects/${projectId}`)}
-          aria-label="Back"
+          aria-label={t("common", "back")}
         >
           <ArrowLeft className="mr-1 h-4 w-4" />
-          Back
+          {t("common", "back")}
         </Button>
         <Badge
           variant="outline"
           className="border-warning/30 bg-warning/10 text-warning"
           data-testid="qa-kind-badge"
         >
-          Quality Assessment
+          {t("qa", "badge")}
         </Badge>
         <h1
           className="truncate text-base font-medium"
           data-testid="qa-template-name"
         >
-          {template?.name ?? (loading ? "Loading…" : "—")}
+          {template?.name ?? (loading ? t("common", "loading") : "—")}
         </h1>
         {template ? (
           <span className="text-xs text-muted-foreground">v{template.version}</span>
@@ -463,6 +513,23 @@ export default function QualityAssessmentFullScreen() {
             requiredReviewerCount={reviewerSummary.requiredReviewerCount}
             divergentCount={reviewerSummary.divergentCoords.size}
           />
+        ) : null}
+        {canCompare ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() =>
+              setViewMode((m) => (m === "assess" ? "compare" : "assess"))
+            }
+            aria-label={t("qa", "compareToggleAria")}
+            data-testid="qa-compare-toggle"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Users className="mr-1.5 h-3.5 w-3.5" />
+            {viewMode === "assess"
+              ? t("qa", "compareToggle")
+              : t("qa", "assessToggle")}
+          </Button>
         ) : null}
         <HeaderAIActions suggestions={aiSuggestions} compact />
         <SaveStatusBadge
@@ -498,7 +565,7 @@ export default function QualityAssessmentFullScreen() {
           data-testid="qa-extract-ai-button"
         >
           <Sparkles className="mr-1 h-4 w-4" />
-          {extractingAI ? "Extracting…" : "Extract with AI"}
+          {extractingAI ? t("qa", "extractingProgress") : t("qa", "extractWithAI")}
         </Button>
         <Button
           size="sm"
@@ -506,7 +573,7 @@ export default function QualityAssessmentFullScreen() {
           disabled={publishing || finalized || !session || !runDetail}
           data-testid="qa-publish-button"
         >
-          {publishing ? "Publishing…" : finalized ? "Published" : "Publish assessment"}
+          {publishing ? t("qa", "publishingProgress") : finalized ? t("qa", "publishedState") : t("qa", "publishButton")}
         </Button>
       </div>
     </div>
@@ -518,6 +585,12 @@ export default function QualityAssessmentFullScreen() {
       className="h-full"
     />
   );
+
+  // Single source for the form-panel stage gates (avoids repeating the same
+  // 5-term chain across the consensus / compare / assess branches).
+  const ready = !loading && !error && !!template && !!session;
+  const showConsensusPanel = ready && inConsensusStage && !!runDetail;
+  const showFormStage = ready && !inConsensusStage;
 
   const formPanel = (
     <div className="space-y-3 p-4" data-testid="qa-form-panel">
@@ -533,11 +606,11 @@ export default function QualityAssessmentFullScreen() {
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Loading template…
+          {t("qa", "loadingTemplate")}
         </div>
       ) : null}
 
-      {!loading && !error && template && session && inConsensusStage && runDetail ? (
+      {showConsensusPanel && runDetail ? (
         <ConsensusPanel
           runDetail={runDetail}
           summary={reviewerSummary}
@@ -552,7 +625,20 @@ export default function QualityAssessmentFullScreen() {
         />
       ) : null}
 
-      {!loading && !error && template && session && !inConsensusStage ? (
+      {showFormStage && effectiveViewMode === "compare" ? (
+        <div data-testid="qa-compare-view">
+          <RunReviewerComparison
+            decisionsByCoord={reviewerSummary.decisionsByCoord}
+            entityTypes={compareEntityTypes}
+            instances={compareInstances}
+            ownValues={values}
+            reviewerLabelById={reviewerProfiles.labelById}
+            reviewerAvatarById={reviewerProfiles.avatarById}
+          />
+        </div>
+      ) : null}
+
+      {showFormStage && template && session && effectiveViewMode === "assess" ? (
         <>
           {template.description ? (
             <p className="text-sm text-muted-foreground">

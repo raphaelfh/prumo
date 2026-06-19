@@ -25,7 +25,6 @@ import type {
   ExtractionValue,
 } from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
-import type {OtherExtraction} from '@/hooks/extraction/collaboration/useOtherExtractions';
 
 export interface ExtractionFormViewProps {
   studyLevelSections: ExtractionEntityTypeWithFields[];
@@ -34,7 +33,6 @@ export interface ExtractionFormViewProps {
   instances: ExtractionInstance[];
   values: Record<string, ExtractionValue>;
   updateValue: (instanceId: string, fieldId: string, value: ExtractionValue) => void;
-  otherExtractions: OtherExtraction[];
   aiSuggestions: Record<string, AISuggestion>;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
@@ -92,7 +90,6 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
             articleId={props.articleId}
             templateId={props.templateId}
             runId={props.runId}
-            otherExtractions={props.otherExtractions}
             aiSuggestions={props.aiSuggestions}
             onAcceptAI={props.acceptSuggestion}
             onRejectAI={props.rejectSuggestion}
@@ -100,7 +97,6 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
             isActionLoading={props.isActionLoading}
             onAddInstance={() => props.handleAddInstance(entityType.id)}
             onRemoveInstance={props.handleRemoveInstance}
-            viewMode="extract"
             onExtractionComplete={props.onExtractionComplete}
           />
         );
@@ -119,7 +115,6 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
           onRemoveModel={props.onRemoveModel}
           values={props.values}
           updateValue={props.updateValue}
-          otherExtractions={props.otherExtractions}
           aiSuggestions={props.aiSuggestions}
           acceptSuggestion={props.acceptSuggestion}
           rejectSuggestion={props.rejectSuggestion}

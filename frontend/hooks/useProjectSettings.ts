@@ -51,7 +51,12 @@ export function useProjectSettings(projectId: string) {
             review_rationale: project.review_rationale,
             search_strategy: project.search_strategy,
             picots_config_ai_review: project.picots_config_ai_review,
-            settings: project.settings,
+            // NOTE: `settings` is intentionally NOT written here. Its only live
+            // sub-key, `managers_see_reviewers`, is owned exclusively by the
+            // typed PUT /manager-review-visibility endpoint
+            // (ManagerReviewVisibilityToggle). Writing the page's snapshot here
+            // would clobber a just-toggled value (possibly un-blinding a manager
+            // who chose blind). The page reads settings for display only.
             eligibility_criteria: project.eligibility_criteria,
             study_design: project.study_design,
             review_keywords: project.review_keywords,

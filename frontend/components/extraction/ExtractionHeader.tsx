@@ -48,7 +48,7 @@ interface ExtractionHeaderProps {
   onTogglePDF: () => void;
   viewMode: 'extract' | 'compare';
   onViewModeChange: (mode: 'extract' | 'compare') => void;
-  hasOtherExtractions: boolean;
+  hasComparison: boolean;
 
     // Permissions and role (optional)
   userRole?: UserRole;
@@ -71,6 +71,8 @@ interface ExtractionHeaderProps {
   /** Active run id forwarded to HeaderMoreMenu so "Extract with AI"
    * reuses the open run instead of creating a parallel one. */
   runId?: string | null;
+  /** Whether AI extraction may run (only in PROPOSAL; one-time-done after). */
+  canRunAI?: boolean;
   onExtractionComplete?: (runId?: string) => void | Promise<void>;
 
     // AI suggestions (for Zone 4 badge)
@@ -101,7 +103,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     onTogglePDF,
     viewMode,
     onViewModeChange,
-    hasOtherExtractions,
+    hasComparison,
     userRole,
     isBlindMode,
     saveState,
@@ -175,7 +177,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 onNavigateToArticle={onNavigateToArticle}
                 viewMode={viewMode}
                 onViewModeChange={onViewModeChange}
-                hasOtherExtractions={hasOtherExtractions}
+                hasComparison={hasComparison}
                 compact={true}
               />
 
@@ -192,6 +194,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                   articleId={currentArticleId}
                   templateId={props.templateId}
                   runId={props.runId}
+                  canRunAI={props.canRunAI}
                   onExtractionComplete={props.onRefreshInstances}
                   onExtractionStateChange={props.onExtractionStateChange}
                 />
@@ -226,7 +229,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 onNavigateToArticle={onNavigateToArticle}
                 viewMode={viewMode}
                 onViewModeChange={onViewModeChange}
-                hasOtherExtractions={hasOtherExtractions}
+                hasComparison={hasComparison}
                 compact={false}
               />
             </div>
@@ -259,6 +262,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 articleId={currentArticleId}
                 templateId={props.templateId}
                 runId={props.runId}
+                canRunAI={props.canRunAI}
                 onExtractionComplete={props.onRefreshInstances}
                 onExtractionStateChange={props.onExtractionStateChange}
               />

@@ -22,12 +22,12 @@ interface HeaderPDFControlsProps {
   currentArticleId?: string;
   onNavigateToArticle?: (articleId: string) => void;
   
-  // Modo comparação
+  // Comparison mode
   viewMode: 'extract' | 'compare';
   onViewModeChange: (mode: 'extract' | 'compare') => void;
-  hasOtherExtractions: boolean;
-  
-  /** Modo compacto (apenas ícones) para mobile */
+  hasComparison: boolean;
+
+  /** Compact mode (icons only) for mobile */
   compact?: boolean;
 }
 
@@ -36,7 +36,7 @@ export function HeaderPDFControls({
   onTogglePDF,
   viewMode,
   onViewModeChange,
-  hasOtherExtractions,
+  hasComparison,
   compact = false,
 }: HeaderPDFControlsProps) {
   const toggleButton = compact ? (
@@ -66,7 +66,7 @@ export function HeaderPDFControls({
     </Button>
   );
 
-  const comparisonButton = hasOtherExtractions ? (
+  const comparisonButton = hasComparison ? (
     compact ? (
       <Tooltip>
         <TooltipTrigger asChild>

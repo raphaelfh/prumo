@@ -25,61 +25,64 @@ export interface PermissionRules {
 }
 
 /**
- * Determines whether user can see other users' extractions/assessments.
- *
- * Layer 3 of the multi-reviewer blind fix: the role is the source of
- * truth for read access, not the project's ``blind_mode`` flag. The
- * previous rule "blind_mode = ON → nobody sees, not even manager"
- * stranded the arbitrator: they could never reach consensus on a
- * blinded project without first manually flipping the flag from a
- * Settings page they often did not know existed.
- *
- * New semantics:
- *   - manager / consensus: ALWAYS see other reviewers' values. The
- *     ``isBlindMode`` flag is *informational* for these roles (e.g.
- *     surfacing a "blind methodology in effect" banner) but does not
- *     gate visibility.
- *   - reviewer / viewer: NEVER see other reviewers' values. The flag
- *     is moot — they never had access.
- *
- * The flag still gets persisted on the project (via the Settings
- * toggle) so external consumers (audit log, exports, downstream
- * tooling) can know whether the project was run under a blind
- * methodology. The change here is strictly the in-app gate.
- *
- * @param role - User's role in the project
- * @param isBlindMode - Whether blind mode is active (informational for
- *   manager/consensus; ignored for reviewer/viewer because they cannot
- *   see others either way)
- * @returns true if can see others
+ * Canonical HITL "kind" discriminator (mirrors `run.kind` / the backend
+ * `TemplateKind` enum). This is the single source of the union — `HITLKind`,
+ * `HITLKindParam`, and any other kind type alias to this rather than
+ * re-declaring the literal (which drifts).
  */
-export function canUserSeeOthers(
-  role: UserRole,
-  _isBlindMode: boolean,
-): boolean {
-  // Role-based gate. Manager and consensus need unblinded read access
-  // to do their arbitration job; reviewer / viewer roles never see
-  // other reviewers regardless of the flag.
-  return role === 'manager' || role === 'consensus';
+export type ReviewKind = 'extraction' | 'quality_assessment';
+
+/** Minimal projection of `projects.settings` the visibility gate reads. */
+export interface ManagerVisibilitySettings {
+  managers_see_reviewers?: Partial<Record<ReviewKind, boolean>>;
 }
 
 /**
- * Returns all permissions for a role.
+ * Determines whether a user can see OTHER reviewers' values, per kind.
  *
- * ``canSeeOthers`` follows the Layer 3 role-based gate (see
- * ``canUserSeeOthers``). All other permission flags are role-only and
- * unaffected by ``isBlindMode``.
+ * Blind-by-default for managers: a manager sees peers only when the
+ * project's live, per-kind setting ``managers_see_reviewers[kind]`` is
+ * true (toggled from the extraction / QA settings). The rule:
+ *   - consensus: ALWAYS sees peers (pure adjudicator, never blind);
+ *   - manager: sees peers IFF ``managers_see_reviewers[kind]`` is true;
+ *   - reviewer / viewer: NEVER see peers.
+ *
+ * This is the frontend mirror of the server rule in
+ * ``extraction_run_read_service.caller_can_see_peers``; the data the
+ * compare surfaces consume is already server-blinded in ``runDetail``,
+ * so this gate decides only whether the affordance is offered.
+ *
+ * @param role - User's role in the project
+ * @param settings - The project's settings (the per-kind toggle map)
+ * @param kind - Which HITL kind the current screen is operating on
+ * @returns true if the user may see other reviewers' values
+ */
+export function canUserSeeOthers(
+  role: UserRole,
+  settings: ManagerVisibilitySettings | null | undefined,
+  kind: ReviewKind,
+): boolean {
+  if (role === 'consensus') return true;
+  if (role === 'manager') return settings?.managers_see_reviewers?.[kind] === true;
+  return false; // reviewer / viewer never see peers
+}
+
+/**
+ * Returns all permissions for a role. ``canSeeOthers`` follows the
+ * per-kind gate (see ``canUserSeeOthers``); all other flags are
+ * role-only.
  *
  * @param role - User role
- * @param isBlindMode - Blind mode state (informational only for
- *   manager/consensus; ignored for reviewer/viewer)
+ * @param settings - Project settings (per-kind manager toggle)
+ * @param kind - Which HITL kind the current screen operates on
  * @returns Object with all permissions
  */
 export function getRolePermissions(
   role: UserRole,
-  isBlindMode: boolean,
+  settings: ManagerVisibilitySettings | null | undefined,
+  kind: ReviewKind,
 ): PermissionRules {
-  const canSeeOthers = canUserSeeOthers(role, isBlindMode);
+  const canSeeOthers = canUserSeeOthers(role, settings, kind);
   switch (role) {
     case 'manager':
       return {

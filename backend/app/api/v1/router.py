@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     feedback,
     hitl_configs,
     hitl_sessions,
+    manager_review_visibility,
     model_extraction,
     project_templates,
     section_extraction,
@@ -77,6 +78,12 @@ api_router.include_router(
     hitl_configs.router,
     prefix="/projects",
     tags=["hitl-configs"],
+)
+
+api_router.include_router(
+    manager_review_visibility.router,
+    prefix="/projects",
+    tags=["projects"],
 )
 
 api_router.include_router(

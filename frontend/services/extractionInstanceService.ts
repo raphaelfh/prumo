@@ -534,37 +534,6 @@ export async function updateInstanceLabel(
 }
 
 // ---------------------------------------------------------------------------
-// useAllUserInstances — all-user instances for an article (comparison UI)
-// ---------------------------------------------------------------------------
-
-export interface InstanceWithCreator {
-  id: string;
-  article_id: string;
-  created_by: string;
-  created_at: string;
-  [key: string]: unknown;
-}
-
-/**
- * Fetch all extraction instances for an article, ordered by creation time.
- * Used by the multi-reviewer comparison panel.
- */
-export function loadAllUserInstancesForArticle(
-  articleId: string,
-): Promise<ErrorResult<InstanceWithCreator[]>> {
-  return toResult(async () => {
-    const {data, error} = await supabase
-      .from('extraction_instances')
-      .select('*')
-      .eq('article_id', articleId)
-      .order('created_at', {ascending: true});
-
-    if (error) throw error;
-    return (data ?? []) as InstanceWithCreator[];
-  }, 'loadAllUserInstancesForArticle');
-}
-
-// ---------------------------------------------------------------------------
 // useModelManagement — model-container instance queries
 // ---------------------------------------------------------------------------
 

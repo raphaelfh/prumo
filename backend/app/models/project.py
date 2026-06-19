@@ -69,7 +69,7 @@ class Project(BaseModel):
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
-        default={"blind_mode": False},
+        default={"managers_see_reviewers": {"extraction": False, "quality_assessment": False}},
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

@@ -832,6 +832,54 @@
         "title": "ApiResponse[ListProvidersData]",
         "type": "object"
       },
+      "ApiResponse_ManagerReviewVisibilityRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManagerReviewVisibilityRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ManagerReviewVisibilityRead]",
+        "type": "object"
+      },
       "ApiResponse_ModelExtractionResult_": {
         "properties": {
           "data": {
@@ -2953,6 +3001,44 @@
           "providers"
         ],
         "title": "ListProvidersData",
+        "type": "object"
+      },
+      "ManagerReviewVisibilityPayload": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "extraction",
+              "quality_assessment"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "managers_see_reviewers": {
+            "title": "Managers See Reviewers",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "managers_see_reviewers"
+        ],
+        "title": "ManagerReviewVisibilityPayload",
+        "type": "object"
+      },
+      "ManagerReviewVisibilityRead": {
+        "properties": {
+          "extraction": {
+            "default": false,
+            "title": "Extraction",
+            "type": "boolean"
+          },
+          "quality_assessment": {
+            "default": false,
+            "title": "Quality Assessment",
+            "type": "boolean"
+          }
+        },
+        "title": "ManagerReviewVisibilityRead",
         "type": "object"
       },
       "ModelExtractionRequest": {
@@ -5662,6 +5748,64 @@
         "summary": "Upsert Project Hitl Config",
         "tags": [
           "hitl-configs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/manager-review-visibility": {
+      "put": {
+        "operationId": "set_manager_review_visibility_api_v1_projects__project_id__manager_review_visibility_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagerReviewVisibilityPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ManagerReviewVisibilityRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Set Manager Review Visibility",
+        "tags": [
+          "projects"
         ]
       }
     },

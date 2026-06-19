@@ -1,7 +1,8 @@
 """Read-side service for ArticleTextBlock rows (typography reader view).
 
-Owns the inline SQL that `article_text_blocks.py` used to do directly,
-so the endpoint module stops importing from `app.models.*`.
+Owns the camelCase dict mapping that the pdf-viewer endpoint expects.
+The ordered query is delegated to ``ArticleTextBlockRepository`` — the
+single ordered-read owner.
 """
 
 from __future__ import annotations
@@ -12,7 +13,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.article import ArticleFile, ArticleTextBlock
+from app.models.article import ArticleFile
+from app.repositories.article_text_block_repository import ArticleTextBlockRepository
 
 
 class ArticleFileNotFoundError(Exception):
@@ -36,21 +38,13 @@ async def get_article_file_project_id(db: AsyncSession, article_file_id: UUID) -
 async def list_text_blocks(db: AsyncSession, article_file_id: UUID) -> list[dict[str, Any]]:
     """Return all text blocks for the given article_file in reading order
     (page_number asc, block_index asc), as the camelCase dicts the
-    pdf-viewer expects."""
-    rows = (
-        (
-            await db.execute(
-                select(ArticleTextBlock)
-                .where(ArticleTextBlock.article_file_id == article_file_id)
-                .order_by(
-                    ArticleTextBlock.page_number.asc(),
-                    ArticleTextBlock.block_index.asc(),
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
+    pdf-viewer expects.
+
+    Ordering is owned by ``ArticleTextBlockRepository.list_ordered_for_file``;
+    this function only applies the presentation mapping.
+    """
+    repo = ArticleTextBlockRepository(db)
+    rows = await repo.list_ordered_for_file(article_file_id)
     return [
         {
             "id": str(row.id),
