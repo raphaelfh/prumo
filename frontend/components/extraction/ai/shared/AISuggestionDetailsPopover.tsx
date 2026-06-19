@@ -1,8 +1,12 @@
 /**
  * AI suggestion details modal (rationale + evidence) - Extraction
  *
- * Uses viewport-centered Dialog so content is never clipped
+ * Uses viewport-centered Dialog so content is never clipped.
  * Same strategy as Assessment. Responsive, with internal scroll.
+ *
+ * When `articleId` is provided (and the component is mounted inside the shared
+ * ViewerProvider at ExtractionFullScreen level), the evidence block gains a
+ * "jump to source" button via useCitationHighlight.
  */
 
 import {useState} from 'react';
@@ -12,6 +16,9 @@ import {Sparkles} from 'lucide-react';
 import {AISuggestionEvidence} from '../AISuggestionEvidence';
 import {t} from '@/lib/copy';
 import type {AISuggestion} from '@/hooks/extraction/ai/useAISuggestions';
+import {useArticleCitations} from '@/hooks/articles/useArticleCitations';
+import {matchEvidenceToCitation} from '@/services/citationsService';
+import {useCitationHighlight} from '@/hooks/extraction/useCitationHighlight';
 
 // -----------------------------------------------------------------------------
 // Constantes de layout (viewport-safe, alinhado ao Assessment)
@@ -34,21 +41,61 @@ function hasSuggestionDetails(suggestion: AISuggestion): boolean {
 }
 
 // -----------------------------------------------------------------------------
-// Tipos
+// Types
 // -----------------------------------------------------------------------------
 
 interface AISuggestionDetailsPopoverProps {
   suggestion: AISuggestion;
   trigger: React.ReactNode;
+  /** Article id. When provided (and inside a ViewerProvider) enables the
+   *  citation highlight on the evidence block. */
+  articleId?: string;
 }
 
 // -----------------------------------------------------------------------------
-// Componente
+// Inner component — holds the citation-highlight hooks.
+// Separated so the hooks only run when the modal is open.
+// -----------------------------------------------------------------------------
+
+interface EvidenceSectionProps {
+  evidence: {text: string; pageNumber?: number | null};
+  articleId: string | undefined;
+}
+
+function EvidenceSection({evidence, articleId}: EvidenceSectionProps) {
+  const citations = useArticleCitations(articleId);
+  const {highlight, isAvailable} = useCitationHighlight();
+
+  const matched =
+    articleId != null
+      ? matchEvidenceToCitation(
+          {text: evidence.text, pageNumber: evidence.pageNumber ?? undefined},
+          citations.data ?? [],
+        )
+      : null;
+
+  return (
+    <section className="space-y-2" aria-label={t('extraction', 'evidenceCitedAria')}>
+      <AISuggestionEvidence
+        evidence={{
+          text: evidence.text,
+          pageNumber: evidence.pageNumber ?? null,
+        }}
+        citation={matched}
+        onHighlight={isAvailable && articleId != null ? highlight : undefined}
+      />
+    </section>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Component
 // -----------------------------------------------------------------------------
 
 export function AISuggestionDetailsPopover({
   suggestion,
   trigger,
+  articleId,
 }: AISuggestionDetailsPopoverProps) {
   const [open, setOpen] = useState(false);
 
@@ -87,14 +134,13 @@ export function AISuggestionDetailsPopover({
             )}
 
             {evidence?.text?.trim() && (
-                <section className="space-y-2" aria-label={t('extraction', 'evidenceCitedAria')}>
-                <AISuggestionEvidence
-                  evidence={{
-                    text: evidence.text,
-                    pageNumber: evidence.pageNumber ?? null,
-                  }}
-                />
-              </section>
+              <EvidenceSection
+                evidence={{
+                  text: evidence.text,
+                  pageNumber: evidence.pageNumber ?? null,
+                }}
+                articleId={articleId}
+              />
             )}
           </div>
         </ScrollArea>

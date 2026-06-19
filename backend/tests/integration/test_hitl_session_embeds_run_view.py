@@ -100,10 +100,12 @@ async def test_extraction_session_open_embeds_run_view(
     assert view["run"]["id"] == run_id, "Embedded run id must match run_id in response"
     assert "entity_types" in view, "run_view must contain entity_types"
     assert "current_values" in view, "run_view must contain current_values"
+    assert "instances" in view, "run_view must contain instances"
     assert view["run"]["stage"] == "proposal", "Session open must advance the run to proposal stage"
     assert view["current_values"] == [], (
         "current_values must be empty for a freshly-opened proposal-stage run"
     )
+    assert isinstance(view["instances"], list), "instances must be a list"
     # RunDetailResponse keys inherited by RunViewResponse
     assert "proposals" in view
     assert "decisions" in view

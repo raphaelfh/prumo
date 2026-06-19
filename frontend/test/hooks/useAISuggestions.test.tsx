@@ -473,7 +473,7 @@ describe('useAISuggestions — getSuggestionsHistory', () => {
     await act(async () => {
       history = await result.current.getSuggestionsHistory('inst-1', 'f-1');
     });
-    expect(AISuggestionService.getHistory).toHaveBeenCalledWith('inst-1', 'f-1', 10);
+    expect(AISuggestionService.getHistory).toHaveBeenCalledWith('art-1', 'inst-1', 'f-1', 10);
     expect(history).toHaveLength(1);
   });
 });
