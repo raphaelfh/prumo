@@ -32,7 +32,7 @@ export interface ExtractionFormPanelProps {
  */
 export function ExtractionFormPanel({
   viewMode,
-                                        showPDF: _showPDF,
+  showPDF,
   formViewProps,
   compareViewProps,
 }: ExtractionFormPanelProps) {
@@ -49,7 +49,7 @@ export function ExtractionFormPanel({
       <ScrollArea className="h-full bg-muted/30">
         <div className="p-8 space-y-4">
           {viewMode === 'extract' && formViewProps ? (
-            <ExtractionFormView {...formViewProps} />
+            <ExtractionFormView {...formViewProps} showPDF={showPDF} />
           ) : viewMode === 'compare' && compareViewProps ? (
             <RunReviewerComparison {...compareViewProps} />
           ) : null}

@@ -18,6 +18,9 @@
 import {memo} from 'react';
 import {ModelSection} from './ModelSection';
 import {SectionAccordion} from './SectionAccordion';
+import SectionNavRail from '@/components/extraction/SectionNavRail';
+import {buildSectionRegistry} from '@/lib/extraction/sectionRegistry';
+import {useActiveSection} from '@/hooks/extraction/useActiveSection';
 import {useExtractionFormAIActions} from '@/hooks/extraction/useExtractionFormAIActions';
 import type {
   ExtractionEntityTypeWithFields,
@@ -60,6 +63,8 @@ export interface ExtractionFormViewProps {
   modelsLoading: boolean;
   /** Callback to refresh values/suggestions after AI extraction. */
   onExtractionComplete?: () => void;
+  /** When true (PDF panel open / narrow), the section rail collapses to a dot strip. */
+  showPDF?: boolean;
 }
 
 function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
@@ -74,71 +79,102 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
     onExtractionComplete: props.onExtractionComplete,
   });
 
-  return (
-    <>
-      {props.studyLevelSections.map(entityType => {
-        const typeInstances = props.instances.filter(i => i.entity_type_id === entityType.id);
-        return (
-          <SectionAccordion
-            key={entityType.id}
-            entityType={entityType}
-            instances={typeInstances}
-            fields={entityType.fields}
-            values={props.values}
-            onValueChange={props.updateValue}
-            projectId={props.projectId}
-            articleId={props.articleId}
-            templateId={props.templateId}
-            runId={props.runId}
-            aiSuggestions={props.aiSuggestions}
-            onAcceptAI={props.acceptSuggestion}
-            onRejectAI={props.rejectSuggestion}
-            getSuggestionsHistory={props.getSuggestionsHistory}
-            isActionLoading={props.isActionLoading}
-            onAddInstance={() => props.handleAddInstance(entityType.id)}
-            onRemoveInstance={props.handleRemoveInstance}
-            onExtractionComplete={props.onExtractionComplete}
-          />
-        );
-      })}
+  const sectionRegistry = buildSectionRegistry({
+    studyLevelSections: props.studyLevelSections,
+    modelParentEntityType: props.modelParentEntityType,
+    modelChildSections: props.modelChildSections,
+    instances: props.instances,
+    values: props.values,
+    activeModelId: props.activeModelId,
+  });
+  const sectionIds = sectionRegistry.map((s) => s.id);
+  const { activeId, registerSection, scrollToSection } = useActiveSection(sectionIds);
 
-      {props.modelParentEntityType && (
-        <ModelSection
-          modelContainer={props.modelParentEntityType}
-          modelChildren={props.modelChildSections}
-          instances={props.instances}
-          activeModelId={props.activeModelId}
-          setActiveModelId={props.setActiveModelId}
-          models={props.models}
-          modelsLoading={props.modelsLoading}
-          onAddModel={props.onAddModel}
-          onRemoveModel={props.onRemoveModel}
-          values={props.values}
-          updateValue={props.updateValue}
-          aiSuggestions={props.aiSuggestions}
-          acceptSuggestion={props.acceptSuggestion}
-          rejectSuggestion={props.rejectSuggestion}
-          getSuggestionsHistory={props.getSuggestionsHistory}
-          isActionLoading={props.isActionLoading}
-          getInstancesForModel={props.getInstancesForModel}
-          handleAddInstance={props.handleAddInstance}
-          handleRemoveInstance={props.handleRemoveInstance}
-          projectId={props.projectId}
-          articleId={props.articleId}
-          templateId={props.templateId}
-          runId={props.runId}
-          onExtractModels={ai.handleExtractModels}
-          extractingModels={ai.extractingModels}
-          onExtractAllSections={ai.handleExtractAllSections}
-          extractingAllSections={ai.extractingAllSections}
-          extractionProgress={ai.extractionProgress}
-          onExtractAllSectionsForAllModels={ai.handleExtractAllSectionsForAllModels}
-          extractingAllSectionsForAllModels={ai.extractingAllSectionsForAllModels}
-          allModelsProgress={ai.allModelsProgress}
-          onExtractionComplete={props.onExtractionComplete}
-        />
-      )}
-    </>
+  return (
+    <div className="flex gap-4">
+      <SectionNavRail
+        items={sectionRegistry}
+        activeId={activeId}
+        onSelect={scrollToSection}
+        collapsed={props.showPDF}
+      />
+      <div className="min-w-0 flex-1 space-y-4">
+        {props.studyLevelSections.map(entityType => {
+          const typeInstances = props.instances.filter(i => i.entity_type_id === entityType.id);
+          return (
+            <div
+              key={entityType.id}
+              ref={(el) => registerSection(entityType.id, el)}
+              tabIndex={-1}
+              className="scroll-mt-4 outline-none"
+            >
+              <SectionAccordion
+                entityType={entityType}
+                instances={typeInstances}
+                fields={entityType.fields}
+                values={props.values}
+                onValueChange={props.updateValue}
+                projectId={props.projectId}
+                articleId={props.articleId}
+                templateId={props.templateId}
+                runId={props.runId}
+                aiSuggestions={props.aiSuggestions}
+                onAcceptAI={props.acceptSuggestion}
+                onRejectAI={props.rejectSuggestion}
+                getSuggestionsHistory={props.getSuggestionsHistory}
+                isActionLoading={props.isActionLoading}
+                onAddInstance={() => props.handleAddInstance(entityType.id)}
+                onRemoveInstance={props.handleRemoveInstance}
+                onExtractionComplete={props.onExtractionComplete}
+              />
+            </div>
+          );
+        })}
+
+        {props.modelParentEntityType && (
+          <div
+            ref={(el) => registerSection(props.modelParentEntityType!.id, el)}
+            tabIndex={-1}
+            className="scroll-mt-4 outline-none"
+          >
+            <ModelSection
+              modelContainer={props.modelParentEntityType}
+              modelChildren={props.modelChildSections}
+              instances={props.instances}
+              activeModelId={props.activeModelId}
+              setActiveModelId={props.setActiveModelId}
+              models={props.models}
+              modelsLoading={props.modelsLoading}
+              onAddModel={props.onAddModel}
+              onRemoveModel={props.onRemoveModel}
+              values={props.values}
+              updateValue={props.updateValue}
+              aiSuggestions={props.aiSuggestions}
+              acceptSuggestion={props.acceptSuggestion}
+              rejectSuggestion={props.rejectSuggestion}
+              getSuggestionsHistory={props.getSuggestionsHistory}
+              isActionLoading={props.isActionLoading}
+              getInstancesForModel={props.getInstancesForModel}
+              handleAddInstance={props.handleAddInstance}
+              handleRemoveInstance={props.handleRemoveInstance}
+              projectId={props.projectId}
+              articleId={props.articleId}
+              templateId={props.templateId}
+              runId={props.runId}
+              onExtractModels={ai.handleExtractModels}
+              extractingModels={ai.extractingModels}
+              onExtractAllSections={ai.handleExtractAllSections}
+              extractingAllSections={ai.extractingAllSections}
+              extractionProgress={ai.extractionProgress}
+              onExtractAllSectionsForAllModels={ai.handleExtractAllSectionsForAllModels}
+              extractingAllSectionsForAllModels={ai.extractingAllSectionsForAllModels}
+              allModelsProgress={ai.allModelsProgress}
+              onExtractionComplete={props.onExtractionComplete}
+            />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

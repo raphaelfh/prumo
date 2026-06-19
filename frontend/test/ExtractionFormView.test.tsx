@@ -10,7 +10,7 @@
  * UI. These specs lock the contract per slice.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/copy', () => ({
@@ -65,6 +65,23 @@ vi.mock('@/components/extraction/BatchAllModelsSectionsProgress', () => ({
 
 vi.mock('@/components/ui/separator', () => ({
   Separator: () => <hr />,
+}));
+
+vi.mock('@/hooks/extraction/useActiveSection', () => ({
+  useActiveSection: () => ({ activeId: null, registerSection: vi.fn(), scrollToSection: vi.fn() }),
+  pickMostVisible: vi.fn(),
+}));
+
+vi.mock('@/components/extraction/SectionNavRail', () => ({
+  default: (props: any) => (
+    <nav aria-label="sectionNavAria">
+      {props.items.map((item: any) => (
+        <button key={item.id} type="button" onClick={() => props.onSelect(item.id)}>
+          {item.label}
+        </button>
+      ))}
+    </nav>
+  ),
 }));
 
 import { ExtractionFormView } from '@/components/extraction/ExtractionFormView';
@@ -384,5 +401,21 @@ describe('ExtractionFormView → combined render order', () => {
     expect(screen.getByTestId('section-study_metadata')).toBeInTheDocument();
     expect(screen.getByTestId('section-prediction_models')).toBeInTheDocument();
     expect(screen.getByTestId('section-source_of_data')).toBeInTheDocument();
+  });
+});
+
+function renderFormView(overrides: Partial<any> = {}) {
+  return render(
+    <ExtractionFormView
+      {...baseProps({ studyLevelSections: [STUDY_SECTION], ...overrides })}
+    />,
+  );
+}
+
+describe('ExtractionFormView → section nav rail', () => {
+  it('renders a section nav rail with a row per study section', () => {
+    renderFormView();
+    const nav = screen.getByRole('navigation', { name: 'sectionNavAria' });
+    expect(within(nav).getAllByRole('button').length).toBeGreaterThan(0);
   });
 });
