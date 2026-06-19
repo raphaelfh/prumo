@@ -15,13 +15,14 @@
  * @page
  */
 
-import {useEffect, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {useNavigate, useParams} from 'react-router-dom';
 import {toast} from 'sonner';
 import {extractionInstanceService, markInstancesCompleted} from '@/services/extractionInstanceService';
 import {getRequiredUserId} from '@/services/authService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
+import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
 import {errorTracker} from '@/services/errorTracking';
 import {ResizablePanel, ResizablePanelGroup} from '@/components/ui/resizable';
 import {Button} from '@/components/ui/button';
@@ -78,17 +79,16 @@ export default function ExtractionFullScreen() {
   const { projectId, articleId } = useParams();
   const navigate = useNavigate();
 
-    // Load data using dedicated hook (SRP: separation of concerns)
+    // Load page-bootstrap data using dedicated hook (SRP). Entity types +
+    // instances are NOT read here anymore — they are derived from the
+    // server RunView (runDetail) below via the adapters.
   const {
     article,
     project,
     template,
-    entityTypes,
-    instances,
     articles,
     loading,
     error: dataError,
-    refreshInstances,
   } = useExtractionData({
     projectId,
     articleId,
@@ -134,24 +134,31 @@ export default function ExtractionFullScreen() {
   });
   const activeRunId = sessionResult.session?.runId ?? null;
 
-  // The backend's ``hitl_session_service._ensure_instances`` materialises
-  // study-level + per-model singletons on the first session open. The
-  // data hook initially reads what's there; once the session reports a
-  // runId, those new rows exist — refresh so the form binds to them
-  // instead of "no instances created" placeholders.
-  useEffect(() => {
-    if (activeRunId) {
-      void refreshInstances();
-    }
-  }, [activeRunId, refreshInstances]);
-
   // Detail fetch on the active run — drives the "Revision" badge when
   // `parameters.parent_run_id` is present, the stage-aware read path of
   // useExtractedValues, and the reviewer-summary + ConsensusPanel below.
+  // The view also carries the frozen-snapshot ``entity_types`` + the
+  // materialised ``instances`` — the single source of truth for the form.
+  // The session embed seeds this cache on open, so ``runDetail`` is present
+  // on first paint and the derived memos populate immediately.
   const { data: runDetail, refetch: refetchRun } = useRun(
     activeRunId ?? null,
     { enabled: !!activeRunId },
   );
+
+  // Entity types + instances are derived from the view (not direct
+  // Supabase). ``entityTypesFromRunView`` / ``instancesFromRunView`` are
+  // pure adapters; the memos keep references stable across renders that
+  // don't change ``runDetail``.
+  const entityTypes = useMemo(
+    () => (runDetail ? entityTypesFromRunView(runDetail) : []),
+    [runDetail],
+  );
+  const instances = useMemo(
+    () => (runDetail ? instancesFromRunView(runDetail) : []),
+    [runDetail],
+  );
+
   const stage = runDetail?.run.stage ?? null;
   const proposals = runDetail?.proposals;
   const isFinalized = stage === 'finalized';
@@ -460,6 +467,26 @@ export default function ExtractionFullScreen() {
     modelChildren: modelChildSections,
   } = useEntityTypePartition(entityTypes);
 
+  // The model-container instances, sourced from the view-derived
+  // ``instances`` and shaped to ``ModelInstanceRow``. Passed to
+  // useModelManagement so it derives models from the view instead of
+  // issuing its own ``extraction_instances`` read. ``undefined`` until a
+  // container entity type exists so the hook keeps its standalone behavior.
+  const modelInstances = useMemo(
+    () =>
+      modelParentEntityType
+        ? instances
+            .filter((i) => i.entity_type_id === modelParentEntityType.id)
+            .map((i) => ({
+              id: i.id,
+              label: i.label,
+              sort_order: i.sort_order,
+              created_at: i.created_at,
+            }))
+        : undefined,
+    [instances, modelParentEntityType],
+  );
+
   // Hook for model management
   const {
     models,
@@ -475,6 +502,7 @@ export default function ExtractionFullScreen() {
     articleId: articleId || '',
     templateId: template?.id || '',
     modelParentEntityTypeId: modelParentEntityType?.id || null,
+    modelInstances,
     enabled: !!template && !!modelParentEntityType
   });
 
@@ -511,9 +539,10 @@ export default function ExtractionFullScreen() {
     );
   };
 
-    // Function to reload instances (used after model extraction)
+    // Function to reload the run view (and thus the derived instances).
+    // Used after model / instance mutations and AI extraction.
   const handleRefreshInstances = async () => {
-    await refreshInstances();
+    await refetchRun();
   };
 
   const handleBack = () => {
@@ -533,9 +562,9 @@ export default function ExtractionFullScreen() {
     const result = await createModel(modelName, modellingMethod);
     if (result) {
       setShowAddModelDialog(false);
-      // Reload instances (child instances will be included).
+      // Reload the run view (child instances will be included).
       // refreshModels() is NOT called — the createModel hook already updated local state.
-      await preserveScroll(refreshInstances);
+      await preserveScroll(refetchRun);
     }
   };
 
@@ -580,10 +609,10 @@ export default function ExtractionFullScreen() {
       setModelToRemove(null);
 
       // Do not call refreshModels() - hook already updates local state
-      // Only reload instances so child instances are removed from UI
-      await refreshInstances().catch((refreshError: unknown) => {
+      // Only reload the run view so child instances are removed from UI
+      await refetchRun().catch((refreshError: unknown) => {
         // Log error but do not re-throw - model was already removed successfully
-        extractionLogger.error('removeModelHandler', 'Error reloading instances after removal', refreshError instanceof Error ? refreshError : undefined, {
+        extractionLogger.error('removeModelHandler', 'Error reloading run view after removal', refreshError instanceof Error ? refreshError : undefined, {
           modelId: modelIdToRemove,
         });
         // Do not block flow - model was already removed from local state
@@ -688,8 +717,8 @@ export default function ExtractionFullScreen() {
       userId,
     }).then(async (result) => {
       if (result.wasCreated) {
-        // Reload instances after create
-        await refreshInstances();
+        // Reload the run view after create (derived instances refresh)
+        await refetchRun();
         extractionLogger.info('handleAddInstance', 'Instance created successfully', {
           instanceId: result.instance.id,
           label: result.instance.label
@@ -725,7 +754,7 @@ export default function ExtractionFullScreen() {
       return false;
     });
     if (removed !== false) {
-      await refreshInstances();
+      await refetchRun();
       toast.success(t('pages', 'extractionScreenInstanceRemoved'));
     }
   };
@@ -949,16 +978,12 @@ export default function ExtractionFullScreen() {
             console.error('Error refetching session (non-critical):', err);
           }
           try {
+            // Refetching the run view also re-derives entity_types +
+            // instances (the form's single source of truth) — no separate
+            // instance refresh is needed.
             await refetchRun();
           } catch (err) {
             console.error('Error refetching run (non-critical):', err);
-          }
-          if (template) {
-            try {
-              await refreshInstances();
-            } catch (err) {
-              console.error('Error reloading instances (non-critical):', err);
-            }
           }
           await refreshValues();
         });
