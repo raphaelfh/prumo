@@ -9,6 +9,7 @@ from parsing_bakeoff.parsers import (
     LlamaParseRunner,
     ParserNotWiredError,
     ParseRun,
+    PyMuPDFRunner,
     StubParser,
 )
 
@@ -35,5 +36,16 @@ def test_llamaparse_unavailable_without_key(monkeypatch) -> None:
     assert LlamaParseRunner().available() is False
 
 
-def test_registry_covers_the_four_candidates() -> None:
-    assert set(REGISTRY) == {"docling", "mineru", "opendataloader", "llamaparse"}
+def test_pymupdf_unavailable_when_lib_absent() -> None:
+    # pymupdf is not a backend dependency; the import check is False here.
+    assert PyMuPDFRunner().available() is False
+
+
+def test_registry_covers_the_candidates() -> None:
+    assert set(REGISTRY) == {
+        "pymupdf",
+        "docling",
+        "mineru",
+        "opendataloader",
+        "llamaparse",
+    }

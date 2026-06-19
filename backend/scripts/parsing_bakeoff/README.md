@@ -76,6 +76,7 @@ missing are **skipped with a logged note** — never silently dropped.
 | Runner | `available()` | `parse()` |
 | --- | --- | --- |
 | `StubParser` | ✅ | ✅ (tests + `--dry-run`) |
+| `PyMuPDFRunner` | ✅ (`uv pip install pymupdf` — one wheel, no models) | ✅ — block bboxes + `find_tables` cells + heading heuristic. The lightest **real** baseline; run it today. |
 | `LlamaParseRunner` | ✅ (lib + `LLAMA_CLOUD_API_KEY`) | grounded against the `llama_cloud` agentic-tier + granular-bbox API; finish `_map_llamaparse_result` against the live SDK |
 | `DoclingRunner` | ✅ (import check) | wire `DocumentConverter` output → `ParseRun` |
 | `MinerURunner` | ✅ (import check) | wire MinerU middle-JSON → `ParseRun` (GPU recommended) |

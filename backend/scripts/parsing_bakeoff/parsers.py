@@ -19,8 +19,10 @@ Wiring status:
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import os
+import statistics
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -183,8 +185,76 @@ def _map_llamaparse_result(result: object):  # noqa: ARG001 - mapping filled in 
     )
 
 
+@dataclass
+class PyMuPDFRunner:
+    """Fast, self-hosted baseline using PyMuPDF (fitz). No model downloads, no
+    egress. Native per-block bboxes; tables via PyMuPDF's ``find_tables``;
+    headings by a font-size/bold heuristic. A useful lower bound — strong on
+    text + bboxes, weak on complex table structure (the rule-based tier in the
+    research). Install with ``uv pip install pymupdf`` (single wheel)."""
+
+    name: str = "pymupdf"
+
+    def available(self) -> bool:
+        return _installed("pymupdf") or _installed("fitz")
+
+    def parse(self, pdf_path: str) -> ParseRun:
+        import time
+
+        import fitz  # PyMuPDF
+
+        started = time.perf_counter()
+        regions: list[Box] = []
+        cells: list[str] = []
+        sections: list[str] = []
+        sizes: list[float] = []
+
+        with fitz.open(pdf_path) as doc:
+            # Pass 1: span-size distribution → a body-text baseline.
+            for page in doc:
+                for block in page.get_text("dict").get("blocks", []):
+                    for line in block.get("lines", []):
+                        for span in line.get("spans", []):
+                            if span.get("text", "").strip():
+                                sizes.append(float(span["size"]))
+            body_size = statistics.median(sizes) if sizes else 0.0
+
+            # Pass 2: blocks (bboxes + heading heuristic) + table cells.
+            for page in doc:
+                for block in page.get_text("dict").get("blocks", []):
+                    if block.get("type") != 0:
+                        continue  # image block
+                    x0, y0, x1, y1 = block["bbox"]
+                    regions.append(Box(x0, y0, x1 - x0, y1 - y0))
+                    parts: list[str] = []
+                    max_size = 0.0
+                    bold = False
+                    for line in block.get("lines", []):
+                        for span in line.get("spans", []):
+                            parts.append(span.get("text", ""))
+                            max_size = max(max_size, float(span.get("size", 0)))
+                            bold = bold or bool(int(span.get("flags", 0)) & 16)
+                    text = " ".join(p for p in parts if p).strip()
+                    if text and len(text) <= 120 and (max_size >= body_size * 1.15 or bold):
+                        sections.append(text)
+                with contextlib.suppress(Exception):  # find_tables is best-effort
+                    for table in page.find_tables().tables:
+                        for row in table.extract():
+                            cells.extend(str(c).strip() for c in row if c and str(c).strip())
+
+        return ParseRun(
+            pred_regions=regions,
+            pred_cells=cells,
+            pred_sections=sections,
+            pred_references=[],
+            elapsed_s=time.perf_counter() - started,
+            est_cost_usd=0.0,
+        )
+
+
 #: name → factory. ``--dry-run`` uses StubParser instead of these.
 REGISTRY: dict[str, type] = {
+    "pymupdf": PyMuPDFRunner,
     "docling": DoclingRunner,
     "mineru": MinerURunner,
     "opendataloader": OpenDataLoaderRunner,
