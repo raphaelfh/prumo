@@ -94,8 +94,9 @@ export class AISuggestionService {
       `/api/v1/articles/${articleId}/suggestions?${params.toString()}`,
     );
 
+    const items = response?.suggestions ?? [];
     const suggestionsMap: Record<string, AISuggestion> = {};
-    for (const item of response.suggestions) {
+    for (const item of items) {
       const key = getSuggestionKey(item.instance_id, item.field_id);
       // First-wins guard: server already dedups to latest-per-coord,
       // but keep this harmless if duplicates slip through.
@@ -105,7 +106,7 @@ export class AISuggestionService {
 
     return {
       suggestions: suggestionsMap,
-      count: Object.keys(suggestionsMap).length,
+      count: response?.count ?? Object.keys(suggestionsMap).length,
     };
   }
 
