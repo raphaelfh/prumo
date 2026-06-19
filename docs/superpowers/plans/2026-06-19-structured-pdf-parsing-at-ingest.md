@@ -25,14 +25,17 @@ and leaves the **position writer** (evidence anchoring) and all consumption to
 the follow-up plan. Parsing runs in the Celery worker as a Python library call
 (no new service); blocks are written through a new repository; the table/formula
 vision pass and a second LLM provider go behind the single `build_model()`
-doorway plus a direct-SDK image adapter (forced by the `pydantic-ai < 2` pin). No
-new tables are required — block status rides on the existing
+doorway — the pinned `pydantic-ai 1.107` already supports multimodal input, so
+the vision pass appends a page-image/PDF `BinaryContent` to the same
+`extract_structured()` call (no direct-SDK adapter). Parser backends are
+pluggable behind one `DocumentParser` port (Docling/MinerU self-hosted,
+LlamaParse cloud, or vision-LLM-native) via a `PARSER_BACKEND` setting. No new
+tables are required — block status rides on the existing
 `ArticleFile.extraction_status`.
 
 **Tech Stack:** Python 3.11 + FastAPI + SQLAlchemy 2.0 async + Alembic; Celery +
-Redis worker (`worker_session()` NullPool); pydantic-ai (text) + provider image
-SDK (vision pass); a self-hosted layout parser (Docling or MinerU, locked in
-Phase 0); pytest integration against local Supabase (`db_session_real`,
+Redis worker (`worker_session()` NullPool); pydantic-ai (text + multimodal vision via `BinaryContent`); a parser backend
+(self-hosted Docling/MinerU or LlamaParse cloud, locked in Phase 0); pytest integration against local Supabase (`db_session_real`,
 project-scoped fixtures). Suggested branch: `feat/pdf-structured-ingest`.
 
 **Constraints (constitution + `.claude/rules/backend.md`):** four-layer flow
@@ -63,14 +66,15 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
 | --- | --- | --- |
 | `backend/app/services/parsing/base.py` | parser port | New: `DocumentParser` Protocol + `ParsedBlock` dataclass (page, index, text, char_start/end, bbox, block_type) |
 | `backend/app/services/parsing/docling_parser.py` (and/or `mineru_parser.py`) | parser adapter | New: wrap the chosen library; emit `ParsedBlock`s with bbox + reading order |
+| `backend/app/services/parsing/llamaparse_parser.py` | parser adapter (cloud) | New (optional): LlamaParse `agentic` tier → blocks from the `items` tree + granular-bbox JSONL sidecar (non-PHI / BAA) |
 | `backend/app/services/document_parsing_service.py` | orchestration | New: source routing (PDF/JATS), run parser, run table pass, write blocks, set status |
 | `backend/app/repositories/article_text_block_repository.py` | persistence | New: bulk insert/replace blocks for an `article_file_id` (`flush`, not `commit`) |
 | `backend/app/worker/tasks/parsing_tasks.py` | async entry | New: `parse_article_file_task` (worker_session + run_task) |
 | `backend/app/services/zotero_import_service.py` | ingest | Enqueue `parse_article_file_task` after `ArticleFile` creation |
 | `backend/app/services/parsing/jats_parser.py` | XML fast-path | New: parse PMC JATS → blocks (text+structure); PDF stays the bbox surface |
-| `backend/app/llm/provider.py` | provider doorway | Add `provider` arg + Anthropic branch (text); keep single doorway |
-| `backend/app/llm/vision/table_pass.py` | vision adapter | New: direct provider image SDK call on table/formula regions |
-| `backend/app/core/config.py` | settings | Add `ANTHROPIC_API_KEY`, `ANTHROPIC_DEFAULT_MODEL`, parser/vision toggles |
+| `backend/app/llm/provider.py` | provider doorway | Add `provider` arg + Anthropic/Gemini branches (`[anthropic]`/`[google]` extras); keep single doorway |
+| `backend/app/llm/vision/table_pass.py` | vision pass | New: page-image/PDF `BinaryContent` through `extract_structured()` (pydantic-ai multimodal) on table/formula regions |
+| `backend/app/core/config.py` | settings | Add `ANTHROPIC_API_KEY`, `ANTHROPIC_DEFAULT_MODEL`, `PARSER_BACKEND`, `VISION_TABLE_PASS` |
 | `backend/app/services/api_key_service.py` | BYOK | Learn an `anthropic` key alongside `openai` |
 | `docs/reference/extraction-hitl-architecture.md` | docs | Document the ingest parse + block contract; bump `last_reviewed` |
 
@@ -95,8 +99,8 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
 
 - [ ] **Step 1:** A standalone script (`scripts/parsing_bakeoff/run.py`, outside
   the app layers) runs each candidate — Docling, MinerU, OpenDataLoader-PDF, and
-  one API baseline (e.g. LlamaParse) — over the set, emitting `ParsedBlock`-shaped
-  output + bboxes.
+  LlamaParse (`agentic` tier with `granular_bboxes`) — over the set, emitting
+  `ParsedBlock`-shaped output + bboxes.
 - [ ] **Step 2:** Score: table fidelity (TEDS **and** an LLM-judge, since
   exact-match penalizes valid reformatting), section/figure/reference/equation
   recovery, bbox correctness vs labeled regions, and per-article wall-clock +
@@ -191,6 +195,22 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
 - [ ] **Step 3:** Run → PASS. Commit
   `feat(parsing): parse PDFs at ingest and persist text blocks`.
 
+### Task 1.6: LlamaParse adapter (optional cloud backend)
+
+**Files:** `backend/app/services/parsing/llamaparse_parser.py`
+
+- [ ] **Step 1:** Failing integration test (mocked LlamaCloud client): the adapter
+  calls `parse(... tier='agentic', output_options={'granular_bboxes':
+  ['word','line','cell']}, expand=['markdown','items'])`, then maps the `items`
+  tree + the granular-bbox JSONL sidecar into `ParsedBlock`s (text, per-page char
+  offsets, bbox, block_type) — the same port as the self-hosted adapter.
+- [ ] **Step 2:** Implement against the `llama_cloud` SDK (`AsyncLlamaCloud`); key
+  via `LLAMA_CLOUD_API_KEY` / `APIKeyService`. Selected only when
+  `PARSER_BACKEND=llamaparse`. **Privacy:** this egresses to a cloud API — gate to
+  non-PHI projects or a BAA / self-hosted LlamaCloud; PHI projects keep the
+  self-hosted backend.
+- [ ] **Step 3:** Run → PASS. Commit `feat(parsing): optional LlamaParse cloud backend`.
+
 ---
 
 ## Phase 2 — Source routing: JATS fast-path, OCR, supplementary
@@ -229,7 +249,7 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
 
 ## Phase 3 — Table/formula vision pass + second provider
 
-### Task 3.1: Provider doorway — add Anthropic (text) without breaking the single doorway
+### Task 3.1: Provider doorway — add Anthropic + Gemini behind build_model
 
 **Files:** `backend/app/llm/provider.py`, `backend/app/core/config.py`,
 `backend/app/services/api_key_service.py`
@@ -238,27 +258,31 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
   model_name=...)` returns an Anthropic pydantic-ai model; `provider='openai'`
   (default) unchanged; `APIKeyService` resolves an `anthropic` BYOK key with the
   same precedence as `openai`.
-- [ ] **Step 2:** Add the `provider` arg + Anthropic branch in `build_model`
-  only; add `ANTHROPIC_API_KEY`/`ANTHROPIC_DEFAULT_MODEL` to `config.py`; teach
-  `APIKeyService` the `anthropic` provider. Services keep calling
-  `extract_structured()` unchanged.
+- [ ] **Step 2:** Add the `provider` arg + Anthropic/Gemini branches in
+  `build_model` only (install the `pydantic-ai-slim[anthropic]` / `[google]`
+  extras); add `ANTHROPIC_API_KEY`/`ANTHROPIC_DEFAULT_MODEL` (and Gemini
+  equivalents) to `config.py`; teach `APIKeyService` the new providers. Services
+  keep calling `extract_structured()` unchanged.
 - [ ] **Step 3:** Run → PASS. Commit `feat(llm): add Anthropic provider behind build_model`.
 
-### Task 3.2: Vision table/formula adapter (direct SDK, outside pydantic-ai)
+### Task 3.2: Vision table/formula pass via pydantic-ai multimodal
 
-**Files:** `backend/app/llm/vision/table_pass.py`
+**Files:** `backend/app/llm/extractor.py`, `backend/app/llm/vision/table_pass.py`
 
-- [ ] **Step 1:** Failing test (stubbed image client): given a page image + a
-  table region bbox, the adapter returns structured table markdown/HTML for that
-  region; the result reconciles onto the parser's `table_cell` blocks (replaces
-  their text, keeps their bboxes).
-- [ ] **Step 2:** Implement a thin adapter calling the provider image API
-  **directly** (documented divergence from `extract_structured()` — forced by
-  `pydantic-ai < 2`); render page images at a fixed DPI; cap regions per article
-  for cost. Gate behind a `VISION_TABLE_PASS` flag.
-- [ ] **Step 3:** Wire it into `DocumentParsingService` after the layout parse,
-  for detected table/formula regions only. Run → PASS. Commit
-  `feat(parsing): vision pass for table and formula regions`.
+- [ ] **Step 1:** Failing unit test: `extract_structured` accepts an optional
+  `attachments: Sequence[BinaryContent | ImageUrl | DocumentUrl]` appended to the
+  `agent.run([...])` input (text-only callers unchanged); a stubbed model receives
+  the image part alongside the prompt.
+- [ ] **Step 2:** Failing test (stubbed model): given a rendered page-region
+  image, `table_pass` calls `extract_structured` with a table-output Pydantic
+  model + the page-image `BinaryContent`, and reconciles the result onto the
+  parser's `table_cell` blocks (replaces text, keeps bboxes). OpenAI chat uses a
+  vision model + image; Anthropic/Gemini may take a PDF page `BinaryContent`
+  directly.
+- [ ] **Step 3:** Implement; render page images at a fixed DPI; cap regions per
+  article for cost; gate behind `VISION_TABLE_PASS`. Wire into
+  `DocumentParsingService` after the layout parse, table/formula regions only.
+  Run → PASS. Commit `feat(parsing): vision table pass via pydantic-ai multimodal`.
 
 ---
 
@@ -286,10 +310,11 @@ ADR 0011 to `accepted`. That plan depends on this one having populated
 - **Reuse:** writes the existing `ArticleTextBlock` schema; no new tables (status
   on `ArticleFile.extraction_status`); the read path is untouched.
 - **Layering/risk:** the parser is a library call inside the Celery worker (no new
-  service); the only architectural divergence is the direct-SDK vision adapter,
-  justified by the `pydantic-ai < 2` pin and isolated in `llm/vision/`. Char
-  offsets are per-page in `block_index` order (single source of truth in
-  `assemble_page_text`, reused downstream).
+  service); the vision pass adds no SDK divergence — it rides `extract_structured()`
+  via pydantic-ai multimodal input (verified on the pinned 1.107). Char offsets are
+  per-page in `block_index` order (single source of truth in `assemble_page_text`,
+  reused downstream). The optional LlamaParse backend is the only cloud-egress path
+  and is privacy-gated to non-PHI / BAA.
 - **Gated/live:** Phase 0 needs real (possibly PHI) papers — handle on an approved
   data surface, not a public bucket.
 - **Ordering:** Phase 0 gates parser-specific code in Phase 1; Phases 2–3 layer

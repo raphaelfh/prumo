@@ -184,3 +184,10 @@ TEDS
 verbatim
 verifiability
 VLM
+agentic
+BinaryContent
+DocumentUrl
+ImageUrl
+JSONL
+LlamaCloud
+multimodal

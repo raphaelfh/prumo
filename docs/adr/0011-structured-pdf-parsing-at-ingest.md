@@ -132,15 +132,18 @@ Concretely, respecting the existing layering:
   from its current non-emptiness check. `text_content`/`page_number` stay
   denormalized in sync with the anchor at the service layer, as
   `citation_read_service.py` already expects.
-- **Provider.** Text extraction stays on `extract_structured()` via the single
-  `build_model()` doorway (`app/llm/provider.py`), which gains an explicit
-  `provider`/model argument and an Anthropic branch; `ANTHROPIC_API_KEY` + a
-  default-model setting join `app/core/config.py` (mirroring the `OPENAI_*`
-  pattern) and `APIKeyService` learns an `anthropic` key, preserving BYOK. The
-  vision table/formula pass is isolated behind a small adapter that calls the
-  provider image API **directly**, because the current `pydantic-ai < 2` pin has
-  no public vision input; a full `pydantic-ai` v2 migration is a separate
-  prerequisite, out of scope here. Services otherwise stay provider-agnostic.
+- **Provider & vision.** The pin is `pydantic-ai-slim[openai] 1.107`, which
+  **already supports multimodal input**, so the table/formula vision pass rides
+  the *same* `extract_structured()` path: append a page-image or PDF
+  `BinaryContent` (or `ImageUrl` / `DocumentUrl`) to the run input and keep
+  `NativeOutput` structured output — no direct-SDK adapter and no v2 migration.
+  `build_model()` gains a `provider` argument with branches for OpenAI (current),
+  Anthropic, and Google Gemini (add the `pydantic-ai-slim` `[anthropic]` /
+  `[google]` extras); `ANTHROPIC_API_KEY` + a default-model setting join
+  `app/core/config.py` (mirroring `OPENAI_*`) and `APIKeyService` learns an
+  `anthropic` key, preserving BYOK. Native PDF-as-document input works on
+  Anthropic and Gemini; for OpenAI chat, render the table region to an image.
+  Services stay provider-agnostic via the single doorway.
 - **Frontend** consumes the contract that already exists (`Reader.tsx`,
   `pdf-viewer/core/citation.ts`); wiring the canvas highlight is the remaining
   frontend task this decision unblocks (tracked separately).
@@ -150,6 +153,16 @@ Concretely, respecting the existing layering:
   one-off task; until a given article has blocks, extraction falls back to
   today's lazy `pypdf` path so nothing breaks (a temporary two-tier state).
   Re-uploading a file cascade-deletes its blocks (`ON DELETE CASCADE`).
+- **Parser backends are pluggable** behind one `DocumentParser` port, selected by
+  a `PARSER_BACKEND` setting: a self-hosted layout parser (Docling/MinerU) for
+  PHI-sensitive projects with no egress; **LlamaParse (LlamaCloud) `agentic`
+  tier** as a first-class cloud option — it returns markdown plus *granular
+  bounding boxes* (word/line/cell) in a JSONL sidecar that maps directly onto
+  `article_text_blocks` + `PositionV1`, the strongest turnkey provenance; and a
+  vision-LLM-native backend (page images/PDF through `extract_structured()`). The
+  bake-off scores all three. **Privacy gate:** LlamaParse sends documents to a
+  cloud API, so it is for non-PHI projects or under a BAA / a self-hosted
+  LlamaCloud deployment; PHI projects default to the self-hosted parser.
 
 ### Consequences
 
@@ -165,9 +178,10 @@ Concretely, respecting the existing layering:
 - Bad — complex merged-cell tables remain imperfect even with the vision pass
   (a known-hard, still-open problem in table-structure recognition); human
   review of tables stays mandatory, now `bbox`-assisted rather than eliminated.
-- Bad — adds a second LLM provider path plus a direct-SDK vision adapter that
-  lives outside `pydantic-ai` (forced by the `< 2` pin), a small but real
-  divergence from the otherwise-uniform `extract_structured()` call path.
+- Neutral — vision rides the existing `extract_structured()` path via
+  `pydantic-ai` multimodal input (verified on the pinned 1.107), so there is no
+  SDK divergence; the cost is the `[anthropic]` / `[google]` extras and a second
+  provider branch in `build_model()`.
 - Neutral — parser choice is deferred to a bake-off; until backfill completes,
   pre-existing articles keep working on the legacy `pypdf` path (a temporary
   two-tier experience); the dead columns (`text_raw`, `text_html`,
@@ -251,6 +265,9 @@ Concretely, respecting the existing layering:
 - Provider doorway and worker pattern: `app/llm/provider.py`,
   `app/core/config.py`, `app/worker/tasks/extraction_tasks.py`,
   `app/worker/_session.py`.
+- Library docs: pydantic-ai multimodal input, verified on the pinned 1.107
+  (<https://ai.pydantic.dev/input/>); LlamaParse granular bounding boxes
+  (<https://developers.llamaindex.ai/llamaparse/parse/examples/parse_granular_bboxes>).
 - Research basis (state of the art, 2024–2026): OmniDocBench (CVPR 2025,
   <https://github.com/opendatalab/OmniDocBench>); LlamaParse granular bounding
   boxes (<https://www.llamaindex.ai/blog/announcing-granular-bounding-boxes-in-llamaparse>);
