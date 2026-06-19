@@ -16,10 +16,11 @@ import type { APIRequestContext, APIResponse } from "@playwright/test";
 
 import { authHeaders, parseEnvelope } from "./api";
 import { adminDelete, adminSelect } from "./supabase-admin";
+import type { ReviewKind } from "../../lib/comparison/permissions";
 
 interface OpenSessionResponse {
   run_id: string;
-  kind: "extraction" | "quality_assessment";
+  kind: ReviewKind;
   project_template_id: string;
   instances_by_entity_type: Record<string, string>;
 }
