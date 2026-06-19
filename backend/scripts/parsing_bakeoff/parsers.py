@@ -89,12 +89,40 @@ class DoclingRunner:
     def available(self) -> bool:
         return _installed("docling")
 
-    def parse(self, pdf_path: str) -> ParseRun:  # noqa: ARG002 - port signature; arg unused in stub/unwired runners
-        # Entry point: docling.document_converter.DocumentConverter().convert(pdf_path)
-        # → result.document, which carries layout items + bboxes per page.
-        raise ParserNotWiredError(
-            "DoclingRunner: install `docling` and map DocumentConverter output "
-            "(texts/tables with prov bboxes) → ParseRun here."
+    def parse(self, pdf_path: str) -> ParseRun:
+        import time
+
+        from docling.document_converter import DocumentConverter
+        from docling_core.types.doc import TableItem
+
+        started = time.perf_counter()
+        doc = DocumentConverter().convert(pdf_path).document
+        regions: list[Box] = []
+        cells: list[str] = []
+        sections: list[str] = []
+        for item, _level in doc.iterate_items():
+            for prov in getattr(item, "prov", None) or []:
+                bb = prov.bbox  # min/abs → positive extent regardless of coord origin
+                regions.append(
+                    Box(min(bb.l, bb.r), min(bb.t, bb.b), abs(bb.r - bb.l), abs(bb.t - bb.b))
+                )
+            if isinstance(item, TableItem):
+                cells.extend(
+                    c.text.strip() for c in item.data.table_cells if getattr(c, "text", "").strip()
+                )
+            else:
+                label = getattr(getattr(item, "label", None), "value", "")
+                if label in ("section_header", "title"):
+                    text = getattr(item, "text", "").strip()
+                    if text:
+                        sections.append(text)
+        return ParseRun(
+            pred_regions=regions,
+            pred_cells=cells,
+            pred_sections=sections,
+            pred_references=[],
+            elapsed_s=time.perf_counter() - started,
+            est_cost_usd=0.0,
         )
 
 

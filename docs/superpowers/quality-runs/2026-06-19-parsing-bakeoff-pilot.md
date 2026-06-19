@@ -4,57 +4,76 @@ last_reviewed: 2026-06-19
 owner: '@raphaelfh'
 ---
 
-# Parsing bake-off — pilot (8 open-access papers)
+# Parsing bake-off — pilot (8 OA papers; PyMuPDF vs Docling)
 
-First multi-paper run of the Phase 0 harness (ADR-0011), to prove the pipeline
-end to end and learn what actually differentiates parsers — **without** waiting
-on a labelled clinical eval set.
+First multi-paper run of the Phase 0 harness (ADR-0011) and the first
+self-hosted layout-parser comparison — without waiting on a labelled clinical
+eval set.
 
 - **Set:** 8 open-access PLOS ONE RCTs (CC-BY), born-digital PDFs from PLOS.
-- **Gold:** section headings + table cells + references **auto-built from PMC
-  JATS XML** via `parsing_bakeoff.jats_gold` — reproducible from open-access
-  sources, no PHI, no manual labelling. (prumo's documents are published
-  articles, not patient records, so the eval set is *not* PHI-gated.)
+- **Gold:** sections + table cells + references **auto-built from PMC JATS XML**
+  via `parsing_bakeoff.jats_gold` (reproducible from open access; prumo's
+  documents are published articles, not PHI).
 - **DOIs:** `10.1371/journal.pone.` `0345292`, `0349793`, `0337817`, `0344538`,
   `0317950`, `0345784`, `0350008`, `0345974`.
 
 ## Result
 
-| Parser | Docs | Errors | Table cell F1 | Bbox F1 | Section recall | Mean latency (s) | Total cost |
+| Parser | Docs | Errors | Table-cell F1 | Bbox F1 | Section recall | Mean latency (s) | Cost |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| pymupdf | 8 | 0 | **0.989** | n/a | **0.816** | 1.02 | **$0.0000** |
+| pymupdf | 8 | 0 | **0.989** | n/a | 0.816 | **1.06** | $0 |
+| docling | 8 | 0 | **0.768** | n/a | 0.816 | 21.0 | $0 |
 
-(Self-hosted PyMuPDF: native block bboxes + `find_tables` + a heading heuristic.)
+## Key finding: do **not** pick a parser on this content metric
 
-## What this tells us about parser selection
+On the same paper, Docling produced a **structurally correct** markdown table
+matching the gold rows × columns:
 
-- **Content recovery is near-saturated on born-digital PDFs.** A free, ~1 s,
-  self-hosted parser recovers table *cell content* at 0.99 multiset-F1 and ~82%
-  of section headings, with a bbox on every block. On born-digital OA papers,
-  **content extraction is not the differentiator.**
-- **The proxy measures content, not table _structure_.** A 0.99 multiset-cell-F1
-  can coexist with wrong row/column/cell assignment — merged/spanning cells,
-  exactly where parsers diverge (per the research). This metric therefore
-  **cannot** rank Docling vs MinerU vs PyMuPDF on the thing that matters.
-- **`bbox_f1` is unscored** (JATS XML carries no coordinates); section gold
-  includes sub-section + abstract titles, so 0.816 reflects the heading
-  heuristic's precision/recall, not a hard ceiling.
+```text
+| Scale/ Subscale                                  | Pre-test | Post-test |
+| Patient Compliance Scale ... (Total)             |    0.791 |     0.918 |
+| Attitudes and emotional factors                  |    0.757 |     0.821 |
+```
 
-## Why we did not install Docling/MinerU here
+…yet Docling scores **lower** (0.768) than PyMuPDF (0.989) on the multiset
+cell-content F1. The reason: the proxy compares cell *strings* as a multiset.
+PyMuPDF's flat `find_tables` dump happens to overlap the JATS cell tokens more,
+while Docling's *structured* cells (header detection, merged-cell handling)
+group/normalise differently from the JATS `td/th` set — so the **better-structured
+output scores worse**. The proxy measures content overlap, **not structure**.
 
-They would also score ~0.99 on this born-digital content proxy, so the run
-would not differentiate them — while costing a lot to set up (Docling resolves
-to **67 packages incl. torch + runtime model downloads**; MinerU is heavier and
-GPU-oriented). They earn their cost only against the metrics/data below.
+A higher content-F1 therefore does **not** mean a better table. The parser
+decision needs a **structure-aware metric (TEDS + an LLM-judge)** — this run is
+concrete evidence that, without one, the bake-off can mis-rank parsers.
 
-## Next lane (where the comparison becomes meaningful)
+## What Docling adds (qualitative, demonstrated)
 
-1. **Add a structure-aware table metric** — TEDS + an LLM-judge (the research
-   found the judge correlates better than TEDS) — and ideally bbox gold.
-2. **Add scanned / image-only papers** — PyMuPDF has no OCR and will fail there;
-   this is where layout-aware parsers and the vision pass earn their keep.
-3. **Then** run Docling + MinerU (+ the vision table pass) on a GPU-capable
-   environment and rank on structure + scanned fidelity, not born-digital content.
+- Clean **structured markdown** (`##` headings, lists, tables as real grids) —
+  ~52 KB for a 14-page paper.
+- Real `DocItem` **labels** (section_header, list_item, caption, table,
+  footnote, picture) + per-item **bboxes** (provenance).
+- Built-in **OCR** (RapidOCR) → handles scanned PDFs. **PyMuPDF has none.**
 
-Harness + gold builder are ready for all three; only the metric, the scanned
-inputs, and the heavy-parser environment remain.
+Trade-off: PyMuPDF is ~1 s/paper, `$0`, bboxes, but flat blocks, no OCR, no table
+structure. Docling is structured + OCR, `$0` self-hosted, but **~20× slower**
+(21 s/paper on CPU) with heavy deps (torch + models; GPU would speed it up).
+
+## LlamaParse (optional)
+
+Wired (agentic tier + granular bboxes) but needs `LLAMA_CLOUD_API_KEY` and
+egresses to a cloud API — **not run here** (no key). Viable for published OA
+papers (not PHI); a candidate for the next round.
+
+## Caveats
+
+8 born-digital papers; `bbox_f1` unscored (JATS has no coordinates); `table_f1`
+is the content proxy shown inadequate above; Docling latency is CPU-bound.
+
+## Next (in priority order)
+
+1. **Add a TEDS + LLM-judge table metric** (structure, not content) — the gating
+   piece; without it the bake-off mis-ranks (as shown).
+2. **Add scanned / image-only papers** — where Docling's OCR vs PyMuPDF's none
+   becomes decisive.
+3. Re-rank **Docling vs MinerU vs LlamaParse** on structure + scanned fidelity,
+   on a GPU-capable environment.

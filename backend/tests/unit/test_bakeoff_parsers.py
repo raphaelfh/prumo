@@ -7,6 +7,7 @@ from parsing_bakeoff.parsers import (
     REGISTRY,
     DoclingRunner,
     LlamaParseRunner,
+    OpenDataLoaderRunner,
     ParserNotWiredError,
     ParseRun,
     PyMuPDFRunner,
@@ -22,8 +23,8 @@ def test_stub_parser_is_available_and_returns_preset() -> None:
 
 
 def test_unwired_runner_raises_with_guidance() -> None:
-    with pytest.raises(ParserNotWiredError, match="DoclingRunner"):
-        DoclingRunner().parse("x.pdf")
+    with pytest.raises(ParserNotWiredError, match="OpenDataLoaderRunner"):
+        OpenDataLoaderRunner().parse("x.pdf")
 
 
 def test_docling_unavailable_when_lib_absent() -> None:
