@@ -42,6 +42,9 @@ export const runs = {
   articleNext: 'Next article',
   // Worklist popover
   worklistSearch: 'Go to article…',
+  // CommandPalette
+  commandPlaceholder: 'Type a command or search…',
+  commandEmpty: 'No results',
 } as const;
 
 export type RunsCopy = typeof runs;

@@ -9,6 +9,7 @@
  * @component
  */
 
+import { useEffect, useState } from 'react';
 import { type UserRole } from '@/lib/comparison/permissions';
 import { RunHeader, type RunHeaderValue, type StageTransition } from '@/components/runs/header';
 import type { ExtractionRunStage } from '@/types/ai-extraction';
@@ -151,6 +152,65 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     reopening = false,
   } = props;
 
+  // ---- Cmd-K palette state ----
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Global ⌘K / Ctrl+K toggle — cleanup via return, NOT try/finally (React Compiler).
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return;
+      const target = e.target as HTMLElement;
+      const isEditing =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target.isContentEditable;
+      if (isEditing) return;
+      e.preventDefault();
+      setPaletteOpen((prev) => !prev);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  // ---- Palette actions: surface all edge-action handlers ----
+  const paletteActions: { id: string; label: string; run: () => void }[] = [];
+
+  if (hasComparison) {
+    paletteActions.push({
+      id: 'compare',
+      label: t('extraction', 'runHeaderCompareToggle'),
+      run: () => onViewModeChange(viewMode === 'compare' ? 'extract' : 'compare'),
+    });
+  }
+  if (canReopen) {
+    paletteActions.push({
+      id: 'reopen',
+      label: t('extraction', 'runHeaderReopenForRevision'),
+      run: () => onReopen?.(),
+    });
+  }
+  paletteActions.push({
+    id: 'panel',
+    label: t('runs', 'togglePanel'),
+    run: () => onTogglePDF(),
+  });
+  if (canReveal && onReveal) {
+    paletteActions.push({
+      id: 'reveal',
+      label: t('runs', 'reveal'),
+      run: () => onReveal(),
+    });
+  }
+  // Keyboard shortcuts: no dedicated dialog exists after HeaderMoreMenu removal
+  // so this is a no-op action that signals the slot exists for future wiring.
+  paletteActions.push({
+    id: 'shortcuts',
+    label: 'Keyboard shortcuts',
+    run: () => {},
+  });
+
   const headerValue: RunHeaderValue = {
     kind: 'extraction',
     stage,
@@ -167,54 +227,77 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
   };
 
   return (
-    <RunHeader value={headerValue}>
-      <RunHeader.Left>
-        <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName }, { label: articleTitle }]} />
-        {articles.length > 1 && (
-          <RunHeader.Worklist
-            articles={articles}
-            currentId={currentArticleId}
-            onNavigate={onNavigateToArticle}
-          />
-        )}
-        {stage != null && <RunHeader.StageRail />}
-      </RunHeader.Left>
+    <>
+      {/* Container-query wrapper: the header's OWN width drives the collapse. */}
+      <div className="@container/headerbar">
+        <RunHeader value={headerValue}>
+          <RunHeader.Left>
+            <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName }, { label: articleTitle }]} />
+            {articles.length > 1 && (
+              <RunHeader.Worklist
+                articles={articles}
+                currentId={currentArticleId}
+                onNavigate={onNavigateToArticle}
+              />
+            )}
+            {stage != null && <RunHeader.StageRail />}
+          </RunHeader.Left>
 
-      <RunHeader.Center>
-        <RunHeader.Reviewers />
-        <RunHeader.RoleChip />
-      </RunHeader.Center>
+          <RunHeader.Center>
+            <RunHeader.Reviewers />
+            <RunHeader.RoleChip />
+          </RunHeader.Center>
 
-      <RunHeader.Right>
-        <RunHeader.AIActions
-          pendingCount={aiPendingCount}
-          canExtract={!!(canRunAI && onExtractWithAI)}
-          extracting={extractingAI}
-          onExtract={onExtractWithAI ?? (() => {})}
-          onOpenSuggestions={props.onAISuggestionsClick}
-        />
-        <RunHeader.PanelToggle pressed={showPDF} onToggle={onTogglePDF} />
-        <RunHeader.Save
-          state={saveState ?? 'idle'}
-          lastSavedAt={lastSavedAt}
-          hidden={stage === 'finalized'}
-        />
-        <RunHeader.PrimaryAction />
-        <RunHeader.Menu>
-          {hasComparison && (
-            <RunHeader.MenuItem onSelect={() => onViewModeChange(viewMode === 'compare' ? 'extract' : 'compare')}>
-              {t('extraction', 'runHeaderCompareToggle')}
-            </RunHeader.MenuItem>
-          )}
-          {canReopen && (
-            <RunHeader.MenuItem onSelect={() => onReopen?.()}>
-              {reopening
-                ? t('extraction', 'runHeaderReopening')
-                : t('extraction', 'runHeaderReopenForRevision')}
-            </RunHeader.MenuItem>
-          )}
-        </RunHeader.Menu>
-      </RunHeader.Right>
-    </RunHeader>
+          <RunHeader.Right>
+            {/* Cmd-K hint chip — always visible, opens palette on click */}
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              className="hidden @[48rem]/headerbar:flex items-center gap-1 rounded border border-border/60 bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted transition-colors"
+              aria-label="Open command palette"
+            >
+              <kbd className="font-sans">⌘K</kbd>
+            </button>
+            <RunHeader.AIActions
+              pendingCount={aiPendingCount}
+              canExtract={!!(canRunAI && onExtractWithAI)}
+              extracting={extractingAI}
+              onExtract={onExtractWithAI ?? (() => {})}
+              onOpenSuggestions={props.onAISuggestionsClick}
+            />
+            <RunHeader.PanelToggle pressed={showPDF} onToggle={onTogglePDF} />
+            <RunHeader.Save
+              state={saveState ?? 'idle'}
+              lastSavedAt={lastSavedAt}
+              hidden={stage === 'finalized'}
+            />
+            <RunHeader.PrimaryAction />
+            <RunHeader.Menu>
+              {hasComparison && (
+                <RunHeader.MenuItem onSelect={() => onViewModeChange(viewMode === 'compare' ? 'extract' : 'compare')}>
+                  {t('extraction', 'runHeaderCompareToggle')}
+                </RunHeader.MenuItem>
+              )}
+              {canReopen && (
+                <RunHeader.MenuItem onSelect={() => onReopen?.()}>
+                  {reopening
+                    ? t('extraction', 'runHeaderReopening')
+                    : t('extraction', 'runHeaderReopenForRevision')}
+                </RunHeader.MenuItem>
+              )}
+            </RunHeader.Menu>
+          </RunHeader.Right>
+        </RunHeader>
+      </div>
+
+      {/* Cmd-K palette — mounted at page level so it renders above the header */}
+      <RunHeader.CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        actions={paletteActions}
+        articles={articles.length > 1 ? articles : undefined}
+        onNavigate={articles.length > 1 ? onNavigateToArticle : undefined}
+      />
+    </>
   );
 }

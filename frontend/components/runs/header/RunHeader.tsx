@@ -11,6 +11,7 @@ import { AIActions } from './AIActions';
 import { Breadcrumb } from './Breadcrumb';
 import { Menu, MenuItem } from './Menu';
 import { Worklist } from './Worklist';
+import { CommandPalette } from './CommandPalette';
 
 function Left({ children }: { children: ReactNode }) {
   return <div className={cn('flex min-w-0 flex-1 items-center gap-3')}>{children}</div>;
@@ -32,4 +33,4 @@ function RunHeaderRoot({ value, children }: { value: RunHeaderValue; children: R
   );
 }
 
-export const RunHeader = Object.assign(RunHeaderRoot, { Left, Center, Right, StageRail, PrimaryAction, PanelToggle, RoleChip, Reviewers, Save: SaveSlot, AIActions, Breadcrumb, Menu, MenuItem, Worklist });
+export const RunHeader = Object.assign(RunHeaderRoot, { Left, Center, Right, StageRail, PrimaryAction, PanelToggle, RoleChip, Reviewers, Save: SaveSlot, AIActions, Breadcrumb, Menu, MenuItem, Worklist, CommandPalette });

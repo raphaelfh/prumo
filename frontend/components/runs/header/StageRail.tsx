@@ -48,7 +48,8 @@ export function StageRail() {
             ) : (
               <Circle className={cn('h-3.5 w-3.5', DOT[node.state])} aria-hidden="true" />
             )}
-            <span className="relative">
+            {/* Label: hidden in very narrow containers (dots-only mode) */}
+            <span className="relative hidden @[48rem]/headerbar:inline">
               {t('runs', STAGE_COPY_KEY[node.key])}
               {node.state === 'current' && progress.total > 0 && (
                 <span
@@ -59,7 +60,7 @@ export function StageRail() {
               )}
             </span>
             {node.state === 'current' && gateRemaining != null && gateRemaining > 0 && (
-              <span className="ml-1 rounded bg-warning/15 px-1.5 text-[11px] text-warning">
+              <span className="ml-1 hidden rounded bg-warning/15 px-1.5 text-[11px] text-warning @[48rem]/headerbar:inline">
                 {t('runs', 'gateRemaining').replace('{{count}}', String(gateRemaining))}
               </span>
             )}
