@@ -437,6 +437,7 @@ export const extraction = {
     tableBatchAIStarting: 'Starting AI extraction for {{count}} article(s)…',
     tableArticleSelected: 'article selected',
     tableArticlesSelected: 'articles selected',
+    tableSelectedCount: '{{n}} selected',
     tableSelectionMenuTooltip: 'Actions menu for selected articles',
     tableBatchActionsLabel: 'Batch actions',
     tableAIExtraction: 'AI extraction',

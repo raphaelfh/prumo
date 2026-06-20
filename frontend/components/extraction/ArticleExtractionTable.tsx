@@ -26,8 +26,7 @@ import {
     PlayCircle,
     Search,
     Sparkles,
-    User,
-    X
+    User
 } from 'lucide-react';
 import {toast} from 'sonner';
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from "@/components/ui/table";
@@ -714,16 +713,17 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                   />
                   {toolbarActions}
                   <div className="flex items-center gap-2 shrink-0 ml-auto">
-                      <ListCount
-                          visible={filteredAndSortedArticles.length}
-                          total={articles.length}
-                          label={t('extraction', 'tableArticlesCount')}
-                      />
-                      {selectedCount > 0 && (
+                      {selectedCount === 0 ? (
+                          <ListCount
+                              visible={filteredAndSortedArticles.length}
+                              total={articles.length}
+                              label={t('extraction', 'tableArticlesCount')}
+                          />
+                      ) : (
                           <div className="flex items-center gap-2 animate-in fade-in duration-200">
-                <span className="text-[11px] font-medium text-foreground">
-                  {selectedCount} {selectedCount === 1 ? t('extraction', 'tableArticleSelected') : t('extraction', 'tableArticlesSelected')}
-                </span>
+                              <span className="text-[11px] font-medium text-foreground tabular-nums">
+                                  {t('extraction', 'tableSelectedCount').replace('{{n}}', String(selectedCount))}
+                              </span>
                               <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
                                       <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-[12px]"
@@ -743,17 +743,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                       </DropdownMenuItem>
                                   </DropdownMenuContent>
                               </DropdownMenu>
-                              <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={deselectAll}
-                                  disabled={isExtracting}
-                                  className="h-6 text-[11px] text-muted-foreground hover:text-foreground"
-                                  aria-label={t('extraction', 'tableClearSelection')}
-                              >
-                                  <X className="h-3 w-3 mr-0.5"/>
-                                  {t('extraction', 'tableClearSelection')}
-                              </Button>
                           </div>
                       )}
                   </div>
