@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { RunHeader } from '@/components/runs/header';
-import { useRunHeader } from '@/components/runs/header/RunHeaderContext';
+import { useRunHeader, type StageTransition } from '@/components/runs/header/RunHeaderContext';
 
 function Probe() {
   const ctx = useRunHeader();
@@ -24,5 +24,21 @@ describe('RunHeader shell', () => {
     );
     expect(screen.getByTestId('probe')).toHaveTextContent('extraction:review');
     expect(screen.getByRole('banner')).toBeInTheDocument();
+  });
+
+  it('StageTransition accepts a non-extraction stage string in to (widened type)', () => {
+    // 'published' is NOT in ExtractionRunStage; this only compiles if to: string
+    const transition: StageTransition = {
+      to: 'published',
+      label: 'Publish',
+      gate: { ok: true },
+      onAdvance: () => {},
+    };
+    render(
+      <RunHeader value={{ ...baseValue, transition }}>
+        <RunHeader.Right><RunHeader.PrimaryAction /></RunHeader.Right>
+      </RunHeader>,
+    );
+    expect(screen.getByRole('button', { name: 'Publish' })).toBeInTheDocument();
   });
 });

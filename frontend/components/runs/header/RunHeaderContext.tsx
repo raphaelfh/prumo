@@ -5,9 +5,9 @@ import type { UserRole } from '@/lib/comparison/permissions';
 export type RunKind = 'extraction' | 'qa';
 
 export type StageTransition =
-  | { to: ExtractionRunStage; label: string; gate: { ok: true }; onAdvance: () => void | Promise<void> }
+  | { to: string; label: string; gate: { ok: true }; onAdvance: () => void | Promise<void> }
   | {
-      to: ExtractionRunStage;
+      to: string;
       label: string;
       gate: { ok: false; reason: string; remaining: number };
       onAdvance: () => void | Promise<void>;
