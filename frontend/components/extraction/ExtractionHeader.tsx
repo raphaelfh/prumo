@@ -14,6 +14,8 @@ import { RunHeader, type RunHeaderValue, type StageTransition } from '@/componen
 import type { ExtractionRunStage } from '@/types/ai-extraction';
 import type { SaveState } from '@/hooks/runs';
 import { t } from '@/lib/copy';
+import { Button } from '@/components/ui/button';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 // =================== INTERFACES ===================
 
@@ -119,6 +121,9 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     projectName,
     articleTitle,
     onBack,
+    articles,
+    currentArticleId,
+    onNavigateToArticle,
     completedFields,
     totalFields,
     showPDF,
@@ -148,6 +153,9 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     onReopen,
     reopening = false,
   } = props;
+
+  // Article pager: only shown when there is more than one article to navigate.
+  const articleIdx = articles.findIndex(a => a.id === currentArticleId);
 
   const pct = totalFields > 0 ? Math.round((completedFields / totalFields) * 100) : 0;
 
@@ -194,6 +202,33 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     <RunHeader value={headerValue}>
       <RunHeader.Left>
         <RunHeader.Breadcrumb onBack={onBack} crumbs={crumbs} />
+        {articles.length > 1 && (
+          <div className="flex items-center gap-1 shrink-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              aria-label={t('extraction', 'articlePrevious')}
+              disabled={articleIdx <= 0}
+              onClick={() => onNavigateToArticle(articles[articleIdx - 1].id)}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-[11px] text-muted-foreground tabular-nums">
+              {articleIdx + 1} / {articles.length}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              aria-label={t('extraction', 'articleNext')}
+              disabled={articleIdx >= articles.length - 1}
+              onClick={() => onNavigateToArticle(articles[articleIdx + 1].id)}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
         {stage != null && <RunHeader.StageRail />}
       </RunHeader.Left>
 
