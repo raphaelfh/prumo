@@ -545,7 +545,7 @@ export default function QualityAssessmentFullScreen() {
             className="border-warning/30 bg-warning/10 text-warning shrink-0"
             data-testid="qa-kind-badge"
           >
-            {t("qa", "badgeShort")}
+            {t("qa", "badge")}
           </Badge>
           {/* Version */}
           {versionLabel ? (

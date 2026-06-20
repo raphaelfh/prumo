@@ -234,8 +234,8 @@ describe("QualityAssessmentFullScreen", () => {
 
   it("renders header with QA badge + template name + version", async () => {
     renderPage();
-    // Kind badge is now a compact 'QA' identifier (not the full 'Quality Assessment').
-    expect(screen.getByTestId("qa-kind-badge")).toHaveTextContent("QA");
+    // Kind badge shows the full 'Quality Assessment' label (reverted from short 'QA').
+    expect(screen.getByTestId("qa-kind-badge")).toHaveTextContent("Quality Assessment");
     // Template name is now in the Breadcrumb crumb; version is in qa-template-name.
     await waitFor(() =>
       expect(screen.getByTestId("qa-template-name")).toHaveTextContent(

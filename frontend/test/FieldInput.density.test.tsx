@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { FieldInput } from '@/components/extraction/FieldInput';
 
+vi.mock('@/integrations/supabase/client', () => ({ supabase: {} }));
 vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
 
 const field = {

@@ -8,6 +8,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 
 // Mock copy so t() returns the key (avoids needing the full copy registry).
 vi.mock('@/lib/copy', () => ({ t: (_n: string, k: string) => k }));
@@ -39,12 +40,14 @@ const baseHeaderProps = {
 describe('ExtractionHeader RoleChip reveal', () => {
   it('renders a plain non-interactive chip when canReveal is false', () => {
     render(
-      <ExtractionHeader
-        {...baseHeaderProps}
-        userRole="manager"
-        isBlindMode={true}
-        canReveal={false}
-      />,
+      <MemoryRouter>
+        <ExtractionHeader
+          {...baseHeaderProps}
+          userRole="manager"
+          isBlindMode={true}
+          canReveal={false}
+        />
+      </MemoryRouter>,
     );
     // No button for manager when canReveal=false
     expect(screen.queryByRole('button', { name: /manager/i })).toBeNull();
@@ -53,13 +56,15 @@ describe('ExtractionHeader RoleChip reveal', () => {
   it('opens popover and calls onReveal when manager clicks Reveal', async () => {
     const onReveal = vi.fn();
     render(
-      <ExtractionHeader
-        {...baseHeaderProps}
-        userRole="manager"
-        isBlindMode={true}
-        canReveal={true}
-        onReveal={onReveal}
-      />,
+      <MemoryRouter>
+        <ExtractionHeader
+          {...baseHeaderProps}
+          userRole="manager"
+          isBlindMode={true}
+          canReveal={true}
+          onReveal={onReveal}
+        />
+      </MemoryRouter>,
     );
     // The role chip renders as an interactive button when canReveal=true
     const chipButton = screen.getByRole('button', { name: /manager/i });

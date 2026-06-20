@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { type UserRole } from '@/lib/comparison/permissions';
 import { RunHeader, type RunHeaderValue, type StageTransition } from '@/components/runs/header';
 import type { ExtractionRunStage } from '@/types/ai-extraction';
@@ -116,6 +117,7 @@ export interface ExtractionHeaderProps {
 // =================== COMPONENT ===================
 
 export function ExtractionHeader(props: ExtractionHeaderProps) {
+  const navigate = useNavigate();
   const {
     projectName,
     articleTitle,
@@ -225,7 +227,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
       <div className="@container/headerbar">
         <RunHeader value={headerValue}>
           <RunHeader.Left>
-            <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName }, { label: articleTitle }]} />
+            <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName, onClick: () => navigate(`/projects/${props.projectId}`) }, { label: articleTitle }]} />
             {articles.length > 1 && (
               <RunHeader.Worklist
                 articles={articles}
