@@ -241,6 +241,8 @@ class APIKeyService(LoggerMixin):
         """
         if provider == "openai":
             return settings.OPENAI_API_KEY
+        if provider == "llama_cloud":
+            return settings.LLAMA_CLOUD_API_KEY
         # Other providers can be added once global keys are configured
         return None
 
@@ -389,6 +391,8 @@ class APIKeyService(LoggerMixin):
                 return await self._validate_gemini(api_key)
             elif provider == "grok":
                 return await self._validate_grok(api_key)
+            elif provider == "llama_cloud":
+                return await self._validate_llama_cloud(api_key)
             else:
                 return {"status": "pending", "message": "Provider validation is not implemented"}
         except Exception as e:
@@ -482,6 +486,23 @@ class APIKeyService(LoggerMixin):
             if response.status_code == 200:
                 return {"status": "valid", "message": "Valid API key"}
             elif response.status_code == 401:
+                return {"status": "invalid", "message": "Invalid API key"}
+            elif response.status_code == 429:
+                return {"status": "valid", "message": "Valid API key (rate limited)"}
+            else:
+                return {"status": "invalid", "message": f"Error: {response.status_code}"}
+
+    async def _validate_llama_cloud(self, api_key: str) -> dict[str, Any]:
+        """Validate a LlamaCloud API key with a lightweight authed GET."""
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.cloud.llamaindex.ai/api/v1/parsing/supported_file_extensions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                return {"status": "valid", "message": "Valid API key"}
+            elif response.status_code in (401, 403):
                 return {"status": "invalid", "message": "Invalid API key"}
             elif response.status_code == 429:
                 return {"status": "valid", "message": "Valid API key (rate limited)"}
