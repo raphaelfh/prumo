@@ -23,8 +23,8 @@ A tempting framing is "point an LLM at MarkItDown to get high-fidelity
 markdown." That is **wrong for tables and layout**: MarkItDown's PDF path is
 pdfminer plain text, and its `llm_client`/`llm_model` only *describe images* and
 (via `markitdown-ocr`) OCR image regions — it does not improve table or section
-structure. In our 8-paper bake-off MarkItDown scored content-F1 0.588 and
-**section recall 0.000** (it emits no headings). MarkItDown's only real
+structure. In our 8-paper bake-off MarkItDown emitted **no `#` headings** (section recall
+0.000) and recovered only part of the table cells (see the pilot run). MarkItDown's only real
 high-fidelity PDF route is `docintel_endpoint` (**Azure Document Intelligence**,
 a paid cloud parse with PHI egress) — not an "LLM tier." High-fidelity markdown
 comes from a **structure parser** (e.g. Docling `export_to_markdown`) or a
@@ -42,8 +42,11 @@ than building a parallel pipeline.
 - One source of truth: the markdown the LLM sees and the markdown the reviewer
   sees must be the *same string*, and must not drift from the blocks (the
   anchoring substrate).
-- Free by default, pay only on opt-in: a `$0` self-hosted default; the
-  high-fidelity tier is config-gated and PHI-aware.
+- Free by default, pay only on opt-in: `MARKDOWN_TIER=free` (the `$0`
+  block-projection tier, derived from blocks, no egress) is the default rendering
+  tier — independent of `PARSER_BACKEND` (whose non-PHI default is LlamaParse
+  `agentic` cloud per ADR 0011; PHI stays self-hosted). The enriched tier is
+  config-gated and PHI-aware.
 - Reuse, don't reinvent: ride ADR 0011's `DocumentParser`/`create_document_parser`
   factory, `PARSER_BACKEND` switch, `project_is_phi` gate, provider doorway, and
   Phase-0 bake-off; reuse the block assembler's table serialization.
@@ -86,14 +89,16 @@ contract (blocks own anchoring; markdown is a projection) and kills the
   blocks already improved by ADR 0011's region-scoped vision table pass
   (`VISION_TABLE_PASS`). Because it is non-deterministic and costs egress, it is
   **stored**: a new `article_files.markdown_enriched TEXT` plus a `markdown_tier`
-  discriminator, added in the **same** schema change that drops the dead
-  `text_raw`/`text_html` (separate Alembic migrations; the dead columns are
-  **not** repurposed — `text_html` implies HTML, not GFM). It reuses ADR 0011's
+  discriminator, added in a SEPARATE additive Alembic migration (revision id
+  ≤ 32 chars), co-sequenced with but distinct from the migration that drops the
+  dead `text_raw`/`text_html` (the dead columns are **not** repurposed —
+  `text_html` implies HTML, not GFM). It reuses ADR 0011's
   `PARSER_BACKEND` + `project_is_phi` gate verbatim; **PHI projects cannot select
   a cloud markdown engine.** The enriched engine is whatever `PARSER_BACKEND`
-  resolves to — e.g. **LlamaParse** `agentic` (cloud, PHI-gated; its
-  granular-`bbox` items enrich the blocks) or a self-hosted parser — so the
-  tier reads `PARSER_BACKEND`, not a second engine switch.
+  resolves to per project — **LlamaParse** `agentic` for non-PHI projects
+  (cloud; its granular-`bbox` items enrich the blocks), the self-hosted parser
+  for PHI (the fail-closed gate) — so the tier reads `PARSER_BACKEND` + ADR
+  0011's PHI gate, not a second engine switch.
 - **Config.** `MARKDOWN_TIER = free | enriched` (default `free`). MarkItDown is
   **not** a tier (rationale in Context); its only high-fidelity route — Azure
   Document Intelligence — is a candidate ADR 0011 `PARSER_BACKEND`, not an "LLM
@@ -187,8 +192,8 @@ contract (blocks own anchoring; markdown is a projection) and kills the
   `docs/superpowers/plans/2026-06-19-grounded-extraction-and-hitl-highlight.md`
   (renderer, storage, endpoint, viewer + sanitizer).
 - Empirical basis: `docs/superpowers/quality-runs/2026-06-19-parsing-bakeoff-pilot.md`
-  (PyMuPDF 0.989 / Docling 0.768 / MarkItDown 0.588 content-F1; section recall
-  0.816 / 0.816 / 0.000 — content-F1 mis-ranks structure).
+  (the 8-paper PyMuPDF/Docling/MarkItDown run — the full bake-off scoreboard and
+  the content-F1-mis-ranks-structure lesson).
 - Library docs: `pymupdf4llm.to_markdown` (<https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/>);
   MarkItDown `llm_client` is image-only, `docintel_endpoint` = Azure Document
   Intelligence (<https://github.com/microsoft/markitdown>).

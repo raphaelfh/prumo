@@ -355,7 +355,8 @@ plan owns the build:
   table serialization (one GFM codepath → prompt and viewer tables byte-identical).
 - **Storage:** enriched tier → new `article_files.markdown_enriched` +
   `markdown_tier` columns in a SEPARATE additive migration (revision id ≤ 32 chars),
-  co-sequenced with Phase 3's `text_raw`/`text_html` drop (dropped, not repurposed).
+  co-sequenced with but DISTINCT from Phase 3's migration that drops the dead
+  `text_raw`/`text_html` (dropped, never repurposed).
 - **Read path:** `GET /api/v1/article-files/{id}/markdown?tier=` —
   `ensure_project_member()` first, `ApiResponse` + a typed Pydantic model,
   `apiClient` only (no `supabase.from`, no raw Storage URL); mirror

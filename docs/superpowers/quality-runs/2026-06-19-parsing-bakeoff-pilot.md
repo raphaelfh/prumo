@@ -64,3 +64,7 @@ egress — not run here. Candidate for the next round on published (non-PHI) pap
 1. **TEDS + LLM-judge** table metric (structure, not content) — the gating piece.
 2. **Scanned / image-only papers** — decisive for OCR (Docling) vs none.
 3. Re-rank **Docling vs MinerU vs LlamaParse** on structure + scanned, on GPU.
+
+> Per the updated ADR-0011 decision, LlamaParse `agentic` is the intended
+> **non-PHI default** (cloud); this self-hosted re-rank picks the **PHI default**
+> and the non-PHI fallback if LlamaParse loses on quality/cost/latency.

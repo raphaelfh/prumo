@@ -59,8 +59,9 @@ PYTHONPATH=scripts uv run python -m parsing_bakeoff.run --manifest /secure/manif
 # Real run (install the parser extras you want to compare first):
 PYTHONPATH=scripts uv run python -m parsing_bakeoff.run \
     --manifest /secure/manifest.json \
-    --parsers docling,mineru,llamaparse \
+    --parsers pymupdf,markitdown,docling,llamaparse \
     --out docs/superpowers/quality-runs
+    # mineru still needs result→ParseRun wiring; opendataloader is an unwired stub
 ```
 
 Outputs `bakeoff-results.csv` + `bakeoff-summary.md` (ranked by table
@@ -71,7 +72,7 @@ missing are **skipped with a logged note** — never silently dropped.
 
 | Metric | What it measures | Notes |
 | --- | --- | --- |
-| `table_f1` | multiset F1 over normalised table cells | a fast, dependency-free **proxy**. Run true TEDS + an LLM-judge (which the research found correlates better than TEDS) alongside it for the real decision. |
+| `table_f1` | multiset F1 over normalised table cells | a fast, dependency-free **proxy** that MIS-RANKS structure (a flat token dump can outrank a structurally-correct grid — see the pilot run); it must **not** gate the parser choice. The gating metric is TEDS + an LLM-judge plus scanned inputs. |
 | `bbox_f1` | greedy IoU-matched precision/recall of table/figure regions | the provenance signal — can a reviewer's highlight land correctly? |
 | `section_recall` / `reference_recall` | IMRaD headings / reference list recovery | normalised (NFKC + whitespace + casefold). |
 | `mean_latency_s`, `total_cost_usd` | per-article ops cost | quality means exclude errored docs; cost/latency include them. |
@@ -81,11 +82,12 @@ missing are **skipped with a logged note** — never silently dropped.
 | Runner | `available()` | `parse()` |
 | --- | --- | --- |
 | `StubParser` | ✅ | ✅ (tests + `--dry-run`) |
-| `PyMuPDFRunner` | ✅ (`uv pip install pymupdf` — one wheel, no models) | ✅ — block bboxes + `find_tables` cells + heading heuristic. The lightest **real** baseline; run it today. |
+| `PyMuPDFRunner` | ✅ (`uv pip install pymupdf` — one wheel, no models) | ✅ — block bboxes + `find_tables` cells + heading heuristic. The lightest **real** baseline; ran the 8-paper pilot. |
+| `MarkItDownRunner` | ✅ (`markitdown[pdf]`) | ✅ — pdfminer text; **no `#` headings / no bboxes**; ran the 8-paper pilot |
+| `DoclingRunner` | ✅ (`docling`) | ✅ — `DocumentConverter` → markdown + structured tables + bboxes + OCR; ran the 8-paper pilot |
 | `LlamaParseRunner` | ✅ (lib + `LLAMA_CLOUD_API_KEY`) | grounded against the `llama_cloud` agentic-tier + granular-bbox API; finish `_map_llamaparse_result` against the live SDK |
-| `DoclingRunner` | ✅ (import check) | wire `DocumentConverter` output → `ParseRun` |
 | `MinerURunner` | ✅ (import check) | wire MinerU middle-JSON → `ParseRun` (GPU recommended) |
-| `OpenDataLoaderRunner` | ✅ (import check) | wire OpenDataLoader-PDF output → `ParseRun` |
+| `OpenDataLoaderRunner` | — | legacy old-spec name — unwired stub, not in the active slate; raises `ParserNotWiredError` |
 
 The lib-output → `ParseRun` mapping is the one integration point left per
 runner, finished when the library is installed during the run (we don't ship

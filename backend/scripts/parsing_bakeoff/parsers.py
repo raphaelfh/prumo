@@ -164,9 +164,10 @@ class LlamaParseRunner:
 
     name: str = "llamaparse"
     tier: str = "agentic"
-    # Public LlamaParse list pricing is ~$0.003/page (cost-mode) and higher for
-    # the agentic tier; treat as an estimate, refined from the real bill.
-    est_cost_per_page_usd: float = 0.03
+    # LlamaParse: $1.25 per 1000 credits; this runner pins the agentic tier
+    # (10 cr/page) -> $0.0125/page (~$0.19 per 15-page paper). Other tiers:
+    # fast 1cr, cost-effective 3cr, agentic-plus 45cr. Refine from the real bill.
+    est_cost_per_page_usd: float = 0.0125
 
     def available(self) -> bool:
         return _installed("llama_cloud") and bool(os.environ.get("LLAMA_CLOUD_API_KEY"))
