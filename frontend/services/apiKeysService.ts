@@ -3,11 +3,17 @@
  *
  * Manages API keys for external providers (OpenAI, Anthropic, Gemini, Grok).
  * Keys are encrypted via Fernet in the FastAPI backend.
+ *
+ * All calls route through the typed client (`frontend/integrations/api/client.ts`):
+ * it injects the Supabase JWT, unwraps the `ApiResponse` envelope, and throws
+ * `ApiError` carrying `error.message` (never FastAPI's `detail`). The exported
+ * `ErrorResult` wrappers let `ApiKeysSection` call these without try/catch.
  */
 
+import {apiClient} from '@/integrations/api/client';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+const BASE_PATH = '/api/v1/user-api-keys';
 
 export interface APIKeyInfo {
   id: string;
@@ -51,160 +57,57 @@ export interface ValidationResult {
 }
 
 class APIKeysService {
-  private getAuthHeaders(token: string): HeadersInit {
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    };
-  }
-
   /**
    * Lists all API keys for the user.
    */
-  async listKeys(token: string, activeOnly: boolean = true): Promise<APIKeyInfo[]> {
-      const requestUrl = `${API_BASE_URL}/api/v1/user-api-keys?active_only=${activeOnly}`;
-    const response = await fetch(
-        requestUrl,
-      {
-        method: 'GET',
-        headers: this.getAuthHeaders(token),
-      }
+  async listKeys(activeOnly: boolean = true): Promise<APIKeyInfo[]> {
+    const data = await apiClient<{keys: APIKeyInfo[]}>(
+      `${BASE_PATH}?active_only=${activeOnly}`,
+      {method: 'GET'},
     );
-
-    if (!response.ok) {
-        throw new Error(`Error listing API keys: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    if (!data.ok) {
-        throw new Error(data.error?.message || 'Error listing API keys');
-    }
-
-    return data.data.keys || [];
+    return data.keys || [];
   }
 
   /**
    * Creates a new API key.
    */
-  async createKey(
-    token: string,
-    request: CreateAPIKeyRequest
-  ): Promise<CreateAPIKeyResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/user-api-keys`, {
-      method: 'POST',
-      headers: this.getAuthHeaders(token),
-      body: JSON.stringify(request),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Error creating API key: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    if (!data.ok) {
-        throw new Error(data.error?.message || 'Error creating API key');
-    }
-
-    return data.data;
+  async createKey(request: CreateAPIKeyRequest): Promise<CreateAPIKeyResponse> {
+    return apiClient<CreateAPIKeyResponse>(BASE_PATH, {method: 'POST', body: request});
   }
 
   /**
    * Updates an API key (activate/deactivate, set as default).
    */
   async updateKey(
-    token: string,
     keyId: string,
-    updates: { isDefault?: boolean; isActive?: boolean }
+    updates: {isDefault?: boolean; isActive?: boolean},
   ): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/user-api-keys/${keyId}`, {
-      method: 'PATCH',
-      headers: this.getAuthHeaders(token),
-      body: JSON.stringify(updates),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Error updating API key: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    if (!data.ok) {
-        throw new Error(data.error?.message || 'Error updating API key');
-    }
+    await apiClient<unknown>(`${BASE_PATH}/${keyId}`, {method: 'PATCH', body: updates});
   }
 
   /**
    * Permanently removes an API key.
    */
-  async deleteKey(token: string, keyId: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/user-api-keys/${keyId}`, {
-      method: 'DELETE',
-      headers: this.getAuthHeaders(token),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Error deleting API key: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    if (!data.ok) {
-        throw new Error(data.error?.message || 'Error deleting API key');
-    }
+  async deleteKey(keyId: string): Promise<void> {
+    await apiClient<unknown>(`${BASE_PATH}/${keyId}`, {method: 'DELETE'});
   }
 
   /**
    * Revalidates an existing API key.
    */
-  async validateKey(token: string, keyId: string): Promise<ValidationResult> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/v1/user-api-keys/${keyId}/validate`,
-      {
-        method: 'POST',
-        headers: this.getAuthHeaders(token),
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Error validating API key: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    if (!data.ok) {
-        throw new Error(data.error?.message || 'Error validating API key');
-    }
-
-    return data.data;
+  async validateKey(keyId: string): Promise<ValidationResult> {
+    return apiClient<ValidationResult>(`${BASE_PATH}/${keyId}/validate`, {method: 'POST'});
   }
 
   /**
-   * Lista provedores suportados.
+   * Lists supported providers.
    */
-  async listProviders(token: string): Promise<ProviderInfo[]> {
-      const requestUrl = `${API_BASE_URL}/api/v1/user-api-keys/providers`;
-      const response = await fetch(requestUrl, {
-      method: 'GET',
-      headers: this.getAuthHeaders(token),
-    });
-
-    if (!response.ok) {
-        throw new Error(`Error listing providers: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    if (!data.ok) {
-        throw new Error(data.error?.message || 'Error listing providers');
-    }
-
-    return data.data.providers || [];
+  async listProviders(): Promise<ProviderInfo[]> {
+    const data = await apiClient<{providers: ProviderInfo[]}>(
+      `${BASE_PATH}/providers`,
+      {method: 'GET'},
+    );
+    return data.providers || [];
   }
 }
 
@@ -219,54 +122,42 @@ export interface LoadedKeysAndProviders {
   providers: ProviderInfo[];
 }
 
-export function loadKeysAndProviders(
-  token: string,
-): Promise<ErrorResult<LoadedKeysAndProviders>> {
+export function loadKeysAndProviders(): Promise<ErrorResult<LoadedKeysAndProviders>> {
   return toResult(async () => {
     const [keys, providers] = await Promise.all([
-      apiKeysService.listKeys(token, false),
-      apiKeysService.listProviders(token),
+      apiKeysService.listKeys(false),
+      apiKeysService.listProviders(),
     ]);
     return {keys, providers};
   }, 'apiKeysService.loadKeysAndProviders');
 }
 
 export function createApiKey(
-  token: string,
   request: CreateAPIKeyRequest,
 ): Promise<ErrorResult<CreateAPIKeyResponse>> {
   return toResult(
-    () => apiKeysService.createKey(token, request),
+    () => apiKeysService.createKey(request),
     'apiKeysService.createApiKey',
   );
 }
 
-export function setDefaultApiKey(
-  token: string,
-  keyId: string,
-): Promise<ErrorResult<void>> {
+export function setDefaultApiKey(keyId: string): Promise<ErrorResult<void>> {
   return toResult(
-    () => apiKeysService.updateKey(token, keyId, {isDefault: true}),
+    () => apiKeysService.updateKey(keyId, {isDefault: true}),
     'apiKeysService.setDefaultApiKey',
   );
 }
 
-export function deleteApiKey(
-  token: string,
-  keyId: string,
-): Promise<ErrorResult<void>> {
+export function deleteApiKey(keyId: string): Promise<ErrorResult<void>> {
   return toResult(
-    () => apiKeysService.deleteKey(token, keyId),
+    () => apiKeysService.deleteKey(keyId),
     'apiKeysService.deleteApiKey',
   );
 }
 
-export function validateApiKey(
-  token: string,
-  keyId: string,
-): Promise<ErrorResult<ValidationResult>> {
+export function validateApiKey(keyId: string): Promise<ErrorResult<ValidationResult>> {
   return toResult(
-    () => apiKeysService.validateKey(token, keyId),
+    () => apiKeysService.validateKey(keyId),
     'apiKeysService.validateApiKey',
   );
 }
