@@ -313,7 +313,7 @@ Before changing anything under `extraction_*`, `/api/v1/runs/...`, or `/api/v1/h
 
 - `docs/reference/extraction-hitl-architecture.md` — canonical schema, the five workflow tables (Proposal → ReviewerDecision → ReviewerState → ConsensusDecision → PublishedState), and the `(run_id, instance_id, field_id)` coordinate system.
 - `docs/reference/migrations.md` — when to squash, RLS conventions, AI-assistant pitfalls.
-- `docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md` — original spec, immutable.
+- `docs/explanation/extraction-hitl-design-rationale.md` — design rationale (the original 2026-04-27 spec is archived under `docs/superpowers/specs/archive/`).
 
 These are not optional reading for HITL changes.
 

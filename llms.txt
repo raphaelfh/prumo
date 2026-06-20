@@ -1,3 +1,9 @@
+---
+status: stable
+last_reviewed: 2026-06-20
+owner: '@raphaelfh'
+---
+
 # prumo — entry point for AI agents
 
 Prumo is a systematic-review / meta-analysis platform. Backend: Python 3.11 +
