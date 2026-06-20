@@ -6,11 +6,8 @@
  */
 export const runs = {
   // StageRail (3 user-facing nodes: Extract → Consensus → Finalized).
-  // stageProposal/stageReview linger until StageRail stops referencing them.
   revision: 'Revision',
   stageExtract: 'Extract',
-  stageProposal: 'Proposal',
-  stageReview: 'Review',
   stageConsensus: 'Consensus',
   stageFinalized: 'Finalized',
   stageExtractTooltip: 'Fill the form and review AI suggestions for this article.',
