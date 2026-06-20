@@ -16,7 +16,7 @@ while IFS= read -r -d '' file; do
 
   # Only enforce on files that should carry frontmatter: docs/**, root *.md, CLAUDE.md
   case "$file" in
-    docs/*.md|docs/**/*.md|README.md|CLAUDE.md|.claude/CLAUDE.md) : ;;
+    docs/*.md|docs/**/*.md|README.md|CLAUDE.md|.claude/CLAUDE.md|llms.txt) : ;;
     *) continue ;;
   esac
 
@@ -32,7 +32,7 @@ while IFS= read -r -d '' file; do
       FAIL=1
     fi
   done
-done < <(git ls-files -z '*.md')
+done < <(git ls-files -z '*.md' 'llms.txt')
 
 if [[ $FAIL -ne 0 ]]; then
   echo

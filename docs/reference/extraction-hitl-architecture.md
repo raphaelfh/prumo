@@ -386,8 +386,12 @@ publish, AI), keep it in the page-specific component.
 - **HitlConfigSnapshot** — JSONB copy of the resolved HitlConfig at Run
   creation time, stored on the Run. Guarantees that "what config was in
   effect when this decision was made?" is always answerable.
-- **ConsensusRule** — `unanimous` / `majority` / `arbitrator`. Drives
-  when consensus triggers and how it resolves.
+- **ConsensusRule** — `unanimous` / `majority` / `arbitrator`. Stored/frozen
+  per-run config (display + CRUD only); the backend finalize path does **not**
+  read it. Finalize gates are (1) `consensus_count > 0` (`EmptyFinalizeError`)
+  and (2) the extraction-only required-field completeness gate (ADR-0009) — see
+  `run_lifecycle_service.py`. `majority` has no vote math; `arbitrator_id` is
+  consumed only for unblinding visibility.
 - **managers_see_reviewers** — Per-kind manager blind-review policy on
   `projects.settings` (`{extraction, quality_assessment}`, both default
   `false` = managers blind). Read **live** by the API read path
