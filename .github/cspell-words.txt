@@ -213,3 +213,7 @@ penalise
 multiset
 normalised
 casefold
+MarkItDown
+remark
+bleach
+torch
