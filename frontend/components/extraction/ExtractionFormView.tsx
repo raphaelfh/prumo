@@ -157,6 +157,10 @@ export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, 
     prevProps.modelChildSections === nextProps.modelChildSections &&
     prevProps.activeModelId === nextProps.activeModelId &&
     prevProps.models.length === nextProps.models.length &&
+    // `isActionLoading` gets a new ref on every `actionLoading` change. Omitting
+    // it lets the memo swallow the post-accept `clearLoading` (its only changed
+    // prop), so the spinner never clears. See FieldInput's comparator.
+    prevProps.isActionLoading === nextProps.isActionLoading &&
     !aiSuggestionsChanged
   );
 });
