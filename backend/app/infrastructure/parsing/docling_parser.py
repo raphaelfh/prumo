@@ -64,7 +64,10 @@ class DoclingParser(DocumentParser):
             bbox = {"x": float(x), "y": float(y), "width": float(width), "height": float(height)}
 
             if isinstance(item, TableItem):
-                # Emit one table_cell block per non-empty cell.
+                # Emit one table_cell block per non-empty cell. Every cell of a
+                # table reuses the table-level ``bbox`` built above, so each cell
+                # MUST get its own copy (``dict(bbox)``) — sharing one mutable
+                # dict across cells is a latent aliasing hazard. Do not collapse.
                 for cell in item.data.table_cells:
                     text = getattr(cell, "text", "").strip()
                     if not text:
@@ -78,7 +81,7 @@ class DoclingParser(DocumentParser):
                             text=text,
                             char_start=0,
                             char_end=0,
-                            bbox=bbox,
+                            bbox=dict(bbox),
                             block_type="table_cell",
                         )
                     )
