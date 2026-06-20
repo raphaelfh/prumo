@@ -135,8 +135,6 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     isBlindMode = false,
     saveState,
     lastSavedAt = null,
-    isComplete,
-    onFinalize,
     submitting = false,
     stage = null,
     transition = null,
@@ -159,7 +157,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
 
   const pct = totalFields > 0 ? Math.round((completedFields / totalFields) * 100) : 0;
 
-  const value: RunHeaderValue = {
+  const headerValue: RunHeaderValue = {
     kind: 'extraction',
     stage: stage ?? null,
     isRevision,
@@ -173,24 +171,6 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     submitting,
     onJumpToDivergence,
   };
-
-  // Effective transition: prefer the explicit `transition` prop (from
-  // buildExtractionTransition). Fall back to a minimal gate-ok transition
-  // built from the legacy `onFinalize`/`finalizeLabel` props so callers
-  // that have not yet been migrated still get a working primary button.
-  const effectiveTransition: StageTransition | null =
-    transition !== undefined
-      ? transition ?? null
-      : isComplete
-        ? {
-            to: (stage ?? 'finalized') as ExtractionRunStage,
-            label: props.finalizeLabel ?? t('extraction', 'runHeaderFinalize'),
-            gate: { ok: true },
-            onAdvance: onFinalize,
-          }
-        : null;
-
-  const headerValue: RunHeaderValue = { ...value, transition: effectiveTransition };
 
   // Project/article crumbs for Breadcrumb slot.
   const crumbs = [
