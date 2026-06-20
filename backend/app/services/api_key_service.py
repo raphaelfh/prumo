@@ -19,6 +19,59 @@ from app.core.security import derive_encryption_key
 from app.models.user_api_key import SUPPORTED_PROVIDERS, UserAPIKey
 from app.repositories.user_api_key_repository import UserAPIKeyRepository
 
+# ---------------------------------------------------------------------------
+# Provider metadata — must cover every entry in SUPPORTED_PROVIDERS.
+# Keeping this in the service layer (not the endpoint) satisfies the layering
+# rule: api → services → repositories → models.
+# ---------------------------------------------------------------------------
+
+_PROVIDER_METADATA: dict[str, dict[str, str]] = {
+    "openai": {
+        "name": "OpenAI",
+        "description": "GPT-4, GPT-4o, etc.",
+        "docsUrl": "https://platform.openai.com/api-keys",
+    },
+    "anthropic": {
+        "name": "Anthropic",
+        "description": "Claude 3, Claude 3.5, etc.",
+        "docsUrl": "https://console.anthropic.com/settings/keys",
+    },
+    "gemini": {
+        "name": "Google Gemini",
+        "description": "Gemini Pro, Gemini Ultra, etc.",
+        "docsUrl": "https://aistudio.google.com/app/apikey",
+    },
+    "grok": {
+        "name": "xAI Grok",
+        "description": "Grok-1, Grok-2, etc.",
+        "docsUrl": "https://console.x.ai/",
+    },
+    "llama_cloud": {
+        "name": "LlamaCloud",
+        "description": "High-quality cloud PDF parsing (LlamaParse) for non-PHI projects",
+        "docsUrl": "https://cloud.llamaindex.ai",
+    },
+}
+
+
+def list_providers_info() -> list[dict[str, str]]:
+    """Return provider info list derived from SUPPORTED_PROVIDERS + metadata.
+
+    Raises:
+        KeyError: If any SUPPORTED_PROVIDERS entry is missing from
+            _PROVIDER_METADATA (drift guard — missing entry would silently
+            omit the provider from the API response).
+    """
+    result: list[dict[str, str]] = []
+    for pid in SUPPORTED_PROVIDERS:
+        if pid not in _PROVIDER_METADATA:
+            raise KeyError(
+                f"Provider '{pid}' is in SUPPORTED_PROVIDERS but has no entry in "
+                "_PROVIDER_METADATA — add its metadata to api_key_service.py"
+            )
+        result.append({"id": pid, **_PROVIDER_METADATA[pid]})
+    return result
+
 
 class APIKeyService(LoggerMixin):
     """

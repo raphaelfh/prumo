@@ -22,7 +22,6 @@ import {
 import {AlertTriangle as _AlertTriangle, Trash2} from 'lucide-react';
 import {deleteProject} from '@/services/projectSettingsService';
 import {loadKeysAndProviders} from '@/services/apiKeysService';
-import {getAccessToken} from '@/services/authService';
 import {toast} from 'sonner';
 import {SettingsSection, SettingsCard, TagInput} from '@/components/settings';
 import type {EligibilityCriteria, StudyDesign} from '@/types/project';
@@ -88,15 +87,11 @@ export function AdvancedSettingsSection({
 
   useEffect(() => {
     // Load stored API keys to compute hasLlamaCloudKey for the parsing toggle.
-    // Mirrors ApiKeysSection's pattern: getAccessToken + loadKeysAndProviders.
+    // Mirrors ApiKeysSection's pattern: call loadKeysAndProviders() directly (no token arg).
     queueMicrotask(() => {
-      getAccessToken()
-        .then((tokenResult) => {
-          if (!tokenResult.ok) return;
-          return loadKeysAndProviders(tokenResult.data);
-        })
+      loadKeysAndProviders()
         .then((result) => {
-          if (!result?.ok) return;
+          if (!result.ok) return;
           const hasKey = result.data.keys.some(
             (k) => k.provider === 'llama_cloud' && k.isActive,
           );
