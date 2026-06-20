@@ -39,7 +39,6 @@ import {
 } from 'lucide-react';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
-import {getAccessToken} from '@/services/authService';
 import {
     type APIKeyInfo, type CreateAPIKeyRequest, type ProviderInfo,
     loadKeysAndProviders, createApiKey, setDefaultApiKey, deleteApiKey, validateApiKey,
@@ -64,13 +63,7 @@ export function ApiKeysSection() {
 
   const loadData = async () => {
     setLoading(true);
-    const tokenResult = await getAccessToken();
-    if (!tokenResult.ok) {
-      toast.error(tokenResult.error.message || t('user', 'apiKeysSessionExpired'));
-      setLoading(false);
-      return;
-    }
-    const result = await loadKeysAndProviders(tokenResult.data);
+    const result = await loadKeysAndProviders();
     setLoading(false);
     if (!result.ok) {
       console.error('Error loading API keys:', result.error);
@@ -93,13 +86,7 @@ export function ApiKeysSection() {
       return;
     }
     setSaving(true);
-    const tokenResult = await getAccessToken();
-    if (!tokenResult.ok) {
-      toast.error(tokenResult.error.message || t('user', 'apiKeysSessionExpired'));
-      setSaving(false);
-      return;
-    }
-    const result = await createApiKey(tokenResult.data, formData);
+    const result = await createApiKey(formData);
     setSaving(false);
     if (!result.ok) {
       console.error('Error adding API key:', result.error);
@@ -121,12 +108,7 @@ export function ApiKeysSection() {
   };
 
   const handleSetDefault = async (keyId: string) => {
-    const tokenResult = await getAccessToken();
-    if (!tokenResult.ok) {
-      toast.error(tokenResult.error.message || t('user', 'apiKeysSessionExpired'));
-      return;
-    }
-    const result = await setDefaultApiKey(tokenResult.data, keyId);
+    const result = await setDefaultApiKey(keyId);
     if (!result.ok) {
       console.error('Error setting as default:', result.error);
       toast.error(result.error.message || t('user', 'apiKeysErrorSetDefault'));
@@ -137,12 +119,7 @@ export function ApiKeysSection() {
   };
 
   const handleDelete = async (keyId: string) => {
-    const tokenResult = await getAccessToken();
-    if (!tokenResult.ok) {
-      toast.error(tokenResult.error.message || t('user', 'apiKeysSessionExpired'));
-      return;
-    }
-    const result = await deleteApiKey(tokenResult.data, keyId);
+    const result = await deleteApiKey(keyId);
     if (!result.ok) {
       console.error('Error removing:', result.error);
       toast.error(result.error.message || t('user', 'apiKeysErrorRemoving'));
@@ -154,13 +131,7 @@ export function ApiKeysSection() {
 
   const handleValidate = async (keyId: string) => {
     setValidating(keyId);
-    const tokenResult = await getAccessToken();
-    if (!tokenResult.ok) {
-      toast.error(tokenResult.error.message || t('user', 'apiKeysSessionExpired'));
-      setValidating(null);
-      return;
-    }
-    const result = await validateApiKey(tokenResult.data, keyId);
+    const result = await validateApiKey(keyId);
     setValidating(null);
     if (!result.ok) {
       console.error('Error validating API key:', result.error);

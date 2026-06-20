@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: draft
 last_reviewed: 2026-06-20
 owner: '@raphaelfh'
 ---
@@ -495,5 +495,5 @@ Confirmed against `frontend/index.css` + `tailwind.config.ts` + live components.
 - Brainstorm grounding: prumo design tokens + best-practice survey
   (Linear / Plane / Notion / Stripe / REDCap / Castor), 2026-06-19.
 - Canonical schema: `docs/reference/extraction-hitl-architecture.md`.
-- Frozen HITL design: `docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md`.
+- Frozen HITL design (archived): `docs/superpowers/specs/archive/2026-06-20-governance-sweep/2026-04-27-extraction-hitl-and-qa-design.md`; rationale: `docs/explanation/extraction-hitl-design-rationale.md`.
 - Visual language: `frontend-ux` / `ui-styling` skills; loop: `design-review`.

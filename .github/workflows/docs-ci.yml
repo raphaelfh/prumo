@@ -51,7 +51,7 @@ jobs:
           # Snapshot / archived content (docs/superpowers/**) is excluded
           # via .github/lychee.toml `exclude_path` and would otherwise
           # gate CI on history rewrites.
-          args: '--config .github/lychee.toml README.md backend/README.md llms.txt docs/README.md docs/ROADMAP.md docs/adr docs/reference docs/how-to docs/design-references .github/CONTRIBUTING.md .github/SUPPORT.md'
+          args: '--config .github/lychee.toml README.md backend/README.md llms.txt docs/README.md docs/ROADMAP.md docs/adr docs/reference docs/explanation docs/how-to docs/design-references .github/CONTRIBUTING.md .github/SUPPORT.md'
           token: ${{ secrets.GITHUB_TOKEN }}
           fail: true
 

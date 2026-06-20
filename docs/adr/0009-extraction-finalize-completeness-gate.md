@@ -123,7 +123,7 @@ swallowing it.
 
 - [Extraction + HITL architecture](../reference/extraction-hitl-architecture.md)
 - Frozen design spec (consensus-only finalize):
-  `docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md`
+  `docs/superpowers/specs/archive/2026-06-20-governance-sweep/2026-04-27-extraction-hitl-and-qa-design.md`
 - Canonical frontend completeness metric:
   `frontend/lib/extraction/progress.ts`
 - Implementation: `backend/app/services/run_lifecycle_service.py`
