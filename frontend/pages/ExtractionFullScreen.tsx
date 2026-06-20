@@ -32,7 +32,9 @@ import {
   HITLStatusBadges,
 } from '@/components/runs/HITLStatusBadges';
 import {buildExtractionTransition} from '@/lib/extraction/stageTransition';
+import {nextArticleTarget} from '@/lib/extraction/worklistNav';
 import {setManagerReviewVisibility} from '@/services/hitlConfigService';
+import {useSidebar} from '@/contexts/SidebarContext';
 
 // Hooks
 import {useExtractionData} from '@/hooks/extraction/useExtractionData';
@@ -83,6 +85,9 @@ const SCROLL_CONTAINERS_TO_PRESERVE = [
 export default function ExtractionFullScreen() {
   const { projectId, articleId } = useParams();
   const navigate = useNavigate();
+  // App navigation sidebar (provided by RunWorkspaceShell) — wired to the
+  // RunHeader.SidebarToggle + ⌘B.
+  const { sidebarCollapsed, toggleSidebar } = useSidebar();
 
   // ONE stable viewer store shared between the PDF panel and the form panel.
   // useState lazy initializer creates the store exactly once per mount —
@@ -373,17 +378,13 @@ export default function ExtractionFullScreen() {
   // values are persisted, advance the run (which materializes those human
   // proposals into that reviewer's own decisions), then refetch. Quiet (no
   // toast) so it can be driven automatically by ``useAutoAdvanceToReview``;
-  // ``handleSubmitForReview`` wraps it for the explicit header button.
+  // Drives PROPOSAL→REVIEW silently; reused by ``onMarkReady`` and the
+  // auto-advance hook below.
   const ensureReviewStage = async () => {
     if (!activeRunId || stage !== 'proposal') return;
     await saveNow();
     await advanceMutation.mutateAsync({ target_stage: 'review' });
     await Promise.all([refetchRun(), refreshValues()]);
-  };
-
-  const handleSubmitForReview = async () => {
-    await ensureReviewStage();
-    toast.success('Submitted for review.');
   };
 
   // Auto-advance PROPOSAL -> REVIEW the moment the run has content to review:
@@ -400,19 +401,27 @@ export default function ExtractionFullScreen() {
     onAdvance: ensureReviewStage,
   });
 
-    // "Reconcile" — flush any pending edits and advance REVIEW →
-    // CONSENSUS so the ``ConsensusPanel`` becomes reachable. This
-    // closes the Layer 2 gap where the extraction page had no UI to
-    // hand the run over to the consensus phase (previously only QA's
-    // ``handlePublish`` advanced past REVIEW). Gate at the call site
-    // on ``permissions.canResolveConflicts`` (manager / consensus
-    // roles) so reviewers don't accidentally trigger it.
-  const handleReconcile = async () => {
+    // "Mark ready" — flush + ensure review + advance REVIEW → CONSENSUS so the
+    // ``ConsensusPanel`` becomes reachable, then open the next article in the
+    // worklist (next-in-order; end-of-queue → back to the list). Available to
+    // EVERY extractor: POST /runs/{id}/advance is membership-gated, not
+    // role-gated. Promise-chain guards (no try/finally) keep the React Compiler
+    // happy and avoid unhandled rejections from the `void onAdvance()` caller.
+  const onMarkReady = async () => {
     if (!activeRunId) return;
-    await saveNow();
-    await advanceMutation.mutateAsync({ target_stage: 'consensus' });
-    await Promise.all([refetchRun(), refreshValues()]);
-    toast.success('Reviewers reconciled. Resolve any divergences below.');
+    const ensured = await ensureReviewStage().then(() => true).catch(() => false);
+    if (!ensured) return;
+    const ok = await advanceMutation
+      .mutateAsync({ target_stage: 'consensus' })
+      .then(() => true)
+      .catch(() => false);
+    if (!ok) return;
+    const nextId = nextArticleTarget(articles, articleId ?? '');
+    navigate(
+      nextId
+        ? `/projects/${projectId}/extraction/${nextId}`
+        : `/projects/${projectId}?tab=extraction`,
+    );
   };
 
     // Permissions hook (controls comparison access) — extraction screen.
@@ -1161,8 +1170,7 @@ export default function ExtractionFullScreen() {
     isComplete,
     completed: completedFields,
     total: totalFields,
-    onSubmit: handleSubmitForReview,
-    onReconcile: handleReconcile,
+    onMarkReady,
     onFinalize: handleFinalize,
     onGuide,
   });
@@ -1171,13 +1179,15 @@ export default function ExtractionFullScreen() {
   const canReopen = isFinalized || (!activeRunId && !!finalizedRun);
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-full flex flex-col bg-background">
       {/* Header — RunHeader compound via ExtractionHeader */}
       <ExtractionHeader
         projectId={projectId || ''}
         projectName={project?.name || t('pages', 'extractionScreenProjectFallback')}
         articleTitle={article.title}
         onBack={handleBack}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={toggleSidebar}
         articles={articles}
         currentArticleId={articleId || ''}
         onNavigateToArticle={handleNavigateToArticle}
