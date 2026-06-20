@@ -551,6 +551,10 @@ export const extraction = {
     noModelsAdded: 'No models added',
     noModelsAddedDesc: 'Add a model manually or extract it automatically from the article.',
     // RunHeader
+    runHeaderSubmitForReview: 'Submit for review',
+    runHeaderReconcile: 'Reconcile',
+    runHeaderFinalize: 'Finalize',
+    runHeaderGateBlocked: 'Complete the required fields first',
     runHeaderRevision: 'Revision',
     extractWithAI: 'Extract with AI',
     runHeaderGateRemaining: '{{count}} left',
