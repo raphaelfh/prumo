@@ -62,6 +62,19 @@ describe('buildExtractionTransition', () => {
     expect(r!.onAdvance).toBe(onFinalize);
   });
 
+  it('Consensus + canResolveConflicts + isComplete=false → gated, onAdvance===onGuide', () => {
+    const onGuide = vi.fn();
+    const onFinalize = vi.fn();
+    const r = buildExtractionTransition(
+      makeArgs({ stage: 'consensus', canResolveConflicts: true, isComplete: false, completed: 5, total: 20, onGuide, onFinalize }),
+    );
+    expect(r).not.toBeNull();
+    expect(r!.to).toBe('finalized');
+    expect(r!.gate.ok).toBe(false);
+    expect((r!.gate as { ok: false; remaining: number }).remaining).toBe(15);
+    expect(r!.onAdvance).toBe(onGuide);
+  });
+
   it('Consensus without canResolveConflicts → null (reviewer cannot finalize)', () => {
     expect(buildExtractionTransition(makeArgs({ stage: 'consensus', canResolveConflicts: false }))).toBeNull();
   });
