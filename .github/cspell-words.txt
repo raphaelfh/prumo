@@ -204,3 +204,5 @@ pymupdf4llm
 rehype
 tailwindcss
 bakeoff
+LiteParse
+BYOC

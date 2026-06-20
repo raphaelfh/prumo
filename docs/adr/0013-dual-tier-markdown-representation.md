@@ -90,7 +90,10 @@ contract (blocks own anchoring; markdown is a projection) and kills the
   `text_raw`/`text_html` (separate Alembic migrations; the dead columns are
   **not** repurposed — `text_html` implies HTML, not GFM). It reuses ADR 0011's
   `PARSER_BACKEND` + `project_is_phi` gate verbatim; **PHI projects cannot select
-  a cloud markdown engine.**
+  a cloud markdown engine.** The enriched engine is whatever `PARSER_BACKEND`
+  resolves to — e.g. **LlamaParse** `agentic` (cloud, PHI-gated; its
+  granular-`bbox` items enrich the blocks) or a self-hosted parser — so the
+  tier reads `PARSER_BACKEND`, not a second engine switch.
 - **Config.** `MARKDOWN_TIER = free | enriched` (default `free`). MarkItDown is
   **not** a tier (rationale in Context); its only high-fidelity route — Azure
   Document Intelligence — is a candidate ADR 0011 `PARSER_BACKEND`, not an "LLM

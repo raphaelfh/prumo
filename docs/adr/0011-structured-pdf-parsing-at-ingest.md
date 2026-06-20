@@ -166,16 +166,26 @@ Concretely, respecting the existing layering:
   `PARSER_BACKEND` switch and the privacy gate (where `project_is_phi` is read
   from a single source of truth — a project/org policy flag — so a PHI project
   cannot select any cloud-egress backend, and ADR 0013's enriched-markdown tier
-  reads the same flag): a self-hosted layout parser (Docling/MinerU) for
+  reads the same flag): a self-hosted layout parser (Docling/MinerU, or the
+  Apache-2.0 **LiteParse** — fully local, free, emits per-element `bbox`es) for
   PHI-sensitive projects with no egress; **LlamaParse (LlamaCloud) `agentic`
-  tier** as a first-class cloud option — it returns markdown plus *granular
-  bounding boxes* (word/line/cell) in a JSONL sidecar that maps directly onto
-  `article_text_blocks` + `PositionV1` (provenance lives in that sidecar, not in
-  the markdown string); and a
-  vision-LLM-native backend (page images/PDF through `extract_structured()`). The
-  bake-off scores all three. **Privacy gate:** LlamaParse sends documents to a
-  cloud API, so it is for non-PHI projects or under a BAA / a self-hosted
-  LlamaCloud deployment; PHI projects default to the self-hosted parser.
+  tier** as a first-class cloud option via the v2 SDK (`llama-cloud >= 2.1`; the
+  legacy `llama_cloud_services`/`llama-parse` SDK is deprecated as of
+  2026-05-01). It returns markdown plus *granular bounding boxes*
+  (word/line/cell) in a JSONL sidecar that maps onto `article_text_blocks` +
+  `PositionV1` — provenance lives in that sidecar, not in the markdown string.
+  Two adapter transforms are mandatory: LlamaParse emits PDF points with a
+  **top-left** origin, so flip to prumo's bottom-left `bbox` contract
+  (`y' = page_height - y - h`) or highlights render vertically mirrored; and
+  `char_start`/`char_end` are **not** taken from LlamaParse (its span is
+  item-local) — `concat_page_text` owns offsets. A vision-LLM-native backend
+  (page images/PDF through `extract_structured()`) rounds out the slate; the
+  bake-off scores them all. **Privacy gate (fail-closed):** LlamaParse cloud
+  egresses documents to LlamaCloud S3 (48 h retention, contractual no-train),
+  so `create_document_parser()` refuses it for PHI projects; a BAA path exists
+  but only on LlamaCloud's **Enterprise** plan (signed BAA / private cloud /
+  self-hosted BYOC, all paid). The default Free/Starter/Pro SaaS has no BAA,
+  so PHI projects fall back to the self-hosted parser with zero egress.
 
 ### Consequences
 

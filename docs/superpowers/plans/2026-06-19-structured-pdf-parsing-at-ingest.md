@@ -203,21 +203,89 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
 - [ ] **Step 3:** Run → PASS. Commit
   `feat(parsing): parse PDFs at ingest and persist text blocks`.
 
-### Task 1.6: LlamaParse adapter (optional cloud backend)
+### Task 1.6: LlamaParse adapter (optional grounded cloud backend)
 
-**Files:** `backend/app/infrastructure/parsing/llamaparse_parser.py`
+Verified against the live LlamaParse/LlamaCloud API (2026-06-20): the v2 SDK
+returns **text-level granular bboxes** (word/line/cell, PDF points, top-left
+origin) that map onto `article_text_blocks` + `PositionV1`; markdown is a
+projection of those blocks (ADR-0013), never the source of truth. Cost: agentic
+tier = 10 credits/page = **$0.0125/page** (~$0.19 per 15-page paper); free tier
+= 10k credits/mo (~1k agentic pages, no card). `granular_bboxes` is **not**
+available on the `fast` tier, so the grounded path pins `tier='agentic'`. The
+backbone (DocumentParser port, repo, `DocumentParsingService`) is already merged
+(PR #322); a `LlamaParseParser` drops in as the injected parser with **zero**
+service changes.
 
-- [ ] **Step 1:** Failing integration test (mocked LlamaCloud client): the adapter
-  calls `parse(... tier='agentic', output_options={'granular_bboxes':
-  ['word','line','cell']}, expand=['markdown','items'])`, then maps the `items`
-  tree + the granular-bbox JSONL sidecar into `ParsedBlock`s (text, per-page char
-  offsets, bbox, block_type) — the same port as the self-hosted adapter.
-- [ ] **Step 2:** Implement against the `llama_cloud` SDK (`AsyncLlamaCloud`); key
-  via `LLAMA_CLOUD_API_KEY` / `APIKeyService`. Registered in
-  `create_document_parser()`; selected when `PARSER_BACKEND=llamaparse`, and the
-  **factory** enforces the privacy gate (cloud egress → non-PHI / BAA /
-  self-hosted LlamaCloud; PHI projects keep the self-hosted backend).
-- [ ] **Step 3:** Run → PASS. Commit `feat(parsing): optional LlamaParse cloud backend`.
+**Files:** `backend/app/infrastructure/parsing/llamaparse_parser.py`,
+`backend/app/core/factories.py`, `backend/app/core/config.py`,
+`backend/pyproject.toml`.
+
+- [ ] **Step 0 — config:** add `PARSER_BACKEND: str = "docling"` (Phase-0 winner
+  default; self-hosted) and `LLAMA_CLOUD_API_KEY: str | None = None` to
+  `Settings`, mirroring `OPENAI_API_KEY`. Do **not** add `"llamaparse"` to
+  `SUPPORTED_PROVIDERS` — it is an org-level **parser** credential, not an LLM
+  BYOK provider; never route it through `build_model()` / `APIKeyService`.
+- [ ] **Step 1 — failing test:** integration test with a mocked `llama_cloud`
+  client. Assert the adapter issues `files.create(purpose="parse")` then
+  `parsing.parse(tier="agentic", version="latest",
+  output_options={"granular_bboxes": ["word","line","cell"]},
+  expand=["markdown","items"])`. Feed a fixture `items` tree + granular-bbox JSONL
+  sidecar; assert `ParsedBlock`s have non-null `bbox {x,y,width,height}`, closed-7
+  `block_type`, 1-indexed `page_number`, 0-indexed reading-order `block_index`;
+  round-trip **through** `DocumentParsingService` (which calls
+  `assign_char_offsets_to_blocks`) and assert
+  `block.text == page_text[char_start:char_end]`. Edge cases: a box-less item
+  (synthesize a covering/sentinel bbox, never `None` — `bbox` is `NOT NULL`); an
+  unknown LlamaParse type (degrades to `paragraph`); a Y-flip assertion (top-left
+  input → bottom-left stored).
+- [ ] **Step 2 — adapter:** `class LlamaParseParser(DocumentParser)`,
+  `__init__(api_key: str, tier: str = "agentic")`; sync `parse(pdf_bytes)` runs
+  the `AsyncLlamaCloud` call via `asyncio.run` (the service calls `parse`
+  synchronously). Lift the call shape verbatim from
+  `scripts/parsing_bakeoff/parsers.py` and finish the `_map_llamaparse_result`
+  step the runner stubbed (`ParserNotWiredError`). Map `items` per page →
+  `ParsedBlock`; `block_type` via `normalize_block_type`
+  (text→paragraph, heading/title→heading, list→list_item, table cell→table_cell,
+  figure caption→figure_caption, unknown→paragraph); `bbox` = reduce the item's
+  word/line/cell sidecar boxes to a covering `{x,y,width,height}` **then Y-flip to
+  bottom-left** (`y' = page_height - y - h`, using the row's `page_height`);
+  `char_start` / `char_end` = `0` placeholders (the service overwrites). Discard
+  native markdown for block-building (optional merge aid only, per ADR-0013).
+- [ ] **Step 3 — factory + PHI gate:** add `create_document_parser(settings, *,
+  project_is_phi: bool) -> DocumentParser` (mirror `create_storage_adapter`).
+  Owns the `PARSER_BACKEND` switch; on `"llamaparse"` it (a) **fail-closed**
+  refuses / falls back to the self-hosted parser when `project_is_phi` is True
+  **or** unknown, (b) raises a clear missing-key error when
+  `settings.LLAMA_CLOUD_API_KEY` is unset, (c) returns
+  `LlamaParseParser(api_key=settings.LLAMA_CLOUD_API_KEY)`. Register the
+  self-hosted backends (Docling/MinerU/LiteParse) in the same switch. Test: a PHI
+  project can never receive a `LlamaParseParser`; `build_model` is uninvolved.
+- [ ] **Step 4 — `project_is_phi` source of truth:** introduce the PHI policy
+  flag as a single project/org column (Alembic migration, revision id ≤ 32 chars)
+  and thread it from the parsing Celery task (Task 1.5) into
+  `create_document_parser()`. Default missing/unknown → PHI (fail-closed). Hard
+  prerequisite — the gate is inert until this lands (today `project_is_phi` exists
+  only in ADR/plan prose, zero code).
+- [ ] **Step 5 — deps:** add `llama-cloud >= 2.1` (latest 2.9.0) as an
+  **optional** cloud extra in `backend/pyproject.toml` so self-hosted-only
+  deployments skip it; lazy-import inside the adapter (like the bake-off runner).
+  The legacy `llama_cloud_services` / `llama-parse` SDK is deprecated (2026-05-01)
+  — do not pin it.
+- [ ] **Step 6 — markdown co-product (defer to the ADR-0013 follow-up plan):**
+  capture LlamaParse's `expand=["markdown"]` payload as a build-time merge aid
+  only; the canonical viewer/prompt markdown stays `render_blocks_to_markdown`
+  over blocks. Do not persist native markdown.
+- [ ] **Step 7 — run → PASS.** Commit `feat(parsing): optional LlamaParse cloud
+  backend (grounded, PHI-gated)`.
+
+**Before any prod default flips to `llamaparse`:** finish
+`_map_llamaparse_result` in `scripts/parsing_bakeoff/parsers.py` against the live
+SDK (`LLAMA_CLOUD_API_KEY` set, real Phase-0 run) reusing the **exact** same
+items + sidecar + Y-flip mapping the adapter uses (one mapper, not two), and gate
+on the Phase-0 quality/cost sign-off (Task 0.3). Recommended posture: keep the
+self-hosted Phase-0 winner as the **default** `PARSER_BACKEND` and LlamaParse
+**opt-in** until the bake-off + cost/latency budget justify a flip. Update the
+runner's `est_cost_per_page_usd` from `0.03` to the verified `0.0125`.
 
 ---
 
