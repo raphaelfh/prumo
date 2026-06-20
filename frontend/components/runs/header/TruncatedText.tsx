@@ -11,10 +11,18 @@ export function TruncatedText({ text, className }: { text: string; className?: s
   const ref = useRef<HTMLSpanElement>(null);
   const [truncated, setTruncated] = useState(false);
 
+  // Re-measure on text change AND on container resize (the header bar width
+  // shifts when the sidebar / PDF panels toggle, which can newly truncate a
+  // title that previously fit). ResizeObserver guarded for non-DOM test envs.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    setTruncated(el.scrollWidth > el.clientWidth);
+    const measure = () => setTruncated(el.scrollWidth > el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [text]);
 
   const span = (

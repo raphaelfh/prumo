@@ -14,7 +14,7 @@ export function SidebarToggle({ pressed, onToggle }: { pressed?: boolean; onTogg
   if (!onToggle) return null;
   return (
     <Button
-      size="sm"
+      size="icon"
       variant="ghost"
       onClick={onToggle}
       aria-pressed={pressed}

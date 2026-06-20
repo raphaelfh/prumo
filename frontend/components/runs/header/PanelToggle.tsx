@@ -11,7 +11,7 @@ import { t } from '@/lib/copy';
 export function PanelToggle({ pressed, onToggle }: { pressed: boolean; onToggle: () => void }) {
   return (
     <Button
-      size="sm"
+      size="icon"
       variant="ghost"
       onClick={onToggle}
       aria-pressed={pressed}
