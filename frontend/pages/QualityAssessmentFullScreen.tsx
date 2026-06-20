@@ -53,6 +53,7 @@ import { setManagerReviewVisibility } from "@/services/hitlConfigService";
 import type { ExtractionRunStage } from "@/types/ai-extraction";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
+import { useSidebar } from "@/contexts/SidebarContext";
 import { t } from "@/lib/copy";
 
 interface FieldKey {
@@ -304,6 +305,26 @@ export default function QualityAssessmentFullScreen() {
   // PDF panel state — lifted so RunHeader.PanelToggle can share the same toggle.
   const pdfPanelState = usePdfPanel({ initialOpen: false });
 
+  // App navigation sidebar (provided by RunWorkspaceShell) — wired to the
+  // RunHeader.SidebarToggle + ⌘B.
+  const { sidebarCollapsed, toggleSidebar } = useSidebar();
+
+  // "\" toggles the source (PDF) panel. No J/K — QA has a single article.
+  // Cleanup via return, NOT try/finally (React Compiler).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tgt = e.target as HTMLElement;
+      if (tgt instanceof HTMLInputElement || tgt instanceof HTMLTextAreaElement || tgt.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "\\") {
+        e.preventDefault();
+        pdfPanelState.toggle();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [pdfPanelState]);
+
   // Reveal: manager can un-blind QA reviewer identities for this project.
   const canReveal = permissions.userRole === "manager" && permissions.isBlindMode;
   const onReveal = () => {
@@ -535,6 +556,7 @@ export default function QualityAssessmentFullScreen() {
         }}
       >
         <RunHeader.Left>
+          <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={toggleSidebar} />
           <RunHeader.Breadcrumb
             onBack={() => navigate(`/projects/${projectId}`)}
             crumbs={[{ label: template?.name ?? "" }]}
@@ -557,6 +579,11 @@ export default function QualityAssessmentFullScreen() {
             </span>
           ) : null}
           {runStage != null && <RunHeader.StageRail />}
+          <RunHeader.Save
+            state={saveState ?? "idle"}
+            lastSavedAt={lastSavedAt ?? null}
+            hidden={!session || finalized}
+          />
         </RunHeader.Left>
 
         <RunHeader.Center>
@@ -571,16 +598,9 @@ export default function QualityAssessmentFullScreen() {
             extracting={extractingAI}
             onExtract={onExtractWithAI}
           />
-          <RunHeader.PanelToggle
-            pressed={pdfPanelState.isOpen}
-            onToggle={pdfPanelState.toggle}
-          />
-          <RunHeader.Save
-            state={saveState ?? "idle"}
-            lastSavedAt={lastSavedAt ?? null}
-            hidden={!session || finalized}
-          />
           <RunHeader.PrimaryAction />
+          <span className="mx-1 h-5 w-px bg-border/60" aria-hidden="true" />
+          <RunHeader.Help />
           <RunHeader.Menu>
             {canCompare && (
               <RunHeader.MenuItem
@@ -603,6 +623,10 @@ export default function QualityAssessmentFullScreen() {
               </RunHeader.MenuItem>
             )}
           </RunHeader.Menu>
+          <RunHeader.PanelToggle
+            pressed={pdfPanelState.isOpen}
+            onToggle={pdfPanelState.toggle}
+          />
         </RunHeader.Right>
       </RunHeader>
     </div>
