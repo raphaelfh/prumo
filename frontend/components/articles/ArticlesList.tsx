@@ -1234,16 +1234,17 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                         />
                     </div>
                     <div className="flex items-center gap-2 shrink-0 ml-auto">
-                        <ListCount
-                            visible={filteredArticles.length}
-                            total={articles.length}
-                            label={articles.length === 1 ? t('articles', 'listArticle') : t('articles', 'listArticles')}
-                        />
-                        {selectedArticles.size > 0 && (
+                        {selectedArticles.size === 0 ? (
+                            <ListCount
+                                visible={filteredArticles.length}
+                                total={articles.length}
+                                label={articles.length === 1 ? t('articles', 'listArticle') : t('articles', 'listArticles')}
+                            />
+                        ) : (
                             <div className="flex items-center gap-2 animate-in fade-in duration-200">
-                          <span className="text-[11px] font-medium text-foreground">
-                              {selectedArticles.size} {t('articles', 'listSelected')}
-                          </span>
+                                <span className="text-[11px] font-medium text-foreground tabular-nums">
+                                    {t('articles', 'listSelectedCount').replace('{{n}}', String(selectedArticles.size))}
+                                </span>
                                 <Button
                                     size="sm"
                                     variant="ghost"
