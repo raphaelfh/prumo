@@ -87,7 +87,11 @@ test.describe("Quality Assessment HITL flow", () => {
     await expect(page.getByTestId("qa-kind-badge")).toContainText("Quality Assessment");
     await expect(page.getByTestId("qa-form-panel")).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId("qa-domains")).toBeVisible({ timeout: 15000 });
-    await expect(page.getByTestId("qa-publish-button")).toBeVisible();
+    // The publish/finalize action lives in RunHeader.PrimaryAction — no qa-publish-button testid.
+    // Verify the action button is reachable via role (label varies by stage).
+    await expect(
+      page.getByRole("button", { name: /finalize|publish/i }).first(),
+    ).toBeVisible();
   });
 
   test("Publish assessment finalizes the run", async ({ page, request }) => {
