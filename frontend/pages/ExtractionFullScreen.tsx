@@ -425,20 +425,22 @@ export default function ExtractionFullScreen() {
 
     // Hook for AI suggestions with callbacks to fill/clear field
   const handleAISuggestionAccepted = async (instanceId: string, fieldId: string, value: any) => {
-      // Fill field automatically when suggestion is accepted
-      console.warn('Accepting AI suggestion:', {instanceId, fieldId, value});
-      // updateValue updates local state immediately
-      // AISuggestionService.acceptSuggestion already saves to DB
-      // No need to reload all values (refreshValues caused full page reload)
+      // Fill field automatically when suggestion is accepted.
+      // NOTE: in this screen the hook runs `acceptStrategy: 'human-proposal'`,
+      // so accepting makes NO backend call. Persistence happens solely here:
+      // updateValue writes the value into form state, and useAutoSaveProposals
+      // records it as a fresh `human` proposal. The suggestion's own
+      // status='accepted' is local-only (not persisted), so it reappears as
+      // pending on reload — only the value survives. (refreshValues is
+      // deliberately avoided; it caused a full-page reload.)
     updateValue(instanceId, fieldId, value);
   };
 
   const handleAISuggestionRejected = async (instanceId: string, fieldId: string) => {
-      // Clear field when suggestion is rejected
-      console.warn('Rejecting AI suggestion - clearing field:', {instanceId, fieldId});
-      // updateValue updates local state immediately
-      // AISuggestionService.rejectSuggestion already updates status in DB
-      // No need to reload all values (refreshValues caused full page reload)
+      // Clear the field when a suggestion is rejected. Same as accept: the
+      // 'human-proposal' strategy makes NO backend call — updateValue writes
+      // null into form state, and useAutoSaveProposals persists the cleared
+      // value. The suggestion's status='rejected' flip is local-only.
     updateValue(instanceId, fieldId, null);
   };
 
