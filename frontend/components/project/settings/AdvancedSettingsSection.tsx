@@ -1,8 +1,9 @@
 /**
- * Advanced settings section — keywords, eligibility, study types, danger zone.
+ * Advanced settings section — keywords, eligibility, study types, danger zone,
+ * and per-project PDF parsing quality toggle.
  */
 
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {Label} from '@/components/ui/label';
 import {Textarea} from '@/components/ui/textarea';
@@ -20,11 +21,15 @@ import {
 } from '@/components/ui/alert-dialog';
 import {AlertTriangle as _AlertTriangle, Trash2} from 'lucide-react';
 import {deleteProject} from '@/services/projectSettingsService';
+import {getParserSettings} from '@/services/parserSettingsService';
+import {loadKeysAndProviders} from '@/services/apiKeysService';
+import {getAccessToken} from '@/services/authService';
 import {toast} from 'sonner';
 import {SettingsSection, SettingsCard, TagInput} from '@/components/settings';
 import type {EligibilityCriteria, StudyDesign} from '@/types/project';
 import type {Json} from '@/integrations/supabase/types';
 import {t} from '@/lib/copy';
+import {HighQualityParsingToggle} from './HighQualityParsingToggle';
 
 // AdvancedProjectShape mirrors the JSON columns of Project using Json (not narrower
 // domain types) so that Project is assignable here without narrowing casts.
@@ -38,7 +43,9 @@ interface AdvancedProjectShape {
 interface AdvancedSettingsSectionProps {
     project: AdvancedProjectShape;
     onChange: (updates: Partial<AdvancedProjectShape>) => void;
-  projectId: string;
+    projectId: string;
+    /** Disables the parsing toggle for non-managers. Defaults to false. */
+    isManager?: boolean;
 }
 
 function ensureEligibility(v: Json | null): EligibilityCriteria {
@@ -64,9 +71,38 @@ export function AdvancedSettingsSection({
                                             project,
                                             onChange,
                                             projectId,
+                                            isManager = false,
                                         }: AdvancedSettingsSectionProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const navigate = useNavigate();
+
+  // --- Parsing toggle state ---
+  const [parserType, setParserType] = useState<'standard' | 'llamaparse'>('standard');
+  const [hasLlamaCloudKey, setHasLlamaCloudKey] = useState(false);
+
+  useEffect(() => {
+    // Load parser settings and stored API keys for the parsing toggle.
+    // Mirrors ApiKeysSection's pattern: getAccessToken + loadKeysAndProviders.
+    queueMicrotask(() => {
+      getParserSettings(projectId)
+        .then((s) => setParserType(s.type))
+        .catch(() => { /* leave default 'standard' on error */ });
+
+      getAccessToken()
+        .then((tokenResult) => {
+          if (!tokenResult.ok) return;
+          return loadKeysAndProviders(tokenResult.data);
+        })
+        .then((result) => {
+          if (!result?.ok) return;
+          const hasKey = result.data.keys.some(
+            (k) => k.provider === 'llama_cloud' && k.isActive,
+          );
+          setHasLlamaCloudKey(hasKey);
+        })
+        .catch(() => { /* leave false */ });
+    });
+  }, [projectId]);
 
     const eligibility = ensureEligibility(project.eligibility_criteria);
     const studyDesign = ensureStudyDesign(project.study_design);
@@ -234,6 +270,18 @@ export function AdvancedSettingsSection({
             />
           </div>
               </div>
+          </SettingsCard>
+
+          <SettingsCard
+              title={t('parsing', 'highQualityLabel')}
+              description={t('project', 'advancedCardParsingDesc')}
+          >
+              <HighQualityParsingToggle
+                  projectId={projectId}
+                  currentType={parserType}
+                  hasLlamaCloudKey={hasLlamaCloudKey}
+                  disabled={!isManager}
+              />
           </SettingsCard>
 
           <SettingsCard
