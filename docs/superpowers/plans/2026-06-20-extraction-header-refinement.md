@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: ready
 last_reviewed: 2026-06-20
 owner: '@raphaelfh'
 ---

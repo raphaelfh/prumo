@@ -409,12 +409,14 @@ export default function ExtractionFullScreen() {
     // happy and avoid unhandled rejections from the `void onAdvance()` caller.
   const onMarkReady = async () => {
     if (!activeRunId) return;
-    // Flush pending autosave FIRST: once the run advances to consensus the
-    // autosave is disabled and proposal writes are rejected, so a debounce in
-    // flight would be lost. ``ensureReviewStage`` only saves when in PROPOSAL,
-    // so the REVIEW path needs this explicit flush. ``saveNow`` is idempotent.
-    const saved = await saveNow().then(() => true).catch(() => false);
-    if (!saved) return;
+    // Flush pending autosave before advancing: once the run reaches consensus
+    // the autosave is disabled and proposal writes are rejected, so a debounce
+    // in flight would be lost. ``ensureReviewStage`` already flushes on the
+    // PROPOSAL path, so only the REVIEW path needs this explicit flush.
+    if (stage !== 'proposal') {
+      const saved = await saveNow().then(() => true).catch(() => false);
+      if (!saved) return;
+    }
     const ensured = await ensureReviewStage().then(() => true).catch(() => false);
     if (!ensured) return;
     const ok = await advanceMutation
@@ -993,7 +995,7 @@ export default function ExtractionFullScreen() {
   // Loading state
   if (viewState.kind === 'loading') {
     return (
-      <div className="h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <div className="text-center space-y-4">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
             <p className="text-muted-foreground">{t('pages', 'extractionScreenLoading')}</p>
@@ -1005,7 +1007,7 @@ export default function ExtractionFullScreen() {
   // Bootstrap (article/template) failed to load.
   if (viewState.kind === 'load-error') {
     return (
-      <div className="h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <div className="text-center space-y-4">
             <p className="text-destructive">{t('pages', 'extractionScreenErrorLoad')}</p>
             <Button onClick={handleBack}>{t('common', 'back')}</Button>
@@ -1018,7 +1020,7 @@ export default function ExtractionFullScreen() {
   // failed). Surface it with a retry instead of masking it as "No fields".
   if (viewState.kind === 'run-error') {
     return (
-      <div className="h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <div className="text-center space-y-4 max-w-md">
           <div className="space-y-2">
             <h3 className="text-lg font-semibold">{t('pages', 'extractionScreenRunErrorTitle')}</h3>
@@ -1046,7 +1048,7 @@ export default function ExtractionFullScreen() {
   // Run is loaded and genuinely has no entity types configured.
   if (viewState.kind === 'no-fields') {
     return (
-      <div className="h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <div className="text-center space-y-6 max-w-md">
           <div className="space-y-2">
               <h3 className="text-lg font-semibold">{t('pages', 'extractionScreenNoFieldsTitle')}</h3>
