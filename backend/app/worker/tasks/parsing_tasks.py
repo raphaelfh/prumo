@@ -47,7 +47,7 @@ async def _run_parse(
 
         # per-project parser preference -> PARSER_BACKEND value
         pref = await ParserSettingsService(session).get_for_project(UUID(project_id))
-        backend = "llamaparse" if pref == "llamaparse" else "docling"
+        backend = {"standard": "docling", "llamaparse": "llamaparse"}.get(pref, "docling")
 
         # BYOK llama_cloud key (default > global); only relevant for llamaparse
         llama_key: str | None = None

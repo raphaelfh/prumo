@@ -62,7 +62,7 @@ def test_llamaparse_maps_items_to_blocks_with_yflip():
     assert by_text["Results"].bbox["y"] == 680.0
 
     # box-less item gets a sentinel covering bbox, not None
-    assert by_text["A box-less line"].bbox["width"] >= 0
+    assert by_text["A box-less line"].bbox == {"x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0}
 
     # 0-indexed reading-order block_index
     idx = sorted(b.block_index for b in blocks)

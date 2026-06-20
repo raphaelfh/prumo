@@ -6,7 +6,7 @@
  * PHI projects to the self-hosted parser regardless). Requires a stored
  * `llama_cloud` BYOK key, mirroring how other integrations are activated.
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Switch } from '@/components/ui/switch';
@@ -50,7 +50,7 @@ export function HighQualityParsingToggle({
       .finally(() => setSaving(false));
   };
 
-  const id = 'high-quality-parsing';
+  const id = useId();
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="space-y-0.5">

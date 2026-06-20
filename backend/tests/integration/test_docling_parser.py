@@ -33,8 +33,6 @@ def test_docling_parses_blocks_with_valid_invariants():
     # >= 1 block per page
     pages = {b.page_number for b in blocks}
     assert pages == {1, 2}
-    for page in pages:
-        assert any(b.page_number == page for b in blocks)
 
     for b in blocks:
         assert b.page_number >= 1  # 1-indexed

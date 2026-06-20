@@ -60,7 +60,7 @@ class LlamaParseParser(DocumentParser):
         return self._map_result(result)
 
     @staticmethod
-    def _map_result(result) -> list[ParsedBlock]:  # type: ignore[override]
+    def _map_result(result) -> list[ParsedBlock]:
         # page_number -> page height (for the Y-flip).
         page_heights: dict[int, float] = {}
         for page in getattr(result, "pages", None) or []:
