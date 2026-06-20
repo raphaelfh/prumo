@@ -23,6 +23,7 @@ from app.repositories.article_repository import (
     ArticleSyncEventRepository,
     ArticleSyncRunRepository,
 )
+from app.services.article_file_ingest_service import ArticleFileIngestService
 from app.services.article_source_normalization import normalize_zotero_item
 from app.services.zotero_service import ZoteroService
 
@@ -452,6 +453,13 @@ class ZoteroImportService(LoggerMixin):
             )
 
             await self._article_files.create(article_file)
+            # Single parse-at-ingest hook — every ArticleFile-create route uses it.
+            ArticleFileIngestService().enqueue_parse_at_ingest(
+                article_file_id=article_file.id,
+                project_id=project_id,
+                user_id=str(self.user_id),
+                trace_id=self.trace_id,
+            )
             return True
         except Exception as exc:
             self.logger.warning(
