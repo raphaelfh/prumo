@@ -30,7 +30,12 @@ export function StageRail() {
         </span>
       )}
       {nodes.map((node, i) => (
-        <div key={node.key} className="flex items-center gap-1.5" data-state={node.state}>
+        <div
+          key={node.key}
+          className="flex items-center gap-1.5"
+          data-state={node.state}
+          {...(node.state === 'current' ? { 'data-testid': 'run-stage-current' } : {})}
+        >
           {i > 0 && <span className={cn('h-px w-3.5', nodes[i - 1].state === 'done' ? 'bg-success/40' : 'bg-border')} aria-hidden="true" />}
           <span
             className={cn(

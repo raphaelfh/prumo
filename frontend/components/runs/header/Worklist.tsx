@@ -76,7 +76,7 @@ export function Worklist({ articles, currentId, onNavigate }: WorklistProps) {
           <Command>
             <CommandInput placeholder={t('runs', 'worklistSearch')} />
             <div className="px-3 py-1.5 text-[11px] text-muted-foreground border-b">
-              {idx + 1} of {articles.length}
+              {t('runs', 'worklistPosition').replace('{{n}}', String(idx + 1)).replace('{{m}}', String(articles.length))}
             </div>
             <CommandList>
               <CommandGroup>

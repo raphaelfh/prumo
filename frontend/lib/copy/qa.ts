@@ -47,7 +47,6 @@ export const qa = {
   // Assess vs. compare view toggle (assessment screen header)
   compareToggle: 'Comparison',
   assessToggle: 'Assessment',
-  compareToggleAria: 'Switch between assessment and comparison views',
 
   // QualityAssessmentFullScreen — header, status, toasts
   badge: 'Quality Assessment',
@@ -55,10 +54,6 @@ export const qa = {
   missingRouteParams: 'Missing route parameters.',
   templateNotFound:
     'Quality-Assessment template {{templateId}} not found. The link may be stale — pick a template from the list and try again.',
-  extractWithAI: 'Extract with AI',
-  extractingProgress: 'Extracting…',
-  publishButton: 'Publish assessment',
-  publishingProgress: 'Publishing…',
   reopenButton: 'Reopen for revision',
   reopenProgress: 'Reopening…',
   publishedState: 'Published',

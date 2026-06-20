@@ -42,6 +42,7 @@ export const runs = {
   articleNext: 'Next article',
   // Worklist popover
   worklistSearch: 'Go to article…',
+  worklistPosition: '{{n}} of {{m}}',
   // CommandPalette
   commandPlaceholder: 'Type a command or search…',
   commandEmpty: 'No results',
