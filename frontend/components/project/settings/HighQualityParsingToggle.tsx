@@ -2,9 +2,8 @@
  * Per-project high-quality-parsing toggle (LlamaParse).
  *
  * Manager-only control. When ON, newly ingested PDFs are parsed by the cloud
- * LlamaParse backend (non-PHI projects only — the backend factory fail-closes
- * PHI projects to the self-hosted parser regardless). Requires a stored
- * `llama_cloud` BYOK key, mirroring how other integrations are activated.
+ * LlamaParse backend; otherwise the self-hosted parser is used. Requires a
+ * stored `llama_cloud` BYOK key, mirroring how other integrations are activated.
  */
 import { useId, useState } from 'react';
 import { toast } from 'sonner';

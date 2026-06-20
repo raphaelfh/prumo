@@ -4,7 +4,7 @@
 export const parsing = {
     highQualityLabel: 'High-quality PDF parsing',
     highQualityHint:
-        'Uses LlamaParse for structured PDF parsing (non-PHI projects only — the backend automatically falls back to the self-hosted parser for PHI projects).',
+        'Uses LlamaParse for high-fidelity structured PDF parsing. When off, the self-hosted parser is used.',
     highQualityNeedsKey:
         'Requires a stored LlamaCloud API key. Add one in your API keys settings.',
     parserSaved: 'Parsing settings saved.',
