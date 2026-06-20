@@ -31,6 +31,8 @@ async def _run_parse(
     When *db* is provided (tests) it is used directly; otherwise a
     worker_session() is opened and committed here.
     """
+    from types import SimpleNamespace
+
     from app.core.config import settings as app_settings
     from app.core.deps import get_supabase_client
     from app.core.factories import create_document_parser, create_storage_adapter
@@ -47,7 +49,7 @@ async def _run_parse(
 
         # per-project parser preference -> PARSER_BACKEND value
         pref = await ParserSettingsService(session).get_for_project(UUID(project_id))
-        backend = {"standard": "docling", "llamaparse": "llamaparse"}.get(pref, "docling")
+        backend = pref if pref == "llamaparse" else "docling"
 
         # BYOK llama_cloud key (default > global); only relevant for llamaparse
         llama_key: str | None = None
@@ -56,8 +58,6 @@ async def _run_parse(
 
         # Build a minimal settings-like namespace that overrides PARSER_BACKEND
         # for this call without mutating the global settings object.
-        from types import SimpleNamespace
-
         call_settings = SimpleNamespace(
             PARSER_BACKEND=backend,
             LLAMA_CLOUD_API_KEY=app_settings.LLAMA_CLOUD_API_KEY,

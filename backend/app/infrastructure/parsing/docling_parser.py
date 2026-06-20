@@ -78,7 +78,7 @@ class DoclingParser(DocumentParser):
                             text=text,
                             char_start=0,
                             char_end=0,
-                            bbox=dict(bbox),
+                            bbox=bbox,
                             block_type="table_cell",
                         )
                     )
