@@ -2,7 +2,14 @@ import { Circle, CircleCheck, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/copy';
 import { useRunHeader } from './RunHeaderContext';
-import { stageNodeStates, type StageNode } from './stage';
+import { stageNodeStates, type StageNode, type StageKey } from './stage';
+
+const STAGE_COPY_KEY: Record<StageKey, 'stageProposal' | 'stageReview' | 'stageConsensus' | 'stageFinalized'> = {
+  proposal: 'stageProposal',
+  review: 'stageReview',
+  consensus: 'stageConsensus',
+  finalized: 'stageFinalized',
+};
 
 const DOT: Record<StageNode['state'], string> = {
   done: 'text-success',
@@ -19,7 +26,7 @@ export function StageRail() {
     <nav className="flex items-center gap-1.5" aria-label="Run stage">
       {isRevision && (
         <span className="mr-1 rounded-md bg-ai/10 px-2 py-0.5 text-[11px] font-medium text-ai">
-          {t('extraction', 'runHeaderRevision')}
+          {t('runs', 'revision')}
         </span>
       )}
       {nodes.map((node, i) => (
@@ -42,7 +49,7 @@ export function StageRail() {
               <Circle className={cn('h-3.5 w-3.5', DOT[node.state])} aria-hidden="true" />
             )}
             <span className="relative">
-              {node.label}
+              {t('runs', STAGE_COPY_KEY[node.key])}
               {node.state === 'current' && progress.total > 0 && (
                 <span
                   className="absolute -bottom-1 left-0 h-0.5 rounded bg-info"
@@ -53,7 +60,7 @@ export function StageRail() {
             </span>
             {node.state === 'current' && gateRemaining != null && gateRemaining > 0 && (
               <span className="ml-1 rounded bg-warning/15 px-1.5 text-[11px] text-warning">
-                {t('extraction', 'runHeaderGateRemaining').replace('{{count}}', String(gateRemaining))}
+                {t('runs', 'gateRemaining').replace('{{count}}', String(gateRemaining))}
               </span>
             )}
           </span>

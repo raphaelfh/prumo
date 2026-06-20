@@ -1,8 +1,9 @@
 import type { ExtractionRunStage } from '@/types/ai-extraction';
 
 export type StageNodeState = 'done' | 'current' | 'future' | 'cancelled';
+export type StageKey = 'proposal' | 'review' | 'consensus' | 'finalized';
 export interface StageNode {
-  key: 'proposal' | 'review' | 'consensus' | 'finalized';
+  key: StageKey;
   label: string;
   state: StageNodeState;
 }

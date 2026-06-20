@@ -21,7 +21,7 @@ export function Menu({ children }: MenuProps) {
           variant="ghost"
           size="sm"
           className="h-8 w-8 p-0 text-muted-foreground"
-          aria-label={t('extraction', 'runHeaderMore')}
+          aria-label={t('runs', 'more')}
         >
           <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>

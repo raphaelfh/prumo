@@ -11,7 +11,7 @@ export function PrimaryAction() {
   if (!transition) return null;
   const gated = transition.gate.ok === false;
   const helper = gated
-    ? t('extraction', 'runHeaderRequiredOfTotal')
+    ? t('runs', 'requiredOfTotal')
         .replace('{{done}}', String(progress.completed))
         .replace('{{total}}', String(progress.total))
     : null;

@@ -26,7 +26,7 @@ export function Reviewers() {
           className="flex items-center gap-1 rounded bg-warning/15 px-1.5 py-0.5 text-[11px] text-warning focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <GitFork className="h-3 w-3" aria-hidden="true" />
-          {t('extraction', 'runHeaderReviewersDiffer').replace('{{count}}', String(reviewers.divergent))}
+          {t('runs', 'reviewersDiffer').replace('{{count}}', String(reviewers.divergent))}
         </button>
       )}
     </div>

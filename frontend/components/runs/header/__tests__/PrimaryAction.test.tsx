@@ -28,7 +28,7 @@ describe('RunHeader.PrimaryAction', () => {
     </RunHeader>);
     const btn = screen.getByRole('button', { name: /Reconcile/ });
     expect(btn).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByText('runHeaderRequiredOfTotal')).toBeInTheDocument();
+    expect(screen.getByText('requiredOfTotal')).toBeInTheDocument();
     await userEvent.click(btn);
     expect(onAdvance).toHaveBeenCalledOnce();
   });

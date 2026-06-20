@@ -16,6 +16,6 @@ describe('RunHeader.Reviewers', () => {
   it('renders avatars + a divergence chip after proposal', () => {
     render(<RunHeader value={{ ...base, stage: 'review', reviewers: { count: 2, required: 3, divergent: 3 } }}><RunHeader.Center><RunHeader.Reviewers /></RunHeader.Center></RunHeader>);
     expect(screen.getByTestId('run-reviewers')).toBeInTheDocument();
-    expect(screen.getByText('runHeaderReviewersDiffer')).toBeInTheDocument();
+    expect(screen.getByText('reviewersDiffer')).toBeInTheDocument();
   });
 });

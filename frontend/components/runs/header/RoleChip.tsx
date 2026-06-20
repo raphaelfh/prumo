@@ -16,9 +16,9 @@ export function RoleChip() {
   const { role, isBlind, canReveal, onReveal } = useRunHeader();
   if (!role) return null;
   const suffixKey = isBlind
-    ? 'runHeaderBlindSuffix' as const
+    ? 'blindSuffix' as const
     : canReveal
-      ? 'runHeaderRevealedSuffix' as const
+      ? 'revealedSuffix' as const
       : null;
   const text = (
     <>
@@ -26,7 +26,7 @@ export function RoleChip() {
       {suffixKey && (
         <>
           <span className="text-muted-foreground" aria-hidden="true">{' · '}</span>
-          <span className="text-muted-foreground">{t('extraction', suffixKey)}</span>
+          <span className="text-muted-foreground">{t('runs', suffixKey)}</span>
         </>
       )}
     </>
@@ -43,8 +43,8 @@ export function RoleChip() {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 text-[13px]">
-        <p className="mb-2 text-muted-foreground">{t('extraction', 'runHeaderBlindExplainer')}</p>
-        <Button size="sm" className="w-full" onClick={() => onReveal?.()}>{t('extraction', 'runHeaderReveal')}</Button>
+        <p className="mb-2 text-muted-foreground">{t('runs', 'blindExplainer')}</p>
+        <Button size="sm" className="w-full" onClick={() => onReveal?.()}>{t('runs', 'reveal')}</Button>
       </PopoverContent>
     </Popover>
   );

@@ -17,9 +17,9 @@ describe('RunHeader.RoleChip', () => {
       <RunHeader.Center><RunHeader.RoleChip /></RunHeader.Center>
     </RunHeader>);
     expect(screen.getByText(/manager/i)).toBeInTheDocument();
-    expect(screen.getByText('runHeaderBlindSuffix')).toBeInTheDocument();
+    expect(screen.getByText('blindSuffix')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /manager/i }));
-    await userEvent.click(screen.getByRole('button', { name: 'runHeaderReveal' }));
+    await userEvent.click(screen.getByRole('button', { name: 'reveal' }));
     expect(onReveal).toHaveBeenCalledOnce();
   });
   it('renders a plain non-interactive chip for a reviewer', () => {

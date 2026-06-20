@@ -17,9 +17,9 @@ describe('RunHeader.StageRail', () => {
     render(<RunHeader value={{ ...value, transition: { to: 'consensus', label: 'Reconcile', gate: { ok: false, reason: 'x', remaining: 27 }, onAdvance: () => {} } }}>
       <RunHeader.Left><RunHeader.StageRail /></RunHeader.Left>
     </RunHeader>);
-    ['Proposal', 'Review', 'Consensus', 'Finalized'].forEach((l) => expect(screen.getByText(l)).toBeInTheDocument());
-    expect(screen.getByText('Review').closest('[data-state]')).toHaveAttribute('data-state', 'current');
-    expect(screen.getByText('runHeaderRevision')).toBeInTheDocument();
-    expect(screen.getByText('runHeaderGateRemaining')).toBeInTheDocument();
+    ['stageProposal', 'stageReview', 'stageConsensus', 'stageFinalized'].forEach((l) => expect(screen.getByText(l)).toBeInTheDocument());
+    expect(screen.getByText('stageReview').closest('[data-state]')).toHaveAttribute('data-state', 'current');
+    expect(screen.getByText('revision')).toBeInTheDocument();
+    expect(screen.getByText('gateRemaining')).toBeInTheDocument();
   });
 });

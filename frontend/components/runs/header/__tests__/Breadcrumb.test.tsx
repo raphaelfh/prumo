@@ -96,7 +96,7 @@ describe('RunHeader.Menu + RunHeader.MenuItem', () => {
         </RunHeader.Right>
       </RunHeader>,
     );
-    const trigger = screen.getByRole('button', { name: 'runHeaderMore' });
+    const trigger = screen.getByRole('button', { name: 'more' });
     expect(trigger).toBeInTheDocument();
     await userEvent.click(trigger);
     const item = screen.getByRole('menuitem', { name: 'Delete run' });
