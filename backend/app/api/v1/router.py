@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     hitl_sessions,
     manager_review_visibility,
     model_extraction,
+    parser_settings,
     project_templates,
     section_extraction,
     user_api_keys,
@@ -83,6 +84,12 @@ api_router.include_router(
 
 api_router.include_router(
     manager_review_visibility.router,
+    prefix="/projects",
+    tags=["projects"],
+)
+
+api_router.include_router(
+    parser_settings.router,
     prefix="/projects",
     tags=["projects"],
 )

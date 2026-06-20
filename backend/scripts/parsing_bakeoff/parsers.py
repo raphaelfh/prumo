@@ -10,7 +10,7 @@ Wiring status:
 * ``StubParser`` — fully working; used by tests and ``--dry-run``.
 * ``LlamaParseRunner`` — grounded against the documented ``llama_cloud`` API
   (agentic tier + granular bounding boxes); needs ``LLAMA_CLOUD_API_KEY`` and
-  egresses to a cloud API (non-PHI / BAA only).
+  egresses to a cloud API; needs ``LLAMA_CLOUD_API_KEY``.
 * ``DoclingRunner`` / ``MinerURunner`` / ``OpenDataLoaderRunner`` — the
   ``available()`` import check is real; the lib-output → ``ParseRun`` mapping
   is the documented integration point, wired when the lib is installed during
@@ -158,8 +158,7 @@ class OpenDataLoaderRunner:
 class LlamaParseRunner:
     """LlamaParse (LlamaCloud) agentic tier with granular bounding boxes.
 
-    Cloud API → egress. Use only for non-PHI projects or under a BAA /
-    self-hosted LlamaCloud. Needs ``LLAMA_CLOUD_API_KEY``.
+    Cloud API → egress. Needs ``LLAMA_CLOUD_API_KEY``.
     """
 
     name: str = "llamaparse"
