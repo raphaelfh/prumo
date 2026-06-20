@@ -6,32 +6,26 @@ Create Date: 2026-06-20
 
 """
 
-from collections.abc import Sequence
-
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "0028_api_key_llama_cloud"
-down_revision: str | None = "0027_project_is_phi"
-branch_labels: str | Sequence[str] | None = None
-depends_on: str | Sequence[str] | None = None
+revision = "0028_api_key_llama_cloud"
+down_revision = "0027_project_is_phi"
+branch_labels = None
+depends_on = None
 
 
 def upgrade() -> None:
-    op.drop_constraint("user_api_keys_provider_check", "user_api_keys", schema="public")
-    op.create_check_constraint(
-        "user_api_keys_provider_check",
-        "user_api_keys",
-        "provider IN ('openai', 'anthropic', 'gemini', 'grok', 'llama_cloud')",
-        schema="public",
+    op.execute("ALTER TABLE public.user_api_keys DROP CONSTRAINT user_api_keys_provider_check")
+    op.execute(
+        "ALTER TABLE public.user_api_keys ADD CONSTRAINT user_api_keys_provider_check "
+        "CHECK (provider IN ('openai', 'anthropic', 'gemini', 'grok', 'llama_cloud'))"
     )
 
 
 def downgrade() -> None:
-    op.drop_constraint("user_api_keys_provider_check", "user_api_keys", schema="public")
-    op.create_check_constraint(
-        "user_api_keys_provider_check",
-        "user_api_keys",
-        "provider IN ('openai', 'anthropic', 'gemini', 'grok')",
-        schema="public",
+    op.execute("ALTER TABLE public.user_api_keys DROP CONSTRAINT user_api_keys_provider_check")
+    op.execute(
+        "ALTER TABLE public.user_api_keys ADD CONSTRAINT user_api_keys_provider_check "
+        "CHECK (provider IN ('openai', 'anthropic', 'gemini', 'grok'))"
     )
