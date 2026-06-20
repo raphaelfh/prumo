@@ -51,6 +51,7 @@ dependencies = [
     "redis>=5.0.0",
     # Spreadsheet generation (extraction Excel export)
     "openpyxl>=3.1.5",
+    "llama-cloud>=2.1",
 ]
 
 [project.optional-dependencies]
