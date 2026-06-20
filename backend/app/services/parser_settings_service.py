@@ -30,7 +30,8 @@ class ParserSettingsService:
         project = await self._projects.get_by_id(project_id)
         if project is None:
             raise ProjectNotFoundError(f"Project {project_id} not found")
-        parsing = dict((project.settings or {}).get("parsing") or {})
+        raw_parsing = (project.settings or {}).get("parsing")
+        parsing = dict(raw_parsing) if isinstance(raw_parsing, dict) else {}
         ptype = parsing.get("type", _DEFAULT_TYPE)
         return ptype if ptype in _VALID_TYPES else _DEFAULT_TYPE
 

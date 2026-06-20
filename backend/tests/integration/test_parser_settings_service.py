@@ -32,6 +32,9 @@ async def test_set_and_get_llamaparse(db_session_real: AsyncSession) -> None:
     svc = ParserSettingsService(db_session_real)
     merged = await svc.set_for_project(project_id=SEED.primary_project, parser_type="llamaparse")
     assert merged == {"type": "llamaparse"}
+    # Expire the identity map so the next read issues a real SELECT against the DB,
+    # proving the JSONB column was actually written (not just mutated in memory).
+    db_session_real.expire_all()
     assert await svc.get_for_project(SEED.primary_project) == "llamaparse"
 
 
