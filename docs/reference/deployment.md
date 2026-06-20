@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-05-31
+last_reviewed: 2026-06-20
 owner: '@raphaelfh'
 ---
 
@@ -101,7 +101,7 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 
 | Service | Key | Value |
 | --- | --- | --- |
-| `web` | `CORS_ORIGINS` | `https://prumo-alpha.vercel.app` |
+| `web` | `CORS_ORIGINS` | Comma-separated allow-list that **extends** the always-allowed defaults baked into [`backend/app/core/config.py`](../../backend/app/core/config.py) (already pins `prumoai.vercel.app` + localhost). The live value lives in the Railway `web` env — the running env is the source of truth, not this table. |
 | `web` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable, resolves to private network) |
 | `worker` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable) |
 
@@ -110,7 +110,7 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 | Key | Purpose | Used by |
 | --- | --- | --- |
 | `LINEAR_API_KEY` | Linear personal/workspace API key (SECRET) — used to create feedback issues via the Linear GraphQL API | `web`, `worker` |
-| `LINEAR_TEAM_ID` | Linear team id for the Prumo team (`9b86c9ed-ede9-4f36-99d1-c2f53fb82370`) | `web`, `worker` |
+| `LINEAR_TEAM_ID` | Linear **Feedback** team UUID (key `FEE`) — in-app feedback routes here; the Prumo team is GitHub-sync/automation only, NOT the feedback target. Must be the team **UUID, not the `FEE` slug** (`issueCreate(teamId:)` requires the UUID; the slug fails). Validated at boot in `config.py`; the live value lives in the Railway env (source of truth). | `web`, `worker` |
 | `FEEDBACK_MEDIA_BUCKET` | Supabase Storage bucket for feedback screenshots/clips (default `feedback-media`) | `worker` |
 
 ### Vercel (frontend) — only `VITE_*` reaches the browser
