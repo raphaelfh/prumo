@@ -91,6 +91,15 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     OPENAI_DEFAULT_MODEL: str = "gpt-4o-mini"
 
+    # =================== PARSING ===================
+    # Standard self-hosted parser by default. Per-project activation can
+    # request "llamaparse"; the create_document_parser() PHI gate is the
+    # final authority (PHI / unknown -> self-hosted, fail-closed).
+    PARSER_BACKEND: str = "docling"
+    # Optional global LlamaCloud key; per-user BYOK (APIKeyService) takes
+    # precedence. Cloud egress -> non-PHI projects only.
+    LLAMA_CLOUD_API_KEY: str | None = None
+
     # =================== EVALUATION ===================
     EVALUATION_EVIDENCE_BUCKET: str = "articles"
 
