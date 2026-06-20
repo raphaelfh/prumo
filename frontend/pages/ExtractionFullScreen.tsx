@@ -31,6 +31,7 @@ import {
   HITLStatusBadges,
 } from '@/components/runs/HITLStatusBadges';
 import {buildExtractionTransition} from '@/lib/extraction/stageTransition';
+import {setManagerReviewVisibility} from '@/services/hitlConfigService';
 
 // Hooks
 import {useExtractionData} from '@/hooks/extraction/useExtractionData';
@@ -44,7 +45,7 @@ import {useAutoSaveProposals} from '@/hooks/runs';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
 import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
-import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
+import {useComparisonPermissions, type ComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
 import {
   useAdvanceRun,
   useCreateConsensus,
@@ -424,6 +425,17 @@ export default function ExtractionFullScreen() {
     // (manager/consensus, per the live setting) AND peers actually exist.
   const canCompare =
     permissions.canSeeOthers && reviewerSummary.decisionsByCoord.size > 0;
+
+  // Manager reveal: only a manager in blind mode may lift the veil for their
+  // own project. Promise-chain form (no try/finally) satisfies the React
+  // Compiler panicThreshold constraint.
+  const canReveal = permissions.userRole === 'manager' && permissions.isBlindMode;
+  const permissionsWithRefresh = permissions as unknown as ComparisonPermissions & { refresh: () => Promise<void> };
+  const onReveal = () => {
+    void setManagerReviewVisibility(projectId || '', 'extraction', true)
+      .then(() => permissionsWithRefresh.refresh())
+      .catch((e: unknown) => toast.error(e instanceof Error ? e.message : String(e)));
+  };
 
     // Hook for AI suggestions with callbacks to fill/clear field
   const handleAISuggestionAccepted = async (instanceId: string, fieldId: string, value: any) => {
@@ -1141,7 +1153,8 @@ export default function ExtractionFullScreen() {
           // divergentCoords is a Set<string> — .size gives the count
           divergent: reviewerSummary.divergentCoords.size,
         }}
-        canReveal={false}
+        canReveal={canReveal}
+        onReveal={onReveal}
         onJumpToDivergence={() => setViewMode('compare')}
         // AI extraction seeds proposals and only works in PROPOSAL; once the
         // run is in REVIEW it's a one-time-done step (re-running would error).
