@@ -453,13 +453,24 @@ class ZoteroImportService(LoggerMixin):
             )
 
             await self._article_files.create(article_file)
-            # Single parse-at-ingest hook — every ArticleFile-create route uses it.
-            ArticleFileIngestService().enqueue_parse_at_ingest(
-                article_file_id=article_file.id,
-                project_id=project_id,
-                user_id=str(self.user_id),
-                trace_id=self.trace_id,
-            )
+            # Enqueue parse-at-ingest best-effort: broker down must not
+            # fail the import — the PDF is already stored and a future
+            # backfill will re-enqueue any orphaned ArticleFile records.
+            try:
+                ArticleFileIngestService().enqueue_parse_at_ingest(
+                    article_file_id=article_file.id,
+                    project_id=project_id,
+                    user_id=str(self.user_id),
+                    trace_id=self.trace_id,
+                )
+            except Exception as enqueue_exc:
+                self.logger.warning(
+                    "zotero_pdf_enqueue_failed",
+                    trace_id=self.trace_id,
+                    article_id=str(article_id),
+                    article_file_id=str(article_file.id),
+                    error=str(enqueue_exc),
+                )
             return True
         except Exception as exc:
             self.logger.warning(
