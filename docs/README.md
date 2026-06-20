@@ -43,6 +43,7 @@ tutorial lives here.*
 | Doc | What it explains |
 | --- | --- |
 | [ADR index](./adr/) | Architecture decisions (MADR 4.0) |
+| [Extraction + HITL design rationale](./explanation/extraction-hitl-design-rationale.md) | Why the extraction stack absorbed HITL + QA (the `kind` discriminator) |
 | [Roadmap pointer](./ROADMAP.md) | Active milestones and link to GitHub Projects |
 
 ## Internal tooling

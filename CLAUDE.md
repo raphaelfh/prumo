@@ -57,8 +57,9 @@ heart. Before changing anything in `extraction_*` tables,
 
 Full doc index: [`docs/README.md`](docs/README.md) (Diátaxis).
 Agent entry point: [`llms.txt`](llms.txt).
-Immutable design spec:
-[`docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md`](docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md).
+Design rationale (the *why*):
+[`docs/explanation/extraction-hitl-design-rationale.md`](docs/explanation/extraction-hitl-design-rationale.md)
+(the original 2026-04-27 spec is archived verbatim under `docs/superpowers/specs/archive/`).
 
 ## Hard rules
 

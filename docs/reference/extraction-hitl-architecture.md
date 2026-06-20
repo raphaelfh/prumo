@@ -431,7 +431,7 @@ publish, AI), keep it in the page-specific component.
 ## 7. References
 
 - **Original design spec (immutable):**
-  `docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md`
+  `docs/superpowers/specs/archive/2026-06-20-governance-sweep/2026-04-27-extraction-hitl-and-qa-design.md`
 - **Execution plans (archived):**
   `docs/superpowers/plans/archive/2026-04-27-hitl-unification/`
 - **Seeds:** `backend/app/seed.py` (`seed_probast`, `seed_quadas2`)
