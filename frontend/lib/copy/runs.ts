@@ -5,12 +5,17 @@
  * so that QA and other consumers can adopt the same header library.
  */
 export const runs = {
-  // StageRail
+  // StageRail (3 user-facing nodes: Extract → Consensus → Finalized).
+  // stageProposal/stageReview linger until StageRail stops referencing them.
   revision: 'Revision',
+  stageExtract: 'Extract',
   stageProposal: 'Proposal',
   stageReview: 'Review',
   stageConsensus: 'Consensus',
   stageFinalized: 'Finalized',
+  stageExtractTooltip: 'Fill the form and review AI suggestions for this article.',
+  stageConsensusTooltip: 'Reconcile reviewer values into one agreed answer.',
+  stageFinalizedTooltip: 'Locked and published — reopen to make changes.',
   gateRemaining: '{{count}} left',
   // PrimaryAction
   requiredOfTotal: '{{done}} of {{total}} required',
@@ -50,6 +55,23 @@ export const runs = {
   commandGoToArticle: 'Go to article…',
   keyboardShortcuts: 'Keyboard shortcuts',
   commandPaletteOpen: 'Open command palette',
+  // SidebarToggle (left, mirrors PanelToggle)
+  sidebarToggle: 'Toggle navigation',
+  // Help panel ("?" button)
+  helpButton: 'Help and shortcuts',
+  helpTitle: 'Help',
+  shortcutsHeading: 'Keyboard shortcuts',
+  glossaryHeading: 'Workflow',
+  shortcutPalette: 'Command palette',
+  shortcutNextPrev: 'Next / previous article',
+  shortcutTogglePdf: 'Toggle source panel',
+  shortcutSidebar: 'Toggle navigation',
+  shortcutEsc: 'Close dialogs',
+  glossaryExtract: 'Extract — fill the form and review AI suggestions.',
+  glossaryConsensus: 'Consensus — reconcile diverging reviewer values.',
+  glossaryFinalize: 'Finalize — lock and publish the agreed values.',
+  glossaryBlind: 'Blind — you cannot see other reviewers’ values.',
+  glossaryDiffer: '"N differ" — fields where reviewers disagree.',
 } as const;
 
 export type RunsCopy = typeof runs;
