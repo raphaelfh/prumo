@@ -42,6 +42,8 @@ import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
 import {useAutoAdvanceToReview} from '@/hooks/extraction/useAutoAdvanceToReview';
 import {useAutoSaveProposals} from '@/hooks/runs';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
+import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
+import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
 import {
   useAdvanceRun,
@@ -466,6 +468,50 @@ export default function ExtractionFullScreen() {
     onSuggestionAccepted: handleAISuggestionAccepted,
     onSuggestionRejected: handleAISuggestionRejected
   });
+
+  // Full AI extraction — mirrors HeaderMoreMenu wiring exactly.
+  // When an active run is available (PROPOSAL stage), ``extractForRun``
+  // reuses it (preserving human proposals). Otherwise ``extractFullAI``
+  // creates a fresh run via the legacy multi-step orchestration.
+  const { extractFullAI, loading: extractingFullAI, progress: extractionProgress } = useFullAIExtraction({
+    onSuccess: async () => {
+      await handleExtractionComplete();
+    },
+  });
+
+  const { extractForRun, loading: extractingForRun } = useRunAIExtraction({
+    onSuccess: async () => {
+      await handleExtractionComplete();
+    },
+  });
+
+  const extractingAI = extractingFullAI || extractingForRun;
+
+  // Handler wired to RunHeader.AIActions — mirrors HeaderMoreMenu.handleFullAIExtraction.
+  const onExtractWithAI = () => {
+    if (!articleId || !template?.id) {
+      console.warn('[ExtractionFullScreen] articleId or templateId not provided for AI extraction');
+      return;
+    }
+    if (activeRunId) {
+      void extractForRun({
+        projectId: projectId ?? '',
+        articleId,
+        templateId: template.id,
+        runId: activeRunId,
+      }).catch((error: unknown) => {
+        console.error('[ExtractionFullScreen] Run AI extraction error:', error);
+      });
+    } else {
+      void extractFullAI({
+        projectId: projectId ?? '',
+        articleId,
+        templateId: template.id,
+      }).catch((error: unknown) => {
+        console.error('[ExtractionFullScreen] Full AI extraction error:', error);
+      });
+    }
+  };
 
   // Partition entity types into study-level + model container + per-model
   // children by structural role. The partition function is the single
@@ -1108,6 +1154,8 @@ export default function ExtractionFullScreen() {
           console.warn('Clicked AI badge - scrolling to first suggestion');
         }}
         onRefreshInstances={handleRefreshInstances}
+        onExtractWithAI={onExtractWithAI}
+        extractingAI={extractingAI}
         onExtractionStateChange={setAiExtractionState}
         // Reopen moved into the header Menu
         canReopen={canReopen}
@@ -1115,11 +1163,14 @@ export default function ExtractionFullScreen() {
         reopening={reopening}
       />
 
-        {/* AI extraction progress - Rendered at page level to avoid conflicts */}
-      {(aiExtractionState?.loading && aiExtractionState?.progress) || isProgressMinimized ? (
+        {/* AI extraction progress - Rendered at page level to avoid conflicts.
+            Shown when either: the page-level extractFullAI hook is running with
+            progress (header button path), or a child component reported state
+            via onExtractionStateChange (form-panel section path), or minimized. */}
+      {(extractingFullAI && extractionProgress) || (aiExtractionState?.loading && aiExtractionState?.progress) || isProgressMinimized ? (
         <div className="fixed bottom-6 right-6 z-[9999] w-96 max-w-[calc(100vw-3rem)]">
           <FullAIExtractionProgress
-            progress={aiExtractionState?.progress || { stage: 'extracting_models' }}
+            progress={extractionProgress ?? aiExtractionState?.progress ?? { stage: 'extracting_models' }}
             onClose={() => {
               setAiExtractionState(null);
               setIsProgressMinimized(false);
