@@ -9,6 +9,8 @@ Random fixes waste time and mask the real issue. On prumo, the cost is paid in H
 
 **Core principle:** find root cause before proposing a fix. Symptom fixes are failure.
 
+**Generic method:** the 4-phase RED→GREEN debugging discipline is owned by `superpowers:systematic-debugging`. This file keeps the method inline (so it stands alone) and layers the prumo-specific delta on top — the evidence checklist, structlog instrumentation, the Pydantic↔Zod lifecycle, and the worked TOCTOU example below.
+
 ## The iron law
 
 > No fix without root-cause investigation. If Phase 1 is not done, you do not get to propose code changes.
