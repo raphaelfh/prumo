@@ -45,7 +45,7 @@ import {useAutoSaveProposals} from '@/hooks/runs';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
 import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
-import {useComparisonPermissions, type ComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
+import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
 import {
   useAdvanceRun,
   useCreateConsensus,
@@ -430,10 +430,9 @@ export default function ExtractionFullScreen() {
   // own project. Promise-chain form (no try/finally) satisfies the React
   // Compiler panicThreshold constraint.
   const canReveal = permissions.userRole === 'manager' && permissions.isBlindMode;
-  const permissionsWithRefresh = permissions as unknown as ComparisonPermissions & { refresh: () => Promise<void> };
   const onReveal = () => {
     void setManagerReviewVisibility(projectId || '', 'extraction', true)
-      .then(() => permissionsWithRefresh.refresh())
+      .then(() => permissions.refresh())
       .catch((e: unknown) => toast.error(e instanceof Error ? e.message : String(e)));
   };
 
