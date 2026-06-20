@@ -390,8 +390,8 @@ export function HITLArticleTable({
   }
 
   return (
-    <div className="space-y-2" data-testid={`hitl-${kind}-table`}>
-      <div className="flex flex-col gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-2" data-testid={`hitl-${kind}-table`}>
+      <div className="flex flex-col gap-2 shrink-0">
         <div className="flex flex-wrap items-center gap-2">
           <ListToolbarSearch
             ref={searchInputRef}
@@ -457,9 +457,10 @@ export function HITLArticleTable({
         />
       </div>
 
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <DataTableWrapper className="overflow-hidden rounded-md border border-border/40">
         <Table>
-          <TableHeader className="bg-transparent">
+          <TableHeader className="sticky top-0 z-10 bg-background">
             <TableRow className="h-8 border-b border-border/40 hover:bg-transparent">
               <TableHead className={`${TABLE_CELL_CLASS} w-[46%]`}>
                 <SortIconHeader
@@ -536,6 +537,7 @@ export function HITLArticleTable({
           </TableBody>
         </Table>
       </DataTableWrapper>
+      </div>
     </div>
   );
 }

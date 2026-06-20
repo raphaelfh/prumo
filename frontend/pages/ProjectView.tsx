@@ -416,7 +416,7 @@ export default function ProjectView() {
 
       {isFullBleed ? (
           <div className="flex-1 overflow-y-auto">{renderContent()}</div>
-      ) : activeTab === 'extraction' || activeTab === 'quality' ? (
+      ) : activeTab === 'extraction' || activeTab === 'quality' || activeTab === 'articles' ? (
           <div className="flex-1 min-h-0 flex flex-col px-6 py-4 lg:px-10">
               <div className="w-full max-w-[1800px] mx-auto flex flex-1 min-h-0 flex-col">
                   {renderContent()}
