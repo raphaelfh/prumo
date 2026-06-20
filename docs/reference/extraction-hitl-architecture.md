@@ -69,7 +69,7 @@ entity *noun* is banned. A copy regression guard
 (`frontend/test/copy-run-vocabulary.test.ts`) fails if the plural noun
 "Runs" reappears in any copy value. Rationale and the full string-level
 change set live in
-`docs/superpowers/specs/2026-05-30-run-user-facing-vocabulary-design.md`.
+`docs/superpowers/specs/archive/2026-06-20-governance-sweep/2026-05-30-run-user-facing-vocabulary-design.md`.
 
 ## 3. Database — final schema
 

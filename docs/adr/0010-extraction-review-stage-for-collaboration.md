@@ -119,7 +119,7 @@ accept, accepts stick, and the counter advances as each reviewer decides.
 ## More Information
 
 - Canonical schema + flow: `docs/reference/extraction-hitl-architecture.md`.
-- Implementation plan: `docs/superpowers/plans/2026-06-18-extraction-review-stage-restore.md`.
+- Implementation plan: `docs/superpowers/plans/archive/2026-06-20-governance-sweep/2026-06-18-extraction-review-stage-restore.md` (shipped; archived).
 - The `PROPOSAL`-only constraint: `app/services/extraction_proposal_service.py`
   and `app/services/section_extraction_service.py`.
 - Related: ADR 0003 (kind discriminator), ADR 0007 (single API read path),

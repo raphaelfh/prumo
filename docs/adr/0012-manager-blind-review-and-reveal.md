@@ -130,6 +130,6 @@ Chosen option: **Option B (per-kind, live-read, API-enforced; RLS unchanged)**.
 ## More Information
 
 - Canonical schema + the read-path/RLS split: `docs/reference/extraction-hitl-architecture.md` (§3 RLS, §5 QA reuse boundary).
-- Design spec: `docs/superpowers/specs/2026-06-18-manager-blind-review-design.md`.
-- Implementation plan: `docs/superpowers/plans/2026-06-19-manager-blind-review.md`.
+- Design spec: `docs/superpowers/specs/archive/2026-06-20-governance-sweep/2026-06-18-manager-blind-review-design.md` (shipped; archived).
+- Implementation plan: `docs/superpowers/plans/archive/2026-06-20-governance-sweep/2026-06-19-manager-blind-review.md` (shipped; archived).
 - Related: ADR 0003 (kind discriminator), ADR 0007 (single API read path), ADR 0008 (typed response payloads), ADR 0010 (REVIEW stage for collaboration).
