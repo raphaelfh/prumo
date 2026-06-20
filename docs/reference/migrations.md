@@ -4,7 +4,7 @@ last_reviewed: 2026-06-10
 owner: '@raphaelfh'
 ---
 
-> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-06-10 · Owner: @raphaelfh
 
 # Database migration strategy
 

@@ -88,11 +88,7 @@ For manual setup (without `make`), see [`.github/CONTRIBUTING.md`](.github/CONTR
 
 ## Documentation
 
-- 📖 [Documentation index](docs/README.md) — Diátaxis-organised site map.
-- 🚀 [Deployment reference](docs/reference/deployment.md) — Railway + Vercel topology, env vars, rollback.
-- 🧱 [Extraction + HITL architecture](docs/reference/extraction-hitl-architecture.md) — canonical schema, run lifecycle.
-- 🛢️ [Migration strategy](docs/reference/migrations.md) — Alembic vs Supabase split, squash recipe.
-- ✅ [Test strategy](docs/reference/test-strategy.md) — load-bearing tests.
+- 📖 [Documentation index](docs/README.md) — the Diátaxis-organised site map (deployment, migrations, architecture, test strategy, and more).
 - 🧭 [ADRs](docs/adr/) — recorded architecture decisions.
 - 🗺️ [Roadmap](docs/ROADMAP.md) — milestones + link to GitHub Projects.
 
