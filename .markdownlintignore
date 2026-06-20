@@ -3,31 +3,15 @@ docs/superpowers/plans/archive/**
 docs/superpowers/specs/archive/**
 docs/superpowers/quality-runs/**
 
-# In-flight + shipped plans — point-in-time snapshots, frequently contain
-# work-in-progress notes, mixed code/prose layouts, and intentional
-# compact tables. Active "doc surfaces" live under docs/{reference,how-to,adr,README,ROADMAP}.
-docs/superpowers/plans/2026-*-pdf-viewer-*.md
-docs/superpowers/plans/2026-04-27-sidebar-revitalization.md
-docs/superpowers/plans/2026-05-03-screening-phase0-foundation.md
-docs/superpowers/plans/2026-05-21-security-hardening-wave.md
-docs/superpowers/plans/2026-05-22-dark-light-ux-tokenization.md
-docs/superpowers/plans/2026-05-24-documentation-overhaul-2026.md
-docs/superpowers/plans/2026-05-24-integration-test-pollution-cleanup.md
-docs/superpowers/plans/2026-05-30-in-app-feedback-to-linear.md
-docs/superpowers/plans/2026-06-06-197-frontend-typecheck-burndown.md
-docs/superpowers/plans/2026-06-08-*.md
-docs/superpowers/plans/2026-06-11-extraction-llm-stack-migration.md
-docs/superpowers/plans/2026-06-11-react-compiler-enablement.md
-docs/superpowers/plans/2026-06-11-react-compiler-zero-bailouts.md
-docs/superpowers/plans/2026-06-14-publication-ready-xlsx-export.md
+# Active in-flight plans — point-in-time snapshots with WIP notes / compact
+# tables. Shipped plans/specs live under */archive/** (globbed above).
 docs/superpowers/plans/2026-06-17-extraction-ux-iteration.md
-docs/superpowers/plans/2026-06-18-extraction-review-stage-restore.md
-docs/superpowers/plans/2026-06-19-manager-blind-review.md
-docs/superpowers/plans/2026-06-19-blind-review-cleanup.md
-docs/superpowers/plans/2026-06-19-extraction-data-path-finish.md
 docs/superpowers/plans/2026-06-19-structured-pdf-parsing-at-ingest.md
 docs/superpowers/plans/2026-06-19-grounded-extraction-and-hitl-highlight.md
+docs/superpowers/plans/2026-06-19-extraction-view-ux-p0.md
 docs/superpowers/plans/2026-06-20-governance-consistency-cleanup.md
+docs/superpowers/plans/2026-06-20-runheader-shared-lib.md
+docs/superpowers/plans/2026-06-20-runheader-plan2-followons.md
 
 # Design specs — likewise snapshots
 docs/superpowers/specs/2026-*-design.md
@@ -50,5 +34,4 @@ CLAUDE.md
 docs/superpowers/plans/2026-06-10-dev-workflow-sota.md
 
 # Snapshot artefacts inside docs/ that are not actively maintained
-docs/superpowers/specs/2026-04-28-pdf-viewer-database-requirements.md
 docs/superpowers/design-system/sidebar-and-panels.md

@@ -8,7 +8,7 @@ owner: '@raphaelfh'
 
 **Date:** 2026-05-24
 **Status:** Kickoff brief (not yet a full spec)
-**Predecessor:** `docs/superpowers/specs/2026-05-24-test-infra-hardening-design.md`
+**Predecessor:** `docs/superpowers/specs/archive/2026-06-20-governance-sweep/2026-05-24-test-infra-hardening-design.md`
 **Predecessor PR:** `de3b985` test(infra): SAVEPOINT db_session + pytest-randomly/deadfixtures + smoke constraints
 
 ## Why this exists
