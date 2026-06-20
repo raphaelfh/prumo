@@ -59,6 +59,8 @@ export const qa = {
   extractingProgress: 'Extracting…',
   publishButton: 'Publish assessment',
   publishingProgress: 'Publishing…',
+  reopenButton: 'Reopen for revision',
+  reopenProgress: 'Reopening…',
   publishedState: 'Published',
   finalizationSuccess: 'Assessment finalized.',
   reopenSuccess: 'Assessment reopened for revision.',

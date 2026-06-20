@@ -302,7 +302,7 @@ export default function QualityAssessmentFullScreen() {
   const [reopening, setReopening] = useState(false);
 
   // PDF panel state — lifted so RunHeader.PanelToggle can share the same toggle.
-  const pdfPanel_state = usePdfPanel({ initialOpen: false });
+  const pdfPanelState = usePdfPanel({ initialOpen: false });
 
   // Reveal: manager can un-blind QA reviewer identities for this project.
   const canReveal = permissions.userRole === "manager" && permissions.isBlindMode;
@@ -583,8 +583,8 @@ export default function QualityAssessmentFullScreen() {
             onExtract={onExtractWithAI}
           />
           <RunHeader.PanelToggle
-            pressed={pdfPanel_state.isOpen}
-            onToggle={pdfPanel_state.toggle}
+            pressed={pdfPanelState.isOpen}
+            onToggle={pdfPanelState.toggle}
           />
           <RunHeader.Save
             state={saveState ?? "idle"}
@@ -609,8 +609,8 @@ export default function QualityAssessmentFullScreen() {
                 onSelect={() => void handleReopen()}
               >
                 {reopening
-                  ? t("qa", "publishingProgress")
-                  : t("qa", "reopenSuccess")}
+                  ? t("qa", "reopenProgress")
+                  : t("qa", "reopenButton")}
               </RunHeader.MenuItem>
             )}
           </RunHeader.Menu>
@@ -739,7 +739,7 @@ export default function QualityAssessmentFullScreen() {
       pdfPanel={pdfPanel}
       formPanel={formPanel}
       header={header}
-      pdfState={pdfPanel_state}
+      pdfState={pdfPanelState}
     />
   );
 }
