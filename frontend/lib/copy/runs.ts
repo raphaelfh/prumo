@@ -40,6 +40,8 @@ export const runs = {
   // Navigation (also kept in extraction for ExtractionHeader callers)
   articlePrevious: 'Previous article',
   articleNext: 'Next article',
+  // Worklist popover
+  worklistSearch: 'Go to article…',
 } as const;
 
 export type RunsCopy = typeof runs;
