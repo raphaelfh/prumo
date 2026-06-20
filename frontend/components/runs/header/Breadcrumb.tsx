@@ -14,11 +14,11 @@ interface BreadcrumbProps {
 
 export function Breadcrumb({ onBack, crumbs }: BreadcrumbProps) {
   return (
-    <nav className="flex min-w-0 items-center gap-1" aria-label="breadcrumb">
+    <nav className="flex shrink-0 items-center gap-1" aria-label="breadcrumb">
       <Button
         variant="ghost"
         size="sm"
-        className="h-8 w-8 p-0"
+        className="h-8 w-8 p-0 shrink-0"
         aria-label={t('common', 'back')}
         onClick={onBack}
       >

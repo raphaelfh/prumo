@@ -152,6 +152,8 @@ export async function ensureFixtures(): Promise<void> {
   await ensureArticleText(F.PROJECT_ID, F.QA_CONSENSUS_ARTICLE_ID);
   await ensureArticle(F.QA_BLIND_REVIEW_ARTICLE_ID, F.PROJECT_ID, "E2E QA Article Two");
   await ensureArticleText(F.PROJECT_ID, F.QA_BLIND_REVIEW_ARTICLE_ID);
+  await ensureArticle(F.QA_REOPEN_ARTICLE_ID, F.PROJECT_ID, "E2E QA Article Three");
+  await ensureArticleText(F.PROJECT_ID, F.QA_REOPEN_ARTICLE_ID);
   const ownerToken = await login(F.OWNER_EMAIL, F.FIXTURE_PASSWORD);
   await ensureCharmsImported(F.PROJECT_ID, ownerToken);
 

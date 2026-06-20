@@ -46,12 +46,18 @@ test.describe("Extraction page navigation", () => {
     await page.goto(`${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`);
 
     await waitForBackButton(page);
-    // Breadcrumb shows the project name as a clickable link on viewports >= md.
+    // The RunHeader breadcrumb renders only once the extraction view reaches
+    // its `ready` state; the loading/error fallbacks render their own Back
+    // button (which is what waitForBackButton matches). Gate on the ready-state
+    // anchor before probing the breadcrumb so we never assert against a
+    // transient pre-ready render where the nav is mounted-but-hidden.
+    await expect(page.locator('[data-scroll-container="extraction-form"]')).toBeVisible({
+      timeout: 15000,
+    });
     // The breadcrumb is rendered inside a navigation landmark with role="navigation" name "breadcrumb".
     const breadcrumb = page.getByRole("navigation", { name: /breadcrumb/i });
-    await expect(breadcrumb).toBeVisible({ timeout: 5000 });
     const projectLink = breadcrumb.getByText("E2E Test Project").first();
-    await expect(projectLink).toBeVisible();
+    await expect(projectLink).toBeVisible({ timeout: 5000 });
 
     await projectLink.click();
     await page.waitForURL(new RegExp(`/projects/${env.projectId}(?!/extraction)`), { timeout: 10000 });
