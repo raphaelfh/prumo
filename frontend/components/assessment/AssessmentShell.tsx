@@ -67,27 +67,31 @@ export function AssessmentShell({
             data-testid="assessment-shell-form"
           >
             <div className="flex h-full flex-col">
-              <div className="flex shrink-0 items-center justify-end px-3 py-2">
-                {pdf.isOpen ? (
-                  <button
-                    type="button"
-                    onClick={pdf.close}
-                    className="text-sm text-muted-foreground hover:underline"
-                    data-testid="assessment-shell-hide-pdf"
-                  >
-                    Hide PDF
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={pdf.open}
-                    className="text-sm text-muted-foreground hover:underline"
-                    data-testid="assessment-shell-show-pdf"
-                  >
-                    Show PDF
-                  </button>
-                )}
-              </div>
+              {/* In-shell PDF toggle: hidden when the caller owns the toggle
+                  (e.g. QA page wires RunHeader.PanelToggle via pdfState). */}
+              {!pdfState && (
+                <div className="flex shrink-0 items-center justify-end px-3 py-2">
+                  {pdf.isOpen ? (
+                    <button
+                      type="button"
+                      onClick={pdf.close}
+                      className="text-sm text-muted-foreground hover:underline"
+                      data-testid="assessment-shell-hide-pdf"
+                    >
+                      Hide PDF
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={pdf.open}
+                      className="text-sm text-muted-foreground hover:underline"
+                      data-testid="assessment-shell-show-pdf"
+                    >
+                      Show PDF
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="min-h-0 flex-1 overflow-auto">{formPanel}</div>
             </div>
           </ResizablePanel>

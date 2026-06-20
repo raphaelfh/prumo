@@ -234,21 +234,26 @@ describe("QualityAssessmentFullScreen", () => {
 
   it("renders header with QA badge + template name + version", async () => {
     renderPage();
-    expect(screen.getByTestId("qa-kind-badge")).toHaveTextContent(
-      "Quality Assessment",
-    );
+    // Kind badge is now a compact 'QA' identifier (not the full 'Quality Assessment').
+    expect(screen.getByTestId("qa-kind-badge")).toHaveTextContent("QA");
+    // Template name is now in the Breadcrumb crumb; version is in qa-template-name.
     await waitFor(() =>
       expect(screen.getByTestId("qa-template-name")).toHaveTextContent(
-        "PROBAST",
+        /v1\.0\.0/,
       ),
     );
-    expect(screen.getByText(/v1\.0\.0/)).toBeInTheDocument();
+    // Template name appears in the breadcrumb.
+    expect(screen.getByText("PROBAST")).toBeInTheDocument();
   });
 
-  it("AssessmentShell starts with PDF collapsed (Show PDF visible)", async () => {
+  it("AssessmentShell shows PDF panel toggle only in header (no in-shell toggle when pdfState provided)", async () => {
+    // QA page passes pdfState to AssessmentShell so the RunHeader.PanelToggle
+    // is the single PDF control — the in-shell toggle must be absent.
     renderPage();
     expect(screen.getByTestId("assessment-shell")).toBeInTheDocument();
-    expect(screen.getByTestId("assessment-shell-show-pdf")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("assessment-shell-show-pdf"),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByTestId("assessment-shell-pdf"),
     ).not.toBeInTheDocument();

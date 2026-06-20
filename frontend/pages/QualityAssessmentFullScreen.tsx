@@ -508,7 +508,6 @@ export default function QualityAssessmentFullScreen() {
     });
   };
 
-  const templateNameLabel = template?.name ?? (loading ? t("common", "loading") : "—");
   const versionLabel = template ? `v${template.version}` : "";
 
   const header = (
@@ -538,25 +537,22 @@ export default function QualityAssessmentFullScreen() {
         <RunHeader.Left>
           <RunHeader.Breadcrumb
             onBack={() => navigate(`/projects/${projectId}`)}
-            crumbs={[{ label: t("qa", "badge") }]}
+            crumbs={[{ label: template?.name ?? "" }]}
           />
-          {/* QA kind badge — adjacent to breadcrumb */}
+          {/* QA kind badge — compact identifier next to breadcrumb */}
           <Badge
             variant="outline"
             className="border-warning/30 bg-warning/10 text-warning shrink-0"
             data-testid="qa-kind-badge"
           >
-            {t("qa", "badge")}
+            {t("qa", "badgeShort")}
           </Badge>
-          {/* Template name + version */}
-          <span
-            className="truncate text-sm font-medium"
-            data-testid="qa-template-name"
-          >
-            {templateNameLabel}
-          </span>
+          {/* Version */}
           {versionLabel ? (
-            <span className="text-xs text-muted-foreground shrink-0">
+            <span
+              className="text-xs text-muted-foreground shrink-0"
+              data-testid="qa-template-name"
+            >
               {versionLabel}
             </span>
           ) : null}

@@ -50,6 +50,7 @@ export const qa = {
 
   // QualityAssessmentFullScreen — header, status, toasts
   badge: 'Quality Assessment',
+  badgeShort: 'QA',
   loadingTemplate: 'Loading template…',
   missingRouteParams: 'Missing route parameters.',
   templateNotFound:
