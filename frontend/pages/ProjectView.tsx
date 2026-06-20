@@ -21,16 +21,10 @@ import {ZoteroImportDialog} from "@/components/articles/ZoteroImportDialog";
 import {RISImportDialog} from "@/components/articles/RISImportDialog";
 import {useProject} from "@/contexts/ProjectContext";
 import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
-import {useProjectMemberRole} from "@/hooks/useProjectMemberRole";
 import {t} from "@/lib/copy";
 import type {Article} from "@/types/article";
 
 type ProjectArticle = Article;
-
-const TAB_DESCRIPTIONS: Record<string, string> = {
-    extraction: 'Extract structured data using standard templates',
-    quality: 'Assess article quality with PROBAST, QUADAS-2, and other risk-of-bias tools',
-};
 
 export default function ProjectView() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -39,35 +33,6 @@ export default function ProjectView() {
 
     // Use context for project state and navigation
   const { project, setProject: setContextProject, activeTab } = useProject();
-
-    const {isManager} = useProjectMemberRole(
-        activeTab === 'extraction' || activeTab === 'quality' ? projectId || '' : '',
-    );
-    const extractionTab = searchParams.get('extractionTab') as 'extraction' | 'dashboard' | 'configuration' | null;
-    const currentExtractionTab = (extractionTab && ['extraction', 'dashboard', 'configuration'].includes(extractionTab))
-        ? extractionTab
-        : 'extraction';
-
-    const setExtractionTab = (tab: 'extraction' | 'dashboard' | 'configuration') => {
-        const next = new URLSearchParams(searchParams);
-        next.set('extractionTab', tab);
-        setSearchParams(next, {replace: true});
-    };
-
-    const qaTab = searchParams.get('qaTab') as
-        | 'assessment'
-        | 'dashboard'
-        | 'configuration'
-        | null;
-    const currentQaTab = (qaTab && ['assessment', 'dashboard', 'configuration'].includes(qaTab))
-        ? qaTab
-        : 'assessment';
-
-    const setQaTab = (tab: 'assessment' | 'dashboard' | 'configuration') => {
-        const next = new URLSearchParams(searchParams);
-        next.set('qaTab', tab);
-        setSearchParams(next, {replace: true});
-    };
 
     const [articles, setArticles] = useState<ProjectArticle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -282,72 +247,14 @@ export default function ProjectView() {
   return (
       <div className="h-full bg-background flex flex-col">
 
-          {/* Sticky action bar — stack on narrow (flex-col md:flex-row), single row from md */}
-        {!isFullBleed && (
+          {/* Sticky action bar — Articles only */}
+        {activeTab === 'articles' && (
             <div
                 className="shrink-0 min-h-12 md:h-12 flex flex-col md:flex-row md:items-center md:justify-between items-stretch gap-2 md:gap-0 py-3 md:py-0 border-b border-border/40 bg-background/80 backdrop-blur-sm px-6 lg:px-10">
           <span className="text-[13px] text-muted-foreground/70 w-full min-w-0 md:flex-1 md:truncate">
-            {activeTab === 'articles'
-                ? 'Articles'
-                : (TAB_DESCRIPTIONS[activeTab] ?? '')}
+            {t('pages', 'projectViewArticlesLabel')}
           </span>
-                {activeTab === 'extraction' && (
-                    <div className="flex items-center gap-0.5 w-full md:w-auto shrink-0" role="tablist"
-                         aria-label="Extraction views">
-                        {[
-                            {value: 'extraction' as const, label: t('extraction', 'tabExtraction')},
-                            {value: 'dashboard' as const, label: t('extraction', 'tabDashboard')},
-                            ...(isManager ? [{
-                                value: 'configuration' as const,
-                                label: t('extraction', 'tabConfiguration')
-                            }] : []),
-                        ].map(({value, label}) => (
-                            <Button
-                                key={value}
-                                variant="ghost"
-                                size="sm"
-                                className={`h-8 px-3 text-[13px] font-medium rounded-md transition-colors duration-75 ${
-                                    currentExtractionTab === value ? 'bg-muted/50 text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-                                }`}
-                                onClick={() => setExtractionTab(value)}
-                                aria-selected={currentExtractionTab === value}
-                                role="tab"
-                            >
-                                {label}
-                            </Button>
-                        ))}
-                    </div>
-                )}
-                {activeTab === 'quality' && (
-                    <div className="flex items-center gap-0.5 w-full md:w-auto shrink-0" role="tablist"
-                         aria-label="Quality assessment views">
-                        {[
-                            {value: 'assessment' as const, label: t('qa', 'tabAssessment')},
-                            {value: 'dashboard' as const, label: t('qa', 'tabDashboard')},
-                            ...(isManager ? [{
-                                value: 'configuration' as const,
-                                label: t('qa', 'tabConfiguration')
-                            }] : []),
-                        ].map(({value, label}) => (
-                            <Button
-                                key={value}
-                                variant="ghost"
-                                size="sm"
-                                className={`h-8 px-3 text-[13px] font-medium rounded-md transition-colors duration-75 ${
-                                    currentQaTab === value ? 'bg-muted/50 text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-                                }`}
-                                onClick={() => setQaTab(value)}
-                                aria-selected={currentQaTab === value}
-                                role="tab"
-                                data-testid={`hitl-quality_assessment-tab-${value}`}
-                            >
-                                {label}
-                            </Button>
-                        ))}
-                    </div>
-                )}
-              {activeTab === 'articles' && (
-                  <div className="flex items-center gap-1.5 w-full md:w-auto shrink-0 flex-wrap">
+              <div className="flex items-center gap-1.5 w-full md:w-auto shrink-0 flex-wrap">
                       <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                               <Button
@@ -410,7 +317,6 @@ export default function ProjectView() {
                           {t('pages', 'projectViewAddArticle')}
                       </Button>
                   </div>
-              )}
             </div>
         )}
 
