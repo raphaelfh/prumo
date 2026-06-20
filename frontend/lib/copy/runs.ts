@@ -36,6 +36,7 @@ export const runs = {
   more: 'More options',
   // AIActions
   extractWithAI: 'Extract with AI',
+  extractingWithAI: 'Extracting with AI…',
   // Navigation (also kept in extraction for ExtractionHeader callers)
   articlePrevious: 'Previous article',
   articleNext: 'Next article',

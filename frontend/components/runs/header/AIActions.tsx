@@ -15,7 +15,7 @@ export function AIActions({ pendingCount, canExtract, extracting, onExtract, onO
     return (
       <Button size="sm" variant="secondary" onClick={onExtract} disabled={extracting} className="gap-1.5">
         <Sparkles className="h-4 w-4 text-ai" aria-hidden="true" />
-        {extracting ? t('extraction', 'extractingWithAI') : t('runs', 'extractWithAI')}
+        {extracting ? t('runs', 'extractingWithAI') : t('runs', 'extractWithAI')}
       </Button>
     );
   }
