@@ -84,6 +84,7 @@ postgres
 PostgREST
 probast
 prumo
+prumoai
 psutil
 psycopg
 pubmed
