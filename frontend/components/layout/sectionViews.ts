@@ -24,7 +24,7 @@ export function getSectionViews(sectionId: string): SectionView[] {
   return sectionViews[sectionId] ?? [];
 }
 
-export const sectionDescriptionKey: Record<string, string> = {
+export const sectionDescriptionKey: Record<string, 'sectionDescriptionExtraction' | 'sectionDescriptionQuality'> = {
   extraction: 'sectionDescriptionExtraction',
   quality: 'sectionDescriptionQuality',
 };
