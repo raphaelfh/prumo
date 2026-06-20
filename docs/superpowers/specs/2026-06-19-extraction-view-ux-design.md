@@ -339,6 +339,23 @@ re-skin `ExtractionHeader` under the same props → fold the banner row into
 constraints as §6 (React Compiler no try/finally; copy via `lib/copy`; read
 `error.message`; no schema/API changes).
 
+**Status (2026-06-20):** P0 + the calm-bar P1 slot behaviors shipped on
+`claude/musing-morse-e2f724` (lib at `frontend/components/runs/header/`,
+`ExtractionHeader` re-skinned, banner folded, AI-extraction re-wired, article
+pager preserved; final review: ready to merge). **Plan 2 (same branch) scope —
+the QA-migration prerequisites flagged during review, do these when wiring QA:**
+(1) the shared slots currently call `t('extraction', …)` and `stage.ts` hardcodes
+the four stage labels — move the shared `runHeader*`/stage keys to a `runs`/
+`common` namespace (or thread a `copyNs`/label set through `RunHeaderValue`) before
+QA composes the slots; (2) widen `StageTransition.to` off `ExtractionRunStage` to a
+neutral type in the shared context; (3) consider folding `SaveSlot` into the
+shared `SaveStatusBadge` (ambient variant) rather than two save components; (4)
+the residual `HITLStatusBadges`/`ReviewerProgressBadge` strip below the bar (a
+partial fold) — fully fold into `StageRail`/`Reviewers` or keep deliberately.
+Also still P2: `RunHeader.Worklist` peek, Cmd-K long-tail + container-query
+collapse (the bar overflows below ~1100px until then), the actionable reveal
+(`canReveal`/`onReveal` is stubbed today), and restoring shortcuts/help into Cmd-K.
+
 ## 4. Design tokens (reuse — do not invent)
 
 Confirmed against `frontend/index.css` + `tailwind.config.ts` + live components.
