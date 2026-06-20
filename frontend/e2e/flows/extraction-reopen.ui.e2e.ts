@@ -157,30 +157,35 @@ test.describe("Extraction reopen UI flow", () => {
       articleId: env.articleId!,
     });
 
-    // Visit the extraction page. The HITL banner should render the
-    // Published badge + the Reopen button.
+    // Visit the extraction page. The StageRail in RunHeader should show
+    // the Finalized node as current once the finalized run loads.
     await page.goto(
       `${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`,
     );
-    await expect(page.getByTestId("extraction-hitl-banner")).toBeVisible({
-      timeout: 30000,
-    });
-    // Banner can render the active-run progress first and only swap to the
-    // finalized state once useFinalizedExtractionRun resolves — give it room.
-    await expect(page.getByTestId("extraction-finalized-badge")).toBeVisible({
-      timeout: 20000,
-    });
-    const reopenButton = page.getByTestId("extraction-reopen-button");
-    await expect(reopenButton).toBeVisible();
-    await expect(reopenButton).toBeEnabled();
+    // Wait for the page to load (back button is always present).
+    await expect(
+      page.getByRole("button", { name: /^back$/i }).first(),
+    ).toBeVisible({ timeout: 30000 });
+    // The current stage node carries data-testid="run-stage-current" and
+    // contains the "Finalized" label.
+    await expect(
+      page.getByTestId("run-stage-current").filter({ hasText: /finalized/i }),
+    ).toBeVisible({ timeout: 20000 });
 
-    // Click reopen — banner re-renders with Revision badge once the
-    // useExtractedValues + useFinalizedExtractionRun refetches land.
-    await reopenButton.click();
+    // Reopen is exposed in the overflow Menu (MoreHorizontal trigger
+    // aria-label = "More options").
+    const moreMenu = page.getByRole("button", { name: /more options/i });
+    await expect(moreMenu).toBeVisible({ timeout: 10000 });
+    await moreMenu.click();
+    const reopenItem = page.getByRole("menuitem", { name: /reopen/i });
+    await expect(reopenItem).toBeVisible();
+    await reopenItem.click();
 
-    await expect(page.getByTestId("extraction-revision-badge")).toBeVisible({
-      timeout: 20000,
-    });
+    // After reopen the StageRail shows a "Revision" tag inside
+    // nav[aria-label="Run stage"] once the new run loads.
+    await expect(
+      page.getByRole("navigation", { name: /run stage/i }),
+    ).toContainText(/revision/i, { timeout: 20000 });
 
     // Sanity via API: the latest non-terminal run for this triple has
     // parent_run_id pointing at the original.

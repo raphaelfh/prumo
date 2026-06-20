@@ -1,0 +1,114 @@
+/**
+ * RunHeader.Worklist — queue-peek slot.
+ *
+ * Renders a pill group: prev arrow | "N / total" popover trigger | next arrow.
+ * The popover contains a searchable command list of all articles.
+ *
+ * NOTE: per-article status is NOT rendered here because the articles prop only
+ * carries id + title.
+ * TODO(plan-future): per-article status needs a batch runs endpoint
+ */
+
+import { useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandGroup,
+  CommandItem,
+} from '@/components/ui/command';
+import { cn } from '@/lib/utils';
+import { t } from '@/lib/copy';
+
+// =================== TYPES ===================
+
+export interface WorklistProps {
+  articles: { id: string; title: string }[];
+  currentId: string;
+  onNavigate: (id: string) => void;
+}
+
+// =================== COMPONENT ===================
+
+export function Worklist({ articles, currentId, onNavigate }: WorklistProps) {
+  const [open, setOpen] = useState(false);
+
+  const idx = articles.findIndex(a => a.id === currentId);
+  const hasPrev = idx > 0;
+  const hasNext = idx < articles.length - 1;
+
+  function handleSelect(id: string) {
+    setOpen(false);
+    onNavigate(id);
+  }
+
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 p-0"
+        aria-label={t('runs', 'articlePrevious')}
+        disabled={!hasPrev}
+        onClick={() => hasPrev && onNavigate(articles[idx - 1].id)}
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-[11px] tabular-nums text-muted-foreground"
+            aria-label={`${idx + 1} / ${articles.length}`}
+          >
+            {idx + 1} / {articles.length}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          className="w-80 p-0 shadow-elev-popover"
+          align="center"
+        >
+          <Command>
+            <CommandInput placeholder={t('runs', 'worklistSearch')} />
+            <div className="px-3 py-1.5 text-[11px] text-muted-foreground border-b">
+              {t('runs', 'worklistPosition').replace('{{n}}', String(idx + 1)).replace('{{m}}', String(articles.length))}
+            </div>
+            <CommandList>
+              <CommandGroup>
+                {articles.map(article => (
+                  <CommandItem
+                    key={article.id}
+                    value={article.title}
+                    className={cn(
+                      'truncate',
+                      article.id === currentId && 'bg-info/10',
+                    )}
+                    onSelect={() => handleSelect(article.id)}
+                  >
+                    <span className="truncate">{article.title}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 p-0"
+        aria-label={t('runs', 'articleNext')}
+        disabled={!hasNext}
+        onClick={() => hasNext && onNavigate(articles[idx + 1].id)}
+      >
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}

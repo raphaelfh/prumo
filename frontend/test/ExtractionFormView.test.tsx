@@ -10,7 +10,7 @@
  * UI. These specs lock the contract per slice.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/copy', () => ({
@@ -71,6 +71,23 @@ vi.mock('@/components/extraction/BatchAllModelsSectionsProgress', () => ({
 
 vi.mock('@/components/ui/separator', () => ({
   Separator: () => <hr />,
+}));
+
+vi.mock('@/hooks/extraction/useActiveSection', () => ({
+  useActiveSection: () => ({ activeId: null, registerSection: vi.fn(), scrollToSection: vi.fn() }),
+  pickMostVisible: vi.fn(),
+}));
+
+vi.mock('@/components/extraction/SectionNavRail', () => ({
+  default: (props: any) => (
+    <nav aria-label="sectionNavAria" className={props.collapsed ? 'w-11' : ''}>
+      {props.items.map((item: any) => (
+        <button key={item.id} type="button" onClick={() => props.onSelect(item.id)}>
+          {!props.collapsed && item.label}
+        </button>
+      ))}
+    </nav>
+  ),
 }));
 
 import { ExtractionFormView } from '@/components/extraction/ExtractionFormView';
@@ -431,5 +448,83 @@ describe('ExtractionFormView → combined render order', () => {
     expect(screen.getByTestId('section-study_metadata')).toBeInTheDocument();
     expect(screen.getByTestId('section-prediction_models')).toBeInTheDocument();
     expect(screen.getByTestId('section-source_of_data')).toBeInTheDocument();
+  });
+});
+
+function renderFormView(overrides: Partial<any> = {}) {
+  return render(
+    <ExtractionFormView
+      {...baseProps({ studyLevelSections: [STUDY_SECTION], ...overrides })}
+    />,
+  );
+}
+
+describe('ExtractionFormView → section nav rail', () => {
+  it('renders a section nav rail with a row per study section', () => {
+    renderFormView();
+    const nav = screen.getByRole('navigation', { name: 'sectionNavAria' });
+    expect(within(nav).getAllByRole('button').length).toBeGreaterThan(0);
+  });
+});
+
+describe('ExtractionFormView → showPDF collapses the section rail', () => {
+  it('shows section labels when showPDF=false and hides them when rerendered with showPDF=true', () => {
+    // Use STABLE object references for every prop the comparator checks so the
+    // ONLY change between the two renders is showPDF.  If the comparator omits
+    // showPDF it returns true (skip), the rail never gets the new prop, and the
+    // label stays visible — failing the second assertion.
+    const stableSections = [STUDY_SECTION];
+    const stableInstances: any[] = [];
+    const stableValues = {};
+    const stableModels: any[] = [];
+    const stableAiSuggestions = {};
+    const stableHandlers = {
+      updateValue: vi.fn(),
+      acceptSuggestion: vi.fn(),
+      rejectSuggestion: vi.fn(),
+      setActiveModelId: vi.fn(),
+      onAddModel: vi.fn(),
+      onRemoveModel: vi.fn(),
+      onRefreshModels: vi.fn().mockResolvedValue(undefined),
+      onRefreshInstances: vi.fn().mockResolvedValue(undefined),
+      getInstancesForModel: vi.fn(() => [] as any[]),
+      handleAddInstance: vi.fn(),
+      handleRemoveInstance: vi.fn(),
+    };
+
+    const sharedProps = {
+      studyLevelSections: stableSections,
+      modelParentEntityType: undefined as any,
+      modelChildSections: stableModels,
+      instances: stableInstances,
+      values: stableValues,
+      aiSuggestions: stableAiSuggestions,
+      models: stableModels,
+      activeModelId: null as string | null,
+      projectId: 'p',
+      articleId: 'a',
+      templateId: 't',
+      modelsLoading: false,
+      ...stableHandlers,
+    };
+
+    const { rerender } = render(
+      <ExtractionFormView {...sharedProps} showPDF={false} />,
+    );
+
+    // Expanded: the section label text is visible inside the nav
+    const nav = screen.getByRole('navigation', { name: 'sectionNavAria' });
+    expect(within(nav).getByText(STUDY_SECTION.label)).toBeInTheDocument();
+    expect(nav).not.toHaveClass('w-11');
+
+    // Rerender with showPDF=true — all other prop references are identical so
+    // the comparator's existing terms all return true.  Without the showPDF
+    // term the comparator returns true (bail), the rail never collapses, and
+    // the label text remains visible → test fails RED.  After the fix the
+    // comparator correctly returns false → re-render → rail collapses.
+    rerender(<ExtractionFormView {...sharedProps} showPDF={true} />);
+
+    expect(within(nav).queryByText(STUDY_SECTION.label)).not.toBeInTheDocument();
+    expect(nav).toHaveClass('w-11');
   });
 });

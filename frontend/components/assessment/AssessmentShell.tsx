@@ -5,7 +5,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { usePdfPanel } from "@/hooks/usePdfPanel";
+import { usePdfPanel, type UsePdfPanelResult } from "@/hooks/usePdfPanel";
 
 export interface AssessmentShellProps {
   /** PDF viewer content for the left panel. */
@@ -16,6 +16,12 @@ export interface AssessmentShellProps {
   header?: ReactNode;
   /** When true, the PDF panel starts open. Default false (collapsed). */
   initialPdfOpen?: boolean;
+  /**
+   * Externally-owned PDF panel state.
+   * When provided, overrides the internal `usePdfPanel` instance so callers
+   * (e.g. the QA page) can wire a RunHeader.PanelToggle to the same toggle fn.
+   */
+  pdfState?: UsePdfPanelResult;
 }
 
 /**
@@ -27,8 +33,10 @@ export function AssessmentShell({
   formPanel,
   header,
   initialPdfOpen = false,
+  pdfState,
 }: AssessmentShellProps) {
-  const pdf = usePdfPanel({ initialOpen: initialPdfOpen });
+  const internalPdf = usePdfPanel({ initialOpen: initialPdfOpen });
+  const pdf = pdfState ?? internalPdf;
   return (
     <div
       className="flex h-full w-full flex-col"
@@ -59,27 +67,31 @@ export function AssessmentShell({
             data-testid="assessment-shell-form"
           >
             <div className="flex h-full flex-col">
-              <div className="flex shrink-0 items-center justify-end px-3 py-2">
-                {pdf.isOpen ? (
-                  <button
-                    type="button"
-                    onClick={pdf.close}
-                    className="text-sm text-muted-foreground hover:underline"
-                    data-testid="assessment-shell-hide-pdf"
-                  >
-                    Hide PDF
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={pdf.open}
-                    className="text-sm text-muted-foreground hover:underline"
-                    data-testid="assessment-shell-show-pdf"
-                  >
-                    Show PDF
-                  </button>
-                )}
-              </div>
+              {/* In-shell PDF toggle: hidden when the caller owns the toggle
+                  (e.g. QA page wires RunHeader.PanelToggle via pdfState). */}
+              {!pdfState && (
+                <div className="flex shrink-0 items-center justify-end px-3 py-2">
+                  {pdf.isOpen ? (
+                    <button
+                      type="button"
+                      onClick={pdf.close}
+                      className="text-sm text-muted-foreground hover:underline"
+                      data-testid="assessment-shell-hide-pdf"
+                    >
+                      Hide PDF
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={pdf.open}
+                      className="text-sm text-muted-foreground hover:underline"
+                      data-testid="assessment-shell-show-pdf"
+                    >
+                      Show PDF
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="min-h-0 flex-1 overflow-auto">{formPanel}</div>
             </div>
           </ResizablePanel>

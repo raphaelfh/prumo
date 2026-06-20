@@ -2,10 +2,10 @@
  * Model Selector Component
  *
  * Prediction model selector for hierarchical extraction.
- * Permite selecionar modelo via dropdown, adicionar novos e remover o ativo.
- * 
+ * Lets the user pick a model via dropdown, add new ones, and remove the active one.
+ *
  * Features:
- * - Dropdown limpo e minimalista
+ * - Clean, minimalist dropdown
  * - Badge with progress per model
  * - Button to add new model
  * - Button to remove active model
@@ -128,7 +128,7 @@ export function ModelSelector({
               {t('extraction', 'noModelsAdded')}
           </h3>
           <p className="text-sm text-muted-foreground mb-4">
-            Adicione um modelo manualmente ou extraia automaticamente do artigo.
+            {t('extraction', 'noModelsAddedDesc')}
           </p>
           <div className="flex flex-col sm:flex-row gap-2 justify-center">
             {onExtractModels && (
@@ -142,7 +142,7 @@ export function ModelSelector({
                 {extractingModels ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Extraindo...
+                    {t('extraction', 'extractingWithAI')}
                   </>
                 ) : (
                   <>

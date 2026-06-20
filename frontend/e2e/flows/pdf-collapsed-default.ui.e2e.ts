@@ -30,27 +30,23 @@ test.describe("Extraction PDF panel — collapsed by default", () => {
       page.getByRole("button", { name: /^back$/i }).first(),
     ).toBeVisible({ timeout: 20000 });
 
-    // The PDF toggle in HeaderPDFControls renders either "Show" (desktop)
-    // or aria-label "Show PDF" (compact). With the new collapsed-by-default
-    // behavior, that toggle must show the SHOW state on first load.
-    const showButton = page
-      .getByRole("button", { name: /^(show|show pdf)$/i })
+    // The PDF panel toggle (RunHeader.PanelToggle) has aria-label="Toggle source panel"
+    // and aria-pressed reflecting the open/closed state. On first load the panel
+    // is collapsed so aria-pressed must be "false".
+    const panelToggle = page
+      .getByRole("button", { name: /toggle source panel/i })
       .first();
-    await expect(showButton).toBeVisible({ timeout: 10000 });
+    await expect(panelToggle).toBeVisible({ timeout: 10000 });
 
-    // Click to open the PDF panel.
-    await showButton.click();
+    // Verify collapsed by default (aria-pressed="false").
+    await expect(panelToggle).toHaveAttribute("aria-pressed", "false");
 
-    // The toggle now shows HIDE state.
-    const hideButton = page
-      .getByRole("button", { name: /^(hide|hide pdf)$/i })
-      .first();
-    await expect(hideButton).toBeVisible({ timeout: 5000 });
+    // Click to open the PDF panel — aria-pressed flips to "true".
+    await panelToggle.click();
+    await expect(panelToggle).toHaveAttribute("aria-pressed", "true", { timeout: 5000 });
 
-    // Click hide to collapse again — toggle returns to SHOW.
-    await hideButton.click();
-    await expect(
-      page.getByRole("button", { name: /^(show|show pdf)$/i }).first(),
-    ).toBeVisible({ timeout: 5000 });
+    // Click again to collapse — returns to "false".
+    await panelToggle.click();
+    await expect(panelToggle).toHaveAttribute("aria-pressed", "false", { timeout: 5000 });
   });
 });

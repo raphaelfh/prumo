@@ -1,23 +1,21 @@
 /**
- * Unified extraction interface header
+ * Extraction interface header — re-skinned onto the shared RunHeader compound.
  *
- * Refactored component following DRY, KISS, unified and responsive principles.
- * Uses smaller extracted components for better maintainability.
+ * The ExtractionHeaderProps interface is kept stable (additive changes only) so
+ * callers do not need to change. New optional props enable RunHeader features:
+ * stage/transition/isRevision for the StageRail, reviewers for the Reviewers
+ * slot, AI props for AIActions, and reopen affordance via the Menu.
  *
  * @component
  */
 
-import {TooltipProvider,} from '@/components/ui/tooltip';
-import {useIsMobile} from '@/hooks/use-mobile';
-import {type UserRole} from '@/lib/comparison/permissions';
-import {HeaderNavigation} from './header/HeaderNavigation';
-import {HeaderPDFControls} from './header/HeaderPDFControls';
-import {HeaderStatusBadges} from './header/HeaderStatusBadges';
-import {HeaderFinalizeButton} from './header/HeaderFinalizeButton';
-import {HeaderAIActions} from './header/HeaderAIActions';
-import {HeaderMoreMenu} from './header/HeaderMoreMenu';
-import type {AISuggestion} from '@/types/ai-extraction';
-import type {SaveState} from '@/hooks/runs';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { type UserRole } from '@/lib/comparison/permissions';
+import { RunHeader, type RunHeaderValue, type StageTransition } from '@/components/runs/header';
+import type { ExtractionRunStage } from '@/types/ai-extraction';
+import type { SaveState } from '@/hooks/runs';
+import { t } from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -26,70 +24,101 @@ interface Article {
   title: string;
 }
 
-interface ExtractionHeaderProps {
-    // Navigation
+export interface ExtractionHeaderProps {
+  // Navigation
   projectId: string;
   projectName: string;
   articleTitle: string;
   onBack: () => void;
 
-    // Article navigation
+  // Article navigation
   articles: Article[];
   currentArticleId: string;
   onNavigateToArticle: (articleId: string) => void;
 
-    // Progress
+  // Progress
   completedFields: number;
   totalFields: number;
   completionPercentage: number;
 
-    // View controls
+  // View controls
   showPDF: boolean;
   onTogglePDF: () => void;
   viewMode: 'extract' | 'compare';
   onViewModeChange: (mode: 'extract' | 'compare') => void;
   hasComparison: boolean;
 
-    // Permissions and role (optional)
+  // Permissions and role (optional)
   userRole?: UserRole;
   isBlindMode?: boolean;
 
-    // Status and actions
+  // Status and actions
   saveState?: SaveState;
   lastSavedAt?: Date | null;
   hasUnsavedChanges?: boolean;
   isComplete: boolean;
   onFinalize: () => void;
-  /** Optional label override for the finalize button — set to
-   * "Submit for review" while the run is still in PROPOSAL. */
+  /** @deprecated Pass transition instead; kept for backward compat. */
   finalizeLabel?: string;
   submitting?: boolean;
 
-    // AI Extraction (optional - kept for compatibility)
+  // AI Extraction (optional - kept for compatibility)
   templateId?: string;
   templateName?: string;
-  /** Active run id forwarded to HeaderMoreMenu so "Extract with AI"
-   * reuses the open run instead of creating a parallel one. */
+  /** Active run id — forwarded but not rendered directly by this header. */
   runId?: string | null;
   /** Whether AI extraction may run (only in PROPOSAL; one-time-done after). */
   canRunAI?: boolean;
   onExtractionComplete?: (runId?: string) => void | Promise<void>;
 
-    // AI suggestions (for Zone 4 badge)
-  aiSuggestions?: Record<string, AISuggestion>;
+  // AI suggestions (for badge)
+  aiSuggestions?: Record<string, unknown>;
   onAISuggestionsClick?: () => void;
 
-    // Callback to refresh after extraction
+  // Callback to refresh after extraction
   onRefreshInstances?: () => Promise<void>;
-    // Callback to expose AI extraction state
-  onExtractionStateChange?: (state: { loading: boolean; progress: any }) => void;
+  // Callback to expose AI extraction state
+  onExtractionStateChange?: (state: { loading: boolean; progress: unknown }) => void;
+
+  // ---- NEW optional RunHeader features ----
+
+  /** Current run stage. When provided, a StageRail is shown. */
+  stage?: ExtractionRunStage;
+
+  /** Pre-built stage transition from buildExtractionTransition(). */
+  transition?: StageTransition | null;
+
+  /** True when this run is a revision of a finalized run. */
+  isRevision?: boolean;
+
+  /** Reviewer state for the Reviewers slot. */
+  reviewers?: { count: number; required: number; divergent: number };
+
+  /** Whether the current user can reveal blind reviewer identities. */
+  canReveal?: boolean;
+  onReveal?: () => void;
+
+  /** Jump to the compare/divergence view. */
+  onJumpToDivergence?: () => void;
+
+  /** Pending AI suggestion count for AIActions badge. */
+  aiPendingCount?: number;
+
+  /** Trigger AI extraction from the header. */
+  onExtractWithAI?: () => void;
+  extractingAI?: boolean;
+
+  /** Show a "Reopen for revision" item in the Menu. */
+  canReopen?: boolean;
+  onReopen?: () => void;
+  reopening?: boolean;
 }
 
 // =================== COMPONENT ===================
 
 export function ExtractionHeader(props: ExtractionHeaderProps) {
+  const navigate = useNavigate();
   const {
-    projectId,
     projectName,
     articleTitle,
     onBack,
@@ -105,183 +134,165 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     onViewModeChange,
     hasComparison,
     userRole,
-    isBlindMode,
+    isBlindMode = false,
     saveState,
     lastSavedAt = null,
-    hasUnsavedChanges = false,
-    isComplete,
-    onFinalize,
-    finalizeLabel,
     submitting = false,
-    aiSuggestions = {},
-    onAISuggestionsClick,
+    stage = null,
+    transition = null,
+    isRevision = false,
+    reviewers = { count: 0, required: 0, divergent: 0 },
+    canReveal = false,
+    onReveal,
+    onJumpToDivergence,
+    aiPendingCount = 0,
+    onExtractWithAI,
+    extractingAI = false,
+    canRunAI = false,
+    canReopen = false,
+    onReopen,
+    reopening = false,
   } = props;
 
-  const isMobile = useIsMobile();
+  // ---- Cmd-K palette state ----
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Global ⌘K / Ctrl+K toggle — cleanup via return, NOT try/finally (React Compiler).
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return;
+      const target = e.target as HTMLElement;
+      const isEditing =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target.isContentEditable;
+      if (isEditing) return;
+      e.preventDefault();
+      setPaletteOpen((prev) => !prev);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  // ---- Palette actions: surface all edge-action handlers ----
+  // note: Export lives in ExtractionExportDialog, not the header
+  const paletteActions: { id: string; label: string; run: () => void }[] = [];
+
+  if (hasComparison) {
+    paletteActions.push({
+      id: 'compare',
+      label: t('extraction', 'runHeaderCompareToggle'),
+      run: () => onViewModeChange(viewMode === 'compare' ? 'extract' : 'compare'),
+    });
+  }
+  if (canReopen) {
+    paletteActions.push({
+      id: 'reopen',
+      label: t('extraction', 'runHeaderReopenForRevision'),
+      run: () => onReopen?.(),
+    });
+  }
+  paletteActions.push({
+    id: 'panel',
+    label: t('runs', 'togglePanel'),
+    run: () => onTogglePDF(),
+  });
+  if (canReveal && onReveal) {
+    paletteActions.push({
+      id: 'reveal',
+      label: t('runs', 'reveal'),
+      run: () => onReveal(),
+    });
+  }
+  const headerValue: RunHeaderValue = {
+    kind: 'extraction',
+    stage,
+    isRevision,
+    role: userRole,
+    isBlind: isBlindMode,
+    canReveal,
+    onReveal,
+    progress: { completed: completedFields, total: totalFields, pct: completionPercentage },
+    reviewers,
+    transition,
+    submitting,
+    onJumpToDivergence,
+  };
 
   return (
-    <TooltipProvider delayDuration={200}>
-      <header className="border-b border-border/40 bg-background/80 backdrop-blur-md relative z-10">
-        {isMobile ? (
-          /* Mobile Layout: Minimalista e organizado */
-          <div className="flex flex-col px-4 py-2.5 gap-2.5">
-              {/* Row 1: Navigation + Status + Finalize */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <HeaderNavigation
-                  projectId={projectId}
-                  projectName={projectName}
-                  articleTitle={articleTitle}
-                  onBack={onBack}
-                  showBackText={false}
-                  maxBreadcrumbWidth="200px"
-                  articles={articles}
-                  currentArticleId={currentArticleId}
-                  onNavigateToArticle={onNavigateToArticle}
-                />
-              </div>
-              
-              <div className="flex items-center gap-2 shrink-0">
-                <HeaderStatusBadges
-                  userRole={userRole}
-                  isBlindMode={isBlindMode}
-                  completedFields={completedFields}
-                  totalFields={totalFields}
-                  completionPercentage={completionPercentage}
-                  saveState={saveState}
-                  lastSavedAt={lastSavedAt}
-                  hasUnsavedChanges={hasUnsavedChanges}
-                  compact={true}
-                />
-              </div>
-              
-              <div className="shrink-0">
-                <HeaderFinalizeButton
-                  isComplete={isComplete}
-                  onSubmit={onFinalize}
-                  submitting={submitting}
-                  variant="default"
-                  size="sm"
-                  label={finalizeLabel}
-                />
-              </div>
-            </div>
-
-              {/* Row 2: PDF controls + Secondary actions */}
-            <div className="flex items-center justify-between pt-2 border-t border-border/40">
-              <HeaderPDFControls
-                showPDF={showPDF}
-                onTogglePDF={onTogglePDF}
+    <>
+      {/* Container-query wrapper: the header's OWN width drives the collapse. */}
+      <div className="@container/headerbar">
+        <RunHeader value={headerValue}>
+          <RunHeader.Left>
+            <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName, onClick: () => navigate(`/projects/${props.projectId}`) }, { label: articleTitle }]} />
+            {articles.length > 1 && (
+              <RunHeader.Worklist
                 articles={articles}
-                currentArticleId={currentArticleId}
-                onNavigateToArticle={onNavigateToArticle}
-                viewMode={viewMode}
-                onViewModeChange={onViewModeChange}
-                hasComparison={hasComparison}
-                compact={true}
+                currentId={currentArticleId}
+                onNavigate={onNavigateToArticle}
               />
+            )}
+            {stage != null && <RunHeader.StageRail />}
+          </RunHeader.Left>
 
-                {/* Zone 4: Secondary actions (Mobile) */}
-              <div className="flex items-center gap-2">
-                <HeaderAIActions
-                  suggestions={aiSuggestions}
-                  onClick={onAISuggestionsClick}
-                  compact={true}
-                />
-                <HeaderMoreMenu
-                  projectId={projectId}
-                  compact={true}
-                  articleId={currentArticleId}
-                  templateId={props.templateId}
-                  runId={props.runId}
-                  canRunAI={props.canRunAI}
-                  onExtractionComplete={props.onRefreshInstances}
-                  onExtractionStateChange={props.onExtractionStateChange}
-                />
-              </div>
-            </div>
-          </div>
-        ) : (
-            /* Desktop layout: 5 zones per UX - header h-12 */
-            <div className="flex h-12 items-center justify-between gap-6 px-6">
-                {/* Zone 1: Contextual navigation (far left) */}
-            <div className="flex-1 min-w-0">
-              <HeaderNavigation
-                projectId={projectId}
-                projectName={projectName}
-                articleTitle={articleTitle}
-                onBack={onBack}
-                showBackText={true}
-                maxBreadcrumbWidth="400px"
-                articles={articles}
-                currentArticleId={currentArticleId}
-                onNavigateToArticle={onNavigateToArticle}
-              />
-            </div>
+          <RunHeader.Center>
+            <RunHeader.Reviewers />
+            <RunHeader.RoleChip />
+          </RunHeader.Center>
 
-                {/* Zone 2: View controls (center-left) */}
-            <div className="flex items-center gap-1 shrink-0">
-              <HeaderPDFControls
-                showPDF={showPDF}
-                onTogglePDF={onTogglePDF}
-                articles={articles}
-                currentArticleId={currentArticleId}
-                onNavigateToArticle={onNavigateToArticle}
-                viewMode={viewMode}
-                onViewModeChange={onViewModeChange}
-                hasComparison={hasComparison}
-                compact={false}
-              />
-            </div>
+          <RunHeader.Right>
+            {/* Cmd-K hint chip — always visible, opens palette on click */}
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              className="hidden @[48rem]/headerbar:flex items-center gap-1 rounded border border-border/60 bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted transition-colors"
+              aria-label={t('runs', 'commandPaletteOpen')}
+            >
+              <kbd className="font-sans">⌘K</kbd>
+            </button>
+            <RunHeader.AIActions
+              pendingCount={aiPendingCount}
+              canExtract={!!(canRunAI && onExtractWithAI)}
+              extracting={extractingAI}
+              onExtract={onExtractWithAI ?? (() => {})}
+              onOpenSuggestions={props.onAISuggestionsClick}
+            />
+            <RunHeader.PanelToggle pressed={showPDF} onToggle={onTogglePDF} />
+            <RunHeader.Save
+              state={saveState ?? 'idle'}
+              lastSavedAt={lastSavedAt}
+              hidden={stage === 'finalized'}
+            />
+            <RunHeader.PrimaryAction />
+            <RunHeader.Menu>
+              {hasComparison && (
+                <RunHeader.MenuItem onSelect={() => onViewModeChange(viewMode === 'compare' ? 'extract' : 'compare')}>
+                  {t('extraction', 'runHeaderCompareToggle')}
+                </RunHeader.MenuItem>
+              )}
+              {canReopen && (
+                <RunHeader.MenuItem onSelect={() => onReopen?.()}>
+                  {reopening
+                    ? t('extraction', 'runHeaderReopening')
+                    : t('extraction', 'runHeaderReopenForRevision')}
+                </RunHeader.MenuItem>
+              )}
+            </RunHeader.Menu>
+          </RunHeader.Right>
+        </RunHeader>
+      </div>
 
-            {/* Zona 3: Status e Feedback (Centro) */}
-            <div className="flex items-center gap-2 shrink-0">
-              <HeaderStatusBadges
-                userRole={userRole}
-                isBlindMode={isBlindMode}
-                completedFields={completedFields}
-                totalFields={totalFields}
-                completionPercentage={completionPercentage}
-                saveState={saveState}
-                lastSavedAt={lastSavedAt}
-                hasUnsavedChanges={hasUnsavedChanges}
-                compact={false}
-              />
-            </div>
-
-                {/* Zone 4: Secondary actions (center-right) */}
-            <div className="flex items-center gap-2 shrink-0">
-              <HeaderAIActions
-                suggestions={aiSuggestions}
-                onClick={onAISuggestionsClick}
-                compact={false}
-              />
-              <HeaderMoreMenu
-                projectId={projectId}
-                compact={false}
-                articleId={currentArticleId}
-                templateId={props.templateId}
-                runId={props.runId}
-                canRunAI={props.canRunAI}
-                onExtractionComplete={props.onRefreshInstances}
-                onExtractionStateChange={props.onExtractionStateChange}
-              />
-            </div>
-
-                {/* Zone 5: Primary action (far right) */}
-            <div className="flex items-center gap-2 shrink-0">
-              <HeaderFinalizeButton
-                isComplete={isComplete}
-                onSubmit={onFinalize}
-                submitting={submitting}
-                variant="default"
-                size="sm"
-                label={finalizeLabel}
-              />
-            </div>
-          </div>
-        )}
-      </header>
-    </TooltipProvider>
+      {/* Cmd-K palette — mounted at page level so it renders above the header */}
+      <RunHeader.CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        actions={paletteActions}
+        articles={articles.length > 1 ? articles : undefined}
+        onNavigate={articles.length > 1 ? onNavigateToArticle : undefined}
+      />
+    </>
   );
 }

@@ -87,7 +87,11 @@ test.describe("Quality Assessment HITL flow", () => {
     await expect(page.getByTestId("qa-kind-badge")).toContainText("Quality Assessment");
     await expect(page.getByTestId("qa-form-panel")).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId("qa-domains")).toBeVisible({ timeout: 15000 });
-    await expect(page.getByTestId("qa-publish-button")).toBeVisible();
+    // The publish/finalize action lives in RunHeader.PrimaryAction — no qa-publish-button testid.
+    // Verify the action button is reachable via role (label varies by stage).
+    await expect(
+      page.getByRole("button", { name: /finalize|publish/i }).first(),
+    ).toBeVisible();
   });
 
   test("Publish assessment finalizes the run", async ({ page, request }) => {
@@ -152,20 +156,23 @@ test.describe("Quality Assessment HITL flow", () => {
       .first()
       .click();
 
-    const publishButton = page.getByTestId("qa-publish-button");
-    await expect(publishButton).toBeEnabled({ timeout: 5000 });
-    await publishButton.click();
+    // The publish/finalize action is now in RunHeader.PrimaryAction.
+    // buildQaTransition sets label = t('runs','finalize') = "Finalize".
+    const finalizeButton = page.getByRole("button", { name: /finalize/i });
+    await expect(finalizeButton).toBeEnabled({ timeout: 5000 });
+    await finalizeButton.click();
 
-    // Once finalized the badge appears and the button label changes.
-    await expect(page.getByTestId("qa-finalized-badge")).toBeVisible({
-      timeout: 30000,
-    });
+    // Once finalized, RunHeader.StageRail marks the Finalized node as current.
+    // The current node carries data-testid="run-stage-current" and its text is "Finalized".
+    await expect(
+      page.getByTestId("run-stage-current").filter({ hasText: /finalized/i }),
+    ).toBeVisible({ timeout: 30000 });
 
     // Reload — finalized state survives.
     await page.reload();
-    await expect(page.getByTestId("qa-finalized-badge")).toBeVisible({
-      timeout: 20000,
-    });
+    await expect(
+      page.getByTestId("run-stage-current").filter({ hasText: /finalized/i }),
+    ).toBeVisible({ timeout: 20000 });
 
     // Confirm via API: run is in stage=finalized.
     const runRes = await request.get(`${env.apiUrl}/api/v1/runs/${session.run_id}`, {

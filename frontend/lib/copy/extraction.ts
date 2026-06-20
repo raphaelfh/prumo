@@ -25,8 +25,6 @@ export const extraction = {
     comparison: 'Comparison',
     // HeaderNavigation
     back: 'Back',
-    articlePrevious: 'Previous article',
-    articleNext: 'Next article',
     articleFirst: 'First article',
     articleLast: 'Last article',
     // ConfigureTemplateFirst
@@ -549,6 +547,19 @@ export const extraction = {
     noSectionsConfigured: 'No sections configured',
     noStudyLevelFields: 'No study-level fields configured in the template.',
     noModelsAdded: 'No models added',
+    noModelsAddedDesc: 'Add a model manually or extract it automatically from the article.',
+    // RunHeader (extraction-specific keys — shared header keys now live in the runs namespace)
+    runHeaderSubmitForReview: 'Submit for review',
+    runHeaderReconcile: 'Reconcile',
+    runHeaderFinalize: 'Finalize',
+    runHeaderGateBlocked: 'Complete the required fields first',
+    runHeaderCompareToggle: 'Compare reviewers',
+    runHeaderReopenForRevision: 'Reopen for revision',
+    runHeaderReopening: 'Reopening…',
+    // Section navigation rail
+    sectionNavRequiredLeft: '{{count}} required left',
+    sectionNavComplete: 'All required fields complete',
+    sectionNavAria: 'Section navigation',
     noFieldsInThisSection: 'No fields in this section',
     errorCalculatingProgress: 'Error calculating progress',
     loadingComparison: 'Loading comparison…',

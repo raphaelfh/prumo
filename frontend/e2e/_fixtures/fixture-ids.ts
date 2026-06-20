@@ -25,6 +25,15 @@ export const ARTICLE_ID = "f00dc63a-6b47-42c3-8a93-af69eb28a1c0";
 export const QA_CONSENSUS_ARTICLE_ID = "f00dc63a-6b47-42c3-8a93-af69eb28a1c1";
 export const QA_BLIND_REVIEW_ARTICLE_ID = "f00dc63a-6b47-42c3-8a93-af69eb28a1c2";
 
+/**
+ * Dedicated article for the QA reopen UI flow. The reopen test finalizes a QA
+ * run; sharing {@link ARTICLE_ID} with `qa-flow` let a prior finalize make
+ * session-open resume an already-finalized (terminal) run, so the test's
+ * advance→consensus seeding returned 400. Its own article keeps the resumed
+ * run non-terminal regardless of sibling test order.
+ */
+export const QA_REOPEN_ARTICLE_ID = "f00dc63a-6b47-42c3-8a93-af69eb28a1c3";
+
 /** Dedicated project for the template-import test — intentionally CHARMS-free. */
 export const IMPORT_PROJECT_ID = "e2e00001-0000-4000-8000-000000000001";
 

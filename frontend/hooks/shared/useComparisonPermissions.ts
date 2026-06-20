@@ -24,6 +24,7 @@ export interface ComparisonPermissions extends PermissionRules {
   isBlindMode: boolean;
   loading: boolean;
   error: string | null;
+  refresh: () => Promise<void>;
 }
 
 /**
@@ -52,7 +53,7 @@ export function useComparisonPermissions(
   userId: string,
   kind: ReviewKind
 ): ComparisonPermissions {
-  const [permissions, setPermissions] = useState<ComparisonPermissions>({
+  const [permissions, setPermissions] = useState<Omit<ComparisonPermissions, 'refresh'>>({
     userRole: 'reviewer',
     isBlindMode: false,
     canSeeOthers: false,
@@ -116,5 +117,5 @@ export function useComparisonPermissions(
   return {
     ...permissions,
     refresh: fetchPermissions,
-  } as ComparisonPermissions & { refresh: () => Promise<void> };
+  };
 }
