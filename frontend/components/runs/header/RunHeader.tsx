@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { RunHeaderProvider, type RunHeaderValue } from './RunHeaderContext';
 import { StageRail } from './StageRail';
+import { PrimaryAction } from './PrimaryAction';
 
 function Left({ children }: { children: ReactNode }) {
   return <div className={cn('flex min-w-0 flex-1 items-center gap-3')}>{children}</div>;
@@ -23,4 +24,4 @@ function RunHeaderRoot({ value, children }: { value: RunHeaderValue; children: R
   );
 }
 
-export const RunHeader = Object.assign(RunHeaderRoot, { Left, Center, Right, StageRail });
+export const RunHeader = Object.assign(RunHeaderRoot, { Left, Center, Right, StageRail, PrimaryAction });
