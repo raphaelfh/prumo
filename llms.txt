@@ -33,8 +33,9 @@ Hosting: Railway (backend + worker + Redis) + Vercel (frontend) + Supabase
 - playwright-report/
 - test-results/
 
-## Documentation conventions
+## Conventions
 
-- Every doc carries `status`, `last_reviewed`, `owner` frontmatter.
-- Conventional commits (`feat:`, `fix:`, `docs:`, `chore:`, `test:`, `ci:`, `refactor:`).
-- English only for code, comments, commits, and documentation.
+Hard rules (English-only; conventional commits; `status`/`last_reviewed`/`owner`
+frontmatter; layering; typed everything) live in [CLAUDE.md](CLAUDE.md) and
+[docs/reference/constitution.md](docs/reference/constitution.md) — the single
+source, not restated here. Full doc map: [docs/README.md](docs/README.md).

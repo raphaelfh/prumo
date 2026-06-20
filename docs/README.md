@@ -24,7 +24,6 @@ tutorial lives here.*
 | Guide | When to read |
 | --- | --- |
 | [Seed the database](./how-to/seed-database.md) | After `make reset-db` or when bootstrapping a new env |
-| [Extraction E2E observability](./how-to/observability-extraction.md) | Debugging extraction latency / errors across browser → API → DB |
 
 ## Reference — *information lookup*
 
@@ -35,6 +34,7 @@ tutorial lives here.*
 | [Constitution](./reference/constitution.md) | Non-negotiable architectural principles (layering, typed everything, split migration ownership) |
 | [Extraction + HITL architecture](./reference/extraction-hitl-architecture.md) | Canonical schema, run lifecycle, RLS posture |
 | [Test strategy](./reference/test-strategy.md) | Load-bearing tests, pyramid layout |
+| [Extraction observability](./reference/observability-extraction.md) | Metrics + structured events; debugging extraction latency/errors (browser → API → DB) |
 | [CHARMS template (v1.1)](./reference/templates/charms-v1.1-complete.md) | Field-by-field spec of the global CHARMS template |
 | [CHARMS visual hierarchy](./reference/templates/charms-v1.1-hierarchy.md) | Tree view of CHARMS entities |
 
@@ -49,8 +49,8 @@ tutorial lives here.*
 
 | Path | Purpose |
 | --- | --- |
-| [`docs/superpowers/specs/`](./superpowers/specs/) | Active design specs |
-| [`docs/superpowers/plans/`](./superpowers/plans/) | Active implementation plans |
+| [`docs/superpowers/specs/`](./superpowers/specs/) | Design specs (lifecycle in each file's frontmatter; shipped → `specs/archive/`) |
+| [`docs/superpowers/plans/`](./superpowers/plans/) | Implementation plans (lifecycle in each file's frontmatter; shipped → `plans/archive/`) |
 | [`docs/superpowers/quality-runs/`](./superpowers/quality-runs/) | Outputs of the architectural quality autoloop |
 | [`docs/superpowers/design-system/`](./superpowers/design-system/) | Component design briefs |
 | [`docs/design-references/`](./design-references/) | Visual references (Linear UX) |
@@ -66,7 +66,7 @@ tutorial lives here.*
 
 ## Doc conventions
 
-- Every file under `docs/` carries YAML frontmatter (`status`, `last_reviewed`, `owner`) and a visible status line at the top.
+- Every file under `docs/` carries YAML frontmatter (`status`, `last_reviewed`, `owner`) — the **single source of truth** (the staleness gate reads frontmatter). A visible status line in the body is optional and must not restate `last_reviewed` (the duplicated date drifts).
 - Status values: `stable` · `draft` · `deprecated` · `shipped` · `frozen` · `in_progress`.
 - CI (`.github/workflows/docs-ci.yml`) enforces markdownlint, cspell, link check, and frontmatter presence on every PR that touches `**/*.md`.
 - Docs older than 180 days trigger a `staleness` warning (set `STALENESS_FAIL=1` in CI to harden later).
