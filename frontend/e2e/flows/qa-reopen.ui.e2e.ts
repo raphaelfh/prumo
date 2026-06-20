@@ -212,13 +212,13 @@ test.describe("HITL reopen flow (Option C)", () => {
     expect(oldDetail.run.stage).toBe("finalized");
     expect(oldDetail.published_states.length).toBeGreaterThan(0);
 
-    // 6. UI surface — the QA page now shows the "Revision" badge for the
-    //    new (latest) run.
+    // 6. UI surface — the QA page now shows the "Revision" tag in the
+    //    StageRail (nav[aria-label="Run stage"]) for the new (latest) run.
     await page.goto(
       `${env.frontendUrl}/projects/${env.projectId}/articles/${env.articleId}/quality-assessment/${qaTemplateId}`,
     );
-    await expect(page.getByTestId("qa-revision-badge")).toBeVisible({
-      timeout: 20000,
-    });
+    await expect(
+      page.getByRole("navigation", { name: /run stage/i }),
+    ).toContainText(/revision/i, { timeout: 20000 });
   });
 });

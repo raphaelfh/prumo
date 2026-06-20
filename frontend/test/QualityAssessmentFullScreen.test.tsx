@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -233,21 +234,26 @@ describe("QualityAssessmentFullScreen", () => {
 
   it("renders header with QA badge + template name + version", async () => {
     renderPage();
-    expect(screen.getByTestId("qa-kind-badge")).toHaveTextContent(
-      "Quality Assessment",
-    );
+    // Kind badge shows the full 'Quality Assessment' label (reverted from short 'QA').
+    expect(screen.getByTestId("qa-kind-badge")).toHaveTextContent("Quality Assessment");
+    // Template name is now in the Breadcrumb crumb; version is in qa-template-name.
     await waitFor(() =>
       expect(screen.getByTestId("qa-template-name")).toHaveTextContent(
-        "PROBAST",
+        /v1\.0\.0/,
       ),
     );
-    expect(screen.getByText(/v1\.0\.0/)).toBeInTheDocument();
+    // Template name appears in the breadcrumb.
+    expect(screen.getByText("PROBAST")).toBeInTheDocument();
   });
 
-  it("AssessmentShell starts with PDF collapsed (Show PDF visible)", async () => {
+  it("AssessmentShell shows PDF panel toggle only in header (no in-shell toggle when pdfState provided)", async () => {
+    // QA page passes pdfState to AssessmentShell so the RunHeader.PanelToggle
+    // is the single PDF control — the in-shell toggle must be absent.
     renderPage();
     expect(screen.getByTestId("assessment-shell")).toBeInTheDocument();
-    expect(screen.getByTestId("assessment-shell-show-pdf")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("assessment-shell-show-pdf"),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByTestId("assessment-shell-pdf"),
     ).not.toBeInTheDocument();
@@ -283,11 +289,28 @@ describe("QualityAssessmentFullScreen", () => {
     expect(screen.getByTestId("qa-form-panel")).toBeInTheDocument();
   });
 
-  it("renders Extract with AI button once the QA session is open", async () => {
+  it("renders the shared RunHeader StageRail once the run loads", async () => {
     renderPage();
-    const button = await screen.findByTestId("qa-extract-ai-button");
+    // The StageRail <nav aria-label="Run stage"> replaces the old hand-rolled
+    // header — its presence is the canonical marker that the RunHeader is mounted.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("navigation", { name: "Run stage" }),
+      ).toBeInTheDocument(),
+    );
+    // Old hand-rolled publish button is gone — PrimaryAction owns that slot now.
+    expect(
+      screen.queryByTestId("qa-publish-button"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders Extract with AI button once the QA session is open", async () => {
+    // RunHeader.AIActions renders a button with "Extract with AI" text.
+    renderPage();
+    const button = await screen.findByRole("button", {
+      name: /extract with ai/i,
+    });
     expect(button).toBeInTheDocument();
-    expect(button).toHaveTextContent(/Extract with AI/i);
     // The button stays enabled while the session is open and the run is
     // not finalized — guards against accidentally disabling it (it's the
     // only entry point to the AI prefill flow).
@@ -301,9 +324,11 @@ describe("QualityAssessmentFullScreen", () => {
     apiClient.mockClear();
 
     renderPage();
-    const button = await screen.findByTestId("qa-extract-ai-button");
+    const button = await screen.findByRole("button", {
+      name: /extract with ai/i,
+    });
     await waitFor(() => expect(button).not.toBeDisabled());
-    button.click();
+    await userEvent.click(button);
 
     await waitFor(() => {
       const sectionCalls = apiClient.mock.calls.filter(
@@ -322,12 +347,13 @@ describe("QualityAssessmentFullScreen", () => {
     });
   });
 
-  it("Publish with no values shows error toast and does NOT advance the run", async () => {
-    // BUG-001 regression: clicking "Publish assessment" when no fields are
+  it("Finalize (PrimaryAction) with no values shows error toast and does NOT advance the run", async () => {
+    // BUG-001 regression: clicking the publish/finalize action when no fields are
     // filled previously advanced the run through review → consensus →
     // finalized without writing any consensus, producing a "Published"
     // run with zero PublishedState rows. The preflight check now blocks
     // this before any backend write.
+    // RunHeader.PrimaryAction renders the transition label ("Finalize").
     const { apiClient } = (await import(
       "@/integrations/api"
     )) as unknown as { apiClient: ReturnType<typeof vi.fn> };
@@ -335,9 +361,10 @@ describe("QualityAssessmentFullScreen", () => {
     (toast.error as ReturnType<typeof vi.fn>).mockClear();
 
     renderPage();
-    const button = await screen.findByTestId("qa-publish-button");
-    await waitFor(() => expect(button).not.toBeDisabled());
-    button.click();
+    // PrimaryAction button label comes from buildQaTransition → t('runs','finalize').
+    const button = await screen.findByRole("button", { name: /finalize/i });
+    await waitFor(() => expect(button).not.toHaveAttribute("disabled"));
+    await userEvent.click(button);
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith(
@@ -359,18 +386,20 @@ describe("QualityAssessmentFullScreen", () => {
     expect(sideEffects).toHaveLength(0);
   });
 
-  it("blind reviewer sees no comparison toggle and stays on the assess view", async () => {
-    // Default permissions (BLIND_PERMISSIONS) → canSeeOthers=false → no toggle
-    // even though a peer decision exists in the run.
+  it("blind reviewer sees no comparison menu item and stays on the assess view", async () => {
+    // Default permissions (BLIND_PERMISSIONS) → canSeeOthers=false →
+    // no compare MenuItem even when the menu is open.
     renderPage();
     await waitFor(() =>
       expect(screen.getByTestId("qa-domains")).toBeInTheDocument(),
     );
-    expect(screen.queryByTestId("qa-compare-toggle")).not.toBeInTheDocument();
+    // Compare view must not appear passively.
     expect(screen.queryByTestId("qa-compare-view")).not.toBeInTheDocument();
+    // The compare text must not appear anywhere in the rendered output.
+    expect(screen.queryByText(/comparison/i)).not.toBeInTheDocument();
   });
 
-  it("manager who may see peers gets the toggle, and clicking it renders the shared comparison", async () => {
+  it("manager who may see peers gets the compare menu item, clicking it renders the comparison", async () => {
     mockedPermissions.mockReturnValue({
       ...BLIND_PERMISSIONS,
       userRole: "manager",
@@ -381,14 +410,27 @@ describe("QualityAssessmentFullScreen", () => {
 
     renderPage();
 
-    // Toggle appears once the run + peer decision are loaded.
-    const toggle = await screen.findByTestId("qa-compare-toggle");
-    expect(toggle).toBeInTheDocument();
-    // Still on the assess view until the toggle is clicked.
-    expect(screen.getByTestId("qa-domains")).toBeInTheDocument();
+    // Wait for domains to load so canCompare resolves (requires peer decisions).
+    await waitFor(() =>
+      expect(screen.getByTestId("qa-domains")).toBeInTheDocument(),
+    );
+
+    // Open the RunHeader.Menu (aria-label "More options").
+    const menuTrigger = await screen.findByRole("button", {
+      name: /more options/i,
+    });
+    await userEvent.click(menuTrigger);
+
+    // The "Comparison" menu item should appear in the open dropdown.
+    const compareItem = await screen.findByRole("menuitem", {
+      name: /comparison/i,
+    });
+    expect(compareItem).toBeInTheDocument();
+
+    // Still on the assess view before clicking.
     expect(screen.queryByTestId("qa-compare-view")).not.toBeInTheDocument();
 
-    toggle.click();
+    await userEvent.click(compareItem);
 
     // Compare view replaces the domain accordions and renders the shared
     // server-blinded comparison table (peer column sourced from decisionsByCoord).
