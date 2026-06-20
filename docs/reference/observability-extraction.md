@@ -1,12 +1,18 @@
 ---
 status: stable
-last_reviewed: 2026-05-24
+last_reviewed: 2026-06-20
 owner: '@raphaelfh'
 ---
 
-> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-06-20 · Owner: @raphaelfh
 
-# Unified Evaluation Observability
+# Extraction Observability
+
+> Metrics and structured events for the extraction stack. The `evaluation_*`
+> names below are the **pre-rename vocabulary** (the evaluation stack was unified
+> into extraction); they are retained for historical dashboards, while new
+> emitters use `extraction_*`. Glossary:
+> [extraction-hitl-architecture.md](./extraction-hitl-architecture.md).
 
 ## Core metrics
 
@@ -33,7 +39,7 @@ owner: '@raphaelfh'
   - filter `evaluation_queue_backlog_scale_alert`
   - group by `project_id`
 
-# Extraction E2E and Database Observability
+## Extraction E2E and database observability
 
 ## Goal
 

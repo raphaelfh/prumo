@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-06-11
+last_reviewed: 2026-06-20
 owner: '@raphaelfh'
 ---
 
@@ -181,15 +181,13 @@ All commits MUST use conventional commit prefixes:
 
 ### CI Pipeline (GitHub Actions)
 
-Every push/PR to `main` or `dev` MUST pass:
-
-1. **backend-lint**: `ruff check` → `ruff format --check` → `mypy`.
-2. **backend-test**: PostgreSQL 15 + migrations applied → `pytest --cov-fail-under=70`.
-3. **backend-build**: Docker image builds successfully.
-4. **frontend-lint**: ESLint → TypeScript type check (`tsc --noEmit`).
-5. **frontend-build**: `npm run build` succeeds.
-
-No merges are permitted when any gate fails.
+Every push/PR to `main` or `dev` MUST pass the full CI gate defined in
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) — that workflow is
+the authoritative, complete list of jobs (backend lint/tests/E2E/build,
+**architectural fitness**, diff- and critical-path coverage, frontend
+lint/tests/E2E/build, and the API-contract drift gate). Coverage gates are
+ratcheted at **62% global / 80% diff / 85% critical-path** (see ci.yml; never
+lowered). No merge is permitted when any required gate fails.
 
 ### File Location Conventions
 
@@ -229,8 +227,12 @@ This constitution is the authoritative reference for all architectural and proce
 - Added complexity beyond what a principle prescribes MUST be justified in the PR description.
 - Use `CLAUDE.md` as the runtime development guidance companion to this constitution.
 
-**Version**: 2.1.0 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-06-10
+**Version**: 2.1.1 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-06-20
 
+> 2.1.1: the CI-Pipeline section was re-pointed to ci.yml — it had drifted to
+> a stale 5-job list with `--cov-fail-under=70` while the tooling table (and CI)
+> already enforced 62. ci.yml is the source of truth for the enforced gate set.
+>
 > 2.1.0 amendments: §V/tooling-table aligned with the actual CI gates
 > (mypy advisory-until-clean; coverage 62/80/85 ratchet replaces the
 > aspirational 70%) — a "non-negotiable" doc that CI contradicts trains
