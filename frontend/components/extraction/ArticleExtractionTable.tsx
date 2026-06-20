@@ -12,15 +12,12 @@ import type {CSSProperties, ReactNode} from 'react';
 import {useEffect, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {Button} from '@/components/ui/button';
-import {Badge} from '@/components/ui/badge';
-import {Progress} from '@/components/ui/progress';
 import {
     AlertCircle,
     Calendar,
     Circle,
     CheckCircle,
     CheckCircle2,
-    Database,
     Edit,
     FileText,
     Info,
@@ -64,6 +61,7 @@ import {
     SortIconHeader,
     ListToolbarSearch,
     ResponsiveList,
+    StatusRing,
     useResizableTableColumns,
 } from '@/components/shared/list';
 import {DataTableWrapper} from '@/components/shared/list/DataTableWrapper';
@@ -102,7 +100,7 @@ interface ArticleExtractionTableProps {
   toolbarActions?: ReactNode;
 }
 
-type SortField = 'title' | 'publication_year' | 'extraction_progress' | 'status' | 'created_at';
+type SortField = 'title' | 'publication_year' | 'extraction_progress' | 'created_at';
 type SortDirection = 'asc' | 'desc';
 
 const EXTRACTION_FILTER_FIELDS: FilterFieldConfig[] = [
@@ -147,11 +145,10 @@ const EXTRACTION_DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
     title: 320,
     authors: 150,
     year: 100,
-    progress: 170,
     status: 96,
     actions: 96,
 };
-const RESIZABLE_COLUMN_ORDER = ['title', 'authors', 'year', 'progress', 'status', 'actions'] as const;
+const RESIZABLE_COLUMN_ORDER = ['title', 'authors', 'year', 'status', 'actions'] as const;
 // Header checkbox component with indeterminate support.
 function HeaderCheckbox({
   checked,
@@ -430,17 +427,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
           aValue = getProgress(a);
           bValue = getProgress(b);
           break;
-        case 'status': {
-            // Sort by status: not started (0), in progress (1), complete (2)
-          const aProgress = getProgress(a);
-          const bProgress = getProgress(b);
-          const aHasInstances = (valuesByArticle.get(a.id)?.instances.length ?? 0) > 0;
-          const bHasInstances = (valuesByArticle.get(b.id)?.instances.length ?? 0) > 0;
-          
-          aValue = !aHasInstances ? 0 : (aProgress >= 100 ? 2 : 1);
-          bValue = !bHasInstances ? 0 : (bProgress >= 100 ? 2 : 1);
-          break;
-        }
         case 'created_at':
           aValue = new Date(a.created_at).getTime();
           bValue = new Date(b.created_at).getTime();
@@ -543,72 +529,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
         const w = columnWidths[columnId] ?? EXTRACTION_DEFAULT_COLUMN_WIDTHS[columnId];
         return {width: w, minWidth: 80};
     };
-
-  const getStatusBadge = (article: ArticleWithExtraction) => {
-    const progress = getProgress(article);
-    const roundedProgress = Math.max(0, Math.min(100, Math.round(progress)));
-    const uiStatus = roundedProgress >= 100 ? 'complete' : roundedProgress > 0 ? 'in_progress' : 'not_started';
-    if (uiStatus === 'not_started') {
-      return (
-          <TooltipProvider>
-              <Tooltip>
-                  <TooltipTrigger asChild>
-                      <Badge
-                          variant="secondary"
-                          className="h-7 w-7 cursor-default justify-center rounded-full border border-info/30 bg-info/10 p-0 text-info shadow-none"
-                          aria-label={t('extraction', 'listStatusNotStarted')}
-                      >
-                          <Circle className="h-3 w-3"/>
-                      </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                      <p>{t('extraction', 'listStatusNotStarted')}</p>
-                  </TooltipContent>
-              </Tooltip>
-          </TooltipProvider>
-      );
-    }
-
-    if (uiStatus === 'complete') {
-      return (
-          <TooltipProvider>
-              <Tooltip>
-                  <TooltipTrigger asChild>
-                      <Badge
-                          variant="secondary"
-                          className="h-7 w-7 cursor-default justify-center rounded-full border border-success/30 bg-success/10 p-0 text-success shadow-none"
-                          aria-label={t('extraction', 'listStatusComplete')}
-                      >
-                          <CheckCircle2 className="h-3 w-3"/>
-                      </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                      <p>{t('extraction', 'listStatusComplete')}</p>
-                  </TooltipContent>
-              </Tooltip>
-          </TooltipProvider>
-      );
-    }
-
-    return (
-        <TooltipProvider>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Badge
-                        variant="secondary"
-                        className="h-7 w-7 cursor-default justify-center rounded-full border border-warning/30 bg-warning/10 p-0 text-warning shadow-none"
-                        aria-label={t('extraction', 'listStatusInProgress')}
-                    >
-                        <span className="text-[9px] font-semibold leading-none">{roundedProgress}%</span>
-                    </Badge>
-                </TooltipTrigger>
-                <TooltipContent>
-                    <p>{t('extraction', 'listStatusInProgress')}</p>
-                </TooltipContent>
-            </Tooltip>
-        </TooltipProvider>
-    );
-  };
 
     const clearListFilters = () => {
         setGlobalFilter('');
@@ -779,8 +699,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                       sortOptions={[
                           {value: 'title', label: t('extraction', 'tableColumnTitle')},
                           {value: 'publication_year', label: t('extraction', 'tableColumnYear')},
-                          {value: 'extraction_progress', label: t('extraction', 'tableColumnProgress')},
-                          {value: 'status', label: t('extraction', 'tableColumnStatus')},
+                          {value: 'extraction_progress', label: t('extraction', 'tableColumnStatus')},
                           {value: 'created_at', label: t('extraction', 'tableColumnCreatedAt')},
                       ]}
                       sortField={sortField}
@@ -945,31 +864,13 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                               />
               </TableHead>
                           <TableHead
-                              ref={(el) => registerHeaderRef('progress', el)}
-                              className={`relative hidden lg:table-cell ${TABLE_CELL_CLASS}`} style={getColumnStyle('progress')}>
-                              <SortIconHeader
-                                  label={t('extraction', 'tableColumnProgress')}
-                                  direction={sortField === 'extraction_progress' ? sortDirection : null}
-                                  onSort={() => handleSort('extraction_progress')}
-                              />
-                              <div
-                                  role="separator"
-                                  aria-label={t('extraction', 'tableColumnProgress')}
-                                  onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      startResize('progress', e.clientX);
-                                  }}
-                                  className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
-                              />
-              </TableHead>
-                          <TableHead
                               ref={(el) => registerHeaderRef('status', el)}
                               className={`relative ${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('status')}>
                               <div className="flex items-center justify-center gap-1">
                                   <SortIconHeader
                                       label={t('extraction', 'tableColumnStatus')}
-                                      direction={sortField === 'status' ? sortDirection : null}
-                                      onSort={() => handleSort('status')}
+                                      direction={sortField === 'extraction_progress' ? sortDirection : null}
+                                      onSort={() => handleSort('extraction_progress')}
                                   />
                                   <TooltipProvider>
                                       <Tooltip>
@@ -1090,24 +991,8 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                       {article.publication_year || 'N/A'}
                     </div>
                   </TableCell>
-                      <TableCell className={`hidden lg:table-cell ${TABLE_CELL_CLASS} text-[13px]`} style={getColumnStyle('progress')}>
-                    {hasInstances ? (
-                      <div className="space-y-1">
-                          <div className="flex items-center justify-between">
-                              <span className="text-muted-foreground">{t('extraction', 'tableColumnProgress')}</span>
-                          <span className="font-medium">{progress.toFixed(0)}%</span>
-                        </div>
-                        <Progress value={progress} className="h-1.5" />
-                      </div>
-                    ) : (
-                        <div className="text-muted-foreground flex items-center gap-1">
-                        <Database className="h-3 w-3" />
-                            {t('extraction', 'listStatusNotStarted')}
-                      </div>
-                    )}
-                  </TableCell>
                       <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('status')}>
-                    {getStatusBadge(article)}
+                    <StatusRing progress={getProgress(article)} />
                   </TableCell>
                       <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}
                                  onClick={(e) => e.stopPropagation()}>
@@ -1192,7 +1077,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                   meta={
                                       <>
                                           {article.publication_year != null && <span>{article.publication_year}</span>}
-                                          {getStatusBadge(article)}
+                                          <StatusRing progress={progress} />
                                       </>
                                   }
                                   primaryAction={
