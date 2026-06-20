@@ -37,6 +37,7 @@ export const extraction = {
     configGoToConfig: 'Go to Configuration',
     // ExtractionInterface tabs
     tabExtraction: 'Extraction',
+    tabWorklist: 'Worklist',
     tabDashboard: 'Dashboard',
     tabConfiguration: 'Configuration',
     // ExtractionInterface dashboard
