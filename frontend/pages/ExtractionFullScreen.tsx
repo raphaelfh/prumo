@@ -23,6 +23,7 @@ import {getRequiredUserId} from '@/services/authService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
+import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
 import {errorTracker} from '@/services/errorTracking';
 import {ResizablePanel, ResizablePanelGroup} from '@/components/ui/resizable';
 import {Button} from '@/components/ui/button';
@@ -154,10 +155,12 @@ export default function ExtractionFullScreen() {
   // materialised ``instances`` — the single source of truth for the form.
   // The session embed seeds this cache on open, so ``runDetail`` is present
   // on first paint and the derived memos populate immediately.
-  const { data: runDetail, refetch: refetchRun } = useRun(
-    activeRunId ?? null,
-    { enabled: !!activeRunId },
-  );
+  const {
+    data: runDetail,
+    refetch: refetchRun,
+    isError: runIsError,
+    error: runErrorObj,
+  } = useRun(activeRunId ?? null, { enabled: !!activeRunId });
 
   // Entity types + instances are derived from the view (not direct
   // Supabase). ``entityTypesFromRunView`` / ``instancesFromRunView`` are
@@ -438,20 +441,22 @@ export default function ExtractionFullScreen() {
 
     // Hook for AI suggestions with callbacks to fill/clear field
   const handleAISuggestionAccepted = async (instanceId: string, fieldId: string, value: any) => {
-      // Fill field automatically when suggestion is accepted
-      console.warn('Accepting AI suggestion:', {instanceId, fieldId, value});
-      // updateValue updates local state immediately
-      // AISuggestionService.acceptSuggestion already saves to DB
-      // No need to reload all values (refreshValues caused full page reload)
+      // Fill field automatically when suggestion is accepted.
+      // NOTE: in this screen the hook runs `acceptStrategy: 'human-proposal'`,
+      // so accepting makes NO backend call. Persistence happens solely here:
+      // updateValue writes the value into form state, and useAutoSaveProposals
+      // records it as a fresh `human` proposal. The suggestion's own
+      // status='accepted' is local-only (not persisted), so it reappears as
+      // pending on reload — only the value survives. (refreshValues is
+      // deliberately avoided; it caused a full-page reload.)
     updateValue(instanceId, fieldId, value);
   };
 
   const handleAISuggestionRejected = async (instanceId: string, fieldId: string) => {
-      // Clear field when suggestion is rejected
-      console.warn('Rejecting AI suggestion - clearing field:', {instanceId, fieldId});
-      // updateValue updates local state immediately
-      // AISuggestionService.rejectSuggestion already updates status in DB
-      // No need to reload all values (refreshValues caused full page reload)
+      // Clear the field when a suggestion is rejected. Same as accept: the
+      // 'human-proposal' strategy makes NO backend call — updateValue writes
+      // null into form state, and useAutoSaveProposals persists the cleared
+      // value. The suggestion's status='rejected' flip is local-only.
     updateValue(instanceId, fieldId, null);
   };
 
@@ -954,8 +959,24 @@ export default function ExtractionFullScreen() {
     handleBack();
   };
 
+  // Single render gate. ``no-fields`` is reported ONLY when the run is loaded
+  // and genuinely carries no entity types — a missing run (open/fetch failed or
+  // still in flight) is an error or a loader, never a false "template has no
+  // fields" empty state (the #324 masking regression). See
+  // ``resolveExtractionViewState``.
+  const viewState = resolveExtractionViewState({
+    bootstrapLoading: loading,
+    hasArticleAndTemplate: !!article && !!template,
+    runDetailLoaded: !!runDetail,
+    sessionError: sessionResult.error,
+    runError: runIsError,
+    runErrorMessage: runErrorObj instanceof Error ? runErrorObj.message : null,
+    valuesLoading,
+    entityTypesCount: entityTypes.length,
+  });
+
   // Loading state
-  if (loading || valuesLoading) {
+  if (viewState.kind === 'loading') {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="text-center space-y-4">
@@ -966,8 +987,8 @@ export default function ExtractionFullScreen() {
     );
   }
 
-  // Error state
-  if (!article || !template) {
+  // Bootstrap (article/template) failed to load.
+  if (viewState.kind === 'load-error') {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="text-center space-y-4">
@@ -978,8 +999,37 @@ export default function ExtractionFullScreen() {
     );
   }
 
-  // Template sem campos configurados
-  if (entityTypes.length === 0) {
+  // The extraction run could not be opened (session-open or RunView fetch
+  // failed). Surface it with a retry instead of masking it as "No fields".
+  if (viewState.kind === 'run-error') {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="text-center space-y-4 max-w-md">
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold">{t('pages', 'extractionScreenRunErrorTitle')}</h3>
+            <p className="text-muted-foreground">{t('pages', 'extractionScreenRunErrorDesc')}</p>
+            {viewState.message ? (
+              <p className="text-xs text-muted-foreground/70 break-words">{viewState.message}</p>
+            ) : null}
+          </div>
+          <div className="flex items-center justify-center gap-2">
+            <Button
+              onClick={() => {
+                void sessionResult.refetch();
+                void refetchRun();
+              }}
+            >
+              {t('pages', 'extractionScreenRetry')}
+            </Button>
+            <Button variant="outline" onClick={handleBack}>{t('common', 'back')}</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Run is loaded and genuinely has no entity types configured.
+  if (viewState.kind === 'no-fields') {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="text-center space-y-6 max-w-md">
@@ -1003,6 +1053,14 @@ export default function ExtractionFullScreen() {
         </div>
       </div>
     );
+  }
+
+  // Only the ``ready`` view-state reaches here. ``article``/``template`` are
+  // guaranteed non-null at this point (a missing one resolves to 'loading' or
+  // 'load-error' above); this guard is unreachable and exists solely to narrow
+  // them for TypeScript after the gate was lifted into resolveExtractionViewState.
+  if (!article || !template) {
+    return null;
   }
 
   /**

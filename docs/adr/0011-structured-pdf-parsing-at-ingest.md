@@ -86,16 +86,19 @@ JATS XML, and supplementary files.
 
 Chosen option: **Option D (hybrid self-hosted parse at ingest + targeted vision
 table pass)**, because the two leading requirements pull toward different
-solution classes and only a hybrid satisfies both. On the available 2024–2026
-benchmarks — OmniDocBench (CVPR 2025) and recent table/formula benchmarks, all
-built on synthetic, born-digital documents — the pattern is consistent: general
+solution classes and only a hybrid satisfies both. The default parser splits on
+PHI: **non-PHI projects default to LlamaParse `agentic`** (cloud,
+confirmed-or-overturned by the Phase-0 bake-off, falling back to the
+self-hosted winner if it loses on quality/cost/latency); **PHI projects
+always use the self-hosted hybrid parser** with zero egress (fail-closed).
+On the available 2024–2026 benchmarks — OmniDocBench (CVPR 2025) and recent
+table/formula benchmarks, which
+under-represent scanned clinical PDFs and publisher clinical-trial tables — the
+pattern is consistent: general
 vision LLMs lead on table, formula, and scanned-page *content* fidelity but emit
 weak, unreliable spatial `bbox` provenance, while layout parsers (MinerU,
 Docling) lead on `bbox` + reading order + born-digital layout but degrade on
-complex merged-cell tables. Those benchmarks do **not** cover scanned clinical
-PDFs or publisher clinical-trial tables, so the concrete parser choice is
-deferred to a bake-off on real prumo papers (see Validation) rather than decided
-from leaderboards. Self-hosting the parser keeps PHI in-house with no egress;
+complex merged-cell tables. Self-hosting the parser keeps PHI in-house with no egress;
 the high-fidelity vision pass is scoped to detected table and formula regions
 only, bounding both cost and the surface that leaves the box (and can itself be
 a self-hosted open model).
@@ -106,9 +109,10 @@ Concretely, respecting the existing layering:
   runs after `ArticleFile` creation (the Zotero flow today, any upload path
   later), using `worker_session()` + `run_task()` and resolving keys via
   `APIKeyService`. Parser model weights ship in the worker image or load once
-  onto a Railway volume on cold start (never per task); the parse runs CPU-first
-  (Docling) and only adds a GPU if the bake-off shows MinerU materially wins, so
-  the ops footprint is itself part of the bake-off scoring.
+  onto a Railway volume on cold start (never per task); on the self-hosted path
+  (PHI projects and the non-PHI fallback) the parse runs CPU-first (Docling) and
+  only adds a GPU if the bake-off shows MinerU materially wins, so the ops
+  footprint is itself part of the bake-off scoring.
 - **Parsing service.** `app/services/document_parsing_service.py` orchestrates:
   pick the source (JATS/PMC XML when present, else the PDF), run the **injected**
   parser to emit blocks with `bbox` + reading order + `block_type`, run the
@@ -153,25 +157,31 @@ Concretely, respecting the existing layering:
 - **Frontend** consumes the contract that already exists (`Reader.tsx`,
   `pdf-viewer/core/citation.ts`); wiring the canvas highlight is the remaining
   frontend task this decision unblocks (tracked separately).
-- The final parser (Docling vs MinerU vs the spec's OpenDataLoader-PDF) is
-  **deferred to a bake-off** (see Validation) because public benchmarks do not
-  cover scanned clinical PDFs. Already-ingested articles are backfilled by a
+- The final non-PHI parser (LlamaParse `agentic` vs the self-hosted
+  Docling/MinerU/LiteParse winner) is **deferred to a bake-off** (see
+  Validation). Already-ingested articles are backfilled by a
   one-off task; until a given article has blocks, extraction falls back to
   today's lazy `pypdf` path so nothing breaks (a temporary two-tier state).
   Re-uploading a file cascade-deletes its blocks (`ON DELETE CASCADE`).
-- **Parser backends are pluggable** behind one `DocumentParser` port in
-  `app/infrastructure/parsing/` (mirroring `StorageAdapter`), built by a
-  `create_document_parser()` factory (`app/core/factories.py`) that owns the
-  `PARSER_BACKEND` switch and the privacy gate: a self-hosted layout parser
-  (Docling/MinerU) for
-  PHI-sensitive projects with no egress; **LlamaParse (LlamaCloud) `agentic`
-  tier** as a first-class cloud option — it returns markdown plus *granular
-  bounding boxes* (word/line/cell) in a JSONL sidecar that maps directly onto
-  `article_text_blocks` + `PositionV1`, the strongest turnkey provenance; and a
-  vision-LLM-native backend (page images/PDF through `extract_structured()`). The
-  bake-off scores all three. **Privacy gate:** LlamaParse sends documents to a
-  cloud API, so it is for non-PHI projects or under a BAA / a self-hosted
-  LlamaCloud deployment; PHI projects default to the self-hosted parser.
+- **Parser backends are pluggable and the default splits on PHI.** Via the
+  `create_document_parser()` factory (above): **non-PHI projects default to
+  LlamaParse (LlamaCloud) `agentic`** (cloud, v2 SDK `llama-cloud >= 2.1`),
+  confirmed-or-overturned by the Phase-0 bake-off — it returns markdown plus
+  *granular word/line/cell bounding boxes* that map onto `article_text_blocks` +
+  `PositionV1` (provenance lives in that JSONL sidecar, not the markdown string;
+  the SDK call, the top-left→bottom-left `bbox` Y-flip, and the item-local-offset
+  caveat are in the ingest plan Task 1.6 Step 2). **PHI projects always resolve
+  to a self-hosted parser** (Docling/MinerU, or the Apache-2.0 LiteParse — fully
+  local, free, per-element `bbox`) with zero egress; that self-hosted winner is
+  also the non-PHI fallback if LlamaParse loses the bake-off. A vision-LLM-native
+  backend (page images/PDF through `extract_structured()`) rounds out the slate.
+  **Privacy gate (fail-closed):** the factory routes PHI or unknown-status
+  projects to the self-hosted parser and can never hand them a cloud backend (the
+  `project_is_phi` policy flag is added by the ingest plan Task 1.6 Step 4; until
+  then the gate fails closed). LlamaParse cloud egresses to LlamaCloud S3 (48 h
+  retention, contractual no-train) and a BAA exists only on LlamaCloud's
+  **Enterprise** plan (signed BAA / private cloud / self-hosted BYOC, all paid),
+  so the default SaaS path is non-PHI-only.
 
 ### Consequences
 
@@ -193,22 +203,24 @@ Concretely, respecting the existing layering:
   provider branch in `build_model()`.
 - Neutral — parser choice is deferred to a bake-off; until backfill completes,
   pre-existing articles keep working on the legacy `pypdf` path (a temporary
-  two-tier experience); the dead columns (`text_raw`, `text_html`,
-  `pdf_extracted_text`, `semantic_*`) and the unused `pdf-lib` dependency can be
-  removed opportunistically alongside this work.
+  two-tier experience); the dead text columns and the unused `pdf-lib`
+  dependency are dropped by the grounded-extraction plan (Phase 3), which owns
+  the exact column list.
 
 ## Validation
 
 - **Parser bake-off.** Lock a labeled set of real prumo papers before scoring —
   at least ~50, balanced across born-digital, scanned, and JATS-available
-  inputs — and score candidates (Docling, MinerU, OpenDataLoader-PDF, plus one
-  API baseline) on table fidelity (TEDS plus an LLM-judge, since exact-match
-  metrics penalize valid reformatting), section/figure/reference/equation
+  inputs — and score candidates (PyMuPDF baseline, Docling, MinerU, LiteParse,
+  plus the LlamaParse `agentic` API) on table fidelity (TEDS plus an LLM-judge —
+  content cell-F1 mis-ranks structure; see the pilot run
+  `docs/superpowers/quality-runs/2026-06-19-parsing-bakeoff-pilot.md`),
+  section/figure/reference/equation
   recovery, `bbox` correctness, and per-article ops cost and latency. Table
   fidelity is the primary metric; `bbox` correctness breaks ties; ground truth
   is labeled by a domain reviewer. Public leaderboards (OmniDocBench and the
-  synthetic born-digital table benchmarks) inform but do not decide, since they
-  exclude scanned clinical PDFs and publisher clinical-trial tables.
+  recent table benchmarks) inform but do not decide, since they under-represent
+  scanned clinical PDFs and publisher clinical-trial tables.
 - **Quality and cost gate.** Set a table-fidelity target on the clinical subset
   (improve on the chosen parser's no-vision baseline by an agreed margin) and a
   per-article cost and latency budget; product and engineering sign off on both
@@ -263,6 +275,12 @@ Concretely, respecting the existing layering:
   (parse at ingest → persist blocks) and
   `docs/superpowers/plans/2026-06-19-grounded-extraction-and-hitl-highlight.md`
   (consume blocks → anchor, verify, highlight).
+- Downstream artifact: the **markdown representation** of a paper (a projection
+  of these blocks — free default + config-gated vision-enriched tier — used as an
+  LLM-extraction input and a viewer option alongside the PDF) is **ADR 0013**
+  (`docs/adr/0013-dual-tier-markdown-representation.md`). It reuses this ADR's
+  parser factory, `PARSER_BACKEND` switch, and PHI gate; blocks remain the
+  offset/`bbox` source of truth and markdown is downstream of them.
 - Canonical schema and run lifecycle:
   `docs/reference/extraction-hitl-architecture.md`.
 - Target contract in code: `ArticleTextBlock` (`app/models/article.py`),

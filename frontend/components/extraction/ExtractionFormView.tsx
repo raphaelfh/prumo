@@ -184,7 +184,8 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
 // reference + key count, published after each extraction; showPDF
 // toggles the section rail collapsed state).
 // Compared props: values, instances, studyLevelSections, modelChildSections,
-// activeModelId, modelParentEntityType, models.length, showPDF, aiSuggestions.
+// activeModelId, modelParentEntityType, models.length, showPDF, isActionLoading,
+// aiSuggestions.
 export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, nextProps) => {
   const aiSuggestionsChanged =
     prevProps.aiSuggestions !== nextProps.aiSuggestions ||
@@ -199,6 +200,10 @@ export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, 
     prevProps.modelParentEntityType === nextProps.modelParentEntityType &&
     prevProps.models.length === nextProps.models.length &&
     prevProps.showPDF === nextProps.showPDF &&
+    // `isActionLoading` gets a new ref on every `actionLoading` change. Omitting
+    // it lets the memo swallow the post-accept `clearLoading` (its only changed
+    // prop), so the spinner never clears. See FieldInput's comparator.
+    prevProps.isActionLoading === nextProps.isActionLoading &&
     !aiSuggestionsChanged
   );
 });

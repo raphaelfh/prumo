@@ -136,19 +136,21 @@ export async function prepareCleanQaRun(
   }
 
   if (targetStage === "review") {
-    // /hitl/sessions can return a run already at `review` (the service
-    // opens at review for QA kind). Only advance when we still need to.
-    const detailRes = await opts.request.get(
-      `${opts.apiUrl}/api/v1/runs/${session.run_id}`,
-      {
-        headers: authHeaders(opts.token, opts.traceId),
-        timeout: 15000,
-      },
-    );
-    await expectOk(detailRes, "fetch run detail");
-    const detail = (await parseEnvelope<{ run: { stage: string } }>(detailRes))
-      .data;
-    if (detail.run.stage !== "review") {
+    // /hitl/sessions can return a run already at `review` (the service opens at
+    // review for QA kind), and sibling QA suites that share this (project,
+    // article) fixture can advance it concurrently. The contract here is only
+    // "leave the run at review", so treat "already at review" as success — the
+    // check→advance window must not flake on a review→review transition.
+    const stageOf = async (): Promise<string> => {
+      const detailRes = await opts.request.get(
+        `${opts.apiUrl}/api/v1/runs/${session.run_id}`,
+        { headers: authHeaders(opts.token, opts.traceId), timeout: 15000 },
+      );
+      await expectOk(detailRes, "fetch run detail");
+      return (await parseEnvelope<{ run: { stage: string } }>(detailRes)).data
+        .run.stage;
+    };
+    if ((await stageOf()) !== "review") {
       const advanceRes = await opts.request.post(
         `${opts.apiUrl}/api/v1/runs/${session.run_id}/advance`,
         {
@@ -157,7 +159,12 @@ export async function prepareCleanQaRun(
           timeout: 15000,
         },
       );
-      await expectOk(advanceRes, "advance proposal → review");
+      // A concurrent prepare on the shared fixture may have moved the run to
+      // review between our read and this write; that's the desired end state,
+      // so only fail if it is genuinely not at review afterwards.
+      if (!advanceRes.ok() && (await stageOf()) !== "review") {
+        await expectOk(advanceRes, "advance proposal → review");
+      }
     }
   }
 

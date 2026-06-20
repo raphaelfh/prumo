@@ -47,6 +47,12 @@ vi.mock('@/components/extraction/SectionAccordion', () => ({
       data-instance-ids={props.instances.map((i: any) => i.id).join(',')}
       data-parent-instance-id={props.parentInstanceId ?? ''}
       data-field-names={props.fields.map((f: any) => f.name).join(',')}
+      // Surfaces the loading signal that reaches the accordion. When the memo
+      // bails out, this child is NOT re-rendered, so the attribute keeps its
+      // stale value — exactly the stuck-spinner symptom.
+      data-ai-loading={String(
+        props.isActionLoading?.(props.instances[0]?.id, props.fields[0]?.id) ?? null,
+      )}
     />
   ),
 }));
@@ -156,7 +162,6 @@ function baseProps(overrides: Partial<any> = {}) {
     instances: [],
     values: {},
     updateValue: vi.fn(),
-    otherExtractions: [],
     aiSuggestions: {},
     acceptSuggestion: vi.fn(),
     rejectSuggestion: vi.fn(),
@@ -377,6 +382,48 @@ describe('ExtractionFormView → model child sections', () => {
       />,
     );
     expect(screen.getByTestId('model-selector')).toBeInTheDocument();
+  });
+});
+
+describe('ExtractionFormView memo comparator — accept spinner propagation', () => {
+  // Regression for the stuck AI-accept spinner. After an accept resolves,
+  // `clearLoading` flips `isActionLoading` true → false while every other prop
+  // (values, instances, aiSuggestions, sections, models) keeps its reference.
+  // If the comparator ignores `isActionLoading`, the memo bails out, the child
+  // accordion (and the FieldInput below it) is never reconciled, and the spinner
+  // spins forever. FieldInput's OWN comparator can't help — it never runs
+  // because this parent gate swallows the update first.
+  it('re-renders children when only isActionLoading clears (no other prop change)', () => {
+    const instances = [
+      { id: 'study-inst', entity_type_id: 'study-et', label: 'Study' },
+    ] as any[];
+    // Stable shared refs: the ONLY thing that differs between the two renders
+    // is the isActionLoading closure, mirroring clearLoading after an accept.
+    const stable = baseProps({
+      studyLevelSections: [STUDY_SECTION],
+      instances,
+      aiSuggestions: {
+        'study-inst_f-doi': {
+          id: 's1',
+          status: 'pending',
+          value: 'x',
+          confidence: 0.9,
+        },
+      },
+    });
+
+    const { rerender } = render(
+      <ExtractionFormView {...stable} isActionLoading={() => 'accept'} />,
+    );
+    expect(
+      screen.getByTestId('section-study_metadata').getAttribute('data-ai-loading'),
+    ).toBe('accept');
+
+    rerender(<ExtractionFormView {...stable} isActionLoading={() => null} />);
+
+    expect(
+      screen.getByTestId('section-study_metadata').getAttribute('data-ai-loading'),
+    ).toBe('null');
   });
 });
 
