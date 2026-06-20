@@ -8,12 +8,6 @@ import type { components } from '@/types/api/schema';
 type ParserType = components['schemas']['ParserSettingsPayload']['type'];
 type ParserSettingsRead = components['schemas']['ParserSettingsRead'];
 
-export function getParserSettings(projectId: string): Promise<ParserSettingsRead> {
-  return apiClient<ParserSettingsRead>(
-    `/api/v1/projects/${projectId}/parser-settings`,
-  );
-}
-
 export function setParserType(
   projectId: string,
   type: ParserType,

@@ -21,7 +21,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import {AlertTriangle as _AlertTriangle, Trash2} from 'lucide-react';
 import {deleteProject} from '@/services/projectSettingsService';
-import {getParserSettings} from '@/services/parserSettingsService';
 import {loadKeysAndProviders} from '@/services/apiKeysService';
 import {getAccessToken} from '@/services/authService';
 import {toast} from 'sonner';
@@ -38,6 +37,7 @@ interface AdvancedProjectShape {
   eligibility_criteria: Json;
   study_design: Json;
   review_keywords: Json;
+  settings: Json;
 }
 
 interface AdvancedSettingsSectionProps {
@@ -77,17 +77,19 @@ export function AdvancedSettingsSection({
   const navigate = useNavigate();
 
   // --- Parsing toggle state ---
-  const [parserType, setParserType] = useState<'standard' | 'llamaparse'>('standard');
+  // Derive the current parser type synchronously from the loaded project settings
+  // (project.settings is the JSONB column, already present from select('*')).
+  const currentParserType: 'standard' | 'llamaparse' =
+    (project.settings as { parsing?: { type?: 'standard' | 'llamaparse' } } | null | undefined)
+      ?.parsing?.type === 'llamaparse'
+      ? 'llamaparse'
+      : 'standard';
   const [hasLlamaCloudKey, setHasLlamaCloudKey] = useState(false);
 
   useEffect(() => {
-    // Load parser settings and stored API keys for the parsing toggle.
+    // Load stored API keys to compute hasLlamaCloudKey for the parsing toggle.
     // Mirrors ApiKeysSection's pattern: getAccessToken + loadKeysAndProviders.
     queueMicrotask(() => {
-      getParserSettings(projectId)
-        .then((s) => setParserType(s.type))
-        .catch(() => { /* leave default 'standard' on error */ });
-
       getAccessToken()
         .then((tokenResult) => {
           if (!tokenResult.ok) return;
@@ -278,7 +280,7 @@ export function AdvancedSettingsSection({
           >
               <HighQualityParsingToggle
                   projectId={projectId}
-                  currentType={parserType}
+                  currentType={currentParserType}
                   hasLlamaCloudKey={hasLlamaCloudKey}
                   disabled={!isManager}
               />
