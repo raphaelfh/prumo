@@ -6,7 +6,7 @@ owner: '@raphaelfh'
 
 # Markdown view and markdown-anchored citations Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax. Decision record: ADR 0013 (this plan **refines** it — see Goal). **Depends on** `docs/superpowers/plans/2026-06-20-dual-path-parse-at-ingest.md` — that plan populates `article_text_blocks` (LlamaParse cloud default / self-hosted PHI); this plan consumes them.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax. Decision record: ADR 0013 (this plan **refines** it — see Goal). **Depends on** `docs/superpowers/plans/2026-06-20-dual-path-parse-at-ingest.md` — that plan populates `article_text_blocks` (Docling self-hosted default / LlamaParse cloud opt-in); this plan consumes them.
 
 **Goal:** Render the article's blocks into one canonical **Markdown** projection
 that is BOTH the surface the AI reads for extraction AND the surface shown in the
