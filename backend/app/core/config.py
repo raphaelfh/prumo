@@ -9,8 +9,10 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from pydantic import PostgresDsn
+from pydantic import PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.config_validators import validate_linear_team_id
 
 
 class Settings(BaseSettings):
@@ -116,6 +118,12 @@ class Settings(BaseSettings):
     FEEDBACK_MEDIA_BUCKET: str = "feedback-media"
     FEEDBACK_MAX_IMAGE_BYTES: int = 10 * 1024 * 1024
     FEEDBACK_MAX_VIDEO_BYTES: int = 50 * 1024 * 1024
+
+    @field_validator("LINEAR_TEAM_ID")
+    @classmethod
+    def _validate_linear_team_id(cls, value: str | None) -> str | None:
+        """Fail fast at boot if LINEAR_TEAM_ID is set to the team slug, not its UUID."""
+        return validate_linear_team_id(value)
 
     @property
     def supabase_env(self) -> str:

@@ -84,6 +84,7 @@ postgres
 PostgREST
 probast
 prumo
+prumoai
 psutil
 psycopg
 pubmed
@@ -134,6 +135,7 @@ tripod
 tsx
 turbopack
 unblinded
+unblinding
 univariable
 upserted
 upserts
