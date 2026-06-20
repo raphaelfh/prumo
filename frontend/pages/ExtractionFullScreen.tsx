@@ -409,6 +409,12 @@ export default function ExtractionFullScreen() {
     // happy and avoid unhandled rejections from the `void onAdvance()` caller.
   const onMarkReady = async () => {
     if (!activeRunId) return;
+    // Flush pending autosave FIRST: once the run advances to consensus the
+    // autosave is disabled and proposal writes are rejected, so a debounce in
+    // flight would be lost. ``ensureReviewStage`` only saves when in PROPOSAL,
+    // so the REVIEW path needs this explicit flush. ``saveNow`` is idempotent.
+    const saved = await saveNow().then(() => true).catch(() => false);
+    if (!saved) return;
     const ensured = await ensureReviewStage().then(() => true).catch(() => false);
     if (!ensured) return;
     const ok = await advanceMutation

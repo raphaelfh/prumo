@@ -9,7 +9,7 @@
  * @component
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type UserRole } from '@/lib/comparison/permissions';
 import { RunHeader, type RunHeaderValue, type StageTransition } from '@/components/runs/header';
@@ -163,11 +163,17 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
   // ---- Cmd-K palette state ----
   const [paletteOpen, setPaletteOpen] = useState(false);
 
-  // Header keyboard shortcuts (documented in the "?" Help panel). Cleanup via
-  // return, NOT try/finally (React Compiler). ⌘B (sidebar) is owned by the
-  // RunWorkspaceShell, not here.
+  // Header keyboard shortcuts (documented in the "?" Help panel). The changing
+  // callbacks/lists live in a ref so the listener registers ONCE (empty deps)
+  // rather than re-binding every render. Cleanup via return, NOT try/finally
+  // (React Compiler). ⌘B (sidebar) is owned by the RunWorkspaceShell, not here.
+  const kbdRef = useRef({ articles, currentArticleId, onNavigateToArticle, onTogglePDF });
+  useEffect(() => {
+    kbdRef.current = { articles, currentArticleId, onNavigateToArticle, onTogglePDF };
+  }, [articles, currentArticleId, onNavigateToArticle, onTogglePDF]);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const { articles, currentArticleId, onNavigateToArticle, onTogglePDF } = kbdRef.current;
       const target = e.target as HTMLElement;
       const isEditing =
         target instanceof HTMLInputElement ||
@@ -205,7 +211,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [articles, currentArticleId, onNavigateToArticle, onTogglePDF]);
+  }, []);
 
   // ---- Palette actions: surface all edge-action handlers ----
   // note: Export lives in ExtractionExportDialog, not the header

@@ -16,7 +16,7 @@
  * field to materialize PublishedState rows.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -310,7 +310,13 @@ export default function QualityAssessmentFullScreen() {
   const { sidebarCollapsed, toggleSidebar } = useSidebar();
 
   // "\" toggles the source (PDF) panel. No J/K — QA has a single article.
-  // Cleanup via return, NOT try/finally (React Compiler).
+  // ``usePdfPanel`` returns a fresh object each render, so hold the toggle in a
+  // ref and register the listener ONCE (empty deps) to avoid re-binding every
+  // render. Cleanup via return, NOT try/finally (React Compiler).
+  const togglePdfRef = useRef(pdfPanelState.toggle);
+  useEffect(() => {
+    togglePdfRef.current = pdfPanelState.toggle;
+  }, [pdfPanelState.toggle]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tgt = e.target as HTMLElement;
@@ -318,12 +324,12 @@ export default function QualityAssessmentFullScreen() {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "\\") {
         e.preventDefault();
-        pdfPanelState.toggle();
+        togglePdfRef.current();
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [pdfPanelState]);
+  }, []);
 
   // Reveal: manager can un-blind QA reviewer identities for this project.
   const canReveal = permissions.userRole === "manager" && permissions.isBlindMode;
