@@ -38,6 +38,7 @@ dependencies = [
     "logfire[fastapi,celery]>=3.0.0",
     # PDF Processing
     "pypdf>=5.0.0",
+    "docling>=2.0.0",
     # Observability
     "structlog>=24.0.0",
     # Rate Limiting
