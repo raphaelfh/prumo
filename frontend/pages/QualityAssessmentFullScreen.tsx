@@ -484,12 +484,6 @@ export default function QualityAssessmentFullScreen() {
       ? t("qa", "templateNotFound").replace("{{templateId}}", templateId ?? "")
       : (sessionError ?? templateError);
 
-  // Guide: scroll to top of form (no required-field count for QA).
-  const onGuide = () => {
-    const el = document.querySelector('[data-testid="qa-form-panel"]');
-    if (el) el.scrollTop = 0;
-  };
-
   // The API returns stage as `string`; cast to the narrow union the header lib expects.
   const runStage = (runDetail?.run.stage ?? null) as ExtractionRunStage | null;
 
@@ -499,7 +493,6 @@ export default function QualityAssessmentFullScreen() {
     canResolveConflicts: permissions.canResolveConflicts,
     onPublish: handlePublish,
     onFinalize: handleFinalizeFromConsensus,
-    onGuide,
   });
 
   // AI extract callback — called by RunHeader.AIActions.

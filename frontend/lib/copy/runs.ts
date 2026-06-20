@@ -37,7 +37,7 @@ export const runs = {
   // AIActions
   extractWithAI: 'Extract with AI',
   extractingWithAI: 'Extracting with AI…',
-  // Navigation (also kept in extraction for ExtractionHeader callers)
+  // Navigation
   articlePrevious: 'Previous article',
   articleNext: 'Next article',
   // Worklist popover
@@ -49,6 +49,7 @@ export const runs = {
   commandActions: 'Actions',
   commandGoToArticle: 'Go to article…',
   keyboardShortcuts: 'Keyboard shortcuts',
+  commandPaletteOpen: 'Open command palette',
 } as const;
 
 export type RunsCopy = typeof runs;

@@ -25,8 +25,6 @@ export const extraction = {
     comparison: 'Comparison',
     // HeaderNavigation
     back: 'Back',
-    articlePrevious: 'Previous article',
-    articleNext: 'Next article',
     articleFirst: 'First article',
     articleLast: 'Last article',
     // ConfigureTemplateFirst

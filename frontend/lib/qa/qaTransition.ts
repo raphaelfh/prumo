@@ -16,8 +16,6 @@ export interface BuildQaTransitionArgs {
    * Maps to handleFinalizeFromConsensus on the page.
    */
   onFinalize: () => void | Promise<void>;
-  /** Scroll/focus guide — used as onAdvance when the gate is blocked. */
-  onGuide: () => void;
 }
 
 /**
@@ -31,7 +29,7 @@ export interface BuildQaTransitionArgs {
  * Mirrors buildExtractionTransition's shape so PrimaryAction renders identically.
  */
 export function buildQaTransition(args: BuildQaTransitionArgs): StageTransition | null {
-  const { stage, canResolveConflicts, onPublish, onFinalize, onGuide } = args;
+  const { stage, canResolveConflicts, onPublish, onFinalize } = args;
 
   if (stage === 'proposal' || stage === 'review') {
     // Primary action: publish the assessment (drives the full pipeline).
@@ -58,6 +56,5 @@ export function buildQaTransition(args: BuildQaTransitionArgs): StageTransition 
   }
 
   // finalized, pending, cancelled, null → no primary action.
-  void onGuide; // consumed by callers but not used here; suppress unused-var lint.
   return null;
 }

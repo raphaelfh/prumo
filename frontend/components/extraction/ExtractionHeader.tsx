@@ -204,14 +204,6 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
       run: () => onReveal(),
     });
   }
-  // Keyboard shortcuts: no dedicated dialog exists after HeaderMoreMenu removal
-  // so this is a no-op action that signals the slot exists for future wiring.
-  paletteActions.push({
-    id: 'shortcuts',
-    label: t('runs', 'keyboardShortcuts'),
-    run: () => {},
-  });
-
   const headerValue: RunHeaderValue = {
     kind: 'extraction',
     stage,
@@ -255,7 +247,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
               type="button"
               onClick={() => setPaletteOpen(true)}
               className="hidden @[48rem]/headerbar:flex items-center gap-1 rounded border border-border/60 bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted transition-colors"
-              aria-label="Open command palette"
+              aria-label={t('runs', 'commandPaletteOpen')}
             >
               <kbd className="font-sans">⌘K</kbd>
             </button>

@@ -11,7 +11,6 @@ function makeArgs(overrides: Partial<Parameters<typeof buildQaTransition>[0]> = 
     canResolveConflicts: false,
     onPublish: noop,
     onFinalize: noop,
-    onGuide: noop,
     ...overrides,
   };
 }
