@@ -560,6 +560,7 @@ export const extraction = {
     runHeaderRevealedSuffix: 'revealed',
     runHeaderReveal: 'Reveal reviewers',
     runHeaderBlindExplainer: "You're blind to reviewers' values for this kind.",
+    runHeaderMore: 'More options',
     runHeaderTogglePanel: 'Toggle source panel',
     runHeaderSaved: 'Saved',
     runHeaderSaving: 'Saving…',
