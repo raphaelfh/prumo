@@ -82,6 +82,22 @@ describe('RunHeader.Breadcrumb', () => {
     // last crumb has no onClick → not a button
     expect(screen.queryByRole('button', { name: 'My Run' })).toBeNull();
   });
+
+  it('renders a long last-crumb title verbatim (wrapped for truncation)', () => {
+    render(
+      <RunHeader value={base}>
+        <RunHeader.Left>
+          <RunHeader.Breadcrumb
+            onBack={vi.fn()}
+            crumbs={[{ label: 'Projects' }, { label: 'A very long article title that should truncate' }]}
+          />
+        </RunHeader.Left>
+      </RunHeader>,
+    );
+    const last = screen.getByText('A very long article title that should truncate');
+    expect(last).toBeInTheDocument();
+    expect(last.className).toMatch(/truncate/);
+  });
 });
 
 describe('RunHeader.Menu + RunHeader.MenuItem', () => {
