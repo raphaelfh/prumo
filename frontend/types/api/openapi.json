@@ -1211,6 +1211,54 @@
         "title": "ApiResponse[OpenHITLSessionResponse]",
         "type": "object"
       },
+      "ApiResponse_ParserSettingsRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ParserSettingsRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ParserSettingsRead]",
+        "type": "object"
+      },
       "ApiResponse_ProposalRecordResponse_": {
         "properties": {
           "data": {
@@ -2218,7 +2266,7 @@
             "title": "Metadata"
           },
           "provider": {
-            "description": "Provedor da API. Valores: ('openai', 'anthropic', 'gemini', 'grok')",
+            "description": "Provedor da API. Valores: ('openai', 'anthropic', 'gemini', 'grok', 'llama_cloud')",
             "title": "Provider",
             "type": "string"
           },
@@ -3835,6 +3883,40 @@
           "instances_by_entity_type"
         ],
         "title": "OpenHITLSessionResponse",
+        "type": "object"
+      },
+      "ParserSettingsPayload": {
+        "properties": {
+          "type": {
+            "enum": [
+              "standard",
+              "llamaparse"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "ParserSettingsPayload",
+        "type": "object"
+      },
+      "ParserSettingsRead": {
+        "properties": {
+          "type": {
+            "enum": [
+              "standard",
+              "llamaparse"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "ParserSettingsRead",
         "type": "object"
       },
       "ProposalRecordResponse": {
@@ -6843,6 +6925,64 @@
           }
         ],
         "summary": "Set Manager Review Visibility",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/parser-settings": {
+      "put": {
+        "operationId": "set_parser_settings_api_v1_projects__project_id__parser_settings_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParserSettingsPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ParserSettingsRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Set Parser Settings",
         "tags": [
           "projects"
         ]
