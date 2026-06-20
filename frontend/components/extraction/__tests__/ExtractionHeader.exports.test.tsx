@@ -30,4 +30,37 @@ describe('ExtractionHeader (post legacy-cascade)', () => {
     await userEvent.click(screen.getByRole('button', { name: /more/i }));
     expect(screen.queryByText(/Export Data/i)).not.toBeInTheDocument();
   });
+
+  // TDD: Task 9 — re-skin onto RunHeader compound
+  it('renders a StageRail navigation landmark', () => {
+    render(<MemoryRouter><ExtractionHeader {...base} stage="proposal" /></MemoryRouter>);
+    expect(screen.getByRole('navigation', { name: 'Run stage' })).toBeInTheDocument();
+  });
+
+  it('primary button label has no parenthetical like "(advance to consensus)"', () => {
+    render(
+      <MemoryRouter>
+        <ExtractionHeader
+          {...base}
+          stage="proposal"
+          isComplete={true}
+          completedFields={5}
+          totalFields={5}
+          transition={{
+            to: 'review',
+            label: 'Submit for review',
+            gate: { ok: true },
+            onAdvance: vi.fn(),
+          }}
+        />
+      </MemoryRouter>,
+    );
+    const btn = screen.getByRole('button', { name: /submit for review/i });
+    expect(btn.textContent).not.toMatch(/\(.*\)/);
+  });
+
+  it('does NOT render extraction-hitl-banner when rendered in isolation', () => {
+    render(<MemoryRouter><ExtractionHeader {...base} /></MemoryRouter>);
+    expect(screen.queryByTestId('extraction-hitl-banner')).not.toBeInTheDocument();
+  });
 });

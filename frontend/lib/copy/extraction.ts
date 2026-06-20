@@ -569,6 +569,9 @@ export const extraction = {
     runHeaderSaved: 'Saved',
     runHeaderSaving: 'Saving…',
     runHeaderSaveFailed: 'Save failed',
+    runHeaderCompareToggle: 'Compare reviewers',
+    runHeaderReopenForRevision: 'Reopen for revision',
+    runHeaderReopening: 'Reopening…',
     // Section navigation rail
     sectionNavRequiredLeft: '{{count}} required left',
     sectionNavComplete: 'All required fields complete',

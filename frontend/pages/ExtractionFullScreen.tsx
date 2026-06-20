@@ -28,9 +28,9 @@ import {ResizablePanel, ResizablePanelGroup} from '@/components/ui/resizable';
 import {Button} from '@/components/ui/button';
 import {Loader2} from 'lucide-react';
 import {
-  HITLReopenButton,
   HITLStatusBadges,
 } from '@/components/runs/HITLStatusBadges';
+import {buildExtractionTransition} from '@/lib/extraction/stageTransition';
 
 // Hooks
 import {useExtractionData} from '@/hooks/extraction/useExtractionData';
@@ -169,7 +169,7 @@ export default function ExtractionFullScreen() {
     [runDetail],
   );
 
-  const stage = runDetail?.run.stage ?? null;
+  const stage = (runDetail?.run.stage ?? null) as import('@/types/ai-extraction').ExtractionRunStage | null;
   const proposals = runDetail?.proposals;
   const isFinalized = stage === 'finalized';
 
@@ -1029,24 +1029,35 @@ export default function ExtractionFullScreen() {
     })();
   };
 
-  // Stage-driven primary action shown in the header. PROPOSAL submits
-  // for review; REVIEW lets manager/consensus reconcile + advance to
-  // CONSENSUS (Layer 2 of the multi-reviewer blind fix — without this
-  // the run had no UI path past REVIEW); everything else falls back to
-  // the legacy finalize handler.
-  let onFinalize: () => void | Promise<void> = handleFinalize;
-  let finalizeLabel: string | undefined;
-  if (stage === 'proposal') {
-    onFinalize = handleSubmitForReview;
-    finalizeLabel = 'Submit for review';
-  } else if (stage === 'review' && permissions.canResolveConflicts) {
-    onFinalize = handleReconcile;
-    finalizeLabel = 'Reconcile (advance to consensus)';
-  }
+  // P0 guide handler: scroll the form container to top and show a toast.
+  // Jump-to-first-empty-field is a documented P1 refinement — not wired here.
+  const onGuide = () => {
+    const el = document.querySelector('[data-scroll-container="extraction-form"] [data-radix-scroll-area-viewport]');
+    if (el) el.scrollTop = 0;
+    toast.info(t('extraction', 'runHeaderGateBlocked'));
+  };
+
+  // Stage-driven transition for the RunHeader PrimaryAction slot.
+  // buildExtractionTransition() owns all label/gate logic; the legacy
+  // onFinalize/finalizeLabel block is removed.
+  const transition = buildExtractionTransition({
+    stage,
+    canResolveConflicts: permissions.canResolveConflicts,
+    isComplete,
+    completed: completedFields,
+    total: totalFields,
+    onSubmit: handleSubmitForReview,
+    onReconcile: handleReconcile,
+    onFinalize: handleFinalize,
+    onGuide,
+  });
+
+  // Reopen is surfaced via the header Menu instead of the orphaned banner.
+  const canReopen = isFinalized || (!activeRunId && !!finalizedRun);
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      {/* Header Unificado */}
+      {/* Header — RunHeader compound via ExtractionHeader */}
       <ExtractionHeader
         projectId={projectId || ''}
         projectName={project?.name || t('pages', 'extractionScreenProjectFallback')}
@@ -1069,30 +1080,45 @@ export default function ExtractionFullScreen() {
         lastSavedAt={lastSavedAt}
         hasUnsavedChanges={hasUnsavedChanges}
         isComplete={isComplete}
-        onFinalize={onFinalize}
-        finalizeLabel={finalizeLabel}
+        onFinalize={handleFinalize}
         submitting={submitting}
         templateId={template?.id}
         templateName={template?.name}
         runId={activeRunId}
+        // RunHeader feature props
+        stage={stage ?? undefined}
+        transition={transition}
+        isRevision={!!parentRunId}
+        reviewers={{
+          count: reviewerSummary.reviewers.length,
+          required: reviewerSummary.requiredReviewerCount,
+          // divergentCoords is a Set<string> — .size gives the count
+          divergent: reviewerSummary.divergentCoords.size,
+        }}
+        canReveal={false}
+        onJumpToDivergence={() => setViewMode('compare')}
         // AI extraction seeds proposals and only works in PROPOSAL; once the
         // run is in REVIEW it's a one-time-done step (re-running would error).
         canRunAI={stage === 'proposal' || stage == null}
         onExtractionComplete={handleExtractionComplete}
         aiSuggestions={aiSuggestions}
+        aiPendingCount={Object.keys(aiSuggestions).length}
         onAISuggestionsClick={() => {
-            // Scroll to first suggestion or open panel
-          // For now, just log — can be improved later
-            console.warn('Clicked AI badge - scrolling to first suggestion');
+          // P1: scroll to first suggestion or open panel
+          console.warn('Clicked AI badge - scrolling to first suggestion');
         }}
         onRefreshInstances={handleRefreshInstances}
         onExtractionStateChange={setAiExtractionState}
+        // Reopen moved into the header Menu
+        canReopen={canReopen}
+        onReopen={() => void handleReopen()}
+        reopening={reopening}
       />
 
         {/* AI extraction progress - Rendered at page level to avoid conflicts */}
       {(aiExtractionState?.loading && aiExtractionState?.progress) || isProgressMinimized ? (
         <div className="fixed bottom-6 right-6 z-[9999] w-96 max-w-[calc(100vw-3rem)]">
-          <FullAIExtractionProgress 
+          <FullAIExtractionProgress
             progress={aiExtractionState?.progress || { stage: 'extracting_models' }}
             onClose={() => {
               setAiExtractionState(null);
@@ -1105,36 +1131,26 @@ export default function ExtractionFullScreen() {
         </div>
       ) : null}
 
-      {/* HITL banner: revision indicator + reopen affordance + reviewer
-          progress. Same primitives the QA page uses — see HITLStatusBadges. */}
+      {/* HITL revision/finalized status badges — now shown inline below header,
+          without the orphaned banner wrapper. Reopen moved to header Menu.
+          ReviewerProgressBadge stays here (it's informational, not an action). */}
       {(parentRunId || (!activeRunId && finalizedRun) || runDetail) ? (
-        <div
-          className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2 text-xs"
-          data-testid="extraction-hitl-banner"
-        >
-          <div className="flex items-center gap-2">
-            <HITLStatusBadges
-              kind="extraction"
-              finalized={isFinalized || (!activeRunId && !!finalizedRun)}
-              parentRunId={parentRunId}
-            />
-            {runDetail && stage !== 'proposal' ? (
-              // Reviewer decisions only exist from REVIEW onward; showing the
-              // counter during PROPOSAL always read "0/N" and confused users
-              // who were actively filling the form.
-              <ReviewerProgressBadge
-                reviewerCount={reviewerSummary.reviewers.length}
-                requiredReviewerCount={reviewerSummary.requiredReviewerCount}
-                divergentCount={reviewerSummary.divergentCoords.size}
-              />
-            ) : null}
-          </div>
-          <HITLReopenButton
+        <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2 text-xs">
+          <HITLStatusBadges
             kind="extraction"
-            visible={isFinalized || (!activeRunId && !!finalizedRun)}
-            onClick={() => void handleReopen()}
-            reopening={reopening}
+            finalized={isFinalized || (!activeRunId && !!finalizedRun)}
+            parentRunId={parentRunId}
           />
+          {runDetail && stage !== 'proposal' ? (
+            // Reviewer decisions only exist from REVIEW onward; showing the
+            // counter during PROPOSAL always read "0/N" and confused users
+            // who were actively filling the form.
+            <ReviewerProgressBadge
+              reviewerCount={reviewerSummary.reviewers.length}
+              requiredReviewerCount={reviewerSummary.requiredReviewerCount}
+              divergentCount={reviewerSummary.divergentCoords.size}
+            />
+          ) : null}
         </div>
       ) : null}
 
