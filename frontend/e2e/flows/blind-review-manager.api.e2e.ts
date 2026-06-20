@@ -26,6 +26,7 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+import { QA_BLIND_REVIEW_ARTICLE_ID } from "../_fixtures/fixture-ids";
 import { prepareCleanQaRun } from "../_fixtures/hitl";
 import type { ReviewKind } from "../../lib/comparison/permissions";
 
@@ -138,7 +139,7 @@ test.describe("Manager blind-review + per-kind reveal", () => {
       apiUrl: env.apiUrl,
       token: managerToken,
       projectId: env.projectId!,
-      articleId: env.articleId!,
+      articleId: QA_BLIND_REVIEW_ARTICLE_ID,
       qaTemplateId,
       traceId,
     });
@@ -197,7 +198,7 @@ test.describe("Manager blind-review + per-kind reveal", () => {
       apiUrl: env.apiUrl,
       token: managerToken,
       projectId: env.projectId!,
-      articleId: env.articleId!,
+      articleId: QA_BLIND_REVIEW_ARTICLE_ID,
       qaTemplateId,
       traceId,
     });
@@ -247,7 +248,7 @@ test.describe("Manager blind-review + per-kind reveal", () => {
       apiUrl: env.apiUrl,
       token: managerToken,
       projectId: env.projectId!,
-      articleId: env.articleId!,
+      articleId: QA_BLIND_REVIEW_ARTICLE_ID,
       qaTemplateId,
       traceId,
     });
