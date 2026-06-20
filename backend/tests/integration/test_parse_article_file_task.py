@@ -194,7 +194,7 @@ def test_celery_task_calls_retry_on_exception() -> None:
 
     mock_retry = MagicMock(side_effect=Exception("retry called"))
     with (
-        patch("app.worker._runner.run_task", side_effect=ValueError("boom")),
+        patch("app.worker.tasks.parsing_tasks.run_task", side_effect=ValueError("boom")),
         patch.object(parse_article_file_task, "retry", mock_retry),
         pytest.raises(Exception, match="retry called"),
     ):

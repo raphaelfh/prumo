@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
+from app.models.user_api_key import SUPPORTED_PROVIDERS
 from app.schemas.common import ApiResponse
 from app.schemas.user_api_key import (
     APIKeyResponse,
@@ -268,32 +269,36 @@ async def list_providers() -> ApiResponse[ListProvidersData]:
     Return informacoes sobre cada provedor.
     Public endpoint - does not require authentication.
     """
-    providers = [
-        {
-            "id": "openai",
+    # Provider metadata — must cover every entry in SUPPORTED_PROVIDERS so the
+    # list endpoint and the validation set cannot silently diverge.
+    _PROVIDER_METADATA: dict[str, dict[str, str]] = {
+        "openai": {
             "name": "OpenAI",
             "description": "GPT-4, GPT-4o, etc.",
             "docsUrl": "https://platform.openai.com/api-keys",
         },
-        {
-            "id": "anthropic",
+        "anthropic": {
             "name": "Anthropic",
             "description": "Claude 3, Claude 3.5, etc.",
             "docsUrl": "https://console.anthropic.com/settings/keys",
         },
-        {
-            "id": "gemini",
+        "gemini": {
             "name": "Google Gemini",
             "description": "Gemini Pro, Gemini Ultra, etc.",
             "docsUrl": "https://aistudio.google.com/app/apikey",
         },
-        {
-            "id": "grok",
+        "grok": {
             "name": "xAI Grok",
             "description": "Grok-1, Grok-2, etc.",
             "docsUrl": "https://console.x.ai/",
         },
-    ]
+        "llama_cloud": {
+            "name": "LlamaCloud",
+            "description": "High-quality cloud PDF parsing (LlamaParse) for non-PHI projects",
+            "docsUrl": "https://cloud.llamaindex.ai",
+        },
+    }
+    providers = [{"id": pid, **_PROVIDER_METADATA[pid]} for pid in SUPPORTED_PROVIDERS]
 
     return ApiResponse(ok=True, data=ListProvidersData.model_validate({"providers": providers}))
 
