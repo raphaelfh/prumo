@@ -252,6 +252,93 @@ time *only* for editing a single prediction-model child in a drawer/modal.
   `J`/`K` article nav in the shortcuts sheet. Drop `hover:scale-[1.02]` on the
   primary (reads toy-ish against the Linear target) for a calm bg/border hover.
 
+### 3.3a Shared `RunHeader` lib — 2026 header redesign (approved 2026-06-20)
+
+Supersedes/expands §3.3 with the full, trend-aligned header. **Key finding:** the
+header is **not actually shared today** — extraction renders `ExtractionHeader`
+plus an orphaned second "HITL banner" row (`ExtractionFullScreen.tsx:1108-1139`),
+while QA hand-rolls a completely different inline header
+(`QualityAssessmentFullScreen.tsx:477-580`); they share only leaf primitives. The
+redesign builds a real composable lib both kinds compose from. The data layer is
+already in place (no backend): `useReviewerSummary` exposes
+`reviewers`/`divergentCoords`/`requiredReviewerCount`/`completionRatio`;
+`permissions` gives `userRole`/`isBlindMode`/`canResolveConflicts`/`canSeeOthers`.
+
+**New home:** `frontend/components/runs/header/` (beside the leaf primitives it
+wraps). shadcn/Radix **compound component** (provider context + slot
+subcomponents), kind-discriminated (`'extraction' | 'qa'`):
+
+```tsx
+<RunHeader kind stage role isBlind canReveal onReveal progress reviewers
+           transition save worklist>
+  <RunHeader.Left>  <RunHeader.Breadcrumb/> <RunHeader.StageRail/> </RunHeader.Left>
+  <RunHeader.Center><RunHeader.Reviewers/>  <RunHeader.RoleChip/>  </RunHeader.Center>
+  <RunHeader.Right>
+    <RunHeader.Worklist/>     {/* extraction only */}
+    <RunHeader.PanelToggle/>  {/* QA omits — no PDF */}
+    <RunHeader.AIActions/> <RunHeader.Save/>
+    <RunHeader.PrimaryAction/>{/* driven by a typed StageTransition, NOT finalizeLabel */}
+    <RunHeader.Menu/>
+  </RunHeader.Right>
+</RunHeader>
+```
+
+`StageRail / Reviewers / RoleChip / Save / AIActions / PrimaryAction` are identical
+for both kinds; only `Breadcrumb / Worklist / PanelToggle / Menu`-items are
+kind-discriminated. The linchpin is the typed transition descriptor:
+
+```ts
+type StageTransition =
+  | { to: ExtractionRunStage; label: string; gate: { ok: true };  onAdvance: () => Promise<void> }
+  | { to: ExtractionRunStage; label: string; gate: { ok: false; reason: string; remaining: number }; onAdvance: () => Promise<void> };
+```
+
+**Proposals (build ON §3.3):**
+
+- **P0 — Stage spine.** `RunHeader.StageRail`: Proposal → Review → Consensus →
+  Finalized; done = `bg-success` dot + check, current = `bg-info` dot in a
+  `bg-info/10` pill + a 2px completion underline (kills the bare `%`), future =
+  hollow ring, finalized = lock. Each state has a distinct **icon** (never color
+  alone). Current node carries the gate chip ("3 left", `text-warning`); a revision
+  run prefixes a `bg-ai/10 text-ai` "Revision" tag (absorbs the banner's revision
+  pill). Replaces the work the button label does at `:1044`.
+- **P0 — Self-explaining gated `PrimaryAction`.** Label = the next verb only (no
+  parenthetical). When `gate.ok === false`: stays enabled-looking
+  (`aria-disabled` + `aria-describedby`), shows "N of M required" inline *before*
+  the click, and on click runs **guide-me** (scroll+focus first required-empty
+  field, pulse the rail) instead of a post-click toast. Drop `hover:scale-[1.02]`.
+- **P0 — Two eyes resolved.** PDF show/hide → `RunHeader.PanelToggle`
+  (`PanelRight`, `aria-pressed`, pressed `bg-muted`); the non-interactive blind
+  `EyeOff` badge is deleted and blind moves onto the role chip text
+  ("Manager · blind").
+- **P0 — Status economy + one bar.** `%` → stage underline; `SaveStatusBadge` →
+  ambient dot+word (hidden when finalized, fades after idle); the orphaned banner
+  row folds into row one.
+- **P0 — Build `<RunHeader>` lib** and re-implement `ExtractionHeader` as a thin
+  composition with the **same external props** (zero page change first).
+- **P1 — Reviewer presence.** `RunHeader.Reviewers`: overlapping
+  `bg-reviewer-1..5` avatars (filled ring = submitted) past Proposal; a
+  `text-warning` "⑂ N differ" chip on divergence → jumps to consensus/compare.
+  Replaces the numeric `ReviewerProgressBadge` as default.
+- **P1 — Honest blind/reveal.** `RunHeader.RoleChip` "Manager · blind" is a
+  Popover whose action toggles the per-kind `managers_see_reviewers[kind]`
+  (`permissions.canSeeOthers`) → "Manager · revealed". Consensus never shows blind.
+- **P1 — AI at the right weight.** `RunHeader.AIActions`: secondary "Extract with
+  AI" (violet `text-ai` sparkle) in Proposal, before PrimaryAction; collapses to a
+  `bg-ai/10` "AI · N" chip after. Never `bg-primary`.
+- **P2 — Worklist peek.** `RunHeader.Worklist` (extraction only): `‹ 4/28 ›` pill
+  → Popover `Command` queue with per-article status dots, "12 remaining", `J`/`K`.
+- **P2 — Cmd-K long-tail + container-query collapse.** Push Reopen/Compare/Export/
+  Reveal/panel-toggle into `cmdk`; collapse the bar by its **own width** (container
+  query, not viewport), primary + Cmd-K last to go.
+
+**Migration order (safe):** build `RunHeader.*` wrapping existing leaf primitives →
+re-skin `ExtractionHeader` under the same props → fold the banner row into
+`StageRail`/`Reviewers` and delete it → swap QA's inline header → replace the
+`finalizeLabel` string with the `StageTransition` descriptor end-to-end. Same
+constraints as §6 (React Compiler no try/finally; copy via `lib/copy`; read
+`error.message`; no schema/API changes).
+
 ## 4. Design tokens (reuse — do not invent)
 
 Confirmed against `frontend/index.css` + `tailwind.config.ts` + live components.
