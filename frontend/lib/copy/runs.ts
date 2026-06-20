@@ -45,6 +45,9 @@ export const runs = {
   // CommandPalette
   commandPlaceholder: 'Type a command or search…',
   commandEmpty: 'No results',
+  commandActions: 'Actions',
+  commandGoToArticle: 'Go to article…',
+  keyboardShortcuts: 'Keyboard shortcuts',
 } as const;
 
 export type RunsCopy = typeof runs;

@@ -37,7 +37,7 @@ export function CommandPalette({
       <CommandList>
         <CommandEmpty>{t('runs', 'commandEmpty')}</CommandEmpty>
         {actions.length > 0 && (
-          <CommandGroup heading="Actions">
+          <CommandGroup heading={t('runs', 'commandActions')}>
             {actions.map((action) => (
               <CommandItem
                 key={action.id}
@@ -52,7 +52,7 @@ export function CommandPalette({
           </CommandGroup>
         )}
         {hasArticles && (
-          <CommandGroup heading="Go to article…">
+          <CommandGroup heading={t('runs', 'commandGoToArticle')}>
             {articles!.map((article) => (
               <CommandItem
                 key={article.id}

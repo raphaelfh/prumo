@@ -175,6 +175,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
   }, []);
 
   // ---- Palette actions: surface all edge-action handlers ----
+  // note: Export lives in ExtractionExportDialog, not the header
   const paletteActions: { id: string; label: string; run: () => void }[] = [];
 
   if (hasComparison) {
@@ -207,7 +208,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
   // so this is a no-op action that signals the slot exists for future wiring.
   paletteActions.push({
     id: 'shortcuts',
-    label: 'Keyboard shortcuts',
+    label: t('runs', 'keyboardShortcuts'),
     run: () => {},
   });
 
