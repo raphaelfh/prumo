@@ -1,5 +1,5 @@
 ---
-status: implemented
+status: shipped
 last_reviewed: 2026-05-31
 owner: '@raphaelfh'
 ---

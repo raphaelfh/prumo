@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-06-20
 owner: '@raphaelfh'
 ---
 
@@ -8,10 +8,9 @@ owner: '@raphaelfh'
 
 ## Current focus
 
-- **Extraction data-path consolidation** (approved 2026-06-07): all
-  frontend reads move from the dual Supabase-REST + API path to the
-  typed API client. Active plans:
-  `docs/superpowers/plans/2026-06-08-runopen-slowload-phase*.md`.
+- See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the active cycle. As of
+  2026-06-20: structured PDF parsing / grounded extraction (ADR-0011, ADR-0013).
+  The extraction data-path consolidation **shipped** (#228, #324) — not active.
 - Project history lives in `git log` and `docs/adr/` — do not append
   changelogs to this file. Keep this section to ≤ 5 lines.
 

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 last_reviewed: 2026-06-14
 owner: '@raphaelfh'
 supersedes: '009-extraction-excel-export'

@@ -269,7 +269,7 @@ Concretely, respecting the existing layering:
 ## More Information
 
 - Schema-landing prerequisite (already merged):
-  `docs/superpowers/specs/2026-04-28-pdf-viewer-database-requirements.md`.
+  `docs/superpowers/specs/archive/2026-06-20-governance-sweep/2026-04-28-pdf-viewer-database-requirements.md`.
 - Implementation plans:
   `docs/superpowers/plans/2026-06-19-structured-pdf-parsing-at-ingest.md`
   (parse at ingest → persist blocks) and
