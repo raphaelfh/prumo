@@ -7,7 +7,11 @@ Elimina duplicacao and garante consistencia in the inicializacao de componentes.
 
 from supabase import Client
 
+from app.core.logging import get_logger
+from app.infrastructure.parsing.base import DocumentParser
 from app.infrastructure.storage import StorageAdapter, SupabaseStorageAdapter
+
+_logger = get_logger(__name__)
 
 
 def create_storage_adapter(supabase: Client) -> StorageAdapter:
@@ -30,18 +34,12 @@ def create_storage_adapter(supabase: Client) -> StorageAdapter:
     return SupabaseStorageAdapter(supabase)
 
 
-from app.core.logging import get_logger
-
-_logger = get_logger(__name__)
-
-
 def create_document_parser(
     settings,
     *,
     project_is_phi: bool,
-    api_key_service=None,  # APIKeyService | None — reserved for BYOK resolution
     llama_cloud_key: str | None = None,
-):
+) -> DocumentParser:
     """Build a DocumentParser per PARSER_BACKEND with a fail-closed PHI gate.
 
     Mirrors create_storage_adapter: a single choke point that owns parser
@@ -51,7 +49,6 @@ def create_document_parser(
     Args:
         settings: app settings (PARSER_BACKEND, LLAMA_CLOUD_API_KEY).
         project_is_phi: True when the project handles PHI (fail-closed input).
-        api_key_service: optional, reserved for future per-user key resolution.
         llama_cloud_key: resolved LlamaCloud key (BYOK > global), or None.
 
     Returns:
