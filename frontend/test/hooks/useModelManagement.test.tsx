@@ -14,7 +14,7 @@
  *    surface failure to the user.
  */
 
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -257,6 +257,48 @@ describe('useModelManagement → getModelProgress (RPC contract)', () => {
     });
 
     expect(progress).toEqual({ completed: 0, total: 0, percentage: 0 });
+  });
+});
+
+describe('useModelManagement → modelInstances prop (view-sourced)', () => {
+  // When the run-open page supplies the model-container instances derived
+  // from the server RunView, the hook must use them directly and NOT issue
+  // the ``loadModelInstances`` Supabase read. The progress RPC loop is
+  // still exercised per model.
+
+  it('derives models from the prop and skips loadModelInstances entirely', async () => {
+    // No mockLoadModelsToEmpty() — assert it is never called.
+    mockFetchModelProgress.mockResolvedValue({ completed: 2, total: 4, percentage: 50 });
+
+    const { result } = renderHook(() =>
+      useModelManagement({
+        ...baseProps,
+        modelInstances: [
+          { id: 'm-1', label: 'LogReg', sort_order: 0, created_at: '2026-01-01T00:00:00Z' },
+          { id: 'm-2', label: 'XGBoost', sort_order: 1, created_at: '2026-01-02T00:00:00Z' },
+        ],
+      }),
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(mockLoadModelInstances).not.toHaveBeenCalled();
+    expect(result.current.models.map((m) => m.modelName)).toEqual(['LogReg', 'XGBoost']);
+    // Progress RPC still runs per supplied model.
+    expect(mockFetchModelProgress).toHaveBeenCalledWith('a-1', 'm-1');
+    expect(mockFetchModelProgress).toHaveBeenCalledWith('a-1', 'm-2');
+  });
+
+  it('renders zero models from an empty prop without touching the service', async () => {
+    const { result } = renderHook(() =>
+      useModelManagement({ ...baseProps, modelInstances: [] }),
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(mockLoadModelInstances).not.toHaveBeenCalled();
+    expect(result.current.models).toHaveLength(0);
+    expect(result.current.activeModelId).toBeNull();
   });
 });
 

@@ -341,34 +341,42 @@ async def test_select_existing_rejects_cross_coordinate_decision(
         pytest.skip("Missing fixtures.")
     run_id, instance_id, field_id, profile_id, decision_id = fx
 
-    # Find a different (instance, field) coordinate in the same template.
-    other_row = await db_session.execute(
-        text(
-            """
-            SELECT i.id, f.id
-            FROM public.extraction_instances i
-            JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
-            JOIN public.extraction_fields f ON f.entity_type_id = et.id
-            WHERE (i.id <> :iid OR f.id <> :fid)
-              AND i.template_id = (
-                  SELECT template_id FROM public.extraction_instances WHERE id = :iid
-              )
-            LIMIT 1
-            """
-        ),
-        {"iid": instance_id, "fid": field_id},
-    )
-    other = other_row.first()
-    if other is None:
-        pytest.skip("Need a second coordinate in the same template.")
-    other_instance_id, other_field_id = other
+    # Build a second coordinate that is coherent for this run by adding a field
+    # to the run instance's own entity_type. (instance_id, other_field_id) then
+    # belongs to the run's article + template, so it passes the #189 coherence
+    # guard (assert_coords_coherent) and the call actually reaches the
+    # "belongs to" guard this test asserts. We cannot borrow a coordinate from
+    # the DB: the seed gives the article exactly one field, and scoping by
+    # template alone would pick a *different article's* instance, which the
+    # coherence guard rejects first (CoordinateMismatchError, not the
+    # InvalidConsensusError under test).
+    entity_type_id = (
+        await db_session.execute(
+            text("SELECT entity_type_id FROM public.extraction_instances WHERE id = :iid"),
+            {"iid": instance_id},
+        )
+    ).scalar()
+    other_field_id = (
+        await db_session.execute(
+            text(
+                """
+                INSERT INTO public.extraction_fields (entity_type_id, name, label, field_type)
+                VALUES (:etid, 'xcoord_probe', 'Cross-coordinate probe', 'text')
+                RETURNING id
+                """
+            ),
+            {"etid": entity_type_id},
+        )
+    ).scalar()
 
     service = ExtractionConsensusService(db_session)
-    # decision_id is for (instance_id, field_id); call consensus on the OTHER coord.
+    # decision_id targets (instance_id, field_id); recording consensus on the
+    # sibling coordinate (instance_id, other_field_id) with that decision must
+    # trip the "belongs to" guard on the field mismatch.
     with pytest.raises(InvalidConsensusError, match="belongs to"):
         await service.record_consensus(
             run_id=run_id,
-            instance_id=other_instance_id,
+            instance_id=instance_id,
             field_id=other_field_id,
             consensus_user_id=profile_id,
             mode=ExtractionConsensusMode.SELECT_EXISTING,

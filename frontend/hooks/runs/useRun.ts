@@ -19,7 +19,7 @@ export function useRun(runId: string | null | undefined, options: UseRunOptions 
   const { enabled = true } = options;
 
   return useQuery<RunViewResponse>({
-    queryKey: runId ? runsKeys.detail(runId) : ["runs", "disabled"],
+    queryKey: runId ? runsKeys.detail(runId) : runsKeys.disabled,
     queryFn: async () => {
       if (!runId) {
         throw new Error("Missing run ID");

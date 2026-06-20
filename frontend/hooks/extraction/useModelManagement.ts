@@ -20,6 +20,7 @@ import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {extractionInstanceService, loadModelInstances, fetchModelProgress} from '@/services/extractionInstanceService';
+import type {ModelInstanceRow} from '@/services/extractionInstanceService';
 import type {Model} from '@/components/extraction/hierarchy/ModelSelector';
 
 // =================== INTERFACES ===================
@@ -30,6 +31,14 @@ interface UseModelManagementProps {
   templateId: string;
   /** ID of the template's model container entity type (role='model_container'). */
   modelParentEntityTypeId: string | null;
+  /**
+   * Model-container instances supplied by the caller (derived from the
+   * server RunView). When provided, the hook uses these directly and
+   * skips the ``loadModelInstances`` Supabase read — the run-open page is
+   * the source of truth. When undefined the hook self-loads (standalone
+   * usage / tests).
+   */
+  modelInstances?: ModelInstanceRow[];
   enabled?: boolean;
 }
 
@@ -62,6 +71,7 @@ export function useModelManagement({
   articleId,
   templateId,
   modelParentEntityTypeId,
+  modelInstances,
   enabled = true
 }: UseModelManagementProps): UseModelManagementReturn {
   const { user } = useAuth();
@@ -69,6 +79,15 @@ export function useModelManagement({
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+    // Primitive signature of the supplied model instances. The mount-load
+    // effect keys on this (not the array reference) so an unstable
+    // ``modelInstances`` reference from a caller can't re-trigger the load
+    // loop — the loop-outage incident class. ``null`` when not supplied.
+  const modelInstancesSig =
+    modelInstances === undefined
+      ? null
+      : modelInstances.map(i => `${i.id}:${i.label}:${i.sort_order}`).join('|');
 
     // Ref to avoid infinite loop: track activeModelId without causing re-render
   const activeModelIdRef = useRef<string | null>(null);
@@ -99,16 +118,24 @@ export function useModelManagement({
 
     console.warn('[useModelManagement] Loading models for article:', articleId, ', entity_type:', modelParentEntityTypeId);
 
-    const result = await loadModelInstances(articleId, modelParentEntityTypeId);
+    // When the caller supplies the model-container instances (derived from
+    // the server RunView on the run-open page), use them directly — no
+    // ``extraction_instances`` read fires from this hook. Otherwise the hook
+    // self-loads via the service (standalone usage / tests).
+    let instances: ModelInstanceRow[];
+    if (modelInstances !== undefined) {
+      instances = modelInstances;
+    } else {
+      const result = await loadModelInstances(articleId, modelParentEntityTypeId);
 
-    if (!result.ok) {
-      console.error('Error loading models:', result.error);
-      setError(result.error.message);
-      setLoading(false);
-      return;
+      if (!result.ok) {
+        console.error('Error loading models:', result.error);
+        setError(result.error.message);
+        setLoading(false);
+        return;
+      }
+      instances = result.data;
     }
-
-    const instances = result.data;
     console.warn(`✅ Encontradas ${instances.length} instances de modelos:`, instances.map(i => i.label));
 
     if (instances.length === 0) {
@@ -263,7 +290,11 @@ export function useModelManagement({
         loadModelsRef.current();
       }
     }
-  }, [enabled, projectId, articleId, templateId, modelParentEntityTypeId]);
+    // ``modelInstancesSig`` (primitive) is in the deps so a fresh view
+    // (after refetchRun) re-derives the models from the supplied prop
+    // without a Supabase read — and an unstable array reference can't spin
+    // the load loop.
+  }, [enabled, projectId, articleId, templateId, modelParentEntityTypeId, modelInstancesSig]);
 
   return {
     models,

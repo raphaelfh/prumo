@@ -15,13 +15,15 @@
  * @page
  */
 
-import {useEffect, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {useNavigate, useParams} from 'react-router-dom';
 import {toast} from 'sonner';
 import {extractionInstanceService, markInstancesCompleted} from '@/services/extractionInstanceService';
 import {getRequiredUserId} from '@/services/authService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
+import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
+import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
 import {errorTracker} from '@/services/errorTracking';
 import {ResizablePanel, ResizablePanelGroup} from '@/components/ui/resizable';
 import {Button} from '@/components/ui/button';
@@ -64,6 +66,7 @@ import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtraction
 import {useModelManagement} from '@/hooks/extraction/useModelManagement';
 import {usePreserveScroll} from '@/hooks/usePreserveScroll';
 import {t} from '@/lib/copy';
+import {ViewerProvider, createViewerStore} from '@prumo/pdf-viewer';
 
 const SCROLL_CONTAINERS_TO_PRESERVE = [
   // Form panel — actual scroll happens on radix' inner viewport node.
@@ -78,17 +81,25 @@ export default function ExtractionFullScreen() {
   const { projectId, articleId } = useParams();
   const navigate = useNavigate();
 
-    // Load data using dedicated hook (SRP: separation of concerns)
+  // ONE stable viewer store shared between the PDF panel and the form panel.
+  // useState lazy initializer creates the store exactly once per mount —
+  // the React-Compiler-approved pattern (mirrors ViewerProvider's own
+  // internal creation). Both <ExtractionPDFPanel store={viewerStore}> and
+  // <ViewerProvider store={viewerStore}> below point at this instance —
+  // that is the prerequisite for the click-evidence → highlight feature
+  // (Task 4B follow-up).
+  const [viewerStore] = useState(createViewerStore);
+
+  // Load page-bootstrap data using dedicated hook (SRP). Entity types +
+  // instances are NOT read here anymore — they are derived from the
+  // server RunView (runDetail) below via the adapters.
   const {
     article,
     project,
     template,
-    entityTypes,
-    instances,
     articles,
     loading,
     error: dataError,
-    refreshInstances,
   } = useExtractionData({
     projectId,
     articleId,
@@ -134,24 +145,33 @@ export default function ExtractionFullScreen() {
   });
   const activeRunId = sessionResult.session?.runId ?? null;
 
-  // The backend's ``hitl_session_service._ensure_instances`` materialises
-  // study-level + per-model singletons on the first session open. The
-  // data hook initially reads what's there; once the session reports a
-  // runId, those new rows exist — refresh so the form binds to them
-  // instead of "no instances created" placeholders.
-  useEffect(() => {
-    if (activeRunId) {
-      void refreshInstances();
-    }
-  }, [activeRunId, refreshInstances]);
-
   // Detail fetch on the active run — drives the "Revision" badge when
   // `parameters.parent_run_id` is present, the stage-aware read path of
   // useExtractedValues, and the reviewer-summary + ConsensusPanel below.
-  const { data: runDetail, refetch: refetchRun } = useRun(
-    activeRunId ?? null,
-    { enabled: !!activeRunId },
+  // The view also carries the frozen-snapshot ``entity_types`` + the
+  // materialised ``instances`` — the single source of truth for the form.
+  // The session embed seeds this cache on open, so ``runDetail`` is present
+  // on first paint and the derived memos populate immediately.
+  const {
+    data: runDetail,
+    refetch: refetchRun,
+    isError: runIsError,
+    error: runErrorObj,
+  } = useRun(activeRunId ?? null, { enabled: !!activeRunId });
+
+  // Entity types + instances are derived from the view (not direct
+  // Supabase). ``entityTypesFromRunView`` / ``instancesFromRunView`` are
+  // pure adapters; the memos keep references stable across renders that
+  // don't change ``runDetail``.
+  const entityTypes = useMemo(
+    () => (runDetail ? entityTypesFromRunView(runDetail) : []),
+    [runDetail],
   );
+  const instances = useMemo(
+    () => (runDetail ? instancesFromRunView(runDetail) : []),
+    [runDetail],
+  );
+
   const stage = runDetail?.run.stage ?? null;
   const proposals = runDetail?.proposals;
   const isFinalized = stage === 'finalized';
@@ -206,10 +226,10 @@ export default function ExtractionFullScreen() {
   const inConsensusStage = runDetail?.run.stage === 'consensus';
 
   // {instance::field} → "Section · Field" label map for ConsensusPanel.
-  // Built from the loaded entity_types + their child fields. The field
-  // join lives in useExtractionData; for now we use the instance label
-  // alone (entityType.label) plus the field label fetched off the run
-  // detail's proposals/decisions when available.
+  // Built from the loaded entity_types + their child fields. entity_types
+  // and fields now come from RunView (runDetail) via the adapters — not
+  // from useExtractionData. We use the instance label (entityType.label)
+  // plus a truncated field id from the run detail's decisions when available.
   const fieldLabelByCoordMap: Record<string, string> = {};
   for (const inst of instances) {
     const et = entityTypes.find((e) => e.id === inst.entity_type_id);
@@ -408,20 +428,22 @@ export default function ExtractionFullScreen() {
 
     // Hook for AI suggestions with callbacks to fill/clear field
   const handleAISuggestionAccepted = async (instanceId: string, fieldId: string, value: any) => {
-      // Fill field automatically when suggestion is accepted
-      console.warn('Accepting AI suggestion:', {instanceId, fieldId, value});
-      // updateValue updates local state immediately
-      // AISuggestionService.acceptSuggestion already saves to DB
-      // No need to reload all values (refreshValues caused full page reload)
+      // Fill field automatically when suggestion is accepted.
+      // NOTE: in this screen the hook runs `acceptStrategy: 'human-proposal'`,
+      // so accepting makes NO backend call. Persistence happens solely here:
+      // updateValue writes the value into form state, and useAutoSaveProposals
+      // records it as a fresh `human` proposal. The suggestion's own
+      // status='accepted' is local-only (not persisted), so it reappears as
+      // pending on reload — only the value survives. (refreshValues is
+      // deliberately avoided; it caused a full-page reload.)
     updateValue(instanceId, fieldId, value);
   };
 
   const handleAISuggestionRejected = async (instanceId: string, fieldId: string) => {
-      // Clear field when suggestion is rejected
-      console.warn('Rejecting AI suggestion - clearing field:', {instanceId, fieldId});
-      // updateValue updates local state immediately
-      // AISuggestionService.rejectSuggestion already updates status in DB
-      // No need to reload all values (refreshValues caused full page reload)
+      // Clear the field when a suggestion is rejected. Same as accept: the
+      // 'human-proposal' strategy makes NO backend call — updateValue writes
+      // null into form state, and useAutoSaveProposals persists the cleared
+      // value. The suggestion's status='rejected' flip is local-only.
     updateValue(instanceId, fieldId, null);
   };
 
@@ -460,6 +482,26 @@ export default function ExtractionFullScreen() {
     modelChildren: modelChildSections,
   } = useEntityTypePartition(entityTypes);
 
+  // The model-container instances, sourced from the view-derived
+  // ``instances`` and shaped to ``ModelInstanceRow``. Passed to
+  // useModelManagement so it derives models from the view instead of
+  // issuing its own ``extraction_instances`` read. ``undefined`` until a
+  // container entity type exists so the hook keeps its standalone behavior.
+  const modelInstances = useMemo(
+    () =>
+      modelParentEntityType
+        ? instances
+            .filter((i) => i.entity_type_id === modelParentEntityType.id)
+            .map((i) => ({
+              id: i.id,
+              label: i.label,
+              sort_order: i.sort_order,
+              created_at: i.created_at,
+            }))
+        : undefined,
+    [instances, modelParentEntityType],
+  );
+
   // Hook for model management
   const {
     models,
@@ -475,6 +517,7 @@ export default function ExtractionFullScreen() {
     articleId: articleId || '',
     templateId: template?.id || '',
     modelParentEntityTypeId: modelParentEntityType?.id || null,
+    modelInstances,
     enabled: !!template && !!modelParentEntityType
   });
 
@@ -511,9 +554,10 @@ export default function ExtractionFullScreen() {
     );
   };
 
-    // Function to reload instances (used after model extraction)
+    // Function to reload the run view (and thus the derived instances).
+    // Used after model / instance mutations and AI extraction.
   const handleRefreshInstances = async () => {
-    await refreshInstances();
+    await refetchRun();
   };
 
   const handleBack = () => {
@@ -533,9 +577,9 @@ export default function ExtractionFullScreen() {
     const result = await createModel(modelName, modellingMethod);
     if (result) {
       setShowAddModelDialog(false);
-      // Reload instances (child instances will be included).
+      // Reload the run view (child instances will be included).
       // refreshModels() is NOT called — the createModel hook already updated local state.
-      await preserveScroll(refreshInstances);
+      await preserveScroll(refetchRun);
     }
   };
 
@@ -580,10 +624,10 @@ export default function ExtractionFullScreen() {
       setModelToRemove(null);
 
       // Do not call refreshModels() - hook already updates local state
-      // Only reload instances so child instances are removed from UI
-      await refreshInstances().catch((refreshError: unknown) => {
+      // Only reload the run view so child instances are removed from UI
+      await refetchRun().catch((refreshError: unknown) => {
         // Log error but do not re-throw - model was already removed successfully
-        extractionLogger.error('removeModelHandler', 'Error reloading instances after removal', refreshError instanceof Error ? refreshError : undefined, {
+        extractionLogger.error('removeModelHandler', 'Error reloading run view after removal', refreshError instanceof Error ? refreshError : undefined, {
           modelId: modelIdToRemove,
         });
         // Do not block flow - model was already removed from local state
@@ -688,8 +732,8 @@ export default function ExtractionFullScreen() {
       userId,
     }).then(async (result) => {
       if (result.wasCreated) {
-        // Reload instances after create
-        await refreshInstances();
+        // Reload the run view after create (derived instances refresh)
+        await refetchRun();
         extractionLogger.info('handleAddInstance', 'Instance created successfully', {
           instanceId: result.instance.id,
           label: result.instance.label
@@ -725,7 +769,7 @@ export default function ExtractionFullScreen() {
       return false;
     });
     if (removed !== false) {
-      await refreshInstances();
+      await refetchRun();
       toast.success(t('pages', 'extractionScreenInstanceRemoved'));
     }
   };
@@ -858,8 +902,24 @@ export default function ExtractionFullScreen() {
     handleBack();
   };
 
+  // Single render gate. ``no-fields`` is reported ONLY when the run is loaded
+  // and genuinely carries no entity types — a missing run (open/fetch failed or
+  // still in flight) is an error or a loader, never a false "template has no
+  // fields" empty state (the #324 masking regression). See
+  // ``resolveExtractionViewState``.
+  const viewState = resolveExtractionViewState({
+    bootstrapLoading: loading,
+    hasArticleAndTemplate: !!article && !!template,
+    runDetailLoaded: !!runDetail,
+    sessionError: sessionResult.error,
+    runError: runIsError,
+    runErrorMessage: runErrorObj instanceof Error ? runErrorObj.message : null,
+    valuesLoading,
+    entityTypesCount: entityTypes.length,
+  });
+
   // Loading state
-  if (loading || valuesLoading) {
+  if (viewState.kind === 'loading') {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="text-center space-y-4">
@@ -870,8 +930,8 @@ export default function ExtractionFullScreen() {
     );
   }
 
-  // Error state
-  if (!article || !template) {
+  // Bootstrap (article/template) failed to load.
+  if (viewState.kind === 'load-error') {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="text-center space-y-4">
@@ -882,8 +942,37 @@ export default function ExtractionFullScreen() {
     );
   }
 
-  // Template sem campos configurados
-  if (entityTypes.length === 0) {
+  // The extraction run could not be opened (session-open or RunView fetch
+  // failed). Surface it with a retry instead of masking it as "No fields".
+  if (viewState.kind === 'run-error') {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="text-center space-y-4 max-w-md">
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold">{t('pages', 'extractionScreenRunErrorTitle')}</h3>
+            <p className="text-muted-foreground">{t('pages', 'extractionScreenRunErrorDesc')}</p>
+            {viewState.message ? (
+              <p className="text-xs text-muted-foreground/70 break-words">{viewState.message}</p>
+            ) : null}
+          </div>
+          <div className="flex items-center justify-center gap-2">
+            <Button
+              onClick={() => {
+                void sessionResult.refetch();
+                void refetchRun();
+              }}
+            >
+              {t('pages', 'extractionScreenRetry')}
+            </Button>
+            <Button variant="outline" onClick={handleBack}>{t('common', 'back')}</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Run is loaded and genuinely has no entity types configured.
+  if (viewState.kind === 'no-fields') {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="text-center space-y-6 max-w-md">
@@ -907,6 +996,14 @@ export default function ExtractionFullScreen() {
         </div>
       </div>
     );
+  }
+
+  // Only the ``ready`` view-state reaches here. ``article``/``template`` are
+  // guaranteed non-null at this point (a missing one resolves to 'loading' or
+  // 'load-error' above); this guard is unreachable and exists solely to narrow
+  // them for TypeScript after the gate was lifted into resolveExtractionViewState.
+  if (!article || !template) {
+    return null;
   }
 
   /**
@@ -949,16 +1046,12 @@ export default function ExtractionFullScreen() {
             console.error('Error refetching session (non-critical):', err);
           }
           try {
+            // Refetching the run view also re-derives entity_types +
+            // instances (the form's single source of truth) — no separate
+            // instance refresh is needed.
             await refetchRun();
           } catch (err) {
             console.error('Error refetching run (non-critical):', err);
-          }
-          if (template) {
-            try {
-              await refreshInstances();
-            } catch (err) {
-              console.error('Error reloading instances (non-critical):', err);
-            }
           }
           await refreshValues();
         });
@@ -1123,14 +1216,21 @@ export default function ExtractionFullScreen() {
         </div>
       ) : null}
 
-      {/* Main content */}
+      {/* Main content — wrapped in ViewerProvider so both the PDF viewer and
+          the form panel resolve useViewerStore/useViewerStoreApi to the same
+          store instance. The viewer also receives store={viewerStore} so
+          Viewer.Root forwards it rather than creating a second store.
+          QA-screen shared-store lift is deferred (AssessmentShell passes the
+          viewer as a ReactNode prop; out of scope here). */}
       <div className="flex-1 overflow-hidden">
+        <ViewerProvider store={viewerStore}>
         <ResizablePanelGroup direction="horizontal">
             {/* PDF Viewer (optional) - Extracted to isolated component */}
-          <ExtractionPDFPanel 
-            articleId={articleId || ''} 
-            projectId={projectId || ''} 
+          <ExtractionPDFPanel
+            articleId={articleId || ''}
+            projectId={projectId || ''}
             showPDF={showPDF}
+            store={viewerStore}
           />
 
             {/* Extraction form - Extracted to isolated component */}
@@ -1183,6 +1283,7 @@ export default function ExtractionFullScreen() {
             />
           </ResizablePanel>
         </ResizablePanelGroup>
+        </ViewerProvider>
       </div>
 
       {/* Dialogs */}
