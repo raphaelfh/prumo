@@ -22,11 +22,30 @@
  *   * E2E_ARTICLE_ID  — at least one finalized article
  */
 
-import { APIRequestContext, expect, test } from "@playwright/test";
+import { APIRequestContext, Locator, Page, expect, test } from "@playwright/test";
 
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+
+/**
+ * Log in, open the Data Extraction tab, and return the (visible) export toolbar
+ * button. The cold first load must resolve the project's active template before
+ * the toolbar — and this button — renders; on the ephemeral CI stack that can
+ * exceed Playwright's default 5s actionability timeout, so wait generously here
+ * instead of letting each case race it. (The describe is already `serial` to
+ * dodge the parallel-login auth rate limit.)
+ */
+async function openExportTab(
+  page: Page,
+  env: ReturnType<typeof loadE2EEnv>,
+): Promise<Locator> {
+  await loginViaUi(page);
+  await page.goto(`${env.frontendUrl}/projects/${env.projectId}?tab=extraction`);
+  const exportBtn = page.getByTestId("extraction-export-button");
+  await expect(exportBtn).toBeVisible({ timeout: 20000 });
+  return exportBtn;
+}
 
 const XLSX_MIME =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -283,16 +302,10 @@ test.describe("Extraction export — UI flow", () => {
     page,
   }) => {
     const env = loadE2EEnv();
-    await loginViaUi(page);
-    await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction`,
-    );
-
     // The consolidated entry point is the toolbar export button (the legacy
     // "Export Data" More-menu item was removed; that source-level guard lives
     // in the HeaderMoreMenu component test).
-    const exportBtn = page.getByTestId("extraction-export-button");
-    await expect(exportBtn).toBeVisible();
+    const exportBtn = await openExportTab(page, env);
     // No legacy "Export Data" affordance is reachable on this view.
     await expect(
       page.getByRole("menuitem", { name: /Export Data/i }),
@@ -305,13 +318,7 @@ test.describe("Extraction export — UI flow", () => {
 
   test("dialog opens with defaults and shows live preview", async ({ page }) => {
     const env = loadE2EEnv();
-    await loginViaUi(page);
-    await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction`,
-    );
-
-    const exportBtn = page.getByTestId("extraction-export-button");
-    await expect(exportBtn).toBeVisible();
+    const exportBtn = await openExportTab(page, env);
     await exportBtn.click();
 
     // Dialog opens.
@@ -333,12 +340,8 @@ test.describe("Extraction export — UI flow", () => {
 
   test("Single-user mode reveals the reviewer control", async ({ page }) => {
     const env = loadE2EEnv();
-    await loginViaUi(page);
-    await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction`,
-    );
-
-    await page.getByTestId("extraction-export-button").click();
+    const exportBtn = await openExportTab(page, env);
+    await exportBtn.click();
     await page.getByLabel(/Single user/i).check();
 
     // Single-user mode resolves to exactly one of three mutually exclusive
@@ -357,12 +360,8 @@ test.describe("Extraction export — UI flow", () => {
 
   test("All-users mode reveals the anonymize-reviewer toggle for managers", async ({ page }) => {
     const env = loadE2EEnv();
-    await loginViaUi(page);
-    await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction`,
-    );
-
-    await page.getByTestId("extraction-export-button").click();
+    const exportBtn = await openExportTab(page, env);
+    await exportBtn.click();
     const allUsers = page.getByLabel(/All users/i);
     // Non-managers see it disabled; managers can tick it.
     const disabled = await allUsers.isDisabled();
@@ -381,12 +380,8 @@ test.describe("Extraction export — UI flow", () => {
 
   test("Cancel button closes the dialog without dispatching", async ({ page }) => {
     const env = loadE2EEnv();
-    await loginViaUi(page);
-    await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction`,
-    );
-
-    await page.getByTestId("extraction-export-button").click();
+    const exportBtn = await openExportTab(page, env);
+    await exportBtn.click();
     await expect(page.getByText(/Export extraction data/i)).toBeVisible();
     await page.getByRole("button", { name: /Cancel/i }).click();
     await expect(page.getByText(/Export extraction data/i)).not.toBeVisible();
@@ -394,12 +389,8 @@ test.describe("Extraction export — UI flow", () => {
 
   test("Empty-scope guard: Selected only is disabled when nothing is ticked", async ({ page }) => {
     const env = loadE2EEnv();
-    await loginViaUi(page);
-    await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction`,
-    );
-
-    await page.getByTestId("extraction-export-button").click();
+    const exportBtn = await openExportTab(page, env);
+    await exportBtn.click();
     const selected = page.getByLabel(/Selected only/i);
     // When no articles ticked, the radio is disabled per FR-005.
     await expect(selected).toBeDisabled();

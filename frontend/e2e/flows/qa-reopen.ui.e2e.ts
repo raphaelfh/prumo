@@ -22,6 +22,7 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+import { QA_REOPEN_ARTICLE_ID } from "../_fixtures/fixture-ids";
 import { adminSelect } from "../_fixtures/supabase-admin";
 
 interface OpenSessionResponse {
@@ -64,12 +65,15 @@ test.describe("HITL reopen flow (Option C)", () => {
       "E2E_USER_EMAIL",
       "E2E_USER_PASSWORD",
       "E2E_PROJECT_ID",
-      "E2E_ARTICLE_ID",
       "E2E_QA_GLOBAL_TEMPLATE_ID",
     ]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
     const env = loadE2EEnv();
+    // Dedicated article (not the shared E2E_ARTICLE_ID): this test finalizes
+    // its QA run, and a finalized run on a shared article makes session-open
+    // resume a terminal run, breaking the advance→consensus seeding below.
+    const articleId = QA_REOPEN_ARTICLE_ID;
     const qaTemplateId = process.env.E2E_QA_GLOBAL_TEMPLATE_ID!;
 
     await loginViaUi(page);
@@ -82,7 +86,7 @@ test.describe("HITL reopen flow (Option C)", () => {
       data: {
         kind: "quality_assessment",
         project_id: env.projectId,
-        article_id: env.articleId,
+        article_id: articleId,
         global_template_id: qaTemplateId,
       },
       timeout: 30000,
@@ -215,7 +219,7 @@ test.describe("HITL reopen flow (Option C)", () => {
     // 6. UI surface — the QA page now shows the "Revision" tag in the
     //    StageRail (nav[aria-label="Run stage"]) for the new (latest) run.
     await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}/articles/${env.articleId}/quality-assessment/${qaTemplateId}`,
+      `${env.frontendUrl}/projects/${env.projectId}/articles/${articleId}/quality-assessment/${qaTemplateId}`,
     );
     await expect(
       page.getByRole("navigation", { name: /run stage/i }),
