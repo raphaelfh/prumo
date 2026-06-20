@@ -12,8 +12,7 @@ function makeArgs(overrides: Partial<Parameters<typeof buildExtractionTransition
     isComplete: false,
     completed: 0,
     total: 30,
-    onSubmit: noop,
-    onReconcile: noop,
+    onMarkReady: noop,
     onFinalize: noop,
     onGuide: noop,
     ...overrides,
@@ -21,117 +20,60 @@ function makeArgs(overrides: Partial<Parameters<typeof buildExtractionTransition
 }
 
 describe('buildExtractionTransition', () => {
-  it('review + canResolveConflicts + isComplete=false → gate blocked, onAdvance===onGuide', () => {
+  it('Extract phase (proposal) → Mark ready to consensus, available to every extractor', () => {
+    const onMarkReady = vi.fn();
+    const r = buildExtractionTransition(
+      makeArgs({ stage: 'proposal', canResolveConflicts: false, isComplete: true, completed: 10, total: 10, onMarkReady }),
+    );
+    expect(r).not.toBeNull();
+    expect(r!.to).toBe('consensus');
+    expect(r!.label).toBe('runHeaderMarkReady');
+    expect(r!.tooltip).toBe('runHeaderMarkReadyTooltip');
+    expect(r!.gate.ok).toBe(true);
+    expect(r!.onAdvance).toBe(onMarkReady);
+  });
+
+  it('Extract phase (review) → Mark ready even when canResolveConflicts=false', () => {
+    const onMarkReady = vi.fn();
+    const r = buildExtractionTransition(
+      makeArgs({ stage: 'review', canResolveConflicts: false, isComplete: true, completed: 5, total: 5, onMarkReady }),
+    );
+    expect(r).not.toBeNull();
+    expect(r!.to).toBe('consensus');
+    expect(r!.label).toBe('runHeaderMarkReady');
+    expect(r!.onAdvance).toBe(onMarkReady);
+  });
+
+  it('Extract phase gated (isComplete=false) → gate blocked, onAdvance===onGuide', () => {
     const onGuide = vi.fn();
-    const onReconcile = vi.fn();
-    const result = buildExtractionTransition(
-      makeArgs({
-        stage: 'review',
-        canResolveConflicts: true,
-        isComplete: false,
-        completed: 3,
-        total: 30,
-        onGuide,
-        onReconcile,
-      }),
-    );
-    expect(result).not.toBeNull();
-    expect(result!.to).toBe('consensus');
-    expect(result!.label).toBe('runHeaderReconcile');
-    expect(result!.gate.ok).toBe(false);
-    expect((result!.gate as { ok: false; remaining: number }).remaining).toBe(27);
-    expect(result!.onAdvance).toBe(onGuide);
+    const r = buildExtractionTransition(makeArgs({ stage: 'review', isComplete: false, completed: 3, total: 30, onGuide }));
+    expect(r!.gate.ok).toBe(false);
+    expect((r!.gate as { ok: false; remaining: number }).remaining).toBe(27);
+    expect(r!.onAdvance).toBe(onGuide);
   });
 
-  it('review + canResolveConflicts + isComplete=true → gate ok, onAdvance===onReconcile', () => {
-    const onGuide = vi.fn();
-    const onReconcile = vi.fn();
-    const result = buildExtractionTransition(
-      makeArgs({
-        stage: 'review',
-        canResolveConflicts: true,
-        isComplete: true,
-        completed: 30,
-        total: 30,
-        onGuide,
-        onReconcile,
-      }),
-    );
-    expect(result).not.toBeNull();
-    expect(result!.gate.ok).toBe(true);
-    expect(result!.onAdvance).toBe(onReconcile);
-  });
-
-  it('stage=proposal + isComplete=true → submit for review, onAdvance===onSubmit', () => {
-    const onSubmit = vi.fn();
-    const result = buildExtractionTransition(
-      makeArgs({
-        stage: 'proposal',
-        isComplete: true,
-        completed: 10,
-        total: 10,
-        onSubmit,
-      }),
-    );
-    expect(result).not.toBeNull();
-    expect(result!.label).toBe('runHeaderSubmitForReview');
-    expect(result!.to).toBe('review');
-    expect(result!.gate.ok).toBe(true);
-    expect(result!.onAdvance).toBe(onSubmit);
-  });
-
-  it('stage=review + canResolveConflicts=false → null', () => {
-    const result = buildExtractionTransition(
-      makeArgs({ stage: 'review', canResolveConflicts: false }),
-    );
-    expect(result).toBeNull();
-  });
-
-  it('stage=finalized → null', () => {
-    const result = buildExtractionTransition(makeArgs({ stage: 'finalized' }));
-    expect(result).toBeNull();
-  });
-
-  it('stage=consensus + isComplete=false → gate blocked, onAdvance===onGuide', () => {
-    const onGuide = vi.fn();
+  it('Consensus + canResolveConflicts + complete → Finalize, onAdvance===onFinalize', () => {
     const onFinalize = vi.fn();
-    const result = buildExtractionTransition(
-      makeArgs({
-        stage: 'consensus',
-        isComplete: false,
-        completed: 5,
-        total: 20,
-        onGuide,
-        onFinalize,
-      }),
-    );
-    expect(result).not.toBeNull();
-    expect(result!.to).toBe('finalized');
-    expect(result!.label).toBe('runHeaderFinalize');
-    expect(result!.gate.ok).toBe(false);
-    expect((result!.gate as { ok: false; remaining: number }).remaining).toBe(15);
-    expect(result!.onAdvance).toBe(onGuide);
+    const r = buildExtractionTransition(makeArgs({ stage: 'consensus', canResolveConflicts: true, isComplete: true, onFinalize }));
+    expect(r!.to).toBe('finalized');
+    expect(r!.label).toBe('runHeaderFinalize');
+    expect(r!.tooltip).toBe('runHeaderFinalizeTooltip');
+    expect(r!.gate.ok).toBe(true);
+    expect(r!.onAdvance).toBe(onFinalize);
   });
 
-  it('stage=consensus + isComplete=true → gate ok, onAdvance===onFinalize', () => {
-    const onFinalize = vi.fn();
-    const result = buildExtractionTransition(
-      makeArgs({ stage: 'consensus', isComplete: true, onFinalize }),
-    );
-    expect(result).not.toBeNull();
-    expect(result!.gate.ok).toBe(true);
-    expect(result!.onAdvance).toBe(onFinalize);
+  it('Consensus without canResolveConflicts → null (reviewer cannot finalize)', () => {
+    expect(buildExtractionTransition(makeArgs({ stage: 'consensus', canResolveConflicts: false }))).toBeNull();
   });
 
-  it('stage=null → null', () => {
+  it('finalized / cancelled / null → null', () => {
+    expect(buildExtractionTransition(makeArgs({ stage: 'finalized' }))).toBeNull();
+    expect(buildExtractionTransition(makeArgs({ stage: 'cancelled' }))).toBeNull();
     expect(buildExtractionTransition(makeArgs({ stage: null }))).toBeNull();
   });
 
-  it('remaining is clamped to 0 when completed > total', () => {
-    const result = buildExtractionTransition(
-      makeArgs({ stage: 'proposal', isComplete: false, completed: 35, total: 30 }),
-    );
-    expect(result).not.toBeNull();
-    expect((result!.gate as { ok: false; remaining: number }).remaining).toBe(0);
+  it('remaining clamps to 0 when completed > total', () => {
+    const r = buildExtractionTransition(makeArgs({ stage: 'proposal', isComplete: false, completed: 35, total: 30 }));
+    expect((r!.gate as { ok: false; remaining: number }).remaining).toBe(0);
   });
 });
