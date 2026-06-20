@@ -9,5 +9,5 @@ per-article cost + latency, so the concrete parser for
 public leaderboards (which do not cover scanned clinical PDFs).
 
 The harness ships **no documents**. See ``README.md`` for provisioning the
-evaluation set on an approved (non-public, PHI-safe) surface.
+evaluation set on an approved (non-public) surface.
 """

@@ -1,7 +1,7 @@
 """api key llama_cloud
 
 Revision ID: 0028_api_key_llama_cloud
-Revises: 0027_project_is_phi
+Revises: 0026_widen_template_snapshot
 Create Date: 2026-06-20
 
 """
@@ -10,7 +10,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "0028_api_key_llama_cloud"
-down_revision = "0027_project_is_phi"
+down_revision = "0026_widen_template_snapshot"
 branch_labels = None
 depends_on = None
 

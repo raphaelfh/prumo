@@ -95,11 +95,10 @@ class Settings(BaseSettings):
 
     # =================== PARSING ===================
     # Standard self-hosted parser by default. Per-project activation can
-    # request "llamaparse"; the create_document_parser() PHI gate is the
-    # final authority (PHI / unknown -> self-hosted, fail-closed).
+    # request "llamaparse"; falls back to docling when no key is available.
     PARSER_BACKEND: str = "docling"
     # Optional global LlamaCloud key; per-user BYOK (APIKeyService) takes
-    # precedence. Cloud egress -> non-PHI projects only.
+    # precedence over this global fallback.
     LLAMA_CLOUD_API_KEY: str | None = None
 
     # =================== EVALUATION ===================

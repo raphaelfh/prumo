@@ -1,7 +1,7 @@
 """LlamaParse (LlamaCloud) DocumentParser adapter (high-quality cloud path).
 
-Cloud egress -> non-PHI projects only (gated by create_document_parser). Pins
-the agentic tier so granular word/line/cell bounding boxes are available, maps
+Cloud parser; selected per project via create_document_parser. Pins the
+agentic tier so granular word/line/cell bounding boxes are available, maps
 the items tree to ParsedBlock, and Y-FLIPS each bbox from LlamaParse's top-left
 origin to PDF user-space bottom-left. Reuses the call shape proven in
 scripts/parsing_bakeoff/parsers.py (one mapper, not two).

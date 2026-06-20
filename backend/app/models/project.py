@@ -74,12 +74,6 @@ class Project(BaseModel):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    # PHI policy flag. Default false (non-PHI). The parser factory's fail-closed
-    # gate routes PHI projects to the self-hosted parser and never to a cloud
-    # backend (ADR-0011). Threaded into create_document_parser() by the parsing
-    # Celery task.
-    is_phi: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
     # Review fields
     review_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     condition_studied: Mapped[str | None] = mapped_column(String, nullable=True)

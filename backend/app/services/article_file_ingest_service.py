@@ -3,7 +3,7 @@
 Every code path that creates an ArticleFile (Zotero today, direct-upload and
 future routes) MUST call enqueue_parse_at_ingest immediately after the row is
 created. This is the only sanctioned way to trigger parsing at ingest; the
-per-project parser preference and PHI flag are resolved inside the Celery task
+per-project parser preference is resolved inside the Celery task
 (single source of truth), so this hook stays route-agnostic.
 """
 

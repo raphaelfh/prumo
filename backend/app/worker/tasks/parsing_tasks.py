@@ -2,8 +2,7 @@
 
 Follows the worker pattern: a synchronous Celery entry point wrapping an inner
 async coroutine via worker_session() + run_task(). The parser is built by the
-create_document_parser() factory, which owns the PARSER_BACKEND switch and the
-fail-closed PHI gate.
+create_document_parser() factory, which owns the PARSER_BACKEND switch.
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ from typing import Any
 from uuid import UUID
 
 from celery import Task
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.worker._runner import run_task
@@ -36,22 +34,17 @@ async def _run_parse(
     from app.core.config import settings as app_settings
     from app.core.deps import get_supabase_client
     from app.core.factories import create_document_parser, create_storage_adapter
-    from app.models.project import Project
     from app.services.api_key_service import APIKeyService
     from app.services.document_parsing_service import DocumentParsingService
     from app.services.parser_settings_service import ParserSettingsService
     from app.worker._session import worker_session
 
     async def _body(session: AsyncSession) -> dict[str, Any]:
-        project = (
-            await session.execute(select(Project).where(Project.id == UUID(project_id)))
-        ).scalar_one()
-
         # per-project parser preference -> PARSER_BACKEND value
         pref = await ParserSettingsService(session).get_for_project(UUID(project_id))
         backend = pref if pref == "llamaparse" else "docling"
 
-        # BYOK llama_cloud key (default > global); only relevant for llamaparse
+        # BYOK llama_cloud key (BYOK > global); only relevant for llamaparse
         llama_key: str | None = None
         if backend == "llamaparse":
             llama_key = await APIKeyService(session, user_id).get_key_for_provider("llama_cloud")
@@ -64,7 +57,6 @@ async def _run_parse(
         )
         parser = create_document_parser(
             call_settings,
-            project_is_phi=bool(project.is_phi),
             llama_cloud_key=llama_key,
         )
 

@@ -48,7 +48,7 @@ _PROVIDER_METADATA: dict[str, dict[str, str]] = {
     },
     "llama_cloud": {
         "name": "LlamaCloud",
-        "description": "High-quality cloud PDF parsing (LlamaParse) for non-PHI projects",
+        "description": "High-quality cloud PDF parsing (LlamaParse), opt-in per project",
         "docsUrl": "https://cloud.llamaindex.ai",
     },
 }
