@@ -5,6 +5,9 @@ import { StageRail } from './StageRail';
 import { PrimaryAction } from './PrimaryAction';
 import { PanelToggle } from './PanelToggle';
 import { RoleChip } from './RoleChip';
+import { Reviewers } from './Reviewers';
+import { SaveSlot } from './SaveSlot';
+import { AIActions } from './AIActions';
 
 function Left({ children }: { children: ReactNode }) {
   return <div className={cn('flex min-w-0 flex-1 items-center gap-3')}>{children}</div>;
@@ -26,4 +29,4 @@ function RunHeaderRoot({ value, children }: { value: RunHeaderValue; children: R
   );
 }
 
-export const RunHeader = Object.assign(RunHeaderRoot, { Left, Center, Right, StageRail, PrimaryAction, PanelToggle, RoleChip });
+export const RunHeader = Object.assign(RunHeaderRoot, { Left, Center, Right, StageRail, PrimaryAction, PanelToggle, RoleChip, Reviewers, Save: SaveSlot, AIActions });
