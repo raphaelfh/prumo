@@ -299,6 +299,7 @@ export const extraction = {
     listStatusNotStarted: 'Not started',
     listStatusComplete: 'Complete',
     listStatusInProgress: 'In progress',
+    statusInProgressPct: 'In progress · {{n}}%',
     listTryAgain: 'Try again',
     listNoArticles: 'No articles found in this project',
     listNoArticlesDesc: 'Add articles first to start data extraction.',
