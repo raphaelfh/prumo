@@ -20,7 +20,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { ArrowLeft, Loader2, Sparkles, Users } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { AssessmentShell } from "@/components/assessment/AssessmentShell";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
@@ -31,7 +31,6 @@ import type {
 } from "@/components/runs/RunReviewerComparison";
 import { PrumoPdfViewer, articleFileSource } from "@prumo/pdf-viewer";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
 import { resolveQATemplateKind } from "@/services/projectSettingsService";
 import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
@@ -46,14 +45,12 @@ import {
   useRun,
   useRunReviewers,
 } from "@/hooks/runs";
-import { SaveStatusBadge } from "@/components/runs/SaveStatusBadge";
-import { ReviewerProgressBadge } from "@/components/runs/ReviewerProgressBadge";
-import {
-  HITLReopenButton,
-  HITLStatusBadges,
-} from "@/components/runs/HITLStatusBadges";
 import { ConsensusPanel } from "@/components/runs/ConsensusPanel";
-import { HeaderAIActions } from "@/components/hitl/HeaderAIActions";
+import { RunHeader } from "@/components/runs/header";
+import { buildQaTransition } from "@/lib/qa/qaTransition";
+import { usePdfPanel } from "@/hooks/usePdfPanel";
+import { setManagerReviewVisibility } from "@/services/hitlConfigService";
+import type { ExtractionRunStage } from "@/types/ai-extraction";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 import { t } from "@/lib/copy";
@@ -241,7 +238,7 @@ export default function QualityAssessmentFullScreen() {
   }
   const loadedValues = loadedValuesMap;
 
-  const { saveState, lastSavedAt, hasUnsavedChanges, saveNow } =
+  const { saveState, lastSavedAt, saveNow } =
     useAutoSaveProposals({
       runId: session?.runId ?? null,
       values,
@@ -303,6 +300,19 @@ export default function QualityAssessmentFullScreen() {
 
   const [publishing, setPublishing] = useState(false);
   const [reopening, setReopening] = useState(false);
+
+  // PDF panel state — lifted so RunHeader.PanelToggle can share the same toggle.
+  const pdfPanel_state = usePdfPanel({ initialOpen: false });
+
+  // Reveal: manager can un-blind QA reviewer identities for this project.
+  const canReveal = permissions.userRole === "manager" && permissions.isBlindMode;
+  const onReveal = () => {
+    void setManagerReviewVisibility(projectId ?? "", "quality_assessment", true)
+      .then(() => permissions.refresh())
+      .catch((e: unknown) =>
+        toast.error(e instanceof Error ? e.message : String(e)),
+      );
+  };
 
   const fieldLabelByCoordMap: Record<string, string> = {};
   if (session) {
@@ -474,108 +484,138 @@ export default function QualityAssessmentFullScreen() {
       ? t("qa", "templateNotFound").replace("{{templateId}}", templateId ?? "")
       : (sessionError ?? templateError);
 
+  // Guide: scroll to top of form (no required-field count for QA).
+  const onGuide = () => {
+    const el = document.querySelector('[data-testid="qa-form-panel"]');
+    if (el) el.scrollTop = 0;
+  };
+
+  // The API returns stage as `string`; cast to the narrow union the header lib expects.
+  const runStage = (runDetail?.run.stage ?? null) as ExtractionRunStage | null;
+
+  // Stage-driven transition for RunHeader.PrimaryAction.
+  const qaTransition = buildQaTransition({
+    stage: runStage,
+    canResolveConflicts: permissions.canResolveConflicts,
+    onPublish: handlePublish,
+    onFinalize: handleFinalizeFromConsensus,
+    onGuide,
+  });
+
+  // AI extract callback — called by RunHeader.AIActions.
+  const onExtractWithAI = () => {
+    if (!session || !projectId || !articleId) return;
+    void extractForRun({
+      projectId,
+      articleId,
+      templateId: session.projectTemplateId,
+      runId: session.runId,
+      skipFieldsWithHumanProposals: true,
+      autoAdvanceToReview: false,
+    });
+  };
+
+  const templateNameLabel = template?.name ?? (loading ? t("common", "loading") : "—");
+  const versionLabel = template ? `v${template.version}` : "";
+
   const header = (
-    <div className="flex items-center justify-between border-b bg-background px-4 py-3">
-      <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate(`/projects/${projectId}`)}
-          aria-label={t("common", "back")}
-        >
-          <ArrowLeft className="mr-1 h-4 w-4" />
-          {t("common", "back")}
-        </Button>
-        <Badge
-          variant="outline"
-          className="border-warning/30 bg-warning/10 text-warning"
-          data-testid="qa-kind-badge"
-        >
-          {t("qa", "badge")}
-        </Badge>
-        <h1
-          className="truncate text-base font-medium"
-          data-testid="qa-template-name"
-        >
-          {template?.name ?? (loading ? t("common", "loading") : "—")}
-        </h1>
-        {template ? (
-          <span className="text-xs text-muted-foreground">v{template.version}</span>
-        ) : null}
-        <HITLStatusBadges
-          kind="qa"
-          finalized={finalized}
-          parentRunId={parentRunId}
-        />
-        {runDetail ? (
-          <ReviewerProgressBadge
-            reviewerCount={reviewerSummary.reviewers.length}
-            requiredReviewerCount={reviewerSummary.requiredReviewerCount}
-            divergentCount={reviewerSummary.divergentCoords.size}
+    <div className="@container/headerbar">
+      <RunHeader
+        value={{
+          kind: "qa",
+          stage: runStage,
+          isRevision: !!parentRunId,
+          role: permissions.userRole,
+          isBlind: permissions.isBlindMode,
+          canReveal,
+          onReveal,
+          progress: { completed: 0, total: 0, pct: 0 },
+          reviewers: {
+            count: reviewerSummary.reviewers.length,
+            required: reviewerSummary.requiredReviewerCount,
+            divergent: reviewerSummary.divergentCoords.size,
+          },
+          transition: qaTransition,
+          submitting: publishing,
+          onJumpToDivergence: canCompare
+            ? () => setViewMode("compare")
+            : undefined,
+        }}
+      >
+        <RunHeader.Left>
+          <RunHeader.Breadcrumb
+            onBack={() => navigate(`/projects/${projectId}`)}
+            crumbs={[{ label: t("qa", "badge") }]}
           />
-        ) : null}
-        {canCompare ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() =>
-              setViewMode((m) => (m === "assess" ? "compare" : "assess"))
-            }
-            aria-label={t("qa", "compareToggleAria")}
-            data-testid="qa-compare-toggle"
-            className="text-muted-foreground hover:text-foreground"
+          {/* QA kind badge — adjacent to breadcrumb */}
+          <Badge
+            variant="outline"
+            className="border-warning/30 bg-warning/10 text-warning shrink-0"
+            data-testid="qa-kind-badge"
           >
-            <Users className="mr-1.5 h-3.5 w-3.5" />
-            {viewMode === "assess"
-              ? t("qa", "compareToggle")
-              : t("qa", "assessToggle")}
-          </Button>
-        ) : null}
-        <HeaderAIActions suggestions={aiSuggestions} compact />
-        <SaveStatusBadge
-          saveState={saveState}
-          lastSavedAt={lastSavedAt}
-          hasUnsavedChanges={hasUnsavedChanges}
-          hidden={!session || finalized}
-        />
-      </div>
-      <div className="flex items-center gap-2">
-        <HITLReopenButton
-          kind="qa"
-          visible={finalized}
-          onClick={() => void handleReopen()}
-          disabled={!session}
-          reopening={reopening}
-        />
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            if (!session || !projectId || !articleId) return;
-            void extractForRun({
-              projectId,
-              articleId,
-              templateId: session.projectTemplateId,
-              runId: session.runId,
-              skipFieldsWithHumanProposals: true,
-              autoAdvanceToReview: false,
-            });
-          }}
-          disabled={!session || finalized || extractingAI}
-          data-testid="qa-extract-ai-button"
-        >
-          <Sparkles className="mr-1 h-4 w-4" />
-          {extractingAI ? t("qa", "extractingProgress") : t("qa", "extractWithAI")}
-        </Button>
-        <Button
-          size="sm"
-          onClick={() => void handlePublish()}
-          disabled={publishing || finalized || !session || !runDetail}
-          data-testid="qa-publish-button"
-        >
-          {publishing ? t("qa", "publishingProgress") : finalized ? t("qa", "publishedState") : t("qa", "publishButton")}
-        </Button>
-      </div>
+            {t("qa", "badge")}
+          </Badge>
+          {/* Template name + version */}
+          <span
+            className="truncate text-sm font-medium"
+            data-testid="qa-template-name"
+          >
+            {templateNameLabel}
+          </span>
+          {versionLabel ? (
+            <span className="text-xs text-muted-foreground shrink-0">
+              {versionLabel}
+            </span>
+          ) : null}
+          {runStage != null && <RunHeader.StageRail />}
+        </RunHeader.Left>
+
+        <RunHeader.Center>
+          <RunHeader.Reviewers />
+          <RunHeader.RoleChip />
+        </RunHeader.Center>
+
+        <RunHeader.Right>
+          <RunHeader.AIActions
+            pendingCount={Object.keys(aiSuggestions).length}
+            canExtract={!!(session && !finalized)}
+            extracting={extractingAI}
+            onExtract={onExtractWithAI}
+          />
+          <RunHeader.PanelToggle
+            pressed={pdfPanel_state.isOpen}
+            onToggle={pdfPanel_state.toggle}
+          />
+          <RunHeader.Save
+            state={saveState ?? "idle"}
+            lastSavedAt={lastSavedAt ?? null}
+            hidden={!session || finalized}
+          />
+          <RunHeader.PrimaryAction />
+          <RunHeader.Menu>
+            {canCompare && (
+              <RunHeader.MenuItem
+                onSelect={() =>
+                  setViewMode((m) => (m === "assess" ? "compare" : "assess"))
+                }
+              >
+                {effectiveViewMode === "assess"
+                  ? t("qa", "compareToggle")
+                  : t("qa", "assessToggle")}
+              </RunHeader.MenuItem>
+            )}
+            {finalized && (
+              <RunHeader.MenuItem
+                onSelect={() => void handleReopen()}
+              >
+                {reopening
+                  ? t("qa", "publishingProgress")
+                  : t("qa", "reopenSuccess")}
+              </RunHeader.MenuItem>
+            )}
+          </RunHeader.Menu>
+        </RunHeader.Right>
+      </RunHeader>
     </div>
   );
 
@@ -699,7 +739,7 @@ export default function QualityAssessmentFullScreen() {
       pdfPanel={pdfPanel}
       formPanel={formPanel}
       header={header}
-      initialPdfOpen={false}
+      pdfState={pdfPanel_state}
     />
   );
 }
