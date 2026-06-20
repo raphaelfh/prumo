@@ -126,6 +126,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     onNavigateToArticle,
     completedFields,
     totalFields,
+    completionPercentage,
     showPDF,
     onTogglePDF,
     viewMode,
@@ -155,33 +156,25 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
   // Article pager: only shown when there is more than one article to navigate.
   const articleIdx = articles.findIndex(a => a.id === currentArticleId);
 
-  const pct = totalFields > 0 ? Math.round((completedFields / totalFields) * 100) : 0;
-
   const headerValue: RunHeaderValue = {
     kind: 'extraction',
-    stage: stage ?? null,
+    stage,
     isRevision,
     role: userRole,
     isBlind: isBlindMode,
     canReveal,
     onReveal,
-    progress: { completed: completedFields, total: totalFields, pct },
+    progress: { completed: completedFields, total: totalFields, pct: completionPercentage },
     reviewers,
-    transition: transition ?? null,
+    transition,
     submitting,
     onJumpToDivergence,
   };
 
-  // Project/article crumbs for Breadcrumb slot.
-  const crumbs = [
-    { label: projectName },
-    { label: articleTitle },
-  ];
-
   return (
     <RunHeader value={headerValue}>
       <RunHeader.Left>
-        <RunHeader.Breadcrumb onBack={onBack} crumbs={crumbs} />
+        <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName }, { label: articleTitle }]} />
         {articles.length > 1 && (
           <div className="flex items-center gap-1 shrink-0">
             <Button
@@ -222,13 +215,13 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
           pendingCount={aiPendingCount}
           canExtract={!!(canRunAI && onExtractWithAI)}
           extracting={extractingAI}
-          onExtract={() => onExtractWithAI?.()}
+          onExtract={onExtractWithAI ?? (() => {})}
           onOpenSuggestions={props.onAISuggestionsClick}
         />
         <RunHeader.PanelToggle pressed={showPDF} onToggle={onTogglePDF} />
         <RunHeader.Save
           state={saveState ?? 'idle'}
-          lastSavedAt={lastSavedAt ?? null}
+          lastSavedAt={lastSavedAt}
           hidden={stage === 'finalized'}
         />
         <RunHeader.PrimaryAction />

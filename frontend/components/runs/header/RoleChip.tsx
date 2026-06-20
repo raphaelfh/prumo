@@ -2,12 +2,15 @@ import { ChevronDown } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { t } from '@/lib/copy';
+import type { UserRole } from '@/lib/comparison/permissions';
 import { useRunHeader } from './RunHeaderContext';
 
-function roleLabel(role?: string) {
-  if (!role) return '';
-  return role.charAt(0).toUpperCase() + role.slice(1);
-}
+const roleKeys: Record<UserRole, 'roleManager' | 'roleReviewer' | 'roleConsensus' | 'roleViewer'> = {
+  manager: 'roleManager',
+  reviewer: 'roleReviewer',
+  consensus: 'roleConsensus',
+  viewer: 'roleViewer',
+};
 
 export function RoleChip() {
   const { role, isBlind, canReveal, onReveal } = useRunHeader();
@@ -19,7 +22,7 @@ export function RoleChip() {
       : null;
   const text = (
     <>
-      {roleLabel(role)}
+      {t('common', roleKeys[role])}
       {suffixKey && (
         <>
           <span className="text-muted-foreground" aria-hidden="true">{' · '}</span>
