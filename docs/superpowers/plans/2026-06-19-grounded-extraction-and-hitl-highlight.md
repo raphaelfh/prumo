@@ -72,6 +72,7 @@ scope queries by `project_id`; `ExtractionEvidence.position` is the canonical
 | `backend/app/worker/tasks/parsing_tasks.py` (+ a backfill entry) | backfill | Enqueue parsing for articles lacking blocks (idempotent, batched) |
 | `scripts/backfill_text_blocks.py` | ops | New: resumable, dry-run, project-ordered backfill driver |
 | `backend/alembic/versions/NNNN_drop_dead_article_text.py` | schema | New: drop `text_raw`, `text_html`, `pdf_extracted_text`, `semantic_*` |
+| `backend/alembic/versions/NNNN_add_markdown_enriched.py` | schema | New (ADR-0013): ADD `article_files.markdown_enriched` + `markdown_tier` — a SEPARATE migration from the drop; do NOT repurpose `text_html` |
 | `backend/app/services/pdf_processor.py` | cleanup | Remove now-unused `extract_text_chunked` / `detect_sections` (keep `extract_text` for fallback) |
 | `package.json` | deps | Remove unused `pdf-lib` |
 | `frontend/hooks/extraction/useCitationHighlight.ts` | UI | New: map `PositionV1` → pdf.js scroll + text-range / region highlight |
@@ -342,3 +343,26 @@ scope queries by `project_id`; `ExtractionEvidence.position` is the canonical
   endpoint and carries the usual BOLA/RLS obligations.
 - **Gated/live:** backfill (3.1) and any test against real clinical PDFs need
   explicit user OK and an approved data surface.
+
+## Markdown representation (ADR-0013)
+
+Decision + rationale (free vs enriched tier, config, PHI gate, sanitizer policy,
+canvas-only highlight) live in **ADR-0013 §Decision Outcome / §Validation**. This
+plan owns the build:
+
+- **Renderer:** add `render_blocks_to_markdown(blocks)` beside `concat_page_text`
+  in `infrastructure/parsing/base.py`; the Task 1.1 assembler **imports** it for
+  table serialization (one GFM codepath → prompt and viewer tables byte-identical).
+- **Storage:** enriched tier → new `article_files.markdown_enriched` +
+  `markdown_tier` columns in a SEPARATE additive migration (revision id ≤ 32 chars),
+  co-sequenced with but DISTINCT from Phase 3's migration that drops the dead
+  `text_raw`/`text_html` (dropped, never repurposed).
+- **Read path:** `GET /api/v1/article-files/{id}/markdown?tier=` —
+  `ensure_project_member()` first, `ApiResponse` + a typed Pydantic model,
+  `apiClient` only (no `supabase.from`, no raw Storage URL); mirror
+  `article_text_block_read_service`.
+- **Viewer:** repoint the `reader` `ViewerMode` to sanitized markdown (retire the
+  flat `<p>` dump; blocks stay the anchor substrate). New deps `react-markdown` +
+  `remark-gfm` + sanitizer; add a vitest that a planted `<img onerror>`/`<script>`
+  does **not** execute; extend the Task 4.3 axe gate. (App's first raw-markup
+  surface — sanitizer policy in ADR-0013.)

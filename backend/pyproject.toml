@@ -119,6 +119,9 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Make the standalone research harnesses under backend/scripts importable
+# from tests (e.g. the parsing bake-off) without packaging them as app code.
+pythonpath = ["scripts"]
 # --strict-markers: typo'd marker (@pytest.mark.intergration vs integration)
 # now fails the test instead of silently being ignored. Catches the class
 # of "marker doesn't filter what you think it filters" bug.
