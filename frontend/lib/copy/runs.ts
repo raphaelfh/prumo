@@ -13,12 +13,9 @@ export const runs = {
   stageExtractTooltip: 'Fill the form and review AI suggestions for this article.',
   stageConsensusTooltip: 'Reconcile reviewer values into one agreed answer.',
   stageFinalizedTooltip: 'Locked and published — reopen to make changes.',
-  gateRemaining: '{{count}} left',
   // PrimaryAction
   requiredOfTotal: '{{done}} of {{total}} required',
-  // Transition labels (also kept in extraction for stageTransition.ts callers)
-  submitForReview: 'Submit for review',
-  reconcile: 'Reconcile',
+  // Transition label (QA's buildQaTransition uses this shared key)
   finalize: 'Finalize',
   gateBlocked: 'Complete the required fields first',
   // Reviewers
