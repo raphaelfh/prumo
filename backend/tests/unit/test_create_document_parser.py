@@ -1,0 +1,47 @@
+# backend/tests/unit/test_create_document_parser.py
+from types import SimpleNamespace
+
+from app.core.factories import create_document_parser
+from app.infrastructure.parsing.docling_parser import DoclingParser
+from app.infrastructure.parsing.llamaparse_parser import LlamaParseParser
+
+
+def _settings(backend="docling", llama_key=None):
+    return SimpleNamespace(PARSER_BACKEND=backend, LLAMA_CLOUD_API_KEY=llama_key)
+
+
+def test_default_backend_is_docling():
+    parser = create_document_parser(_settings(), project_is_phi=False)
+    assert isinstance(parser, DoclingParser)
+
+
+def test_phi_project_never_gets_llamaparse():
+    # Cloud requested but project is PHI -> fail-closed to self-hosted.
+    parser = create_document_parser(
+        _settings(backend="llamaparse", llama_key="lc-key"),
+        project_is_phi=True,
+    )
+    assert isinstance(parser, DoclingParser)
+
+
+def test_non_phi_llamaparse_with_key():
+    parser = create_document_parser(
+        _settings(backend="llamaparse", llama_key="lc-key"),
+        project_is_phi=False,
+        llama_cloud_key="lc-key",
+    )
+    assert isinstance(parser, LlamaParseParser)
+
+
+def test_llamaparse_without_key_falls_back_to_docling():
+    parser = create_document_parser(
+        _settings(backend="llamaparse", llama_key=None),
+        project_is_phi=False,
+        llama_cloud_key=None,
+    )
+    assert isinstance(parser, DoclingParser)
+
+
+def test_unknown_backend_falls_back_to_docling():
+    parser = create_document_parser(_settings(backend="bogus"), project_is_phi=False)
+    assert isinstance(parser, DoclingParser)
