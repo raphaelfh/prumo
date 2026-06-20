@@ -672,9 +672,9 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
 
     // Ready state — render table
   return (
-      <div className="space-y-2">
+      <div className="flex h-full min-h-0 flex-col gap-2">
           {/* Single toolbar: search + Filter + count/selection (Linear-style) */}
-          <div className="flex flex-col gap-2">
+          <div className="flex shrink-0 flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2 w-full">
                   <ListToolbarSearch
                       ref={searchInputRef}
@@ -770,12 +770,13 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
           </div>
 
           {/* Table or card list (responsive) */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <ResponsiveList
               isNarrow={isNarrow}
               tableContent={
                   <DataTableWrapper className="overflow-hidden rounded-md border border-border/40">
                       <Table className="table-fixed w-max min-w-full">
-                  <TableHeader className="bg-transparent">
+                  <TableHeader className="sticky top-0 z-10 bg-background">
                       <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
                           <TableHead className={`w-[40px] min-w-[40px] ${TABLE_CELL_CLASS} text-left align-middle`}>
                 <TooltipProvider>
@@ -1133,6 +1134,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                   </>
               }
           />
+          </div>
 
           {/* Empty state after filters (match ArticlesList) */}
       {filteredAndSortedArticles.length === 0 && articles.length > 0 && (
