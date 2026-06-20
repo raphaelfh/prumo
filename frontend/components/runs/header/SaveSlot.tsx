@@ -7,8 +7,6 @@ import type { SaveState } from '@/hooks/runs';
 const SAVED_VISIBLE_MS = 2000;
 const FADE_MS = 300;
 
-type SavedPhase = 'idle' | 'shown' | 'fading';
-
 /**
  * Subtle, transient save indicator that lives by the title:
  *  - "Saving…" while a write is in flight,
@@ -17,28 +15,36 @@ type SavedPhase = 'idle' | 'shown' | 'fading';
  *  - "Save failed" persists (red) until the next save attempt.
  */
 export function SaveSlot({ state, lastSavedAt, hidden }: { state: SaveState; lastSavedAt: Date | null; hidden?: boolean }) {
-  const [savedPhase, setSavedPhase] = useState<SavedPhase>('idle');
+  // The "Saved" pill is keyed by the timestamp of the save it represents, so a
+  // NEW save restarts the show→fade→gone lifecycle.
+  const savedKey = state === 'saved' && lastSavedAt ? lastSavedAt.getTime() : null;
+  const [shownKey, setShownKey] = useState<number | null>(null);
+  const [phase, setPhase] = useState<'shown' | 'fading' | 'gone'>('gone');
 
-  // Drive the show → fade → unmount lifecycle when a save lands. Timers cleared
-  // in cleanup (React-Compiler-safe — no try/finally).
+  // Render-phase restart when a new save lands (the adjust-state-on-prop-change
+  // pattern — not an effect, so no cascading-render). Guarded by the key
+  // comparison so it runs once per new save and then stabilises.
+  if (savedKey !== null && savedKey !== shownKey) {
+    setShownKey(savedKey);
+    setPhase('shown');
+  }
+
+  // Timer-only effect: every setState here runs inside a setTimeout callback,
+  // never synchronously. Cleared in cleanup (no try/finally — React Compiler).
   useEffect(() => {
-    if (state !== 'saved') {
-      setSavedPhase('idle');
-      return;
-    }
-    setSavedPhase('shown');
-    const fadeAt = setTimeout(() => setSavedPhase('fading'), SAVED_VISIBLE_MS);
-    const hideAt = setTimeout(() => setSavedPhase('idle'), SAVED_VISIBLE_MS + FADE_MS);
+    if (shownKey === null) return;
+    const fadeAt = setTimeout(() => setPhase('fading'), SAVED_VISIBLE_MS);
+    const hideAt = setTimeout(() => setPhase('gone'), SAVED_VISIBLE_MS + FADE_MS);
     return () => {
       clearTimeout(fadeAt);
       clearTimeout(hideAt);
     };
-  }, [state, lastSavedAt]);
+  }, [shownKey]);
 
   if (hidden) return null;
   const failed = state === 'error';
   const saving = state === 'saving';
-  const showSaved = !saving && !failed && savedPhase !== 'idle';
+  const showSaved = !saving && !failed && savedKey !== null && phase !== 'gone';
   // Nothing to show: idle, or a Saved that has already faded out.
   if (!saving && !failed && !showSaved) return null;
 
@@ -48,7 +54,7 @@ export function SaveSlot({ state, lastSavedAt, hidden }: { state: SaveState; las
       className={cn(
         'flex items-center gap-1 whitespace-nowrap text-[11px] transition-opacity duration-300',
         failed ? 'text-destructive' : 'text-muted-foreground',
-        savedPhase === 'fading' ? 'opacity-0' : 'opacity-100',
+        showSaved && phase === 'fading' ? 'opacity-0' : 'opacity-100',
       )}
       title={lastSavedAt ? lastSavedAt.toLocaleTimeString() : undefined}
     >
