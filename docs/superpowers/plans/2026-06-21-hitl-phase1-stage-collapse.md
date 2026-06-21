@@ -390,17 +390,31 @@ Expected: FAIL — `AI extraction requires PROPOSAL`.
 
 - [ ] **Step 3: Relax the proposal-service gate**
 
-In `extraction_proposal_service.py`, replace lines 66-67:
+In `extraction_proposal_service.py`, replace the gate (lines 66-79). Preserve the
+blind-review write defense: AI/system proposals are allowed in `extract`; **human
+`extraction` writes are rejected** (they must go through `/decisions` as
+`ReviewerDecision`s); human QA proposals are allowed in `extract`:
 ```python
-        if source_value == "ai" or run.kind == "extraction":
+        if source_value in ("ai", "system"):
             allowed_stages = {ExtractionRunStage.EXTRACT.value}
+        elif run.kind == "extraction":
+            # Blind-review write defense: a reviewer's extraction values must
+            # land as per-user ReviewerDecision rows (loadValuesForUser filters
+            # by reviewer_id). A human 'proposal' here would be shared, leaking.
+            raise InvalidProposalError(
+                "For kind='extraction', human writes must go through "
+                "/decisions (ReviewerDecision), not /proposals."
+            )
         else:
             allowed_stages = {ExtractionRunStage.EXTRACT.value}
+        if run.stage not in allowed_stages:
+            raise InvalidProposalError(
+                f"Cannot record proposal: run stage is {run.stage}, "
+                f"not in {sorted(allowed_stages)}."
+            )
 ```
-(Both branches now allow only `extract`; the `human` + `extraction` rejection in
-the error message below still holds — update the message text to say `extract`.)
-Update the error message string `"For kind='extraction', writes at REVIEW ..."`
-to `"... writes at EXTRACT must go through /decisions ..."`.
+Add a test asserting a human `extraction` proposal is rejected (mirrors the
+existing blind-gate test in `test_extraction_proposal_service.py`).
 
 - [ ] **Step 4: Relax the section-extraction gates**
 
