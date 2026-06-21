@@ -21,7 +21,7 @@ vi.mock('@/lib/file-validation', () => ({detectFileFormat: vi.fn(() => 'applicat
 
 import {supabase} from '@/integrations/supabase/client';
 import {apiClient} from '@/integrations/api';
-import {addArticle, uploadArticleFile} from '@/services/articlesService';
+import {addArticle, uploadArticleFile, reparseArticleFile} from '@/services/articlesService';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -244,6 +244,23 @@ describe('articlesService.uploadArticleFile', () => {
     // No longer calls supabase.from('article_files')
     const fromCalls = vi.mocked(supabase.from).mock.calls.map(c => c[0]);
     expect(fromCalls).not.toContain('article_files');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reparseArticleFile
+// ---------------------------------------------------------------------------
+
+describe('articlesService.reparseArticleFile', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('POSTs the reparse endpoint for the given file id', async () => {
+    const res = await reparseArticleFile('file-7');
+    expect(res.ok).toBe(true);
+    expect(apiClient).toHaveBeenCalledWith(
+      '/api/v1/article-files/file-7/reparse',
+      expect.objectContaining({method: 'POST'}),
+    );
   });
 });
 

@@ -440,6 +440,21 @@ export function deleteArticle(articleId: string): Promise<ErrorResult<void>> {
 }
 
 // ---------------------------------------------------------------------------
+// ArticleDetailDialog: trigger a re-parse for a stuck article file
+// ---------------------------------------------------------------------------
+
+/**
+ * Enqueues a re-parse job for the given article file.
+ * Returns ok:true on success; ok:false with error.message on failure.
+ */
+export function reparseArticleFile(articleFileId: string): Promise<ErrorResult<unknown>> {
+  return toResult(
+    () => apiClient(`/api/v1/article-files/${articleFileId}/reparse`, {method: 'POST'}),
+    'articlesService.reparseArticleFile',
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ExtractionInterface: article list for dashboard stats
 // ---------------------------------------------------------------------------
 

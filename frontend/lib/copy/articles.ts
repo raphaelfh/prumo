@@ -309,6 +309,9 @@ export const articles = {
     exportInProgress: 'Export in progress…',
     exportCancelExport: 'Cancel export',
     exportSkippedFilesCount: '{{n}} file(s) could not be included in the package.',
+    // ArticleDetailDialog: per-file re-parse action
+    reparse: 'Re-parse',
+    reparseQueued: 'Re-parse queued',
 } as const;
 
 export type ArticlesCopy = typeof articles;

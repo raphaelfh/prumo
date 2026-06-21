@@ -24,6 +24,7 @@ import {
     fetchArticleFiles,
     downloadFileBlob,
     deleteArticleFile,
+    reparseArticleFile,
     type ArticleFileRecord,
 } from "@/services/articlesService";
 
@@ -340,6 +341,17 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
                         </div>
                       </div>
                       <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={async () => {
+                            const r = await reparseArticleFile(file.id);
+                            if (r.ok) toast.success(t('articles', 'reparseQueued'));
+                            else toast.error(r.error.message);
+                          }}
+                        >
+                          {t('articles', 'reparse')}
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"
