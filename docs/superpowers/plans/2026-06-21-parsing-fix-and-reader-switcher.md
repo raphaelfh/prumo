@@ -1,7 +1,7 @@
 ---
-status: proposed
+status: in_progress
 last_reviewed: 2026-06-21
-owner: raphaelfh
+owner: "@raphaelfh"
 ---
 
 # Parsing Fix (LlamaParse default, PHI-free) + Reader/Switcher Implementation Plan
