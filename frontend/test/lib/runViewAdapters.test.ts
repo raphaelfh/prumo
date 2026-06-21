@@ -25,7 +25,7 @@ function makeRunViewResponse(
     template_id: 'tmpl-1',
     kind: 'extraction',
     version_id: 'ver-1',
-    stage: 'review',
+    stage: 'extract',
     status: 'in_progress',
     hitl_config_snapshot: {},
     parameters: {},

@@ -184,23 +184,23 @@ describe('useAutoSaveProposals — basic write semantics', () => {
   });
 });
 
-describe('useAutoSaveProposals — stage-aware write target (Layer 2 fix)', () => {
-  // Bug B (multi-reviewer blind review): during stage='review' every
-  // reviewer's edit must land as a per-user ``ReviewerDecision`` so the
-  // run view's reviewer-scoped read (``currentValues``) keeps them
-  // blinded from each other. The previous unified write to /proposals
-  // appended the value as a shared ProposalRecord, which broke the
-  // per-user contract and also wasted writes that ``useExtractedValues``'
-  // review branch would never read back. Fix: when the caller passes ``stage='review'``,
-  // POST to /decisions with decision='edit'.
+describe('useAutoSaveProposals — kind-aware write target (Layer 2 fix)', () => {
+  // Bug B (multi-reviewer blind review): for an extraction run in the editable
+  // ``extract`` stage every reviewer's edit must land as a per-user
+  // ``ReviewerDecision`` so the run view's reviewer-scoped read
+  // (``currentValues``) keeps them blinded from each other. A shared
+  // /proposals write would break the per-user contract (and is now rejected
+  // by the backend for extraction). Fix: extraction in ``extract`` POSTs to
+  // /decisions with decision='edit'; QA stays on /proposals.
 
-  it("writes an 'edit' ReviewerDecision per dirty coord when stage='review'", async () => {
+  it("writes an 'edit' ReviewerDecision per dirty coord for extraction in 'extract'", async () => {
     apiClientMock.mockResolvedValue({ ok: true });
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
-        stage: 'review',
+        stage: 'extract',
+        kind: 'extraction',
         values: { 'inst-1_field-1': 'reviewer-typed' },
       }),
     );
@@ -225,13 +225,14 @@ describe('useAutoSaveProposals — stage-aware write target (Layer 2 fix)', () =
     );
   });
 
-  it("does NOT post a /proposals write when stage='review' (no double write)", async () => {
+  it("does NOT post a /proposals write for extraction in 'extract' (no double write)", async () => {
     apiClientMock.mockResolvedValue({ ok: true });
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
-        stage: 'review',
+        stage: 'extract',
+        kind: 'extraction',
         values: { 'inst-1_field-1': 'x' },
       }),
     );
@@ -251,7 +252,8 @@ describe('useAutoSaveProposals — stage-aware write target (Layer 2 fix)', () =
     const { result } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
-        stage: 'review',
+        stage: 'extract',
+        kind: 'extraction',
         values: { 'inst-1_field-1': '' },
       }),
     );
@@ -288,13 +290,14 @@ describe('useAutoSaveProposals — stage-aware write target (Layer 2 fix)', () =
     );
   });
 
-  it("writes to /proposals when stage='proposal' explicitly (extraction PROPOSAL stage)", async () => {
+  it("writes to /proposals for a QA run in 'extract' (kind='quality_assessment')", async () => {
     apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
-        stage: 'proposal',
+        stage: 'extract',
+        kind: 'quality_assessment',
         values: { 'inst-1_field-1': 'hello' },
       }),
     );
@@ -312,12 +315,12 @@ describe('useAutoSaveProposals — stage-aware write target (Layer 2 fix)', () =
 
 describe('useAutoSaveProposals — non-writable stages are inert', () => {
   // Regression: opening a run parked at ``consensus`` (or ``finalized``)
-  // fired a doomed POST /proposals on load, which the backend rejects
-  // (HTTP 400 "run stage is consensus, not in ['proposal']") and the UI
-  // surfaced as a spurious "Error saving data automatically" toast. Past
-  // the proposal/review stages, autosave must not write at all. ``review``
-  // routes to /decisions and ``proposal``/undefined to /proposals — those
-  // remain writable (covered by the stage-aware suite above).
+  // fired a doomed POST on load, which the backend rejects (HTTP 400 "run
+  // stage is consensus, not in ['extract']") and the UI surfaced as a
+  // spurious "Error saving data automatically" toast. Past the editable
+  // ``extract`` stage, autosave must not write at all. In ``extract``,
+  // extraction routes to /decisions and QA/undefined to /proposals — those
+  // remain writable (covered by the kind-aware suite above).
   it.each(['consensus', 'finalized', 'pending'])(
     'does NOT POST and stays idle when stage=%s',
     async (stage) => {

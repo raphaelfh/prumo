@@ -27,7 +27,7 @@ describe('ExtractionValueService.findActiveRun', () => {
   it('returns mapped RunRef when the API returns a RunSummaryResponse', async () => {
     apiClientMock.mockResolvedValueOnce({
       id: 'run-1',
-      stage: 'review',
+      stage: 'extract',
       status: 'running',
       template_id: 'tpl-1',
       project_id: 'proj-1',
@@ -43,7 +43,7 @@ describe('ExtractionValueService.findActiveRun', () => {
     const result = await ExtractionValueService.findActiveRun('article-1', 'tpl-1');
     expect(result).toEqual({
       id: 'run-1',
-      stage: 'review',
+      stage: 'extract',
       status: 'running',
       template_id: 'tpl-1',
     });

@@ -70,7 +70,7 @@ describe('AISuggestionService.acceptSuggestion', () => {
   it('falls back to findActiveRun when no runId is supplied', async () => {
     (ExtractionValueService.findActiveRun as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       id: 'run-fallback',
-      stage: 'review',
+      stage: 'extract',
       status: 'running',
       template_id: 'tpl-1',
     });
@@ -116,7 +116,7 @@ describe('AISuggestionService.rejectSuggestion', () => {
   it('falls back to findActiveRun when no runId is supplied', async () => {
     (ExtractionValueService.findActiveRun as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       id: 'run-fallback',
-      stage: 'review',
+      stage: 'extract',
       status: 'running',
       template_id: 'tpl-1',
     });

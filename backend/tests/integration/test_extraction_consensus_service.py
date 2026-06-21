@@ -84,7 +84,7 @@ async def _setup_consensus_run(
     )
     await lifecycle.advance_stage(
         run_id=run.id,
-        target_stage=ExtractionRunStage.PROPOSAL,
+        target_stage=ExtractionRunStage.EXTRACT,
         user_id=profile_id,
     )
     proposal = await ExtractionProposalService(db).record_proposal(
@@ -93,11 +93,6 @@ async def _setup_consensus_run(
         field_id=field_id,
         source=ExtractionProposalSource.AI,
         proposed_value={"v": "candidate"},
-    )
-    await lifecycle.advance_stage(
-        run_id=run.id,
-        target_stage=ExtractionRunStage.REVIEW,
-        user_id=profile_id,
     )
     decision = await ExtractionReviewService(db).record_decision(
         run_id=run.id,
@@ -320,7 +315,7 @@ async def test_select_existing_rejects_reject_decision(
         user_id=profile_id,
     )
     await lifecycle.advance_stage(
-        run_id=run.id, target_stage=ExtractionRunStage.PROPOSAL, user_id=profile_id
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=profile_id
     )
     await ExtractionProposalService(db_session).record_proposal(
         run_id=run.id,
@@ -328,9 +323,6 @@ async def test_select_existing_rejects_reject_decision(
         field_id=field_id,
         source=ExtractionProposalSource.AI,
         proposed_value={"v": "x"},
-    )
-    await lifecycle.advance_stage(
-        run_id=run.id, target_stage=ExtractionRunStage.REVIEW, user_id=profile_id
     )
     reject = await ExtractionReviewService(db_session).record_decision(
         run_id=run.id,

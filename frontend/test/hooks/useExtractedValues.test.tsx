@@ -1,16 +1,15 @@
 /**
  * Tests for the rewritten ``useExtractedValues``.
  *
- * The hook now branches by ``run.stage``:
- *  - ``proposal``: hydrate from ``runDetail.proposals`` (newest-per-coord,
- *    any source). No DB call. Mirrors QA.
- *  - ``review`` / ``consensus`` / ``finalized``: hydrate from the
- *    ``currentValues`` embedded in the run view (current decision per
- *    coord, resolved + reviewer-scoped server-side). No DB call.
+ * The hook branches by stage AND run kind:
+ *  - QA (``kind != 'extraction'``) in ``extract``: hydrate from
+ *    ``runDetail.proposals`` (newest-per-coord, blind-filtered). No DB call.
+ *  - extraction in ``extract``, or any kind in ``consensus`` / ``finalized``:
+ *    hydrate from the ``currentValues`` embedded in the run view (current
+ *    decision per coord, resolved + reviewer-scoped server-side). No DB call.
  *  - missing run / pending / unknown: empty.
  *
- * The legacy ``save()`` method is gone — the autosave is the sole
- * writer.
+ * The legacy ``save()`` method is gone — the autosave is the sole writer.
  */
 
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -53,13 +52,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('useExtractedValues — stage=proposal', () => {
+describe('useExtractedValues — QA in extract (proposals path)', () => {
   it('hydrates from proposals (newest-per-coord) without hitting reviewer_states', async () => {
     const { result } = renderHook(() =>
       useExtractedValues({
         currentUserId: 'user-1',
         runId: 'run-1',
-        stage: 'proposal',
+        stage: 'extract',
+        kind: 'quality_assessment',
         proposals: [
           {
             id: 'p-newest',
@@ -113,7 +113,8 @@ describe('useExtractedValues — stage=proposal', () => {
       useExtractedValues({
         currentUserId: 'user-1',
         runId: 'run-1',
-        stage: 'proposal',
+        stage: 'extract',
+        kind: 'quality_assessment',
         proposals: [],
       }),
     );
@@ -122,7 +123,7 @@ describe('useExtractedValues — stage=proposal', () => {
   });
 });
 
-describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () => {
+describe('useExtractedValues — QA-in-extract blinding (multi-reviewer)', () => {
   // Bug A (multi-reviewer blind leak): the PROPOSAL stage hydration
   // used to take the newest proposal per coord regardless of source,
   // which meant a `human` proposal written by reviewer A appeared in
@@ -135,7 +136,8 @@ describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () =
       useExtractedValues({
         currentUserId: 'user-1',
         runId: 'run-1',
-        stage: 'proposal',
+        stage: 'extract',
+        kind: 'quality_assessment',
         proposals: [
           {
             id: 'p-other-human',
@@ -164,7 +166,8 @@ describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () =
       useExtractedValues({
         currentUserId: 'user-1',
         runId: 'run-1',
-        stage: 'proposal',
+        stage: 'extract',
+        kind: 'quality_assessment',
         proposals: [
           {
             id: 'p-mine',
@@ -191,7 +194,8 @@ describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () =
       useExtractedValues({
         currentUserId: 'user-1',
         runId: 'run-1',
-        stage: 'proposal',
+        stage: 'extract',
+        kind: 'quality_assessment',
         proposals: [
           {
             id: 'p-ai',
@@ -218,7 +222,8 @@ describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () =
       useExtractedValues({
         currentUserId: 'user-1',
         runId: 'run-1',
-        stage: 'proposal',
+        stage: 'extract',
+        kind: 'quality_assessment',
         proposals: [
           {
             id: 'p-system',
@@ -247,7 +252,8 @@ describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () =
       useExtractedValues({
         currentUserId: 'user-1',
         runId: 'run-1',
-        stage: 'proposal',
+        stage: 'extract',
+        kind: 'quality_assessment',
         proposals: [
           {
             id: 'p-other-newest',
@@ -282,7 +288,7 @@ describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () =
   });
 });
 
-describe('useExtractedValues — stage=review via currentValues', () => {
+describe('useExtractedValues — extraction in extract via currentValues', () => {
   it('hydrates from currentValues and skips reject decisions', async () => {
     const i1 = 'inst-1';
     const f1 = 'field-1';
@@ -292,7 +298,8 @@ describe('useExtractedValues — stage=review via currentValues', () => {
       useExtractedValues({
         currentUserId: 'user-1',
         runId: 'run-1',
-        stage: 'review',
+        stage: 'extract',
+        kind: 'extraction',
         currentValues: [
           {
             instance_id: i1,
@@ -331,7 +338,8 @@ describe('useExtractedValues — stage=review and beyond', () => {
       useExtractedValues({
         currentUserId: 'user-1',
         runId: 'run-1',
-        stage: 'review',
+        stage: 'extract',
+        kind: 'extraction',
         currentValues: [
           {
             instance_id: 'inst-1',
@@ -383,7 +391,8 @@ describe('useExtractedValues — missing run / no auth', () => {
       useExtractedValues({
         currentUserId: null,
         runId: 'run-1',
-        stage: 'review',
+        stage: 'extract',
+        kind: 'extraction',
       }),
     );
 
@@ -420,7 +429,8 @@ describe('useExtractedValues — disabled state (no run yet)', () => {
       useExtractedValues({
         currentUserId: 'user-1',
         runId: 'run-1',
-        stage: 'review',
+        stage: 'extract',
+        kind: 'extraction',
         proposals: [],
         enabled: false,
       }),
@@ -441,7 +451,8 @@ describe('useExtractedValues — disabled state (no run yet)', () => {
         useExtractedValues({
           currentUserId: 'user-1',
           runId: 'run-1',
-          stage: 'review',
+          stage: 'extract',
+        kind: 'extraction',
           proposals: [],
           currentValues,
           enabled,
@@ -470,7 +481,8 @@ describe('useExtractedValues — local update', () => {
       useExtractedValues({
         currentUserId: 'user-1',
         runId: 'run-1',
-        stage: 'proposal',
+        stage: 'extract',
+        kind: 'quality_assessment',
         proposals: [],
       }),
     );
@@ -515,7 +527,8 @@ describe('useExtractedValues — local-edits-win on backend refetch', () => {
         useExtractedValues({
           currentUserId: 'user-1',
           runId: 'run-1',
-          stage: 'proposal',
+          stage: 'extract',
+        kind: 'quality_assessment',
           proposals,
         }),
       { initialProps: { proposals: initialProposals } },
@@ -553,7 +566,8 @@ describe('useExtractedValues — local-edits-win on backend refetch', () => {
         useExtractedValues({
           currentUserId: 'user-1',
           runId: 'run-1',
-          stage: 'proposal',
+          stage: 'extract',
+        kind: 'quality_assessment',
           proposals,
         }),
       {
@@ -655,7 +669,8 @@ describe('useExtractedValues — run boundary reset', () => {
         useExtractedValues({
           currentUserId: 'user-1',
           runId,
-          stage: 'proposal',
+          stage: 'extract',
+        kind: 'quality_assessment',
           proposals,
         }),
       { initialProps: { runId: 'run-1', proposals: run1Proposals } },

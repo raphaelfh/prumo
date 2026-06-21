@@ -11,7 +11,7 @@ the same row) blocks until the service's transaction commits.
 
 How the test works:
 
-1. Build a run in PROPOSAL stage via the standard fixture helper.
+1. Build a run in EXTRACT stage via the standard fixture helper.
 2. Open a SECOND engine + session and issue `SELECT … FOR UPDATE` on
    the same run row. The session2 transaction is held open via
    `BEGIN`; the lock is alive for the duration of the `async with`
@@ -54,7 +54,7 @@ from app.services.run_lifecycle_service import RunLifecycleService
 async def _setup_proposal_run(
     db: AsyncSession,
 ) -> tuple[UUID, UUID, UUID, UUID] | None:
-    """Build a run + advance to PROPOSAL; return (run_id, instance_id, field_id, profile_id)."""
+    """Build a run + advance to EXTRACT; return (run_id, instance_id, field_id, profile_id)."""
     project_id = (
         await db.execute(
             text(
@@ -111,7 +111,7 @@ async def _setup_proposal_run(
     )
     await lifecycle.advance_stage(
         run_id=run.id,
-        target_stage=ExtractionRunStage.PROPOSAL,
+        target_stage=ExtractionRunStage.EXTRACT,
         user_id=profile_id,
     )
     # Persist so the second session sees the row.

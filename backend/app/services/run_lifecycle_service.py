@@ -79,14 +79,10 @@ class IncompleteFinalizeError(InvalidStageTransitionError):
 # Allowed transitions: from -> set of valid target stages
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     ExtractionRunStage.PENDING.value: {
-        ExtractionRunStage.PROPOSAL.value,
+        ExtractionRunStage.EXTRACT.value,
         ExtractionRunStage.CANCELLED.value,
     },
-    ExtractionRunStage.PROPOSAL.value: {
-        ExtractionRunStage.REVIEW.value,
-        ExtractionRunStage.CANCELLED.value,
-    },
-    ExtractionRunStage.REVIEW.value: {
+    ExtractionRunStage.EXTRACT.value: {
         ExtractionRunStage.CONSENSUS.value,
         ExtractionRunStage.CANCELLED.value,
     },
@@ -250,122 +246,8 @@ class RunLifecycleService:
         elif target == ExtractionRunStage.FINALIZED.value:
             run.status = ExtractionRunStatus.COMPLETED.value
         await self.db.flush()
-
-        # Invariant I-1: in REVIEW+, every human proposal must have a
-        # corresponding reviewer_decision so the form's per-user read can
-        # render the typed value. The autosave path writes proposals
-        # regardless of stage, and AI-extraction services advance to
-        # REVIEW without round-tripping through a "confirm" step — so
-        # any human input the user typed before the advance would be
-        # orphaned without this materialization step.
-        if target == ExtractionRunStage.REVIEW.value:
-            await self._materialize_human_decisions(run_id)
-
         await self.db.refresh(run)
         return run
-
-    async def _materialize_human_decisions(self, run_id: UUID) -> None:
-        """For each (instance, field) on this run that has a human
-        ``ProposalRecord`` (``source='human'``, ``source_user_id`` set)
-        but no existing ``ReviewerDecision`` for that source user,
-        insert a ``decision='accept_proposal'`` row pointing at the
-        latest proposal and upsert the matching ``ReviewerState``.
-
-        Idempotent: skips any (run, instance, field, reviewer) triple
-        that already has a decision row, so retries / re-advances do
-        not duplicate.
-
-        AI proposals are NOT materialized — reviewers must explicitly
-        accept/edit/reject them. The premise of the auto-materialize is
-        "user typed = user committed"; AI output has no analogous
-        commitment.
-        """
-        # Latest human proposal per (instance, field, source_user_id).
-        # DISTINCT ON keeps the newest row per coord, since
-        # extraction_proposal_records is append-only and "the latest
-        # typed value wins".
-        latest_proposals = (
-            (
-                await self.db.execute(
-                    select(ExtractionProposalRecord)
-                    .where(
-                        ExtractionProposalRecord.run_id == run_id,
-                        ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
-                        ExtractionProposalRecord.source_user_id.is_not(None),
-                    )
-                    .order_by(
-                        ExtractionProposalRecord.instance_id,
-                        ExtractionProposalRecord.field_id,
-                        ExtractionProposalRecord.source_user_id,
-                        ExtractionProposalRecord.created_at.desc(),
-                    )
-                    .distinct(
-                        ExtractionProposalRecord.instance_id,
-                        ExtractionProposalRecord.field_id,
-                        ExtractionProposalRecord.source_user_id,
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-
-        if not latest_proposals:
-            return
-
-        for proposal in latest_proposals:
-            existing = (
-                await self.db.execute(
-                    select(ExtractionReviewerDecision.id)
-                    .where(
-                        ExtractionReviewerDecision.run_id == run_id,
-                        ExtractionReviewerDecision.instance_id == proposal.instance_id,
-                        ExtractionReviewerDecision.field_id == proposal.field_id,
-                        ExtractionReviewerDecision.reviewer_id == proposal.source_user_id,
-                    )
-                    .limit(1)
-                )
-            ).scalar_one_or_none()
-            if existing is not None:
-                continue
-
-            decision = ExtractionReviewerDecision(
-                run_id=run_id,
-                reviewer_id=proposal.source_user_id,
-                instance_id=proposal.instance_id,
-                field_id=proposal.field_id,
-                decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL.value,
-                proposal_record_id=proposal.id,
-                value=proposal.proposed_value,
-            )
-            self.db.add(decision)
-            await self.db.flush()
-
-            # Upsert the materialized reviewer_state pointer so subsequent
-            # reads (including the form's loadValuesForUser) see this
-            # decision as current. The unique key is
-            # (run_id, reviewer_id, instance_id, field_id).
-            stmt = (
-                pg_insert(ExtractionReviewerState)
-                .values(
-                    run_id=run_id,
-                    reviewer_id=proposal.source_user_id,
-                    instance_id=proposal.instance_id,
-                    field_id=proposal.field_id,
-                    current_decision_id=decision.id,
-                )
-                .on_conflict_do_update(
-                    index_elements=[
-                        "run_id",
-                        "reviewer_id",
-                        "instance_id",
-                        "field_id",
-                    ],
-                    set_={"current_decision_id": decision.id},
-                )
-            )
-            await self.db.execute(stmt)
-        await self.db.flush()
 
     async def _find_unfilled_required_coords(self, run: ExtractionRun) -> list[tuple[UUID, UUID]]:
         """Return ``(instance_id, field_id)`` for every required field that
@@ -494,9 +376,8 @@ class RunLifecycleService:
         are not mutated; the new Run will publish its own (with version+1
         per coordinate via the normal consensus flow).
 
-        The new Run lands in stage=REVIEW so the form can immediately
-        accept ReviewerDecisions over the seeded proposals — same UX as
-        post-AI-extraction.
+        The new Run lands in stage=EXTRACT so the form can immediately
+        record decisions over the seeded proposals.
         """
         # Lock the parent run for the duration of the transaction so two
         # concurrent reopen requests serialise. Inside the locked section
@@ -588,12 +469,7 @@ class RunLifecycleService:
         await self.db.flush()
         await self.db.refresh(new_run)
 
-        # 3. Advance pending → proposal so the seed-proposal writes pass
-        #    the lifecycle precondition.
-        new_run.stage = ExtractionRunStage.PROPOSAL.value
-        await self.db.flush()
-
-        # 4. Seed: each PublishedState in the old run becomes a system
+        # 3. Seed: each PublishedState in the old run becomes a system
         #    ProposalRecord in the new run. The form sees them as the
         #    starting point and the user can keep / edit / reject.
         old_published = (
@@ -620,9 +496,8 @@ class RunLifecycleService:
             )
         await self.db.flush()
 
-        # 5. Advance proposal → review so the form can immediately
-        #    record decisions on the seeded proposals.
-        new_run.stage = ExtractionRunStage.REVIEW.value
+        # 4. Land the child run in EXTRACT so the form can immediately record decisions.
+        new_run.stage = ExtractionRunStage.EXTRACT.value
         await self.db.flush()
         await self.db.refresh(new_run)
         return new_run, True

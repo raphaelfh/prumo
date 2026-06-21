@@ -22,7 +22,7 @@ from app.services.run_lifecycle_service import RunLifecycleService
 async def _setup_review_run(
     db: AsyncSession,
 ) -> tuple[UUID, UUID, UUID, UUID, UUID, UUID] | None:
-    """Build run, advance to review, return (run_id, instance_id, field_id, profile_id, proposal_id, alt_profile_id)."""
+    """Build run, advance to extract, return (run_id, instance_id, field_id, profile_id, proposal_id, alt_profile_id)."""
     project_id = (
         await db.execute(
             text(
@@ -81,7 +81,7 @@ async def _setup_review_run(
     )
     await lifecycle.advance_stage(
         run_id=run.id,
-        target_stage=ExtractionRunStage.PROPOSAL,
+        target_stage=ExtractionRunStage.EXTRACT,
         user_id=profile_id,
     )
     proposal = await ExtractionProposalService(db).record_proposal(
@@ -90,11 +90,6 @@ async def _setup_review_run(
         field_id=field_id,
         source=ExtractionProposalSource.AI,
         proposed_value={"text": "candidate"},
-    )
-    await lifecycle.advance_stage(
-        run_id=run.id,
-        target_stage=ExtractionRunStage.REVIEW,
-        user_id=profile_id,
     )
     return run.id, instance_id, field_id, profile_id, proposal.id, profile_id
 
@@ -267,8 +262,8 @@ async def test_accept_proposal_rejects_cross_coordinate_proposal(
     assert other is not None, "self-provisioned second coordinate must be discoverable"
     other_instance_id, other_field_id = other
 
-    # The setup left the run in REVIEW; record_proposal requires PROPOSAL.
-    # Insert the cross-coord proposal directly via the model to bypass stage checks.
+    # Insert the cross-coord proposal directly via the model — the value and
+    # coordinate are what we're testing here, not the proposal write path.
     from app.models.extraction_workflow import ExtractionProposalRecord
 
     cross_proposal = ExtractionProposalRecord(

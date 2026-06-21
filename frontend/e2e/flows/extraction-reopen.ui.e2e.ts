@@ -3,11 +3,11 @@
  *
  * Same Option C mechanic as `qa-reopen.ui.e2e.ts`, but on the extraction
  * page (data-extraction template, not Quality Assessment). Drives:
- *   1. A run advanced through PROPOSAL → REVIEW → CONSENSUS → FINALIZED.
+ *   1. A run advanced through EXTRACT → CONSENSUS → FINALIZED.
  *   2. The extraction page renders the "Published" badge + the
  *      "Reopen for revision" button (because no active run remains).
  *   3. Clicking the button calls `/runs/{id}/reopen`, the new run
- *      lands in REVIEW, and the page now shows the "Revision" badge
+ *      lands in EXTRACT, and the page now shows the "Revision" badge
  *      keyed off `run.parameters.parent_run_id`.
  *
  * Skips when env doesn't include an article+template ready for
@@ -117,7 +117,7 @@ test.describe("Extraction reopen UI flow", () => {
     expect(createRes.ok()).toBeTruthy();
     const run = (await parseEnvelope<RunSummaryResponse>(createRes)).data;
 
-    for (const stage of ["proposal", "review", "consensus"] as const) {
+    for (const stage of ["extract", "consensus"] as const) {
       const adv = await request.post(
         `${env.apiUrl}/api/v1/runs/${run.id}/advance`,
         {
@@ -196,11 +196,11 @@ test.describe("Extraction reopen UI flow", () => {
     }>(
       "extraction_runs",
       `select=id,stage,parameters&article_id=eq.${env.articleId}&template_id=eq.${templateId}` +
-        `&stage=in.(pending,proposal,review,consensus)&order=created_at.desc&limit=1`,
+        `&stage=in.(pending,extract,consensus)&order=created_at.desc&limit=1`,
     );
     expect(newRuns.length).toBe(1);
     expect(newRuns[0].id).not.toBe(run.id);
-    expect(newRuns[0].stage).toBe("review");
+    expect(newRuns[0].stage).toBe("extract");
     expect(
       (newRuns[0].parameters as Record<string, unknown>).parent_run_id,
     ).toBe(run.id);

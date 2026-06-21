@@ -440,7 +440,7 @@ async def reopen_run(
 
     Implements the "Option C" reopen flow: previous PublishedState rows
     are seeded into the new Run as ``source='system'`` proposals; the
-    new Run lands in stage=REVIEW so the form picks up where the old
+    new Run lands in stage=EXTRACT so the form picks up where the old
     one left off. Old Run is untouched (audit trail).
     """
     await _load_run_and_check_member(db, run_id, current_user_sub)

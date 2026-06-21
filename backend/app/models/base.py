@@ -44,8 +44,7 @@ POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
     "extraction_entity_role": ["study_section", "model_container", "model_section"],
     "extraction_run_stage": [
         "pending",
-        "proposal",
-        "review",
+        "extract",
         "consensus",
         "finalized",
         "cancelled",

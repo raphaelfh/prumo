@@ -297,25 +297,25 @@ async def test_concurrent_advance_stage_serialises_via_row_lock(
 
     try:
         async with session_factory() as s1, session_factory() as s2:
-            # Race two identical advances PENDING → PROPOSAL. Without a
+            # Race two identical advances PENDING → EXTRACT. Without a
             # row lock both callers see stage=PENDING, both pass the
-            # precondition, and both write stage=PROPOSAL silently
+            # precondition, and both write stage=EXTRACT silently
             # (the second succeeds even though it raced with the first).
             # With the FOR UPDATE lock, the second caller blocks until
-            # the first commits, then wakes up to see stage=PROPOSAL —
-            # PROPOSAL → PROPOSAL is not an allowed transition, so it
+            # the first commits, then wakes up to see stage=EXTRACT —
+            # EXTRACT → EXTRACT is not an allowed transition, so it
             # raises InvalidStageTransitionError instead of silently
             # overwriting.
             results = await asyncio.gather(
-                _advance(s1, ExtractionRunStage.PROPOSAL),
-                _advance(s2, ExtractionRunStage.PROPOSAL),
+                _advance(s1, ExtractionRunStage.EXTRACT),
+                _advance(s2, ExtractionRunStage.EXTRACT),
                 return_exceptions=True,
             )
         successes = [r for r in results if isinstance(r, str)]
         invalid = [r for r in results if isinstance(r, InvalidStageTransitionError)]
         assert len(successes) == 1, results
         assert len(invalid) == 1, results
-        assert successes[0] == ExtractionRunStage.PROPOSAL.value
+        assert successes[0] == ExtractionRunStage.EXTRACT.value
 
         async with session_factory() as verify:
             stage = (
@@ -324,7 +324,7 @@ async def test_concurrent_advance_stage_serialises_via_row_lock(
                     {"rid": str(run_id)},
                 )
             ).scalar()
-            assert stage == ExtractionRunStage.PROPOSAL.value
+            assert stage == ExtractionRunStage.EXTRACT.value
     finally:
         async with session_factory() as cleanup:
             await cleanup.execute(

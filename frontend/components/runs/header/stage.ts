@@ -10,10 +10,8 @@ export interface StageNode {
 const ORDER: StageNode['key'][] = ['extract', 'consensus', 'finalized'];
 
 /**
- * Maps a DB stage to a user-facing 3-node index. `proposal` and `review` both
- * collapse into the single `extract` node — `review` is reviewing one's OWN AI
- * suggestions, not peer review, and is reached via an invisible auto-advance
- * (`useAutoAdvanceToReview`).
+ * Maps a DB stage to a user-facing 3-node index. The single editable `extract`
+ * stage (plus `pending`/`null`) maps to the first Extract node.
  */
 function uiIndex(stage: ExtractionRunStage | null): number {
   switch (stage) {
@@ -22,7 +20,7 @@ function uiIndex(stage: ExtractionRunStage | null): number {
     case 'finalized':
       return 2;
     default:
-      // pending / null / proposal / review → Extract
+      // pending / null / extract → Extract
       return 0;
   }
 }

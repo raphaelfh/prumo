@@ -7,7 +7,7 @@ import type { RunHeaderValue } from '../RunHeaderContext';
 // HeaderShell, so the slot leaves are intentionally empty.
 const base: RunHeaderValue = {
   kind: 'qa',
-  stage: 'proposal',
+  stage: 'extract',
   isRevision: false,
   role: 'reviewer',
   isBlind: false,

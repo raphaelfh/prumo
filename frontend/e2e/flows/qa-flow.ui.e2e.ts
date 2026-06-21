@@ -4,7 +4,7 @@
  * Drives the full HITL pipeline through the UI for a single PROBAST/QUADAS-2
  * domain field:
  *   1. Open `POST /api/v1/hitl/sessions` with kind=quality_assessment (clones template + creates instances
- *      + parks Run in PROPOSAL).
+ *      + parks Run in EXTRACT).
  *   2. Visit /projects/{pid}/articles/{aid}/quality-assessment/{globalTemplateId}.
  *   3. Verify the form rendered and the Publish button is wired.
  *   4. Reload the page and verify the run + project_template_id are reused

@@ -24,12 +24,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import ExtractionRun, ExtractionRunStage, TemplateKind
 from app.models.extraction_workflow import (
     ExtractionConsensusMode,
-    ExtractionProposalSource,
 )
 from app.services.exports.extraction.workbook import build_workbook
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import ExportMode, ExtractionExportService
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.hitl_session_service import HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
@@ -94,24 +92,9 @@ async def _seed_finalized_charms_run(db: AsyncSession) -> _CharmsExportFixture |
     )
     run_id = session.run_id
 
-    # Park a human proposal so PROPOSAL → REVIEW materializes an
-    # accept_proposal reviewer_decision (invariant I-1); the run can
-    # then reach CONSENSUS where we publish via manual_override.
-    await ExtractionProposalService(db).record_proposal(
-        run_id=run_id,
-        instance_id=instance_id,
-        field_id=field_id,
-        source=ExtractionProposalSource.HUMAN,
-        source_user_id=profile_id,
-        proposed_value={"value": "seed"},
-    )
-
+    # The run is already in EXTRACT (session open parks it there); advance
+    # straight to CONSENSUS and publish via manual_override.
     lifecycle = RunLifecycleService(db)
-    await lifecycle.advance_stage(
-        run_id=run_id,
-        target_stage=ExtractionRunStage.REVIEW,
-        user_id=profile_id,
-    )
     await lifecycle.advance_stage(
         run_id=run_id,
         target_stage=ExtractionRunStage.CONSENSUS,

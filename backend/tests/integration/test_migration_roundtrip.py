@@ -104,8 +104,8 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0027_api_key_llama_cloud" in out, (
-        f"Expected head revision '0027_api_key_llama_cloud', got:\n{out}"
+    assert "0028_run_stage_extract" in out, (
+        f"Expected head revision '0028_run_stage_extract', got:\n{out}"
     )
 
 

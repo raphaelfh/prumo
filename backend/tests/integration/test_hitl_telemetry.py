@@ -128,10 +128,10 @@ async def test_invalid_stage_transition_logs_warning(
     assert create.status_code == 201
     run_id = create.json()["data"]["id"]
 
-    # Skipping a stage is rejected: pending → review without going through proposal.
+    # Skipping a stage is rejected: pending → consensus without going through extract.
     bad = await db_client.post(
         f"/api/v1/runs/{run_id}/advance",
-        json={"target_stage": "review"},
+        json={"target_stage": "consensus"},
     )
     assert bad.status_code == 400
 
@@ -141,6 +141,6 @@ async def test_invalid_stage_transition_logs_warning(
         e for e in captured_logs.entries if e["event"] == "hitl_stage_transition_rejected"
     )
     assert rejected["run_id"] == run_id
-    assert rejected["target_stage"] == "review"
+    assert rejected["target_stage"] == "consensus"
     # Warning level for client errors (operations folks filter on this).
     assert rejected["log_level"] == "warning"

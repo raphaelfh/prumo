@@ -2208,8 +2208,7 @@ export type Database = {
       extraction_reviewer_decision: "accept_proposal" | "reject" | "edit"
       extraction_run_stage:
         | "pending"
-        | "proposal"
-        | "review"
+        | "extract"
         | "consensus"
         | "finalized"
         | "cancelled"
@@ -2390,8 +2389,7 @@ export const Constants = {
       extraction_reviewer_decision: ["accept_proposal", "reject", "edit"],
       extraction_run_stage: [
         "pending",
-        "proposal",
-        "review",
+        "extract",
         "consensus",
         "finalized",
         "cancelled",

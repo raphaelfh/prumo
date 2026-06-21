@@ -13,8 +13,7 @@ export type SuggestionStatus = 'pending' | 'accepted' | 'rejected';
 export type ExtractionRunStatus = 'pending' | 'running' | 'completed' | 'failed';
 export type ExtractionRunStage =
   | 'pending'
-  | 'proposal'
-  | 'review'
+  | 'extract'
   | 'consensus'
   | 'finalized'
   | 'cancelled';
