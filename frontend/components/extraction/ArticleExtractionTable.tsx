@@ -63,7 +63,6 @@ import {
     StatusRing,
     useResizableTableColumns,
 } from '@/components/shared/list';
-import {DataTableWrapper} from '@/components/shared/list/DataTableWrapper';
 import {useIsNarrow} from '@/hooks/use-mobile';
 import {useQueryClient} from '@tanstack/react-query';
 import {loadExtractionTableArticles} from '@/services/articlesService';
@@ -759,12 +758,11 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
           </div>
 
           {/* Table or card list (responsive) */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-border/40">
           <ResponsiveList
               isNarrow={isNarrow}
               tableContent={
-                  <DataTableWrapper className="overflow-hidden rounded-md border border-border/40">
-                      <Table className="table-fixed w-max min-w-full">
+                      <Table containerClassName="overflow-visible" className="table-fixed w-max min-w-full">
                   <TableHeader className="sticky top-0 z-10 bg-background">
                       <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
                           <TableHead className={`w-[40px] min-w-[40px] ${TABLE_CELL_CLASS} text-left align-middle`}>
@@ -1044,7 +1042,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
             })}
           </TableBody>
                       </Table>
-                  </DataTableWrapper>
               }
               cardContent={
                   <>

@@ -45,7 +45,6 @@ import type {FilterFieldConfig, FilterValues} from "@/components/shared/list";
 import {
     ActiveFilterChips,
     buildActiveFiltersList,
-    DataTableWrapper,
     EmptyListState,
     FilterButtonWithPopover,
     ListCount,
@@ -772,8 +771,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
     ) : null;
 
     const tableContent = (
-            <DataTableWrapper className="overflow-hidden rounded-md border border-border/40">
-            <Table className="table-fixed w-max min-w-full">
+            <Table containerClassName="overflow-visible" className="table-fixed w-max min-w-full">
                       <TableHeader className="sticky top-0 z-10 bg-background">
                           <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
                               <TableHead className="w-[40px] min-w-[40px] px-2 py-1.5 text-left align-middle">
@@ -1108,7 +1106,6 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                           ))}
                       </TableBody>
                   </Table>
-            </DataTableWrapper>
     );
 
     const cardContent = (
@@ -1268,7 +1265,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                 />
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-border/40">
             {bodyContent}
 
             {/* Empty state after filters */}
