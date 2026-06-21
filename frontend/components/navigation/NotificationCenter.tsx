@@ -253,7 +253,7 @@ export function NotificationCenter() {
         </Button>
       </DropdownMenuTrigger>
       
-      <DropdownMenuContent align="end" className="w-[400px]">
+      <DropdownMenuContent align="end" className="w-[min(400px,calc(100vw-1rem))]">
         <DropdownMenuLabel className="flex items-center justify-between">
             <span>{t('navigation', 'notifications')}</span>
           {recentJobs.some(j => j.status === 'completed' || j.status === 'failed') && (

@@ -70,7 +70,7 @@ export function Worklist({ articles, currentId, onNavigate }: WorklistProps) {
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-80 p-0 shadow-elev-popover"
+          className="w-[min(20rem,calc(100vw-1rem))] p-0"
           align="center"
         >
           <Command>
