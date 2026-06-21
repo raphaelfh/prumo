@@ -5,6 +5,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.run_lifecycle_service import RunLifecycleService
+from tests.integration.conftest import SEED
+
 
 @pytest.mark.asyncio
 async def test_kind_column_exists_on_global_template(
@@ -148,23 +151,17 @@ async def test_composite_fk_blocks_kind_mismatch(
     db_session: AsyncSession,
 ) -> None:
     # Composite FK on (template_id, kind) must reject a Run.kind that doesn't
-    # match its Template.kind. Pick a run whose template is 'extraction' and
-    # try to flip the run's kind — that breaks coherence and the UPDATE raises.
-    target_id = (
-        await db_session.execute(
-            text(
-                """
-                SELECT r.id
-                FROM public.extraction_runs r
-                JOIN public.project_extraction_templates t ON t.id = r.template_id
-                WHERE t.kind = 'extraction'
-                LIMIT 1
-                """
-            )
-        )
-    ).scalar()
-    if target_id is None:
-        pytest.skip("No extraction-kind runs available.")
+    # match its Template.kind. Provision a run on the seed's primary template
+    # (kind='extraction'); create_run copies the template's kind onto the run,
+    # so flipping the run's kind breaks coherence and the UPDATE must raise.
+    run = await RunLifecycleService(db_session).create_run(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        project_template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+    )
+    await db_session.flush()
+    target_id = run.id
 
     with pytest.raises(IntegrityError):
         await db_session.execute(
