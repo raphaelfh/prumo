@@ -679,6 +679,66 @@ class TestFieldsWithRecentHumanProposal:
         assert result == set()
 
 
+class TestFieldsWithHumanDecision:
+    """Re-run safety in the collapsed ``extract`` lifecycle: human
+    *extraction* values land as per-reviewer ``ReviewerDecision`` rows (the
+    blind-review write gate rejects ``human`` proposals for
+    ``kind='extraction'``), so the proposal probe never sees them. A field
+    whose *current* reviewer decision is ``edit`` or ``accept_proposal`` is
+    protected; ``reject`` leaves the field eligible for a fresh AI guess."""
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_set_for_empty_field_ids(self, service):
+        result = await service._fields_with_human_decision(
+            run_id=uuid4(),
+            instance_id=uuid4(),
+            field_ids=[],
+        )
+        assert result == set()
+        # Should short-circuit before hitting the DB.
+        assert getattr(service.db, "execute", None) is None or not (
+            isinstance(service.db.execute, AsyncMock) and service.db.execute.await_count
+        )
+
+    @pytest.mark.asyncio
+    async def test_picks_edit_and_accept_proposal_but_not_reject(self, service):
+        from app.models.extraction_workflow import ExtractionReviewerDecisionType
+
+        f_edit = uuid4()
+        f_accept = uuid4()
+        f_reject = uuid4()
+        rows = [
+            (f_edit, ExtractionReviewerDecisionType.EDIT.value),
+            (f_accept, ExtractionReviewerDecisionType.ACCEPT_PROPOSAL.value),
+            (f_reject, ExtractionReviewerDecisionType.REJECT.value),
+        ]
+        execute_result = MagicMock()
+        execute_result.all.return_value = rows
+        service.db.execute = AsyncMock(return_value=execute_result)
+
+        result = await service._fields_with_human_decision(
+            run_id=uuid4(),
+            instance_id=uuid4(),
+            field_ids=[f_edit, f_accept, f_reject],
+        )
+
+        assert result == {f_edit, f_accept}
+
+    @pytest.mark.asyncio
+    async def test_fields_without_decisions_are_not_in_result(self, service):
+        execute_result = MagicMock()
+        execute_result.all.return_value = []
+        service.db.execute = AsyncMock(return_value=execute_result)
+
+        result = await service._fields_with_human_decision(
+            run_id=uuid4(),
+            instance_id=uuid4(),
+            field_ids=[uuid4()],
+        )
+
+        assert result == set()
+
+
 class TestExtractOneEntityTypeForRun:
     """Field-restoration invariant: after we filter ``full_entity_type.fields``
     to skip human-edited ones, we must restore the original list in a finally
@@ -724,6 +784,7 @@ class TestExtractOneEntityTypeForRun:
             return {f_skip.id}
 
         service._fields_with_recent_human_proposal = AsyncMock(side_effect=fake_human_probe)
+        service._fields_with_human_decision = AsyncMock(return_value=set())
 
         # LLM + suggestion writes
         service._extract_with_llm = AsyncMock(
@@ -762,6 +823,7 @@ class TestExtractOneEntityTypeForRun:
             return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
         )
         service._fields_with_recent_human_proposal = AsyncMock(return_value={f1.id, f2.id})
+        service._fields_with_human_decision = AsyncMock(return_value=set())
         # If filter logic is wrong the LLM gets called — fail loudly.
         service._extract_with_llm = AsyncMock(
             side_effect=AssertionError("LLM must NOT be called when all fields are human")
@@ -804,6 +866,9 @@ class TestExtractOneEntityTypeForRun:
         service._fields_with_recent_human_proposal = AsyncMock(
             side_effect=AssertionError("human-proposal probe must not run when skip flag is False")
         )
+        service._fields_with_human_decision = AsyncMock(
+            side_effect=AssertionError("human-decision probe must not run when skip flag is False")
+        )
         service._extract_with_llm = AsyncMock(
             return_value=({}, LlmUsage(prompt_tokens=1, completion_tokens=1))
         )
@@ -820,6 +885,57 @@ class TestExtractOneEntityTypeForRun:
         )
 
         service._fields_with_recent_human_proposal.assert_not_called()
+        service._fields_with_human_decision.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skip_set_unions_proposal_and_decision_probes(self, service, run):
+        """The skip set is the UNION of human-proposal fields (the QA track)
+        and human-decision fields (the extraction track). A field protected by
+        EITHER probe is excluded from the LLM call; only the untouched field
+        reaches the model."""
+        f_proposal = MagicMock(id=uuid4())
+        f_proposal.name = "via_proposal"
+        f_decision = MagicMock(id=uuid4())
+        f_decision.name = "via_decision"
+        f_open = MagicMock(id=uuid4())
+        f_open.name = "eligible"
+        f_open.field_type = "string"
+        f_open.description = ""
+        f_open.is_required = False
+
+        full_et = MagicMock()
+        full_et.id = uuid4()
+        full_et.name = "Section"
+        full_et.description = ""
+        full_et.fields = [f_proposal, f_decision, f_open]
+
+        service._entity_types.get_with_fields = AsyncMock(return_value=full_et)
+        service._instances.get_by_article = AsyncMock(
+            return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
+        )
+        service._fields_with_recent_human_proposal = AsyncMock(return_value={f_proposal.id})
+        service._fields_with_human_decision = AsyncMock(return_value={f_decision.id})
+
+        captured: dict[str, list] = {}
+
+        async def fake_llm(*, pdf_text, entity_type, model, kind, framework):  # noqa: ARG001
+            captured["fields"] = [f.id for f in entity_type.fields]
+            return ({}, LlmUsage(prompt_tokens=1, completion_tokens=1))
+
+        service._extract_with_llm = AsyncMock(side_effect=fake_llm)
+        service._create_suggestions = AsyncMock(return_value=0)
+
+        await service._extract_one_entity_type_for_run(
+            run=run,
+            entity_type=MagicMock(id=full_et.id, name="x"),
+            pdf_text="text",
+            framework=None,
+            kind="extraction",
+            skip_fields_with_human_proposals=True,
+            model="gpt-4o-mini",
+        )
+
+        assert captured["fields"] == [f_open.id]
 
 
 # ---------------------------------------------------------------------------

@@ -89,9 +89,12 @@ class SectionExtractionRequest(BaseModel):
     # ``finalized`` itself. See ADR-0013 / section_extraction_service.
     auto_advance_to_review: bool = Field(default=True, alias="autoAdvanceToReview")
 
-    # When True, fields whose latest proposal on this Run is `human` are
-    # excluded from the LLM call. Lets users re-run AI without losing
-    # values they already typed/edited manually.
+    # When True, fields a human has already settled are excluded from the
+    # LLM call so users can re-run AI without losing their work. "Settled"
+    # spans both tracks: a latest `human` proposal (QA surface) or a
+    # committed reviewer decision — edit/accept_proposal (extraction
+    # surface, where the blind-review gate routes human values to
+    # ReviewerDecision rows rather than `human` proposals).
     skip_fields_with_human_proposals: bool = Field(
         default=False,
         alias="skipFieldsWithHumanProposals",

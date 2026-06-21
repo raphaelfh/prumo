@@ -1,15 +1,20 @@
-"""Integration tests for the manual-only extraction flow.
+"""Integration tests for the manual-only + hybrid extraction flows.
 
 In the collapsed lifecycle (pending → extract → consensus → finalized) the
 Data-Extraction surface writes human values straight to per-user
 ``ReviewerDecision`` rows: the blind-review write defense rejects ``human``
 proposals on extraction runs, so the form autosaves through ``/decisions``.
-This test covers that path end-to-end at the service level, with no AI
-extraction in the loop:
 
-    open session (parks the run in EXTRACT) → record a human ``edit``
-    decision → advance EXTRACT → CONSENSUS → publish via manual_override →
-    FINALIZED.
+Two scenarios are covered end-to-end at the service level:
+
+1. **Manual-only**: open session (parks the run in EXTRACT) → record a human
+   ``edit`` decision → advance EXTRACT → CONSENSUS → publish via
+   manual_override → FINALIZED. No AI extraction in the loop.
+2. **Hybrid re-run safety**: a human ``edit`` decision already exists when AI
+   re-runs. The skip flag (``skip_fields_with_human_proposals``) must protect
+   that field. Post-collapse the human value is a ``ReviewerDecision`` (not a
+   ``human`` proposal), so the skip set is computed off the decision track —
+   the porting of the deleted ``test_human_proposal_blocks_ai_skip_flag``.
 
 The old ``proposal → review`` boundary materialization that used to convert
 human proposals into decisions was removed with the stage collapse (humans
@@ -18,6 +23,7 @@ write decisions directly), so the tests that exercised it are gone.
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
@@ -32,12 +38,18 @@ from app.models.extraction import (
 )
 from app.models.extraction_workflow import (
     ExtractionConsensusMode,
+    ExtractionProposalSource,
     ExtractionReviewerDecisionType,
 )
 from app.services.extraction_consensus_service import ExtractionConsensusService
+from app.services.extraction_proposal_service import (
+    ExtractionProposalService,
+    InvalidProposalError,
+)
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.hitl_session_service import HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
+from app.services.section_extraction_service import SectionExtractionService
 
 
 async def _coords(
@@ -191,4 +203,95 @@ async def test_manual_only_extraction_flow(db_session: AsyncSession) -> None:
     assert refreshed is not None
     assert refreshed.stage == ExtractionRunStage.FINALIZED.value
     assert refreshed.status == ExtractionRunStatus.COMPLETED.value
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_human_decision_blocks_ai_skip_flag(db_session: AsyncSession) -> None:
+    """Post-collapse port of the deleted ``test_human_proposal_blocks_ai_skip_flag``.
+
+    The hybrid re-run safety used by ``extract_for_run``
+    (``skip_fields_with_human_proposals``) must still protect a field the
+    human has already settled. In the collapsed ``extract`` lifecycle the
+    human's extraction value is a per-reviewer ``ReviewerDecision`` (the
+    blind-review write gate rejects ``human`` proposals for
+    ``kind='extraction'``), not a ``human`` proposal — so the skip set is
+    computed off the decision track. This pins that invariant against the
+    real schema: after a human ``edit`` decision lands,
+
+    * a ``human`` proposal on the same coord is rejected (gate), so the
+      proposal probe can never see the value, and
+    * the decision probe DOES include the field, so AI re-runs skip it.
+    """
+    fx = await _coords(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id, instance_id, field_id = fx
+
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
+            "AND article_id = :aid AND template_id = :tid"
+        ),
+        {"pid": str(project_id), "aid": str(article_id), "tid": str(template_id)},
+    )
+
+    session = await HITLSessionService(db_session).open_or_resume(
+        kind=TemplateKind.EXTRACTION,
+        project_id=project_id,
+        article_id=article_id,
+        user_id=profile_id,
+        project_template_id=template_id,
+    )
+    run = await db_session.get(ExtractionRun, session.run_id)
+    assert run is not None
+    assert run.stage == ExtractionRunStage.EXTRACT.value
+
+    # The human value lands as a per-reviewer ``edit`` decision — the
+    # extraction autosave path post-collapse.
+    await ExtractionReviewService(db_session).record_decision(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        reviewer_id=profile_id,
+        decision=ExtractionReviewerDecisionType.EDIT,
+        value={"value": "user-typed-this-first"},
+    )
+
+    # The shared ``human`` proposal track is closed for extraction runs:
+    # a frontend bypass (curl / agent client) cannot resurrect it. This is
+    # why the skip set must read the decision track, not the proposal track.
+    with pytest.raises(InvalidProposalError):
+        await ExtractionProposalService(db_session).record_proposal(
+            run_id=run.id,
+            instance_id=instance_id,
+            field_id=field_id,
+            source=ExtractionProposalSource.HUMAN,
+            source_user_id=profile_id,
+            proposed_value={"value": "should-be-rejected"},
+        )
+
+    service = SectionExtractionService(
+        db=db_session,
+        user_id=str(profile_id),
+        storage=MagicMock(),
+        trace_id="test-trace",
+    )
+
+    via_proposal = await service._fields_with_recent_human_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_ids=[field_id],
+    )
+    via_decision = await service._fields_with_human_decision(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_ids=[field_id],
+    )
+
+    # No human proposal exists for extraction → proposal probe is blind to it.
+    assert field_id not in via_proposal
+    # The decision probe protects the field → the AI re-run excludes it.
+    assert field_id in via_decision
+
     await db_session.rollback()
