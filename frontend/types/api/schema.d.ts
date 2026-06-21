@@ -25,6 +25,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/article-files/{article_file_id}/reparse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reparse Article File
+         * @description Re-enqueue a parse for an existing ArticleFile (recovery).
+         */
+        post: operations["reparse_article_file_api_v1_article_files__article_file_id__reparse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/article-files/{article_file_id}/text-blocks": {
         parameters: {
             query?: never;
@@ -185,6 +205,26 @@ export interface paths {
         get: operations["list_article_citations_endpoint_api_v1_articles__article_id__citations_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/articles/{article_id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Article File Upload
+         * @description Register an already-uploaded object and enqueue its parse.
+         */
+        post: operations["confirm_article_file_upload_api_v1_articles__article_id__files_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1113,6 +1153,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[ArticleFileResponse] */
+        ApiResponse_ArticleFileResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ArticleFileResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[CloneTemplateResponse] */
         ApiResponse_CloneTemplateResponse_: {
             /** @description Dados da resposta */
@@ -1658,6 +1715,61 @@ export interface components {
             trace_id?: string | null;
         };
         /**
+         * ArticleFileResponse
+         * @description Response de file de article.
+         */
+        ArticleFileResponse: {
+            /**
+             * Articleid
+             * Format: uuid
+             */
+            articleId: string;
+            /** Bytes */
+            bytes?: number | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Extractedat */
+            extractedAt?: string | null;
+            /** Extractionerror */
+            extractionError?: string | null;
+            /**
+             * Extractionstatus
+             * @default pending
+             */
+            extractionStatus: string;
+            /** Filerole */
+            fileRole: string;
+            /** Filetype */
+            fileType: string;
+            /**
+             * Hastext
+             * @default false
+             */
+            hasText: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Originalfilename */
+            originalFilename?: string | null;
+            /**
+             * Projectid
+             * Format: uuid
+             */
+            projectId: string;
+            /** Storagekey */
+            storageKey: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+        };
+        /**
          * ArticleRunRef
          * @description Per-article run reference returned by POST /articles/form-runs.
          *
@@ -1733,6 +1845,31 @@ export interface components {
              * Format: uuid
              */
             version_id: string;
+        };
+        /**
+         * ConfirmUploadRequest
+         * @description Request for confirmar upload.
+         */
+        ConfirmUploadRequest: {
+            /**
+             * Articleid
+             * Format: uuid
+             */
+            articleId: string;
+            /** Bytes */
+            bytes: number;
+            /** Contenttype */
+            contentType: string;
+            /**
+             * Filerole
+             * @default MAIN
+             * @enum {string}
+             */
+            fileRole: "MAIN" | "SUPPLEMENT" | "PROTOCOL" | "DATASET" | "APPENDIX" | "FIGURE" | "OTHER";
+            /** Originalfilename */
+            originalFilename: string;
+            /** Storagekey */
+            storageKey: string;
         };
         /** ConsensusDecisionResponse */
         ConsensusDecisionResponse: {
@@ -3336,6 +3473,37 @@ export interface operations {
             };
         };
     };
+    reparse_article_file_api_v1_article_files__article_file_id__reparse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ArticleFileResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_article_text_blocks_api_v1_article_files__article_file_id__text_blocks_get: {
         parameters: {
             query?: never;
@@ -3577,6 +3745,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_list_dict_str__Any___"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_article_file_upload_api_v1_articles__article_id__files_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ArticleFileResponse_"];
                 };
             };
             /** @description Validation Error */

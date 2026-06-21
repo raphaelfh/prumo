@@ -11,9 +11,37 @@
  * typed-client swap.
  */
 import {supabase} from '@/integrations/supabase/client';
+import {apiClient} from '@/integrations/api';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 import {detectFileFormat} from '@/lib/file-validation';
 import {FILE_ROLES, type FileRole} from '@/lib/file-constants';
+
+// ---------------------------------------------------------------------------
+// confirmArticleFileUpload: register a storage object via the backend endpoint
+// ---------------------------------------------------------------------------
+
+interface ConfirmUploadParams {
+  articleId: string;
+  storageKey: string;
+  originalFilename: string;
+  contentType: string;
+  bytes: number;
+  fileRole: FileRole;
+}
+
+function confirmArticleFileUpload(p: ConfirmUploadParams): Promise<unknown> {
+  return apiClient(`/api/v1/articles/${p.articleId}/files`, {
+    method: 'POST',
+    body: {
+      articleId: p.articleId,
+      storageKey: p.storageKey,
+      originalFilename: p.originalFilename,
+      contentType: p.contentType,
+      bytes: p.bytes,
+      fileRole: p.fileRole,
+    },
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Shared insert payload type (used by addArticle and saveArticle)
@@ -103,21 +131,20 @@ export function addArticle(
         throw new Error('Upload failed: ' + uploadError.message);
       }
 
-      const {error: insertError} = await supabase.from('article_files').insert([{
-        project_id: articleData.project_id,
-        article_id: article.id,
-        file_type: pdfInput.detectedFormat,
-        file_role: FILE_ROLES.MAIN,
-        storage_key: storageKey,
-        original_filename: pdfInput.file.name,
-        bytes: pdfInput.file.size,
-      }]);
-
-      if (insertError) {
+      try {
+        await confirmArticleFileUpload({
+          articleId: article.id,
+          storageKey,
+          originalFilename: pdfInput.file.name,
+          contentType: pdfInput.detectedFormat,
+          bytes: pdfInput.file.size,
+          fileRole: FILE_ROLES.MAIN,
+        });
+      } catch (e) {
         // Rollback: remove storage object and article row
         await supabase.storage.from('articles').remove([storageKey]);
         await supabase.from('articles').delete().eq('id', article.id);
-        throw new Error('File registration failed: ' + insertError.message);
+        throw e instanceof Error ? e : new Error('File registration failed');
       }
     }
 
@@ -310,20 +337,18 @@ export function uploadArticleFile(params: UploadFileParams): Promise<ErrorResult
 
     if (uploadError) throw new Error('Upload failed: ' + uploadError.message);
 
-    const {error: insertError} = await supabase.from('article_files').insert([{
-      project_id: params.projectId,
-      article_id: params.articleId,
-      file_type: detectedFormat,
-      file_role: params.role,
-      storage_key: params.storageKey,
-      original_filename: params.file.name,
-      bytes: params.file.size,
-    }]);
-
-    if (insertError) {
-      // Rollback storage
+    try {
+      await confirmArticleFileUpload({
+        articleId: params.articleId,
+        storageKey: params.storageKey,
+        originalFilename: params.file.name,
+        contentType: detectedFormat,
+        bytes: params.file.size,
+        fileRole: params.role,
+      });
+    } catch (e) {
       await supabase.storage.from('articles').remove([params.storageKey]);
-      throw new Error('File registration failed: ' + insertError.message);
+      throw e instanceof Error ? e : new Error('File registration failed');
     }
   }, 'articlesService.uploadArticleFile');
 }
@@ -412,6 +437,21 @@ export function deleteArticle(articleId: string): Promise<ErrorResult<void>> {
 
     if (deleteError) throw deleteError;
   }, 'articlesService.deleteArticle');
+}
+
+// ---------------------------------------------------------------------------
+// ArticleDetailDialog: trigger a re-parse for a stuck article file
+// ---------------------------------------------------------------------------
+
+/**
+ * Enqueues a re-parse job for the given article file.
+ * Returns ok:true on success; ok:false with error.message on failure.
+ */
+export function reparseArticleFile(articleFileId: string): Promise<ErrorResult<unknown>> {
+  return toResult(
+    () => apiClient(`/api/v1/article-files/${articleFileId}/reparse`, {method: 'POST'}),
+    'articlesService.reparseArticleFile',
+  );
 }
 
 // ---------------------------------------------------------------------------
