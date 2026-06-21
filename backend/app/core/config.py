@@ -94,8 +94,10 @@ class Settings(BaseSettings):
     OPENAI_DEFAULT_MODEL: str = "gpt-4o-mini"
 
     # =================== PARSING ===================
-    # Standard self-hosted parser by default. Per-project activation can
-    # request "llamaparse"; falls back to docling when no key is available.
+    # Per-project default resolution is "auto" (see ParserSettingsService +
+    # parsing_tasks._run_parse): the LlamaParse cloud parser when a llama_cloud
+    # key is configured, else the self-hosted Docling parser. This scalar is
+    # only the factory's last-resort fallback when no per-call backend is given.
     PARSER_BACKEND: str = "docling"
     # Optional global LlamaCloud key; per-user BYOK (APIKeyService) takes
     # precedence over this global fallback.

@@ -126,7 +126,7 @@ async def _insert_model_instance(
                      parent_instance_id, label, sort_order, status, created_by)
                 VALUES (:pid, :aid, :tid, :etid, NULL, :label, 0,
                         'pending'::extraction_instance_status,
-                        (SELECT id FROM public.profiles LIMIT 1))
+                        (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1))
                 RETURNING id
                 """
             ),
@@ -737,7 +737,7 @@ async def test_backfill_preserves_user_created_label(
                      parent_instance_id, label, sort_order, status, created_by)
                 VALUES (:pid, :aid, :tid, :etid, :parent, 'My custom label', 0,
                         'pending'::extraction_instance_status,
-                        (SELECT id FROM public.profiles LIMIT 1))
+                        (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1))
                 RETURNING id
                 """
             ),

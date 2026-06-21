@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-06-20
+last_reviewed: 2026-06-21
 owner: '@raphaelfh'
 ---
 
@@ -68,10 +68,11 @@ can open (and read the grounded markdown of) any linked document.
 ## Scope guardrails (what this is NOT)
 
 - Not a generic app-schema API buildout. Only the endpoints needed below.
-- Not the PHI fail-closed gate (`create_document_parser(project_is_phi=…)`).
-  Per the 2026-06-20 decision, supplements follow the **same per-project
-  parser backend as the MAIN file** (no special-casing). The PHI gate
-  remains a documented future item, out of scope here.
+- Supplements follow the **same per-project parser backend as the MAIN file**
+  (no special-casing): `auto` resolves to LlamaParse cloud when a `llama_cloud`
+  key is configured for the project's user, else the self-hosted Docling
+  fallback. prumo does not process PHI, so there is no PHI gate anywhere in
+  parser selection.
 - Not a bulk backfill. Recovery of the 39 stranded files is via a per-file
   **Re-parse** action, not a sweeper.
 
@@ -166,9 +167,10 @@ verification against the code. Each reshapes a phase below.
    reversible destructive migration (revision id ≤ 32 chars). This executes
    the `articles`-level subset of roadmap Task 3.2/3.3
    (`text_raw`/`text_html` on `article_files` stay with that task).
-3. **Supplements follow the LlamaCloud flow** like the MAIN file (same
-   per-project parser backend; no PHI special-case). Keep a lightweight
-   per-file cost guard (MF-10) as a safety net.
+3. **Supplements follow the same per-project parser backend** as the MAIN file
+   (`auto` → LlamaParse cloud when a `llama_cloud` key is configured, else the
+   self-hosted Docling fallback). Keep a lightweight per-file cost guard
+   (MF-10) as a safety net.
 4. **`parsed_by` column deferred (YAGNI).** The Docling-fallback is already
    observable via the `parser_gate_llamaparse_no_key_fallback_docling` log
    (`backend/app/core/factories.py:66`). Add the column only if the UI must
@@ -306,7 +308,6 @@ viewable).
 
 ## Out of scope / follow-ups
 
-- PHI fail-closed gate (`project_is_phi`) — future ADR/plan.
 - `parsed_by` column (Decision 4) — add only if persistently displayed.
 - Per-role parser policy (e.g. cheaper backend for DATASET/FIGURE) — note
   only; cost guard (MF-10) is the interim safety net.

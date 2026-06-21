@@ -202,6 +202,21 @@ class ArticleFileResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
 
+class ArticleFileListItem(BaseModel):
+    """Item de lista de files de um article (document switcher)."""
+
+    id: UUID
+    file_role: str = Field(..., alias="fileRole")
+    file_type: str = Field(..., alias="fileType")
+    original_filename: str | None = Field(default=None, alias="originalFilename")
+    extraction_status: str = Field(default="pending", alias="extractionStatus")
+    bytes: int | None = None
+    storage_key: str = Field(..., alias="storageKey")
+    created_at: datetime = Field(..., alias="createdAt")
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
 # =================== UPLOAD SCHEMAS ===================
 
 

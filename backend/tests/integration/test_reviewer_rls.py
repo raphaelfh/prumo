@@ -26,7 +26,13 @@ async def test_is_project_reviewer_admits_manager_reviewer_consensus(
 ) -> None:
     """The fn should return true for any project_member role that
     legitimately writes workflow rows: manager, reviewer, consensus."""
-    project_id = (await db_session.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    project_id = (
+        await db_session.execute(
+            text(
+                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
+            )
+        )
+    ).scalar()
     if project_id is None:
         pytest.skip("Need a project")
 
@@ -56,7 +62,13 @@ async def test_is_project_reviewer_admits_manager_reviewer_consensus(
 
 @pytest.mark.asyncio
 async def test_is_project_reviewer_rejects_outsider(db_session: AsyncSession) -> None:
-    project_id = (await db_session.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    project_id = (
+        await db_session.execute(
+            text(
+                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
+            )
+        )
+    ).scalar()
     if project_id is None:
         pytest.skip("Need a project")
 

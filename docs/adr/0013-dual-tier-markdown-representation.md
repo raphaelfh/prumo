@@ -1,6 +1,6 @@
 ---
 status: proposed
-last_reviewed: 2026-06-20
+last_reviewed: 2026-06-21
 owner: '@raphaelfh'
 adr_number: '0013'
 ---
@@ -44,9 +44,9 @@ than building a parallel pipeline.
   anchoring substrate).
 - Free by default, pay only on opt-in: `MARKDOWN_TIER=free` (the `$0`
   block-projection tier, derived from blocks, no egress) is the default rendering
-  tier — independent of `PARSER_BACKEND` (whose default is the self-hosted
-  Docling parser per ADR 0011; LlamaParse cloud is per-project opt-in). The
-  enriched tier is config-gated.
+  tier — independent of `PARSER_BACKEND` (whose per-project setting defaults to
+  `auto` per ADR 0011: LlamaParse cloud when a `llama_cloud` key is configured,
+  the self-hosted Docling parser otherwise). The enriched tier is config-gated.
 - Reuse, don't reinvent: ride ADR 0011's `DocumentParser`/`create_document_parser`
   factory, `PARSER_BACKEND` switch, per-project parser selection, provider
   doorway, and Phase-0 bake-off; reuse the block assembler's table serialization.

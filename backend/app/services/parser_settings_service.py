@@ -1,8 +1,13 @@
 """Service for the per-project parser-backend setting.
 
 Owns the ``parsing`` sub-dict inside ``projects.settings``:
-``{"type": "standard" | "llamaparse"}``. Mirrors
+``{"type": "auto" | "llamaparse" | "docling"}``. Mirrors
 ManagerReviewVisibilityService (plain JSONB, reassign-to-track).
+
+Default is ``"auto"``: the worker uses the cloud LlamaParse parser when a
+``llama_cloud`` key is configured, falling back to the self-hosted Docling
+parser otherwise. The legacy value ``"standard"`` (the old self-hosted
+opt-out) is still accepted on write and normalises to ``"docling"`` on read.
 """
 
 from uuid import UUID
@@ -11,8 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.project_repository import ProjectRepository
 
-_VALID_TYPES = ("standard", "llamaparse")
-_DEFAULT_TYPE = "standard"
+# Values the worker resolves against (see parsing_tasks._run_parse).
+_RESOLVED_TYPES = ("auto", "llamaparse", "docling")
+# Values a manager may persist. "standard" is the legacy self-hosted opt-out
+# kept for back-compat; it normalises to "docling" on read.
+_SETTABLE_TYPES = ("auto", "standard", "llamaparse", "docling")
+_DEFAULT_TYPE = "auto"
 
 
 class ProjectNotFoundError(Exception):
@@ -33,11 +42,13 @@ class ParserSettingsService:
         raw_parsing = (project.settings or {}).get("parsing")
         parsing = dict(raw_parsing) if isinstance(raw_parsing, dict) else {}
         ptype = parsing.get("type", _DEFAULT_TYPE)
-        return ptype if ptype in _VALID_TYPES else _DEFAULT_TYPE
+        if ptype == "standard":  # legacy alias for the self-hosted parser
+            return "docling"
+        return ptype if ptype in _RESOLVED_TYPES else _DEFAULT_TYPE
 
     async def set_for_project(self, *, project_id: UUID, parser_type: str) -> dict[str, str]:
-        if parser_type not in _VALID_TYPES:
-            raise ValueError(f"parser_type must be one of {_VALID_TYPES}, got {parser_type!r}")
+        if parser_type not in _SETTABLE_TYPES:
+            raise ValueError(f"parser_type must be one of {_SETTABLE_TYPES}, got {parser_type!r}")
         project = await self._projects.get_by_id(project_id)
         if project is None:
             raise ProjectNotFoundError(f"Project {project_id} not found")

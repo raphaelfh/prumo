@@ -25,7 +25,9 @@ async def test_hitl_config_insert_project_scope_and_unique_per_scope(
     db_session: AsyncSession,
 ) -> None:
     project_row = await db_session.execute(
-        text("SELECT id FROM public.projects LIMIT 1"),
+        text(
+            "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
+        ),
     )
     project_id = project_row.scalar()
     if project_id is None:
@@ -57,7 +59,9 @@ async def test_hitl_config_arbitrator_required_when_rule_is_arbitrator(
     db_session: AsyncSession,
 ) -> None:
     project_row = await db_session.execute(
-        text("SELECT id FROM public.projects LIMIT 1"),
+        text(
+            "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
+        ),
     )
     project_id = project_row.scalar()
     if project_id is None:

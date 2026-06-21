@@ -9,8 +9,10 @@
 import {memo} from 'react';
 import type {StoreApi} from 'zustand';
 import {ResizableHandle, ResizablePanel} from '@/components/ui/resizable';
-import {PrumoPdfViewer, articleFileSource} from '@prumo/pdf-viewer';
+import {PrumoPdfViewer} from '@prumo/pdf-viewer';
 import type {ViewerState} from '@prumo/pdf-viewer';
+import {useArticleDocuments} from '@/hooks/extraction/useArticleDocuments';
+import {DocumentSwitcher, ReparseButton} from './DocumentSwitcher';
 
 export interface ExtractionPDFPanelProps {
   articleId: string;
@@ -28,7 +30,28 @@ function ExtractionPDFPanelComponent({
   showPDF,
   store,
 }: ExtractionPDFPanelProps) {
-  const source = articleId ? articleFileSource(articleId) : null;
+  const {
+    files,
+    selectedFileId,
+    setSelectedFileId,
+    selectedFile,
+    source,
+    readerBlocks,
+    readerLoading,
+  } = useArticleDocuments(articleId);
+
+  const handleSelect = (id: string) => {
+    if (id === selectedFileId) {
+      return;
+    }
+    // Switching documents must not carry the previous file's highlights,
+    // search, or scroll position over (cross-document leak, MF-8).
+    const actions = store?.getState().actions;
+    actions?.clearCitations();
+    actions?.clearSearch();
+    actions?.goToPage(1);
+    setSelectedFileId(id);
+  };
 
   if (!showPDF) {
     return null;
@@ -46,7 +69,32 @@ function ExtractionPDFPanelComponent({
         minSize={30}
         maxSize={70}
       >
-        <PrumoPdfViewer source={source} store={store} className="h-full" />
+        <div className="flex h-full min-h-0 flex-col">
+          {files.length > 0 && (
+            <div className="flex items-center gap-2 border-b px-2 py-1.5">
+              <DocumentSwitcher
+                files={files}
+                selectedFileId={selectedFileId}
+                onSelect={handleSelect}
+              />
+              {selectedFile?.extractionStatus === 'parse_failed' && (
+                <ReparseButton
+                  articleFileId={selectedFile.id}
+                  articleId={articleId}
+                />
+              )}
+            </div>
+          )}
+          <div className="min-h-0 flex-1">
+            <PrumoPdfViewer
+              source={source}
+              store={store}
+              readerBlocks={readerBlocks}
+              readerLoading={readerLoading}
+              className="h-full"
+            />
+          </div>
+        </div>
       </ResizablePanel>
     </>
   );
