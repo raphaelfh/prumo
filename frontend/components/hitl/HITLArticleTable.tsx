@@ -19,10 +19,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, CheckCircle2, Circle, FileText } from "lucide-react";
+import { AlertCircle, FileText } from "lucide-react";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -34,12 +33,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
   ActiveFilterChips,
   buildActiveFiltersList,
   FilterButtonWithPopover,
@@ -49,10 +42,10 @@ import {
   ListFilterPanel,
   ListToolbarSearch,
   SortIconHeader,
+  StatusRing,
   type FilterFieldConfig,
   type FilterValues,
 } from "@/components/shared/list";
-import { DataTableWrapper } from "@/components/shared/list/DataTableWrapper";
 import { useListKeyboardShortcuts } from "@/hooks/useListKeyboardShortcuts";
 import { getCurrentUserId } from "@/services/authService";
 import { fetchProjectArticles, type ArticleListItem } from "@/services/articlesService";
@@ -69,7 +62,6 @@ type SortField =
   | "title"
   | "publication_year"
   | "progress"
-  | "status"
   | "created_at";
 type SortDirection = "asc" | "desc";
 
@@ -285,15 +277,6 @@ export function HITLArticleTable({
           aVal = getProgress(a);
           bVal = getProgress(b);
           break;
-        case "status": {
-          const ap = getProgress(a);
-          const bp = getProgress(b);
-          aVal =
-            (valuesByArticle.get(a.id)?.instances.length ?? 0) === 0 ? 0 : ap >= 100 ? 2 : 1;
-          bVal =
-            (valuesByArticle.get(b.id)?.instances.length ?? 0) === 0 ? 0 : bp >= 100 ? 2 : 1;
-          break;
-        }
         case "created_at":
           aVal = new Date(a.created_at).getTime();
           bVal = new Date(b.created_at).getTime();
@@ -360,73 +343,6 @@ export function HITLArticleTable({
     }
   };
 
-  const renderStatus = (article: Article) => {
-    const progress = getProgress(article);
-    const status =
-      progress >= 100
-        ? "complete"
-        : progress > 0
-          ? "in_progress"
-          : "not_started";
-    if (status === "not_started") {
-      return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge
-                variant="secondary"
-                className="h-7 w-7 cursor-default justify-center rounded-full border border-info/30 bg-info/10 p-0 text-info shadow-none"
-              >
-                <Circle className="h-3 w-3" />
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{t("extraction", "listStatusNotStarted")}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      );
-    }
-    if (status === "complete") {
-      return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge
-                variant="secondary"
-                className="h-7 w-7 cursor-default justify-center rounded-full border border-success/30 bg-success/10 p-0 text-success shadow-none"
-              >
-                <CheckCircle2 className="h-3 w-3" />
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{t("extraction", "listStatusComplete")}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      );
-    }
-    return (
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge
-              variant="secondary"
-              className="h-7 w-7 cursor-default justify-center rounded-full border border-warning/30 bg-warning/10 p-0 text-warning shadow-none"
-            >
-              <span className="text-[9px] font-semibold leading-none">
-                {progress}%
-              </span>
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t("extraction", "listStatusInProgress")}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
-  };
-
   if (loading || entityTypesLoading || valuesLoading) {
     return (
       <div className="space-y-3" data-testid={`hitl-${kind}-table-loading`}>
@@ -473,8 +389,8 @@ export function HITLArticleTable({
   }
 
   return (
-    <div className="space-y-2" data-testid={`hitl-${kind}-table`}>
-      <div className="flex flex-col gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-2" data-testid={`hitl-${kind}-table`}>
+      <div className="flex flex-col gap-2 shrink-0">
         <div className="flex flex-wrap items-center gap-2">
           <ListToolbarSearch
             ref={searchInputRef}
@@ -504,9 +420,8 @@ export function HITLArticleTable({
               },
               {
                 value: "progress",
-                label: t("extraction", "tableColumnProgress"),
+                label: t("extraction", "tableColumnStatus"),
               },
-              { value: "status", label: t("extraction", "tableColumnStatus") },
               {
                 value: "created_at",
                 label: t("extraction", "tableColumnCreatedAt"),
@@ -541,11 +456,11 @@ export function HITLArticleTable({
         />
       </div>
 
-      <DataTableWrapper className="overflow-hidden rounded-md border border-border/40">
-        <Table>
-          <TableHeader className="bg-transparent">
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-border/40">
+        <Table containerClassName="overflow-visible">
+          <TableHeader className="sticky top-0 z-10 bg-background">
             <TableRow className="h-8 border-b border-border/40 hover:bg-transparent">
-              <TableHead className={`${TABLE_CELL_CLASS} w-[40%]`}>
+              <TableHead className={`${TABLE_CELL_CLASS} w-[46%]`}>
                 <SortIconHeader
                   label={t("extraction", "tableColumnTitle")}
                   direction={sortField === "title" ? sortDirection : null}
@@ -564,18 +479,11 @@ export function HITLArticleTable({
                   onSort={() => handleSort("publication_year")}
                 />
               </TableHead>
-              <TableHead className={`${TABLE_CELL_CLASS} w-[16%]`}>
-                <SortIconHeader
-                  label={t("extraction", "tableColumnProgress")}
-                  direction={sortField === "progress" ? sortDirection : null}
-                  onSort={() => handleSort("progress")}
-                />
-              </TableHead>
-              <TableHead className={`${TABLE_CELL_CLASS} w-[8%]`}>
+              <TableHead className={`${TABLE_CELL_CLASS} w-[18%]`}>
                 <SortIconHeader
                   label={t("extraction", "tableColumnStatus")}
-                  direction={sortField === "status" ? sortDirection : null}
-                  onSort={() => handleSort("status")}
+                  direction={sortField === "progress" ? sortDirection : null}
+                  onSort={() => handleSort("progress")}
                 />
               </TableHead>
               <TableHead className={`${TABLE_CELL_CLASS} w-[6%] text-right`}>
@@ -584,9 +492,7 @@ export function HITLArticleTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredAndSorted.map((article) => {
-              const progress = getProgress(article);
-              return (
+            {filteredAndSorted.map((article) => (
                 <TableRow
                   key={article.id}
                   data-testid={`hitl-${kind}-row-${article.id}`}
@@ -611,26 +517,7 @@ export function HITLArticleTable({
                     </span>
                   </TableCell>
                   <TableCell className={TABLE_CELL_CLASS}>
-                    <div className="flex items-center gap-2">
-                      <div className="h-1.5 w-full max-w-[100px] overflow-hidden rounded-full bg-muted">
-                        <div
-                          className={`h-full ${
-                            progress >= 100
-                              ? "bg-success"
-                              : progress > 0
-                                ? "bg-warning"
-                                : "bg-info/40"
-                          }`}
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                      <span className="text-xs tabular-nums text-muted-foreground">
-                        {progress}%
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell className={TABLE_CELL_CLASS}>
-                    {renderStatus(article)}
+                    <StatusRing progress={getProgress(article)} />
                   </TableCell>
                   <TableCell className={`${TABLE_CELL_CLASS} text-right`}>
                     <Button
@@ -644,11 +531,10 @@ export function HITLArticleTable({
                     </Button>
                   </TableCell>
                 </TableRow>
-              );
-            })}
+            ))}
           </TableBody>
         </Table>
-      </DataTableWrapper>
+      </div>
     </div>
   );
 }
