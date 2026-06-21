@@ -1,9 +1,21 @@
 import {useEffect, useState} from 'react';
-import {useViewerStore} from '../core/context';
+import {useStore} from 'zustand';
+import {useViewerStoreApiOptional} from '../core/context';
+import {createViewerStore} from '../core/store';
 import type {PDFPageHandle} from '../core/engine';
 
+// Fallback store for the case where usePageHandle renders OUTSIDE a
+// ViewerProvider — e.g. the QA screen mounts citation hooks (useCitationHighlight)
+// with no PDF viewer present. Its `document` is null, so the hook returns null
+// instead of throwing. Module-level + read-only: shared and never mutated.
+const NO_PROVIDER_STORE = createViewerStore();
+
 export function usePageHandle(pageNumber: number): PDFPageHandle | null {
-  const document = useViewerStore((s) => s.document);
+  // Subscribe through the optional store API so the hook degrades gracefully
+  // outside a ViewerProvider rather than throwing. In-provider behaviour is
+  // unchanged: the real store is used whenever a provider is present.
+  const storeApi = useViewerStoreApiOptional();
+  const document = useStore(storeApi ?? NO_PROVIDER_STORE, (s) => s.document);
   const [handle, setHandle] = useState<PDFPageHandle | null>(null);
 
   // Drop the stale handle as soon as the document/page changes (during render,
