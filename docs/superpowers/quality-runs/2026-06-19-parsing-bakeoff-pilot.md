@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-06-19
+last_reviewed: 2026-06-21
 owner: '@raphaelfh'
 ---
 
@@ -65,6 +65,8 @@ egress — not run here. Candidate for the next round on published (non-PHI) pap
 2. **Scanned / image-only papers** — decisive for OCR (Docling) vs none.
 3. Re-rank **Docling vs MinerU vs LlamaParse** on structure + scanned, on GPU.
 
-> Per the updated ADR-0011 decision, LlamaParse `agentic` is the intended
-> **non-PHI default** (cloud); this self-hosted re-rank picks the **PHI default**
-> and the non-PHI fallback if LlamaParse loses on quality/cost/latency.
+> Per the updated ADR-0011 decision, the per-project parser setting defaults to
+> `auto`: LlamaParse `agentic` (cloud) when a `llama_cloud` key is configured,
+> else the self-hosted Docling parser. This self-hosted re-rank picks the no-key
+> fallback parser — which also becomes the keyed-`auto` choice if LlamaParse
+> loses on quality/cost/latency.
