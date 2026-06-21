@@ -27,21 +27,34 @@ function readInitialCollapsed(fallback: boolean): boolean {
 interface SidebarProviderProps {
     children: ReactNode;
     defaultCollapsed?: boolean;
+    /**
+     * When false, the collapse state is view-scoped: it ignores the persisted
+     * baseline on init (starting at `defaultCollapsed`), never writes
+     * localStorage, and does not sync across tabs. Used by focus shells
+     * (per-article extraction/QA) so they default collapsed without clobbering
+     * the user's project-view preference. See
+     * docs/superpowers/specs/2026-06-21-sidebar-sota-polish-design.md §3.
+     */
+    persist?: boolean;
 }
 
-export function SidebarProvider({children, defaultCollapsed = false}: SidebarProviderProps) {
-    const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => readInitialCollapsed(defaultCollapsed));
+export function SidebarProvider({children, defaultCollapsed = false, persist = true}: SidebarProviderProps) {
+    const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() =>
+        persist ? readInitialCollapsed(defaultCollapsed) : defaultCollapsed,
+    );
     const [mobileOpen, setMobileOpen] = useState(false);
 
     useEffect(() => {
+        if (!persist) return;
         try {
             localStorage.setItem(STORAGE_KEY, String(sidebarCollapsed));
         } catch {
             /* ignore */
         }
-    }, [sidebarCollapsed]);
+    }, [sidebarCollapsed, persist]);
 
     useEffect(() => {
+        if (!persist) return undefined;
         function onStorage(e: StorageEvent) {
             if (e.key !== STORAGE_KEY || e.newValue == null) return;
             if (e.newValue === 'true') setSidebarCollapsed(true);
@@ -49,7 +62,7 @@ export function SidebarProvider({children, defaultCollapsed = false}: SidebarPro
         }
         window.addEventListener('storage', onStorage);
         return () => window.removeEventListener('storage', onStorage);
-    }, []);
+    }, [persist]);
 
     const toggleSidebar = () => setSidebarCollapsed((p) => !p);
     const toggleMobile = () => setMobileOpen((p) => !p);
