@@ -26,7 +26,13 @@ async def _setup_consensus_run(
     db: AsyncSession,
 ) -> tuple[UUID, UUID, UUID, UUID, UUID] | None:
     """Build run, advance to consensus stage, return (run_id, instance_id, field_id, profile_id, decision_id)."""
-    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    project_id = (
+        await db.execute(
+            text(
+                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
+            )
+        )
+    ).scalar()
     article_id = (
         await db.execute(
             text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
@@ -41,7 +47,13 @@ async def _setup_consensus_run(
             {"pid": project_id},
         )
     ).scalar()
-    profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    profile_id = (
+        await db.execute(
+            text(
+                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            )
+        )
+    ).scalar()
     if not all((project_id, article_id, template_id, profile_id)):
         return None
     # Pick instance and field that match the same template and entity_type.
@@ -252,7 +264,13 @@ async def test_select_existing_rejects_reject_decision(
 ) -> None:
     """Issue #53: selecting a reject decision must raise, not publish {}."""
     # Build a run where the existing decision is a REJECT (not accept_proposal).
-    project_id = (await db_session.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    project_id = (
+        await db_session.execute(
+            text(
+                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
+            )
+        )
+    ).scalar()
     article_id = (
         await db_session.execute(
             text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
@@ -267,7 +285,13 @@ async def test_select_existing_rejects_reject_decision(
             {"pid": project_id},
         )
     ).scalar()
-    profile_id = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    profile_id = (
+        await db_session.execute(
+            text(
+                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            )
+        )
+    ).scalar()
     if not all((project_id, article_id, template_id, profile_id)):
         pytest.skip("Missing fixtures.")
     row = await db_session.execute(
@@ -390,7 +414,13 @@ async def test_publish_requires_consensus_stage(
     db_session: AsyncSession,
 ) -> None:
     """Issue #43: publish() must reject runs that are not in CONSENSUS stage."""
-    project_id = (await db_session.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    project_id = (
+        await db_session.execute(
+            text(
+                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
+            )
+        )
+    ).scalar()
     article_id = (
         await db_session.execute(
             text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
@@ -405,7 +435,13 @@ async def test_publish_requires_consensus_stage(
             {"pid": project_id},
         )
     ).scalar()
-    profile_id = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    profile_id = (
+        await db_session.execute(
+            text(
+                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            )
+        )
+    ).scalar()
     if not all((project_id, article_id, template_id, profile_id)):
         pytest.skip("Missing fixtures.")
     row = await db_session.execute(
@@ -450,7 +486,13 @@ async def test_publish_unknown_run_raises(db_session: AsyncSession) -> None:
     """Issue #43: publish() must reject unknown run_id."""
     import uuid as _uuid
 
-    profile_id = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    profile_id = (
+        await db_session.execute(
+            text(
+                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            )
+        )
+    ).scalar()
     if profile_id is None:
         pytest.skip("Missing profile.")
     service = ExtractionConsensusService(db_session)

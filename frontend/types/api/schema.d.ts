@@ -218,7 +218,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Article Files
+         * @description List an article's files (MAIN first) — the document switcher's source.
+         */
+        get: operations["list_article_files_api_v1_articles__article_id__files_get"];
         put?: never;
         /**
          * Confirm Article File Upload
@@ -1652,6 +1656,26 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[list[ArticleFileListItem]] */
+        ApiResponse_list_ArticleFileListItem__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: components["schemas"]["ArticleFileListItem"][] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[list[ArticleRunRef]] */
         ApiResponse_list_ArticleRunRef__: {
             /**
@@ -1713,6 +1737,37 @@ export interface components {
              * @description rastreamento
              */
             trace_id?: string | null;
+        };
+        /**
+         * ArticleFileListItem
+         * @description Item de lista de files de um article (document switcher).
+         */
+        ArticleFileListItem: {
+            /** Bytes */
+            bytes?: number | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Extractionstatus
+             * @default pending
+             */
+            extractionStatus: string;
+            /** Filerole */
+            fileRole: string;
+            /** Filetype */
+            fileType: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Originalfilename */
+            originalFilename?: string | null;
+            /** Storagekey */
+            storageKey: string;
         };
         /**
          * ArticleFileResponse
@@ -2713,7 +2768,7 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "standard" | "llamaparse";
+            type: "auto" | "standard" | "llamaparse" | "docling";
         };
         /** ParserSettingsRead */
         ParserSettingsRead: {
@@ -2721,7 +2776,7 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "standard" | "llamaparse";
+            type: "auto" | "standard" | "llamaparse" | "docling";
         };
         /** ProposalRecordResponse */
         ProposalRecordResponse: {
@@ -3745,6 +3800,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_list_dict_str__Any___"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_article_files_api_v1_articles__article_id__files_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_ArticleFileListItem__"];
                 };
             };
             /** @description Validation Error */

@@ -149,3 +149,61 @@ async def test_reparse_resets_status_and_enqueues(
 async def test_reparse_missing_file_404(db_client: AsyncClient) -> None:
     res = await db_client.post(f"/api/v1/article-files/{uuid4()}/reparse")
     assert res.status_code == 404, res.text
+
+
+# ---------------------------------------------------------------------------
+# GET /articles/{id}/files — the document switcher's data source
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_files_returns_main_first(
+    db_client: AsyncClient, db_session: AsyncSession, member_article
+) -> None:
+    project_id, _, article_id = member_article
+    supp = ArticleFile(
+        project_id=project_id,
+        article_id=article_id,
+        file_type="PDF",
+        storage_key=f"{project_id}/{article_id}/supp.pdf",
+        original_filename="supp.pdf",
+        file_role="SUPPLEMENT",
+        extraction_status="pending",
+    )
+    main = ArticleFile(
+        project_id=project_id,
+        article_id=article_id,
+        file_type="PDF",
+        storage_key=f"{project_id}/{article_id}/main.pdf",
+        original_filename="main.pdf",
+        file_role="MAIN",
+        extraction_status="parsed",
+    )
+    db_session.add_all([supp, main])
+    await db_session.commit()
+
+    res = await db_client.get(f"/api/v1/articles/{article_id}/files")
+    assert res.status_code == 200, res.text
+    data = res.json()["data"]
+    assert [f["fileRole"] for f in data] == ["MAIN", "SUPPLEMENT"]
+    assert data[0]["extractionStatus"] == "parsed"
+    assert data[0]["storageKey"].endswith("main.pdf")
+    assert data[0]["originalFilename"] == "main.pdf"
+
+
+@pytest.mark.asyncio
+async def test_list_files_rejects_non_member(db_client: AsyncClient, member_article) -> None:
+    _, _, article_id = member_article
+
+    async def _outsider() -> TokenPayload:
+        return TokenPayload(sub=str(uuid4()), email="o@x.com", role="authenticated", aal="aal1")
+
+    app.dependency_overrides[get_current_user] = _outsider
+    res = await db_client.get(f"/api/v1/articles/{article_id}/files")
+    assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_list_files_unknown_article_404(db_client: AsyncClient) -> None:
+    res = await db_client.get(f"/api/v1/articles/{uuid4()}/files")
+    assert res.status_code == 404, res.text

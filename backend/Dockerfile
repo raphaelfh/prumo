@@ -20,6 +20,17 @@ FROM python:3.12-slim as runtime
 
 WORKDIR /app
 
+# System libraries for the self-hosted Docling fallback parser. Docling pulls
+# opencv (via rapidocr/docling-ibm-models), which dlopens libGL/libxcb/glib at
+# `import cv2`. The slim base ships none of these, so the fallback otherwise
+# crashes with "libxcb.so.1: cannot open shared object file". The default
+# (cloud LlamaParse) path is pure HTTP and does not need these, but the
+# fallback must not be a guaranteed crash.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libgl1 libglib2.0-0 libxcb1 libxext6 libsm6 libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Create non-root user
 RUN adduser --disabled-password --gecos "" appuser
 

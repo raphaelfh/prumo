@@ -23,7 +23,13 @@ async def _setup_review_run(
     db: AsyncSession,
 ) -> tuple[UUID, UUID, UUID, UUID, UUID, UUID] | None:
     """Build run, advance to review, return (run_id, instance_id, field_id, profile_id, proposal_id, alt_profile_id)."""
-    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    project_id = (
+        await db.execute(
+            text(
+                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
+            )
+        )
+    ).scalar()
     article_id = (
         await db.execute(
             text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
@@ -38,7 +44,13 @@ async def _setup_review_run(
             {"pid": project_id},
         )
     ).scalar()
-    profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    profile_id = (
+        await db.execute(
+            text(
+                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            )
+        )
+    ).scalar()
     if not all((project_id, article_id, template_id, profile_id)):
         return None
     # Pick instance and field that match the same template and entity_type.
@@ -210,6 +222,29 @@ async def test_accept_proposal_rejects_cross_coordinate_proposal(
         pytest.skip("Missing fixtures.")
     run_id, instance_id, field_id, profile_id, _, _ = fx
 
+    # Self-provision a SECOND coordinate in the same template. The seed
+    # ships exactly one entity_type + one field (one coordinate), so add a
+    # distinct field on the SAME entity_type as the existing instance: the
+    # existing instance paired with this new field is a second valid
+    # (instance, field) coordinate in the same template. Rolled back with
+    # db_session, so there is no leak.
+    other_field_id = (
+        await db_session.execute(
+            text(
+                "INSERT INTO public.extraction_fields "
+                "(id, entity_type_id, name, label, field_type, is_required) "
+                "SELECT gen_random_uuid(), et.id, 'second_coordinate_field', "
+                " 'Second Coordinate Field', 'text', false "
+                "FROM public.extraction_entity_types et "
+                "WHERE et.id = (SELECT entity_type_id FROM public.extraction_instances "
+                "               WHERE id = :iid) "
+                "RETURNING id"
+            ),
+            {"iid": instance_id},
+        )
+    ).scalar_one()
+    await db_session.flush()
+
     # Build a second proposal targeting a DIFFERENT (instance, field) in the same run.
     other_row = await db_session.execute(
         text(
@@ -219,17 +254,17 @@ async def test_accept_proposal_rejects_cross_coordinate_proposal(
             JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
             JOIN public.extraction_fields f ON f.entity_type_id = et.id
             WHERE (i.id <> :iid OR f.id <> :fid)
+              AND f.id = :other_fid
               AND i.template_id = (
                   SELECT template_id FROM public.extraction_instances WHERE id = :iid
               )
             LIMIT 1
             """
         ),
-        {"iid": instance_id, "fid": field_id},
+        {"iid": instance_id, "fid": field_id, "other_fid": other_field_id},
     )
     other = other_row.first()
-    if other is None:
-        pytest.skip("Need a second coordinate in the same template.")
+    assert other is not None, "self-provisioned second coordinate must be discoverable"
     other_instance_id, other_field_id = other
 
     # The setup left the run in REVIEW; record_proposal requires PROPOSAL.

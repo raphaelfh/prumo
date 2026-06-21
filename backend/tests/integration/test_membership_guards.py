@@ -10,9 +10,13 @@ The cluster of fixes share two helpers:
   ``handle_new_user`` trigger materializes a matching ``public.profiles``
   row) and overrides ``get_current_user`` so the JWT sub is the outsider's
   id. Cleaned up at teardown.
-* ``insider_run`` — picks an existing run owned by a project the outsider
-  does NOT belong to, plus matching ``(instance_id, field_id)`` coords for
-  the proposal/decision/consensus payloads.
+* ``_provision_run_for_outsider`` — creates a run (via
+  ``RunLifecycleService``) inside the seeded primary project, which the
+  outsider is NOT a member of, plus the matching seeded
+  ``(instance_id, field_id)`` coords for the proposal/decision/consensus
+  payloads. Self-provisioned on the rolled-back ``db_session`` so the run
+  never persists; the membership guard fires on the project, so any run in
+  that project exercises the 403 path.
 """
 
 from __future__ import annotations
@@ -29,6 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+from app.services.run_lifecycle_service import RunLifecycleService
+from tests.integration.conftest import SEED
 
 # =================== FIXTURES ===================
 
@@ -89,30 +95,37 @@ async def outsider_user(
         await db_session.commit()
 
 
-async def _pick_run_for_outsider(
-    db: AsyncSession, outsider_id: UUID
-) -> tuple[UUID, UUID, UUID, UUID] | None:
-    """Return (run_id, project_id, instance_id, field_id) for any run whose
-    project does NOT include ``outsider_id`` as a member."""
-    row = (
-        await db.execute(
-            text(
-                """
-                SELECT r.id, r.project_id, i.id, f.id
-                FROM public.extraction_runs r
-                JOIN public.extraction_instances i ON i.template_id = r.template_id
-                JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
-                JOIN public.extraction_fields f ON f.entity_type_id = et.id
-                WHERE NOT public.is_project_member(r.project_id, :uid)
-                LIMIT 1
-                """
-            ),
-            {"uid": str(outsider_id)},
-        )
-    ).first()
-    if row is None:
-        return None
-    return UUID(str(row[0])), UUID(str(row[1])), UUID(str(row[2])), UUID(str(row[3]))
+async def _provision_run_for_outsider(
+    db: AsyncSession,
+    outsider_id: UUID,  # noqa: ARG001
+) -> tuple[UUID, UUID, UUID, UUID]:
+    """Provision a run in a project the outsider is NOT a member of.
+
+    Returns ``(run_id, project_id, instance_id, field_id)``.
+
+    The seed deliberately ships no ``extraction_run``, so searching for a
+    pre-existing one made these tests order-dependent skips. Instead we
+    create a run inside ``SEED.primary_project`` — which the outsider (a
+    member of no project) is not in — via ``RunLifecycleService``, mirroring
+    ``_setup_consensus_run`` in ``test_extraction_consensus_service.py``. The
+    membership guard fires on the project, so a freshly created run in that
+    project exercises the same 403 path a real run would. The coordinates
+    come from the seeded instance + field, which are coherent with the
+    seeded template. The run is created on the rolled-back ``db_session``,
+    so it never persists.
+    """
+    run = await RunLifecycleService(db).create_run(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        project_template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+    )
+    return (
+        run.id,
+        SEED.primary_project,
+        SEED.primary_instance,
+        SEED.primary_field,
+    )
 
 
 async def _pick_template_for_outsider(
@@ -164,10 +177,7 @@ async def test_get_run_403_for_non_member(
     db_session: AsyncSession,
     outsider_user: UUID,
 ) -> None:
-    fx = await _pick_run_for_outsider(db_session, outsider_user)
-    if fx is None:
-        pytest.skip("Need a run in a project the outsider does not belong to")
-    run_id, _, _, _ = fx
+    run_id, _, _, _ = await _provision_run_for_outsider(db_session, outsider_user)
 
     res = await db_client.get(f"/api/v1/runs/{run_id}")
     assert res.status_code == 403, res.text
@@ -182,10 +192,7 @@ async def test_list_run_reviewers_403_for_non_member(
     db_session: AsyncSession,
     outsider_user: UUID,
 ) -> None:
-    fx = await _pick_run_for_outsider(db_session, outsider_user)
-    if fx is None:
-        pytest.skip("Need a run in a project the outsider does not belong to")
-    run_id, _, _, _ = fx
+    run_id, _, _, _ = await _provision_run_for_outsider(db_session, outsider_user)
 
     res = await db_client.get(f"/api/v1/runs/{run_id}/reviewers")
     assert res.status_code == 403, res.text
@@ -200,10 +207,7 @@ async def test_advance_run_403_for_non_member(
     db_session: AsyncSession,
     outsider_user: UUID,
 ) -> None:
-    fx = await _pick_run_for_outsider(db_session, outsider_user)
-    if fx is None:
-        pytest.skip("Need a run in a project the outsider does not belong to")
-    run_id, _, _, _ = fx
+    run_id, _, _, _ = await _provision_run_for_outsider(db_session, outsider_user)
 
     res = await db_client.post(
         f"/api/v1/runs/{run_id}/advance",
@@ -218,10 +222,7 @@ async def test_reopen_run_403_for_non_member(
     db_session: AsyncSession,
     outsider_user: UUID,
 ) -> None:
-    fx = await _pick_run_for_outsider(db_session, outsider_user)
-    if fx is None:
-        pytest.skip("Need a run in a project the outsider does not belong to")
-    run_id, _, _, _ = fx
+    run_id, _, _, _ = await _provision_run_for_outsider(db_session, outsider_user)
 
     res = await db_client.post(f"/api/v1/runs/{run_id}/reopen")
     assert res.status_code == 403, res.text
@@ -325,25 +326,9 @@ async def test_section_extraction_run_id_403_for_non_member(
     db_session: AsyncSession,
     outsider_user: UUID,
 ) -> None:
-    fx = await _pick_run_for_outsider(db_session, outsider_user)
-    if fx is None:
-        pytest.skip("Need a run in a project the outsider does not belong to")
-    run_id, _, _, _ = fx
-    row = (
-        await db_session.execute(
-            text(
-                """
-                SELECT project_id, article_id, template_id
-                FROM public.extraction_runs
-                WHERE id = :rid
-                """
-            ),
-            {"rid": str(run_id)},
-        )
-    ).first()
-    if row is None:
-        pytest.skip("Run disappeared before request")
-    project_id, article_id, template_id = row
+    run_id, project_id, _, _ = await _provision_run_for_outsider(db_session, outsider_user)
+    article_id = SEED.primary_article
+    template_id = SEED.primary_template
 
     res = await db_client.post(
         "/api/v1/extraction/sections",
@@ -415,10 +400,7 @@ async def test_create_proposal_403_for_non_member(
     db_session: AsyncSession,
     outsider_user: UUID,
 ) -> None:
-    fx = await _pick_run_for_outsider(db_session, outsider_user)
-    if fx is None:
-        pytest.skip("Need a run in a project the outsider does not belong to")
-    run_id, _, instance_id, field_id = fx
+    run_id, _, instance_id, field_id = await _provision_run_for_outsider(db_session, outsider_user)
 
     res = await db_client.post(
         f"/api/v1/runs/{run_id}/proposals",
@@ -438,10 +420,7 @@ async def test_create_decision_403_for_non_member(
     db_session: AsyncSession,
     outsider_user: UUID,
 ) -> None:
-    fx = await _pick_run_for_outsider(db_session, outsider_user)
-    if fx is None:
-        pytest.skip("Need a run in a project the outsider does not belong to")
-    run_id, _, instance_id, field_id = fx
+    run_id, _, instance_id, field_id = await _provision_run_for_outsider(db_session, outsider_user)
 
     res = await db_client.post(
         f"/api/v1/runs/{run_id}/decisions",
@@ -460,10 +439,7 @@ async def test_create_consensus_403_for_non_member(
     db_session: AsyncSession,
     outsider_user: UUID,
 ) -> None:
-    fx = await _pick_run_for_outsider(db_session, outsider_user)
-    if fx is None:
-        pytest.skip("Need a run in a project the outsider does not belong to")
-    run_id, _, instance_id, field_id = fx
+    run_id, _, instance_id, field_id = await _provision_run_for_outsider(db_session, outsider_user)
 
     res = await db_client.post(
         f"/api/v1/runs/{run_id}/consensus",

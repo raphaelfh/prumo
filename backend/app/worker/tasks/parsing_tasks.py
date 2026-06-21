@@ -40,14 +40,24 @@ async def _run_parse(
     from app.worker._session import worker_session
 
     async def _body(session: AsyncSession) -> dict[str, Any]:
-        # per-project parser preference -> PARSER_BACKEND value
+        # Per-project parser preference: "auto" | "llamaparse" | "docling".
+        # "auto" (the default) prefers the LlamaParse cloud backend when a
+        # llama_cloud key resolves, falling back to the self-hosted Docling
+        # parser otherwise. An explicit "docling" never looks up a key.
         pref = await ParserSettingsService(session).get_for_project(UUID(project_id))
-        backend = pref if pref == "llamaparse" else "docling"
 
-        # BYOK llama_cloud key (BYOK > global); only relevant for llamaparse
+        # BYOK llama_cloud key (BYOK > global); fetched only when the cloud
+        # path is reachable (auto or explicit llamaparse).
         llama_key: str | None = None
-        if backend == "llamaparse":
+        if pref in ("auto", "llamaparse"):
             llama_key = await APIKeyService(session, user_id).get_key_for_provider("llama_cloud")
+
+        if pref == "docling":
+            backend = "docling"
+        elif pref == "llamaparse":
+            backend = "llamaparse"
+        else:  # auto
+            backend = "llamaparse" if llama_key else "docling"
 
         # Build a minimal settings-like namespace that overrides PARSER_BACKEND
         # for this call without mutating the global settings object.

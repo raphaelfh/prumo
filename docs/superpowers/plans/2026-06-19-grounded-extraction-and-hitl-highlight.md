@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-06-19
+last_reviewed: 2026-06-21
 owner: '@raphaelfh'
 ---
 
@@ -223,7 +223,7 @@ scope queries by `project_id`; `ExtractionEvidence.position` is the canonical
   up to a cap.
 - [ ] **Step 2–3: Implement** the driver with a resumable cursor and progress
   logging; reuse the ingest task. **Gated:** running against the live project's
-  articles requires explicit user OK (it touches real, possibly PHI, data).
+  articles requires explicit user OK (it touches real production data).
 - [ ] **Step 4: Run → passes.** Commit `feat(parsing): resumable text-block backfill driver`.
 
 ### Task 3.2: Confirm-dead gate
@@ -327,7 +327,7 @@ scope queries by `project_id`; `ExtractionEvidence.position` is the canonical
   4.1–4.3); kill the 15k truncation across all three sites (1.2); verbatim verify
   / flag-not-drop (2.3); humans-read + reviewer verification (Phase 4); backfill +
   two-tier safety (1.3, 3.1); dead-schema cleanup (3.2–3.3). The ingest-side
-  decisions (parser, vision pass, JATS, PHI hosting) live in the sibling plan.
+  decisions (parser selection, vision pass, JATS) live in the sibling plan.
 - **Reuse:** writes the existing `PositionV1` contract and renders via the
   existing viewer types — no new schema; backfill reuses the ingest task; the read
   path only gains a `verified` field; block reads reuse the existing
@@ -341,14 +341,14 @@ scope queries by `project_id`; `ExtractionEvidence.position` is the canonical
   tested (OCR noise, multi-block, ties) before it touches the DB. Phase 4 depends
   on Phase 2 anchors; the manual-evidence write path (4.5) is the only new
   endpoint and carries the usual BOLA/RLS obligations.
-- **Gated/live:** backfill (3.1) and any test against real clinical PDFs need
+- **Gated/live:** backfill (3.1) and any test against real production PDFs need
   explicit user OK and an approved data surface.
 
 ## Markdown representation (ADR-0013)
 
-Decision + rationale (free vs enriched tier, config, PHI gate, sanitizer policy,
-canvas-only highlight) live in **ADR-0013 §Decision Outcome / §Validation**. This
-plan owns the build:
+Decision + rationale (free vs enriched tier, config, parser selection, sanitizer
+policy, canvas-only highlight) live in **ADR-0013 §Decision Outcome /
+§Validation**. This plan owns the build:
 
 - **Renderer:** add `render_blocks_to_markdown(blocks)` beside `concat_page_text`
   in `infrastructure/parsing/base.py`; the Task 1.1 assembler **imports** it for

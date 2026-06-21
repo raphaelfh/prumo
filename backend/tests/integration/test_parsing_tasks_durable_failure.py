@@ -14,7 +14,11 @@ from app.worker.tasks.parsing_tasks import _mark_parse_failed
 async def _seed_pending_file(db: AsyncSession) -> UUID:
     """Insert an article + a pending PDF file under a seeded project."""
     project_id = (
-        await db.execute(text("SELECT id FROM public.projects LIMIT 1"))
+        await db.execute(
+            text(
+                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
+            )
+        )
     ).scalar_one_or_none()
     if project_id is None:
         pytest.skip("Need at least one seeded project")

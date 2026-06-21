@@ -28,6 +28,8 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests.integration.conftest import SEED
+
 pytestmark = pytest.mark.asyncio
 
 
@@ -35,29 +37,16 @@ pytestmark = pytest.mark.asyncio
 async def project_with_run(db_session: AsyncSession) -> AsyncGenerator[dict, None]:
     """Build a self-contained model fixture: project + article + template +
     prediction_models entity_type + parent instance + child instance + run.
-    Returns the IDs the caller needs; tears the chain down at the end."""
-    project_row = (
-        await db_session.execute(
-            text(
-                "SELECT id, (SELECT user_id FROM project_members WHERE project_id = projects.id LIMIT 1) "
-                "FROM projects LIMIT 1"
-            )
-        )
-    ).first()
-    if project_row is None or project_row[1] is None:
-        pytest.skip("Need a project with at least one member")
-    project_id = UUID(str(project_row[0]))
-    user_id = UUID(str(project_row[1]))
+    Returns the IDs the caller needs; tears the chain down at the end.
 
-    article_row = (
-        await db_session.execute(
-            text("SELECT id FROM articles WHERE project_id = :pid LIMIT 1"),
-            {"pid": str(project_id)},
-        )
-    ).first()
-    if article_row is None:
-        pytest.skip("Need an article in the project")
-    article_id = UUID(str(article_row[0]))
+    Scoped to the seeded ``SEED.primary_project`` / ``SEED.primary_article``
+    so the full extraction graph (and a manager member to author the rows)
+    is guaranteed present — no order-dependent "find an article" skip. The
+    isolated ``is_active=False`` template this fixture builds keeps it
+    independent of the seed's own active template."""
+    project_id = SEED.primary_project
+    article_id = SEED.primary_article
+    user_id = SEED.primary_profile
 
     # Inert isolated template so cleanup is safe regardless of the running
     # CHARMS state. Bypass the partial-active index by using is_active=False.
@@ -439,14 +428,14 @@ async def test_published_state_counts_when_value_present(
             """
             INSERT INTO public.extraction_published_states
                 (run_id, instance_id, field_id, value, version, published_by)
-            VALUES (:rid, :inst, :fid, to_jsonb('final-value'::text), 1,
-                    (SELECT id FROM public.profiles LIMIT 1))
+            VALUES (:rid, :inst, :fid, to_jsonb('final-value'::text), 1, :uid)
             """
         ),
         {
             "rid": str(project_with_run["run_id"]),
             "inst": str(project_with_run["parent_inst"]),
             "fid": str(project_with_run["parent_field"]),
+            "uid": str(project_with_run["user_id"]),
         },
     )
     await db_session.commit()
@@ -470,14 +459,14 @@ async def test_published_state_with_jsonb_null_does_not_count(
             """
             INSERT INTO public.extraction_published_states
                 (run_id, instance_id, field_id, value, version, published_by)
-            VALUES (:rid, :inst, :fid, 'null'::jsonb, 1,
-                    (SELECT id FROM public.profiles LIMIT 1))
+            VALUES (:rid, :inst, :fid, 'null'::jsonb, 1, :uid)
             """
         ),
         {
             "rid": str(project_with_run["run_id"]),
             "inst": str(project_with_run["parent_inst"]),
             "fid": str(project_with_run["parent_field"]),
+            "uid": str(project_with_run["user_id"]),
         },
     )
     await db_session.commit()

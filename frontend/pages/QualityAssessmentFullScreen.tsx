@@ -29,7 +29,12 @@ import type {
   ComparisonEntityType,
   ComparisonInstance,
 } from "@/components/runs/RunReviewerComparison";
-import { PrumoPdfViewer, articleFileSource } from "@prumo/pdf-viewer";
+import { PrumoPdfViewer } from "@prumo/pdf-viewer";
+import { useArticleDocuments } from "@/hooks/extraction/useArticleDocuments";
+import {
+  DocumentSwitcher,
+  ReparseButton,
+} from "@/components/extraction/DocumentSwitcher";
 import { Badge } from "@/components/ui/badge";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
 import { resolveQATemplateKind } from "@/services/projectSettingsService";
@@ -75,6 +80,7 @@ export default function QualityAssessmentFullScreen() {
     templateId: string;
   }>();
   const navigate = useNavigate();
+  const documents = useArticleDocuments(articleId);
 
   // The ``:templateId`` URL segment may point at either a project-level
   // ``project_extraction_templates`` row (when the user landed here from
@@ -641,10 +647,32 @@ export default function QualityAssessmentFullScreen() {
   );
 
   const pdfPanel = (
-    <PrumoPdfViewer
-      source={articleId ? articleFileSource(articleId) : null}
-      className="h-full"
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      {documents.files.length > 0 && (
+        <div className="flex items-center gap-2 border-b px-2 py-1.5">
+          <DocumentSwitcher
+            files={documents.files}
+            selectedFileId={documents.selectedFileId}
+            onSelect={documents.setSelectedFileId}
+          />
+          {documents.selectedFile?.extractionStatus === "parse_failed" &&
+            articleId && (
+              <ReparseButton
+                articleFileId={documents.selectedFile.id}
+                articleId={articleId}
+              />
+            )}
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        <PrumoPdfViewer
+          source={documents.source}
+          readerBlocks={documents.readerBlocks}
+          readerLoading={documents.readerLoading}
+          className="h-full"
+        />
+      </div>
+    </div>
   );
 
   // Single source for the form-panel stage gates (avoids repeating the same
