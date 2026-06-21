@@ -31,6 +31,7 @@ EXPECTED_TASK_MODULES = (
     ("app.worker.tasks.export_tasks", "export_articles_task"),
     ("app.worker.tasks.extraction_export_tasks", "export_extraction_task"),
     ("app.worker.tasks.feedback_tasks", "forward_feedback_to_linear_task"),
+    ("app.worker.tasks.parsing_tasks", "parse_article_file_task"),
 )
 
 

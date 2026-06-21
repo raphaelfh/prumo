@@ -105,122 +105,135 @@ export function QualityAssessmentInterface({ projectId }: Props) {
     };
   }, [projectId, activeTemplate, user]);
 
-  const getTabContent = () => {
-    if (activeTab === "configuration") {
-      return (
-        <QualityAssessmentConfiguration
-          projectId={projectId}
-          onAfterChange={() => void refresh()}
-        />
-      );
-    }
-
-    if (activeTab === "dashboard") {
-      return (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="border-border/40 shadow-elev-popover">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
-              <CardTitle className="text-[13px] font-medium">
-                {t("extraction", "dashboardArticles")}
-              </CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-xl font-bold">{stats.totalArticles}</div>
-              <p className="text-[13px] text-muted-foreground">
-                {t("extraction", "dashboardInProject")}
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="border-border/40 shadow-elev-popover">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
-              <CardTitle className="text-[13px] font-medium">
-                {t("extraction", "dashboardExtractionsStarted")}
-              </CardTitle>
-              <CheckCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-xl font-bold">{stats.assessmentsStarted}</div>
-              <p className="text-[13px] text-muted-foreground">
-                {activeTemplate?.name ?? "—"}
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="border-border/40 shadow-elev-popover">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
-              <CardTitle className="text-[13px] font-medium">
-                {t("extraction", "dashboardProgress")}
-              </CardTitle>
-              <ShieldCheck className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-xl font-bold">{stats.progressPercentage}%</div>
-              <p className="text-[13px] text-muted-foreground">
-                {t("qa", "dashboardDesc")}
-              </p>
-            </CardContent>
-          </Card>
+  if (activeTab === "configuration") {
+    return (
+      <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-4 p-4 lg:p-6">
+          <QualityAssessmentConfiguration
+            projectId={projectId}
+            onAfterChange={() => void refresh()}
+          />
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
-    // assessment tab
-    if (templatesLoading) {
-      return (
-        <div className="space-y-3">
-          <Skeleton className="h-10 w-full max-w-md" />
-          <Skeleton className="h-72 w-full" />
+  if (activeTab === "dashboard") {
+    return (
+      <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-4 p-4 lg:p-6">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <Card className="border-border/40 shadow-elev-popover">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
+                <CardTitle className="text-[13px] font-medium">
+                  {t("extraction", "dashboardArticles")}
+                </CardTitle>
+                <FileText className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                <div className="text-xl font-bold">{stats.totalArticles}</div>
+                <p className="text-[13px] text-muted-foreground">
+                  {t("extraction", "dashboardInProject")}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/40 shadow-elev-popover">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
+                <CardTitle className="text-[13px] font-medium">
+                  {t("extraction", "dashboardExtractionsStarted")}
+                </CardTitle>
+                <CheckCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                <div className="text-xl font-bold">{stats.assessmentsStarted}</div>
+                <p className="text-[13px] text-muted-foreground">
+                  {activeTemplate?.name ?? "—"}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/40 shadow-elev-popover">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
+                <CardTitle className="text-[13px] font-medium">
+                  {t("extraction", "dashboardProgress")}
+                </CardTitle>
+                <ShieldCheck className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                <div className="text-xl font-bold">{stats.progressPercentage}%</div>
+                <p className="text-[13px] text-muted-foreground">
+                  {t("qa", "dashboardDesc")}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
-    if (!activeTemplate) {
-      return (
-        <div className="space-y-3">
+  // assessment tab
+  if (templatesLoading) {
+    return (
+      <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
+        <div className="flex min-h-0 flex-1 flex-col p-4 lg:p-6">
+          <div className="space-y-3">
+            <Skeleton className="h-10 w-full max-w-md" />
+            <Skeleton className="h-72 w-full" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeTemplate) {
+    return (
+      <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
+        <div className="flex min-h-0 flex-1 flex-col p-4 lg:p-6">
+          <div className="space-y-3">
+            <HITLActiveTemplateBar
+              kind="quality_assessment"
+              templates={templates}
+              activeTemplate={null}
+              onSelect={selectTemplate}
+            />
+            <Card className="border-border/40">
+              <CardHeader>
+                <CardTitle className="text-base">
+                  {t("qa", "noTemplatesTitle")}
+                </CardTitle>
+                <CardDescription>{t("qa", "activeTemplateNone")}</CardDescription>
+              </CardHeader>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
+      <div className="flex min-h-0 flex-1 flex-col p-4 lg:p-6">
+        <div className="shrink-0">
           <HITLActiveTemplateBar
             kind="quality_assessment"
             templates={templates}
-            activeTemplate={null}
+            activeTemplate={activeTemplate}
             onSelect={selectTemplate}
           />
-          <Card className="border-border/40">
-            <CardHeader>
-              <CardTitle className="text-base">
-                {t("qa", "noTemplatesTitle")}
-              </CardTitle>
-              <CardDescription>{t("qa", "activeTemplateNone")}</CardDescription>
-            </CardHeader>
-          </Card>
         </div>
-      );
-    }
-
-    return (
-      <div className="space-y-3">
-        <HITLActiveTemplateBar
-          kind="quality_assessment"
-          templates={templates}
-          activeTemplate={activeTemplate}
-          onSelect={selectTemplate}
-        />
-        <HITLArticleTable
-          kind="quality_assessment"
-          projectId={projectId}
-          templateId={activeTemplate.id}
-          rowActionHref={(articleId, templateId) =>
-            `/projects/${projectId}/articles/${articleId}/quality-assessment/${templateId}`
-          }
-          emptyTitle={t("qa", "noArticlesForListTitle")}
-          emptyDescription={t("qa", "noArticlesForListDesc")}
-        />
+        <div className="flex min-h-0 flex-1 flex-col mt-3">
+          <HITLArticleTable
+            kind="quality_assessment"
+            projectId={projectId}
+            templateId={activeTemplate.id}
+            rowActionHref={(articleId, templateId) =>
+              `/projects/${projectId}/articles/${articleId}/quality-assessment/${templateId}`
+            }
+            emptyTitle={t("qa", "noArticlesForListTitle")}
+            emptyDescription={t("qa", "noArticlesForListDesc")}
+          />
+        </div>
       </div>
-    );
-  };
-  const tabContent = getTabContent();
-
-  return (
-    <div className="space-y-4 p-4 lg:p-6" data-testid="hitl-quality_assessment-interface">
-      {tabContent}
     </div>
   );
 }

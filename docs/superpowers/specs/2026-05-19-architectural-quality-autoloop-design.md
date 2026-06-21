@@ -1,5 +1,5 @@
 ---
-status: stable
+status: frozen
 last_reviewed: 2026-05-24
 owner: '@raphaelfh'
 ---
@@ -17,7 +17,7 @@ owner: '@raphaelfh'
 1. **Reduce architectural & concept drift** with the hybrid technique recommended in the [Thoughtworks Tech Radar Vol. 34](https://www.thoughtworks.com/radar/techniques/architecture-drift-reduction-with-llms): deterministic fitness functions first, LLM evaluation second.
 2. **Make the loop autonomous and bounded** — explicit `STOP` criterion (convergence + green gates), so the agent never spirals.
 3. **Apply the harness-engineering split** (Fowler, 04/2026) between *computational controls* (linters, type-checkers, tests, fitness scripts) and *inferential controls* (LLM scanners + LLM judge). Lint errors are themselves prompts for the next iteration.
-4. **Stay aligned with the project's invariants** — the canonical [extraction-hitl-architecture.md](../../architecture/extraction-hitl-architecture.md) glossary; the Alembic-vs-Supabase-CLI migration split; the API → Service → Repository → Model layering; RLS coverage on `extraction_*`; the `ApiResponse` envelope.
+4. **Stay aligned with the project's invariants** — the canonical [extraction-hitl-architecture.md](../../reference/extraction-hitl-architecture.md) glossary; the Alembic-vs-Supabase-CLI migration split; the API → Service → Repository → Model layering; RLS coverage on `extraction_*`; the `ApiResponse` envelope.
 5. **Iterative extraction cycle** — one finding per iteration, ≤ 300 LOC, test-first, reversible. Borrowed from the 2026 legacy-refactor playbook ([SitePoint 2026](https://www.sitepoint.com/handson-with-claude-code-automating-git-workflows-and-legacy-refactoring/)).
 6. **Single user-facing entry point**: `Skill architectural-quality-loop`. Cadence is either manual (one cycle per invocation) or autonomous via `superpowers:loop`.
 
@@ -256,4 +256,4 @@ Skill architectural-quality-loop --scope "concept:hitl-session"
 - Inductivee (2026). [Autonomous Agent Design Patterns](https://inductivee.com/blog/autonomous-agent-design-patterns).
 - arXiv:2510.08996. [Saving SWE-Bench: A Benchmark Mutation Approach for Realistic Agent Evaluation](https://arxiv.org/abs/2510.08996).
 - Masood, A. (2026). [Agent Drift: the reliability blind spot in multi-agent LLM systems](https://medium.com/@adnanmasood/agent-drift-the-reliability-blind-spot-in-multi-agent-llm-systems-and-a-blueprint-to-measure-it-7c653d684b80).
-- prumo canonical docs: [extraction-hitl-architecture.md](../../architecture/extraction-hitl-architecture.md), [migrations.md](../../architecture/migrations.md), [test-strategy.md](../../architecture/test-strategy.md), [docs/reference/constitution.md](../../reference/constitution.md).
+- prumo canonical docs: [extraction-hitl-architecture.md](../../reference/extraction-hitl-architecture.md), [migrations.md](../../reference/migrations.md), [test-strategy.md](../../reference/test-strategy.md), [docs/reference/constitution.md](../../reference/constitution.md).

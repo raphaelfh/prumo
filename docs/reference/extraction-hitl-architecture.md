@@ -69,7 +69,32 @@ entity *noun* is banned. A copy regression guard
 (`frontend/test/copy-run-vocabulary.test.ts`) fails if the plural noun
 "Runs" reappears in any copy value. Rationale and the full string-level
 change set live in
-`docs/superpowers/specs/2026-05-30-run-user-facing-vocabulary-design.md`.
+`docs/superpowers/specs/archive/2026-06-20-governance-sweep/2026-05-30-run-user-facing-vocabulary-design.md`.
+
+### 2.2 Stage (DB) vs user-facing phase
+
+The `extraction_run_stage` values
+(`pending` / `proposal` / `review` / `consensus` / `finalized` / `cancelled`)
+are the **internal lifecycle**, NOT the model end users see. The UI presents
+**three phases**:
+
+| User-facing phase | DB stage(s) |
+| --- | --- |
+| **Extract** | `pending`, `proposal`, `review` |
+| **Consensus** | `consensus` |
+| **Finalized** | `finalized` |
+
+Key glossary point: **`review` is not peer review.** It means *reviewing the AI
+suggestions within one's OWN extraction*, and is reached via an invisible
+`proposal → review` auto-advance (`useAutoAdvanceToReview`) the instant the Run
+has content worth reviewing — there is no user action between `proposal` and
+`review`. The shared RunHeader therefore folds `proposal` + `review` into a
+single **Extract** node, so the rail reads Extract → Consensus → Finalized.
+The primary action is one role/phase-aware control: **"Mark ready →"** in
+Extract (advances to consensus; available to every extractor since
+`POST /runs/{id}/advance` is membership-gated) and **"Finalize"** in Consensus
+(manager / consensus only). Design:
+`docs/superpowers/specs/2026-06-20-extraction-header-refinement-design.md`.
 
 ## 3. Database — final schema
 
@@ -386,8 +411,12 @@ publish, AI), keep it in the page-specific component.
 - **HitlConfigSnapshot** — JSONB copy of the resolved HitlConfig at Run
   creation time, stored on the Run. Guarantees that "what config was in
   effect when this decision was made?" is always answerable.
-- **ConsensusRule** — `unanimous` / `majority` / `arbitrator`. Drives
-  when consensus triggers and how it resolves.
+- **ConsensusRule** — `unanimous` / `majority` / `arbitrator`. Stored/frozen
+  per-run config (display + CRUD only); the backend finalize path does **not**
+  read it. Finalize gates are (1) `consensus_count > 0` (`EmptyFinalizeError`)
+  and (2) the extraction-only required-field completeness gate (ADR-0009) — see
+  `run_lifecycle_service.py`. `majority` has no vote math; `arbitrator_id` is
+  consumed only for unblinding visibility.
 - **managers_see_reviewers** — Per-kind manager blind-review policy on
   `projects.settings` (`{extraction, quality_assessment}`, both default
   `false` = managers blind). Read **live** by the API read path
@@ -427,7 +456,7 @@ publish, AI), keep it in the page-specific component.
 ## 7. References
 
 - **Original design spec (immutable):**
-  `docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md`
+  `docs/superpowers/specs/archive/2026-06-20-governance-sweep/2026-04-27-extraction-hitl-and-qa-design.md`
 - **Execution plans (archived):**
   `docs/superpowers/plans/archive/2026-04-27-hitl-unification/`
 - **Seeds:** `backend/app/seed.py` (`seed_probast`, `seed_quadas2`)

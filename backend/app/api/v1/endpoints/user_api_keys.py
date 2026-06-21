@@ -23,7 +23,7 @@ from app.schemas.user_api_key import (
     UpdateAPIKeyRequest,
     UpdateAPIKeyResult,
 )
-from app.services.api_key_service import APIKeyService
+from app.services.api_key_service import APIKeyService, list_providers_info
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -268,32 +268,8 @@ async def list_providers() -> ApiResponse[ListProvidersData]:
     Return informacoes sobre cada provedor.
     Public endpoint - does not require authentication.
     """
-    providers = [
-        {
-            "id": "openai",
-            "name": "OpenAI",
-            "description": "GPT-4, GPT-4o, etc.",
-            "docsUrl": "https://platform.openai.com/api-keys",
-        },
-        {
-            "id": "anthropic",
-            "name": "Anthropic",
-            "description": "Claude 3, Claude 3.5, etc.",
-            "docsUrl": "https://console.anthropic.com/settings/keys",
-        },
-        {
-            "id": "gemini",
-            "name": "Google Gemini",
-            "description": "Gemini Pro, Gemini Ultra, etc.",
-            "docsUrl": "https://aistudio.google.com/app/apikey",
-        },
-        {
-            "id": "grok",
-            "name": "xAI Grok",
-            "description": "Grok-1, Grok-2, etc.",
-            "docsUrl": "https://console.x.ai/",
-        },
-    ]
+    # Delegate to the service layer — metadata + drift guard live in api_key_service.py.
+    providers = list_providers_info()
 
     return ApiResponse(ok=True, data=ListProvidersData.model_validate({"providers": providers}))
 

@@ -483,10 +483,10 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   };
 
     return (
-        <div className="space-y-4">
-            <div className="mt-6">
+        <div className="flex h-full min-h-0 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col">
                 {templatesLoading ? (
-                    <div className="space-y-4" aria-busy="true" aria-label={t('extraction', 'loadingTemplates')}>
+                    <div className="space-y-4 px-0 py-2" aria-busy="true" aria-label={t('extraction', 'loadingTemplates')}>
                         <div className="flex items-center gap-2">
                             <Skeleton className="h-9 flex-1 max-w-sm"/>
                             <Skeleton className="h-4 w-24"/>
@@ -512,8 +512,10 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                             ))}
                         </div>
           </div>
+                ) : activeTab === 'extraction' ? (
+                    <div className="flex min-h-0 flex-1 flex-col">{renderTabContent()}</div>
                 ) : (
-                    renderTabContent()
+                    <div className="min-h-0 flex-1 overflow-y-auto pb-4">{renderTabContent()}</div>
                 )}
             </div>
 

@@ -61,5 +61,5 @@ Implemented across migrations `0010` → `0018` (2026-04-27 → 2026-04-28).
 ## More Information
 
 - [Extraction + HITL architecture](../reference/extraction-hitl-architecture.md)
-- [Original design spec (frozen)](../superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md)
+- [Original design spec (archived)](../superpowers/specs/archive/2026-06-20-governance-sweep/2026-04-27-extraction-hitl-and-qa-design.md) · [design rationale](../explanation/extraction-hitl-design-rationale.md)
 - [Cancelled spec/008 placeholder](../superpowers/specs/archive/legacy-spec-kit/008-unified-evaluation-model/spec.md)

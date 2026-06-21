@@ -37,6 +37,7 @@ export const extraction = {
     configGoToConfig: 'Go to Configuration',
     // ExtractionInterface tabs
     tabExtraction: 'Extraction',
+    tabWorklist: 'Worklist',
     tabDashboard: 'Dashboard',
     tabConfiguration: 'Configuration',
     // ExtractionInterface dashboard
@@ -299,6 +300,7 @@ export const extraction = {
     listStatusNotStarted: 'Not started',
     listStatusComplete: 'Complete',
     listStatusInProgress: 'In progress',
+    statusInProgressPct: 'In progress · {{n}}%',
     listTryAgain: 'Try again',
     listNoArticles: 'No articles found in this project',
     listNoArticlesDesc: 'Add articles first to start data extraction.',
@@ -435,6 +437,7 @@ export const extraction = {
     tableBatchAIStarting: 'Starting AI extraction for {{count}} article(s)…',
     tableArticleSelected: 'article selected',
     tableArticlesSelected: 'articles selected',
+    tableSelectedCount: '{{n}} selected',
     tableSelectionMenuTooltip: 'Actions menu for selected articles',
     tableBatchActionsLabel: 'Batch actions',
     tableAIExtraction: 'AI extraction',
@@ -549,9 +552,10 @@ export const extraction = {
     noModelsAdded: 'No models added',
     noModelsAddedDesc: 'Add a model manually or extract it automatically from the article.',
     // RunHeader (extraction-specific keys — shared header keys now live in the runs namespace)
-    runHeaderSubmitForReview: 'Submit for review',
-    runHeaderReconcile: 'Reconcile',
+    runHeaderMarkReady: 'Mark ready →',
+    runHeaderMarkReadyTooltip: 'Mark this extraction ready for consensus and open the next article.',
     runHeaderFinalize: 'Finalize',
+    runHeaderFinalizeTooltip: 'Lock and publish the agreed values.',
     runHeaderGateBlocked: 'Complete the required fields first',
     runHeaderCompareToggle: 'Compare reviewers',
     runHeaderReopenForRevision: 'Reopen for revision',

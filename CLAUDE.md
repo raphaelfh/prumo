@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-06-20
 owner: '@raphaelfh'
 ---
 
@@ -8,10 +8,9 @@ owner: '@raphaelfh'
 
 ## Current focus
 
-- **Extraction data-path consolidation** (approved 2026-06-07): all
-  frontend reads move from the dual Supabase-REST + API path to the
-  typed API client. Active plans:
-  `docs/superpowers/plans/2026-06-08-runopen-slowload-phase*.md`.
+- See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the active cycle. As of
+  2026-06-20: structured PDF parsing / grounded extraction (ADR-0011, ADR-0013).
+  The extraction data-path consolidation **shipped** (#228, #324) — not active.
 - Project history lives in `git log` and `docs/adr/` — do not append
   changelogs to this file. Keep this section to ≤ 5 lines.
 
@@ -24,6 +23,17 @@ owner: '@raphaelfh'
   Zustand, shadcn/Radix, react-hook-form, Zod. In-house i18n at
   `frontend/lib/copy/` (no external i18n lib). Hosted on **Vercel**.
 - **Testing**: pytest (backend), vitest (frontend), Playwright (E2E).
+
+## Required plugins
+
+- **superpowers** (`@claude-plugins-official`, pin to the installed
+  6.x) is a required project plugin, declared in
+  `.claude/settings.json`. The `architectural-quality-loop` family and
+  the process skills under `.claude/skills/debugging/` defer to
+  `superpowers:loop`, `writing-plans`, `using-git-worktrees`,
+  `systematic-debugging`, and `verification-before-completion`. Generic
+  engineering process lives there; keep prumo skills to the
+  prumo-specific delta. Without the plugin those skills are incomplete.
 
 ## Layout gotchas (agents get these wrong)
 
@@ -58,8 +68,9 @@ heart. Before changing anything in `extraction_*` tables,
 
 Full doc index: [`docs/README.md`](docs/README.md) (Diátaxis).
 Agent entry point: [`llms.txt`](llms.txt).
-Immutable design spec:
-[`docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md`](docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md).
+Design rationale (the *why*):
+[`docs/explanation/extraction-hitl-design-rationale.md`](docs/explanation/extraction-hitl-design-rationale.md)
+(the original 2026-04-27 spec is archived verbatim under `docs/superpowers/specs/archive/`).
 
 ## Hard rules
 

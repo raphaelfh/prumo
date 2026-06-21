@@ -1,5 +1,5 @@
 ---
-status: planned
+status: draft
 last_reviewed: 2026-06-19
 owner: '@raphaelfh'
 ---

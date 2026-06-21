@@ -45,7 +45,6 @@ import type {FilterFieldConfig, FilterValues} from "@/components/shared/list";
 import {
     ActiveFilterChips,
     buildActiveFiltersList,
-    DataTableWrapper,
     EmptyListState,
     FilterButtonWithPopover,
     ListCount,
@@ -772,9 +771,8 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
     ) : null;
 
     const tableContent = (
-            <DataTableWrapper className="overflow-hidden rounded-md border border-border/40">
-            <Table className="table-fixed w-max min-w-full">
-                      <TableHeader className="bg-transparent">
+            <Table containerClassName="overflow-visible" className="table-fixed w-max min-w-full">
+                      <TableHeader className="sticky top-0 z-10 bg-background">
                           <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
                               <TableHead className="w-[40px] min-w-[40px] px-2 py-1.5 text-left align-middle">
                                   <Checkbox
@@ -1108,7 +1106,6 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                           ))}
                       </TableBody>
                   </Table>
-            </DataTableWrapper>
     );
 
     const cardContent = (
@@ -1176,8 +1173,8 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
     );
 
     return (
-        <>
-            <div className="space-y-3">
+        <div className="flex h-full min-h-0 flex-col gap-2">
+            <div className="space-y-3 shrink-0">
                 <div className="flex flex-col gap-2">
                     <div className="flex flex-wrap items-center gap-2 w-full">
                         <ListToolbarSearch
@@ -1234,16 +1231,17 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                         />
                     </div>
                     <div className="flex items-center gap-2 shrink-0 ml-auto">
-                        <ListCount
-                            visible={filteredArticles.length}
-                            total={articles.length}
-                            label={articles.length === 1 ? t('articles', 'listArticle') : t('articles', 'listArticles')}
-                        />
-                        {selectedArticles.size > 0 && (
+                        {selectedArticles.size === 0 ? (
+                            <ListCount
+                                visible={filteredArticles.length}
+                                total={articles.length}
+                                label={articles.length === 1 ? t('articles', 'listArticle') : t('articles', 'listArticles')}
+                            />
+                        ) : (
                             <div className="flex items-center gap-2 animate-in fade-in duration-200">
-                          <span className="text-[11px] font-medium text-foreground">
-                              {selectedArticles.size} {t('articles', 'listSelected')}
-                          </span>
+                                <span className="text-[11px] font-medium text-foreground tabular-nums">
+                                    {t('articles', 'listSelectedCount').replace('{{n}}', String(selectedArticles.size))}
+                                </span>
                                 <Button
                                     size="sm"
                                     variant="ghost"
@@ -1267,6 +1265,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                 />
             </div>
 
+            <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-border/40">
             {bodyContent}
 
             {/* Empty state after filters */}
@@ -1279,6 +1278,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                     onAction={clearAllFilters}
                 />
       )}
+            </div>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -1358,7 +1358,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                   }}
               />
           )}
-        </>
+        </div>
   );
 });
 

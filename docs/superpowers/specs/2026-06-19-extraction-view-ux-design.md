@@ -1,8 +1,18 @@
 ---
-status: proposed
-last_reviewed: 2026-06-19
+status: draft
+last_reviewed: 2026-06-20
 owner: '@raphaelfh'
 ---
+
+> **Superseded 2026-06-20 (header only):** the stage rail is now **3
+> user-facing nodes** — Extract → Consensus → Finalized (DB `proposal`+`review`
+> both collapse into **Extract**; `review` = reviewing your OWN AI suggestions,
+> not peer review). The raw DB stage names and the "Submit for review" /
+> "Reconcile (advance to consensus)" labels referenced in the notes below are
+> replaced by a single role/phase-aware **"Mark ready →"** (Extract) /
+> **"Finalize"** (Consensus) primary action. See
+> `docs/superpowers/specs/2026-06-20-extraction-header-refinement-design.md`.
+> The rest of this spec (section rail, density, PDF/evidence plumbing) stands.
 
 > **Status:** Proposed — design approved in brainstorm 2026-06-19, not yet
 > planned/implemented. Next step: `superpowers:writing-plans` to produce a
@@ -485,5 +495,5 @@ Confirmed against `frontend/index.css` + `tailwind.config.ts` + live components.
 - Brainstorm grounding: prumo design tokens + best-practice survey
   (Linear / Plane / Notion / Stripe / REDCap / Castor), 2026-06-19.
 - Canonical schema: `docs/reference/extraction-hitl-architecture.md`.
-- Frozen HITL design: `docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md`.
+- Frozen HITL design (archived): `docs/superpowers/specs/archive/2026-06-20-governance-sweep/2026-04-27-extraction-hitl-and-qa-design.md`; rationale: `docs/explanation/extraction-hitl-design-rationale.md`.
 - Visual language: `frontend-ux` / `ui-styling` skills; loop: `design-review`.

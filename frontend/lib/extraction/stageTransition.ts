@@ -8,8 +8,8 @@ export interface BuildTransitionArgs {
   isComplete: boolean;
   completed: number;
   total: number;
-  onSubmit: () => void | Promise<void>;
-  onReconcile: () => void | Promise<void>;
+  /** Extract phase: advance to consensus AND open the next article. */
+  onMarkReady: () => void | Promise<void>;
   onFinalize: () => void | Promise<void>;
   onGuide: () => void;
 }
@@ -17,6 +17,7 @@ export interface BuildTransitionArgs {
 function makeTransition(
   to: ExtractionRunStage,
   label: string,
+  tooltip: string,
   isComplete: boolean,
   completed: number,
   total: number,
@@ -24,11 +25,12 @@ function makeTransition(
   onGuide: () => void,
 ): StageTransition {
   if (isComplete) {
-    return { to, label, gate: { ok: true }, onAdvance: advance };
+    return { to, label, tooltip, gate: { ok: true }, onAdvance: advance };
   }
   return {
     to,
     label,
+    tooltip,
     gate: {
       ok: false,
       reason: t('extraction', 'runHeaderGateBlocked'),
@@ -39,36 +41,29 @@ function makeTransition(
 }
 
 export function buildExtractionTransition(args: BuildTransitionArgs): StageTransition | null {
-  const { stage, canResolveConflicts, isComplete, completed, total, onSubmit, onReconcile, onFinalize, onGuide } = args;
+  const { stage, canResolveConflicts, isComplete, completed, total, onMarkReady, onFinalize, onGuide } = args;
 
-  if (stage === 'proposal') {
-    return makeTransition(
-      'review',
-      t('extraction', 'runHeaderSubmitForReview'),
-      isComplete,
-      completed,
-      total,
-      onSubmit,
-      onGuide,
-    );
-  }
-
-  if (stage === 'review' && canResolveConflicts) {
+  // Extract phase: proposal + review collapse into one user step. Available to
+  // EVERY extractor — POST /runs/{id}/advance is membership-gated, not role-gated.
+  if (stage === 'proposal' || stage === 'review') {
     return makeTransition(
       'consensus',
-      t('extraction', 'runHeaderReconcile'),
+      t('extraction', 'runHeaderMarkReady'),
+      t('extraction', 'runHeaderMarkReadyTooltip'),
       isComplete,
       completed,
       total,
-      onReconcile,
+      onMarkReady,
       onGuide,
     );
   }
 
-  if (stage === 'consensus') {
+  // Consensus → Finalize, manager/consensus only.
+  if (stage === 'consensus' && canResolveConflicts) {
     return makeTransition(
       'finalized',
       t('extraction', 'runHeaderFinalize'),
+      t('extraction', 'runHeaderFinalizeTooltip'),
       isComplete,
       completed,
       total,
@@ -77,6 +72,6 @@ export function buildExtractionTransition(args: BuildTransitionArgs): StageTrans
     );
   }
 
-  // review without permission, finalized, pending, cancelled, null → no primary action
+  // consensus-without-permission, finalized, pending, cancelled, null → none.
   return null;
 }

@@ -1,9 +1,12 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { RunHeaderProvider, type RunHeaderValue } from './RunHeaderContext';
 import { StageRail } from './StageRail';
 import { PrimaryAction } from './PrimaryAction';
 import { PanelToggle } from './PanelToggle';
+import { SidebarToggle } from './SidebarToggle';
+import { Help } from './Help';
 import { RoleChip } from './RoleChip';
 import { Reviewers } from './Reviewers';
 import { SaveSlot } from './SaveSlot';
@@ -26,11 +29,13 @@ function Right({ children }: { children: ReactNode }) {
 function RunHeaderRoot({ value, children }: { value: RunHeaderValue; children: ReactNode }) {
   return (
     <RunHeaderProvider value={value}>
-      <header className="relative z-10 border-b border-border/40 bg-background/80 backdrop-blur-md">
-        <div className="flex h-12 items-center gap-4 px-6">{children}</div>
-      </header>
+      <TooltipProvider delayDuration={200}>
+        <header className="relative z-10 border-b border-border/40 bg-background/80 backdrop-blur-md">
+          <div className="flex h-12 items-center gap-4 px-6">{children}</div>
+        </header>
+      </TooltipProvider>
     </RunHeaderProvider>
   );
 }
 
-export const RunHeader = Object.assign(RunHeaderRoot, { Left, Center, Right, StageRail, PrimaryAction, PanelToggle, RoleChip, Reviewers, Save: SaveSlot, AIActions, Breadcrumb, Menu, MenuItem, Worklist, CommandPalette });
+export const RunHeader = Object.assign(RunHeaderRoot, { Left, Center, Right, StageRail, PrimaryAction, PanelToggle, SidebarToggle, Help, RoleChip, Reviewers, Save: SaveSlot, AIActions, Breadcrumb, Menu, MenuItem, Worklist, CommandPalette });

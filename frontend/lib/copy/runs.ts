@@ -5,18 +5,17 @@
  * so that QA and other consumers can adopt the same header library.
  */
 export const runs = {
-  // StageRail
+  // StageRail (3 user-facing nodes: Extract → Consensus → Finalized).
   revision: 'Revision',
-  stageProposal: 'Proposal',
-  stageReview: 'Review',
+  stageExtract: 'Extract',
   stageConsensus: 'Consensus',
   stageFinalized: 'Finalized',
-  gateRemaining: '{{count}} left',
+  stageExtractTooltip: 'Fill the form and review AI suggestions for this article.',
+  stageConsensusTooltip: 'Reconcile reviewer values into one agreed answer.',
+  stageFinalizedTooltip: 'Locked and published — reopen to make changes.',
   // PrimaryAction
   requiredOfTotal: '{{done}} of {{total}} required',
-  // Transition labels (also kept in extraction for stageTransition.ts callers)
-  submitForReview: 'Submit for review',
-  reconcile: 'Reconcile',
+  // Transition label (QA's buildQaTransition uses this shared key)
   finalize: 'Finalize',
   gateBlocked: 'Complete the required fields first',
   // Reviewers
@@ -50,6 +49,23 @@ export const runs = {
   commandGoToArticle: 'Go to article…',
   keyboardShortcuts: 'Keyboard shortcuts',
   commandPaletteOpen: 'Open command palette',
+  // SidebarToggle (left, mirrors PanelToggle)
+  sidebarToggle: 'Toggle navigation',
+  // Help panel ("?" button)
+  helpButton: 'Help and shortcuts',
+  helpTitle: 'Help',
+  shortcutsHeading: 'Keyboard shortcuts',
+  glossaryHeading: 'Workflow',
+  shortcutPalette: 'Command palette',
+  shortcutNextPrev: 'Next / previous article',
+  shortcutTogglePdf: 'Toggle source panel',
+  shortcutSidebar: 'Toggle navigation',
+  shortcutEsc: 'Close dialogs',
+  glossaryExtract: 'Extract — fill the form and review AI suggestions.',
+  glossaryConsensus: 'Consensus — reconcile diverging reviewer values.',
+  glossaryFinalize: 'Finalize — lock and publish the agreed values.',
+  glossaryBlind: 'Blind — you cannot see other reviewers’ values.',
+  glossaryDiffer: '"N differ" — fields where reviewers disagree.',
 } as const;
 
 export type RunsCopy = typeof runs;

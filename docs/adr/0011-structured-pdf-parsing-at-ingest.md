@@ -1,6 +1,6 @@
 ---
 status: proposed
-last_reviewed: 2026-06-18
+last_reviewed: 2026-06-20
 owner: '@raphaelfh'
 adr_number: '0011'
 ---
@@ -56,8 +56,8 @@ JATS XML, and supplementary files.
   hierarchy, figures and captions, references, and equations.
 - Reviewer verifiability. Each value must anchor to a pixel `bbox` on the page
   for highlight-in-document review, and AI evidence must be verbatim-verified.
-- PHI / data privacy. Clinical PDFs are sensitive; a path with no third-party
-  data egress is strongly preferred, otherwise a BAA-gated vendor.
+- Data egress. Cloud parsing routes data to a third-party vendor; cloud is
+  opt-in per project, with a BYOK key required.
 - Cost and latency matter, but at the per-paper scale ops burden and data
   egress dominate dollars; absolute per-article cost is deferred to the
   Validation cost model rather than asserted here.
@@ -86,11 +86,10 @@ JATS XML, and supplementary files.
 
 Chosen option: **Option D (hybrid self-hosted parse at ingest + targeted vision
 table pass)**, because the two leading requirements pull toward different
-solution classes and only a hybrid satisfies both. The default parser splits on
-PHI: **non-PHI projects default to LlamaParse `agentic`** (cloud,
-confirmed-or-overturned by the Phase-0 bake-off, falling back to the
-self-hosted winner if it loses on quality/cost/latency); **PHI projects
-always use the self-hosted hybrid parser** with zero egress (fail-closed).
+solution classes and only a hybrid satisfies both. **The self-hosted Docling
+parser is the default.** LlamaParse (cloud, BYOK) is an opt-in per-project
+upgrade, activated in project settings when a `llama_cloud` key is stored,
+confirmed-or-overturned by the Phase-0 bake-off.
 On the available 2024–2026 benchmarks — OmniDocBench (CVPR 2025) and recent
 table/formula benchmarks, which
 under-represent scanned clinical PDFs and publisher clinical-trial tables — the
@@ -98,10 +97,9 @@ pattern is consistent: general
 vision LLMs lead on table, formula, and scanned-page *content* fidelity but emit
 weak, unreliable spatial `bbox` provenance, while layout parsers (MinerU,
 Docling) lead on `bbox` + reading order + born-digital layout but degrade on
-complex merged-cell tables. Self-hosting the parser keeps PHI in-house with no egress;
-the high-fidelity vision pass is scoped to detected table and formula regions
-only, bounding both cost and the surface that leaves the box (and can itself be
-a self-hosted open model).
+complex merged-cell tables. The high-fidelity vision pass is scoped to detected
+table and formula regions only, bounding both cost and the surface that leaves
+the box (and can itself be a self-hosted open model).
 
 Concretely, respecting the existing layering:
 
@@ -109,10 +107,9 @@ Concretely, respecting the existing layering:
   runs after `ArticleFile` creation (the Zotero flow today, any upload path
   later), using `worker_session()` + `run_task()` and resolving keys via
   `APIKeyService`. Parser model weights ship in the worker image or load once
-  onto a Railway volume on cold start (never per task); on the self-hosted path
-  (PHI projects and the non-PHI fallback) the parse runs CPU-first (Docling) and
-  only adds a GPU if the bake-off shows MinerU materially wins, so the ops
-  footprint is itself part of the bake-off scoring.
+  onto a Railway volume on cold start (never per task); the self-hosted Docling
+  path runs CPU-first and only adds a GPU if the bake-off shows MinerU
+  materially wins, so the ops footprint is itself part of the bake-off scoring.
 - **Parsing service.** `app/services/document_parsing_service.py` orchestrates:
   pick the source (JATS/PMC XML when present, else the PDF), run the **injected**
   parser to emit blocks with `bbox` + reading order + `block_type`, run the
@@ -124,7 +121,7 @@ Concretely, respecting the existing layering:
   adapters wrap external libs/APIs, so — like `StorageAdapter` — they live in
   `app/infrastructure/parsing/` (a `DocumentParser` port + concrete adapters) and
   are built by a `create_document_parser()` factory in `app/core/factories.py`
-  that owns the `PARSER_BACKEND` switch and the PHI gate; the service receives the
+  that owns the `PARSER_BACKEND` switch; the service receives the
   parser by injection. `char_start`/`char_end` are offsets **within the page's**
   concatenated text (not global); `bbox` is PDF user space matching the frontend
   `PDFRect`; unknown block types map to `paragraph`.
@@ -157,38 +154,33 @@ Concretely, respecting the existing layering:
 - **Frontend** consumes the contract that already exists (`Reader.tsx`,
   `pdf-viewer/core/citation.ts`); wiring the canvas highlight is the remaining
   frontend task this decision unblocks (tracked separately).
-- The final non-PHI parser (LlamaParse `agentic` vs the self-hosted
+- The final parser choice (LlamaParse `agentic` vs the self-hosted
   Docling/MinerU/LiteParse winner) is **deferred to a bake-off** (see
   Validation). Already-ingested articles are backfilled by a
   one-off task; until a given article has blocks, extraction falls back to
   today's lazy `pypdf` path so nothing breaks (a temporary two-tier state).
   Re-uploading a file cascade-deletes its blocks (`ON DELETE CASCADE`).
-- **Parser backends are pluggable and the default splits on PHI.** Via the
-  `create_document_parser()` factory (above): **non-PHI projects default to
-  LlamaParse (LlamaCloud) `agentic`** (cloud, v2 SDK `llama-cloud >= 2.1`),
-  confirmed-or-overturned by the Phase-0 bake-off — it returns markdown plus
-  *granular word/line/cell bounding boxes* that map onto `article_text_blocks` +
+- **Parser backends are pluggable; the default is Docling (self-hosted).** Via
+  the `create_document_parser(settings, *, llama_cloud_key=None)` factory
+  (above): **Docling is the standard path** (self-hosted, CPU-first, no egress).
+  **LlamaParse (LlamaCloud) `agentic`** (cloud, v2 SDK `llama-cloud >= 2.1`) is
+  an opt-in per-project upgrade, activated in project settings when a
+  `llama_cloud` key is stored — it returns markdown plus *granular
+  word/line/cell bounding boxes* that map onto `article_text_blocks` +
   `PositionV1` (provenance lives in that JSONL sidecar, not the markdown string;
   the SDK call, the top-left→bottom-left `bbox` Y-flip, and the item-local-offset
-  caveat are in the ingest plan Task 1.6 Step 2). **PHI projects always resolve
-  to a self-hosted parser** (Docling/MinerU, or the Apache-2.0 LiteParse — fully
-  local, free, per-element `bbox`) with zero egress; that self-hosted winner is
-  also the non-PHI fallback if LlamaParse loses the bake-off. A vision-LLM-native
-  backend (page images/PDF through `extract_structured()`) rounds out the slate.
-  **Privacy gate (fail-closed):** the factory routes PHI or unknown-status
-  projects to the self-hosted parser and can never hand them a cloud backend (the
-  `project_is_phi` policy flag is added by the ingest plan Task 1.6 Step 4; until
-  then the gate fails closed). LlamaParse cloud egresses to LlamaCloud S3 (48 h
-  retention, contractual no-train) and a BAA exists only on LlamaCloud's
-  **Enterprise** plan (signed BAA / private cloud / self-hosted BYOC, all paid),
-  so the default SaaS path is non-PHI-only.
+  caveat are in the ingest plan). A vision-LLM-native backend (page images/PDF
+  through `extract_structured()`) rounds out the slate. The bake-off
+  (Docling/MinerU/LiteParse vs LlamaParse `agentic`) decides the recommended
+  backend; Docling is the self-hosted winner candidate and the fallback when no
+  `llama_cloud` key is configured.
 
 ### Consequences
 
 - Good — one persisted artifact serves both the LLM (structured text) and the
   reviewer (`bbox` highlight); `bbox` anchoring and verbatim verification
   become possible; the 15k truncation and the extract-and-discard pattern are
-  retired; PHI stays in-house.
+  retired; the default self-hosted path has no cloud egress.
 - Good — this finishes an already-migrated schema and an already-working read
   path rather than designing new infrastructure.
 - Bad — ingestion gains a heavier parse step (added latency and worker compute,
@@ -248,28 +240,29 @@ Concretely, respecting the existing layering:
 - Good — best table/formula content fidelity; handles scans natively; one model
   call produces text and a first-pass extraction.
 - Bad — weak, unreliable spatial provenance, so `bbox` highlighting must be
-  reconstructed anyway; sends whole clinical PDFs to a third party (PHI egress)
-  unless a self-hosted open VLM is run.
+  reconstructed anyway; sends whole PDFs to a third-party unless a self-hosted
+  open VLM is run.
 
 ### Option C — commercial parse/OCR API
 
 - Good — turnkey blocks, `bbox`, and per-field provenance (LlamaParse granular
   bounding boxes; Reducto two-way highlight); strongest table/formula results
   fastest; least engineering.
-- Bad — per-page cost and vendor lock; clinical content requires a BAA and a
-  data-egress review; provenance evidence is largely vendor-self-reported.
+- Bad — per-page cost and vendor lock; cloud egress requires a data-egress
+  review; provenance evidence is largely vendor-self-reported.
 
 ### Option D — hybrid self-hosted parse + targeted vision table pass
 
-- Good — satisfies accuracy *and* `bbox` provenance; keeps PHI in-house; bounds
-  the vision pass to table/formula regions; reuses the merged contract.
+- Good — satisfies accuracy *and* `bbox` provenance; default path has no cloud
+  egress; bounds the vision pass to table/formula regions; reuses the merged
+  contract.
 - Bad — the most moving parts (parser ops, a second provider, region routing)
   and merged-cell tables still need human review.
 
 ## More Information
 
 - Schema-landing prerequisite (already merged):
-  `docs/superpowers/specs/2026-04-28-pdf-viewer-database-requirements.md`.
+  `docs/superpowers/specs/archive/2026-06-20-governance-sweep/2026-04-28-pdf-viewer-database-requirements.md`.
 - Implementation plans:
   `docs/superpowers/plans/2026-06-19-structured-pdf-parsing-at-ingest.md`
   (parse at ingest → persist blocks) and
@@ -279,7 +272,7 @@ Concretely, respecting the existing layering:
   of these blocks — free default + config-gated vision-enriched tier — used as an
   LLM-extraction input and a viewer option alongside the PDF) is **ADR 0013**
   (`docs/adr/0013-dual-tier-markdown-representation.md`). It reuses this ADR's
-  parser factory, `PARSER_BACKEND` switch, and PHI gate; blocks remain the
+  parser factory and `PARSER_BACKEND` switch; blocks remain the
   offset/`bbox` source of truth and markdown is downstream of them.
 - Canonical schema and run lifecycle:
   `docs/reference/extraction-hitl-architecture.md`.

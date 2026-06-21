@@ -1,5 +1,4 @@
 import * as React from 'react';
-import {DataTableWrapper} from './DataTableWrapper';
 
 export interface ResponsiveListProps {
     isNarrow: boolean;
@@ -8,12 +7,12 @@ export interface ResponsiveListProps {
 }
 
 /**
- * Renders card list when isNarrow (viewport < sm), else table wrapped in DataTableWrapper.
- * Centralizes table-vs-cards switch so callers do not repeat the conditional.
+ * Switches between card list (isNarrow, viewport < sm) and table content.
+ * The caller owns the scroll container + border framing; the table mode renders
+ * its content directly so the scroll/sticky-header chain is not broken by an
+ * intermediate overflow wrapper. Centralizes the table-vs-cards switch so
+ * callers do not repeat the conditional.
  */
 export function ResponsiveList({isNarrow, tableContent, cardContent}: ResponsiveListProps) {
-    if (isNarrow) {
-        return <div className="rounded-md overflow-hidden w-full border border-border/40">{cardContent}</div>;
-    }
-    return <DataTableWrapper>{tableContent}</DataTableWrapper>;
+    return <>{isNarrow ? cardContent : tableContent}</>;
 }
