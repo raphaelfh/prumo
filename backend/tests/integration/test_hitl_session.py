@@ -313,37 +313,42 @@ async def _wipe_qa_state(
     *,
     project_id: UUID,
     global_template_id: UUID,
-    article_id: UUID | None = None,
+    article_id: UUID | None = None,  # noqa: ARG001 — kept for caller compatibility
 ) -> None:
-    """Reset the (project, article?, qa-template) tuple so subsequent calls
-    exercise the create branch rather than the reuse branch."""
-    article_clause = "AND article_id = :aid" if article_id is not None else ""
+    """Reset the (project, qa-template) tuple so subsequent calls exercise the
+    create branch rather than the reuse branch.
+
+    The template delete below is unconditional for the whole
+    ``global_template`` chain, so the runs + instances referencing that chain
+    must ALSO be cleared chain-wide first. Scoping the run/instance deletes by
+    a single ``article_id`` (the previous behaviour) leaves another article's
+    rows pointing at the template and trips
+    ``extraction_instances_template_id_fkey`` when an earlier test committed an
+    instance for a different article on the same chain — an order-dependent
+    flake. The ``article_id`` parameter is retained for caller signature
+    compatibility but no longer narrows the wipe."""
     params: dict[str, object] = {"pid": str(project_id), "gid": str(global_template_id)}
-    if article_id is not None:
-        params["aid"] = str(article_id)
 
     await db.execute(
         text(
-            f"""
+            """
             DELETE FROM public.extraction_runs
-            WHERE project_id = :pid {article_clause}
-              AND template_id IN (
+            WHERE template_id IN (
                 SELECT id FROM public.project_extraction_templates
                 WHERE project_id = :pid AND global_template_id = :gid
-              )
+            )
             """
         ),
         params,
     )
     await db.execute(
         text(
-            f"""
+            """
             DELETE FROM public.extraction_instances
-            WHERE project_id = :pid {article_clause}
-              AND template_id IN (
+            WHERE template_id IN (
                 SELECT id FROM public.project_extraction_templates
                 WHERE project_id = :pid AND global_template_id = :gid
-              )
+            )
             """
         ),
         params,
@@ -353,7 +358,7 @@ async def _wipe_qa_state(
             "DELETE FROM public.project_extraction_templates "
             "WHERE project_id = :pid AND global_template_id = :gid"
         ),
-        {"pid": str(project_id), "gid": str(global_template_id)},
+        params,
     )
     await db.commit()
 
@@ -511,9 +516,10 @@ async def test_qa_session_returns_finalized_run_instead_of_forking(
     ).scalar()
     assert field_id is not None, "QA entity type has no fields"
 
-    for stage in ("review", "consensus"):
-        adv = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": stage})
-        assert adv.status_code == 200, adv.text
+    # Collapsed lifecycle: session-open parks the run in extract; a single
+    # extract -> consensus advance reaches the adjudication stage.
+    adv = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": "consensus"})
+    assert adv.status_code == 200, adv.text
 
     # Satisfy the FINALIZED invariant: write at least one consensus decision
     # (manual_override carries the value+rationale directly).

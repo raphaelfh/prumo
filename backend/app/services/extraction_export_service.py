@@ -1355,9 +1355,10 @@ class ExtractionExportService(LoggerMixin):
             if run.stage in (
                 ExtractionRunStage.CANCELLED.value,
                 ExtractionRunStage.PENDING.value,
-                ExtractionRunStage.PROPOSAL.value,
+                ExtractionRunStage.EXTRACT.value,
             ):
-                # All-users wants reviewer activity; pre-review runs have none.
+                # All-users wants cross-reviewer activity; pre-consensus extract
+                # runs have none worth exporting.
                 omitted[run.stage] = omitted.get(run.stage, 0) + 1
                 continue
             kept_article_ids.append(aid)

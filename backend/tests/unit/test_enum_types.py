@@ -204,7 +204,7 @@ class TestEnumCreationFromString:
             (ExtractionFramework, "CHARMS"),
             (ExtractionFieldType, "text"),
             (ExtractionCardinality, "one"),
-            (ExtractionRunStage, "proposal"),
+            (ExtractionRunStage, "extract"),
             (ExtractionRunStatus, "pending"),
             (ExtractionInstanceStatus, "pending"),
         ],

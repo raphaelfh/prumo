@@ -44,7 +44,7 @@ from app.services.run_lifecycle_service import RunLifecycleService
 async def _proposal_stage_coord(
     db: AsyncSession,
 ) -> tuple[UUID, UUID, UUID, UUID] | None:
-    """Build a PROPOSAL-stage run; return (run_id, instance_id, field_id, user_id)."""
+    """Build an EXTRACT-stage run; return (run_id, instance_id, field_id, user_id)."""
     project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
     if project_id is None:
         return None
@@ -93,7 +93,7 @@ async def _proposal_stage_coord(
         user_id=user_id,
     )
     await lifecycle.advance_stage(
-        run_id=run.id, target_stage=ExtractionRunStage.PROPOSAL, user_id=user_id
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=user_id
     )
     return run.id, instance_id, field_id, UUID(str(user_id))
 
@@ -122,21 +122,22 @@ async def test_read_model_preserves_proposals_for_newest_wins_resolution(
     run_id, instance_id, field_id, user_id = fx
 
     proposals = ExtractionProposalService(db_session)
+    # AI source: human extraction writes go through /decisions now, but the
+    # append-only / newest-wins read contract is source-agnostic, so we
+    # exercise it via AI proposals (allowed on extraction runs in extract).
     v1 = await proposals.record_proposal(
         run_id=run_id,
         instance_id=instance_id,
         field_id=field_id,
-        source=ExtractionProposalSource.HUMAN,
+        source=ExtractionProposalSource.AI,
         proposed_value={"value": "V1-original"},
-        source_user_id=user_id,
     )
     v2 = await proposals.record_proposal(
         run_id=run_id,
         instance_id=instance_id,
         field_id=field_id,
-        source=ExtractionProposalSource.HUMAN,
+        source=ExtractionProposalSource.AI,
         proposed_value={"value": "V2-updated"},
-        source_user_id=user_id,
     )
     # now() is constant within a transaction, so both rows tie on created_at.
     # Force the production reality (each POST is its own txn → distinct time):

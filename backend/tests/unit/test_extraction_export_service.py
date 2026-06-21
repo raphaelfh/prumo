@@ -414,7 +414,7 @@ class TestResolveArticlesForConsensus:
 
     @pytest.mark.asyncio
     async def test_mixed_stages_only_finalized_kept(self):
-        """FINALIZED kept; REVIEW + PROPOSAL → omitted with stage key."""
+        """FINALIZED kept; CONSENSUS + EXTRACT → omitted with stage key."""
         svc = _make_service()
         template_id = uuid4()
         project_id = uuid4()
@@ -424,8 +424,8 @@ class TestResolveArticlesForConsensus:
         aid_prop = uuid4()
 
         run_fin = _make_run(article_id=aid_fin, stage=ExtractionRunStage.FINALIZED.value)
-        run_rev = _make_run(article_id=aid_rev, stage=ExtractionRunStage.REVIEW.value)
-        run_prop = _make_run(article_id=aid_prop, stage=ExtractionRunStage.PROPOSAL.value)
+        run_rev = _make_run(article_id=aid_rev, stage=ExtractionRunStage.CONSENSUS.value)
+        run_prop = _make_run(article_id=aid_prop, stage=ExtractionRunStage.EXTRACT.value)
 
         svc.db.execute = AsyncMock(return_value=_scalars_result([run_fin, run_rev, run_prop]))
         svc._load_instances_for_runs = AsyncMock(return_value={run_fin.id: []})
@@ -440,8 +440,8 @@ class TestResolveArticlesForConsensus:
 
         assert len(articles) == 1
         assert articles[0].article_id == aid_fin
-        assert omitted[ExtractionRunStage.REVIEW.value] == 1
-        assert omitted[ExtractionRunStage.PROPOSAL.value] == 1
+        assert omitted[ExtractionRunStage.CONSENSUS.value] == 1
+        assert omitted[ExtractionRunStage.EXTRACT.value] == 1
 
     @pytest.mark.asyncio
     async def test_missing_run_counted_as_no_run(self):
@@ -2113,7 +2113,7 @@ class TestResolveArticlesForSingleUser:
         aid = uuid4()
         reviewer_id = uuid4()
 
-        run = _make_run(article_id=aid, stage=ExtractionRunStage.REVIEW.value)
+        run = _make_run(article_id=aid, stage=ExtractionRunStage.CONSENSUS.value)
 
         svc.db.execute = AsyncMock(
             side_effect=[
@@ -2138,7 +2138,7 @@ class TestResolveArticlesForSingleUser:
         aid = uuid4()
         reviewer_id = uuid4()
 
-        run = _make_run(article_id=aid, stage=ExtractionRunStage.REVIEW.value)
+        run = _make_run(article_id=aid, stage=ExtractionRunStage.CONSENSUS.value)
 
         svc.db.execute = AsyncMock(
             side_effect=[
@@ -2283,13 +2283,13 @@ class TestResolveArticlesForAllUsers:
         assert omitted == {}
 
     @pytest.mark.asyncio
-    async def test_cancelled_proposal_pending_omitted(self):
-        """CANCELLED, PROPOSAL, PENDING → all omitted."""
+    async def test_cancelled_extract_pending_omitted(self):
+        """CANCELLED, EXTRACT, PENDING → all omitted."""
         svc = _make_service()
         aid1, aid2, aid3 = uuid4(), uuid4(), uuid4()
 
         run1 = _make_run(article_id=aid1, stage=ExtractionRunStage.CANCELLED.value)
-        run2 = _make_run(article_id=aid2, stage=ExtractionRunStage.PROPOSAL.value)
+        run2 = _make_run(article_id=aid2, stage=ExtractionRunStage.EXTRACT.value)
         run3 = _make_run(article_id=aid3, stage=ExtractionRunStage.PENDING.value)
 
         svc.db.execute = AsyncMock(return_value=_scalars_result([run1, run2, run3]))
@@ -2301,16 +2301,16 @@ class TestResolveArticlesForAllUsers:
         )
         assert articles == []
         assert omitted[ExtractionRunStage.CANCELLED.value] == 1
-        assert omitted[ExtractionRunStage.PROPOSAL.value] == 1
+        assert omitted[ExtractionRunStage.EXTRACT.value] == 1
         assert omitted[ExtractionRunStage.PENDING.value] == 1
 
     @pytest.mark.asyncio
-    async def test_review_and_finalized_kept(self):
-        """REVIEW and FINALIZED stages → kept for all-users."""
+    async def test_consensus_and_finalized_kept(self):
+        """CONSENSUS and FINALIZED stages → kept for all-users."""
         svc = _make_service()
         aid1, aid2 = uuid4(), uuid4()
 
-        run1 = _make_run(article_id=aid1, stage=ExtractionRunStage.REVIEW.value)
+        run1 = _make_run(article_id=aid1, stage=ExtractionRunStage.CONSENSUS.value)
         run2 = _make_run(article_id=aid2, stage=ExtractionRunStage.FINALIZED.value)
 
         svc.db.execute = AsyncMock(return_value=_scalars_result([run1, run2]))

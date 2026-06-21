@@ -80,7 +80,7 @@ async def test_ai_proposed_value_resolves_number_unit(
     proposals = ExtractionProposalService(db_session)
     lifecycle = RunLifecycleService(db_session)
 
-    # AI proposals only persist when recorded in PROPOSAL stage. The
+    # AI proposals persist when recorded in EXTRACT stage. The
     # double-wrapped number+unit shape is the real write-path payload the
     # §6 bug corrupted; it must surface as "5 mg" in the AI column.
     await proposals.record_proposal(
@@ -93,23 +93,8 @@ async def test_ai_proposed_value_resolves_number_unit(
         rationale="AI-metadata resolution fixture",
     )
 
-    # A human proposal on the same coord lets the run advance through the
-    # manual-only lifecycle (PROPOSAL -> REVIEW materializes an
-    # accept_proposal decision, invariant I-1) so it can reach CONSENSUS.
-    await proposals.record_proposal(
-        run_id=run_id,
-        instance_id=instance_id,
-        field_id=number_field_id,
-        source=ExtractionProposalSource.HUMAN,
-        source_user_id=profile_id,
-        proposed_value={"value": "seed"},
-    )
-
-    await lifecycle.advance_stage(
-        run_id=run_id,
-        target_stage=ExtractionRunStage.REVIEW,
-        user_id=profile_id,
-    )
+    # The run is already in EXTRACT (session open parks it there); advance
+    # straight to CONSENSUS, where the value is published via manual_override.
     await lifecycle.advance_stage(
         run_id=run_id,
         target_stage=ExtractionRunStage.CONSENSUS,

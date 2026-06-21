@@ -23,11 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import ExtractionRun, ExtractionRunStage, TemplateKind
 from app.models.extraction_workflow import (
     ExtractionConsensusMode,
-    ExtractionProposalSource,
 )
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import ExportMode, ExtractionExportService
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.hitl_session_service import HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
@@ -112,28 +110,9 @@ async def test_consensus_value_map_resolves_unit_and_other(
     )
     run_id = session.run_id
 
-    # Park a human proposal per coord, mirroring the manual-only flow.
-    # Advancing PROPOSAL → REVIEW materializes each into an
-    # accept_proposal reviewer_decision (invariant I-1), so the run can
-    # then advance to CONSENSUS where we publish via manual_override.
-    proposals = ExtractionProposalService(db_session)
+    # The run is already in EXTRACT (session open parks it there); advance
+    # straight to CONSENSUS where each field is published via manual_override.
     lifecycle = RunLifecycleService(db_session)
-
-    for fid in (number_field_id, select_field_id):
-        await proposals.record_proposal(
-            run_id=run_id,
-            instance_id=instance_id,
-            field_id=fid,
-            source=ExtractionProposalSource.HUMAN,
-            source_user_id=profile_id,
-            proposed_value={"value": "seed"},
-        )
-
-    await lifecycle.advance_stage(
-        run_id=run_id,
-        target_stage=ExtractionRunStage.REVIEW,
-        user_id=profile_id,
-    )
     await lifecycle.advance_stage(
         run_id=run_id,
         target_stage=ExtractionRunStage.CONSENSUS,

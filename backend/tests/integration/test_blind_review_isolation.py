@@ -145,7 +145,7 @@ async def _build_two_reviewer_review_run(
         user_id=manager,
     )
     await lifecycle.advance_stage(
-        run_id=run.id, target_stage=ExtractionRunStage.PROPOSAL, user_id=manager
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager
     )
     await ExtractionProposalService(db).record_proposal(
         run_id=run.id,
@@ -153,9 +153,6 @@ async def _build_two_reviewer_review_run(
         field_id=field_id,
         source=ExtractionProposalSource.AI,
         proposed_value={"v": "candidate"},
-    )
-    await lifecycle.advance_stage(
-        run_id=run.id, target_stage=ExtractionRunStage.REVIEW, user_id=manager
     )
 
     review = ExtractionReviewService(db)

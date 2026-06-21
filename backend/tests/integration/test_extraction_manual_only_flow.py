@@ -1,23 +1,19 @@
-"""Integration tests for the manual-only and hybrid extraction flows.
+"""Integration tests for the manual-only extraction flow.
 
-After the autosave/proposal unification, the Data-Extraction surface
-matches the QA pattern:
+In the collapsed lifecycle (pending → extract → consensus → finalized) the
+Data-Extraction surface writes human values straight to per-user
+``ReviewerDecision`` rows: the blind-review write defense rejects ``human``
+proposals on extraction runs, so the form autosaves through ``/decisions``.
+This test covers that path end-to-end at the service level, with no AI
+extraction in the loop:
 
-* Edits write ``human`` proposals on the active run (which
-  ``HITLSessionService.open`` parks in ``PROPOSAL``).
-* The legacy ``ReviewerDecision(decision='edit')`` write is no longer
-  the primary input channel; decisions are reserved for REVIEW where
-  multi-reviewer accept/reject decides between proposals.
+    open session (parks the run in EXTRACT) → record a human ``edit``
+    decision → advance EXTRACT → CONSENSUS → publish via manual_override →
+    FINALIZED.
 
-These tests cover the two new scenarios end-to-end at the service level:
-
-1. **Manual-only**: open session → record a ``human`` proposal → advance
-   PROPOSAL → REVIEW → record a decision → advance through CONSENSUS →
-   FINALIZED. No AI extraction in the loop.
-2. **Hybrid**: a ``human`` proposal already exists when AI runs; the AI
-   pipeline must skip that coord (``skip_fields_with_human_proposals``)
-   and the human value must remain the latest non-AI proposal for the
-   coord.
+The old ``proposal → review`` boundary materialization that used to convert
+human proposals into decisions was removed with the stage collapse (humans
+write decisions directly), so the tests that exercised it are gone.
 """
 
 from __future__ import annotations
@@ -25,7 +21,7 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
@@ -36,18 +32,12 @@ from app.models.extraction import (
 )
 from app.models.extraction_workflow import (
     ExtractionConsensusMode,
-    ExtractionProposalRecord,
-    ExtractionProposalSource,
-    ExtractionReviewerDecision,
     ExtractionReviewerDecisionType,
-    ExtractionReviewerState,
 )
 from app.services.extraction_consensus_service import ExtractionConsensusService
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.hitl_session_service import HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
 
 
 async def _coords(
@@ -105,12 +95,11 @@ async def _coords(
 
 @pytest.mark.asyncio
 async def test_manual_only_extraction_flow(db_session: AsyncSession) -> None:
-    """End-to-end: open extraction session → human proposal → advance
-    to REVIEW → reviewer decision → consensus → finalize. Asserts:
+    """End-to-end: open extraction session → human ``edit`` decision →
+    consensus → finalize. Asserts:
 
-    * Session opens the run in PROPOSAL (not PENDING).
-    * ``human`` proposal records cleanly without AI involvement.
-    * Decision write succeeds once the run is in REVIEW.
+    * Session opens the run in EXTRACT (not PENDING).
+    * A human value lands as a per-user ReviewerDecision in EXTRACT.
     * Consensus + finalize advance the lifecycle terminally.
     """
     fx = await _coords(db_session)
@@ -119,8 +108,8 @@ async def test_manual_only_extraction_flow(db_session: AsyncSession) -> None:
     project_id, article_id, template_id, profile_id, instance_id, field_id = fx
 
     # Clear ALL pre-existing runs for this coord so the session creates
-    # a fresh PROPOSAL run — the surrounding integration suite leaks
-    # runs in REVIEW/CONSENSUS/FINALIZED via committed HTTP calls. The
+    # a fresh EXTRACT run — the surrounding integration suite leaks
+    # runs in CONSENSUS/FINALIZED via committed HTTP calls. The
     # transaction-scoped rollback at the end of this test will undo
     # the cleanup along with the rest of our writes.
     await db_session.execute(
@@ -131,7 +120,7 @@ async def test_manual_only_extraction_flow(db_session: AsyncSession) -> None:
         {"pid": str(project_id), "aid": str(article_id), "tid": str(template_id)},
     )
 
-    # 1. Open session — backend creates / resumes a Run and parks it in PROPOSAL.
+    # 1. Open session — backend creates / resumes a Run and parks it in EXTRACT.
     session_service = HITLSessionService(db_session)
     session = await session_service.open_or_resume(
         kind=TemplateKind.EXTRACTION,
@@ -142,44 +131,26 @@ async def test_manual_only_extraction_flow(db_session: AsyncSession) -> None:
     )
     run = await db_session.get(ExtractionRun, session.run_id)
     assert run is not None
-    assert run.stage == ExtractionRunStage.PROPOSAL.value
+    assert run.stage == ExtractionRunStage.EXTRACT.value
 
-    # 2. Autosave write: record a ``human`` proposal at PROPOSAL stage.
-    proposal = await ExtractionProposalService(db_session).record_proposal(
-        run_id=run.id,
-        instance_id=instance_id,
-        field_id=field_id,
-        source=ExtractionProposalSource.HUMAN,
-        source_user_id=profile_id,
-        proposed_value={"value": "manual-edit"},
-    )
-    assert proposal.id is not None
-    assert proposal.source == ExtractionProposalSource.HUMAN.value
-
-    # 3. "Submit for review" — advance PROPOSAL → REVIEW.
-    lifecycle = RunLifecycleService(db_session)
-    await lifecycle.advance_stage(
-        run_id=run.id,
-        target_stage=ExtractionRunStage.REVIEW,
-        user_id=profile_id,
-    )
-
-    # 4. Reviewer accepts the human proposal (the "I confirm this value"
-    # decision in the multi-reviewer flow).
+    # 2. Autosave write: a human value lands as a per-user ReviewerDecision
+    #    (edit) in EXTRACT — humans write decisions directly now, not the
+    #    shared ``human`` proposal track (rejected for extraction kinds).
     review_service = ExtractionReviewService(db_session)
     decision = await review_service.record_decision(
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
         reviewer_id=profile_id,
-        decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
-        proposal_record_id=proposal.id,
+        decision=ExtractionReviewerDecisionType.EDIT,
+        value={"value": "manual-edit"},
     )
     assert decision.run_id == run.id
-    assert decision.decision == ExtractionReviewerDecisionType.ACCEPT_PROPOSAL.value
+    assert decision.decision == ExtractionReviewerDecisionType.EDIT.value
 
-    # 5. Advance REVIEW → CONSENSUS, materialize a manual_override
+    # 3. Advance EXTRACT → CONSENSUS, materialize a manual_override
     # consensus that publishes the value, then FINALIZED.
+    lifecycle = RunLifecycleService(db_session)
     await lifecycle.advance_stage(
         run_id=run.id,
         target_stage=ExtractionRunStage.CONSENSUS,
@@ -208,333 +179,4 @@ async def test_manual_only_extraction_flow(db_session: AsyncSession) -> None:
     assert refreshed is not None
     assert refreshed.stage == ExtractionRunStage.FINALIZED.value
     assert refreshed.status == ExtractionRunStatus.COMPLETED.value
-    await db_session.rollback()
-
-
-@pytest.mark.asyncio
-async def test_human_proposal_blocks_ai_skip_flag(db_session: AsyncSession) -> None:
-    """Hybrid flow: a ``human`` proposal already exists when AI runs.
-    The skip flag (``skip_fields_with_human_proposals``) used by
-    ``extract_for_run`` is implemented as "if the latest proposal on
-    this coord is already ``human``, exclude this field from the LLM
-    call". This test pins down that invariant by asserting the latest
-    proposal per coord stays ``human`` after we mimic the AI write
-    being skipped.
-    """
-    fx = await _coords(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    project_id, article_id, template_id, profile_id, instance_id, field_id = fx
-
-    session_service = HITLSessionService(db_session)
-    session = await session_service.open_or_resume(
-        kind=TemplateKind.EXTRACTION,
-        project_id=project_id,
-        article_id=article_id,
-        user_id=profile_id,
-        project_template_id=template_id,
-    )
-
-    proposal_service = ExtractionProposalService(db_session)
-    await proposal_service.record_proposal(
-        run_id=session.run_id,
-        instance_id=instance_id,
-        field_id=field_id,
-        source=ExtractionProposalSource.HUMAN,
-        source_user_id=profile_id,
-        proposed_value={"value": "user-typed-this-first"},
-    )
-
-    # The LLM pipeline filters out coords with a latest ``human``
-    # proposal *before* calling the model. We assert the contract: the
-    # latest per coord is still the human row, and no ``ai`` row was
-    # written for this (instance, field).
-    latest = (
-        await db_session.execute(
-            select(ExtractionProposalRecord)
-            .where(
-                ExtractionProposalRecord.run_id == session.run_id,
-                ExtractionProposalRecord.instance_id == instance_id,
-                ExtractionProposalRecord.field_id == field_id,
-            )
-            .order_by(ExtractionProposalRecord.created_at.desc())
-            .limit(1)
-        )
-    ).scalar_one()
-    assert latest.source == ExtractionProposalSource.HUMAN.value
-    assert latest.proposed_value == {"value": "user-typed-this-first"}
-
-    ai_count = (
-        (
-            await db_session.execute(
-                select(ExtractionProposalRecord).where(
-                    ExtractionProposalRecord.run_id == session.run_id,
-                    ExtractionProposalRecord.instance_id == instance_id,
-                    ExtractionProposalRecord.field_id == field_id,
-                    ExtractionProposalRecord.source == ExtractionProposalSource.AI.value,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert ai_count == []
-    await db_session.rollback()
-
-
-@pytest.mark.asyncio
-async def test_advance_to_review_materializes_human_decisions(
-    db_session: AsyncSession,
-) -> None:
-    """H2 — Invariant I-1: when ``advance_stage(PROPOSAL → REVIEW)`` runs
-    on a Run with human ``ProposalRecord`` rows (source=human,
-    source_user_id present), each pending coord must be materialized as
-    a ``ReviewerDecision`` with ``decision='accept_proposal'``, owned by
-    ``source_user_id``, plus the matching ``ReviewerState`` pointer.
-
-    Without this, the form's per-user read in REVIEW returns 0 rows for
-    coords that only have a human proposal_record (production bug
-    repro: article 5573e7f3, value ``"Case series"`` stuck in
-    proposal_records). After the fix, "user typed = user committed"
-    holds at the schema layer regardless of which trigger advanced
-    the stage (AI auto-advance or explicit "Submit for review").
-
-    AI proposals are NOT materialized — they require explicit reviewer
-    action.
-    """
-    if (
-        await db_session.execute(
-            text("SELECT 1 FROM public.profiles WHERE id = :id"),
-            {"id": str(SEED.primary_profile)},
-        )
-    ).scalar() is None:
-        pytest.skip("Missing fixtures.")
-    project_id = SEED.primary_project
-    article_id = SEED.primary_article
-    template_id = SEED.primary_template
-    profile_id = SEED.primary_profile
-    instance_id = SEED.primary_instance
-    field_id = SEED.primary_field
-
-    await db_session.execute(
-        text(
-            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
-            "AND article_id = :aid AND template_id = :tid"
-        ),
-        {"pid": str(project_id), "aid": str(article_id), "tid": str(template_id)},
-    )
-
-    session = await HITLSessionService(db_session).open_or_resume(
-        kind=TemplateKind.EXTRACTION,
-        project_id=project_id,
-        article_id=article_id,
-        user_id=profile_id,
-        project_template_id=template_id,
-    )
-
-    human_proposal = await ExtractionProposalService(db_session).record_proposal(
-        run_id=session.run_id,
-        instance_id=instance_id,
-        field_id=field_id,
-        source=ExtractionProposalSource.HUMAN,
-        source_user_id=profile_id,
-        proposed_value={"value": "Case series"},
-    )
-
-    await RunLifecycleService(db_session).advance_stage(
-        run_id=session.run_id,
-        target_stage=ExtractionRunStage.REVIEW,
-        user_id=profile_id,
-    )
-
-    decision = (
-        await db_session.execute(
-            select(ExtractionReviewerDecision).where(
-                ExtractionReviewerDecision.run_id == session.run_id,
-                ExtractionReviewerDecision.instance_id == instance_id,
-                ExtractionReviewerDecision.field_id == field_id,
-                ExtractionReviewerDecision.reviewer_id == profile_id,
-            )
-        )
-    ).scalar_one_or_none()
-    assert decision is not None, (
-        "advance_stage(PROPOSAL→REVIEW) must materialize a reviewer_decision "
-        "for every existing human proposal_record (invariant I-1)."
-    )
-    assert decision.decision == ExtractionReviewerDecisionType.ACCEPT_PROPOSAL.value
-    assert decision.proposal_record_id == human_proposal.id
-    assert decision.value == {"value": "Case series"}
-
-    state = (
-        await db_session.execute(
-            select(ExtractionReviewerState).where(
-                ExtractionReviewerState.run_id == session.run_id,
-                ExtractionReviewerState.reviewer_id == profile_id,
-                ExtractionReviewerState.instance_id == instance_id,
-                ExtractionReviewerState.field_id == field_id,
-            )
-        )
-    ).scalar_one_or_none()
-    assert state is not None, (
-        "Materialized reviewer_decision must also update the reviewer_state pointer."
-    )
-    assert state.current_decision_id == decision.id
-
-    await db_session.rollback()
-
-
-@pytest.mark.asyncio
-async def test_advance_to_review_does_not_materialize_ai_proposals(
-    db_session: AsyncSession,
-) -> None:
-    """H2 — AI proposals are NOT auto-materialized as decisions. They
-    require an explicit reviewer action (accept_proposal/edit/reject)
-    so the human reviewer remains the gatekeeper on AI output.
-    """
-    if (
-        await db_session.execute(
-            text("SELECT 1 FROM public.profiles WHERE id = :id"),
-            {"id": str(SEED.primary_profile)},
-        )
-    ).scalar() is None:
-        pytest.skip("Missing fixtures.")
-    project_id = SEED.primary_project
-    article_id = SEED.primary_article
-    template_id = SEED.primary_template
-    profile_id = SEED.primary_profile
-    instance_id = SEED.primary_instance
-    field_id = SEED.primary_field
-
-    await db_session.execute(
-        text(
-            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
-            "AND article_id = :aid AND template_id = :tid"
-        ),
-        {"pid": str(project_id), "aid": str(article_id), "tid": str(template_id)},
-    )
-
-    session = await HITLSessionService(db_session).open_or_resume(
-        kind=TemplateKind.EXTRACTION,
-        project_id=project_id,
-        article_id=article_id,
-        user_id=profile_id,
-        project_template_id=template_id,
-    )
-
-    await ExtractionProposalService(db_session).record_proposal(
-        run_id=session.run_id,
-        instance_id=instance_id,
-        field_id=field_id,
-        source=ExtractionProposalSource.AI,
-        source_user_id=None,
-        proposed_value={"value": "ai-suggested"},
-    )
-
-    await RunLifecycleService(db_session).advance_stage(
-        run_id=session.run_id,
-        target_stage=ExtractionRunStage.REVIEW,
-        user_id=profile_id,
-    )
-
-    decision_count = (
-        (
-            await db_session.execute(
-                select(ExtractionReviewerDecision).where(
-                    ExtractionReviewerDecision.run_id == session.run_id,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert decision_count == [], (
-        "AI proposals must remain as proposals — reviewers explicitly accept/edit/reject them."
-    )
-
-    await db_session.rollback()
-
-
-@pytest.mark.asyncio
-async def test_advance_to_review_is_idempotent_for_materialization(
-    db_session: AsyncSession,
-) -> None:
-    """H2 — Re-entering REVIEW (e.g., a retried transaction or a future
-    REVIEW→CONSENSUS rollback) must not create duplicate decisions for
-    the same (run, instance, field, reviewer) coord. The transition
-    materialization is a no-op when a decision already exists.
-
-    The lifecycle currently rejects redundant transitions
-    (REVIEW→REVIEW), so we exercise the idempotency at the
-    materialization layer directly: a second call to the materialize
-    helper after the first must not insert a duplicate decision row.
-    """
-    if (
-        await db_session.execute(
-            text("SELECT 1 FROM public.profiles WHERE id = :id"),
-            {"id": str(SEED.primary_profile)},
-        )
-    ).scalar() is None:
-        pytest.skip("Missing fixtures.")
-    project_id = SEED.primary_project
-    article_id = SEED.primary_article
-    template_id = SEED.primary_template
-    profile_id = SEED.primary_profile
-    instance_id = SEED.primary_instance
-    field_id = SEED.primary_field
-
-    await db_session.execute(
-        text(
-            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
-            "AND article_id = :aid AND template_id = :tid"
-        ),
-        {"pid": str(project_id), "aid": str(article_id), "tid": str(template_id)},
-    )
-
-    session = await HITLSessionService(db_session).open_or_resume(
-        kind=TemplateKind.EXTRACTION,
-        project_id=project_id,
-        article_id=article_id,
-        user_id=profile_id,
-        project_template_id=template_id,
-    )
-    await ExtractionProposalService(db_session).record_proposal(
-        run_id=session.run_id,
-        instance_id=instance_id,
-        field_id=field_id,
-        source=ExtractionProposalSource.HUMAN,
-        source_user_id=profile_id,
-        proposed_value={"value": "v1"},
-    )
-
-    lifecycle = RunLifecycleService(db_session)
-    await lifecycle.advance_stage(
-        run_id=session.run_id,
-        target_stage=ExtractionRunStage.REVIEW,
-        user_id=profile_id,
-    )
-
-    # Re-invoke the materialization helper directly; the public
-    # advance_stage will refuse REVIEW→REVIEW but the underlying
-    # operation must be idempotent so retries don't produce duplicates.
-    await lifecycle._materialize_human_decisions(session.run_id)
-
-    decisions = (
-        (
-            await db_session.execute(
-                select(ExtractionReviewerDecision).where(
-                    ExtractionReviewerDecision.run_id == session.run_id,
-                    ExtractionReviewerDecision.instance_id == instance_id,
-                    ExtractionReviewerDecision.field_id == field_id,
-                    ExtractionReviewerDecision.reviewer_id == profile_id,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert len(decisions) == 1, (
-        "Materialization must be idempotent — a second pass cannot duplicate "
-        "the decision row for the same (run, instance, field, reviewer)."
-    )
-
     await db_session.rollback()

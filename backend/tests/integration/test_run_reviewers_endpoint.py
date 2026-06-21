@@ -135,7 +135,7 @@ async def test_reviewers_collects_proposer_decision_consensus(
     project_id, article_id, template_id, instance_id, field_id = fx
     user_id = str(auth_as_profile)
 
-    # 1. Create run, advance to proposal, post a human proposal.
+    # 1. Create run, advance to extract.
     create = await db_client.post(
         "/api/v1/runs",
         json={
@@ -146,34 +146,21 @@ async def test_reviewers_collects_proposer_decision_consensus(
     )
     assert create.status_code == 201
     run_id = create.json()["data"]["id"]
-    adv = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": "proposal"})
+    adv = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": "extract"})
     assert adv.status_code == 200
 
-    proposal = await db_client.post(
-        f"/api/v1/runs/{run_id}/proposals",
-        json={
-            "instance_id": instance_id,
-            "field_id": field_id,
-            "source": "human",
-            "proposed_value": {"value": "X"},
-            "source_user_id": user_id,
-        },
-    )
-    assert proposal.status_code == 201, proposal.text
-
-    # 2. Advance to review and post a decision.
-    adv2 = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": "review"})
-    assert adv2.status_code == 200
+    # 2. Post a human value as an edit decision — extraction writes go through
+    # /decisions (the blind-review write defense rejects /proposals here).
     decision = await db_client.post(
         f"/api/v1/runs/{run_id}/decisions",
         json={
             "instance_id": instance_id,
             "field_id": field_id,
-            "decision": "accept_proposal",
-            "proposal_record_id": proposal.json()["data"]["id"],
+            "decision": "edit",
+            "value": {"value": "X"},
         },
     )
-    assert decision.status_code == 201
+    assert decision.status_code == 201, decision.text
 
     # 3. Advance to consensus and post a manual_override.
     adv3 = await db_client.post(

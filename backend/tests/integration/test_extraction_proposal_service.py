@@ -19,14 +19,13 @@ from tests.factories.template_factory import TemplateFactory
 async def _setup_qa_run_with_instance_field(
     db: AsyncSession,
 ) -> tuple[UUID, UUID, UUID, UUID] | None:
-    """Build a kind='quality_assessment' run + advance to PROPOSAL.
+    """Build a kind='quality_assessment' run + advance to EXTRACT.
 
-    Used by tests that need the QA-specific recovery-from-interrupted-publish
-    behaviour, where ``human`` proposals MUST keep being accepted at REVIEW
-    stage (the QA publish flow advances to REVIEW unconditionally; a downstream
-    failure leaves the run parked there, and the user must be able to keep
-    typing). The kind discriminator in the proposal service exempts QA from
-    the Layer 1b extraction-only gate.
+    Used by tests that need the QA-specific behaviour, where ``human``
+    proposals MUST keep being accepted in the editable ``extract`` stage
+    (QA has no per-reviewer blind contract, so its human writes stay on the
+    shared proposal track). The kind discriminator in the proposal service
+    exempts QA from the Layer 1b extraction-only gate.
 
     Builds a transient QA template under PRIMARY_PROJECT via ``TemplateFactory``
     so the test does not depend on a pre-cloned QA project template existing
@@ -94,7 +93,7 @@ async def _setup_qa_run_with_instance_field(
     )
     await lifecycle.advance_stage(
         run_id=run.id,
-        target_stage=ExtractionRunStage.PROPOSAL,
+        target_stage=ExtractionRunStage.EXTRACT,
         user_id=UUID(str(profile_id)),
     )
     return run.id, instance_id, field_id, UUID(str(profile_id))
@@ -105,7 +104,7 @@ async def _setup_run_with_instance_field(
     *,
     kind: str | None = None,
 ) -> tuple[UUID, UUID, UUID, UUID] | None:
-    """Build a run + advance to proposal + return (run_id, instance_id, field_id, profile_id).
+    """Build a run + advance to extract + return (run_id, instance_id, field_id, profile_id).
 
     When ``kind`` is provided the project template lookup filters by it
     (otherwise picks the lex-first id, which historically happened to be
@@ -177,7 +176,7 @@ async def _setup_run_with_instance_field(
     )
     await lifecycle.advance_stage(
         run_id=run.id,
-        target_stage=ExtractionRunStage.PROPOSAL,
+        target_stage=ExtractionRunStage.EXTRACT,
         user_id=profile_id,
     )
     return run.id, instance_id, field_id, profile_id
@@ -227,18 +226,18 @@ async def test_record_human_proposal_requires_user_id(
 
 
 @pytest.mark.asyncio
-async def test_record_proposal_blocked_outside_proposal_stage(
+async def test_record_proposal_blocked_outside_extract_stage(
     db_session: AsyncSession,
 ) -> None:
     fx = await _setup_run_with_instance_field(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
     run_id, instance_id, field_id, profile_id = fx
-    # Move run forward past proposal stage
+    # Move run forward past the editable extract stage (into consensus).
     lifecycle = RunLifecycleService(db_session)
     await lifecycle.advance_stage(
         run_id=run_id,
-        target_stage=ExtractionRunStage.REVIEW,
+        target_stage=ExtractionRunStage.CONSENSUS,
         user_id=profile_id,
     )
     service = ExtractionProposalService(db_session)
@@ -254,30 +253,23 @@ async def test_record_proposal_blocked_outside_proposal_stage(
 
 
 @pytest.mark.asyncio
-async def test_record_human_proposal_accepted_at_review_for_qa(
+async def test_record_human_proposal_accepted_in_extract_for_qa(
     db_session: AsyncSession,
 ) -> None:
-    """Quality-Assessment / human flows must keep working when the run has
-    already advanced to REVIEW (e.g. after an interrupted publish that
-    succeeded the ``proposal -> review`` step but failed downstream).
+    """Quality-Assessment / human flows must keep working in the editable
+    ``extract`` stage.
 
     Layer 1b: The extraction-only gate added in this layer must NOT block
-    QA's recovery write — QA's publish is a one-shot single-user flow that
-    legitimately needs ``human`` proposals at REVIEW. Coverage of QA's
-    permissiveness is therefore explicit and uses a kind='quality_assessment'
-    template (the sibling extraction-kind rejection lives in
-    ``test_record_human_proposal_rejected_at_review_for_extraction``).
+    QA's write — QA is a one-shot single-user flow that legitimately needs
+    ``human`` proposals on the shared track. Coverage of QA's permissiveness
+    is therefore explicit and uses a kind='quality_assessment' template (the
+    sibling extraction-kind rejection lives in
+    ``test_record_human_proposal_rejected_in_extract_for_extraction``).
     """
     fx = await _setup_qa_run_with_instance_field(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
     run_id, instance_id, field_id, profile_id = fx
-    lifecycle = RunLifecycleService(db_session)
-    await lifecycle.advance_stage(
-        run_id=run_id,
-        target_stage=ExtractionRunStage.REVIEW,
-        user_id=profile_id,
-    )
     service = ExtractionProposalService(db_session)
     record = await service.record_proposal(
         run_id=run_id,
@@ -293,35 +285,28 @@ async def test_record_human_proposal_accepted_at_review_for_qa(
 
 
 @pytest.mark.asyncio
-async def test_record_human_proposal_rejected_at_review_for_extraction(
+async def test_record_human_proposal_rejected_in_extract_for_extraction(
     db_session: AsyncSession,
 ) -> None:
     """Layer 1b defense-in-depth: ``human`` proposals against an
-    EXTRACTION-kind run in REVIEW stage must be rejected.
+    EXTRACTION-kind run must be rejected outright (in any stage).
 
-    During REVIEW the reviewer's writes must land as per-user
-    ``ReviewerDecision`` rows so the blind-review contract holds
-    (``loadValuesForUser`` filters by ``reviewer_id``). Allowing
-    ``human`` proposals at this stage opened the leak that Layer 1 fixed
-    on the read side; this gate closes the loophole on the write side so
+    A reviewer's extraction writes must land as per-user ``ReviewerDecision``
+    rows so the blind-review contract holds (``loadValuesForUser`` filters by
+    ``reviewer_id``). Allowing ``human`` proposals opened the leak that Layer 1
+    fixed on the read side; this gate closes the loophole on the write side so
     a future bypass of the frontend filter (curl, agent client) cannot
-    resurrect the bug.
+    resurrect the bug — humans write via /decisions.
 
-    QA's publish flow legitimately needs proposals at REVIEW and is
-    therefore exempted (covered by the sibling QA test above).
+    QA legitimately needs human proposals and is therefore exempted (covered
+    by the sibling QA test above).
     """
     fx = await _setup_run_with_instance_field(db_session, kind="extraction")
     if fx is None:
         pytest.skip("Missing extraction-kind template in test DB.")
     run_id, instance_id, field_id, profile_id = fx
-    lifecycle = RunLifecycleService(db_session)
-    await lifecycle.advance_stage(
-        run_id=run_id,
-        target_stage=ExtractionRunStage.REVIEW,
-        user_id=profile_id,
-    )
     service = ExtractionProposalService(db_session)
-    with pytest.raises(InvalidProposalError, match="extraction.*review|review.*extraction"):
+    with pytest.raises(InvalidProposalError, match="/decisions"):
         await service.record_proposal(
             run_id=run_id,
             instance_id=instance_id,

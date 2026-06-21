@@ -45,37 +45,38 @@ class ExtractionProposalService:
             raise InvalidProposalError(f"Run {run_id} not found")
 
         source_value = source.value if isinstance(source, ExtractionProposalSource) else source
-        # Stage gate is source-specific AND kind-aware:
+        # Stage gate is source-specific AND kind-aware in the collapsed
+        # ``extract`` lifecycle (pending -> extract -> consensus -> finalized):
         #
-        # * ``ai`` proposals only make sense in PROPOSAL — once the run
-        #   has advanced past it the AI phase is conceptually closed.
-        # * ``human`` / ``system`` proposals at REVIEW are kind-gated
-        #   (Layer 1b of the multi-reviewer blind fix):
-        #     - kind='quality_assessment': allowed. QA's publish flow
-        #       advances proposal -> review unconditionally; an
-        #       interrupted downstream consensus call leaves the run
-        #       parked at REVIEW and the user must be able to keep
-        #       typing for the retry.
-        #     - kind='extraction': REJECTED. Reviewer writes during
-        #       REVIEW must land as per-user ``ReviewerDecision`` rows
-        #       so the blind-review contract holds (``loadValuesForUser``
-        #       filters by reviewer_id). Allowing ``human`` proposals
-        #       here opens the leak Layer 1 patched on the read side;
-        #       this gate closes it on the write side so a frontend
-        #       bypass (curl, agent client) cannot resurrect the bug.
-        if source_value == "ai" or run.kind == "extraction":
-            allowed_stages = {ExtractionRunStage.PROPOSAL.value}
+        # * ``ai`` / ``system`` proposals are produced during ``extract`` —
+        #   the AI phase and any system seeding both live in that single
+        #   stage now that ``proposal``/``review`` are unified.
+        # * ``human`` proposals are kind-gated (Layer 1b of the
+        #   multi-reviewer blind fix):
+        #     - kind='extraction': REJECTED outright. A reviewer's
+        #       extraction values must land as per-user ``ReviewerDecision``
+        #       rows so the blind-review contract holds (``loadValuesForUser``
+        #       filters by reviewer_id). A shared ``human`` proposal here
+        #       opens the leak Layer 1 patched on the read side; this gate
+        #       closes it on the write side so a frontend bypass (curl,
+        #       agent client) cannot resurrect the bug — humans write via
+        #       /decisions.
+        #     - kind='quality_assessment': allowed in ``extract``. QA has no
+        #       per-reviewer blind contract, so its human writes stay on the
+        #       shared proposal track.
+        if source_value in ("ai", "system"):
+            allowed_stages = {ExtractionRunStage.EXTRACT.value}
+        elif run.kind == "extraction":
+            raise InvalidProposalError(
+                "For kind='extraction', human writes must go through "
+                "/decisions (ReviewerDecision), not /proposals."
+            )
         else:
-            allowed_stages = {
-                ExtractionRunStage.PROPOSAL.value,
-                ExtractionRunStage.REVIEW.value,
-            }
+            allowed_stages = {ExtractionRunStage.EXTRACT.value}
         if run.stage not in allowed_stages:
             raise InvalidProposalError(
                 f"Cannot record proposal: kind={run.kind} run stage is "
-                f"{run.stage}, not in {sorted(allowed_stages)}. "
-                f"For kind='extraction', writes at REVIEW must go through "
-                f"/decisions (ReviewerDecision), not /proposals."
+                f"{run.stage}, not in {sorted(allowed_stages)}."
             )
 
         await assert_coords_coherent(

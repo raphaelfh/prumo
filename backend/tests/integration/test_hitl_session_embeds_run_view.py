@@ -75,8 +75,8 @@ async def test_extraction_session_open_embeds_run_view(
     - ``run_view["run"]["id"]`` matches ``data["run_id"]`` (same run).
     - ``run_view`` has ``entity_types`` and ``current_values`` keys
       (the RunViewResponse contract beyond RunDetailResponse).
-    - Stage is 'proposal' (session open advances pending → proposal).
-    - ``current_values`` is empty (proposal stage → no value resolution yet).
+    - Stage is 'extract' (session open advances pending → extract).
+    - ``current_values`` is empty (freshly opened, no decisions recorded yet).
     """
     res = await db_client.post(
         _SESSION_URL,
@@ -101,9 +101,9 @@ async def test_extraction_session_open_embeds_run_view(
     assert "entity_types" in view, "run_view must contain entity_types"
     assert "current_values" in view, "run_view must contain current_values"
     assert "instances" in view, "run_view must contain instances"
-    assert view["run"]["stage"] == "proposal", "Session open must advance the run to proposal stage"
+    assert view["run"]["stage"] == "extract", "Session open must advance the run to extract stage"
     assert view["current_values"] == [], (
-        "current_values must be empty for a freshly-opened proposal-stage run"
+        "current_values must be empty for a freshly-opened extract-stage run"
     )
     assert isinstance(view["instances"], list), "instances must be a list"
     # RunDetailResponse keys inherited by RunViewResponse

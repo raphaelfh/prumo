@@ -311,18 +311,18 @@ class TestSectionExtractionFullFlow:
         assert result.tokens_total == 150
         service._proposals.record_proposal.assert_awaited()
 
-        # The run lifecycle gets exactly one stage advance: pending → proposal.
-        # The run STAYS in PROPOSAL after AI proposing so ``useExtractedValues``
+        # The run lifecycle gets exactly one stage advance: pending → extract.
+        # The run STAYS in EXTRACT after AI proposing so ``useExtractedValues``
         # can hydrate from ``runDetail.proposals`` and show the values in the
-        # form. The user advances to REVIEW explicitly via "Submit for review".
-        # Auto-advancing here skipped the proposal-stage hydration and left
+        # form. The user advances to CONSENSUS explicitly via "Open consensus".
+        # Auto-advancing here skipped the extract-stage hydration and left
         # the form blank until F5 (#bug: AI extraction values not appearing).
         from app.models.extraction import ExtractionRunStage
 
         advance_calls = service._lifecycle.advance_stage.await_args_list
         target_stages = [call.kwargs.get("target_stage") for call in advance_calls]
-        assert ExtractionRunStage.PROPOSAL in target_stages
-        assert ExtractionRunStage.REVIEW not in target_stages
+        assert ExtractionRunStage.EXTRACT in target_stages
+        assert ExtractionRunStage.CONSENSUS not in target_stages
 
 
 class TestExtractSectionWithExistingRun:
@@ -394,7 +394,7 @@ class TestExtractSectionWithExistingRun:
 
         existing_run = MagicMock()
         existing_run.id = existing_run_id
-        existing_run.stage = ExtractionRunStage.PROPOSAL.value
+        existing_run.stage = ExtractionRunStage.EXTRACT.value
 
         self._wire_pipeline(service, mock_storage, existing_run, entity_type_id)
 
@@ -438,17 +438,17 @@ class TestExtractSectionWithExistingRun:
         assert record_call.kwargs["run_id"] == existing_run_id
 
     @pytest.mark.asyncio
-    async def test_existing_run_id_rejects_non_proposal_stage(self, service, mock_storage):
-        """Run already moved past PROPOSAL → reject (matches extract_for_run)."""
+    async def test_existing_run_id_rejects_non_extract_stage(self, service, mock_storage):
+        """Run already moved past EXTRACT → reject (matches extract_for_run)."""
         from app.models.extraction import ExtractionRunStage
 
         existing_run = MagicMock()
         existing_run.id = uuid4()
-        existing_run.stage = ExtractionRunStage.REVIEW.value
+        existing_run.stage = ExtractionRunStage.CONSENSUS.value
 
         self._wire_pipeline(service, mock_storage, existing_run, uuid4())
 
-        with pytest.raises(ValueError, match="PROPOSAL"):
+        with pytest.raises(ValueError, match="EXTRACT"):
             await service.extract_section(
                 project_id=uuid4(),
                 article_id=uuid4(),
@@ -492,7 +492,7 @@ class TestExtractForRun:
         run.template_id = uuid4()
         from app.models.extraction import ExtractionRunStage
 
-        run.stage = ExtractionRunStage.PROPOSAL.value
+        run.stage = ExtractionRunStage.EXTRACT.value
         run.kind = "quality_assessment"
         return run
 
@@ -556,9 +556,9 @@ class TestExtractForRun:
     async def test_extract_for_run_does_not_advance_when_disabled(
         self, service, qa_run, qa_template
     ):
-        """QA passes auto_advance_to_review=False so its publish flow can
-        drive the run from PROPOSAL → REVIEW → CONSENSUS → FINALIZED in
-        one click."""
+        """``extract_for_run`` never flips the stage: the run stays in EXTRACT
+        and the QA publish flow drives extract → consensus → finalized itself.
+        With ``auto_advance_to_review=False`` no advance is attempted."""
         et = MagicMock()
         et.id = uuid4()
         et.name = "Participants"
@@ -574,9 +574,12 @@ class TestExtractForRun:
         service._lifecycle.advance_stage.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_extract_for_run_advances_when_enabled(self, service, qa_run, qa_template):
-        from app.models.extraction import ExtractionRunStage
-
+    async def test_extract_for_run_does_not_advance_even_when_enabled(
+        self, service, qa_run, qa_template
+    ):
+        """``auto_advance_to_review`` is inert in the collapsed lifecycle:
+        there is no separate review stage, so even with the flag True the run
+        stays in EXTRACT and no stage advance is attempted."""
         et = MagicMock()
         et.id = uuid4()
         et.name = "Participants"
@@ -589,20 +592,16 @@ class TestExtractForRun:
             auto_advance_to_review=True,
         )
 
-        target_stages = [
-            call.kwargs.get("target_stage")
-            for call in service._lifecycle.advance_stage.await_args_list
-        ]
-        assert ExtractionRunStage.REVIEW in target_stages
+        service._lifecycle.advance_stage.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_extract_for_run_rejects_non_proposal_stage(self, service, qa_run, qa_template):
+    async def test_extract_for_run_rejects_non_extract_stage(self, service, qa_run, qa_template):
         from app.models.extraction import ExtractionRunStage
 
-        qa_run.stage = ExtractionRunStage.REVIEW.value
+        qa_run.stage = ExtractionRunStage.CONSENSUS.value
         self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [])
 
-        with pytest.raises(ValueError, match="PROPOSAL"):
+        with pytest.raises(ValueError, match="EXTRACT"):
             await service.extract_for_run(run_id=qa_run.id)
 
     @pytest.mark.asyncio
@@ -695,7 +694,7 @@ class TestExtractOneEntityTypeForRun:
         run.project_id = uuid4()
         run.article_id = uuid4()
         run.template_id = uuid4()
-        run.stage = ExtractionRunStage.PROPOSAL.value
+        run.stage = ExtractionRunStage.EXTRACT.value
         run.kind = "extraction"
         return run
 
@@ -1612,7 +1611,7 @@ class TestExtractForRunErrorPath:
         run.project_id = uuid4()
         run.article_id = uuid4()
         run.template_id = uuid4()
-        run.stage = ExtractionRunStage.PROPOSAL.value
+        run.stage = ExtractionRunStage.EXTRACT.value
         run.kind = "extraction"
 
         template = MagicMock()

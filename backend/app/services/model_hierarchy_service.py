@@ -18,9 +18,8 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
 )
 from app.models.extraction_versioning import TemplateKind
-from app.models.extraction_workflow import ExtractionProposalSource
 from app.repositories.extraction_repository import ExtractionTemplateRepository
-from app.services.extraction_proposal_service import ExtractionProposalService
+from app.services.extraction_review_service import ExtractionReviewService
 
 
 @dataclass
@@ -239,12 +238,7 @@ class ModelHierarchyService:
                 ExtractionRun.article_id == article_id,
                 ExtractionRun.template_id == template_id,
                 ExtractionRun.kind == TemplateKind.EXTRACTION.value,
-                ExtractionRun.stage.in_(
-                    [
-                        ExtractionRunStage.PROPOSAL.value,
-                        ExtractionRunStage.REVIEW.value,
-                    ]
-                ),
+                ExtractionRun.stage == ExtractionRunStage.EXTRACT.value,
             )
             .order_by(ExtractionRun.created_at.desc())
             .limit(1)
@@ -253,13 +247,17 @@ class ModelHierarchyService:
         if run is None:
             return None
 
-        proposal_service = ExtractionProposalService(self.db)
-        await proposal_service.record_proposal(
+        # A human-entered extraction value must land as a per-user
+        # ReviewerDecision (blind-review write defense), not a shared proposal —
+        # the form's /decisions path does the same. Recording it as a proposal
+        # would leak this reviewer's value to peers via the shared proposal track.
+        review_service = ExtractionReviewService(self.db)
+        await review_service.record_decision(
             run_id=run.id,
             instance_id=model_instance_id,
             field_id=field.id,
-            source=ExtractionProposalSource.HUMAN,
-            source_user_id=user_id,
-            proposed_value={"value": modelling_method},
+            reviewer_id=user_id,
+            decision="edit",
+            value={"value": modelling_method},
         )
         return run.id

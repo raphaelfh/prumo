@@ -82,10 +82,11 @@ class SectionExtractionRequest(BaseModel):
     # session-scoped Run isn't shadowed by a new one).
     run_id: UUID | None = Field(default=None, alias="runId")
 
-    # When False, the service skips the proposal -> review auto-advance
-    # at the end. QA needs this off because its publish flow walks the
-    # run from PROPOSAL all the way to FINALIZED in one click; an early
-    # advance would land the run at REVIEW prematurely and break that.
+    # Retained for API compatibility but inert in the collapsed lifecycle:
+    # there is no separate ``review`` stage to auto-advance to, so the run
+    # stays in ``extract`` after AI extraction and reviewers act there
+    # directly. QA's publish flow walks the run from ``extract`` to
+    # ``finalized`` itself. See ADR-0013 / section_extraction_service.
     auto_advance_to_review: bool = Field(default=True, alias="autoAdvanceToReview")
 
     # When True, fields whose latest proposal on this Run is `human` are

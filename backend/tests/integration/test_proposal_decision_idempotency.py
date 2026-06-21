@@ -20,39 +20,30 @@ from app.services.run_lifecycle_service import RunLifecycleService
 
 
 async def _coord(db: AsyncSession):
-    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    if project_id is None:
-        return None
-    article_id = (
-        await db.execute(
-            text("SELECT id FROM public.articles WHERE project_id=:p LIMIT 1"),
-            {"p": str(project_id)},
-        )
-    ).scalar()
-    template_id = (
-        await db.execute(
-            text(
-                "SELECT id FROM public.project_extraction_templates "
-                "WHERE project_id=:p AND kind='extraction' LIMIT 1"
-            ),
-            {"p": str(project_id)},
-        )
-    ).scalar()
     user_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    if user_id is None:
+        return None
+    # Derive a coherent (project, article, template, instance, field) tuple
+    # from a real extraction instance with a field chain. Scoping off the
+    # instance (rather than picking projects LIMIT 1, which on the shared dev
+    # DB can land on a project that has no extraction template) keeps the
+    # graph coherent so create_run / record_proposal don't fail.
     row = (
         await db.execute(
             text(
-                "SELECT i.id, f.id FROM public.extraction_instances i "
+                "SELECT i.project_id, i.article_id, i.template_id, i.id, f.id "
+                "FROM public.extraction_instances i "
                 "JOIN public.extraction_entity_types et ON et.id=i.entity_type_id "
                 "JOIN public.extraction_fields f ON f.entity_type_id=et.id "
-                "WHERE i.template_id=:t AND i.article_id=:a LIMIT 1"
-            ),
-            {"t": str(template_id), "a": str(article_id)},
+                "JOIN public.project_extraction_templates t ON t.id=i.template_id "
+                "WHERE t.kind='extraction' LIMIT 1"
+            )
         )
     ).first()
-    if not (article_id and template_id and user_id and row):
+    if row is None:
         return None
-    return project_id, article_id, template_id, user_id, row[0], row[1]
+    project_id, article_id, template_id, instance_id, field_id = row
+    return project_id, article_id, template_id, user_id, instance_id, field_id
 
 
 @pytest.mark.asyncio
@@ -69,16 +60,18 @@ async def test_identical_proposal_rerecord_is_a_noop(db_session: AsyncSession) -
         project_template_id=template_id,
         user_id=user_id,
     )
-    await lc.advance_stage(run_id=run.id, target_stage=ExtractionRunStage.PROPOSAL, user_id=user_id)
+    await lc.advance_stage(run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=user_id)
 
     svc = ExtractionProposalService(db_session)
+    # AI source: human extraction writes go through /decisions now, but the
+    # idempotent re-record guard is source-agnostic, so we exercise it via an
+    # AI proposal (allowed on extraction runs in extract).
     args = {
         "run_id": run.id,
         "instance_id": instance_id,
         "field_id": field_id,
-        "source": ExtractionProposalSource.HUMAN,
+        "source": ExtractionProposalSource.AI,
         "proposed_value": {"value": "v"},
-        "source_user_id": user_id,
     }
     first = await svc.record_proposal(**args)
     second = await svc.record_proposal(**args)  # identical re-record (mount replay)
@@ -114,8 +107,7 @@ async def test_identical_decision_rerecord_is_a_noop(db_session: AsyncSession) -
         project_template_id=template_id,
         user_id=user_id,
     )
-    await lc.advance_stage(run_id=run.id, target_stage=ExtractionRunStage.PROPOSAL, user_id=user_id)
-    await lc.advance_stage(run_id=run.id, target_stage=ExtractionRunStage.REVIEW, user_id=user_id)
+    await lc.advance_stage(run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=user_id)
 
     svc = ExtractionReviewService(db_session)
     args = {

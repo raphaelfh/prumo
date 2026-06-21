@@ -168,9 +168,9 @@ class SectionExtractionService(LoggerMixin):
             existing_run = await self.db.get(ExtractionRun, run_id)
             if existing_run is None:
                 raise ValueError(f"Run {run_id} not found")
-            if existing_run.stage != ExtractionRunStage.PROPOSAL.value:
+            if existing_run.stage != ExtractionRunStage.EXTRACT.value:
                 raise ValueError(
-                    f"Run {run_id} stage is {existing_run.stage}; AI extraction requires PROPOSAL",
+                    f"Run {run_id} stage is {existing_run.stage}; AI extraction requires EXTRACT",
                 )
             run = existing_run
         else:
@@ -187,7 +187,7 @@ class SectionExtractionService(LoggerMixin):
             )
             run = await self._lifecycle.advance_stage(
                 run_id=run.id,
-                target_stage=ExtractionRunStage.PROPOSAL,
+                target_stage=ExtractionRunStage.EXTRACT,
                 user_id=UUID(self.user_id),
             )
             await self._runs.start_run(run.id)
@@ -237,14 +237,14 @@ class SectionExtractionService(LoggerMixin):
             )
             phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
-            # Run stays in PROPOSAL. The HITL session service's
+            # Run stays in EXTRACT. The HITL session service's
             # ``_reuse_or_create_run`` returns this run on next session
             # open (most-recent non-terminal), so ``useExtractedValues``
             # hydrates from ``runDetail.proposals`` and the AI values
-            # show in the form immediately. The user advances to REVIEW
-            # explicitly via "Submit for review" — auto-advancing here
-            # would skip the proposal-stage hydration and leave the
-            # form empty (#bug: AI extraction values not appearing).
+            # show in the form immediately. The user advances to CONSENSUS
+            # explicitly via "Open consensus" — auto-advancing here would
+            # skip the extract-stage hydration and leave the form empty
+            # (#bug: AI extraction values not appearing).
 
             duration = (perf_counter() - start_time) * 1000
 
@@ -331,12 +331,13 @@ class SectionExtractionService(LoggerMixin):
         ``_create_suggestions``.
 
         Stage rules:
-        - The Run must already be in PROPOSAL stage (the HITL session
+        - The Run must already be in EXTRACT stage (the HITL session
           service opens it there).
-        - When ``auto_advance_to_review`` is True the Run advances
-          PROPOSAL → REVIEW after success. QA passes False so the publish
-          flow can drive the lifecycle from PROPOSAL all the way to
-          FINALIZED in one click.
+        - ``auto_advance_to_review`` is retained for API compatibility but
+          is now inert: the collapsed lifecycle has no separate ``review``
+          stage, so the Run stays in EXTRACT after success and reviewers
+          act there directly. The flag's requested value is still recorded
+          in the result for telemetry continuity.
 
         Re-run safety: when ``skip_fields_with_human_proposals`` is True,
         every field whose latest proposal on this Run is already
@@ -353,8 +354,8 @@ class SectionExtractionService(LoggerMixin):
         run = await self.db.get(ExtractionRun, run_id)
         if run is None:
             raise ValueError(f"Run {run_id} not found")
-        if run.stage != ExtractionRunStage.PROPOSAL.value:
-            raise ValueError(f"Run {run_id} stage is {run.stage}; AI extraction requires PROPOSAL")
+        if run.stage != ExtractionRunStage.EXTRACT.value:
+            raise ValueError(f"Run {run_id} stage is {run.stage}; AI extraction requires EXTRACT")
 
         template = await self.db.get(ProjectExtractionTemplate, run.template_id)
         framework: str | None = template.framework if template is not None else None
@@ -416,12 +417,10 @@ class SectionExtractionService(LoggerMixin):
                         }
                     )
 
-            if auto_advance_to_review:
-                await self._lifecycle.advance_stage(
-                    run_id=run.id,
-                    target_stage=ExtractionRunStage.REVIEW,
-                    user_id=UUID(self.user_id),
-                )
+            # No stage flip: the collapsed lifecycle has no ``review`` stage,
+            # so a successful AI pass leaves the Run in EXTRACT where reviewers
+            # act directly. ``auto_advance_to_review`` is recorded below for
+            # telemetry but no longer drives a transition.
 
             duration_ms = (perf_counter() - start_time) * 1000
 
@@ -643,7 +642,7 @@ class SectionExtractionService(LoggerMixin):
         )
         run = await self._lifecycle.advance_stage(
             run_id=run.id,
-            target_stage=ExtractionRunStage.PROPOSAL,
+            target_stage=ExtractionRunStage.EXTRACT,
             user_id=UUID(self.user_id),
         )
 
@@ -740,9 +739,9 @@ class SectionExtractionService(LoggerMixin):
                         }
                     )
 
-            # Run stays in PROPOSAL — see ``extract_section`` for the
-            # rationale. The user advances to REVIEW via "Submit for
-            # review" after inspecting the AI-proposed values.
+            # Run stays in EXTRACT — see ``extract_section`` for the
+            # rationale. The user advances to CONSENSUS via "Open consensus"
+            # after inspecting the AI-proposed values.
 
             duration = (perf_counter() - start_time) * 1000
 
@@ -842,7 +841,7 @@ class SectionExtractionService(LoggerMixin):
         )
         run = await self._lifecycle.advance_stage(
             run_id=run.id,
-            target_stage=ExtractionRunStage.PROPOSAL,
+            target_stage=ExtractionRunStage.EXTRACT,
             user_id=UUID(self.user_id),
         )
 
@@ -874,9 +873,9 @@ class SectionExtractionService(LoggerMixin):
             # Generate memory summary (max 200 chars)
             summary = self._generate_extraction_summary(entity_type, extracted_data)
 
-            # Run stays in PROPOSAL — see ``extract_section`` for the
-            # rationale. The user advances to REVIEW via "Submit for
-            # review" after inspecting the AI-proposed values.
+            # Run stays in EXTRACT — see ``extract_section`` for the
+            # rationale. The user advances to CONSENSUS via "Open consensus"
+            # after inspecting the AI-proposed values.
 
             # Complete run
             phase_start = perf_counter()

@@ -315,9 +315,7 @@ async def test_finalize_blocked_until_required_fields_filled(
     await db_session.flush()
 
     lifecycle = RunLifecycleService(db_session)
-    await lifecycle.advance_stage(
-        run_id=run_id, target_stage=ExtractionRunStage.EXTRACT, user_id=profile_id
-    )
+    # The session already parked the run in EXTRACT; advance straight to CONSENSUS.
     await lifecycle.advance_stage(
         run_id=run_id, target_stage=ExtractionRunStage.CONSENSUS, user_id=profile_id
     )

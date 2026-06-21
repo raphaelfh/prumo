@@ -192,12 +192,12 @@ class TestCreateConsensusRequest:
 
 # --------------------------------------------------------------------------- #
 # AdvanceStageRequest
-# (target_stage pattern ^(pending|proposal|review|consensus|finalized|cancelled)$)
+# (target_stage pattern ^(pending|extract|consensus|finalized|cancelled)$)
 # --------------------------------------------------------------------------- #
 class TestAdvanceStageRequest:
     @pytest.mark.parametrize(
         "stage",
-        ["pending", "proposal", "review", "consensus", "finalized", "cancelled"],
+        ["pending", "extract", "consensus", "finalized", "cancelled"],
     )
     def test_valid_stages_accepted(self, stage: str) -> None:
         req = AdvanceStageRequest(target_stage=stage)
@@ -399,7 +399,7 @@ def _run_summary_ns(**kw: object) -> types.SimpleNamespace:
         "template_id": uuid4(),
         "kind": "extraction",
         "version_id": uuid4(),
-        "stage": "proposal",
+        "stage": "extract",
         "status": "running",
         "hitl_config_snapshot": {"reviewer_count": 1},
         "parameters": {},
@@ -415,7 +415,7 @@ class TestRunSummaryResponse:
     def test_from_attributes(self) -> None:
         resp = RunSummaryResponse.model_validate(_run_summary_ns())
         assert resp.kind == "extraction"
-        assert resp.stage == "proposal"
+        assert resp.stage == "extract"
 
     def test_missing_required_attr_rejected(self) -> None:
         ns = _run_summary_ns()

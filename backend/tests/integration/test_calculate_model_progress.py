@@ -182,7 +182,7 @@ async def project_with_run(db_session: AsyncSession) -> AsyncGenerator[dict, Non
                  stage, status, parameters, results, hitl_config_snapshot,
                  created_by)
             VALUES (:rid, :proj, :art, :tid, :vid, 'extraction',
-                    'review'::extraction_run_stage,
+                    'extract'::extraction_run_stage,
                     'running'::extraction_run_status,
                     '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, :uid)
             """
