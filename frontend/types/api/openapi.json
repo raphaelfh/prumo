@@ -443,6 +443,54 @@
         "title": "ApiResponse[Annotated[Union[SingleSectionResult, BatchSectionResult], FieldInfo(annotation=NoneType, required=True, discriminator='mode')]]",
         "type": "object"
       },
+      "ApiResponse_ArticleFileResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArticleFileResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ArticleFileResponse]",
+        "type": "object"
+      },
       "ApiResponse_CloneTemplateResponse_": {
         "properties": {
           "data": {
@@ -1977,6 +2025,115 @@
         "title": "ApiResponse[list[dict[str, Any]]]",
         "type": "object"
       },
+      "ArticleFileResponse": {
+        "description": "Response de file de article.",
+        "properties": {
+          "articleId": {
+            "format": "uuid",
+            "title": "Articleid",
+            "type": "string"
+          },
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "extractedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extractedat"
+          },
+          "extractionError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extractionerror"
+          },
+          "extractionStatus": {
+            "default": "pending",
+            "title": "Extractionstatus",
+            "type": "string"
+          },
+          "fileRole": {
+            "title": "Filerole",
+            "type": "string"
+          },
+          "fileType": {
+            "title": "Filetype",
+            "type": "string"
+          },
+          "hasText": {
+            "default": false,
+            "title": "Hastext",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "originalFilename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Originalfilename"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "storageKey": {
+            "title": "Storagekey",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "articleId",
+          "fileType",
+          "storageKey",
+          "fileRole",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ArticleFileResponse",
+        "type": "object"
+      },
       "ArticleRunRef": {
         "description": "Per-article run reference returned by POST /articles/form-runs.\n\n``run_id`` is None when the article has no matching run.",
         "properties": {
@@ -2119,6 +2276,55 @@
           "created"
         ],
         "title": "CloneTemplateResponse",
+        "type": "object"
+      },
+      "ConfirmUploadRequest": {
+        "description": "Request for confirmar upload.",
+        "properties": {
+          "articleId": {
+            "format": "uuid",
+            "title": "Articleid",
+            "type": "string"
+          },
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "contentType": {
+            "title": "Contenttype",
+            "type": "string"
+          },
+          "fileRole": {
+            "default": "MAIN",
+            "enum": [
+              "MAIN",
+              "SUPPLEMENT",
+              "PROTOCOL",
+              "DATASET",
+              "APPENDIX",
+              "FIGURE",
+              "OTHER"
+            ],
+            "title": "Filerole",
+            "type": "string"
+          },
+          "originalFilename": {
+            "title": "Originalfilename",
+            "type": "string"
+          },
+          "storageKey": {
+            "title": "Storagekey",
+            "type": "string"
+          }
+        },
+        "required": [
+          "articleId",
+          "storageKey",
+          "originalFilename",
+          "contentType",
+          "bytes"
+        ],
+        "title": "ConfirmUploadRequest",
         "type": "object"
       },
       "ConsensusDecisionResponse": {
@@ -5524,6 +5730,55 @@
         ]
       }
     },
+    "/api/v1/article-files/{article_file_id}/reparse": {
+      "post": {
+        "description": "Re-enqueue a parse for an existing ArticleFile (recovery).",
+        "operationId": "reparse_article_file_api_v1_article_files__article_file_id__reparse_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_file_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ArticleFileResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Reparse Article File",
+        "tags": [
+          "article-files"
+        ]
+      }
+    },
     "/api/v1/article-files/{article_file_id}/text-blocks": {
       "get": {
         "description": "Return all text blocks for ``article_file_id`` in reading order.",
@@ -5919,6 +6174,65 @@
         "summary": "List Article Citations Endpoint",
         "tags": [
           "citations"
+        ]
+      }
+    },
+    "/api/v1/articles/{article_id}/files": {
+      "post": {
+        "description": "Register an already-uploaded object and enqueue its parse.",
+        "operationId": "confirm_article_file_upload_api_v1_articles__article_id__files_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ArticleFileResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Confirm Article File Upload",
+        "tags": [
+          "article-files"
         ]
       }
     },
