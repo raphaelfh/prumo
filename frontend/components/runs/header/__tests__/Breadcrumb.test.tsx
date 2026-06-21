@@ -46,7 +46,10 @@ describe('RunHeader.Breadcrumb', () => {
     expect(screen.getByText('My Run')).toBeInTheDocument();
   });
 
-  it('applies truncate class to the last crumb only', () => {
+  it('truncates every crumb so a non-final crumb cannot overflow into the next', () => {
+    // Non-final crumbs must also truncate (min-w-0 + truncate): a whitespace-nowrap
+    // crumb overflows its shrunk <li> at narrow widths and paints over the next
+    // crumb. Both the final title and the non-final crumbs carry the truncate class.
     render(
       <RunHeader value={base}>
         <RunHeader.Left>
@@ -57,10 +60,8 @@ describe('RunHeader.Breadcrumb', () => {
         </RunHeader.Left>
       </RunHeader>,
     );
-    const lastCrumb = screen.getByText('My Run');
-    expect(lastCrumb.className).toMatch(/truncate/);
-    const firstCrumb = screen.getByText('Projects');
-    expect(firstCrumb.className).not.toMatch(/truncate/);
+    expect(screen.getByText('My Run').className).toMatch(/truncate/);
+    expect(screen.getByText('Projects').className).toMatch(/truncate/);
   });
 
   it('renders clickable crumbs as buttons and non-clickable as spans', async () => {

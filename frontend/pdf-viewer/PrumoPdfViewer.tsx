@@ -73,8 +73,8 @@ export function PrumoPdfViewer({
   }, []);
 
   return (
-    <div ref={rootRef} className={`flex flex-col h-full ${className ?? ''}`} tabIndex={-1}>
-      <Viewer.Root source={source} store={store} className="flex flex-col flex-1 min-h-0">
+    <div ref={rootRef} className={`flex flex-col h-full min-w-0 overflow-hidden ${className ?? ''}`} tabIndex={-1}>
+      <Viewer.Root source={source} store={store} className="flex flex-col flex-1 min-h-0 min-w-0">
         {toolbar && <Toolbar onSearchToggle={() => setSearchOpen((v) => !v)} />}
         <SearchBar open={searchOpen} onClose={() => setSearchOpen(false)} />
         {/* aria-live region: announces citation jumps to screen readers (canvas + reader mode) */}

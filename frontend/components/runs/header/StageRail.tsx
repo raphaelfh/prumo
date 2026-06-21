@@ -28,9 +28,9 @@ export function StageRail() {
   const { stage, isRevision } = useRunHeader();
   const nodes = stageNodeStates(stage);
   return (
-    <nav className="flex items-center gap-1.5" aria-label="Run stage">
+    <nav className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden" aria-label="Run stage">
       {isRevision && (
-        <span className="mr-1 whitespace-nowrap rounded-md bg-ai/10 px-2 py-0.5 text-[11px] font-medium text-ai">
+        <span className="mr-1 hidden @[48rem]/headerbar:inline-flex whitespace-nowrap rounded-md bg-ai/10 px-2 py-0.5 text-[11px] font-medium text-ai">
           {t('runs', 'revision')}
         </span>
       )}

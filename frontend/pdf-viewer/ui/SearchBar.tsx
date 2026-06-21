@@ -84,7 +84,7 @@ export function SearchBar({open, onClose}: SearchBarProps) {
 
   return (
     <div
-      className="flex items-center gap-1 px-2 py-1 border-b bg-background"
+      className="flex min-w-0 items-center gap-1 px-2 py-1 border-b bg-background"
       role="search"
       data-testid="pdf-search-bar"
     >
@@ -95,7 +95,7 @@ export function SearchBar({open, onClose}: SearchBarProps) {
         onChange={(e) => actions.setSearchQuery(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Find in document"
-        className="h-8 w-64 text-sm"
+        className="h-8 w-full min-w-0 max-w-64 text-sm"
         aria-label="Search query"
       />
       <span className="text-xs text-muted-foreground min-w-[68px] text-center">
