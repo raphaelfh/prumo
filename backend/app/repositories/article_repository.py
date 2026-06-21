@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -398,6 +398,23 @@ class ArticleFileRepository(BaseRepository[ArticleFile]):
 
         query = query.order_by(ArticleFile.created_at.desc())
 
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def list_for_article_ordered(self, article_id: UUID | str) -> list[ArticleFile]:
+        """List an article's files MAIN-first, then by created_at asc.
+
+        Drives the document switcher: the MAIN document is the default
+        selection, supplements follow in a stable upload order.
+        """
+        if isinstance(article_id, str):
+            article_id = UUID(article_id)
+        main_first = case((ArticleFile.file_role == "MAIN", 0), else_=1)
+        query = (
+            select(ArticleFile)
+            .where(ArticleFile.article_id == article_id)
+            .order_by(main_first, ArticleFile.created_at.asc())
+        )
         result = await self.db.execute(query)
         return list(result.scalars().all())
 

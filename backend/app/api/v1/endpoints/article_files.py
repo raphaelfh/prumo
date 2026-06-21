@@ -14,7 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.deps.security import ensure_project_member, get_current_user_sub
 from app.core.deps import DbSession
-from app.schemas.article import ArticleFileResponse, ConfirmUploadRequest
+from app.schemas.article import (
+    ArticleFileListItem,
+    ArticleFileResponse,
+    ConfirmUploadRequest,
+)
 from app.schemas.common import ApiResponse
 from app.services.article_file_service import ArticleFileService, ParseEnqueueError
 from app.services.article_text_block_read_service import (
@@ -72,6 +76,27 @@ async def confirm_article_file_upload(
         raise HTTPException(status_code=503, detail=_ENQUEUE_FAILED_DETAIL) from e
 
     return ApiResponse.success(ArticleFileResponse.model_validate(article_file), trace_id=trace_id)
+
+
+@router.get("/articles/{article_id}/files")
+async def list_article_files(
+    article_id: UUID,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse[list[ArticleFileListItem]]:
+    """List an article's files (MAIN first) — the document switcher's source."""
+    trace_id = _trace(request)
+    try:
+        project_id = await get_article_project_id(db, article_id)
+    except ArticleNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    await ensure_project_member(db, project_id, current_user_sub)
+
+    files = await ArticleFileService(db).list_for_article(article_id)
+    return ApiResponse.success(
+        [ArticleFileListItem.model_validate(f) for f in files], trace_id=trace_id
+    )
 
 
 @router.post("/article-files/{article_file_id}/reparse")
