@@ -1,6 +1,6 @@
 ---
 status: proposed
-last_reviewed: 2026-06-19
+last_reviewed: 2026-06-20
 owner: '@raphaelfh'
 adr_number: '0013'
 ---
@@ -26,7 +26,7 @@ pdfminer plain text, and its `llm_client`/`llm_model` only *describe images* and
 structure. In our 8-paper bake-off MarkItDown emitted **no `#` headings** (section recall
 0.000) and recovered only part of the table cells (see the pilot run). MarkItDown's only real
 high-fidelity PDF route is `docintel_endpoint` (**Azure Document Intelligence**,
-a paid cloud parse with PHI egress) — not an "LLM tier." High-fidelity markdown
+a paid cloud parse) — not an "LLM tier." High-fidelity markdown
 comes from a **structure parser** (e.g. Docling `export_to_markdown`) or a
 **vision-LLM pass** — the same engines ADR 0011 already evaluates.
 
@@ -44,12 +44,12 @@ than building a parallel pipeline.
   anchoring substrate).
 - Free by default, pay only on opt-in: `MARKDOWN_TIER=free` (the `$0`
   block-projection tier, derived from blocks, no egress) is the default rendering
-  tier — independent of `PARSER_BACKEND` (whose non-PHI default is LlamaParse
-  `agentic` cloud per ADR 0011; PHI stays self-hosted). The enriched tier is
-  config-gated and PHI-aware.
+  tier — independent of `PARSER_BACKEND` (whose default is the self-hosted
+  Docling parser per ADR 0011; LlamaParse cloud is per-project opt-in). The
+  enriched tier is config-gated.
 - Reuse, don't reinvent: ride ADR 0011's `DocumentParser`/`create_document_parser`
-  factory, `PARSER_BACKEND` switch, `project_is_phi` gate, provider doorway, and
-  Phase-0 bake-off; reuse the block assembler's table serialization.
+  factory, `PARSER_BACKEND` switch, per-project parser selection, provider
+  doorway, and Phase-0 bake-off; reuse the block assembler's table serialization.
 - Security: rendering parser/LLM markdown in the viewer is the app's **first
   raw-markup surface** — it must be sanitized.
 - Correctness over a fidelity proxy: judge tiers by **structure** (TEDS /
@@ -85,7 +85,7 @@ contract (blocks own anchoring; markdown is a projection) and kills the
   `export_to_markdown`, LlamaParse `markdown`), the service may use it as a merge
   aid when building blocks — but the string the viewer and prompt share is always
   the block projection, and blocks remain the offset/`bbox` source of truth.
-- **Enriched tier (optional, config + PHI gated).** The *same* renderer over
+- **Enriched tier (optional, config-gated).** The *same* renderer over
   blocks already improved by ADR 0011's region-scoped vision table pass
   (`VISION_TABLE_PASS`). Because it is non-deterministic and costs egress, it is
   **stored**: a new `article_files.markdown_enriched TEXT` plus a `markdown_tier`
@@ -93,12 +93,11 @@ contract (blocks own anchoring; markdown is a projection) and kills the
   ≤ 32 chars), co-sequenced with but distinct from the migration that drops the
   dead `text_raw`/`text_html` (the dead columns are **not** repurposed —
   `text_html` implies HTML, not GFM). It reuses ADR 0011's
-  `PARSER_BACKEND` + `project_is_phi` gate verbatim; **PHI projects cannot select
-  a cloud markdown engine.** The enriched engine is whatever `PARSER_BACKEND`
-  resolves to per project — **LlamaParse** `agentic` for non-PHI projects
-  (cloud; its granular-`bbox` items enrich the blocks), the self-hosted parser
-  for PHI (the fail-closed gate) — so the tier reads `PARSER_BACKEND` + ADR
-  0011's PHI gate, not a second engine switch.
+  `PARSER_BACKEND` + per-project parser selection verbatim — the enriched engine
+  is whatever `PARSER_BACKEND` resolves to per project (**LlamaParse** `agentic`
+  when a `llama_cloud` key is configured and the project has opted in, or the
+  self-hosted Docling parser otherwise) — so the tier reads `PARSER_BACKEND` +
+  ADR 0011's per-project selection, not a second engine switch.
 - **Config.** `MARKDOWN_TIER = free | enriched` (default `free`). MarkItDown is
   **not** a tier (rationale in Context); its only high-fidelity route — Azure
   Document Intelligence — is a candidate ADR 0011 `PARSER_BACKEND`, not an "LLM
@@ -133,13 +132,13 @@ contract (blocks own anchoring; markdown is a projection) and kills the
 
 - Good — one block-projection renderer feeds both the LLM prompt's tables and the
   viewer (no drift); the free tier is `$0`, self-hosted, no egress; reuses ADR
-  0011's factory, gate, bake-off, and the assembler.
+  0011's factory, per-project selection, bake-off, and the assembler.
 - Good — ADR 0011 stays focused on the blocks/`bbox` artifact; this is a thin,
   referenced second artifact.
 - Bad — the viewer markdown surface adds frontend deps (`react-markdown` +
   `remark-gfm` + a sanitizer) and the app's **first** raw-markup/XSS surface;
   sanitization + an XSS test are mandatory, not optional.
-- Bad — the enriched tier adds a stored column, a cloud-egress path (PHI-gated),
+- Bad — the enriched tier adds a stored column, a cloud-egress path (opt-in),
   and non-determinism.
 - Neutral — highlight is canvas-only; markdown mode degrades to switch-to-canvas
   or a best-effort quote match.
@@ -175,7 +174,7 @@ contract (blocks own anchoring; markdown is a projection) and kills the
 
 ### Option C — markdown as a projection of blocks
 
-- Good — one source of truth; free tier is `$0`/derived; reuses 0011 + the
+- Good — one source of truth; free tier is `$0`/derived; reuses ADR 0011 + the
   assembler; no drift between LLM input and viewer.
 - Bad — pure block→markdown can merge complex cells less well than a parser's
   native markdown (mitigated: keep native markdown as an optional secondary).
@@ -184,8 +183,9 @@ contract (blocks own anchoring; markdown is a projection) and kills the
 
 - Builds on **ADR 0011** (`docs/adr/0011-structured-pdf-parsing-at-ingest.md`):
   reuses its `DocumentParser` / `create_document_parser` factory, `PARSER_BACKEND`
-  switch, `project_is_phi` PHI gate, provider doorway, and Phase-0 bake-off; the
-  `article_text_blocks` substrate is its decision, this ADR only projects from it.
+  switch, per-project parser selection, provider doorway, and Phase-0 bake-off;
+  the `article_text_blocks` substrate is its decision, this ADR only projects
+  from it.
 - Implementation plans:
   `docs/superpowers/plans/2026-06-19-structured-pdf-parsing-at-ingest.md`
   (parser emits markdown as a co-product) and

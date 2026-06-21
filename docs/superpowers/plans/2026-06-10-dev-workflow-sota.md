@@ -1,7 +1,7 @@
 ---
 status: draft
 last_reviewed: 2026-06-10
-owner: raphaelfh
+owner: '@raphaelfh'
 ---
 
 # Dev-Workflow State-of-the-Art Plan (mid-2026)

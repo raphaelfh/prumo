@@ -1,18 +1,19 @@
 # ApiResponse envelope rules (prumo)
 
-Every API response on prumo is wrapped in an `ApiResponse` envelope. The envelope adds consistency (errors, metadata, pagination hooks) and makes it possible to evolve the response without breaking clients. **But every envelope drift on prumo has cost a bug.**
+Every API response on prumo is wrapped in an `ApiResponse` envelope. The envelope adds consistency (an `ok` flag, a structured `error`, a `trace_id`) and makes it possible to evolve the response without breaking clients. **But every envelope drift on prumo has cost a bug.**
 
 ## The envelope
 
 ```jsonc
 {
-  "data": <payload>,
-  "error": null | { "code": "...", "message": "..." },
-  "meta": null | { "page": ..., "page_size": ..., ... }
+  "ok": true | false,
+  "data": <payload> | null,
+  "error": null | { "code": "...", "message": "...", "details": null | { ... } },
+  "trace_id": "<uuid>"
 }
 ```
 
-The payload is whatever the endpoint returns — an object, a list, a UUID, a boolean. The envelope is *always* the outer shape.
+Real shape (`backend/app/schemas/common.py` → `ApiResponse`): `{ ok, data, error, trace_id }` — there is **no** top-level `meta`. The frontend client checks `responseData.ok` and reads `error.message`. Pagination lives *inside* `data` via `PaginatedResponse`, not a top-level field. The payload is whatever the endpoint returns — an object, a list, a UUID, a boolean. The envelope is *always* the outer shape.
 
 ## The four envelope sins
 

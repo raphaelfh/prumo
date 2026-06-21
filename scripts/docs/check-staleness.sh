@@ -28,7 +28,7 @@ while IFS= read -r -d '' file; do
     echo "STALE (${age_days}d > ${THRESHOLD}d): $file"
     STALE_COUNT=$(( STALE_COUNT + 1 ))
   fi
-done < <(git ls-files -z '*.md')
+done < <(git ls-files -z '*.md' 'llms.txt')
 
 echo
 echo "$STALE_COUNT doc(s) older than ${THRESHOLD} days."

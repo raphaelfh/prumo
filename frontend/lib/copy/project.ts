@@ -158,6 +158,7 @@ export const project = {
     advancedStudyTypesPlaceholder: 'e.g. Randomized controlled trial, Cohort',
     advancedDesignNotesLabel: 'Design notes',
     advancedDesignNotesPlaceholder: 'Notes on accepted study types...',
+    advancedCardParsingDesc: 'Choose the PDF parsing backend for newly ingested documents in this project.',
     advancedCardDangerTitle: 'Danger zone',
     advancedCardDangerDesc: 'Irreversible actions that may permanently affect the project.',
     advancedDeleteProjectHeading: 'Delete project',

@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-05-24
+last_reviewed: 2026-06-20
 owner: '@raphaelfh'
 ---
 
@@ -41,7 +41,7 @@ below follow.
                        │  golden flow CHARMS)   │   on the wire
                        └────────────────────────┘
                   ┌────────────────────────────────────┐
-                  │  Backend integration (488 / 31 skip)│   the bulk —
+                  │  Backend integration (the broad set)│   the bulk —
                   │  pytest + asyncpg + real Postgres   │   real schema,
                   │  via supabase_db_supabase_local     │   real RLS
                   └────────────────────────────────────┘
@@ -51,7 +51,7 @@ below follow.
             │  hooks / components / services in isolation    │
             └────────────────────────────────────────────────┘
                   ┌────────────────────────────────────┐
-                  │  Backend unit (subset of 488)      │
+                  │  Backend unit (subset of all)      │
                   │  service-only / pure-function      │
                   └────────────────────────────────────┘
 ```
@@ -221,7 +221,7 @@ When you add a new test, follow the rules these files agreed on:
 
 | Command | What it runs |
 | --- | --- |
-| `make test-backend` | full pytest suite (488 passed / 31 skipped) |
+| `make test-backend` | full pytest suite (counts are point-in-time; CI output is authoritative) |
 | `npm test -- --run` | full vitest suite (343 passed) |
 | `make lint-backend` | ruff check + format |
 | `npm run lint` | eslint |

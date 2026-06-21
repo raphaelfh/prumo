@@ -3,7 +3,7 @@
 PubMed Central's JATS XML is the cleanest ground truth available for an
 open-access paper: ``<sec><title>`` → section headings, ``<table-wrap>`` …
 ``<td|th>`` → table cells, ``<ref>`` → references. This lets the evaluation set
-be provisioned reproducibly from open-access sources — no PHI, no manual
+be provisioned reproducibly from open-access sources — no manual
 labelling. Parsing is namespace-agnostic (JATS files vary).
 """
 

@@ -7,7 +7,11 @@ Elimina duplicacao and garante consistencia in the inicializacao de componentes.
 
 from supabase import Client
 
+from app.core.logging import get_logger
+from app.infrastructure.parsing.base import DocumentParser
 from app.infrastructure.storage import StorageAdapter, SupabaseStorageAdapter
+
+_logger = get_logger(__name__)
 
 
 def create_storage_adapter(supabase: Client) -> StorageAdapter:
@@ -28,3 +32,42 @@ def create_storage_adapter(supabase: Client) -> StorageAdapter:
         service = ModelExtractionService(db=db, storage=storage, ...)
     """
     return SupabaseStorageAdapter(supabase)
+
+
+def create_document_parser(
+    settings,
+    *,
+    llama_cloud_key: str | None = None,
+) -> DocumentParser:
+    """Build a DocumentParser per PARSER_BACKEND.
+
+    Mirrors create_storage_adapter: a single choke point that owns parser
+    selection. Per-project activation can request llamaparse; falls back to
+    docling when no key is available.
+
+    Args:
+        settings: app settings (PARSER_BACKEND, LLAMA_CLOUD_API_KEY).
+        llama_cloud_key: resolved LlamaCloud key (BYOK > global), or None.
+
+    Returns:
+        A DocumentParser instance. Falls back to the self-hosted DoclingParser
+        whenever the cloud path is unavailable.
+    """
+    # Lazy imports: the heavy docling/llama_cloud deps must not load at module
+    # import time (app boot, tests that never parse).
+    from app.infrastructure.parsing.docling_parser import DoclingParser
+    from app.infrastructure.parsing.llamaparse_parser import LlamaParseParser
+
+    backend = (getattr(settings, "PARSER_BACKEND", "docling") or "docling").lower()
+
+    if backend == "llamaparse":
+        key = llama_cloud_key or getattr(settings, "LLAMA_CLOUD_API_KEY", None)
+        if not key:
+            _logger.warning("parser_gate_llamaparse_no_key_fallback_docling")
+            return DoclingParser()
+        return LlamaParseParser(api_key=key)
+
+    if backend != "docling":
+        _logger.warning("parser_gate_unknown_backend_fallback_docling", backend=backend)
+
+    return DoclingParser()
