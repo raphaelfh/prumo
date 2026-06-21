@@ -446,3 +446,18 @@ async def test_reopen_after_cancelled_child_creates_fresh_run(
     assert child_c.stage == ExtractionRunStage.REVIEW.value
 
     await db_session.rollback()
+
+
+async def test_enum_has_extract_not_proposal_review(db_session_real):
+    rows = (
+        (
+            await db_session_real.execute(
+                text("SELECT unnest(enum_range(NULL::public.extraction_run_stage))::text AS v")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert "extract" in rows
+    assert "proposal" not in rows
+    assert "review" not in rows

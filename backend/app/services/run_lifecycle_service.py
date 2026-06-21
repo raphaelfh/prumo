@@ -79,14 +79,10 @@ class IncompleteFinalizeError(InvalidStageTransitionError):
 # Allowed transitions: from -> set of valid target stages
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     ExtractionRunStage.PENDING.value: {
-        ExtractionRunStage.PROPOSAL.value,
+        ExtractionRunStage.EXTRACT.value,
         ExtractionRunStage.CANCELLED.value,
     },
-    ExtractionRunStage.PROPOSAL.value: {
-        ExtractionRunStage.REVIEW.value,
-        ExtractionRunStage.CANCELLED.value,
-    },
-    ExtractionRunStage.REVIEW.value: {
+    ExtractionRunStage.EXTRACT.value: {
         ExtractionRunStage.CONSENSUS.value,
         ExtractionRunStage.CANCELLED.value,
     },

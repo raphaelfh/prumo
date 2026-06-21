@@ -2073,8 +2073,7 @@ def _infer_reviewer_outcome(
 
 _ACTIVE_EXPORT_RUN_STAGES = {
     ExtractionRunStage.PENDING.value,
-    ExtractionRunStage.PROPOSAL.value,
-    ExtractionRunStage.REVIEW.value,
+    ExtractionRunStage.EXTRACT.value,
     ExtractionRunStage.CONSENSUS.value,
 }
 

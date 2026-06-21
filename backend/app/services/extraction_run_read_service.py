@@ -303,11 +303,11 @@ async def resolve_caller_current_values(
 
 
 # Stages whose form hydrates from the materialized reviewer_states + decisions
-# (current_values). In 'proposal' the client uses proposals[]; pending/cancelled
+# (current_values). In 'extract' the client uses proposals[]; pending/cancelled
 # show nothing.
 _CURRENT_VALUE_STAGES = frozenset(
     {
-        ExtractionRunStage.REVIEW.value,
+        ExtractionRunStage.EXTRACT.value,
         ExtractionRunStage.CONSENSUS.value,
         ExtractionRunStage.FINALIZED.value,
     }
@@ -459,8 +459,7 @@ async def list_run_participants(db: AsyncSession, run_id: UUID) -> list[RunRevie
 
 _ACTIVE_STAGES = (
     ExtractionRunStage.PENDING.value,
-    ExtractionRunStage.PROPOSAL.value,
-    ExtractionRunStage.REVIEW.value,
+    ExtractionRunStage.EXTRACT.value,
     ExtractionRunStage.CONSENSUS.value,
 )
 
