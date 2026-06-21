@@ -25,8 +25,16 @@ const base = {
 };
 
 describe('ExtractionHeader (post legacy-cascade)', () => {
-  it('renders the More menu without an Export Data item', async () => {
+  it('hides the More menu entirely when it would have no items', () => {
+    // base has hasComparison:false and no canReopen, so the only two menu
+    // items are both gated off. An empty kebab is a dead affordance — it must
+    // not render at all (regression: it used to open to an empty dropdown).
     render(<MemoryRouter><ExtractionHeader {...base} /></MemoryRouter>);
+    expect(screen.queryByRole('button', { name: /more/i })).not.toBeInTheDocument();
+  });
+
+  it('renders the More menu (without an Export Data item) when it has items', async () => {
+    render(<MemoryRouter><ExtractionHeader {...base} hasComparison /></MemoryRouter>);
     await userEvent.click(screen.getByRole('button', { name: /more/i }));
     expect(screen.queryByText(/Export Data/i)).not.toBeInTheDocument();
   });

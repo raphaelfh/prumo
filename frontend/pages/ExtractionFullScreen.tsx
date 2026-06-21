@@ -1322,18 +1322,10 @@ export default function ExtractionFullScreen() {
       <div className="flex-1 overflow-hidden">
         <ViewerProvider store={viewerStore}>
         <ResizablePanelGroup direction="horizontal">
-            {/* PDF Viewer (optional) - Extracted to isolated component */}
-          <ExtractionPDFPanel
-            articleId={articleId || ''}
-            projectId={projectId || ''}
-            showPDF={showPDF}
-            store={viewerStore}
-          />
-
-            {/* Extraction form - Extracted to isolated component */}
+            {/* Extraction form (left) - Extracted to isolated component */}
           <ResizablePanel
             id="extraction-form"
-            order={2}
+            order={1}
             defaultSize={showPDF ? 50 : 100}
             minSize={30}
           >
@@ -1379,6 +1371,14 @@ export default function ExtractionFullScreen() {
               }}
             />
           </ResizablePanel>
+
+            {/* PDF Viewer (right, optional) - renders the handle + panel */}
+          <ExtractionPDFPanel
+            articleId={articleId || ''}
+            projectId={projectId || ''}
+            showPDF={showPDF}
+            store={viewerStore}
+          />
         </ResizablePanelGroup>
         </ViewerProvider>
       </div>
