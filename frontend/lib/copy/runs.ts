@@ -51,6 +51,8 @@ export const runs = {
   commandPaletteOpen: 'Open command palette',
   // SidebarToggle (left, mirrors PanelToggle)
   sidebarToggle: 'Toggle navigation',
+  // Phone focus-mode hamburger — opens the project navigation drawer.
+  openProjectNav: 'Open project navigation',
   // Help panel ("?" button)
   helpButton: 'Help and shortcuts',
   helpTitle: 'Help',

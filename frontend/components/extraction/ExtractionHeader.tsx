@@ -31,9 +31,11 @@ export interface ExtractionHeaderProps {
   articleTitle: string;
   onBack: () => void;
 
-  // App sidebar collapse state + toggle (focus-shell wiring for ⌘B).
+  // App sidebar collapse state + toggle (focus-shell wiring for ⌘B). Below `lg`
+  // the desktop sidebar is hidden, so onOpenMobileNav opens the drawer instead.
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
+  onOpenMobileNav?: () => void;
 
   // Article navigation
   articles: Article[];
@@ -128,6 +130,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     onBack,
     sidebarCollapsed,
     onToggleSidebar,
+    onOpenMobileNav,
     articles,
     currentArticleId,
     onNavigateToArticle,
@@ -260,10 +263,11 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
 
   return (
     <>
-      {/* Container-query wrapper: the header's OWN width drives the collapse. */}
-      <div className="@container/headerbar">
+      {/* HeaderShell (inside RunHeader) owns the @container/headerbar — the
+          header's own width drives the collapse, no consumer wrapper needed. */}
         <RunHeader value={headerValue}>
           <RunHeader.Left>
+            <RunHeader.MobileNav onOpen={onOpenMobileNav} />
             <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={onToggleSidebar} />
             <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName, onClick: () => navigate(`/projects/${props.projectId}`) }, { label: articleTitle }]} />
             {articles.length > 1 && (
@@ -316,7 +320,6 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
             <RunHeader.PanelToggle pressed={showPDF} onToggle={onTogglePDF} />
           </RunHeader.Right>
         </RunHeader>
-      </div>
 
       {/* Cmd-K palette — mounted at page level so it renders above the header */}
       <RunHeader.CommandPalette
