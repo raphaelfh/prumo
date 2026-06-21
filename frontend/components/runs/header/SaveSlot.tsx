@@ -65,7 +65,9 @@ export function SaveSlot({ state, lastSavedAt, hidden }: { state: SaveState; las
       ) : (
         <Check className="h-3 w-3 text-success" aria-hidden="true" />
       )}
-      {label}
+      {/* Compact tier (phone): keep only the status dot/icon; the word collapses
+          to sr-only so it stays in the a11y tree without eating row width. */}
+      <span className="sr-only @[34rem]/headerbar:not-sr-only">{label}</span>
     </span>
   );
 }

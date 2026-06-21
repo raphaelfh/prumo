@@ -538,7 +538,7 @@ export default function QualityAssessmentFullScreen() {
   const versionLabel = template ? `v${template.version}` : "";
 
   const header = (
-    <div className="@container/headerbar">
+    // HeaderShell (inside RunHeader) owns the @container/headerbar — no consumer wrapper.
       <RunHeader
         value={{
           kind: "qa",
@@ -638,7 +638,6 @@ export default function QualityAssessmentFullScreen() {
           />
         </RunHeader.Right>
       </RunHeader>
-    </div>
   );
 
   const pdfPanel = (

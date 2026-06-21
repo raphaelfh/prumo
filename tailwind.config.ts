@@ -91,6 +91,15 @@ export default {
         // are color keys, so we prefix with `elev-`.
         "elev-card": "var(--shadow-card)",
         "elev-popover": "var(--shadow-popover)",
+        "elev-header": "var(--shadow-header)",
+      },
+      zIndex: {
+        header: "var(--z-header)",
+      },
+      fontSize: {
+        "header-title": ["13px", { lineHeight: "1.2" }],
+        "header-meta": ["12px", { lineHeight: "1.2" }],
+        "header-micro": ["11px", { lineHeight: "1.2" }],
       },
       borderRadius: {
         lg: "var(--radius)",

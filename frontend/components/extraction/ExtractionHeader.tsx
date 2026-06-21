@@ -263,8 +263,8 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
 
   return (
     <>
-      {/* Container-query wrapper: the header's OWN width drives the collapse. */}
-      <div className="@container/headerbar">
+      {/* HeaderShell (inside RunHeader) owns the @container/headerbar — the
+          header's own width drives the collapse, no consumer wrapper needed. */}
         <RunHeader value={headerValue}>
           <RunHeader.Left>
             <RunHeader.MobileNav onOpen={onOpenMobileNav} />
@@ -320,7 +320,6 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
             <RunHeader.PanelToggle pressed={showPDF} onToggle={onTogglePDF} />
           </RunHeader.Right>
         </RunHeader>
-      </div>
 
       {/* Cmd-K palette — mounted at page level so it renders above the header */}
       <RunHeader.CommandPalette

@@ -83,6 +83,12 @@
        boxShadow.card / boxShadow.popover mappings. */
     --shadow-card: 0 1px 3px rgb(0 0 0 / 0.05);
     --shadow-popover: 0 8px 30px rgb(0 0 0 / 0.04);
+    /* Header system — frosted surface + elevation. One knob per concern;
+       both real headers (Topbar, RunHeader) and floating overlays read these. */
+    --header-blur: 12px;
+    --header-surface-alpha: 0.82;
+    --shadow-header: 0 4px 16px rgb(0 0 0 / 0.06);
+    --z-header: 40;
 
     /* Primary hover — slightly lighter than --primary in light mode
        (since --primary is near-black). Referenced from
@@ -154,6 +160,8 @@
        shadows. */
     --shadow-card: 0 1px 3px rgb(0 0 0 / 0.40);
     --shadow-popover: 0 8px 30px rgb(0 0 0 / 0.35);
+    --header-surface-alpha: 0.80;
+    --shadow-header: 0 4px 16px rgb(0 0 0 / 0.45);
 
     /* Primary hover — slightly darker than --primary in dark mode
        (since --primary is near-white). */
@@ -202,9 +210,33 @@
         @apply flex items-center gap-3 px-4 py-2.5 text-[13px] font-normal text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground cursor-pointer border-b border-border/30 last:border-0;
     }
 
-    /* Linear style header - design system: headers h-12 */
-    .linear-header {
-        @apply sticky top-0 z-50 flex h-12 items-center gap-4 border-b border-border/40 bg-background/80 px-6 backdrop-blur-md;
+    /* Frosted header surface — consumed by HeaderShell. Border + translucent
+       background + blur; shadow is opt-in via shadow-elev-header (shadow-on-lift). */
+    .frosted-header {
+        background-color: hsl(var(--background) / var(--header-surface-alpha));
+        backdrop-filter: blur(var(--header-blur));
+        -webkit-backdrop-filter: blur(var(--header-blur));
+    }
+    /* Frosted floating overlay — same surface for menus/popovers. */
+    .frosted-overlay {
+        background-color: hsl(var(--popover) / var(--header-surface-alpha));
+        backdrop-filter: blur(var(--header-blur));
+        -webkit-backdrop-filter: blur(var(--header-blur));
+    }
+    /* Legibility fallbacks: no backdrop-filter support, or user opts out of
+       transparency. Solid surface in both cases. */
+    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+        .frosted-header { background-color: hsl(var(--background)); }
+        .frosted-overlay { background-color: hsl(var(--popover)); }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+        .frosted-header,
+        .frosted-overlay {
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+            background-color: hsl(var(--background));
+        }
+        .frosted-overlay { background-color: hsl(var(--popover)); }
     }
 
     /* Subtle button style */
