@@ -605,8 +605,10 @@ export default function QualityAssessmentFullScreen() {
             onExtract={onExtractWithAI}
           />
           <RunHeader.PrimaryAction />
-          <span className="mx-1 h-5 w-px bg-border/60" aria-hidden="true" />
-          <RunHeader.Help />
+          <span className="mx-1 hidden h-5 w-px bg-border/60 @[40rem]/headerbar:block" aria-hidden="true" />
+          <span className="hidden @[40rem]/headerbar:inline-flex">
+            <RunHeader.Help />
+          </span>
           <RunHeader.Menu>
             {canCompare && (
               <RunHeader.MenuItem

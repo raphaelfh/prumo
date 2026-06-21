@@ -295,8 +295,10 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
               onOpenSuggestions={props.onAISuggestionsClick}
             />
             <RunHeader.PrimaryAction />
-            <span className="mx-1 h-5 w-px bg-border/60" aria-hidden="true" />
-            <RunHeader.Help />
+            <span className="mx-1 hidden h-5 w-px bg-border/60 @[40rem]/headerbar:block" aria-hidden="true" />
+            <span className="hidden @[40rem]/headerbar:inline-flex">
+              <RunHeader.Help />
+            </span>
             <RunHeader.Menu>
               {hasComparison && (
                 <RunHeader.MenuItem onSelect={() => onViewModeChange(viewMode === 'compare' ? 'extract' : 'compare')}>

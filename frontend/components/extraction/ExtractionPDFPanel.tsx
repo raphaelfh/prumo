@@ -34,18 +34,20 @@ function ExtractionPDFPanelComponent({
     return null;
   }
 
+  // PDF lives on the RIGHT (order 2). The form panel is order 1, so the single
+  // resize handle sits BETWEEN them — i.e. before this panel, not after it.
   return (
     <>
+      <ResizableHandle withHandle />
       <ResizablePanel
         id="extraction-pdf"
-        order={1}
+        order={2}
         defaultSize={50}
         minSize={30}
         maxSize={70}
       >
         <PrumoPdfViewer source={source} store={store} className="h-full" />
       </ResizablePanel>
-      <ResizableHandle withHandle />
     </>
   );
 }

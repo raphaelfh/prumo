@@ -31,7 +31,10 @@ export function PrimaryAction() {
   );
   return (
     <div className="flex items-center gap-2">
-      {helper && <span id={helperId} className="whitespace-nowrap text-[11px] text-muted-foreground">{helper}</span>}
+      {/* sr-only (not `hidden`) below 52rem so the node stays in the a11y tree
+          and the button's aria-describedby keeps resolving; revealed visually
+          where the row has room. */}
+      {helper && <span id={helperId} className="sr-only text-[11px] text-muted-foreground @[52rem]/headerbar:not-sr-only @[52rem]/headerbar:whitespace-nowrap">{helper}</span>}
       {transition.tooltip ? (
         <Tooltip>
           <TooltipTrigger asChild>{button}</TooltipTrigger>
