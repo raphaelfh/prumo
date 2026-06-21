@@ -22,18 +22,12 @@ function ShellInner({ projectId, activeTab, children }: RunWorkspaceShellProps) 
   const bindings: Binding[] = [{ type: 'chord', key: 'b', mod: true, handler: toggleSidebar }];
   useKeyboardShortcuts({ bindings, enabled: true });
 
+  // Both the desktop ProjectSidebar and the mobile drawer navigate OUT of focus
+  // mode to the chosen project tab.
+  const goToTab = (tab: SidebarTabId) => navigate(`/projects/${projectId}?tab=${tab}`);
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
-      {/* Mobile nav drawer (Sheet) — the focus-mode phone hamburger
-          (RunHeader Left, container < 34rem) opens this. ProjectSidebar is
-          hidden below lg, so it is the only nav surface on phones. projectName
-          is intentionally omitted, mirroring the ProjectSidebar call below. */}
-      <MobileSidebar
-        open={mobileOpen}
-        onOpenChange={setMobileOpen}
-        activeTab={activeTab}
-        onTabChange={(tab) => navigate(`/projects/${projectId}?tab=${tab}`)}
-      />
       <div className="flex flex-1 overflow-hidden">
         {/* projectName is intentionally omitted: ProjectSidebar is unmounted
             while collapsed (the focus default), and SidebarHeader fetches the
@@ -41,9 +35,18 @@ function ShellInner({ projectId, activeTab, children }: RunWorkspaceShellProps) 
             would be wasted work in the common collapsed case. */}
         <ProjectSidebar
           activeTab={activeTab}
-          onTabChange={(tab) => navigate(`/projects/${projectId}?tab=${tab}`)}
+          onTabChange={goToTab}
           switcherOpen={switcherOpen}
           onSwitcherOpenChange={setSwitcherOpen}
+        />
+        {/* Below `lg` the ProjectSidebar is display:none; this overlay is how
+            phone/tablet users in focus mode reach project navigation. Opened by
+            the RunHeader.MobileNav hamburger via shared SidebarContext state. */}
+        <MobileSidebar
+          open={mobileOpen}
+          onOpenChange={setMobileOpen}
+          activeTab={activeTab}
+          onTabChange={goToTab}
         />
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
       </div>

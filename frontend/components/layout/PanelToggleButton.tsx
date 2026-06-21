@@ -7,12 +7,15 @@ interface PanelToggleButtonProps {
   pressed: boolean;
   onToggle: () => void;
   ariaLabel: string;
+  /** Extra classes on the button itself (e.g. responsive gating like
+   *  `hidden lg:inline-flex`). Merged after the base via cn. */
+  className?: string;
 }
 
 // One component for the three previously-duplicated header toggles (Topbar
 // sidebar toggle, RunHeader SidebarToggle, RunHeader PanelToggle). `pressed`
 // = panel/sidebar OPEN; the "Close" glyph shows when open.
-export function PanelToggleButton({ side, pressed, onToggle, ariaLabel }: PanelToggleButtonProps) {
+export function PanelToggleButton({ side, pressed, onToggle, ariaLabel, className }: PanelToggleButtonProps) {
   const Close = side === 'left' ? PanelLeftClose : PanelRightClose;
   const Open = side === 'left' ? PanelLeftOpen : PanelRightOpen;
   return (
@@ -23,7 +26,7 @@ export function PanelToggleButton({ side, pressed, onToggle, ariaLabel }: PanelT
       aria-pressed={pressed}
       aria-keyshortcuts={side === 'left' ? 'Meta+B' : '\\'}
       aria-label={ariaLabel}
-      className="relative shrink-0 p-0 text-muted-foreground transition-colors duration-75 hover:bg-muted/50"
+      className={cn('relative shrink-0 p-0 text-muted-foreground transition-colors duration-75 hover:bg-muted/50', className)}
     >
       <span className="relative block h-4 w-4">
         <Close
