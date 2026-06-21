@@ -175,17 +175,17 @@ async def test_confirm_endpoint_rejects_article_id_mismatch() -> None:
 async def test_confirm_endpoint_404_when_article_missing() -> None:
     aid, pid = uuid4(), uuid4()
     body = _confirm_body(aid, pid)
-    with patch(
-        f"{_EP}.get_article_project_id", AsyncMock(side_effect=ArticleNotFoundError("nope"))
+    with (
+        patch(f"{_EP}.get_article_project_id", AsyncMock(side_effect=ArticleNotFoundError("nope"))),
+        pytest.raises(HTTPException) as exc,
     ):
-        with pytest.raises(HTTPException) as exc:
-            await confirm_article_file_upload(
-                article_id=aid,
-                body=body,
-                request=_request(),
-                db=AsyncMock(),
-                current_user_sub=uuid4(),
-            )
+        await confirm_article_file_upload(
+            article_id=aid,
+            body=body,
+            request=_request(),
+            db=AsyncMock(),
+            current_user_sub=uuid4(),
+        )
     assert exc.value.status_code == 404
 
 
