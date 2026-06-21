@@ -247,7 +247,6 @@ export const articles = {
     listOfArticles: 'of',
     listArticle: 'article',
     listArticles: 'articles',
-    listSelected: 'selected',
     listSelectedCount: '{{n}} selected',
     listClearAll: 'Clear all',
     listSearchTitlePlaceholder: 'Search title…',
