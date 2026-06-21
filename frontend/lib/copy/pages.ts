@@ -25,6 +25,7 @@ export const pages = {
     projectViewLoading: 'Loading project...',
     projectViewProjectNotFound: 'Project not found',
     projectViewTabExtractionDesc: 'Extract structured data using standard templates',
+    projectViewArticlesLabel: 'Articles',
     projectViewImportArticles: 'Import',
     projectViewFromZotero: 'From Zotero',
     projectViewFromRisFile: 'From RIS file',

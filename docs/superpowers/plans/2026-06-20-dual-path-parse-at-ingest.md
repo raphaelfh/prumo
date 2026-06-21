@@ -1,36 +1,34 @@
 ---
-status: planned
+status: draft
 last_reviewed: 2026-06-20
 owner: '@raphaelfh'
 ---
 
 # Dual-path parse at ingest Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Decision records: ADR 0011 (structured PDF parsing at ingest) — split default + fail-closed PHI gate.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Decision records: ADR 0011 (structured PDF parsing at ingest) — Docling default + LlamaParse opt-in per project.
 
 **Goal:** At ingest, every newly imported article (any route — Zotero today,
 direct-upload and future routes) is parsed into the already-migrated
 `article_text_blocks` (bbox + char offsets) by a pluggable `DocumentParser`
-selected per-project: a standard self-hosted path (**Docling**) or a
-high-quality cloud path (**LlamaParse**, BYOK, activated per-project in
-settings), behind a `create_document_parser()` factory with a fail-closed PHI
-gate.
+selected per-project: the standard self-hosted path (**Docling**, default) or a
+high-quality cloud path (**LlamaParse**, BYOK, activated per-project in settings
+when a `llama_cloud` key is stored), via a `create_document_parser()` factory.
 
 **Architecture:** The `DocumentParser` port, the `ParsedBlock` value type,
 `DocumentParsingService`, and `ArticleTextBlockRepository` already exist and are
 merged (PR #322). This plan supplies the **two concrete adapters** (Docling,
-LlamaParse), the **factory + PHI gate** that picks one per project, the
-**per-project activation surface** (a `ParserSettingsService` over
+LlamaParse), the **factory** that picks one per project, the **per-project
+activation surface** (a `ParserSettingsService` over
 `Project.settings['parsing']` plus a manager-only endpoint and a frontend
 toggle), the **Celery task** that runs the parse in the worker, and a **single
 ingest hook** (`ArticleFileIngestService.enqueue_parse_at_ingest`) called after
 every `ArticleFile.create`. The parser is injected into the service exactly as
-`StorageAdapter` is; the factory is the single choke point for parser selection
-and is the only place the PHI gate runs. This plan **stops at "blocks populated
-for every ingested article."** The markdown projection
-(`render_blocks_to_markdown`), the markdown view, and citation marking are a
-separate plan, `2026-06-20-markdown-view-and-markdown-citations.md` — referenced
-here as the follow-up, not implemented.
+`StorageAdapter` is; the factory is the single choke point for parser selection.
+This plan **stops at "blocks populated for every ingested article."** The markdown
+projection (`render_blocks_to_markdown`), the markdown view, and citation marking
+are a separate plan, `2026-06-20-markdown-view-and-markdown-citations.md` —
+referenced here as the follow-up, not implemented.
 
 **Tech Stack:** Python 3.11 + FastAPI + SQLAlchemy 2.0 async + Alembic; Celery +
 Redis worker (`worker_session()` NullPool + `run_task()` bridge); two parser
@@ -87,12 +85,10 @@ include this section** (constitution + `.claude/rules/backend.md` +
 
 ## Phases
 
-- **Phase 1 — Config + PHI column + factory.** `PARSER_BACKEND`,
-  `LLAMA_CLOUD_API_KEY`; `Project.is_phi` (migration, fail-closed default);
-  `create_document_parser()` owning the `PARSER_BACKEND` switch + the fail-closed
-  PHI gate. (Anthropic provider config is OUT OF SCOPE here — it belongs to the
-  separate vision-table-pass / second-provider plan; adding it now would be
-  unused config.)
+- **Phase 1 — Config + factory.** `PARSER_BACKEND`, `LLAMA_CLOUD_API_KEY`;
+  `create_document_parser()` owning the `PARSER_BACKEND` switch. (Anthropic
+  provider config is OUT OF SCOPE here — it belongs to the separate
+  vision-table-pass / second-provider plan; adding it now would be unused config.)
 - **Phase 2 — Docling adapter** (standard self-hosted path).
 - **Phase 3 — LlamaParse adapter** (high-quality cloud path) + teach
   `APIKeyService` the `llama_cloud` provider.
@@ -112,13 +108,11 @@ plan**: `docs/superpowers/plans/2026-06-20-markdown-view-and-markdown-citations.
 | File | Responsibility | Change |
 | --- | --- | --- |
 | `backend/app/core/config.py` | settings | Add `PARSER_BACKEND`, `LLAMA_CLOUD_API_KEY` |
-| `backend/alembic/versions/0027_project_is_phi.py` | schema | New: add `projects.is_phi BOOLEAN NOT NULL DEFAULT false` (fail-closed: absent = treated as PHI by the gate) |
-| `backend/app/models/project.py` | model | Add `is_phi: Mapped[bool]` column |
-| `backend/app/core/factories.py` | parser factory | Add `create_document_parser(settings, *, project_is_phi, api_key_service=None)` — owns the `PARSER_BACKEND` switch + fail-closed PHI gate (mirrors `create_storage_adapter`) |
+| `backend/app/core/factories.py` | parser factory | Add `create_document_parser(settings, *, llama_cloud_key=None)` — owns the `PARSER_BACKEND` switch (mirrors `create_storage_adapter`) |
 | `backend/app/infrastructure/parsing/docling_parser.py` | parser adapter (standard) | New: `DoclingParser(DocumentParser)` — `DocumentConverter` → items → `ParsedBlock`s |
 | `backend/app/infrastructure/parsing/llamaparse_parser.py` | parser adapter (cloud) | New: `LlamaParseParser(DocumentParser)` — `llama_cloud` agentic tier + granular bboxes + Y-flip |
 | `backend/app/models/user_api_key.py` | model | Add `"llama_cloud"` to `SUPPORTED_PROVIDERS` + the `CheckConstraint` |
-| `backend/alembic/versions/0028_api_key_llama_cloud.py` | schema | New: widen the `user_api_keys_provider_check` CHECK to include `llama_cloud` |
+| `backend/alembic/versions/0027_api_key_llama_cloud.py` | schema | New: widen the `user_api_keys_provider_check` CHECK to include `llama_cloud` |
 | `backend/app/services/api_key_service.py` | BYOK | Add `_validate_llama_cloud`, the `llama_cloud` case in `_validate_key`, and the `llama_cloud` branch in `_get_global_key` |
 | `backend/app/services/parser_settings_service.py` | per-project setting | New: `ParserSettingsService` over `Project.settings['parsing']` (mirrors `ManagerReviewVisibilityService`) |
 | `backend/app/schemas/parser_settings.py` | schema | New: `ParserSettingsPayload` + `ParserSettingsRead` |
@@ -135,7 +129,7 @@ plan**: `docs/superpowers/plans/2026-06-20-markdown-view-and-markdown-citations.
 
 ---
 
-## Phase 1 — Config + PHI column + factory
+## Phase 1 — Config + factory
 
 ### Task 1.1: Config fields for parser selection
 
@@ -172,12 +166,12 @@ In `backend/app/core/config.py`, after the `OPENAI` block (line 92), add:
 
 ```python
     # =================== PARSING ===================
-    # Standard self-hosted parser by default. Per-project activation can
-    # request "llamaparse"; the create_document_parser() PHI gate is the
-    # final authority (PHI / unknown -> self-hosted, fail-closed).
+    # Self-hosted Docling parser by default. Per-project activation can
+    # request "llamaparse" (BYOK, opt-in); the create_document_parser()
+    # factory is the final authority.
     PARSER_BACKEND: str = "docling"
     # Optional global LlamaCloud key; per-user BYOK (APIKeyService) takes
-    # precedence. Cloud egress -> non-PHI projects only.
+    # precedence.
     LLAMA_CLOUD_API_KEY: str | None = None
 ```
 
@@ -193,103 +187,7 @@ git add backend/app/core/config.py backend/tests/unit/test_config_parser_fields.
 git commit -m "feat(parsing): config fields for PARSER_BACKEND + LlamaCloud key"
 ```
 
-### Task 1.2: `Project.is_phi` column + migration (fail-closed default)
-
-**Files:**
-- Create: `backend/alembic/versions/0027_project_is_phi.py`
-- Modify: `backend/app/models/project.py:75` (next to `is_active`)
-- Test: `backend/tests/integration/test_project_is_phi_column.py`
-
-**Interfaces:**
-- Produces: `Project.is_phi: Mapped[bool]` (NOT NULL, default `False`). The
-  Celery task (Task 5.1) reads it; the factory (Task 1.3) receives it as
-  `project_is_phi`. **Fail-closed semantics:** the column default is `False`
-  (non-PHI) for *explicitly created* rows, but the **gate** treats a project as
-  PHI whenever the cloud path is requested without an explicit non-PHI opt-in —
-  the gate, not the column default, is the fail-closed authority (see Task 1.3).
-
-- [ ] **Step 1: Write the failing test**
-
-```python
-# backend/tests/integration/test_project_is_phi_column.py
-import pytest
-from sqlalchemy import select
-from app.models.project import Project
-
-
-@pytest.mark.asyncio
-async def test_project_is_phi_defaults_false(db_session_real, seed):
-    project_id = seed.project_id
-    project = (
-        await db_session_real.execute(select(Project).where(Project.id == project_id))
-    ).scalar_one()
-    assert project.is_phi is False
-    project.is_phi = True
-    await db_session_real.flush()
-    refreshed = (
-        await db_session_real.execute(select(Project).where(Project.id == project_id))
-    ).scalar_one()
-    assert refreshed.is_phi is True
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `cd backend && uv run pytest tests/integration/test_project_is_phi_column.py -v`
-Expected: FAIL — `AttributeError`/`UndefinedColumn` (no `is_phi` column).
-
-- [ ] **Step 3: Add the model column**
-
-In `backend/app/models/project.py`, immediately after the `is_active` column
-(line 75):
-
-```python
-    # PHI policy flag. Default false (non-PHI). The parser factory's fail-closed
-    # gate routes PHI projects to the self-hosted parser and never to a cloud
-    # backend (ADR-0011). Threaded into create_document_parser() by the parsing
-    # Celery task.
-    is_phi: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-```
-
-- [ ] **Step 4: Generate the migration**
-
-```bash
-cd backend && uv run alembic revision --autogenerate -m "project is_phi"
-```
-
-Rename the generated file to `0027_project_is_phi.py` and set
-`revision = "0027_project_is_phi"` (24 chars ≤ 32), `down_revision = "0026_widen_template_snapshot"`.
-Confirm the body is exactly the additive column with a server default so
-existing rows backfill to non-PHI:
-
-```python
-def upgrade() -> None:
-    op.add_column(
-        "projects",
-        sa.Column("is_phi", sa.Boolean(), nullable=False, server_default=sa.false()),
-        schema="public",
-    )
-
-
-def downgrade() -> None:
-    op.drop_column("projects", "is_phi", schema="public")
-```
-
-- [ ] **Step 5: Apply and run the test**
-
-```bash
-cd backend && uv run alembic upgrade head
-uv run pytest tests/integration/test_project_is_phi_column.py -v
-```
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add backend/app/models/project.py backend/alembic/versions/0027_project_is_phi.py backend/tests/integration/test_project_is_phi_column.py
-git commit -m "feat(parsing): projects.is_phi column for the fail-closed PHI gate"
-```
-
-### Task 1.3: `create_document_parser()` factory + fail-closed PHI gate
+### Task 1.2: `create_document_parser()` factory
 
 **Files:**
 - Modify: `backend/app/core/factories.py`
@@ -300,14 +198,11 @@ git commit -m "feat(parsing): projects.is_phi column for the fail-closed PHI gat
   `DoclingParser` (Task 2.1) and `LlamaParseParser` (Task 3.1) — **import them
   lazily inside the factory** so a missing heavy dep (torch/docling) or the cloud
   SDK never breaks app import.
-- Produces: `create_document_parser(settings, *, project_is_phi: bool, api_key_service: APIKeyService | None = None, llama_cloud_key: str | None = None) -> DocumentParser`.
-  The Celery task (Task 5.1) calls it; the per-project parser preference is passed
-  by overriding `settings.PARSER_BACKEND` at the call site via the `backend`
-  argument (see signature below). **Gate rule:** when the resolved backend is
-  `"llamaparse"` AND `project_is_phi` is True → fall back to `DoclingParser`
-  (never raise into the user's face; log + degrade). When the resolved backend is
-  `"llamaparse"`, `project_is_phi` is False, and no key is available → fall back to
-  `DoclingParser`. Otherwise honor the backend.
+- Produces: `create_document_parser(settings, *, llama_cloud_key: str | None = None) -> DocumentParser`.
+  The Celery task (Task 5.1) calls it; the per-project parser preference is
+  passed by overriding `settings.PARSER_BACKEND` at the call site. **Selection
+  rule:** when the resolved backend is `"llamaparse"` and no key is available →
+  fall back to `DoclingParser`. Otherwise honor the backend.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -327,23 +222,13 @@ def _settings(backend="docling", llama_key=None):
 
 
 def test_default_backend_is_docling():
-    parser = create_document_parser(_settings(), project_is_phi=False)
+    parser = create_document_parser(_settings())
     assert isinstance(parser, DoclingParser)
 
 
-def test_phi_project_never_gets_llamaparse():
-    # Cloud requested but project is PHI -> fail-closed to self-hosted.
+def test_llamaparse_with_key():
     parser = create_document_parser(
         _settings(backend="llamaparse", llama_key="lc-key"),
-        project_is_phi=True,
-    )
-    assert isinstance(parser, DoclingParser)
-
-
-def test_non_phi_llamaparse_with_key():
-    parser = create_document_parser(
-        _settings(backend="llamaparse", llama_key="lc-key"),
-        project_is_phi=False,
         llama_cloud_key="lc-key",
     )
     assert isinstance(parser, LlamaParseParser)
@@ -352,14 +237,13 @@ def test_non_phi_llamaparse_with_key():
 def test_llamaparse_without_key_falls_back_to_docling():
     parser = create_document_parser(
         _settings(backend="llamaparse", llama_key=None),
-        project_is_phi=False,
         llama_cloud_key=None,
     )
     assert isinstance(parser, DoclingParser)
 
 
 def test_unknown_backend_falls_back_to_docling():
-    parser = create_document_parser(_settings(backend="bogus"), project_is_phi=False)
+    parser = create_document_parser(_settings(backend="bogus"))
     assert isinstance(parser, DoclingParser)
 ```
 
@@ -383,25 +267,22 @@ _logger = get_logger(__name__)
 def create_document_parser(
     settings,
     *,
-    project_is_phi: bool,
-    api_key_service=None,  # APIKeyService | None — reserved for BYOK resolution
     llama_cloud_key: str | None = None,
 ):
-    """Build a DocumentParser per PARSER_BACKEND with a fail-closed PHI gate.
+    """Build a DocumentParser per PARSER_BACKEND setting.
 
     Mirrors create_storage_adapter: a single choke point that owns parser
-    selection. The PHI gate is the final authority — PHI / unknown projects
-    can never receive a cloud backend.
+    selection. Docling is the default (self-hosted, no egress). LlamaParse is
+    the opt-in cloud path, activated when a llama_cloud key is available and
+    the project has selected it.
 
     Args:
         settings: app settings (PARSER_BACKEND, LLAMA_CLOUD_API_KEY).
-        project_is_phi: True when the project handles PHI (fail-closed input).
-        api_key_service: optional, reserved for future per-user key resolution.
         llama_cloud_key: resolved LlamaCloud key (BYOK > global), or None.
 
     Returns:
         A DocumentParser instance. Falls back to the self-hosted DoclingParser
-        whenever the cloud path is unavailable or forbidden.
+        when llamaparse is requested but no key is available.
     """
     # Lazy imports: the heavy docling/llama_cloud deps must not load at module
     # import time (app boot, tests that never parse).
@@ -411,17 +292,14 @@ def create_document_parser(
     backend = (getattr(settings, "PARSER_BACKEND", "docling") or "docling").lower()
 
     if backend == "llamaparse":
-        if project_is_phi:
-            _logger.info("parser_gate_phi_forced_self_hosted")
-            return DoclingParser()
         key = llama_cloud_key or getattr(settings, "LLAMA_CLOUD_API_KEY", None)
         if not key:
-            _logger.warning("parser_gate_llamaparse_no_key_fallback_docling")
+            _logger.warning("parser_factory_llamaparse_no_key_fallback_docling")
             return DoclingParser()
         return LlamaParseParser(api_key=key)
 
     if backend != "docling":
-        _logger.warning("parser_gate_unknown_backend_fallback_docling", backend=backend)
+        _logger.warning("parser_factory_unknown_backend_fallback_docling", backend=backend)
 
     return DoclingParser()
 ```
@@ -431,7 +309,7 @@ def create_document_parser(
 > (LlamaParse) **before** running this task's test green, or stub the two classes
 > as `class DoclingParser(DocumentParser): ...` raising `NotImplementedError` in
 > `parse` to satisfy the import, then fill them in. The subagent executor runs
-> these in order; if running Task 1.3 standalone, do Phase 2 + Phase 3 first.
+> these in order; if running Task 1.2 standalone, do Phase 2 + Phase 3 first.
 
 - [ ] **Step 4: Run test to verify it passes** (after Phases 2–3 land)
 
@@ -442,7 +320,7 @@ Expected: PASS.
 
 ```bash
 git add backend/app/core/factories.py backend/tests/unit/test_create_document_parser.py
-git commit -m "feat(parsing): create_document_parser factory + fail-closed PHI gate"
+git commit -m "feat(parsing): create_document_parser factory (Docling default, LlamaParse opt-in)"
 ```
 
 ---
@@ -781,7 +659,7 @@ Expected: FAIL — `ModuleNotFoundError: app.infrastructure.parsing.llamaparse_p
 # backend/app/infrastructure/parsing/llamaparse_parser.py
 """LlamaParse (LlamaCloud) DocumentParser adapter (high-quality cloud path).
 
-Cloud egress -> non-PHI projects only (gated by create_document_parser). Pins
+Cloud egress -> opt-in per project (BYOK key required). Pins
 the agentic tier so granular word/line/cell bounding boxes are available, maps
 the items tree to ParsedBlock, and Y-FLIPS each bbox from LlamaParse's top-left
 origin to PDF user-space bottom-left. Reuses the call shape proven in
@@ -915,7 +793,7 @@ git commit -m "feat(parsing): LlamaParse cloud DocumentParser adapter (agentic, 
 
 **Files:**
 - Modify: `backend/app/models/user_api_key.py:24,116-120`
-- Create: `backend/alembic/versions/0028_api_key_llama_cloud.py`
+- Create: `backend/alembic/versions/0027_api_key_llama_cloud.py`
 - Modify: `backend/app/services/api_key_service.py` (`_get_global_key`,
   `_validate_key`, new `_validate_llama_cloud`)
 - Test: `backend/tests/integration/test_api_key_llama_cloud.py`
@@ -973,9 +851,9 @@ And the `CheckConstraint` (line 117-120):
         ),
 ```
 
-Generate + rename the migration to `0028_api_key_llama_cloud.py`
-(`revision = "0028_api_key_llama_cloud"`, 25 chars ≤ 32,
-`down_revision = "0027_project_is_phi"`), replacing the CHECK constraint:
+Generate + rename the migration to `0027_api_key_llama_cloud.py`
+(`revision = "0027_api_key_llama_cloud"`, 25 chars ≤ 32,
+`down_revision = "0026_widen_template_snapshot"`), replacing the CHECK constraint:
 
 ```python
 def upgrade() -> None:
@@ -1048,7 +926,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/models/user_api_key.py backend/alembic/versions/0028_api_key_llama_cloud.py backend/app/services/api_key_service.py backend/tests/integration/test_api_key_llama_cloud.py
+git add backend/app/models/user_api_key.py backend/alembic/versions/0027_api_key_llama_cloud.py backend/app/services/api_key_service.py backend/tests/integration/test_api_key_llama_cloud.py
 git commit -m "feat(parsing): llama_cloud BYOK provider in APIKeyService + CHECK constraint"
 ```
 
@@ -1428,9 +1306,8 @@ export function setParserType(
  * Per-project high-quality-parsing toggle (LlamaParse).
  *
  * Manager-only control. When ON, newly ingested PDFs are parsed by the cloud
- * LlamaParse backend (non-PHI projects only — the backend factory fail-closes
- * PHI projects to the self-hosted parser regardless). Requires a stored
- * `llama_cloud` BYOK key, mirroring how other integrations are activated.
+ * LlamaParse backend (cloud, opt-in). Requires a stored `llama_cloud` BYOK key,
+ * mirroring how other integrations are activated.
  */
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -1532,14 +1409,13 @@ git commit -m "feat(parsing): per-project high-quality parsing toggle (LlamaPars
 
 **Interfaces:**
 - Consumes: `worker_session`, `run_task`, `get_supabase_client`,
-  `create_storage_adapter`, `create_document_parser` (Task 1.3),
-  `ParserSettingsService.get_for_project` (Task 4.1), `DocumentParsingService`,
-  `Project.is_phi` (Task 1.2).
+  `create_storage_adapter`, `create_document_parser` (Task 1.2),
+  `ParserSettingsService.get_for_project` (Task 4.1), `DocumentParsingService`.
 - Produces: `parse_article_file_task.delay(article_file_id, project_id, user_id, trace_id=None)`.
-  Loads the `Project` (reads `is_phi`), resolves the per-project parser preference
-  (`standard → "docling"`, `llamaparse → "llamaparse"` — overriding
-  `settings.PARSER_BACKEND` for this call), resolves the BYOK `llama_cloud` key via
-  `APIKeyService`, builds the parser via `create_document_parser`, runs
+  Resolves the per-project parser preference (`standard → "docling"`,
+  `llamaparse → "llamaparse"` — overriding `settings.PARSER_BACKEND` for this
+  call), resolves the BYOK `llama_cloud` key via `APIKeyService`, builds the
+  parser via `create_document_parser`, runs
   `DocumentParsingService(...).parse_article_file(...)`, commits. The ingest hook
   (Task 6.1) enqueues it.
 
@@ -1615,8 +1491,7 @@ Expected: FAIL — module not found.
 
 Follows the worker pattern: a synchronous Celery entry point wrapping an inner
 async coroutine via worker_session() + run_task(). The parser is built by the
-create_document_parser() factory, which owns the PARSER_BACKEND switch and the
-fail-closed PHI gate.
+create_document_parser() factory, which owns the PARSER_BACKEND switch.
 """
 
 from __future__ import annotations
@@ -1647,22 +1522,17 @@ async def _run_parse(
     from app.core.config import settings as app_settings
     from app.core.deps import get_supabase_client
     from app.core.factories import create_document_parser, create_storage_adapter
-    from app.models.project import Project
     from app.services.api_key_service import APIKeyService
     from app.services.document_parsing_service import DocumentParsingService
     from app.services.parser_settings_service import ParserSettingsService
     from app.worker._session import worker_session
 
     async def _body(session: AsyncSession) -> dict[str, Any]:
-        project = (
-            await session.execute(select(Project).where(Project.id == UUID(project_id)))
-        ).scalar_one()
-
         # per-project parser preference -> PARSER_BACKEND value
         pref = await ParserSettingsService(session).get_for_project(UUID(project_id))
         backend = "llamaparse" if pref == "llamaparse" else "docling"
 
-        # BYOK llama_cloud key (default > global); only relevant for llamaparse
+        # BYOK llama_cloud key (BYOK > global); only relevant for llamaparse
         llama_key = None
         if backend == "llamaparse":
             llama_key = await APIKeyService(session, user_id).get_key_for_provider("llama_cloud")
@@ -1675,7 +1545,6 @@ async def _run_parse(
         )
         parser = create_document_parser(
             call_settings,
-            project_is_phi=bool(project.is_phi),
             llama_cloud_key=llama_key,
         )
 
@@ -1743,7 +1612,7 @@ Expected: PASS.
 
 ```bash
 git add backend/app/worker/tasks/parsing_tasks.py backend/tests/integration/test_parse_article_file_task.py
-git commit -m "feat(parsing): parse_article_file_task (per-project parser + PHI gate)"
+git commit -m "feat(parsing): parse_article_file_task (per-project parser selection)"
 ```
 
 ---
@@ -1765,7 +1634,7 @@ git commit -m "feat(parsing): parse_article_file_task (per-project parser + PHI 
 - Produces:
   `ArticleFileIngestService.enqueue_parse_at_ingest(*, article_file_id, project_id, user_id, trace_id) -> str`
   (returns the Celery task id). Reads nothing from the DB here — the per-project
-  parser preference + PHI flag are resolved inside the task (single source of
+  parser preference is resolved inside the task (single source of
   truth, Task 5.1), so the hook stays route-agnostic and a future direct-upload
   route reuses it unchanged.
 
@@ -1814,7 +1683,7 @@ Expected: FAIL — module not found.
 Every code path that creates an ArticleFile (Zotero today, direct-upload and
 future routes) MUST call enqueue_parse_at_ingest immediately after the row is
 created. This is the only sanctioned way to trigger parsing at ingest; the
-per-project parser preference and PHI flag are resolved inside the Celery task
+per-project parser preference is resolved inside the Celery task
 (single source of truth), so this hook stays route-agnostic.
 """
 
@@ -2027,19 +1896,19 @@ ingested article.
 ## Self-Review
 
 - **Spec coverage:** every spec phase maps to a task. Phase 1 config →
-  Task 1.1; `Project.is_phi` migration (≤32-char revision) → Task 1.2; factory +
-  fail-closed PHI gate → Task 1.3. Docling adapter (with the heavy-dep/lazy-load
-  call-out) → Task 2.1. LlamaParse adapter (`agentic` tier, `granular_bboxes`,
-  Y-flip, sentinel bbox, `normalize_block_type`) → Task 3.1; `APIKeyService` +
-  `SUPPORTED_PROVIDERS` + CHECK constraint + `_validate_llama_cloud` +
-  `_get_global_key` → Task 3.2. Per-project `ParserSettingsService` →
-  Task 4.1; manager-only `PUT .../parser-settings` (BOLA via
-  `require_project_manager`, typed Pydantic, API-contract regen) → Task 4.2;
-  frontend BYOK-gated toggle → Task 4.3. Celery `parse_article_file_task`
-  (bind/retries/rate_limit, `worker_session`, factory, PHI gate, error→retry→
-  `parse_failed`) → Task 5.1. Single ingest hook for all routes + Zotero wiring →
-  Task 6.1; grep/fitness no-bypass guard → Task 6.2. No-legacy cleanup +
-  `/simplify` → Task 7.1. Markdown/citations explicitly deferred to the follow-up.
+  Task 1.1; factory (Docling default + LlamaParse opt-in) → Task 1.2. Docling
+  adapter (with the heavy-dep/lazy-load call-out) → Task 2.1. LlamaParse adapter
+  (`agentic` tier, `granular_bboxes`, Y-flip, sentinel bbox,
+  `normalize_block_type`) → Task 3.1; `APIKeyService` + `SUPPORTED_PROVIDERS` +
+  CHECK constraint + `_validate_llama_cloud` + `_get_global_key` → Task 3.2.
+  Per-project `ParserSettingsService` → Task 4.1; manager-only
+  `PUT .../parser-settings` (BOLA via `require_project_manager`, typed Pydantic,
+  API-contract regen) → Task 4.2; frontend BYOK-gated toggle → Task 4.3. Celery
+  `parse_article_file_task` (bind/retries/rate_limit, `worker_session`, factory,
+  error→retry→`parse_failed`) → Task 5.1. Single ingest hook for all routes +
+  Zotero wiring → Task 6.1; grep/fitness no-bypass guard → Task 6.2. No-legacy
+  cleanup + `/simplify` → Task 7.1. Markdown/citations explicitly deferred to
+  the follow-up.
 - **Placeholder scan:** no "TBD"/"handle edge cases"/"similar to Task N" — every
   code step shows real code; every command shows the expected result. The one
   forward-reference (Task 1.3 imports the Phase 2/3 adapters) is called out with
@@ -2052,19 +1921,19 @@ ingested article.
   `create_storage_adapter`, `require_project_manager`, `ApiResponse.success`,
   `ProjectRepository.get_by_id`, `SUPPORTED_PROVIDERS`,
   `get_key_for_provider("llama_cloud")` — all match the real interfaces read from
-  the codebase. `create_document_parser(settings, *, project_is_phi, api_key_service=None, llama_cloud_key=None)`,
+  the codebase. `create_document_parser(settings, *, llama_cloud_key=None)`,
   `ParserSettingsService.set_for_project/get_for_project`,
   `parse_article_file_task(article_file_id, project_id, user_id, trace_id)`, and
   `ArticleFileIngestService.enqueue_parse_at_ingest(...)` are used identically in
   every task that references them.
-- **Risk/ordering:** Phases 2–3 must land before Task 1.3 goes green (noted
-  inline). The factory is the only PHI-gate site; the task resolves PHI + parser
-  preference + BYOK key (single source of truth); the hook stays route-agnostic so
-  a future upload route reuses it.
+- **Risk/ordering:** Phases 2–3 must land before Task 1.2 goes green (noted
+  inline). The factory is the single parser-selection site; the task resolves the
+  per-project preference + BYOK key (single source of truth); the hook stays
+  route-agnostic so a future upload route reuses it.
 
 ## Registration
 
 Add this plan's path to `.markdownlintignore` and any new tech terms (Docling,
-LlamaParse, LlamaCloud, PyMuPDF, BYOK, PHI, agentic, granular, bboxes, etc.) to
+LlamaParse, LlamaCloud, PyMuPDF, BYOK, agentic, granular, bboxes, etc.) to
 `.github/cspell-words.txt`. (The controller handles registration; this note is a
 reminder.)

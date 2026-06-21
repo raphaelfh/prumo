@@ -4,8 +4,9 @@
  */
 
 import React, {useContext, useState} from 'react';
-import {Menu, PanelLeftClose, PanelLeftOpen} from 'lucide-react';
+import {Info, Menu, PanelLeftClose, PanelLeftOpen} from 'lucide-react';
 import {Button} from '@/components/ui/button';
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import {useUserProfile} from '@/hooks/useNavigation';
 import {SidebarContext} from '@/contexts/SidebarContext';
@@ -15,6 +16,8 @@ import {NotificationCenter} from './NotificationCenter';
 import type {TopbarProps} from '@/types/navigation';
 import {tabIdToLabel} from '@/components/layout/sidebarConfig';
 import {t} from '@/lib/copy';
+import {SectionViewSwitcher} from '@/components/navigation/SectionViewSwitcher';
+import {sectionDescriptionKey} from '@/components/layout/sectionViews';
 
 export const Topbar: React.FC<TopbarProps> = ({
   className,
@@ -68,9 +71,9 @@ export const Topbar: React.FC<TopbarProps> = ({
   return (
       <header
           className={cn("z-40 w-full border-b border-border/40 bg-background/80 backdrop-blur-md sticky top-0", className)}>
-          <div className="flex h-12 w-full items-center justify-between px-4 sm:px-6 shrink-0">
+          <div className="grid grid-cols-[1fr_auto_1fr] h-12 w-full items-center px-4 sm:px-6 shrink-0">
               {/* Left Section - Toggle + title (min-w-0 so title can truncate) */}
-              <div className="flex items-center gap-2 min-w-0 flex-1">
+              <div className="flex items-center gap-2 min-w-0">
                   {/* Hamburger Menu - Mobile/Tablet only */}
                   {sidebarContext && isProjectPage && (
                       <Button
@@ -121,15 +124,36 @@ export const Topbar: React.FC<TopbarProps> = ({
                               className="text-[13px] font-medium text-foreground tracking-tight">{t('navigation', 'topbarBrandFull')}</span>
                       </div>
                   ) : (
-                      <span className="text-[13px] font-medium text-foreground px-2 truncate block min-w-0">
-                        {tabIdToLabel[projectContext?.activeTab ?? ''] ?? t('layout', 'defaultProjectName')}
+                      <span className="flex items-center gap-1.5 min-w-0 px-2">
+                        <span className="text-[13px] font-medium text-foreground truncate">
+                          {tabIdToLabel[projectContext?.activeTab ?? ''] ?? t('layout', 'defaultProjectName')}
+                        </span>
+                        {sectionDescriptionKey[projectContext?.activeTab ?? ''] && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button type="button" className="text-muted-foreground/60 hover:text-foreground transition-colors" aria-label={t('navigation', sectionDescriptionKey[projectContext?.activeTab ?? ''])}>
+                                  <Info className="h-3.5 w-3.5" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>{t('navigation', sectionDescriptionKey[projectContext?.activeTab ?? ''])}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                       </span>
                   )}
 
         </div>
 
+        {/* Center Section - View Switcher */}
+        <div className="flex items-center justify-center">
+          {isProjectPage && <SectionViewSwitcher />}
+        </div>
+
         {/* Right Section - Notifications + Feedback */}
-              <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center justify-end gap-1.5 shrink-0">
           <NotificationCenter />
           <FeedbackButton />
         </div>

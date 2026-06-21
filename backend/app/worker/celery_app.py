@@ -23,6 +23,7 @@ celery_app = Celery(
         "app.worker.tasks.export_tasks",
         "app.worker.tasks.extraction_export_tasks",
         "app.worker.tasks.feedback_tasks",
+        "app.worker.tasks.parsing_tasks",
     ],
 )
 
@@ -68,6 +69,9 @@ celery_app.conf.update(
         # Feedback forwarding to Linear — low-volume, no special resource
         # requirements, routed to the already-consumed `celery` queue.
         "app.worker.tasks.feedback_tasks.*": {"queue": "celery"},
+        # PDF parsing at ingest — routed to the `celery` queue; low initial
+        # volume, no separate queue needed until throughput warrants it.
+        "app.worker.tasks.parsing_tasks.*": {"queue": "celery"},
     },
 )
 

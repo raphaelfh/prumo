@@ -70,7 +70,7 @@ export const ProjectLayout: React.FC<AppLayoutProps> = ({children, className}) =
           switcherOpen={switcherOpen}
           onSwitcherOpenChange={setSwitcherOpen}
         />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {children || <Outlet />}
         </main>
       </div>

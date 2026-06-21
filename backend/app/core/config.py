@@ -9,8 +9,10 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from pydantic import PostgresDsn
+from pydantic import PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.config_validators import validate_linear_team_id
 
 
 class Settings(BaseSettings):
@@ -91,6 +93,14 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     OPENAI_DEFAULT_MODEL: str = "gpt-4o-mini"
 
+    # =================== PARSING ===================
+    # Standard self-hosted parser by default. Per-project activation can
+    # request "llamaparse"; falls back to docling when no key is available.
+    PARSER_BACKEND: str = "docling"
+    # Optional global LlamaCloud key; per-user BYOK (APIKeyService) takes
+    # precedence over this global fallback.
+    LLAMA_CLOUD_API_KEY: str | None = None
+
     # =================== EVALUATION ===================
     EVALUATION_EVIDENCE_BUCKET: str = "articles"
 
@@ -107,6 +117,12 @@ class Settings(BaseSettings):
     FEEDBACK_MEDIA_BUCKET: str = "feedback-media"
     FEEDBACK_MAX_IMAGE_BYTES: int = 10 * 1024 * 1024
     FEEDBACK_MAX_VIDEO_BYTES: int = 50 * 1024 * 1024
+
+    @field_validator("LINEAR_TEAM_ID")
+    @classmethod
+    def _validate_linear_team_id(cls, value: str | None) -> str | None:
+        """Fail fast at boot if LINEAR_TEAM_ID is set to the team slug, not its UUID."""
+        return validate_linear_team_id(value)
 
     @property
     def supabase_env(self) -> str:
