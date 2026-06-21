@@ -61,7 +61,7 @@ interface RunDetailResponse {
 }
 
 test.describe("HITL AI proposal pipeline", () => {
-  test("source='ai' proposal flows proposal → review → consensus → published", async ({
+  test("source='ai' proposal flows extract → consensus → published", async ({
     page,
     request,
   }) => {

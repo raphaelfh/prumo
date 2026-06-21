@@ -4,7 +4,7 @@
  * Drives the API surface that backs the "Reopen for revision" button:
  *   1. Open a QA session and publish (manual_override → finalize).
  *   2. Hit `POST /api/v1/runs/{id}/reopen` and verify the response is a
- *      fresh run with `stage=review`, `parameters.parent_run_id` ref,
+ *      fresh run with `stage=extract`, `parameters.parent_run_id` ref,
  *      and seeded `source=system` proposals derived from the finalized
  *      run's PublishedState rows.
  *   3. Verify the old (parent) run survived untouched — its stage stays

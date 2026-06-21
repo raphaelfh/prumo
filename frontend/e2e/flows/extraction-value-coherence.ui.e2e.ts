@@ -2,15 +2,13 @@
  * Extraction value coherence — end-to-end regression for the
  * "form blank but badge says completed" bug (article 5573e7f3 repro).
  *
- * The four H1–H4 invariants under test:
- *  - H2: ``advance_stage(PROPOSAL → REVIEW)`` auto-materializes a
- *    ``reviewer_decision='accept_proposal'`` for every human
- *    ``proposal_record``. Verified via the run detail API.
- *  - H1: the form's per-user read in REVIEW falls back to the user's
- *    human proposal layer when no reviewer_decision exists yet — and
- *    after H2 runs, the decision is present so the form renders the
- *    typed value either way. Verified by opening the extraction page
- *    and asserting the field's UI value matches what was proposed.
+ * The invariant under test (post ADR-0014 collapse):
+ *  - H1: a human ``decision='edit'`` recorded in the EXTRACT stage is read
+ *    back by the form (reviewer-state path) so the field renders the typed
+ *    value after reload. Verified via the run detail API and by opening the
+ *    extraction page and asserting the field's UI value. (H2 — the old
+ *    ``PROPOSAL → REVIEW`` boundary materialization — was removed with the
+ *    stage collapse; humans write decisions directly in EXTRACT.)
  *
  * This test sits in the ``local-hitl`` Playwright project (single-worker,
  * stateful) because it mutates the shared extraction run state for the
@@ -56,8 +54,8 @@ interface RunDetailResponse {
 // Mirrors the production bug repro on article 5573e7f3.
 const TYPED_VALUE = "Case series";
 
-test.describe("Extraction value coherence (H1+H2 end-to-end)", () => {
-  test("human proposal in REVIEW stage becomes decision and renders in form", async ({
+test.describe("Extraction value coherence (H1 end-to-end)", () => {
+  test("an edit decision in EXTRACT renders the typed value in the form", async ({
     page,
     request,
   }) => {
@@ -112,7 +110,7 @@ test.describe("Extraction value coherence (H1+H2 end-to-end)", () => {
     const runs = await adminSelect<{ id: string; stage: string }>(
       "extraction_runs",
       `select=id,stage&article_id=eq.${env.articleId}&template_id=eq.${templateId}` +
-        `&stage=in.(pending,proposal,review,consensus)&order=created_at.desc&limit=1`,
+        `&stage=in.(pending,extract,consensus)&order=created_at.desc&limit=1`,
     );
     test.skip(runs.length === 0, "Session opener did not yield an active run.");
     const runId = runs[0].id;

@@ -2,14 +2,15 @@
  * HITL run-lifecycle invariant E2E.
  *
  * Pins the API contracts that hold the workflow tables together:
- *   1. Skipping stages (e.g. PROPOSAL → CONSENSUS without REVIEW) is
+ *   1. Skipping the editable stage (PENDING → CONSENSUS without EXTRACT) is
  *      rejected.
- *   2. A `decision='edit'` posted in PROPOSAL stage is rejected.
+ *   2. A `source='human'` write to `/proposals` on an extraction run is
+ *      rejected (humans write decisions via `/decisions`).
  *   3. A `consensus mode='select_existing'` with a decision_id from a
  *      different (instance, field) is rejected with 422 (coordinate
  *      coherence).
- *   4. The reviewers endpoint reflects the human proposer immediately
- *      after a `source='human'` proposal, before any reviewer decisions.
+ *   4. The reviewers endpoint reflects the reviewer immediately after a
+ *      `decision='edit'` recorded in EXTRACT.
  *
  * These are the cheap-to-test invariants that, if regressed, would
  * silently corrupt the HITL audit trail.
