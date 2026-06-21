@@ -125,7 +125,7 @@ export function NotificationCenter() {
                             updateJob(job.id, {
                                 status: 'failed',
                                 completedAt: Date.now(),
-                                error: error instanceof Error ? error.message : 'Failed to check export status',
+                                error: error instanceof Error ? error.message : t('navigation', 'exportStatusCheckFailed'),
                             });
                         });
                     })
@@ -346,7 +346,7 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
             {getJobDescription(job)}
           </p>
 
-          {/* Progresso (se running) */}
+          {/* Progress (while running) */}
           {job.status === 'running' && job.progress && (
             <div className="space-y-1 pt-1">
               <div className="flex items-center justify-between text-xs">
@@ -364,17 +364,17 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
             </div>
           )}
 
-          {/* Stats (se completed) */}
+          {/* Stats (when completed) */}
           {job.status === 'completed' && job.stats && (
             <div className="flex items-center gap-3 text-xs text-muted-foreground pt-1">
               {job.stats.imported !== undefined && job.stats.imported > 0 && (
-                <span>✓ {job.stats.imported} importados</span>
+                <span>{job.stats.imported} {t('navigation', 'importedCount')}</span>
               )}
               {job.stats.updated !== undefined && job.stats.updated > 0 && (
-                <span>↻ {job.stats.updated} atualizados</span>
+                <span>{job.stats.updated} {t('navigation', 'updatedCount')}</span>
               )}
               {job.stats.pdfsDownloaded !== undefined && job.stats.pdfsDownloaded > 0 && (
-                <span>📄 {job.stats.pdfsDownloaded} PDFs</span>
+                <span>{job.stats.pdfsDownloaded} {t('navigation', 'pdfsLabel')}</span>
               )}
             </div>
           )}
@@ -423,7 +423,7 @@ function getJobTitle(job: BackgroundJob): string {
 function getJobDescription(job: BackgroundJob): string {
   if (job.type === 'zotero-import') {
     const metadata = (job as ZoteroImportJob).metadata;
-    const collectionName = metadata.collectionName || 'Collection';
+    const collectionName = metadata.collectionName || t('navigation', 'defaultCollectionName');
       const projectName = metadata.projectName || t('navigation', 'defaultProjectName');
 
     if (job.status === 'running' || job.status === 'pending') {
@@ -438,7 +438,7 @@ function getJobDescription(job: BackgroundJob): string {
         const metadata = (job as ArticlesExportJob).metadata;
         const formats = metadata.formats.join(', ').toUpperCase();
         if (job.status === 'running' || job.status === 'pending') {
-            return `${t('articles', 'exportInProgress')} (${metadata.articleCount} items, ${formats})`;
+            return `${t('articles', 'exportInProgress')} (${metadata.articleCount} ${t('navigation', 'unitItems')}, ${formats})`;
         }
         if (job.status === 'completed') {
             const skipped = job.stats?.skipped ?? 0;
@@ -457,7 +457,7 @@ function getJobDescription(job: BackgroundJob): string {
         const metadata = (job as ExtractionExportJob).metadata;
         const templateName = metadata.templateName || t('extraction', 'exportDialogTitle');
         if (job.status === 'running' || job.status === 'pending') {
-            return `${t('extraction', 'exportGenerating')} (${metadata.articleCount} articles, ${templateName})`;
+            return `${t('extraction', 'exportGenerating')} (${metadata.articleCount} ${t('navigation', 'unitArticles')}, ${templateName})`;
         }
         if (job.status === 'completed') {
             return t('extraction', 'exportSuccessToast');
@@ -480,9 +480,9 @@ function getCompletionMessage(job: BackgroundJob): string {
 
       if (stats.imported) parts.push(`${stats.imported} ${t('navigation', 'importedCount')}`);
       if (stats.updated) parts.push(`${stats.updated} ${t('navigation', 'updatedCount')}`);
-      if (stats.removedAtSource) parts.push(`${stats.removedAtSource} removed`);
-      if (stats.reactivated) parts.push(`${stats.reactivated} reactivated`);
-    if (stats.pdfsDownloaded) parts.push(`${stats.pdfsDownloaded} PDFs`);
+      if (stats.removedAtSource) parts.push(`${stats.removedAtSource} ${t('navigation', 'removedCount')}`);
+      if (stats.reactivated) parts.push(`${stats.reactivated} ${t('navigation', 'reactivatedCount')}`);
+    if (stats.pdfsDownloaded) parts.push(`${stats.pdfsDownloaded} ${t('navigation', 'pdfsLabel')}`);
 
       return `${t('navigation', 'importComplete')} ${parts.join(', ')}`;
   }

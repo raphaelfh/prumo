@@ -32,7 +32,9 @@ Read `frontend-ux` first to know the target; run this loop to verify you hit it.
 
 ```
 1. RENDER     dev server up, log in if the screen is gated, open the exact state
-2. CAPTURE    screenshot it (desktop light; add dark + mobile if you touched them)
+2. CAPTURE    screenshot it at TWO widths every time — desktop (~1280) and
+              narrow (~390). Responsive is never optional; add a dark capture
+              too if you touched theming
 3. COMPARE    hold it against TWO anchors (rubric below): the frontend-ux
               checklist (objective) and the Linear reference images (vocabulary)
 4. DIFF       write a prioritised list — P0 (breaks the look) → P2 (nice-to-have)
@@ -77,7 +79,14 @@ Mechanics:
   out from under you. Force it durably with
   `preview_eval("localStorage.setItem('prumo:theme','dark'); location.reload()")`,
   screenshot, then restore (`'system'` or `'light'`) and reload.
-- Responsive: `preview_resize` to a narrow width (≈390) before re-capturing.
+- Responsive — **always** re-capture narrow, not only when you "touched"
+  layout: `preview_resize` to ~390 (below `sm`/640), and sanity-check a mid
+  width (~700–900) whenever the screen has a priority-track header. The app
+  breaks at Tailwind defaults (sm 640, md 768, lg 1024, xl 1280; `2xl` is
+  overridden to **1400**), and some chrome (RunHeader, ExtractionHeader)
+  reflows on its *own* width via `@tailwindcss/container-queries`
+  (`@container/headerbar`) — so a component can change layout without the
+  viewport crossing a breakpoint. Resize the panel, not just the window.
 
 ## Targets — what "correct" means (two anchors)
 
@@ -125,8 +134,13 @@ Use them to answer "does this *feel* like the same family of tool?"
   `reviewer-1..5` dots/avatars and status/severity colors still read on the dark
   surface and come from tokens (`text-reviewer-N`), not hardcoded hex/HSL? Shadows
   still read on the dark surface?
-- **Responsive** — overflow on flex/grid (missing `min-w-0`)? Does it degrade
-  cleanly at ≈390px?
+- **Responsive (check every time, not only when you changed layout)** — capture
+  at ~390 (below `sm`) and a mid width (~700–900). Overflow on flex/grid (missing
+  `min-w-0`)? Does a dense table drop to a card list below `sm` (`useIsNarrow`)?
+  Does the sidebar collapse to the `MobileSidebar`/Sheet drawer? Do the
+  container-query headers clip/collapse labels gracefully instead of pushing
+  content out of their track? Are hover-only actions still reachable on touch
+  (a visible kebab, not `group-hover`-only)?
 - **Reduced motion** — with `prefers-reduced-motion` forced, do the
   field-just-updated flash and any transitions degrade to no-motion (not animate)?
   Hover stays instant per `frontend-ux` either way.
@@ -177,7 +191,9 @@ avatars, reviewer colors).
 ## Checklist (make these TodoWrite items)
 
 - [ ] Rendered the exact screen **and state** I changed (not just the happy path).
-- [ ] Captured desktop-light; added dark + mobile if I touched them.
+- [ ] Captured desktop-light **and a narrow width (~390)** — responsive is not
+      optional; added a mid width too if the screen has a priority-track header.
+- [ ] Added a dark capture if I touched theming.
 - [ ] Compared against the `frontend-ux` checklist (objective) and the Linear
       reference images (vocabulary).
 - [ ] Wrote a prioritised diff list (P0 → P2).
