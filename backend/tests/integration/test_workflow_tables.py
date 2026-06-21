@@ -1,9 +1,14 @@
 """Integration tests for the 5 HITL workflow tables."""
 
+from uuid import UUID
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.run_lifecycle_service import RunLifecycleService
+from tests.integration.conftest import SEED
 
 WORKFLOW_TABLES = [
     "extraction_proposal_records",
@@ -12,6 +17,24 @@ WORKFLOW_TABLES = [
     "extraction_consensus_decisions",
     "extraction_published_states",
 ]
+
+
+async def _provision_run(db: AsyncSession) -> tuple[UUID, UUID, UUID]:
+    """Create a run on the seed project/article/template; return (run_id, instance_id, field_id).
+
+    The seed provides the article + template + entity_type + field +
+    instance chain but intentionally leaves ``extraction_runs`` empty, so
+    these CHECK-constraint tests must materialise their own run rather than
+    probing for a pre-existing one (which made them skip in CI). The run is
+    created on the rolled-back ``db_session``, so it never persists.
+    """
+    run = await RunLifecycleService(db).create_run(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        project_template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+    )
+    return run.id, SEED.primary_instance, SEED.primary_field
 
 
 @pytest.mark.asyncio
@@ -55,21 +78,7 @@ async def test_workflow_table_updated_at_trigger(
 
 @pytest.mark.asyncio
 async def test_proposal_record_human_requires_user_check(db_session: AsyncSession) -> None:
-    run_id = (
-        await db_session.execute(text("SELECT id FROM public.extraction_runs LIMIT 1"))
-    ).scalar()
-    if run_id is None:
-        pytest.skip("No extraction_runs rows.")
-    instance_id = (
-        await db_session.execute(text("SELECT id FROM public.extraction_instances LIMIT 1"))
-    ).scalar()
-    if instance_id is None:
-        pytest.skip("No extraction_instances rows.")
-    field_id = (
-        await db_session.execute(text("SELECT id FROM public.extraction_fields LIMIT 1"))
-    ).scalar()
-    if field_id is None:
-        pytest.skip("No extraction_fields rows.")
+    run_id, instance_id, field_id = await _provision_run(db_session)
 
     with pytest.raises(IntegrityError):
         await db_session.execute(
@@ -89,30 +98,8 @@ async def test_proposal_record_human_requires_user_check(db_session: AsyncSessio
 async def test_reviewer_decision_accept_requires_proposal_check(
     db_session: AsyncSession,
 ) -> None:
-    run_id = (
-        await db_session.execute(text("SELECT id FROM public.extraction_runs LIMIT 1"))
-    ).scalar()
-    if run_id is None:
-        pytest.skip("No extraction_runs rows.")
-    instance_id = (
-        await db_session.execute(text("SELECT id FROM public.extraction_instances LIMIT 1"))
-    ).scalar()
-    if instance_id is None:
-        pytest.skip("No extraction_instances rows.")
-    field_id = (
-        await db_session.execute(text("SELECT id FROM public.extraction_fields LIMIT 1"))
-    ).scalar()
-    if field_id is None:
-        pytest.skip("No extraction_fields rows.")
-    reviewer_id = (
-        await db_session.execute(
-            text(
-                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
-            )
-        )
-    ).scalar()
-    if reviewer_id is None:
-        pytest.skip("No profiles rows.")
+    run_id, instance_id, field_id = await _provision_run(db_session)
+    reviewer_id = SEED.primary_profile
 
     with pytest.raises(IntegrityError):
         await db_session.execute(
@@ -137,30 +124,8 @@ async def test_reviewer_decision_accept_requires_proposal_check(
 async def test_reviewer_decision_edit_requires_value_check(
     db_session: AsyncSession,
 ) -> None:
-    run_id = (
-        await db_session.execute(text("SELECT id FROM public.extraction_runs LIMIT 1"))
-    ).scalar()
-    if run_id is None:
-        pytest.skip("No extraction_runs rows.")
-    instance_id = (
-        await db_session.execute(text("SELECT id FROM public.extraction_instances LIMIT 1"))
-    ).scalar()
-    if instance_id is None:
-        pytest.skip("No extraction_instances rows.")
-    field_id = (
-        await db_session.execute(text("SELECT id FROM public.extraction_fields LIMIT 1"))
-    ).scalar()
-    if field_id is None:
-        pytest.skip("No extraction_fields rows.")
-    reviewer_id = (
-        await db_session.execute(
-            text(
-                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
-            )
-        )
-    ).scalar()
-    if reviewer_id is None:
-        pytest.skip("No profiles rows.")
+    run_id, instance_id, field_id = await _provision_run(db_session)
+    reviewer_id = SEED.primary_profile
 
     with pytest.raises(IntegrityError):
         await db_session.execute(
@@ -185,30 +150,8 @@ async def test_reviewer_decision_edit_requires_value_check(
 async def test_consensus_decision_select_existing_requires_decision_check(
     db_session: AsyncSession,
 ) -> None:
-    run_id = (
-        await db_session.execute(text("SELECT id FROM public.extraction_runs LIMIT 1"))
-    ).scalar()
-    if run_id is None:
-        pytest.skip("No extraction_runs rows.")
-    instance_id = (
-        await db_session.execute(text("SELECT id FROM public.extraction_instances LIMIT 1"))
-    ).scalar()
-    if instance_id is None:
-        pytest.skip("No extraction_instances rows.")
-    field_id = (
-        await db_session.execute(text("SELECT id FROM public.extraction_fields LIMIT 1"))
-    ).scalar()
-    if field_id is None:
-        pytest.skip("No extraction_fields rows.")
-    consensus_user_id = (
-        await db_session.execute(
-            text(
-                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
-            )
-        )
-    ).scalar()
-    if consensus_user_id is None:
-        pytest.skip("No profiles rows.")
+    run_id, instance_id, field_id = await _provision_run(db_session)
+    consensus_user_id = SEED.primary_profile
 
     with pytest.raises(IntegrityError):
         await db_session.execute(

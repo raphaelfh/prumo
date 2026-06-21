@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
 
 API_PREFIX = "/api/v1/runs"
@@ -184,24 +185,22 @@ async def _open_qa_session(
     return res.json()["data"]
 
 
-async def _pick_run_for_outsider(db: AsyncSession, outsider_id: UUID) -> UUID | None:
-    """Return any run_id belonging to a project the outsider is NOT a member of."""
-    row = (
-        await db.execute(
-            text(
-                """
-                SELECT r.id
-                FROM public.extraction_runs r
-                WHERE NOT public.is_project_member(r.project_id, :uid)
-                LIMIT 1
-                """
-            ),
-            {"uid": str(outsider_id)},
-        )
-    ).first()
-    if row is None:
-        return None
-    return UUID(str(row[0]))
+async def _provision_run_outsider_cannot_see(db: AsyncSession) -> UUID:
+    """Create a run in SEED.primary_project (the outsider is not a member).
+
+    Provisioned directly via ``RunLifecycleService`` on the shared rolled-back
+    ``db_session`` so the BOLA test has a concrete run target without depending
+    on order-of-execution leftovers in the DB. The run is created as the seed
+    manager (``SEED.primary_profile``); the outsider is intentionally not a
+    member of ``primary_project``, so the ``/view`` BOLA gate must reject them.
+    """
+    run = await RunLifecycleService(db).create_run(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        project_template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+    )
+    return run.id
 
 
 # =================== TESTS ===================
@@ -261,9 +260,8 @@ async def test_get_run_view_returns_403_for_non_member(
     outsider_user: UUID,
 ) -> None:
     """BOLA gate: a caller who is not a member of the run's project gets 403."""
-    run_id = await _pick_run_for_outsider(db_session, outsider_user)
-    if run_id is None:
-        pytest.skip("Need a run in a project the outsider does not belong to")
+    del outsider_user  # auth override active via fixture; sub is the outsider
+    run_id = await _provision_run_outsider_cannot_see(db_session)
 
     resp = await db_client.get(f"{API_PREFIX}/{run_id}/view")
     assert resp.status_code == 403, resp.text
