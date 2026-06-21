@@ -16,11 +16,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from app.api.deps.security import ensure_project_member, get_current_user_sub
 from app.core.deps import DbSession
 from app.core.logging import get_logger
-from app.models.article import ArticleFile
-from app.repositories.article_repository import ArticleFileRepository
 from app.schemas.article import ArticleFileResponse, ConfirmUploadRequest
 from app.schemas.common import ApiResponse
 from app.services.article_file_ingest_service import ArticleFileIngestService
+from app.services.article_file_service import ArticleFileService
 from app.services.article_text_block_read_service import (
     ArticleFileNotFoundError,
     get_article_file_project_id,
@@ -59,16 +58,16 @@ async def confirm_article_file_upload(
     if not body.storage_key.startswith(expected_prefix):
         raise HTTPException(status_code=400, detail="storage_key outside article path")
 
-    article_file = ArticleFile(
+    service = ArticleFileService(db)
+    article_file = await service.create_uploaded_file(
         project_id=project_id,
         article_id=article_id,
-        file_type=body.content_type,
         storage_key=body.storage_key,
+        file_type=body.content_type,
         original_filename=body.original_filename,
-        bytes=body.bytes,
+        bytes_=body.bytes,
         file_role=body.file_role,
     )
-    article_file = await ArticleFileRepository(db).create(article_file)
     # Commit BEFORE enqueue: the Celery task loads the row in its own session.
     await db.commit()
 
@@ -86,8 +85,7 @@ async def confirm_article_file_upload(
             article_file_id=str(article_file.id),
             error=str(exc),
         )
-        article_file.extraction_status = "parse_failed"
-        article_file.extraction_error = f"enqueue failed: {exc}"[:500]
+        service.mark_parse_failed(article_file, f"enqueue failed: {exc}")
         await db.commit()
         raise HTTPException(
             status_code=503, detail="Failed to schedule parsing; please retry"
@@ -111,11 +109,11 @@ async def reparse_article_file(
         raise HTTPException(status_code=404, detail=str(e)) from e
     await ensure_project_member(db, project_id, current_user_sub)
 
-    article_file = await ArticleFileRepository(db).get_by_id(article_file_id)
+    service = ArticleFileService(db)
+    article_file = await service.get_by_id(article_file_id)
     if article_file is None:  # defensive — gate already resolved the project
         raise HTTPException(status_code=404, detail="Article file not found")
-    article_file.extraction_status = "pending"
-    article_file.extraction_error = None
+    service.reset_for_reparse(article_file)
     await db.commit()
     await db.refresh(article_file)
 
@@ -133,8 +131,7 @@ async def reparse_article_file(
             article_file_id=str(article_file.id),
             error=str(exc),
         )
-        article_file.extraction_status = "parse_failed"
-        article_file.extraction_error = f"enqueue failed: {exc}"[:500]
+        service.mark_parse_failed(article_file, f"enqueue failed: {exc}")
         await db.commit()
         raise HTTPException(
             status_code=503, detail="Failed to schedule parsing; please retry"
