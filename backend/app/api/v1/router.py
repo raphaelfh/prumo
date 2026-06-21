@@ -7,6 +7,7 @@ Agrega todas as rotas da API v1.
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    article_files,
     article_text_blocks,
     articles,
     articles_export,
@@ -105,6 +106,8 @@ api_router.include_router(
     prefix="/articles",
     tags=["articles"],
 )
+
+api_router.include_router(article_files.router)
 
 api_router.include_router(
     article_text_blocks.router,
