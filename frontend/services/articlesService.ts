@@ -337,20 +337,18 @@ export function uploadArticleFile(params: UploadFileParams): Promise<ErrorResult
 
     if (uploadError) throw new Error('Upload failed: ' + uploadError.message);
 
-    const {error: insertError} = await supabase.from('article_files').insert([{
-      project_id: params.projectId,
-      article_id: params.articleId,
-      file_type: detectedFormat,
-      file_role: params.role,
-      storage_key: params.storageKey,
-      original_filename: params.file.name,
-      bytes: params.file.size,
-    }]);
-
-    if (insertError) {
-      // Rollback storage
+    try {
+      await confirmArticleFileUpload({
+        articleId: params.articleId,
+        storageKey: params.storageKey,
+        originalFilename: params.file.name,
+        contentType: detectedFormat,
+        bytes: params.file.size,
+        fileRole: params.role,
+      });
+    } catch (e) {
       await supabase.storage.from('articles').remove([params.storageKey]);
-      throw new Error('File registration failed: ' + insertError.message);
+      throw e instanceof Error ? e : new Error('File registration failed');
     }
   }, 'articlesService.uploadArticleFile');
 }

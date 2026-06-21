@@ -228,9 +228,8 @@ describe('articlesService.uploadArticleFile', () => {
       remove: storageRemove,
     } as never);
 
-    vi.mocked(supabase.from).mockImplementation(() => ({
-      insert: vi.fn(async () => ({error: {message: 'insert failed'}})),
-    } as never));
+    // apiClient rejects → triggers storage rollback
+    vi.mocked(apiClient).mockRejectedValueOnce(new Error('constraint violation'));
 
     const result = await uploadArticleFile({
       projectId: 'proj-1',
@@ -242,6 +241,35 @@ describe('articlesService.uploadArticleFile', () => {
 
     expect(result.ok).toBe(false);
     expect(storageRemove).toHaveBeenCalledWith(['proj-1/art-4/file.pdf']);
-    expect(vi.mocked(supabase.from)).toHaveBeenCalledWith('article_files');
+    // No longer calls supabase.from('article_files')
+    const fromCalls = vi.mocked(supabase.from).mock.calls.map(c => c[0]);
+    expect(fromCalls).not.toContain('article_files');
+  });
+});
+
+describe('articlesService.uploadArticleFile — backend confirm', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('registers supplements via the backend, not a direct insert', async () => {
+    vi.mocked(supabase.storage.from).mockReturnValue({
+      upload: vi.fn(async () => ({error: null})),
+      remove: vi.fn(async () => ({error: null})),
+    } as never);
+
+    const res = await uploadArticleFile({
+      projectId: 'proj-1',
+      articleId: 'art-1',
+      storageKey: 'proj-1/art-1/supp.pdf',
+      file: FAKE_PDF,
+      role: 'SUPPLEMENT',
+    } as never);
+
+    expect(res.ok).toBe(true);
+    expect(apiClient).toHaveBeenCalledWith(
+      '/api/v1/articles/art-1/files',
+      expect.objectContaining({method: 'POST'}),
+    );
+    const fromCalls = vi.mocked(supabase.from).mock.calls.map(c => c[0]);
+    expect(fromCalls).not.toContain('article_files');
   });
 });
