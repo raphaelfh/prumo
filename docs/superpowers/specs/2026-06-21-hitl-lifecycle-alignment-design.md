@@ -101,12 +101,16 @@ pending → extract → consensus → finalized        (+ cancelled at any non-t
 - The "X/N reviewers" counter and the "0% until you accept" progress compute from
   **per-user reviewer state** (existing logic; no longer gated on a `review`
   stage).
-- **"Mark ready" commits the reviewer**: it materializes their `human` proposals
-  into their own committed `ReviewerDecision`s (reusing the old `proposal →
-  review` boundary materialization logic, `run_lifecycle_service.py:261,337`,
-  now triggered per-reviewer instead of on a stage edge) and sets a per-reviewer
-  ready flag. It does **not** advance the run. Only committed reviewers' decisions
-  appear in the consensus compare view.
+- Human writes go **straight to per-user `ReviewerDecision`s** via `/decisions` —
+  the form already does this in `REVIEW` (`extractionValueService.saveValue`); we
+  relax `record_decision` to accept `extract`. So decisions exist live during
+  `extract`, and the "X/N" counter + own-progress are correct **without** any
+  stage flip. The old `proposal → review` auto-advance (`useAutoAdvanceToReview`)
+  and boundary materialization (`run_lifecycle_service.py:261`) are therefore
+  **deleted, not moved** — in the new model there are no un-materialized human
+  proposals to convert (the transient `proposal` window they bridged is gone).
+- **"Mark ready"** is a per-reviewer "I'm done" flag (introduced in **Phase 2**
+  with manual "Open consensus"). It does not advance the run.
 
 ### 4.2 Consensus (manual open)
 
@@ -135,7 +139,8 @@ pending → extract → consensus → finalized        (+ cancelled at any non-t
 
 - The `review` stage; `useAutoAdvanceToReview`
   (`frontend/hooks/extraction/useAutoAdvanceToReview.ts`); the proposal→review
-  boundary materialization.
+  boundary materialization (`_materialize_human_decisions` + its call) — **deleted
+  outright**, since humans write decisions directly in `extract`.
 - The legacy header finalize: `handleFinalize`
   (`ExtractionFullScreen.tsx:851-976`), `markInstancesCompleted`
   (`extractionInstanceService.ts:639-663`), and the
@@ -234,12 +239,14 @@ The change is large enough to stage into separate plans/PRs, in this order so
 each ships green:
 
 1. **Collapse the stage model** — enum migration (`proposal`/`review` → `extract`),
-   relax stage gating, delete `useAutoAdvanceToReview`, park/reopen in `extract`,
-   move materialization to "Mark ready" + the per-reviewer ready flag. New ADR
-   superseding ADR-0010. (Backend-heavy; no finalize change yet.)
-2. **Consensus + finalize rework** — manual "Open consensus", auto-reveal,
-   evaluate-all `ConsensusPanel`, "Approve & finalize" (publish-all → advance),
-   header phase-aware action. New ADR superseding the finalize parts of ADR-0009.
+   relax `record_decision` + AI-proposal gating to `extract`, delete
+   `useAutoAdvanceToReview` + the boundary materialization, park/reopen in
+   `extract`, point autosave at `/decisions` in `extract`. New ADR superseding
+   ADR-0010. (Self-contained; ships green; no finalize/ready-flag change.)
+2. **Consensus + finalize rework** — per-reviewer "Mark ready" flag, manual
+   "Open consensus", auto-reveal, evaluate-all `ConsensusPanel`, "Approve &
+   finalize" (publish-all → advance), header phase-aware action. New ADR
+   superseding the finalize parts of ADR-0009.
 3. **Delete the legacy finalize path** — `handleFinalize`,
    `markInstancesCompleted`, the `instance.status` progress shortcut; progress
    from field-completeness. (Pure cleanup once 2 lands.)
