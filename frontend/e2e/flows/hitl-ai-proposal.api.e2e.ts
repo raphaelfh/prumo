@@ -132,12 +132,12 @@ test.describe("HITL AI proposal pipeline", () => {
     expect(createRes.ok()).toBeTruthy();
     const runBody = (await parseEnvelope<RunSummaryResponse>(createRes)).data;
 
-    // 2. Advance to proposal.
+    // 2. Advance to extract.
     const advRes = await request.post(
       `${env.apiUrl}/api/v1/runs/${runBody.id}/advance`,
       {
         headers: authHeaders(token, traceId),
-        data: { target_stage: "proposal" },
+        data: { target_stage: "extract" },
         timeout: 15000,
       },
     );
@@ -164,12 +164,7 @@ test.describe("HITL AI proposal pipeline", () => {
     expect(proposal.source).toBe("ai");
     expect(proposal.confidence_score).toBeCloseTo(0.87, 2);
 
-    // 4. Advance to review and accept the AI proposal.
-    await request.post(`${env.apiUrl}/api/v1/runs/${runBody.id}/advance`, {
-      headers: authHeaders(token, traceId),
-      data: { target_stage: "review" },
-      timeout: 15000,
-    });
+    // 4. Accept the AI proposal (recorded as a decision in extract).
     const decisionRes = await request.post(
       `${env.apiUrl}/api/v1/runs/${runBody.id}/decisions`,
       {

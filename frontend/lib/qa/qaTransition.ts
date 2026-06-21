@@ -31,7 +31,7 @@ export interface BuildQaTransitionArgs {
 export function buildQaTransition(args: BuildQaTransitionArgs): StageTransition | null {
   const { stage, canResolveConflicts, onPublish, onFinalize } = args;
 
-  if (stage === 'proposal' || stage === 'review') {
+  if (stage === 'extract') {
     // Primary action: publish the assessment (drives the full pipeline).
     return {
       to: 'finalized',

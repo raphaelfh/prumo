@@ -117,7 +117,7 @@ test.describe("Extraction reopen UI flow", () => {
     expect(createRes.ok()).toBeTruthy();
     const run = (await parseEnvelope<RunSummaryResponse>(createRes)).data;
 
-    for (const stage of ["proposal", "review", "consensus"] as const) {
+    for (const stage of ["extract", "consensus"] as const) {
       const adv = await request.post(
         `${env.apiUrl}/api/v1/runs/${run.id}/advance`,
         {
@@ -200,7 +200,7 @@ test.describe("Extraction reopen UI flow", () => {
     );
     expect(newRuns.length).toBe(1);
     expect(newRuns[0].id).not.toBe(run.id);
-    expect(newRuns[0].stage).toBe("review");
+    expect(newRuns[0].stage).toBe("extract");
     expect(
       (newRuns[0].parameters as Record<string, unknown>).parent_run_id,
     ).toBe(run.id);

@@ -113,7 +113,7 @@ test.describe("HITL run lifecycle invariants", () => {
     expect(createRes.ok()).toBeTruthy();
     const run = (await parseEnvelope<RunSummaryResponse>(createRes)).data;
 
-    // 1. PENDING → CONSENSUS skipping PROPOSAL/REVIEW: rejected.
+    // 1. PENDING → CONSENSUS skipping EXTRACT: rejected.
     const badAdvance = await request.post(
       `${env.apiUrl}/api/v1/runs/${run.id}/advance`,
       {
@@ -126,38 +126,20 @@ test.describe("HITL run lifecycle invariants", () => {
     expect(badAdvance.status()).toBeGreaterThanOrEqual(400);
     expect(badAdvance.status()).toBeLessThan(500);
 
-    // 2. Advance to PROPOSAL — legal.
+    // 2. Advance to EXTRACT — legal.
     const adv1 = await request.post(
       `${env.apiUrl}/api/v1/runs/${run.id}/advance`,
       {
         headers: authHeaders(token, traceId),
-        data: { target_stage: "proposal" },
+        data: { target_stage: "extract" },
         timeout: 15000,
       },
     );
     expect(adv1.ok()).toBeTruthy();
 
-    // 3. Trying to record a `decision='edit'` while still in PROPOSAL
-    //    must be rejected — decisions only land in REVIEW.
-    const earlyDecision = await request.post(
-      `${env.apiUrl}/api/v1/runs/${run.id}/decisions`,
-      {
-        headers: authHeaders(token, traceId),
-        data: {
-          instance_id: inst0,
-          field_id: f0,
-          decision: "edit",
-          value: { value: "should-fail" },
-        },
-        timeout: 15000,
-        failOnStatusCode: false,
-      },
-    );
-    expect(earlyDecision.status()).toBeGreaterThanOrEqual(400);
-
-    // 4. Record a human proposal — `source='human'` requires
-    //    `source_user_id`. Server must accept it in PROPOSAL stage.
-    const proposalRes = await request.post(
+    // 3. A human `/proposals` write on an extraction run is rejected — human
+    //    extraction values must go through `/decisions` (blind-review gate).
+    const humanProposalRejected = await request.post(
       `${env.apiUrl}/api/v1/runs/${run.id}/proposals`,
       {
         headers: authHeaders(token, traceId),
@@ -165,15 +147,32 @@ test.describe("HITL run lifecycle invariants", () => {
           instance_id: inst0,
           field_id: f0,
           source: "human",
-          proposed_value: { value: "human-says" },
-          source_user_id: undefined, // server picks current user
+          proposed_value: { value: "should-fail" },
+        },
+        timeout: 15000,
+        failOnStatusCode: false,
+      },
+    );
+    expect(humanProposalRejected.status()).toBeGreaterThanOrEqual(400);
+
+    // 4. Record the reviewer's value as a `decision='edit'` — accepted in
+    //    EXTRACT (the per-user write path).
+    const decisionRes = await request.post(
+      `${env.apiUrl}/api/v1/runs/${run.id}/decisions`,
+      {
+        headers: authHeaders(token, traceId),
+        data: {
+          instance_id: inst0,
+          field_id: f0,
+          decision: "edit",
+          value: { value: "human-says" },
         },
         timeout: 15000,
       },
     );
-    expect(proposalRes.ok()).toBeTruthy();
+    expect(decisionRes.ok()).toBeTruthy();
 
-    // 5. Reviewers endpoint already lists the proposer's profile.
+    // 5. Reviewers endpoint lists the decision-maker's profile.
     const reviewersRes = await request.get(
       `${env.apiUrl}/api/v1/runs/${run.id}/reviewers`,
       { headers: authHeaders(token, traceId), timeout: 15000 },
@@ -187,11 +186,6 @@ test.describe("HITL run lifecycle invariants", () => {
     // 6. Coordinate coherence: a decision targeting a (instance, field)
     //    pair where the field doesn't belong to the instance must 422.
     if (fieldsOther.length > 0) {
-      await request.post(`${env.apiUrl}/api/v1/runs/${run.id}/advance`, {
-        headers: authHeaders(token, traceId),
-        data: { target_stage: "review" },
-        timeout: 15000,
-      });
       const wrongField = fieldsOther[0].id;
       const badCoord = await request.post(
         `${env.apiUrl}/api/v1/runs/${run.id}/decisions`,

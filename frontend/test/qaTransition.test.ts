@@ -32,19 +32,9 @@ describe('buildQaTransition', () => {
     expect(buildQaTransition(makeArgs({ stage: 'cancelled' }))).toBeNull();
   });
 
-  it('stage=proposal → finalize action, gate ok:true, onAdvance===onPublish', () => {
+  it('stage=extract → finalize action, gate ok:true, onAdvance===onPublish', () => {
     const onPublish = vi.fn();
-    const result = buildQaTransition(makeArgs({ stage: 'proposal', onPublish }));
-    expect(result).not.toBeNull();
-    expect(result!.to).toBe('finalized');
-    expect(result!.label).toBe('finalize');
-    expect(result!.gate.ok).toBe(true);
-    expect(result!.onAdvance).toBe(onPublish);
-  });
-
-  it('stage=review → finalize action, gate ok:true, onAdvance===onPublish', () => {
-    const onPublish = vi.fn();
-    const result = buildQaTransition(makeArgs({ stage: 'review', onPublish }));
+    const result = buildQaTransition(makeArgs({ stage: 'extract', onPublish }));
     expect(result).not.toBeNull();
     expect(result!.to).toBe('finalized');
     expect(result!.label).toBe('finalize');

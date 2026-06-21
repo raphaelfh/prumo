@@ -56,21 +56,29 @@ export interface UseAutoSaveProposalsProps {
   /** Debounce delay in ms (default 600). */
   debounceMs?: number;
   /**
-   * Active run stage. Drives the write target:
-   *   - ``'review'`` → POST ``/decisions`` with decision='edit' so each
-   *     reviewer's typing lands as a per-user ReviewerDecision (the
-   *     blind-review contract). The run view reads these back resolved
-   *     and scoped to the active reviewer (``currentValues``).
-   *   - any other value (``'proposal'``, ``undefined``, …) → POST
-   *     ``/proposals`` with source='human'. Preserves the existing QA
-   *     single-user publish flow and the extraction PROPOSAL stage
-   *     where the AI/proposer fills in initial values.
-   *
-   * Layer 2 of the multi-reviewer-blind fix. Omitting it keeps the
-   * legacy behaviour (proposal write) so callers that don't yet care
-   * about the stage discriminator (QA today) are unaffected.
+   * Active run stage. Together with ``kind`` it drives the write target —
+   * see ``kind`` below. Autosave only writes in the editable ``'extract'``
+   * stage; other stages are read-only/terminal for autosave.
    */
   stage?: string | null;
+  /**
+   * Run kind. In the collapsed ``'extract'`` stage the write target is
+   * kind-specific:
+   *   - ``'extraction'`` → POST ``/decisions`` with decision='edit' so each
+   *     reviewer's typing lands as a per-user ReviewerDecision (the
+   *     blind-review contract). The run view reads these back resolved and
+   *     scoped to the active reviewer (``currentValues``). A human
+   *     ``/proposals`` write is rejected by the backend for extraction runs.
+   *   - any other kind (``'quality_assessment'``, ``undefined``) → POST
+   *     ``/proposals`` with source='human'. QA has no per-reviewer blind
+   *     contract, so its single-user publish flow stays on the shared
+   *     proposal track.
+   *
+   * Layer 2 of the multi-reviewer-blind fix. Omitting it keeps the legacy
+   * proposal-write behaviour so callers that don't care (QA today) are
+   * unaffected.
+   */
+  kind?: string | null;
   /**
    * Server-persisted values per ``${instanceId}_${fieldId}`` (the map the
    * form hydrated from). A coord whose current value still equals its
@@ -95,18 +103,17 @@ export interface UseAutoSaveProposalsReturn {
  *   - ``null`` / ``undefined`` — legacy QA single-user flow (writes
  *     ``human`` proposals); callers that omit ``stage`` keep their
  *     behaviour.
- *   - ``'proposal'`` — extraction PROPOSAL stage; the proposer (or AI)
- *     fills initial values as ``human`` proposals.
- *   - ``'review'`` — per-reviewer ``ReviewerDecision`` writes (see
- *     ``performSave``).
+ *   - ``'extract'`` — the single editable stage. Extraction writes go to
+ *     ``/decisions`` (per-reviewer), QA writes to ``/proposals`` (see
+ *     ``performSave`` + the ``kind`` prop docs).
  *
  * Any other stage (``'consensus'``, ``'finalized'``, ``'pending'``, …) is
- * read-only or terminal for autosave: the backend rejects a proposal
- * write past PROPOSAL (HTTP 400 ``run stage is consensus, not in
- * ['proposal']``), which used to surface as a spurious "Error saving
- * data automatically" toast the moment a consolidated run was opened.
+ * read-only or terminal for autosave: the backend rejects a write past
+ * ``extract`` (HTTP 400 ``run stage is consensus, not in ['extract']``),
+ * which used to surface as a spurious "Error saving data automatically"
+ * toast the moment a consolidated run was opened.
  */
-const WRITABLE_STAGES = new Set(['proposal', 'review']);
+const WRITABLE_STAGES = new Set(['extract']);
 function isWritableStage(stage?: string | null): boolean {
   return stage == null || WRITABLE_STAGES.has(stage);
 }
@@ -114,7 +121,7 @@ function isWritableStage(stage?: string | null): boolean {
 export function useAutoSaveProposals(
   props: UseAutoSaveProposalsProps,
 ): UseAutoSaveProposalsReturn {
-  const { runId, values, enabled = true, debounceMs = 600, stage, baselineValues } =
+  const { runId, values, enabled = true, debounceMs = 600, stage, kind, baselineValues } =
     props;
 
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -130,6 +137,7 @@ export function useAutoSaveProposals(
   const runIdRef = useRef(runId);
   const enabledRef = useRef(enabled);
   const stageRef = useRef(stage);
+  const kindRef = useRef(kind);
   // Server-persisted baseline (see prop docs). Mirrored in a ref so the
   // diff sees the latest hydrated map without re-creating callbacks.
   const baselineRef = useRef<Record<string, unknown>>(baselineValues ?? {});
@@ -138,6 +146,7 @@ export function useAutoSaveProposals(
     runIdRef.current = runId;
     enabledRef.current = enabled;
     stageRef.current = stage;
+    kindRef.current = kind;
     baselineRef.current = baselineValues ?? {};
   });
 
@@ -205,16 +214,15 @@ export function useAutoSaveProposals(
               : actualValue;
           const normalized =
             writeValue === '' || writeValue === undefined ? null : writeValue;
-          // Stage-aware write target (Layer 2 of the multi-reviewer
-          // blind fix). ``stage='review'`` means every reviewer is
-          // making per-user decisions on top of the same Run — the
+          // Kind-aware write target (Layer 2 of the multi-reviewer blind
+          // fix). For an extraction run in the editable ``extract`` stage,
+          // every reviewer makes per-user decisions on the same Run — the
           // write must be a ReviewerDecision so the run view's
-          // reviewer-scoped read (``currentValues``) holds. Any other stage
-          // (proposal, undefined) keeps writing ``human`` proposals,
-          // preserving the QA publish flow and the extraction
-          // PROPOSAL stage where one user (or AI) builds the initial
-          // value set.
-          const useDecisionEndpoint = stageRef.current === 'review';
+          // reviewer-scoped read (``currentValues``) holds, and a human
+          // ``/proposals`` write is rejected by the backend. QA stays on
+          // ``human`` proposals (its shared single-user publish flow).
+          const useDecisionEndpoint =
+            stageRef.current === 'extract' && kindRef.current === 'extraction';
           return writeRunFieldValue({
             runId: currentRunId,
             instanceId,

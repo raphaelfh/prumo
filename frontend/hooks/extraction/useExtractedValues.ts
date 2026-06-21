@@ -1,23 +1,22 @@
 /**
  * Hook to load a reviewer's per-field values for an extraction run.
  *
- * Two-mode read path, switched by the run's current stage:
+ * Two-mode read path, switched by the run's current stage AND kind:
  *
- *  * ``stage='proposal'`` — the run is being filled in (manual edits as
- *    `human` proposals, AI proposals from extract_for_run). The form
- *    hydrates from ``runDetail.proposals`` (newest-per-coord, any
- *    source) so both human and AI proposals appear immediately. This
- *    mirrors the QA flow (``QualityAssessmentFullScreen.tsx:163-185``).
+ *  * reviewer-state path — ``stage in {'consensus','finalized'}``, or an
+ *    extraction run (``kind='extraction'``) in the editable ``'extract'``
+ *    stage. Extraction humans write per-user ReviewerDecisions, so the form
+ *    hydrates from ``extraction_reviewer_states`` (current decision pointer
+ *    per coord, scoped to the active user). AI proposals surface as
+ *    suggestions, not field pre-fills.
  *
- *  * ``stage in {'review','consensus','finalized'}`` — proposals have
- *    been "frozen" and reviewers are deciding. The form hydrates from
- *    ``extraction_reviewer_states`` (current decision pointer per
- *    coord, scoped to the active user) — the same path that has been
- *    in use since the ``extracted_values`` removal.
+ *  * proposals path — a QA run (``kind != 'extraction'``) in ``'extract'``.
+ *    QA writes ``human`` proposals on the shared track, so the form
+ *    hydrates from ``runDetail.proposals`` (newest-per-coord, blind-filtered).
  *
  *  * ``stage='pending'`` or no run — empty map; autosave is also a
  *    no-op so the user's typing stays in local state until the page
- *    opens a session and the run lands in PROPOSAL.
+ *    opens a session and the run lands in EXTRACT.
  *
  * Run resolution moved out of this hook: the page resolves it via
  * ``useExtractionSession`` and passes ``runId`` + ``stage`` (+ proposals
@@ -53,6 +52,13 @@ export interface ExtractedValueData {
 interface UseExtractedValuesProps {
   runId: string | null | undefined;
   stage: string | null | undefined;
+  /**
+   * Run kind. In the collapsed ``'extract'`` stage it selects the read path:
+   * ``'extraction'`` hydrates from reviewer-states (per-user decisions); any
+   * other kind hydrates from raw proposals (QA). consensus/finalized always
+   * use reviewer-states regardless of kind.
+   */
+  kind?: string | null;
   proposals?: ProposalRecordResponse[];
   /**
    * Pre-computed reviewer values embedded in the run view (review /
@@ -86,7 +92,26 @@ interface UseExtractedValuesReturn {
   refresh: () => Promise<void>;
 }
 
-const REVIEWER_STATE_STAGES = new Set(['review', 'consensus', 'finalized']);
+// Read-path selectors for the collapsed ``extract`` stage. Extraction writes
+// per-user decisions (reviewer-states); QA writes shared proposals. consensus
+// and finalized always resolve from reviewer-states.
+function usesReviewerStatePath(
+  stage: string | null | undefined,
+  kind: string | null | undefined,
+): boolean {
+  return (
+    stage === 'consensus' ||
+    stage === 'finalized' ||
+    (stage === 'extract' && kind === 'extraction')
+  );
+}
+
+function usesProposalsPath(
+  stage: string | null | undefined,
+  kind: string | null | undefined,
+): boolean {
+  return stage === 'extract' && kind !== 'extraction';
+}
 
 function resetValuesIfNeeded(
   setValues: Dispatch<SetStateAction<Record<string, any>>>,
@@ -126,7 +151,7 @@ function mergeValuesById(
 export function useExtractedValues(
   props: UseExtractedValuesProps,
 ): UseExtractedValuesReturn {
-  const { runId, stage, proposals, currentValues, currentUserId, enabled = true } = props;
+  const { runId, stage, kind, proposals, currentValues, currentUserId, enabled = true } = props;
 
   const [values, setValues] = useState<Record<string, any>>({});
   // Raw server map the hook hydrated from — the autosave baseline.
@@ -173,7 +198,7 @@ export function useExtractedValues(
           return;
         }
 
-        if (stage === 'proposal') {
+        if (usesProposalsPath(stage, kind)) {
           // Bug A (multi-reviewer blind leak): the previous logic took
           // newest-per-coord regardless of source, which surfaced one
           // reviewer's ``human`` proposals in another reviewer's form
@@ -212,7 +237,7 @@ export function useExtractedValues(
           return;
         }
 
-        if (REVIEWER_STATE_STAGES.has(stage)) {
+        if (usesReviewerStatePath(stage, kind)) {
           // ``currentUserId`` comes from AuthContext (zero network), so the
           // transient /auth/v1/user 5xx that used to blank the form (#49) is
           // gone. A null id means signed out → reset, don't fetch values.

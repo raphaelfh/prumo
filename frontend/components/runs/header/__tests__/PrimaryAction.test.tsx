@@ -5,7 +5,7 @@ import { RunHeader } from '@/components/runs/header';
 vi.mock('@/lib/copy', () => ({ t: (_n: string, k: string) => k }));
 
 const base = {
-  kind: 'extraction' as const, stage: 'review' as const, isRevision: false,
+  kind: 'extraction' as const, stage: 'extract' as const, isRevision: false,
   role: 'manager' as const, isBlind: false, canReveal: false,
   progress: { completed: 3, total: 30, pct: 10 }, reviewers: { count: 0, required: 0, divergent: 0 },
 };

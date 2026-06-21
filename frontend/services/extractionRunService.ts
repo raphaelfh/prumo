@@ -111,7 +111,7 @@ export interface WriteProposalParams {
   instanceId: string;
   fieldId: string;
   normalizedValue: unknown;
-  /** When true, writes a ReviewerDecision (stage='review'); otherwise writes a human proposal. */
+  /** When true, writes a ReviewerDecision (extraction in 'extract'); otherwise writes a human proposal. */
   useDecisionEndpoint: boolean;
 }
 

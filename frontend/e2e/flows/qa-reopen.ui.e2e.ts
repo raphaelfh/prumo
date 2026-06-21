@@ -103,26 +103,18 @@ test.describe("HITL reopen flow (Option C)", () => {
     const detail = (await parseEnvelope<RunDetailResponse>(detailRes)).data;
     const stage = detail.run.stage;
 
-    // The session opens into PROPOSAL by design; advance it to REVIEW
-    // → CONSENSUS so manual_override is accepted.
-    if (stage === "proposal") {
+    // The session opens into EXTRACT by design; advance it to CONSENSUS so
+    // manual_override is accepted.
+    if (stage === "extract") {
       await request.post(
         `${env.apiUrl}/api/v1/runs/${session.run_id}/advance`,
         {
           headers: authHeaders(token, traceId),
-          data: { target_stage: "review" },
+          data: { target_stage: "consensus" },
           timeout: 15000,
         },
       );
     }
-    await request.post(
-      `${env.apiUrl}/api/v1/runs/${session.run_id}/advance`,
-      {
-        headers: authHeaders(token, traceId),
-        data: { target_stage: "consensus" },
-        timeout: 15000,
-      },
-    );
 
     const [firstEntityTypeId, firstInstanceId] = Object.entries(
       session.instances_by_entity_type,
@@ -191,7 +183,7 @@ test.describe("HITL reopen flow (Option C)", () => {
       parameters: Record<string, unknown> | null;
     }>(reopenRes)).data;
     expect(reopenBody.id).not.toBe(session.run_id);
-    expect(reopenBody.stage).toBe("review");
+    expect(reopenBody.stage).toBe("extract");
     expect(reopenBody.parameters).toBeTruthy();
     expect((reopenBody.parameters as Record<string, unknown>).parent_run_id).toBe(
       session.run_id,
@@ -203,7 +195,7 @@ test.describe("HITL reopen flow (Option C)", () => {
       { headers: authHeaders(token, traceId), timeout: 15000 },
     );
     const newDetail = (await parseEnvelope<RunDetailResponse>(newDetailRes)).data;
-    expect(newDetail.run.stage).toBe("review");
+    expect(newDetail.run.stage).toBe("extract");
     const systemProposals = newDetail.proposals.filter((p) => p.source === "system");
     expect(systemProposals.length).toBe(finalizedBody.published_states.length);
 

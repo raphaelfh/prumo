@@ -143,83 +143,56 @@ test.describe("Extraction value coherence (H1+H2 end-to-end)", () => {
     }
     test.skip(!instance || !field, "No (instance, field) coordinate available.");
 
-    // 3. Record a human proposal via the API (mirrors what the autosave
-    //    hook would write during PROPOSAL stage).
-    const proposalRes = await request.post(
-      `${env.apiUrl}/api/v1/runs/${runId}/proposals`,
+    // 3. Record the typed value as a reviewer decision via the API — this
+    //    mirrors what the autosave hook writes for an extraction run in
+    //    EXTRACT: human extraction writes go through /decisions (a per-user
+    //    ReviewerDecision), not the shared /proposals track.
+    const decisionRes = await request.post(
+      `${env.apiUrl}/api/v1/runs/${runId}/decisions`,
       {
         headers: authHeaders(token, traceId),
         data: {
           instance_id: instance!.id,
           field_id: field!.id,
-          source: "human",
-          proposed_value: { value: TYPED_VALUE },
+          decision: "edit",
+          value: { value: TYPED_VALUE },
         },
         timeout: 15000,
       },
     );
     expect(
-      proposalRes.ok(),
-      "Recording human proposal must succeed in PROPOSAL stage.",
+      decisionRes.ok(),
+      "Recording an 'edit' decision must succeed in EXTRACT stage.",
     ).toBeTruthy();
 
-    // 4. Advance to REVIEW — this is the trigger for H2's
-    //    auto-materialization. Pre-fix, no reviewer_decision is created
-    //    for the human proposal and the form would render blank on
-    //    reload. Post-fix, an ``accept_proposal`` decision lands here.
-    const advRes = await request.post(
-      `${env.apiUrl}/api/v1/runs/${runId}/advance`,
-      {
-        headers: authHeaders(token, traceId),
-        data: { target_stage: "review" },
-        timeout: 15000,
-      },
-    );
-    expect(advRes.ok(), "Advance to REVIEW must succeed.").toBeTruthy();
-
-    // 5. H2 assertion: a reviewer_decision with decision='accept_proposal'
-    //    must now exist for the human proposal, owned by the current user.
+    // 4. The reviewer_decision carrying the typed value must exist for the
+    //    current user; the run stays in EXTRACT (no proposal→review edge).
     const detailRes = await request.get(
       `${env.apiUrl}/api/v1/runs/${runId}`,
       { headers: authHeaders(token, traceId), timeout: 15000 },
     );
     const detail = (await parseEnvelope<RunDetailResponse>(detailRes)).data;
-    expect(detail.run.stage).toBe("review");
+    expect(detail.run.stage).toBe("extract");
 
-    const humanProposal = detail.proposals.find(
-      (p) =>
-        p.source === "human" &&
-        p.instance_id === instance!.id &&
-        p.field_id === field!.id,
-    );
-    expect(
-      humanProposal,
-      "Human proposal must be present in run detail.",
-    ).toBeTruthy();
-
-    const autoMaterialized = detail.decisions.find(
+    const editDecision = detail.decisions.find(
       (d) =>
-        d.decision === "accept_proposal" &&
+        d.decision === "edit" &&
         d.instance_id === instance!.id &&
         d.field_id === field!.id &&
-        d.reviewer_id === userId &&
-        d.proposal_record_id === humanProposal!.id,
+        d.reviewer_id === userId,
     );
     expect(
-      autoMaterialized,
-      "H2 — advance_stage(PROPOSAL→REVIEW) must materialize an " +
-        "accept_proposal decision pointing at the human proposal.",
+      editDecision,
+      "The 'edit' decision must be present in run detail.",
     ).toBeTruthy();
 
-    const materializedValue = autoMaterialized!.value as
-      | { value: unknown }
-      | unknown;
+    const decisionValue = editDecision!.value as { value: unknown } | unknown;
     const unwrapped =
-      typeof materializedValue === "object" &&
-      materializedValue !== null &&
-      "value" in (materializedValue as Record<string, unknown>)
-        ? (materializedValue as { value: unknown }).value
-        : materializedValue;
+      typeof decisionValue === "object" &&
+      decisionValue !== null &&
+      "value" in (decisionValue as Record<string, unknown>)
+        ? (decisionValue as { value: unknown }).value
+        : decisionValue;
     expect(unwrapped).toBe(TYPED_VALUE);
 
     // 6. H1 assertion: open the extraction page in the browser; the
@@ -257,7 +230,7 @@ test.describe("Extraction value coherence (H1+H2 end-to-end)", () => {
           timeout: 15000,
           intervals: [500, 1000, 2000],
           message:
-            "H1 — form must render the typed value after run advanced to REVIEW.",
+            "H1 — form must render the typed value recorded in EXTRACT.",
         },
       )
       .toBe(true);
