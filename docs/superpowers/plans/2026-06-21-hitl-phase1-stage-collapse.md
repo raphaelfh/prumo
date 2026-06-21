@@ -735,3 +735,46 @@ includes `EXTRACT`; `_ACTIVE_STAGES`/`_ACTIVE_EXPORT_RUN_STAGES` are the same
 `proposal` read branch into the `extract` reviewer-state path — confirm the
 blind-leak handling that lived in the `proposal` branch is preserved (Task 6 Step
 4 flags this); if it was load-bearing, keep it under `extract`.
+
+---
+
+## Execution checkpoint — 2026-06-21 (paused, resume in a fresh session)
+
+**Committed on `claude/hitl-lifecycle-alignment` (branch off `dev`):**
+- `ad8b69e5` — Task 1: enum collapse + migration `0028_run_stage_extract`. The
+  migration also drops+recreates 3 RLS SELECT policies (the enum type dep);
+  reviewer verified them semantically identical to `0025` (no blind-review leak).
+  Task 1 also pulled forward the module-level constants `_ALLOWED_TRANSITIONS`,
+  `_CURRENT_VALUE_STAGES`, `_ACTIVE_STAGES`, `_ACTIVE_EXPORT_RUN_STAGES` (import
+  would crash otherwise). **Reviewed: Spec ✅ Quality ✅.**
+- `98c156b9` — Task 2: reopen/park land in `extract`; reopen test assertions
+  updated. **NOT verified green** (the test run never completed). Task 2 also
+  moved the boundary materialization trigger `REVIEW→CONSENSUS` — but **Task 3
+  deletes that materialization entirely**, so reconcile (net: delete it).
+
+**DB state:** the shared local Postgres is **stamped to `0028`**. Other worktrees
+/ the main checkout on pre-0028 branches will fail `alembic current`/roundtrip
+until they migrate (accepted by the owner).
+
+**Remaining backend churn (bigger than the plan's per-task slices):** ~58 stale
+`PROPOSAL`/`REVIEW` references across ~19 test files + the service function bodies
+in Tasks 3–5. Known hotspots: `test_run_lifecycle_concurrency.py` (uses
+`PROPOSAL`), `test_run_stage_enum_migration.py`, `test_enum_types.py`,
+`test_extraction_consensus_service.py`.
+
+**Why this paused & the recommended resume shape:** the 8-task subagent loop
+fights a cross-cutting rename — the suite stays red between tasks, so no per-task
+green gate, and each task re-runs the heavy suite. **Resume by finishing the
+backend rename as ONE consolidated sweep** (fix every remaining service + test
+ref together, reconcile the materialization deletion, run the suite green ONCE,
+commit), then do the frontend (Tasks 6–7) as one sweep, then Task 8.
+
+**Hard environment gotchas for the resume:**
+1. **NEVER run concurrent `make test-backend`.** The suite serializes via
+   `pg_advisory_xact_lock`; a single run interrupted mid-transaction orphans the
+   lock and **hangs every subsequent run** at fixture setup (empty output,
+   pytest burning CPU). Recover: `pkill -f "uv run pytest"` then
+   `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state='idle in
+   transaction'` on the supabase_db container.
+2. Subagents default to the **main checkout** — pin the worktree path + branch.
+3. Progress ledger: `$(git rev-parse --git-path sdd)/progress.md`.
