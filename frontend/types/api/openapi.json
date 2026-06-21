@@ -273,7 +273,7 @@
       "AdvanceStageRequest": {
         "properties": {
           "target_stage": {
-            "pattern": "^(pending|proposal|review|consensus|finalized|cancelled)$",
+            "pattern": "^(pending|extract|consensus|finalized|cancelled)$",
             "title": "Target Stage",
             "type": "string"
           }
@@ -7938,7 +7938,7 @@
     },
     "/api/v1/runs/{run_id}/reopen": {
       "post": {
-        "description": "Create a new Run derived from a finalized one.\n\nImplements the \"Option C\" reopen flow: previous PublishedState rows\nare seeded into the new Run as ``source='system'`` proposals; the\nnew Run lands in stage=REVIEW so the form picks up where the old\none left off. Old Run is untouched (audit trail).",
+        "description": "Create a new Run derived from a finalized one.\n\nImplements the \"Option C\" reopen flow: previous PublishedState rows\nare seeded into the new Run as ``source='system'`` proposals; the\nnew Run lands in stage=EXTRACT so the form picks up where the old\none left off. Old Run is untouched (audit trail).",
         "operationId": "reopen_run_api_v1_runs__run_id__reopen_post",
         "parameters": [
           {

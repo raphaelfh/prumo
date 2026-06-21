@@ -773,7 +773,7 @@ export interface paths {
          *
          *     Implements the "Option C" reopen flow: previous PublishedState rows
          *     are seeded into the new Run as ``source='system'`` proposals; the
-         *     new Run lands in stage=REVIEW so the form picks up where the old
+         *     new Run lands in stage=EXTRACT so the form picks up where the old
          *     one left off. Old Run is untouched (audit trail).
          */
         post: operations["reopen_run_api_v1_runs__run_id__reopen_post"];
