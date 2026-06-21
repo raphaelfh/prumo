@@ -305,9 +305,9 @@ export default function QualityAssessmentFullScreen() {
   // PDF panel state — lifted so RunHeader.PanelToggle can share the same toggle.
   const pdfPanelState = usePdfPanel({ initialOpen: false });
 
-  // App navigation sidebar (provided by RunWorkspaceShell) — wired to the
-  // RunHeader.SidebarToggle + ⌘B.
-  const { sidebarCollapsed, toggleSidebar } = useSidebar();
+  // App navigation sidebar (provided by RunWorkspaceShell). SidebarToggle + ⌘B
+  // collapse the desktop sidebar (lg+); toggleMobile opens the drawer below lg.
+  const { sidebarCollapsed, toggleSidebar, toggleMobile } = useSidebar();
 
   // "\" toggles the source (PDF) panel. No J/K — QA has a single article.
   // ``usePdfPanel`` returns a fresh object each render, so hold the toggle in a
@@ -562,6 +562,7 @@ export default function QualityAssessmentFullScreen() {
         }}
       >
         <RunHeader.Left>
+          <RunHeader.MobileNav onOpen={toggleMobile} />
           <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={toggleSidebar} />
           <RunHeader.Breadcrumb
             onBack={() => navigate(`/projects/${projectId}`)}
