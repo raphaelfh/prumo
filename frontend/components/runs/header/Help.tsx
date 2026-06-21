@@ -1,5 +1,6 @@
 import { HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { KbdBadge } from '@/components/ui/kbd-badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { t } from '@/lib/copy';
 
@@ -38,7 +39,7 @@ export function Help() {
           {SHORTCUTS.map((s) => (
             <li key={s.key} className="flex items-center justify-between gap-3">
               <span className="text-muted-foreground">{t('runs', s.key)}</span>
-              <kbd className="rounded border border-border/60 bg-muted/40 px-1.5 font-sans text-[11px]">{s.combo}</kbd>
+              <KbdBadge keys={[s.combo]} />
             </li>
           ))}
         </ul>
