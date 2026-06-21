@@ -217,6 +217,29 @@ async def test_accept_proposal_rejects_cross_coordinate_proposal(
         pytest.skip("Missing fixtures.")
     run_id, instance_id, field_id, profile_id, _, _ = fx
 
+    # Self-provision a SECOND coordinate in the same template. The seed
+    # ships exactly one entity_type + one field (one coordinate), so add a
+    # distinct field on the SAME entity_type as the existing instance: the
+    # existing instance paired with this new field is a second valid
+    # (instance, field) coordinate in the same template. Rolled back with
+    # db_session, so there is no leak.
+    other_field_id = (
+        await db_session.execute(
+            text(
+                "INSERT INTO public.extraction_fields "
+                "(id, entity_type_id, name, label, field_type, is_required) "
+                "SELECT gen_random_uuid(), et.id, 'second_coordinate_field', "
+                " 'Second Coordinate Field', 'text', false "
+                "FROM public.extraction_entity_types et "
+                "WHERE et.id = (SELECT entity_type_id FROM public.extraction_instances "
+                "               WHERE id = :iid) "
+                "RETURNING id"
+            ),
+            {"iid": instance_id},
+        )
+    ).scalar_one()
+    await db_session.flush()
+
     # Build a second proposal targeting a DIFFERENT (instance, field) in the same run.
     other_row = await db_session.execute(
         text(
@@ -226,17 +249,17 @@ async def test_accept_proposal_rejects_cross_coordinate_proposal(
             JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
             JOIN public.extraction_fields f ON f.entity_type_id = et.id
             WHERE (i.id <> :iid OR f.id <> :fid)
+              AND f.id = :other_fid
               AND i.template_id = (
                   SELECT template_id FROM public.extraction_instances WHERE id = :iid
               )
             LIMIT 1
             """
         ),
-        {"iid": instance_id, "fid": field_id},
+        {"iid": instance_id, "fid": field_id, "other_fid": other_field_id},
     )
     other = other_row.first()
-    if other is None:
-        pytest.skip("Need a second coordinate in the same template.")
+    assert other is not None, "self-provisioned second coordinate must be discoverable"
     other_instance_id, other_field_id = other
 
     # Insert the cross-coord proposal directly via the model — the value and
