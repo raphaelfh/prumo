@@ -59,7 +59,7 @@ async def test_confirm_creates_row_and_enqueues(
 ) -> None:
     project_id, _, article_id = member_article
     with patch(
-        "app.api.v1.endpoints.article_files.ArticleFileIngestService.enqueue_parse_at_ingest",
+        "app.services.article_file_service.ArticleFileIngestService.enqueue_parse_at_ingest",
         return_value="task-123",
     ) as enq:
         res = await db_client.post(
@@ -102,7 +102,7 @@ async def test_confirm_does_not_swallow_enqueue_failure(
 ) -> None:
     project_id, _, article_id = member_article
     with patch(
-        "app.api.v1.endpoints.article_files.ArticleFileIngestService.enqueue_parse_at_ingest",
+        "app.services.article_file_service.ArticleFileIngestService.enqueue_parse_at_ingest",
         side_effect=RuntimeError("broker down"),
     ):
         res = await db_client.post(
@@ -133,7 +133,7 @@ async def test_reparse_resets_status_and_enqueues(
     await db_session.commit()
 
     with patch(
-        "app.api.v1.endpoints.article_files.ArticleFileIngestService.enqueue_parse_at_ingest",
+        "app.services.article_file_service.ArticleFileIngestService.enqueue_parse_at_ingest",
         return_value="task-9",
     ) as enq:
         res = await db_client.post(f"/api/v1/article-files/{file.id}/reparse")

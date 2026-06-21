@@ -15,6 +15,7 @@ _APP = Path(__file__).parent.parent.parent / "app"
 _ALLOWED = {
     "services/zotero_import_service.py",
     "services/article_file_ingest_service.py",
+    "services/article_file_service.py",
     "repositories/unit_of_work.py",
 }
 
