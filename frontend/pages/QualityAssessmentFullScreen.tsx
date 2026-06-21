@@ -20,7 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { Loader2 } from "lucide-react";
+import { Loader2, Menu as MenuIcon } from "lucide-react";
 
 import { AssessmentShell } from "@/components/assessment/AssessmentShell";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
@@ -31,6 +31,7 @@ import type {
 } from "@/components/runs/RunReviewerComparison";
 import { PrumoPdfViewer, articleFileSource } from "@prumo/pdf-viewer";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
 import { resolveQATemplateKind } from "@/services/projectSettingsService";
 import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
@@ -538,106 +539,120 @@ export default function QualityAssessmentFullScreen() {
   const versionLabel = template ? `v${template.version}` : "";
 
   const header = (
-    <div className="@container/headerbar">
-      <RunHeader
-        value={{
-          kind: "qa",
-          stage: runStage,
-          isRevision: !!parentRunId,
-          role: permissions.userRole,
-          isBlind: permissions.isBlindMode,
-          canReveal,
-          onReveal,
-          progress: { completed: 0, total: 0, pct: 0 },
-          reviewers: {
-            count: reviewerSummary.reviewers.length,
-            required: reviewerSummary.requiredReviewerCount,
-            divergent: reviewerSummary.divergentCoords.size,
-          },
-          transition: qaTransition,
-          submitting: publishing,
-          onJumpToDivergence: canCompare
-            ? () => setViewMode("compare")
-            : undefined,
-        }}
-      >
-        <RunHeader.Left>
-          <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={toggleSidebar} />
-          <RunHeader.Breadcrumb
-            onBack={() => navigate(`/projects/${projectId}`)}
-            crumbs={[{ label: template?.name ?? "" }]}
-          />
-          {/* QA kind badge — compact identifier next to breadcrumb */}
-          <Badge
-            variant="outline"
-            className="border-warning/30 bg-warning/10 text-warning shrink-0"
-            data-testid="qa-kind-badge"
+    <RunHeader
+      value={{
+        kind: "qa",
+        stage: runStage,
+        isRevision: !!parentRunId,
+        role: permissions.userRole,
+        isBlind: permissions.isBlindMode,
+        canReveal,
+        onReveal,
+        progress: { completed: 0, total: 0, pct: 0 },
+        reviewers: {
+          count: reviewerSummary.reviewers.length,
+          required: reviewerSummary.requiredReviewerCount,
+          divergent: reviewerSummary.divergentCoords.size,
+        },
+        transition: qaTransition,
+        submitting: publishing,
+        onJumpToDivergence: canCompare
+          ? () => setViewMode("compare")
+          : undefined,
+      }}
+    >
+      <RunHeader.Left>
+        {/* Phone focus-mode nav — opens the project sidebar drawer at compact.
+            The desktop SidebarToggle takes over from 34rem up. */}
+        <span className="@[34rem]/headerbar:hidden">
+          <Button
+            size="header-icon"
+            variant="ghost"
+            onClick={toggleSidebar}
+            aria-label={t("runs", "openProjectNav")}
+            className="shrink-0 p-0 text-muted-foreground hover:bg-muted/50"
           >
-            {t("qa", "badge")}
-          </Badge>
-          {/* Version */}
-          {versionLabel ? (
-            <span
-              className="text-xs text-muted-foreground shrink-0"
-              data-testid="qa-template-name"
-            >
-              {versionLabel}
-            </span>
-          ) : null}
-          {runStage != null && <RunHeader.StageRail />}
-          <RunHeader.Save
-            state={saveState ?? "idle"}
-            lastSavedAt={lastSavedAt ?? null}
-            hidden={!session || finalized}
-          />
-        </RunHeader.Left>
-
-        <RunHeader.Center>
-          <RunHeader.Reviewers />
-          <RunHeader.RoleChip />
-        </RunHeader.Center>
-
-        <RunHeader.Right>
-          <RunHeader.AIActions
-            pendingCount={Object.keys(aiSuggestions).length}
-            canExtract={!!(session && !finalized)}
-            extracting={extractingAI}
-            onExtract={onExtractWithAI}
-          />
-          <RunHeader.PrimaryAction />
-          <span className="mx-1 hidden h-5 w-px bg-border/60 @[40rem]/headerbar:block" aria-hidden="true" />
-          <span className="hidden @[40rem]/headerbar:inline-flex">
-            <RunHeader.Help />
+            <MenuIcon className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </span>
+        <span className="hidden @[34rem]/headerbar:inline-flex">
+          <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={toggleSidebar} />
+        </span>
+        <RunHeader.Breadcrumb
+          onBack={() => navigate(`/projects/${projectId}`)}
+          crumbs={[{ label: template?.name ?? "" }]}
+        />
+        {/* QA kind badge — compact identifier next to breadcrumb. Folds at the
+            compact tier (text stays in the DOM via `hidden`, not unmounted). */}
+        <Badge
+          variant="outline"
+          className="hidden border-warning/30 bg-warning/10 text-warning shrink-0 @[34rem]/headerbar:inline-flex"
+          data-testid="qa-kind-badge"
+        >
+          {t("qa", "badge")}
+        </Badge>
+        {/* Version — also folds at compact. */}
+        {versionLabel ? (
+          <span
+            className="hidden text-xs text-muted-foreground shrink-0 @[34rem]/headerbar:inline"
+            data-testid="qa-template-name"
+          >
+            {versionLabel}
           </span>
-          <RunHeader.Menu>
-            {canCompare && (
-              <RunHeader.MenuItem
-                onSelect={() =>
-                  setViewMode((m) => (m === "assess" ? "compare" : "assess"))
-                }
-              >
-                {effectiveViewMode === "assess"
-                  ? t("qa", "compareToggle")
-                  : t("qa", "assessToggle")}
-              </RunHeader.MenuItem>
-            )}
-            {finalized && (
-              <RunHeader.MenuItem
-                onSelect={() => void handleReopen()}
-              >
-                {reopening
-                  ? t("qa", "reopenProgress")
-                  : t("qa", "reopenButton")}
-              </RunHeader.MenuItem>
-            )}
-          </RunHeader.Menu>
-          <RunHeader.PanelToggle
-            pressed={pdfPanelState.isOpen}
-            onToggle={pdfPanelState.toggle}
-          />
-        </RunHeader.Right>
-      </RunHeader>
-    </div>
+        ) : null}
+        {runStage != null && <RunHeader.StageRail />}
+        <RunHeader.Save
+          state={saveState ?? "idle"}
+          lastSavedAt={lastSavedAt ?? null}
+          hidden={!session || finalized}
+        />
+      </RunHeader.Left>
+
+      <RunHeader.Center>
+        <RunHeader.Reviewers />
+        <RunHeader.RoleChip />
+      </RunHeader.Center>
+
+      <RunHeader.Right>
+        <RunHeader.AIActions
+          pendingCount={Object.keys(aiSuggestions).length}
+          canExtract={!!(session && !finalized)}
+          extracting={extractingAI}
+          onExtract={onExtractWithAI}
+        />
+        <RunHeader.PrimaryAction />
+        <span className="mx-1 hidden h-5 w-px bg-border/60 @[40rem]/headerbar:block" aria-hidden="true" />
+        {/* Help stays inline at every tier — it is a single ~32px icon, so it
+            remains reachable on phone (no @[40rem] hide wrapper). */}
+        <RunHeader.Help />
+        <RunHeader.Menu>
+          {canCompare && (
+            <RunHeader.MenuItem
+              onSelect={() =>
+                setViewMode((m) => (m === "assess" ? "compare" : "assess"))
+              }
+            >
+              {effectiveViewMode === "assess"
+                ? t("qa", "compareToggle")
+                : t("qa", "assessToggle")}
+            </RunHeader.MenuItem>
+          )}
+          {finalized && (
+            <RunHeader.MenuItem
+              onSelect={() => void handleReopen()}
+            >
+              {reopening
+                ? t("qa", "reopenProgress")
+                : t("qa", "reopenButton")}
+            </RunHeader.MenuItem>
+          )}
+        </RunHeader.Menu>
+        <RunHeader.PanelToggle
+          pressed={pdfPanelState.isOpen}
+          onToggle={pdfPanelState.toggle}
+        />
+      </RunHeader.Right>
+    </RunHeader>
   );
 
   const pdfPanel = (

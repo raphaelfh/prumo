@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { cn } from '@/lib/utils';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { HeaderShell } from '@/components/layout/HeaderShell';
 import { RunHeaderProvider, type RunHeaderValue } from './RunHeaderContext';
 import { StageRail } from './StageRail';
 import { PrimaryAction } from './PrimaryAction';
@@ -34,13 +35,25 @@ function Right({ children }: { children: ReactNode }) {
   return <div className={cn('flex shrink-0 items-center gap-1 @[48rem]/headerbar:gap-2')}>{children}</div>;
 }
 
-function RunHeaderRoot({ value, children }: { value: RunHeaderValue; children: ReactNode }) {
+function RunHeaderRoot({
+  value,
+  children,
+  rootRef,
+}: {
+  value: RunHeaderValue;
+  children: ReactNode;
+  rootRef?: Ref<HTMLElement>;
+}) {
   return (
     <RunHeaderProvider value={value}>
       <TooltipProvider delayDuration={200}>
-        <header className="relative z-10 border-b border-border/40 bg-background/80 backdrop-blur-md">
-          <div className="flex h-12 items-center gap-2 px-3 @[40rem]/headerbar:gap-4 @[40rem]/headerbar:px-6">{children}</div>
-        </header>
+        {/* relative (not sticky): run pages don't scroll the header out — the
+            body is a fixed-height panel split. Shadow stays off (border-only).
+            HeaderShell owns the `@container/headerbar` + frosted chrome, so the
+            consumer no longer wraps RunHeader in its own container div. */}
+        <HeaderShell position="relative" ref={rootRef}>
+          {children}
+        </HeaderShell>
       </TooltipProvider>
     </RunHeaderProvider>
   );

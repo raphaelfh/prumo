@@ -11,7 +11,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Menu as MenuIcon } from 'lucide-react';
 import { type UserRole } from '@/lib/comparison/permissions';
+import { Button } from '@/components/ui/button';
 import { RunHeader, type RunHeaderValue, type StageTransition } from '@/components/runs/header';
 import type { ExtractionRunStage } from '@/types/ai-extraction';
 import type { SaveState } from '@/hooks/runs';
@@ -260,63 +262,77 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
 
   return (
     <>
-      {/* Container-query wrapper: the header's OWN width drives the collapse. */}
-      <div className="@container/headerbar">
-        <RunHeader value={headerValue}>
-          <RunHeader.Left>
+      {/* HeaderShell (inside RunHeader) owns the `@container/headerbar`, so the
+          header's OWN width still drives the collapse — no consumer wrapper. */}
+      <RunHeader value={headerValue}>
+        <RunHeader.Left>
+          {/* Phone focus-mode nav — opens the app sidebar drawer at compact.
+              The desktop SidebarToggle takes over from 34rem up. */}
+          <span className="@[34rem]/headerbar:hidden">
+            <Button
+              size="header-icon"
+              variant="ghost"
+              onClick={onToggleSidebar}
+              aria-label={t('runs', 'openProjectNav')}
+              className="shrink-0 p-0 text-muted-foreground hover:bg-muted/50"
+            >
+              <MenuIcon className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </span>
+          <span className="hidden @[34rem]/headerbar:inline-flex">
             <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={onToggleSidebar} />
-            <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName, onClick: () => navigate(`/projects/${props.projectId}`) }, { label: articleTitle }]} />
-            {articles.length > 1 && (
-              <RunHeader.Worklist
-                articles={articles}
-                currentId={currentArticleId}
-                onNavigate={onNavigateToArticle}
-              />
+          </span>
+          <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName, onClick: () => navigate(`/projects/${props.projectId}`) }, { label: articleTitle }]} />
+          {articles.length > 1 && (
+            <RunHeader.Worklist
+              articles={articles}
+              currentId={currentArticleId}
+              onNavigate={onNavigateToArticle}
+            />
+          )}
+          <RunHeader.Save
+            state={saveState ?? 'idle'}
+            lastSavedAt={lastSavedAt}
+            hidden={stage === 'finalized'}
+          />
+          {stage != null && <RunHeader.StageRail />}
+        </RunHeader.Left>
+
+        <RunHeader.Center>
+          <RunHeader.Reviewers />
+          <RunHeader.RoleChip />
+        </RunHeader.Center>
+
+        <RunHeader.Right>
+          <RunHeader.AIActions
+            pendingCount={aiPendingCount}
+            canExtract={!!(canRunAI && onExtractWithAI)}
+            extracting={extractingAI}
+            onExtract={onExtractWithAI ?? (() => {})}
+            onOpenSuggestions={props.onAISuggestionsClick}
+          />
+          <RunHeader.PrimaryAction />
+          <span className="mx-1 hidden h-5 w-px bg-border/60 @[40rem]/headerbar:block" aria-hidden="true" />
+          {/* Help stays inline at every tier — single ~32px icon, reachable on
+              phone (no @[40rem] hide wrapper). */}
+          <RunHeader.Help />
+          <RunHeader.Menu>
+            {hasComparison && (
+              <RunHeader.MenuItem onSelect={() => onViewModeChange(viewMode === 'compare' ? 'extract' : 'compare')}>
+                {t('extraction', 'runHeaderCompareToggle')}
+              </RunHeader.MenuItem>
             )}
-            <RunHeader.Save
-              state={saveState ?? 'idle'}
-              lastSavedAt={lastSavedAt}
-              hidden={stage === 'finalized'}
-            />
-            {stage != null && <RunHeader.StageRail />}
-          </RunHeader.Left>
-
-          <RunHeader.Center>
-            <RunHeader.Reviewers />
-            <RunHeader.RoleChip />
-          </RunHeader.Center>
-
-          <RunHeader.Right>
-            <RunHeader.AIActions
-              pendingCount={aiPendingCount}
-              canExtract={!!(canRunAI && onExtractWithAI)}
-              extracting={extractingAI}
-              onExtract={onExtractWithAI ?? (() => {})}
-              onOpenSuggestions={props.onAISuggestionsClick}
-            />
-            <RunHeader.PrimaryAction />
-            <span className="mx-1 hidden h-5 w-px bg-border/60 @[40rem]/headerbar:block" aria-hidden="true" />
-            <span className="hidden @[40rem]/headerbar:inline-flex">
-              <RunHeader.Help />
-            </span>
-            <RunHeader.Menu>
-              {hasComparison && (
-                <RunHeader.MenuItem onSelect={() => onViewModeChange(viewMode === 'compare' ? 'extract' : 'compare')}>
-                  {t('extraction', 'runHeaderCompareToggle')}
-                </RunHeader.MenuItem>
-              )}
-              {canReopen && (
-                <RunHeader.MenuItem onSelect={() => onReopen?.()}>
-                  {reopening
-                    ? t('extraction', 'runHeaderReopening')
-                    : t('extraction', 'runHeaderReopenForRevision')}
-                </RunHeader.MenuItem>
-              )}
-            </RunHeader.Menu>
-            <RunHeader.PanelToggle pressed={showPDF} onToggle={onTogglePDF} />
-          </RunHeader.Right>
-        </RunHeader>
-      </div>
+            {canReopen && (
+              <RunHeader.MenuItem onSelect={() => onReopen?.()}>
+                {reopening
+                  ? t('extraction', 'runHeaderReopening')
+                  : t('extraction', 'runHeaderReopenForRevision')}
+              </RunHeader.MenuItem>
+            )}
+          </RunHeader.Menu>
+          <RunHeader.PanelToggle pressed={showPDF} onToggle={onTogglePDF} />
+        </RunHeader.Right>
+      </RunHeader>
 
       {/* Cmd-K palette — mounted at page level so it renders above the header */}
       <RunHeader.CommandPalette
