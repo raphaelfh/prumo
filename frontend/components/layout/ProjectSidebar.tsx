@@ -12,6 +12,7 @@ import {SidebarFooter} from './SidebarFooter';
 import {sidebarSections, type SidebarTabId} from './sidebarConfig';
 import {useSidebar} from '@/contexts/SidebarContext';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 
 interface ProjectSidebarProps {
   activeTab: string;
@@ -42,6 +43,8 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
       snapCollapseAt={150}
       collapsed={sidebarCollapsed}
       onCollapse={toggleSidebar}
+      tooltipLabel={t('layout', 'resizeHandleTooltip')}
+      shortcut={['mod', 'B']}
       className={cn(
         'bg-[#fafafa] dark:bg-[#0c0c0c] border-r border-border/40 hidden lg:block',
         className,

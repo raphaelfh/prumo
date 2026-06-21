@@ -52,13 +52,21 @@ function ShellInner({ projectId, activeTab, children }: RunWorkspaceShellProps) 
 }
 
 /**
- * Wraps a full-screen run page in the real app navigation sidebar, collapsed by
- * default for focus. The page's RunHeader is the bar (no Topbar). ⌘B and the
- * RunHeader.SidebarToggle both drive the same collapse state via SidebarContext.
+ * Wraps a full-screen run page (per-article extraction / QA) in the real app
+ * navigation sidebar, collapsed by default for focus. The page's RunHeader is
+ * the bar (no Topbar). ⌘B and the RunHeader.SidebarToggle both drive the same
+ * collapse state via SidebarContext.
+ *
+ * `persist={false}` makes the collapse view-scoped: it reliably starts
+ * collapsed regardless of the user's saved project-view preference, and
+ * toggling it open here never overwrites that baseline (it restores on leave).
+ * Without this, a saved `collapsed=false` baseline would defeat
+ * `defaultCollapsed`. See
+ * docs/superpowers/specs/2026-06-21-sidebar-sota-polish-design.md §3.
  */
 export function RunWorkspaceShell({ projectId, activeTab, children }: RunWorkspaceShellProps) {
   return (
-    <SidebarProvider defaultCollapsed>
+    <SidebarProvider defaultCollapsed persist={false}>
       <ShellInner projectId={projectId} activeTab={activeTab}>
         {children}
       </ShellInner>

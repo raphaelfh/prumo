@@ -31,7 +31,11 @@ export const SidebarNavItem: React.FC<SidebarNavItemProps> = ({icon: Icon, label
   >
     <Icon className={cn('h-4 w-4 shrink-0', active ? 'text-foreground' : 'group-hover:text-foreground/80')} strokeWidth={1.5} />
     <span className="text-[13px] flex-1 text-left truncate">{label}</span>
-    <KbdBadge keys={['G', shortcut]} variant="sequence" className="opacity-60 group-hover:opacity-100" />
+    <KbdBadge
+      keys={['G', shortcut]}
+      variant="sequence"
+      className="opacity-0 transition-opacity duration-75 group-hover:opacity-100 group-focus-visible:opacity-100"
+    />
   </Button>
 );
 
