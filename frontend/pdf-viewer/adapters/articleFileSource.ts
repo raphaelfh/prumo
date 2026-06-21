@@ -1,11 +1,12 @@
 /**
- * Domain adapter: turn an `articleId` into a `PDFLazySource` that resolves
- * the article's MAIN file via Supabase and creates a signed URL on demand.
+ * Domain adapter: turn an article file's `storage_key` into a `PDFLazySource`
+ * by signing the object URL on demand.
  *
- * Lives outside `core/` because it knows about the project's domain
- * (`article_files` table, the `MAIN` `file_role`, the `articles` storage
- * bucket). The viewer module itself stays domain-free — consumers compose
- * this adapter at the call site.
+ * Lives outside `core/` because it knows about the project's domain (the
+ * `articles` storage bucket). The `storage_key` itself comes from the typed
+ * `GET /articles/{id}/files` endpoint (resolved + membership-gated server-side)
+ * — the viewer module stays domain-free, and there is NO `article_files` table
+ * read on the client.
  */
 import {supabase} from '@/integrations/supabase/client';
 import type {PDFLazySource, PDFUrlSource} from '../core/source';
@@ -17,19 +18,13 @@ export interface ArticleFileSourceOptions {
   bucket?: string;
 }
 
-export class ArticleFileNotFoundError extends Error {
-  constructor(articleId: string) {
-    super(`No PDF (file_role='MAIN') found for article ${articleId}`);
-    this.name = 'ArticleFileNotFoundError';
-  }
-}
-
 /**
- * Build a lazy PDF source for an article. The actual database query +
- * signed-URL request only fires when the viewer first calls `load()`.
+ * Build a lazy PDF source from a known `storage_key`. The signed-URL request
+ * only fires when the viewer first calls `load()`. Works for any file role
+ * (MAIN or supplement) — the caller resolves which file via the document list.
  */
-export function articleFileSource(
-  articleId: string,
+export function articleFileSourceFromStorageKey(
+  storageKey: string,
   opts: ArticleFileSourceOptions = {},
 ): PDFLazySource {
   const {signedUrlTtlSeconds = 3600, bucket = 'articles'} = opts;
@@ -37,24 +32,9 @@ export function articleFileSource(
   return {
     kind: 'lazy',
     load: async (): Promise<PDFUrlSource> => {
-      const {data: file, error: fileErr} = await supabase
-        .from('article_files')
-        .select('storage_key')
-        .eq('article_id', articleId)
-        .eq('file_role', 'MAIN')
-        .maybeSingle();
-
-      if (fileErr) {
-        throw new Error(`Failed to fetch article file: ${fileErr.message}`);
-      }
-      if (!file?.storage_key) {
-        throw new ArticleFileNotFoundError(articleId);
-      }
-
-      const {data: signed, error: signErr} = await supabase
-        .storage
+      const {data: signed, error: signErr} = await supabase.storage
         .from(bucket)
-        .createSignedUrl(file.storage_key, signedUrlTtlSeconds);
+        .createSignedUrl(storageKey, signedUrlTtlSeconds);
 
       if (signErr || !signed?.signedUrl) {
         throw new Error(
