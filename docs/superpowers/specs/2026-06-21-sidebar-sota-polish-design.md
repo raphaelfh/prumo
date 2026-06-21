@@ -1,10 +1,10 @@
 ---
-status: accepted
+status: approved
 last_reviewed: 2026-06-21
 owner: '@raphaelfh'
 ---
 
-> **Status:** Accepted · Last reviewed: 2026-06-21 · Owner: @raphaelfh
+> **Status:** Approved · Last reviewed: 2026-06-21 · Owner: @raphaelfh
 
 # Sidebar SOTA polish — design
 
