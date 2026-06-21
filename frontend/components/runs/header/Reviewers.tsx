@@ -11,7 +11,7 @@ export function Reviewers() {
   const shown = Math.min(reviewers.count, 3);
   return (
     <div className="flex items-center gap-2" data-testid="run-reviewers">
-      <div className="flex -space-x-2" title={`${reviewers.count}/${reviewers.required}`}>
+      <div className="flex shrink-0 -space-x-2" title={`${reviewers.count}/${reviewers.required}`}>
         {Array.from({ length: shown }).map((_, i) => (
           <span key={i} className={cn('h-[18px] w-[18px] rounded-full border-2 border-background', AVATAR[i % AVATAR.length])} aria-hidden="true" />
         ))}

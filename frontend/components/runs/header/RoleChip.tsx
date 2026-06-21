@@ -24,20 +24,23 @@ export function RoleChip() {
     <>
       {t('common', roleKeys[role])}
       {suffixKey && (
-        <>
+        // Collapse the role qualifier on narrow headers (mirrors the StageRail
+        // label reveal at the same breakpoint) so the chip shrinks to just the
+        // role word before Center starts clipping.
+        <span className="hidden @[48rem]/headerbar:inline">
           <span className="text-muted-foreground" aria-hidden="true">{' · '}</span>
           <span className="text-muted-foreground">{t('runs', suffixKey)}</span>
-        </>
+        </span>
       )}
     </>
   );
   if (!canReveal) {
-    return <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{text}</span>;
+    return <span className="whitespace-nowrap rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{text}</span>;
   }
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground">
+        <Button variant="ghost" size="sm" className="h-7 gap-1 whitespace-nowrap px-2 text-[11px] text-muted-foreground hover:text-foreground">
           {text}
           <ChevronDown className="h-3 w-3" aria-hidden="true" />
         </Button>

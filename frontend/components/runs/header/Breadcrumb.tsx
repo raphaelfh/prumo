@@ -15,7 +15,7 @@ interface BreadcrumbProps {
 
 export function Breadcrumb({ onBack, crumbs }: BreadcrumbProps) {
   return (
-    <nav className="flex shrink-0 items-center gap-1" aria-label="breadcrumb">
+    <nav className="flex min-w-0 items-center gap-1" aria-label="breadcrumb">
       <Button
         variant="ghost"
         size="sm"
@@ -34,9 +34,12 @@ export function Breadcrumb({ onBack, crumbs }: BreadcrumbProps) {
                 <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
               )}
               {crumb.onClick ? (
+                // min-w-0 + truncate so the non-final crumb shrinks WITH its
+                // li under flex pressure instead of overflowing it and painting
+                // over the next crumb (the narrow-width overlap).
                 <button
                   type="button"
-                  className="whitespace-nowrap rounded text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="min-w-0 max-w-[180px] truncate rounded text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={crumb.onClick}
                 >
                   {crumb.label}
@@ -44,7 +47,7 @@ export function Breadcrumb({ onBack, crumbs }: BreadcrumbProps) {
               ) : isLast ? (
                 <TruncatedText text={crumb.label} className="max-w-[220px] text-sm font-medium text-foreground" />
               ) : (
-                <span className="whitespace-nowrap text-sm text-muted-foreground">{crumb.label}</span>
+                <span className="block min-w-0 max-w-[180px] truncate text-sm text-muted-foreground">{crumb.label}</span>
               )}
             </li>
           );
