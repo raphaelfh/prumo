@@ -30,8 +30,18 @@ def test_unwired_runner_raises_with_guidance() -> None:
         OpenDataLoaderRunner().parse("x.pdf")
 
 
-def test_docling_unavailable_when_lib_absent() -> None:
-    # docling is not a dependency of the backend, so the import check is False.
+def test_docling_unavailable_when_lib_absent(monkeypatch) -> None:
+    # Simulate docling being absent: patch _installed so find_spec returns None for docling.
+    import importlib.util
+
+    original_find_spec = importlib.util.find_spec
+
+    def _fake_find_spec(name: str, *args, **kwargs):
+        if name == "docling":
+            return None
+        return original_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "find_spec", _fake_find_spec)
     assert DoclingRunner().available() is False
 
 

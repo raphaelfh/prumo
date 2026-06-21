@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 # Provedores suportados
-SUPPORTED_PROVIDERS = ("openai", "anthropic", "gemini", "grok")
+SUPPORTED_PROVIDERS = ("openai", "anthropic", "gemini", "grok", "llama_cloud")
 
 # Status de validacao
 VALIDATION_STATUSES = ("valid", "invalid", "pending")
@@ -115,7 +115,7 @@ class UserAPIKey(BaseModel):
 
     __table_args__ = (
         CheckConstraint(
-            "provider IN ('openai', 'anthropic', 'gemini', 'grok')",
+            "provider IN ('openai', 'anthropic', 'gemini', 'grok', 'llama_cloud')",
             name="user_api_keys_provider_check",
         ),
         CheckConstraint(

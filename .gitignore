@@ -32,6 +32,7 @@ supabase/functions/.env.*
 *.pdf
 !docs/**/*.pdf
 !frontend/pdf-viewer/__fixtures__/*.pdf
+!backend/tests/fixtures/**/*.pdf
 supabase/functions/*/tests/*.pdf
 
 # Workspace files

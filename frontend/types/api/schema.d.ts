@@ -533,6 +533,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/parser-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Parser Settings */
+        put: operations["set_parser_settings_api_v1_projects__project_id__parser_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/clone": {
         parameters: {
             query?: never;
@@ -1368,6 +1385,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[ParserSettingsRead] */
+        ApiResponse_ParserSettingsRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ParserSettingsRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[ProposalRecordResponse] */
         ApiResponse_ProposalRecordResponse_: {
             /** @description Dados da resposta */
@@ -1778,7 +1812,7 @@ export interface components {
             } | null;
             /**
              * Provider
-             * @description Provedor da API. Valores: ('openai', 'anthropic', 'gemini', 'grok')
+             * @description Provedor da API. Valores: ('openai', 'anthropic', 'gemini', 'grok', 'llama_cloud')
              */
             provider: string;
             /**
@@ -2535,6 +2569,22 @@ export interface components {
              */
             run_id: string;
             run_view?: components["schemas"]["RunViewResponse"] | null;
+        };
+        /** ParserSettingsPayload */
+        ParserSettingsPayload: {
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "standard" | "llamaparse";
+        };
+        /** ParserSettingsRead */
+        ParserSettingsRead: {
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "standard" | "llamaparse";
         };
         /** ProposalRecordResponse */
         ProposalRecordResponse: {
@@ -4121,6 +4171,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_ManagerReviewVisibilityRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_parser_settings_api_v1_projects__project_id__parser_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParserSettingsPayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ParserSettingsRead_"];
                 };
             };
             /** @description Validation Error */

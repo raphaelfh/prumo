@@ -93,6 +93,14 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     OPENAI_DEFAULT_MODEL: str = "gpt-4o-mini"
 
+    # =================== PARSING ===================
+    # Standard self-hosted parser by default. Per-project activation can
+    # request "llamaparse"; falls back to docling when no key is available.
+    PARSER_BACKEND: str = "docling"
+    # Optional global LlamaCloud key; per-user BYOK (APIKeyService) takes
+    # precedence over this global fallback.
+    LLAMA_CLOUD_API_KEY: str | None = None
+
     # =================== EVALUATION ===================
     EVALUATION_EVIDENCE_BUCKET: str = "articles"
 

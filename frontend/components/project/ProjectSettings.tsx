@@ -9,6 +9,7 @@ import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {PageHeader} from '@/components/patterns/PageHeader';
 import {useProjectSettings} from '@/hooks/useProjectSettings';
+import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 
 import {BasicInfoSection} from './settings/BasicInfoSection';
 import {ReviewDetailsSection} from './settings/ReviewDetailsSection';
@@ -51,6 +52,7 @@ interface ProjectSettingsProps {
 export function ProjectSettings({ projectId }: ProjectSettingsProps) {
   const [activeTab, setActiveTab] = useState<TabId>('basic');
     const {project, loading, hasUnsavedChanges, updateProject, saveProject} = useProjectSettings(projectId);
+    const {isManager} = useProjectMemberRole(projectId);
 
   if (loading && !project) {
     return (
@@ -126,6 +128,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
                         project={project}
                         onChange={updateProject}
                         projectId={projectId}
+                        isManager={isManager}
                     />
                 )}
           </div>

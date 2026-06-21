@@ -65,6 +65,10 @@ export const navigation = {
     feedbackCaptureFailed: 'Capture was cancelled or failed.',
     feedbackCaptureUnsupported: 'Screen capture is not supported in this browser.',
     feedbackSuccessSent: 'Thanks — your report was sent.',
+    viewsExtractionAria: 'Extraction views',
+    viewsQualityAria: 'Quality assessment views',
+    sectionDescriptionExtraction: 'Extract structured data using standard templates',
+    sectionDescriptionQuality: 'Assess article quality with PROBAST, QUADAS-2, and other risk-of-bias tools',
 } as const;
 
 export type NavigationCopy = typeof navigation;
