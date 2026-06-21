@@ -6,6 +6,7 @@ import { StageRail } from './StageRail';
 import { PrimaryAction } from './PrimaryAction';
 import { PanelToggle } from './PanelToggle';
 import { SidebarToggle } from './SidebarToggle';
+import { MobileNav } from './MobileNav';
 import { Help } from './Help';
 import { RoleChip } from './RoleChip';
 import { Reviewers } from './Reviewers';
@@ -46,4 +47,4 @@ function RunHeaderRoot({ value, children }: { value: RunHeaderValue; children: R
   );
 }
 
-export const RunHeader = Object.assign(RunHeaderRoot, { Left, Center, Right, StageRail, PrimaryAction, PanelToggle, SidebarToggle, Help, RoleChip, Reviewers, Save: SaveSlot, AIActions, Breadcrumb, Menu, MenuItem, Worklist, CommandPalette });
+export const RunHeader = Object.assign(RunHeaderRoot, { Left, Center, Right, StageRail, PrimaryAction, PanelToggle, SidebarToggle, MobileNav, Help, RoleChip, Reviewers, Save: SaveSlot, AIActions, Breadcrumb, Menu, MenuItem, Worklist, CommandPalette });

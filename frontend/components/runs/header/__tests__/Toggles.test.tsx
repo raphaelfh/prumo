@@ -28,6 +28,33 @@ describe('RunHeader.SidebarToggle', () => {
     await userEvent.click(btn);
     expect(onToggle).toHaveBeenCalledOnce();
   });
+  it('is gated to lg+ (the desktop sidebar is display:none below lg, so its collapse toggle would be a no-op there)', () => {
+    render(
+      <RunHeader value={base}><RunHeader.Left><RunHeader.SidebarToggle pressed onToggle={() => {}} /></RunHeader.Left></RunHeader>,
+    );
+    const btn = screen.getByRole('button', { name: 'sidebarToggle' });
+    expect(btn.className).toContain('hidden');
+    expect(btn.className).toContain('lg:inline-flex');
+  });
+});
+
+describe('RunHeader.MobileNav', () => {
+  it('renders nothing without onOpen', () => {
+    const { container } = render(
+      <RunHeader value={base}><RunHeader.Left><RunHeader.MobileNav /></RunHeader.Left></RunHeader>,
+    );
+    expect(container.querySelector('button')).toBeNull();
+  });
+  it('is a hamburger gated to below lg that opens the drawer', async () => {
+    const onOpen = vi.fn();
+    render(
+      <RunHeader value={base}><RunHeader.Left><RunHeader.MobileNav onOpen={onOpen} /></RunHeader.Left></RunHeader>,
+    );
+    const btn = screen.getByRole('button', { name: 'ariaOpenMenu' });
+    expect(btn.className).toContain('lg:hidden');
+    await userEvent.click(btn);
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
 });
 
 describe('RunHeader.PanelToggle (mirror)', () => {
