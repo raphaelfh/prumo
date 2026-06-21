@@ -31,9 +31,11 @@ export interface ExtractionHeaderProps {
   articleTitle: string;
   onBack: () => void;
 
-  // App sidebar collapse state + toggle (focus-shell wiring for ⌘B).
+  // App sidebar collapse state + toggle (focus-shell wiring for ⌘B). Below `lg`
+  // the desktop sidebar is hidden, so onOpenMobileNav opens the drawer instead.
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
+  onOpenMobileNav?: () => void;
 
   // Article navigation
   articles: Article[];
@@ -128,6 +130,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     onBack,
     sidebarCollapsed,
     onToggleSidebar,
+    onOpenMobileNav,
     articles,
     currentArticleId,
     onNavigateToArticle,
@@ -264,6 +267,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
       <div className="@container/headerbar">
         <RunHeader value={headerValue}>
           <RunHeader.Left>
+            <RunHeader.MobileNav onOpen={onOpenMobileNav} />
             <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={onToggleSidebar} />
             <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName, onClick: () => navigate(`/projects/${props.projectId}`) }, { label: articleTitle }]} />
             {articles.length > 1 && (
