@@ -15,7 +15,13 @@ from tests.integration.conftest import SEED
 
 
 async def _coherent_triplet(db: AsyncSession):
-    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    project_id = (
+        await db.execute(
+            text(
+                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
+            )
+        )
+    ).scalar()
     article_id = (
         await db.execute(
             text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
@@ -30,7 +36,13 @@ async def _coherent_triplet(db: AsyncSession):
             {"pid": project_id},
         )
     ).scalar()
-    profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    profile_id = (
+        await db.execute(
+            text(
+                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            )
+        )
+    ).scalar()
     if not all((project_id, article_id, template_id, profile_id)):
         return None
     # Pick instance and field that match the same template.

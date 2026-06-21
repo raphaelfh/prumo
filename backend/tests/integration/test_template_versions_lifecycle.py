@@ -23,7 +23,13 @@ async def test_template_version_unique_template_version_constraint(
     db_session: AsyncSession,
 ) -> None:
     # Pick a real existing project_template_id from backfill (v1 was seeded for each)
-    project_id = (await db_session.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    project_id = (
+        await db_session.execute(
+            text(
+                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
+            )
+        )
+    ).scalar()
     row = await db_session.execute(
         text(
             "SELECT id FROM public.project_extraction_templates WHERE project_id = :pid LIMIT 1",
@@ -35,7 +41,9 @@ async def test_template_version_unique_template_version_constraint(
         pytest.skip("No project_extraction_templates rows; backfill skipped this test.")
 
     profile_row = await db_session.execute(
-        text("SELECT id FROM public.profiles LIMIT 1"),
+        text(
+            "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+        ),
     )
     profile_id = profile_row.scalar()
     assert profile_id is not None
@@ -56,7 +64,13 @@ async def test_template_version_unique_template_version_constraint(
 async def test_template_version_only_one_active_per_template(
     db_session: AsyncSession,
 ) -> None:
-    project_id = (await db_session.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    project_id = (
+        await db_session.execute(
+            text(
+                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
+            )
+        )
+    ).scalar()
     row = await db_session.execute(
         text(
             "SELECT id FROM public.project_extraction_templates WHERE project_id = :pid LIMIT 1",
@@ -68,7 +82,9 @@ async def test_template_version_only_one_active_per_template(
         pytest.skip("No project_extraction_templates rows.")
 
     profile_row = await db_session.execute(
-        text("SELECT id FROM public.profiles LIMIT 1"),
+        text(
+            "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+        ),
     )
     profile_id = profile_row.scalar()
     assert profile_id is not None
@@ -113,7 +129,9 @@ async def test_run_lifecycle_lazy_creates_v1_for_template_without_version(
         pytest.skip("All templates already have an active version; nothing to heal.")
 
     profile_row = await db_session.execute(
-        text("SELECT id FROM public.profiles LIMIT 1"),
+        text(
+            "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+        ),
     )
     profile_id = profile_row.scalar()
     assert profile_id is not None
