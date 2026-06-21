@@ -1,6 +1,6 @@
 ---
 name: ui-styling
-description: Tailwind + shadcn/ui + Radix mechanics for the prumo frontend (Vite + React 18 + TS strict). Use whenever you are adding or editing a `frontend/components/**/*.tsx` file, installing a new shadcn primitive, writing className strings, building a cva variant, touching `frontend/index.css` / `tailwind.config.ts` / `components.json`, wiring dark mode, fixing a contrast/focus/keyboard a11y bug, or hand-rolling a Radix primitive. Be a little pushy: if you are about to write JSX with classes, read this first — it will stop you from inventing colors, breaking the cn() merge order, or shipping focus-less buttons. For the project's *visual language* (Plane/Linear aesthetic, header height, density, hover affordances) see the sibling `frontend-ux` skill; this skill is the *how* layer underneath.
+description: Tailwind + shadcn/ui + Radix mechanics for the prumo frontend (Vite + React 19 + TS strict). Use whenever you are adding or editing a `frontend/components/**/*.tsx` file, installing a new shadcn primitive, writing className strings, building a cva variant, touching `frontend/index.css` / `tailwind.config.ts` / `components.json`, wiring dark mode, fixing a contrast/focus/keyboard a11y bug, or hand-rolling a Radix primitive. Be a little pushy: if you are about to write JSX with classes, read this first — it will stop you from inventing colors, breaking the cn() merge order, or shipping focus-less buttons. For the project's *visual language* (Plane/Linear aesthetic, header height, density, hover affordances) see the sibling `frontend-ux` skill; this skill is the *how* layer underneath.
 ---
 
 # UI Styling (prumo)
@@ -14,7 +14,7 @@ it ends up that way**.
 
 | Layer            | What we use                                                            |
 | ---------------- | ---------------------------------------------------------------------- |
-| Bundler / router | Vite + React 18.3 + TypeScript strict, no Next.js / no RSC             |
+| Bundler / router | Vite + React 19 + TypeScript strict, no Next.js / no RSC               |
 | Tailwind         | **v3.4.17**, classic `tailwind.config.ts` + `@tailwind base/...`       |
 | Components       | shadcn/ui (`style: default`, `baseColor: slate`, `cssVariables: true`) |
 | Primitives       | Radix UI under shadcn, plus direct Radix for custom compositions       |
@@ -141,8 +141,10 @@ Why these choices:
 - **Variants on `tone`, not `color`** — semantic name, future-proof against
   re-theming.
 - **`className` last** in the `cn(...)` call — caller wins, as always.
-- **`forwardRef` is optional in React 19, required in our 18.3 codebase if the
-  ref needs to flow.** Match the shape of neighboring `ui/*` files.
+- **`ref` is a plain prop in React 19** (we are on `react@19` — no `forwardRef`
+  needed to accept a ref). But ~75% of `ui/*` still uses `forwardRef` (pre-19
+  shape); match the neighboring file rather than mixing both styles in one
+  component.
 
 For compound variants, `cva` `compoundVariants`, ranking rules, and the
 "escape hatch" for arbitrary class slots: see `references/cva-patterns.md`.
@@ -201,6 +203,44 @@ sit in `references/tailwind-v4.md`.
 
 Full theming patterns (multi-theme via `data-theme`, radius scale,
 prefers-color-scheme bootstrap, charts): `references/theming.md`.
+
+## Responsive mechanics
+
+`frontend-ux` §5 sets *how it should adapt*; this is *how to wire it*. Treat
+narrow widths as part of the build, not a later pass — `design-review` captures
+every screen at ~390 regardless of what you changed.
+
+**Breakpoint scale.** Tailwind defaults — `sm` 640, `md` 768, `lg` 1024, `xl`
+1280 — with `2xl` overridden to **1400px** in `tailwind.config.ts`. Mobile-first:
+unprefixed = base, prefixes layer *upward* (`grid-cols-1 lg:grid-cols-2`), so
+build the narrow case first and add the wide case on top. There are no `max-*`
+prefixes in the codebase — don't introduce them; restructure mobile-first instead.
+
+**Container queries — for component-internal reflow.** `@tailwindcss/container-queries`
+is installed and in use. When a component must adapt to *its own* width (a header
+in a resizable panel, a card in a grid cell) rather than the viewport, mark the
+parent `@container` (or a named `@container/headerbar`) and prefix children with
+`@md:` / `@[48rem]:`. This is why `RunHeader` / `ExtractionHeader` reflow correctly
+even when the window hasn't crossed a viewport breakpoint. Reach for this before a
+JS width hook.
+
+**JS width hooks — only when CSS can't express it.** `frontend/hooks/use-mobile.tsx`
+exports `useIsMobile()` (<768) and `useIsNarrow()` (<640). Use them to *swap
+components* (data table → card list, sidebar → `MobileSidebar`/`Sheet`), not to
+toggle classes a breakpoint prefix already covers. They read `matchMedia` via
+`useSyncExternalStore`, so they re-render on resize without a mount-effect.
+
+**Priority-track header (the "never overflow" pattern).** A flex row of
+Left/Center/Right tracks, each `min-w-0`, the container `overflow-hidden` as a
+backstop, with shrink priorities — `shrink-0` on the action you must never clip,
+`shrink` on the mid-priority track that yields room first. Labels collapse via
+container queries *before* anything clips. Reference:
+`frontend/components/runs/header/RunHeader.tsx`.
+
+**The `min-w-0` rule.** Any flex/grid child holding text that can be long needs
+`min-w-0` (usually `min-w-0 truncate`) or it forces horizontal scroll — the single
+most common responsive bug here. On a breadcrumb, *every* crumb needs it, not just
+the last.
 
 ## Accessibility (the rules Radix already gives you, plus the ones it does not)
 
@@ -298,6 +338,8 @@ second highlight scheme.
 | Focus ring missing on Radix trigger           | You spread props *before* setting `className` or used a `<div>` not `<button>`.   |
 | `cn()` does not strip earlier `p-2` for `p-4` | One of them is hidden inside a template literal or arbitrary value bracket.       |
 | Long string in flex/grid causes overflow      | Child needs `min-w-0` (flex) or `min-w-0 truncate`.                               |
+| Layout fine on desktop, cramped/overflowing on mobile | Built desktop-first with `max-*` thinking; rebuild mobile-first (base = narrow, add `sm:`/`lg:` upward). |
+| Header reflows on window resize but not when the panel resizes | Used `md:`/`lg:` (viewport) where you wanted `@md:`/`@container` (element width). |
 | Variant prop is typed `any`                   | Missing `VariantProps<typeof xxxVariants>` on the props interface.                |
 | Toast not announced                           | You bypassed `useToast` and rendered a `<div>` yourself.                          |
 | Custom `shadow-*` utility resolves to `box-shadow: none` | Key collides with a `theme.colors` key — Tailwind treats it as a shadow-colour modifier. Rename the `boxShadow` key (e.g. prefix `elev-`). |
