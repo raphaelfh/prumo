@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-06-19
+last_reviewed: 2026-06-21
 owner: '@raphaelfh'
 ---
 
@@ -14,8 +14,7 @@ pipeline that persists structured, bbox-bearing blocks into the already-migrated
 supplementary). This plan stops at a **populated, faithful representation**;
 consuming it (section-aware extraction, evidence anchoring, dead-schema cleanup,
 and the reviewer highlight UI) is the follow-up plan
-`2026-06-19-grounded-extraction-and-hitl-highlight.md`. Accuracy leads; clinical
-PHI stays in-house.
+`2026-06-19-grounded-extraction-and-hitl-highlight.md`. Accuracy leads.
 
 **Architecture:** The target schema and the eventual read path already exist
 (`ArticleTextBlock`, `PositionV1` anchors, `citation_read_service.py`). This plan
@@ -30,17 +29,18 @@ the vision pass appends a page-image/PDF `BinaryContent` to the same
 `extract_structured()` call (no direct-SDK adapter). Parser backends are
 pluggable behind one `DocumentParser` port in `app/infrastructure/parsing/`
 (mirroring `StorageAdapter`), built by a `create_document_parser()` factory in
-`app/core/factories.py` that owns the `PARSER_BACKEND` switch and the PHI gate
+`app/core/factories.py` that owns the per-project parser selection
 (Docling/MinerU/LiteParse self-hosted, LlamaParse cloud, or vision-LLM-native).
-Per ADR-0011's split-default, non-PHI projects default to LlamaParse `agentic`
-(Phase-0-confirmed, falling back to the self-hosted winner on quality/cost/
-latency); PHI projects always resolve to self-hosted via the fail-closed gate. No
-new tables are required — block status rides on the existing
-`ArticleFile.extraction_status`.
+Per ADR-0011, the per-project parser setting defaults to `auto`: `auto` resolves
+to LlamaParse `agentic` (cloud) when a `llama_cloud` BYOK key is configured for
+the project's user, and otherwise falls back to the self-hosted Docling parser. A
+project may explicitly force `llamaparse` or `docling` (legacy `standard` ==
+`docling`); there is no PHI check. No new tables are required — block status rides
+on the existing `ArticleFile.extraction_status`.
 
 **Tech Stack:** Python 3.11 + FastAPI + SQLAlchemy 2.0 async + Alembic; Celery +
 Redis worker (`worker_session()` NullPool); pydantic-ai (text + multimodal vision via `BinaryContent`); a parser backend
-(non-PHI → LlamaParse `agentic` cloud default; PHI → self-hosted Docling/MinerU/LiteParse, resolved by the `create_document_parser()` PHI gate; Phase 0 confirms the cloud default + picks the self-hosted winner); pytest integration against local Supabase (`db_session_real`,
+(`auto` → LlamaParse `agentic` cloud when a `llama_cloud` key is configured, else self-hosted Docling/MinerU/LiteParse, resolved by `create_document_parser()`; Phase 0 confirms the cloud backend + picks the self-hosted winner); pytest integration against local Supabase (`db_session_real`,
 project-scoped fixtures). Suggested branch: `feat/pdf-structured-ingest`.
 
 **Constraints (constitution + `.claude/rules/backend.md`):** four-layer flow
@@ -71,9 +71,9 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
 | --- | --- | --- |
 | `backend/app/infrastructure/parsing/base.py` | parser port | New: `DocumentParser` ABC + `ParsedBlock` dataclass + `concat_page_text` (the char-offset source of truth) |
 | `backend/app/infrastructure/parsing/docling_parser.py` (and/or `mineru_parser.py`) | parser adapter | New: wrap the chosen library; emit `ParsedBlock`s with bbox + reading order |
-| `backend/app/infrastructure/parsing/llamaparse_parser.py` | parser adapter (cloud) | New: LlamaParse `agentic` tier → blocks from the `items` tree + granular-bbox JSONL sidecar — the **non-PHI default** backend (PHI-gated; self-hosted is the PHI path + non-PHI fallback). The `llama-cloud` lib is an optional pyproject extra so self-hosted-only deploys can skip it |
+| `backend/app/infrastructure/parsing/llamaparse_parser.py` | parser adapter (cloud) | New: LlamaParse `agentic` tier → blocks from the `items` tree + granular-bbox JSONL sidecar — the backend `auto` selects when a `llama_cloud` key is configured (self-hosted Docling is the no-key fallback). The `llama-cloud` lib is an optional pyproject extra so self-hosted-only deploys can skip it |
 | `backend/app/infrastructure/parsing/page_render.py` | rasterizer | New: render a PDF page to an image once (**PyMuPDF** — one dep that also powers the free `pymupdf4llm` markdown tier per ADR-0013; new dependency) for the vision pass |
-| `backend/app/core/factories.py` | parser factory | Add `create_document_parser(settings, *, project_is_phi)` — owns `PARSER_BACKEND` + PHI gate (mirrors `create_storage_adapter`) |
+| `backend/app/core/factories.py` | parser factory | Add `create_document_parser(settings, *, llama_cloud_key=None)` — resolves the per-project parser setting (`auto` → LlamaParse when a key is present, else Docling; or an explicit `llamaparse`/`docling`), mirrors `create_storage_adapter` |
 | `backend/app/services/document_parsing_service.py` | orchestration | New: source routing via `ingestion_source`, run the injected parser, table pass, write blocks once, set status |
 | `backend/app/repositories/article_text_block_repository.py` | persistence | New: `replace_for_file` + the single ordered-read owner (existing read service delegates here); `flush`, not `commit` |
 | `backend/app/worker/tasks/parsing_tasks.py` | async entry | New: `parse_article_file_task` (worker_session + run_task) |
@@ -81,7 +81,7 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
 | `backend/app/infrastructure/parsing/jats_parser.py` | XML fast-path | New: parse PMC JATS → blocks (text+structure); PDF stays the bbox surface |
 | `backend/app/llm/provider.py` | provider doorway | Add `provider` arg + Anthropic/Gemini branches (`[anthropic]`/`[google]` extras); keep single doorway |
 | `backend/app/llm/vision_table_pass.py` | vision pass | New: render page once → crop regions → concurrent `extract_structured()` calls with page-image `BinaryContent` (pydantic-ai multimodal) |
-| `backend/app/core/config.py` | settings | Add `ANTHROPIC_API_KEY`, `ANTHROPIC_DEFAULT_MODEL`, `PARSER_BACKEND`, `VISION_TABLE_PASS` |
+| `backend/app/core/config.py` | settings | Add `ANTHROPIC_API_KEY`, `ANTHROPIC_DEFAULT_MODEL`, the per-project parser setting (default `auto`), `VISION_TABLE_PASS` |
 | `backend/app/services/api_key_service.py` | BYOK | Learn an `anthropic` key alongside `openai` |
 | `docs/reference/extraction-hitl-architecture.md` | docs | Document the ingest parse + block contract; bump `last_reviewed` |
 
@@ -185,7 +185,7 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
   re-raise the task can retry).
 - [ ] **Step 2:** Implement `DocumentParsingService(db, user_id, storage, parser,
   trace_id)` — `parser` comes from `create_document_parser(settings,
-  project_is_phi=...)` (mirroring how the task builds `StorageAdapter` via
+  llama_cloud_key=...)` (mirroring how the task builds `StorageAdapter` via
   `create_storage_adapter`); instantiate the repo inside; return a typed
   `DocumentParsingResult` dataclass (block count, page count, status). No HTTP
   objects. Table/JATS/OCR routing are added in Phases 2–3 behind flags.
@@ -225,10 +225,10 @@ service changes.
 `backend/app/core/factories.py`, `backend/app/core/config.py`,
 `backend/pyproject.toml`.
 
-- [ ] **Step 0 — config:** add `PARSER_BACKEND: str = "llamaparse"` (the non-PHI
-  default = LlamaParse `agentic`, confirmed-or-overturned by the Phase-0 bake-off;
-  `create_document_parser()`'s fail-closed PHI gate forces the self-hosted Phase-0
-  winner for PHI or unknown-status projects — see ADR-0011's split-default) and
+- [ ] **Step 0 — config:** add the per-project parser setting (default `auto`,
+  confirmed-or-overturned by the Phase-0 bake-off; `auto` resolves to LlamaParse
+  `agentic` when a `llama_cloud` key is configured for the project's user and
+  otherwise to the self-hosted Docling parser — see ADR-0011) and
   `LLAMA_CLOUD_API_KEY: str | None = None` to `Settings`, mirroring
   `OPENAI_API_KEY`. Do **not** add `"llamaparse"` to
   `SUPPORTED_PROVIDERS` — it is an org-level **parser** credential, not an LLM
@@ -261,21 +261,22 @@ service changes.
   bottom-left** (`y' = page_height - y - h`, using the row's `page_height`);
   `char_start` / `char_end` = `0` placeholders (the service overwrites). Discard
   native markdown for block-building (optional merge aid only, per ADR-0013).
-- [ ] **Step 3 — factory + PHI gate:** add `create_document_parser(settings, *,
-  project_is_phi: bool) -> DocumentParser` (mirror `create_storage_adapter`).
-  Owns the `PARSER_BACKEND` switch; on `"llamaparse"` it (a) **fail-closed**
-  refuses / falls back to the self-hosted parser when `project_is_phi` is True
-  **or** unknown, (b) raises a clear missing-key error when
-  `settings.LLAMA_CLOUD_API_KEY` is unset, (c) returns
-  `LlamaParseParser(api_key=settings.LLAMA_CLOUD_API_KEY)`. Register the
-  self-hosted backends (Docling/MinerU/LiteParse) in the same switch. Test: a PHI
-  project can never receive a `LlamaParseParser`; `build_model` is uninvolved.
-- [ ] **Step 4 — `project_is_phi` source of truth:** introduce the PHI policy
-  flag as a single project/org column (Alembic migration, revision id ≤ 32 chars)
-  and thread it from the parsing Celery task (Task 1.5) into
-  `create_document_parser()`. Default missing/unknown → PHI (fail-closed). Hard
-  prerequisite — the gate is inert until this lands (today `project_is_phi` exists
-  only in ADR/plan prose, zero code).
+- [ ] **Step 3 — factory + parser selection:** add
+  `create_document_parser(settings, *, llama_cloud_key: str | None = None) ->
+  DocumentParser` (mirror `create_storage_adapter`). It resolves the per-project
+  parser setting: on `auto` (the default) it (a) returns
+  `LlamaParseParser(api_key=llama_cloud_key)` when `llama_cloud_key` is set, and
+  (b) falls back to the self-hosted Docling parser when no key is configured. An
+  explicit `llamaparse` setting raises a clear missing-key error when no key is
+  present; an explicit `docling` (legacy `standard`) always returns the
+  self-hosted parser. Register the self-hosted backends
+  (Docling/MinerU/LiteParse) in the same selection. There is **no PHI check**.
+  Test: a project with no `llama_cloud` key never receives a `LlamaParseParser`;
+  `build_model` is uninvolved.
+- [ ] **Step 4 — `llama_cloud` key source of truth:** thread the project user's
+  configured `llama_cloud` BYOK key (resolved via `APIKeyService`) from the
+  parsing Celery task (Task 1.5) into `create_document_parser()` so `auto` can
+  pick LlamaParse-vs-Docling per project. No key → Docling fallback.
 - [ ] **Step 5 — deps:** add `llama-cloud >= 2.1` (latest 2.9.0) as an
   **optional** cloud extra in `backend/pyproject.toml` so self-hosted-only
   deployments skip it; lazy-import inside the adapter (like the bake-off runner).
@@ -286,19 +287,20 @@ service changes.
   only; the canonical viewer/prompt markdown stays `render_blocks_to_markdown`
   over blocks. Do not persist native markdown.
 - [ ] **Step 7 — run → PASS.** Commit `feat(parsing): optional LlamaParse cloud
-  backend (grounded, PHI-gated)`.
+  backend (grounded, key-gated)`.
 
-**Before any prod default flips to `llamaparse`:** finish
+**Before relying on LlamaParse for `auto`:** finish
 `_map_llamaparse_result` in `scripts/parsing_bakeoff/parsers.py` against the live
 SDK (`LLAMA_CLOUD_API_KEY` set, real Phase-0 run) reusing the **exact** same
 items + sidecar + Y-flip mapping the adapter uses (one mapper, not two), and gate
 on the Phase-0 quality/cost sign-off (Task 0.3). Recommended posture (per
-ADR-0011's split-default): the non-PHI default `PARSER_BACKEND` is LlamaParse
-`agentic`; the Phase-0 bake-off (Task 0.3) is the confirm-or-fallback gate — keep
-LlamaParse as the non-PHI default unless it loses to the self-hosted winner on
-quality/cost/latency, in which case fall back to that winner. PHI projects always
-resolve to the self-hosted parser via the fail-closed factory gate (zero egress),
-independent of `PARSER_BACKEND`. Also update the runner's `est_cost_per_page_usd`
+ADR-0011): the per-project parser setting defaults to `auto`, which selects
+LlamaParse `agentic` when a `llama_cloud` key is configured and the self-hosted
+Docling parser otherwise; the Phase-0 bake-off (Task 0.3) is the
+confirm-or-fallback gate — keep LlamaParse as the keyed-`auto` choice unless it
+loses to the self-hosted winner on quality/cost/latency, in which case prefer that
+winner. Projects with no `llama_cloud` key always resolve to the self-hosted
+parser (zero egress). Also update the runner's `est_cost_per_page_usd`
 0.03 → 0.0125 (pricing rationale in the Task 1.6 preamble and `parsers.py`).
 
 ---
@@ -399,8 +401,8 @@ ADR 0011 to `accepted`. That plan depends on this one having populated
 - **Spec coverage (the decisions this plan owns):** all input types → Phases 1–2
   (PDF, OCR, JATS, supplementary); vision/Claude → Phase 3; cost tradeoff → the
   Phase 0 bake-off + budget gate; extract-once-at-ingest + persist → Phase 1;
-  self-host on Railway (PHI) → in-worker parser, no egress except the gated,
-  region-scoped vision call. The bbox-anchoring, verbatim-verification, and
+  self-hosted Docling fallback on Railway → in-worker parser, no egress except
+  the region-scoped vision call. The bbox-anchoring, verbatim-verification, and
   highlight-UI decisions are delivered by the follow-up plan, on top of the blocks
   produced here.
 - **Reuse:** writes the existing `ArticleTextBlock` schema; no new tables (status
@@ -412,9 +414,9 @@ ADR 0011 to `accepted`. That plan depends on this one having populated
   multimodal input (verified on the pinned 1.107). Char offsets are per-page in
   `block_index` order (single source of truth in `concat_page_text`, reused
   downstream). The optional LlamaParse backend is the only cloud-egress path and is
-  privacy-gated by the factory to non-PHI / BAA.
-- **Gated/live:** Phase 0 needs real (possibly PHI) papers — handle on an approved
-  data surface, not a public bucket.
+  selected by the factory only when a project's `llama_cloud` key is configured.
+- **Gated/live:** Phase 0 needs real prumo papers (published articles, not PHI) —
+  handle on an approved data surface, not a public bucket.
 - **Ordering:** Phase 0 gates parser-specific code in Phase 1; Phases 2–3 layer
   onto Phase 1's service. The follow-up plan begins once blocks are populated.
 

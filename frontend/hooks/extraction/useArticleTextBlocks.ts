@@ -37,11 +37,23 @@ export interface ArticleTextBlock {
 
 const STALE_MS = 5 * 60_000;
 
-export function useArticleTextBlocks(articleFileId: string | null | undefined) {
+export interface UseArticleTextBlocksOptions {
+  /**
+   * Poll interval (ms) while the upstream parse is still running. Pass `false`
+   * (the default) once the file is `parsed`/`parse_failed` to stop polling.
+   */
+  refetchInterval?: number | false;
+}
+
+export function useArticleTextBlocks(
+  articleFileId: string | null | undefined,
+  options: UseArticleTextBlocksOptions = {},
+) {
   return useQuery({
     queryKey: articleKeys.textBlocks(articleFileId ?? ''),
     enabled: Boolean(articleFileId),
     staleTime: STALE_MS,
+    refetchInterval: options.refetchInterval ?? false,
     queryFn: async (): Promise<ArticleTextBlock[]> => {
       const blocks = await apiClient<ArticleTextBlock[]>(
         `/api/v1/article-files/${articleFileId}/text-blocks`,

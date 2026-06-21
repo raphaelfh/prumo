@@ -440,7 +440,7 @@ async def test_published_state_counts_when_value_present(
             INSERT INTO public.extraction_published_states
                 (run_id, instance_id, field_id, value, version, published_by)
             VALUES (:rid, :inst, :fid, to_jsonb('final-value'::text), 1,
-                    (SELECT id FROM public.profiles LIMIT 1))
+                    (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1))
             """
         ),
         {
@@ -471,7 +471,7 @@ async def test_published_state_with_jsonb_null_does_not_count(
             INSERT INTO public.extraction_published_states
                 (run_id, instance_id, field_id, value, version, published_by)
             VALUES (:rid, :inst, :fid, 'null'::jsonb, 1,
-                    (SELECT id FROM public.profiles LIMIT 1))
+                    (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1))
             """
         ),
         {

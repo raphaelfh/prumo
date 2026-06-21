@@ -262,7 +262,7 @@ async def test_clone_extraction_deactivates_sibling_extraction_templates(
                  is_active, created_by)
             VALUES (:id, :pid, 'Legacy E2E', 'legacy', 'CUSTOM', '1.0', 'extraction',
                     '{}'::jsonb, true,
-                    (SELECT id FROM public.profiles LIMIT 1))
+                    (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1))
             ON CONFLICT (id) DO UPDATE SET is_active = true
             """
         ),
@@ -276,7 +276,7 @@ async def test_clone_extraction_deactivates_sibling_extraction_templates(
                 (project_template_id, version, schema, published_at,
                  published_by, is_active)
             VALUES (:tid, 1, '{}'::jsonb, NOW(),
-                    (SELECT id FROM public.profiles LIMIT 1), true)
+                    (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1), true)
             ON CONFLICT DO NOTHING
             """
         ),
@@ -352,7 +352,13 @@ async def test_partial_unique_index_blocks_second_active_extraction_template(
     # Insert two active extraction templates in a single transaction; the
     # second insert must fail. Use a savepoint per insert so the test
     # session isn't poisoned by a failed transaction.
-    profile_id = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    profile_id = (
+        await db_session.execute(
+            text(
+                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            )
+        )
+    ).scalar()
 
     await db_session.execute(
         text(
@@ -850,7 +856,7 @@ async def test_clone_heals_project_template_with_no_structure(
                  is_active, created_by, global_template_id)
             VALUES (:id, :pid, 'CHARMS (partial)', NULL, 'CHARMS', '1.0', 'extraction',
                     '{}'::jsonb, true,
-                    (SELECT id FROM public.profiles LIMIT 1),
+                    (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1),
                     :gid)
             ON CONFLICT (id) DO UPDATE SET is_active = true
             """
@@ -865,7 +871,7 @@ async def test_clone_heals_project_template_with_no_structure(
             INSERT INTO public.extraction_template_versions
                 (id, project_template_id, version, schema, published_at, published_by, is_active)
             VALUES (gen_random_uuid(), :tid, 1, '{}'::jsonb, NOW(),
-                    (SELECT id FROM public.profiles LIMIT 1), true)
+                    (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1), true)
             """
         ),
         {"tid": str(partial_id)},

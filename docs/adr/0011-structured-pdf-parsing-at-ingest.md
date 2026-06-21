@@ -1,6 +1,6 @@
 ---
 status: proposed
-last_reviewed: 2026-06-20
+last_reviewed: 2026-06-21
 owner: '@raphaelfh'
 adr_number: '0011'
 ---
@@ -56,8 +56,9 @@ JATS XML, and supplementary files.
   hierarchy, figures and captions, references, and equations.
 - Reviewer verifiability. Each value must anchor to a pixel `bbox` on the page
   for highlight-in-document review, and AI evidence must be verbatim-verified.
-- Data egress. Cloud parsing routes data to a third-party vendor; cloud is
-  opt-in per project, with a BYOK key required.
+- Data egress. Cloud parsing routes data to a third-party vendor; the cloud
+  parser is used only when a `llama_cloud` BYOK key is configured for the
+  project's user.
 - Cost and latency matter, but at the per-paper scale ops burden and data
   egress dominate dollars; absolute per-article cost is deferred to the
   Validation cost model rather than asserted here.
@@ -86,10 +87,13 @@ JATS XML, and supplementary files.
 
 Chosen option: **Option D (hybrid self-hosted parse at ingest + targeted vision
 table pass)**, because the two leading requirements pull toward different
-solution classes and only a hybrid satisfies both. **The self-hosted Docling
-parser is the default.** LlamaParse (cloud, BYOK) is an opt-in per-project
-upgrade, activated in project settings when a `llama_cloud` key is stored,
-confirmed-or-overturned by the Phase-0 bake-off.
+solution classes and only a hybrid satisfies both. **The per-project parser
+setting defaults to `auto`: `auto` uses the LlamaParse cloud parser when a
+`llama_cloud` BYOK key is configured for the project's user, and otherwise falls
+back to the self-hosted Docling parser.** A project may explicitly force
+`llamaparse` or `docling` (the legacy value `standard` means `docling`). There is
+no PHI check anywhere in this selection. The relative ranking of the two backends
+is confirmed-or-overturned by the Phase-0 bake-off.
 On the available 2024–2026 benchmarks — OmniDocBench (CVPR 2025) and recent
 table/formula benchmarks, which
 under-represent scanned clinical PDFs and publisher clinical-trial tables — the
@@ -160,27 +164,28 @@ Concretely, respecting the existing layering:
   one-off task; until a given article has blocks, extraction falls back to
   today's lazy `pypdf` path so nothing breaks (a temporary two-tier state).
   Re-uploading a file cascade-deletes its blocks (`ON DELETE CASCADE`).
-- **Parser backends are pluggable; the default is Docling (self-hosted).** Via
-  the `create_document_parser(settings, *, llama_cloud_key=None)` factory
-  (above): **Docling is the standard path** (self-hosted, CPU-first, no egress).
-  **LlamaParse (LlamaCloud) `agentic`** (cloud, v2 SDK `llama-cloud >= 2.1`) is
-  an opt-in per-project upgrade, activated in project settings when a
-  `llama_cloud` key is stored — it returns markdown plus *granular
+- **Parser backends are pluggable; the per-project setting defaults to `auto`.**
+  Via the `create_document_parser(settings, *, llama_cloud_key=None)` factory
+  (above): on `auto`, the factory returns the **LlamaParse (LlamaCloud)
+  `agentic`** backend when a `llama_cloud` BYOK key is configured for the
+  project's user, and otherwise falls back to the **self-hosted Docling** parser
+  (CPU-first, no egress). A project may explicitly force `llamaparse` or
+  `docling` (legacy `standard` == `docling`); there is no PHI gate. **LlamaParse**
+  (cloud, v2 SDK `llama-cloud >= 2.1`) returns markdown plus *granular
   word/line/cell bounding boxes* that map onto `article_text_blocks` +
   `PositionV1` (provenance lives in that JSONL sidecar, not the markdown string;
   the SDK call, the top-left→bottom-left `bbox` Y-flip, and the item-local-offset
   caveat are in the ingest plan). A vision-LLM-native backend (page images/PDF
   through `extract_structured()`) rounds out the slate. The bake-off
   (Docling/MinerU/LiteParse vs LlamaParse `agentic`) decides the recommended
-  backend; Docling is the self-hosted winner candidate and the fallback when no
-  `llama_cloud` key is configured.
+  backend; Docling is the no-key fallback path.
 
 ### Consequences
 
 - Good — one persisted artifact serves both the LLM (structured text) and the
   reviewer (`bbox` highlight); `bbox` anchoring and verbatim verification
   become possible; the 15k truncation and the extract-and-discard pattern are
-  retired; the default self-hosted path has no cloud egress.
+  retired; the no-key Docling fallback path has no cloud egress.
 - Good — this finishes an already-migrated schema and an already-working read
   path rather than designing new infrastructure.
 - Bad — ingestion gains a heavier parse step (added latency and worker compute,
@@ -253,9 +258,9 @@ Concretely, respecting the existing layering:
 
 ### Option D — hybrid self-hosted parse + targeted vision table pass
 
-- Good — satisfies accuracy *and* `bbox` provenance; default path has no cloud
-  egress; bounds the vision pass to table/formula regions; reuses the merged
-  contract.
+- Good — satisfies accuracy *and* `bbox` provenance; the no-key Docling fallback
+  path has no cloud egress; bounds the vision pass to table/formula regions;
+  reuses the merged contract.
 - Bad — the most moving parts (parser ops, a second provider, region routing)
   and merged-cell tables still need human review.
 

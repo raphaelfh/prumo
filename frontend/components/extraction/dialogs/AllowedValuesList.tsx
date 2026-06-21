@@ -16,6 +16,7 @@ import {useState} from 'react';
 import {Input} from '@/components/ui/input';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
+import {KbdBadge} from '@/components/ui/kbd-badge';
 import {GripVertical, Plus, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
@@ -269,8 +270,7 @@ export function AllowedValuesList({
               {t('extraction', 'noOptionsAddedYet')}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-              {t('extraction', 'typeAbovePressEnter')} <kbd
-              className="px-1 py-0.5 bg-muted border rounded text-xs font-mono">Enter</kbd> <Plus
+              {t('extraction', 'typeAbovePressEnter')} <KbdBadge keys={['Enter']} /> <Plus
               className="h-3 w-3 inline"/>
               {showReorder && ` • ${t('extraction', 'dragToReorder')}`}
           </p>

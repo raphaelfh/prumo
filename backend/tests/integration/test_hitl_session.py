@@ -93,7 +93,13 @@ async def home_project_fixture(
     this fixture must NOT also depend on ``auth_as_profile`` — the two
     would race over ``app.dependency_overrides``.
     """
-    raw = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    raw = (
+        await db_session.execute(
+            text(
+                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            )
+        )
+    ).scalar()
     if raw is not None:
         profile_id = UUID(str(raw))
         seeded_profile = False
@@ -1149,7 +1155,7 @@ async def test_session_backfills_singleton_children_added_after_model_creation(
                      parent_instance_id, label, sort_order, status, created_by)
                 VALUES (:pid, :aid, :tid, :etid, NULL, 'XGBoost', 0,
                         'pending'::extraction_instance_status,
-                        (SELECT id FROM public.profiles LIMIT 1))
+                        (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1))
                 RETURNING id
                 """
             ),
@@ -1274,7 +1280,7 @@ async def test_session_backfill_is_idempotent(
                      parent_instance_id, label, sort_order, status, created_by)
                 VALUES (:pid, :aid, :tid, :etid, NULL, 'XGBoost', 0,
                         'pending'::extraction_instance_status,
-                        (SELECT id FROM public.profiles LIMIT 1))
+                        (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1))
                 RETURNING id
                 """
             ),

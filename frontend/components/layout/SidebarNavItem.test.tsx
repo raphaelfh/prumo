@@ -26,4 +26,12 @@ describe('SidebarNavItem', () => {
     render(<SidebarNavItem icon={FileText} label="Articles" shortcut="A" active={false} onClick={vi.fn()} />);
     expect(screen.getByRole('button')).toHaveAttribute('aria-keyshortcuts', 'G A');
   });
+
+  it('hides the shortcut chip at rest and reveals it on hover and keyboard focus', () => {
+    render(<SidebarNavItem icon={FileText} label="Articles" shortcut="A" active={false} onClick={vi.fn()} />);
+    const chip = screen.getByText('A').parentElement as HTMLElement;
+    expect(chip.className).toContain('opacity-0');
+    expect(chip.className).toContain('group-hover:opacity-100');
+    expect(chip.className).toContain('group-focus-visible:opacity-100');
+  });
 });

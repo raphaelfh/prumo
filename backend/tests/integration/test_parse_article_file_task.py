@@ -94,6 +94,16 @@ async def _cleanup(db: AsyncSession, *, file_id: uuid.UUID) -> None:
     await db.commit()
 
 
+async def _clear_parsing_setting(db: AsyncSession, project_id: uuid.UUID) -> None:
+    """Restore the seed-clean state (no ``parsing`` key). db_session_real
+    persists commits, so selection tests must reset what they commit."""
+    await db.execute(
+        text("UPDATE public.projects SET settings = settings - 'parsing' WHERE id = :pid"),
+        {"pid": str(project_id)},
+    )
+    await db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -206,3 +216,102 @@ def test_celery_task_calls_retry_on_exception() -> None:
         )
 
     mock_retry.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Parser-backend selection (auto = LlamaParse-when-key, else Docling)
+# ---------------------------------------------------------------------------
+
+
+async def _run_with_captured_selection(
+    db: AsyncSession,
+    *,
+    file_id: uuid.UUID,
+    llama_key: str | None,
+):
+    """Run _run_parse with the parser factory + key lookup patched, returning
+    the MagicMock for create_document_parser and the AsyncMock for the key
+    lookup so the caller can assert on the resolved backend/key.
+    """
+    from app.worker.tasks.parsing_tasks import _run_parse
+
+    parser_factory = MagicMock(return_value=_FakeParser())
+    key_lookup = AsyncMock(return_value=llama_key)
+    with (
+        patch("app.core.factories.create_document_parser", parser_factory),
+        patch("app.core.factories.create_storage_adapter") as storage_factory,
+        patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+        patch(
+            "app.services.api_key_service.APIKeyService.get_key_for_provider",
+            key_lookup,
+        ),
+    ):
+        storage_factory.return_value.download = AsyncMock(return_value=b"%PDF-1.4 fake")
+        await _run_parse(
+            str(file_id),
+            str(SEED.primary_project),
+            str(SEED.primary_profile),
+            trace_id="t-sel",
+            db=db,
+        )
+    return parser_factory, key_lookup
+
+
+@pytest.mark.asyncio
+async def test_auto_default_with_key_selects_llamaparse(db_session_real: AsyncSession) -> None:
+    """No per-project setting (auto) + a llama_cloud key → LlamaParse."""
+    await _clear_parsing_setting(db_session_real, SEED.primary_project)
+    file_id = await _insert_article_file(
+        db_session_real, project_id=SEED.primary_project, article_id=SEED.primary_article
+    )
+    try:
+        factory, key_lookup = await _run_with_captured_selection(
+            db_session_real, file_id=file_id, llama_key="lc-key"
+        )
+        key_lookup.assert_awaited_once_with("llama_cloud")
+        call = factory.call_args
+        assert call.args[0].PARSER_BACKEND == "llamaparse"
+        assert call.kwargs["llama_cloud_key"] == "lc-key"
+    finally:
+        await _cleanup(db_session_real, file_id=file_id)
+
+
+@pytest.mark.asyncio
+async def test_auto_default_without_key_selects_docling(db_session_real: AsyncSession) -> None:
+    """No per-project setting (auto) + no key → Docling fallback."""
+    await _clear_parsing_setting(db_session_real, SEED.primary_project)
+    file_id = await _insert_article_file(
+        db_session_real, project_id=SEED.primary_project, article_id=SEED.primary_article
+    )
+    try:
+        factory, key_lookup = await _run_with_captured_selection(
+            db_session_real, file_id=file_id, llama_key=None
+        )
+        key_lookup.assert_awaited_once_with("llama_cloud")
+        assert factory.call_args.args[0].PARSER_BACKEND == "docling"
+        assert factory.call_args.kwargs["llama_cloud_key"] is None
+    finally:
+        await _cleanup(db_session_real, file_id=file_id)
+
+
+@pytest.mark.asyncio
+async def test_explicit_docling_skips_key_lookup(db_session_real: AsyncSession) -> None:
+    """Explicit per-project 'docling' → Docling, and the key is never fetched."""
+    from app.services.parser_settings_service import ParserSettingsService
+
+    settings_svc = ParserSettingsService(db_session_real)
+    await settings_svc.set_for_project(project_id=SEED.primary_project, parser_type="docling")
+    file_id = await _insert_article_file(
+        db_session_real, project_id=SEED.primary_project, article_id=SEED.primary_article
+    )
+    try:
+        factory, key_lookup = await _run_with_captured_selection(
+            db_session_real, file_id=file_id, llama_key="lc-key"
+        )
+        key_lookup.assert_not_awaited()
+        assert factory.call_args.args[0].PARSER_BACKEND == "docling"
+    finally:
+        await _cleanup(db_session_real, file_id=file_id)
+        # _insert_article_file's commit persisted the "docling" setting on the
+        # shared seed project — restore the seed-clean state so it does not leak.
+        await _clear_parsing_setting(db_session_real, SEED.primary_project)

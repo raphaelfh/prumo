@@ -138,9 +138,9 @@ vi.mock("@/integrations/supabase/client", () => {
 // up for a unit test — stub it out.
 vi.mock("@prumo/pdf-viewer", () => ({
   PrumoPdfViewer: () => <div data-testid="qa-pdf-viewer-stub">PDF</div>,
-  articleFileSource: (articleId: string) => ({
+  articleFileSourceFromStorageKey: (storageKey: string) => ({
     kind: "lazy" as const,
-    load: async () => ({kind: "url" as const, url: `stub://articles/${articleId}.pdf`}),
+    load: async () => ({kind: "url" as const, url: `stub://${storageKey}`}),
   }),
 }));
 
@@ -199,6 +199,10 @@ vi.mock("@/integrations/api", () => ({
     }
     if (url.includes("/suggestions")) {
       return { suggestions: [], count: 0 };
+    }
+    // Document switcher data source + reader blocks (array-typed).
+    if (url.includes("/files") || url.includes("/text-blocks")) {
+      return [];
     }
     return {};
   }),

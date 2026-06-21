@@ -34,13 +34,16 @@ export function RoleChip() {
       )}
     </>
   );
+  // Compact tier (phone): the role qualifier is the lowest-priority Center
+  // affordance — hide the whole chip (still in the DOM, just `hidden`) so the
+  // row keeps the StageRail + PrimaryAction. Above 34rem it shows as before.
   if (!canReveal) {
-    return <span className="whitespace-nowrap rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{text}</span>;
+    return <span className="hidden @[34rem]/headerbar:inline-flex whitespace-nowrap rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{text}</span>;
   }
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 gap-1 whitespace-nowrap px-2 text-[11px] text-muted-foreground hover:text-foreground">
+        <Button variant="ghost" size="sm" className="hidden h-7 gap-1 whitespace-nowrap px-2 text-[11px] text-muted-foreground hover:text-foreground @[34rem]/headerbar:inline-flex">
           {text}
           <ChevronDown className="h-3 w-3" aria-hidden="true" />
         </Button>

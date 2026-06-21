@@ -105,7 +105,11 @@ async def test_reviewer_decision_accept_requires_proposal_check(
     if field_id is None:
         pytest.skip("No extraction_fields rows.")
     reviewer_id = (
-        await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))
+        await db_session.execute(
+            text(
+                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            )
+        )
     ).scalar()
     if reviewer_id is None:
         pytest.skip("No profiles rows.")
@@ -149,7 +153,11 @@ async def test_reviewer_decision_edit_requires_value_check(
     if field_id is None:
         pytest.skip("No extraction_fields rows.")
     reviewer_id = (
-        await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))
+        await db_session.execute(
+            text(
+                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            )
+        )
     ).scalar()
     if reviewer_id is None:
         pytest.skip("No profiles rows.")
@@ -193,7 +201,11 @@ async def test_consensus_decision_select_existing_requires_decision_check(
     if field_id is None:
         pytest.skip("No extraction_fields rows.")
     consensus_user_id = (
-        await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))
+        await db_session.execute(
+            text(
+                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            )
+        )
     ).scalar()
     if consensus_user_id is None:
         pytest.skip("No profiles rows.")

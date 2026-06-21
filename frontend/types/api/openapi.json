@@ -1867,6 +1867,58 @@
         "title": "ApiResponse[list[AISuggestionHistoryItem]]",
         "type": "object"
       },
+      "ApiResponse_list_ArticleFileListItem__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ArticleFileListItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[list[ArticleFileListItem]]",
+        "type": "object"
+      },
       "ApiResponse_list_ArticleRunRef__": {
         "properties": {
           "data": {
@@ -2023,6 +2075,69 @@
           "ok"
         ],
         "title": "ApiResponse[list[dict[str, Any]]]",
+        "type": "object"
+      },
+      "ArticleFileListItem": {
+        "description": "Item de lista de files de um article (document switcher).",
+        "properties": {
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "extractionStatus": {
+            "default": "pending",
+            "title": "Extractionstatus",
+            "type": "string"
+          },
+          "fileRole": {
+            "title": "Filerole",
+            "type": "string"
+          },
+          "fileType": {
+            "title": "Filetype",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "originalFilename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Originalfilename"
+          },
+          "storageKey": {
+            "title": "Storagekey",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "fileRole",
+          "fileType",
+          "storageKey",
+          "createdAt"
+        ],
+        "title": "ArticleFileListItem",
         "type": "object"
       },
       "ArticleFileResponse": {
@@ -4095,8 +4210,10 @@
         "properties": {
           "type": {
             "enum": [
+              "auto",
               "standard",
-              "llamaparse"
+              "llamaparse",
+              "docling"
             ],
             "title": "Type",
             "type": "string"
@@ -4112,8 +4229,10 @@
         "properties": {
           "type": {
             "enum": [
+              "auto",
               "standard",
-              "llamaparse"
+              "llamaparse",
+              "docling"
             ],
             "title": "Type",
             "type": "string"
@@ -6178,6 +6297,53 @@
       }
     },
     "/api/v1/articles/{article_id}/files": {
+      "get": {
+        "description": "List an article's files (MAIN first) \u2014 the document switcher's source.",
+        "operationId": "list_article_files_api_v1_articles__article_id__files_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_ArticleFileListItem__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "List Article Files",
+        "tags": [
+          "article-files"
+        ]
+      },
       "post": {
         "description": "Register an already-uploaded object and enqueue its parse.",
         "operationId": "confirm_article_file_upload_api_v1_articles__article_id__files_post",

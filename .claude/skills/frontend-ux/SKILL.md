@@ -47,7 +47,9 @@ Headers should be thin (h-12 / 48px) and serve as a navigation anchor, not just 
 
 Sidebars should feel integrated into the window, not like a separate drawer.
 
-- **Background:** `bg-[#fafafa]` (Light) or `bg-[#0c0c0c]` (Dark).
+- **Background:** `bg-sidebar` — the `--sidebar-*` tokens flip per theme. Do
+  **not** hardcode `bg-[#fafafa]`/`bg-[#0c0c0c]`; the real `ui/sidebar.tsx`
+  uses `bg-sidebar text-sidebar-foreground`.
 - **Active State:** A subtle `bg-muted` or `bg-primary/5`, never a heavy highlight.
 - **Icons:** Always `h-4 w-4` with `strokeWidth={1.5}`.
 
@@ -73,7 +75,39 @@ Sidebars should feel integrated into the window, not like a separate drawer.
    shift.
 3. **Status Dots:** Small (6px), glowing for "Active", muted for "Draft".
 
-## 5. Implementation Checklist
+## 5. Responsive Behaviour
+
+The density-first language has to hold from a wide desktop down to a phone.
+**Every screen is designed for at least two widths — never assume desktop.**
+
+| Width                | What the layout does                                                                                              |
+|----------------------|-------------------------------------------------------------------------------------------------------------------|
+| Wide (≥`lg` 1024)    | Full layout: sidebar visible, side-by-side comparison (`lg:grid-cols-2`), all header chips with labels.           |
+| Mid (`sm`–`lg`)      | Sidebar may collapse to an icon rail; two-up panels stack; low-priority header chips start dropping their labels. |
+| Narrow (<`sm` 640)   | Sidebar becomes a `Sheet` drawer (`MobileSidebar`); dense tables become **card lists** (`useIsNarrow`); row actions move into an always-visible kebab. |
+
+Principles:
+
+- **Degrade, don't overflow.** Long strings ellipsize (`min-w-0 truncate`),
+  chrome tightens its gaps, low-priority chips drop their labels — content never
+  paints outside its track or forces a horizontal scrollbar. The run/extraction
+  headers do this with **container queries** (they react to their *own* width, so
+  they reflow even when the viewport has not crossed a breakpoint).
+- **Keep density at every width.** Narrow ≠ bigger. The `h-12` header,
+  `text-[13px]` body, and row height survive the shrink; you trade columns and
+  labels for space, never font size.
+- **Touch needs a fallback.** Hover-only affordances (`group-hover` reveal) are
+  invisible on touch — at narrow widths the row is tappable and the kebab is
+  always shown.
+- **Tables → cards below `sm`.** Do not crush a dense table to unreadable; switch
+  to the card-list layout via `useIsNarrow` (`frontend/hooks/use-mobile.tsx`).
+
+The breakpoint scale is the Tailwind default with `2xl` overridden to **1400px**
+(`tailwind.config.ts`). Wiring mechanics — breakpoint prefixes, container queries,
+the `useIsMobile`/`useIsNarrow` hooks, the priority-track header — live in
+`ui-styling` (§ *Responsive mechanics*).
+
+## 6. Implementation Checklist
 
 - [ ] Header height is exactly `h-12`.
 - [ ] Main UI font size is `text-[13px]`.
@@ -82,3 +116,5 @@ Sidebars should feel integrated into the window, not like a separate drawer.
 - [ ] Hover states on lists use `hover:bg-muted/50`.
 - [ ] Breadcrumbs are used for navigation context.
 - [ ] Shadows are soft and minimal.
+- [ ] Checked at a narrow width too — degrades cleanly, no overflow, touch
+      actions reachable (responsive is part of "done", not a later pass).

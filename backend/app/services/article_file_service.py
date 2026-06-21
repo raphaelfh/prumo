@@ -37,6 +37,10 @@ class ArticleFileService:
         self._db = db
         self._repo = ArticleFileRepository(db)
 
+    async def list_for_article(self, article_id: UUID) -> list[ArticleFile]:
+        """List an article's files MAIN-first (document-switcher data source)."""
+        return await self._repo.list_for_article_ordered(article_id)
+
     async def register_uploaded_file(
         self,
         *,

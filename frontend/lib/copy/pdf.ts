@@ -72,6 +72,15 @@ export const pdf = {
     thumbnailsPagesTitle: 'Pages ({{n}})',
     thumbnailsPageLabel: 'Page {{n}}',
     thumbnailsCurrentPage: 'Current page',
+
+    // Document switcher (MAIN + supplements)
+    docSwitcherAria: 'Select document',
+    docStatusReady: 'Ready',
+    docStatusPending: 'Processing…',
+    docStatusFailed: 'Parse failed',
+    docReparse: 'Re-parse',
+    docReparseQueued: 'Re-parse queued',
+    docReparseError: 'Failed to queue re-parse',
 } as const;
 
 export type PdfCopy = typeof pdf;

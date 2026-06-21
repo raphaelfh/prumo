@@ -7,6 +7,8 @@ export const articleKeys = {
     [...articleKeys.all, 'by-project', projectId, filters ?? null] as const,
   detail: (articleId: string) =>
     [...articleKeys.all, 'detail', articleId] as const,
+  files: (articleId: string) =>
+    [...articleKeys.all, 'files', articleId] as const,
   textBlocks: (articleFileId: string) =>
     [...articleKeys.all, 'text-blocks', articleFileId] as const,
   citations: (articleId: string) =>

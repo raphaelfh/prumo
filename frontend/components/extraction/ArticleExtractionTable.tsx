@@ -146,7 +146,6 @@ const EXTRACTION_DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
     status: 96,
     actions: 96,
 };
-const RESIZABLE_COLUMN_ORDER = ['title', 'authors', 'year', 'status', 'actions'] as const;
 // Header checkbox component with indeterminate support.
 function HeaderCheckbox({
   checked,
@@ -207,11 +206,10 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
             return {...EXTRACTION_DEFAULT_COLUMN_WIDTHS};
         }
     });
-    const {registerHeaderRef, startResize} = useResizableTableColumns({
+    const {startResize} = useResizableTableColumns({
         columnWidths,
         setColumnWidths,
         defaultColumnWidths: EXTRACTION_DEFAULT_COLUMN_WIDTHS,
-        orderedColumns: [...RESIZABLE_COLUMN_ORDER],
         storageKey: EXTRACTION_COLUMN_WIDTHS_KEY,
     });
 
@@ -799,7 +797,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                 </TooltipProvider>
               </TableHead>
                           <TableHead
-                              ref={(el) => registerHeaderRef('title', el)}
                               className={`relative ${TABLE_CELL_CLASS}`} style={getColumnStyle('title')}>
                               <div className="pr-4 min-w-0">
                                   <SortIconHeader
@@ -819,7 +816,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                               />
               </TableHead>
                           <TableHead
-                              ref={(el) => registerHeaderRef('authors', el)}
                               className={`relative hidden md:table-cell ${TABLE_CELL_CLASS}`} style={getColumnStyle('authors')}>
                               <span
                                   className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t('extraction', 'tableColumnAuthors')}</span>
@@ -834,7 +830,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                               />
               </TableHead>
                           <TableHead
-                              ref={(el) => registerHeaderRef('year', el)}
                               className={`relative hidden md:table-cell ${TABLE_CELL_CLASS}`} style={getColumnStyle('year')}>
                               <SortIconHeader
                                   label={t('extraction', 'tableColumnYear')}
@@ -852,7 +847,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                               />
               </TableHead>
                           <TableHead
-                              ref={(el) => registerHeaderRef('status', el)}
                               className={`relative ${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('status')}>
                               <div className="flex items-center justify-center gap-1">
                                   <SortIconHeader
@@ -901,7 +895,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                               />
               </TableHead>
                           <TableHead
-                              ref={(el) => registerHeaderRef('actions', el)}
                               className={`relative ${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}>
                               {t('extraction', 'tableActions')}
                               <div

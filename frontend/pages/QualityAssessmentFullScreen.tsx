@@ -29,7 +29,12 @@ import type {
   ComparisonEntityType,
   ComparisonInstance,
 } from "@/components/runs/RunReviewerComparison";
-import { PrumoPdfViewer, articleFileSource } from "@prumo/pdf-viewer";
+import { PrumoPdfViewer } from "@prumo/pdf-viewer";
+import { useArticleDocuments } from "@/hooks/extraction/useArticleDocuments";
+import {
+  DocumentSwitcher,
+  ReparseButton,
+} from "@/components/extraction/DocumentSwitcher";
 import { Badge } from "@/components/ui/badge";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
 import { resolveQATemplateKind } from "@/services/projectSettingsService";
@@ -75,6 +80,7 @@ export default function QualityAssessmentFullScreen() {
     templateId: string;
   }>();
   const navigate = useNavigate();
+  const documents = useArticleDocuments(articleId);
 
   // The ``:templateId`` URL segment may point at either a project-level
   // ``project_extraction_templates`` row (when the user landed here from
@@ -303,9 +309,9 @@ export default function QualityAssessmentFullScreen() {
   // PDF panel state — lifted so RunHeader.PanelToggle can share the same toggle.
   const pdfPanelState = usePdfPanel({ initialOpen: false });
 
-  // App navigation sidebar (provided by RunWorkspaceShell) — wired to the
-  // RunHeader.SidebarToggle + ⌘B.
-  const { sidebarCollapsed, toggleSidebar } = useSidebar();
+  // App navigation sidebar (provided by RunWorkspaceShell). SidebarToggle + ⌘B
+  // collapse the desktop sidebar (lg+); toggleMobile opens the drawer below lg.
+  const { sidebarCollapsed, toggleSidebar, toggleMobile } = useSidebar();
 
   // "\" toggles the source (PDF) panel. No J/K — QA has a single article.
   // ``usePdfPanel`` returns a fresh object each render, so hold the toggle in a
@@ -533,7 +539,7 @@ export default function QualityAssessmentFullScreen() {
   const versionLabel = template ? `v${template.version}` : "";
 
   const header = (
-    <div className="@container/headerbar">
+    // HeaderShell (inside RunHeader) owns the @container/headerbar — no consumer wrapper.
       <RunHeader
         value={{
           kind: "qa",
@@ -557,6 +563,7 @@ export default function QualityAssessmentFullScreen() {
         }}
       >
         <RunHeader.Left>
+          <RunHeader.MobileNav onOpen={toggleMobile} />
           <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={toggleSidebar} />
           <RunHeader.Breadcrumb
             onBack={() => navigate(`/projects/${projectId}`)}
@@ -632,14 +639,35 @@ export default function QualityAssessmentFullScreen() {
           />
         </RunHeader.Right>
       </RunHeader>
-    </div>
   );
 
   const pdfPanel = (
-    <PrumoPdfViewer
-      source={articleId ? articleFileSource(articleId) : null}
-      className="h-full"
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      {documents.files.length > 0 && (
+        <div className="flex items-center gap-2 border-b px-2 py-1.5">
+          <DocumentSwitcher
+            files={documents.files}
+            selectedFileId={documents.selectedFileId}
+            onSelect={documents.setSelectedFileId}
+          />
+          {documents.selectedFile?.extractionStatus === "parse_failed" &&
+            articleId && (
+              <ReparseButton
+                articleFileId={documents.selectedFile.id}
+                articleId={articleId}
+              />
+            )}
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        <PrumoPdfViewer
+          source={documents.source}
+          readerBlocks={documents.readerBlocks}
+          readerLoading={documents.readerLoading}
+          className="h-full"
+        />
+      </div>
+    </div>
   );
 
   // Single source for the form-panel stage gates (avoids repeating the same

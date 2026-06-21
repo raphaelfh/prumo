@@ -3,13 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RunHeader } from '@/components/runs/header';
+import { makeRunHeaderValue } from './_headerTestUtils';
 vi.mock('@/lib/copy', () => ({ t: (_n: string, k: string) => k }));
 
-const base = {
-  kind: 'extraction' as const, stage: 'extract' as const, isRevision: false,
-  isBlind: false, canReveal: false,
-  progress: { completed: 0, total: 0, pct: 0 }, reviewers: { count: 0, required: 0, divergent: 0 }, transition: null,
-};
+const base = makeRunHeaderValue();
 
 describe('RunHeader.Breadcrumb', () => {
   it('renders back button and calls onBack when clicked', async () => {

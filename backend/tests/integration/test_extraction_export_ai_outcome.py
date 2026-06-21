@@ -82,7 +82,13 @@ async def _coord(
     Scopes the article/template join by ``project_id`` per the
     integration rule. All columns are non-null by the JOIN.
     """
-    profile = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    profile = (
+        await db.execute(
+            text(
+                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            )
+        )
+    ).scalar()
     row = (
         await db.execute(
             text(

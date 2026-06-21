@@ -32,8 +32,5 @@ export {PrumoPdfViewer} from './PrumoPdfViewer';
 export type {PrumoPdfViewerProps} from './PrumoPdfViewer';
 
 // Domain adapters (opt-in; consumers can also build their own)
-export {
-  articleFileSource,
-  ArticleFileNotFoundError,
-} from './adapters/articleFileSource';
+export {articleFileSourceFromStorageKey} from './adapters/articleFileSource';
 export type {ArticleFileSourceOptions} from './adapters/articleFileSource';
