@@ -14,10 +14,13 @@ vi.mock('@/integrations/supabase/client', () => {
   return {supabase: {from, storage: {from: storageFrom}}};
 });
 
+vi.mock('@/integrations/api', () => ({apiClient: vi.fn(async () => ({}))}));
+
 // file-validation is a pure util — let it run, or stub it simply
 vi.mock('@/lib/file-validation', () => ({detectFileFormat: vi.fn(() => 'application/pdf')}));
 
 import {supabase} from '@/integrations/supabase/client';
+import {apiClient} from '@/integrations/api';
 import {addArticle, uploadArticleFile} from '@/services/articlesService';
 
 // ---------------------------------------------------------------------------
@@ -84,6 +87,7 @@ describe('articlesService.addArticle', () => {
   });
 
   it('article_files insert failure — storage object removed AND article row deleted', async () => {
+    // After the change: apiClient rejection triggers the rollback path
     let callIndex = 0;
     const articleDeleteEq = vi.fn(async () => ({data: null, error: null}));
     const storageRemove = vi.fn(async () => ({error: null}));
@@ -105,9 +109,9 @@ describe('articlesService.addArticle', () => {
         c.eq = articleDeleteEq;
         return c as never;
       }
-      // article_files insert failure
+      // No article_files PostgREST calls expected any more
       const c: Record<string, unknown> = {};
-      c.insert = vi.fn(async () => ({error: {message: 'constraint violation'}}));
+      c.insert = vi.fn(async () => ({error: null}));
       return c as never;
     });
 
@@ -115,6 +119,9 @@ describe('articlesService.addArticle', () => {
       upload: vi.fn(async () => ({error: null})),
       remove: storageRemove,
     } as never);
+
+    // apiClient rejects → triggers rollback
+    vi.mocked(apiClient).mockRejectedValueOnce(new Error('constraint violation'));
 
     const result = await addArticle(ARTICLE_DATA, {
       file: FAKE_PDF,
@@ -128,8 +135,7 @@ describe('articlesService.addArticle', () => {
     expect(articleDeleteEq).toHaveBeenCalledWith('id', 'art-2');
   });
 
-  it('happy path — article insert + storage upload + article_files insert all called', async () => {
-    const articleFilesInsert = vi.fn(async () => ({error: null}));
+  it('happy path — article insert + storage upload + backend confirm called (no direct article_files insert)', async () => {
     const storageUpload = vi.fn(async () => ({error: null}));
 
     vi.mocked(supabase.from).mockImplementation((table: string) => {
@@ -140,8 +146,8 @@ describe('articlesService.addArticle', () => {
         c.single = vi.fn(async () => ({data: {id: 'art-3'}, error: null}));
         return c as never;
       }
-      // article_files
-      return {insert: articleFilesInsert} as never;
+      // article_files should NOT be called — fail loudly if it is
+      return {insert: vi.fn(async () => ({error: {message: 'unexpected article_files insert'}})) } as never;
     });
 
     vi.mocked(supabase.storage.from).mockReturnValue({
@@ -155,13 +161,53 @@ describe('articlesService.addArticle', () => {
 
     expect(result.ok).toBe(true);
     expect(storageUpload).toHaveBeenCalled();
-    expect(articleFilesInsert).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({article_id: 'art-3', file_role: 'MAIN'}),
-      ]),
+    // Backend confirm endpoint was called
+    expect(apiClient).toHaveBeenCalledWith(
+      '/api/v1/articles/art-3/files',
+      expect.objectContaining({method: 'POST'}),
     );
-    expect(vi.mocked(supabase.from)).toHaveBeenCalledWith('articles');
-    expect(vi.mocked(supabase.from)).toHaveBeenCalledWith('article_files');
+    // No direct article_files PostgREST insert
+    const fromCalls = vi.mocked(supabase.from).mock.calls.map(c => c[0]);
+    expect(fromCalls).not.toContain('article_files');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// addArticle — backend confirm (new test from brief)
+// ---------------------------------------------------------------------------
+
+describe('articlesService.addArticle — backend confirm', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('registers the file via the backend, not a direct article_files insert', async () => {
+    // article insert + storage upload succeed
+    vi.mocked(supabase.from).mockImplementation(() => {
+      const c: Record<string, unknown> = {};
+      c.insert = vi.fn(() => c);
+      c.select = vi.fn(() => c);
+      c.single = vi.fn(async () => ({data: {id: 'art-1'}, error: null}));
+      c.delete = vi.fn(() => c);
+      c.eq = vi.fn(() => c);
+      return c;
+    });
+    vi.mocked(supabase.storage.from).mockReturnValue({
+      upload: vi.fn(async () => ({error: null})),
+      remove: vi.fn(async () => ({error: null})),
+    } as never);
+
+    const res = await addArticle(ARTICLE_DATA as never, {
+      file: FAKE_PDF,
+      detectedFormat: 'PDF',
+    } as never);
+
+    expect(res.ok).toBe(true);
+    expect(apiClient).toHaveBeenCalledWith(
+      '/api/v1/articles/art-1/files',
+      expect.objectContaining({method: 'POST'}),
+    );
+    // No direct article_files PostgREST insert anymore:
+    const fromCalls = vi.mocked(supabase.from).mock.calls.map(c => c[0]);
+    expect(fromCalls).not.toContain('article_files');
   });
 });
 
