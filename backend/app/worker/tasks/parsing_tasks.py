@@ -89,6 +89,32 @@ async def _run_parse(
             raise
 
 
+async def _mark_parse_failed(article_file_id: str, error_message: str) -> None:
+    """Persist a terminal parse failure in its own committed transaction.
+
+    The main worker_session() rolls back on parser error (discarding any
+    in-session status flush), so the failure is recorded out-of-band in a
+    fresh session that commits independently. Covers parser errors AND
+    pre-parse failures (e.g. storage download) the service never marks.
+    """
+    from sqlalchemy import select
+
+    from app.models.article import ArticleFile
+    from app.worker._session import worker_session
+
+    async with worker_session() as session:
+        article_file = (
+            await session.execute(
+                select(ArticleFile).where(ArticleFile.id == UUID(article_file_id))
+            )
+        ).scalar_one_or_none()
+        if article_file is None:
+            return
+        article_file.extraction_status = "parse_failed"
+        article_file.extraction_error = error_message[:500]
+        await session.commit()
+
+
 @celery_app.task(
     bind=True,
     max_retries=3,
@@ -109,4 +135,11 @@ def parse_article_file_task(
             lambda: _run_parse(article_file_id, project_id, user_id, trace_id or self.request.id)
         )
     except Exception as exc:
-        self.retry(exc=exc)
+        if self.request.retries >= self.max_retries:
+            # Terminal: the main session already rolled back, so persist the
+            # failure durably in its own transaction before the task dies.
+            # Capture error_message now — `exc` is deleted after the except block.
+            error_message = str(exc)
+            run_task(lambda: _mark_parse_failed(article_file_id, error_message))
+            raise
+        raise self.retry(exc=exc)
