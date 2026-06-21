@@ -6,17 +6,25 @@ interface UseResizableTableColumnsParams {
     columnWidths: WidthMap;
     setColumnWidths: React.Dispatch<React.SetStateAction<WidthMap>>;
     defaultColumnWidths: WidthMap;
-    orderedColumns: string[];
     storageKey: string;
     minWidth?: number;
     maxWidth?: number;
 }
 
+/**
+ * Drag-to-resize for `table-fixed w-max` list headers (extraction, articles,
+ * and any future table of the same shape).
+ *
+ * Resizing only ever changes the dragged column's width. The table width is the
+ * sum of its column widths (`w-max`) inside a horizontally scrollable container,
+ * so the surrounding columns reflow naturally — there is no neighbour to "steal"
+ * width from. An earlier version inversely resized the adjacent column, which
+ * made dragging one column visibly shrink another; that push-pull model is gone.
+ */
 export function useResizableTableColumns({
     columnWidths,
     setColumnWidths,
     defaultColumnWidths,
-    orderedColumns,
     storageKey,
     minWidth = 80,
     maxWidth = 600,
@@ -24,9 +32,6 @@ export function useResizableTableColumns({
     const [resizingColumn, setResizingColumn] = useState<string | null>(null);
     const [resizeStartX, setResizeStartX] = useState(0);
     const [resizeStartWidth, setResizeStartWidth] = useState(0);
-    const [resizeAdjacentColumn, setResizeAdjacentColumn] = useState<string | null>(null);
-    const [resizeAdjacentStartWidth, setResizeAdjacentStartWidth] = useState(0);
-    const headerRefs = useRef<Record<string, HTMLTableCellElement | null>>({});
     // Latest-value mirror so the mouseup handler can persist without
     // re-subscribing; written in an effect (refs must not be written in render).
     const columnWidthsRef = useRef(columnWidths);
@@ -34,40 +39,11 @@ export function useResizableTableColumns({
         columnWidthsRef.current = columnWidths;
     }, [columnWidths]);
 
-    const registerHeaderRef = (columnId: string, el: HTMLTableCellElement | null) => {
-        headerRefs.current[columnId] = el;
-    };
-
     const startResize = (columnId: string, clientX: number) => {
-        const isVisibleColumn = (key: string) => {
-            const el = headerRefs.current[key];
-            if (!el) return false;
-            const rect = el.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0;
-        };
-
-        const currentIndex = orderedColumns.indexOf(columnId);
-        let adjacentColumn: string | null = null;
-        if (currentIndex >= 0) {
-            for (let i = currentIndex + 1; i < orderedColumns.length; i += 1) {
-                const candidate = orderedColumns[i];
-                if (isVisibleColumn(candidate)) {
-                    adjacentColumn = candidate;
-                    break;
-                }
-            }
-        }
-
         const initialWidth = columnWidths[columnId] ?? defaultColumnWidths[columnId] ?? minWidth;
-        const adjacentStartWidth = adjacentColumn
-            ? (columnWidths[adjacentColumn] ?? defaultColumnWidths[adjacentColumn] ?? minWidth)
-            : 0;
-
         setResizingColumn(columnId);
         setResizeStartX(clientX);
         setResizeStartWidth(initialWidth);
-        setResizeAdjacentColumn(adjacentColumn);
-        setResizeAdjacentStartWidth(adjacentStartWidth);
     };
 
     useEffect(() => {
@@ -75,34 +51,8 @@ export function useResizableTableColumns({
 
         const onMove = (e: MouseEvent) => {
             const deltaFromStart = e.clientX - resizeStartX;
-            const baseWidth = resizeStartWidth;
-            const adjacentBaseWidth = resizeAdjacentStartWidth;
-            const hasAdjacent = !!resizeAdjacentColumn && adjacentBaseWidth > 0;
-
-            const minDeltaByActive = minWidth - baseWidth;
-            const maxDeltaByActive = maxWidth - baseWidth;
-            const minDeltaByAdjacent = hasAdjacent ? -(maxWidth - adjacentBaseWidth) : Number.NEGATIVE_INFINITY;
-            const maxDeltaByAdjacent = hasAdjacent ? adjacentBaseWidth - minWidth : Number.POSITIVE_INFINITY;
-            const clampedDelta = Math.min(
-                Math.min(maxDeltaByActive, maxDeltaByAdjacent),
-                Math.max(Math.max(minDeltaByActive, minDeltaByAdjacent), deltaFromStart)
-            );
-
-            const nextWidth = Math.min(maxWidth, Math.max(minWidth, baseWidth + clampedDelta));
-            const nextAdjacentWidth = hasAdjacent
-                ? Math.min(maxWidth, Math.max(minWidth, adjacentBaseWidth - clampedDelta))
-                : null;
-
-            setColumnWidths((prev) => {
-                if (resizeAdjacentColumn && nextAdjacentWidth != null) {
-                    return {
-                        ...prev,
-                        [resizingColumn]: nextWidth,
-                        [resizeAdjacentColumn]: nextAdjacentWidth,
-                    };
-                }
-                return {...prev, [resizingColumn]: nextWidth};
-            });
+            const nextWidth = Math.min(maxWidth, Math.max(minWidth, resizeStartWidth + deltaFromStart));
+            setColumnWidths((prev) => ({...prev, [resizingColumn]: nextWidth}));
         };
 
         const onUp = () => {
@@ -113,8 +63,6 @@ export function useResizableTableColumns({
             }
 
             setResizingColumn(null);
-            setResizeAdjacentColumn(null);
-            setResizeAdjacentStartWidth(0);
         };
 
         window.addEventListener('mousemove', onMove);
@@ -126,8 +74,6 @@ export function useResizableTableColumns({
     }, [
         maxWidth,
         minWidth,
-        resizeAdjacentColumn,
-        resizeAdjacentStartWidth,
         resizeStartWidth,
         resizeStartX,
         resizingColumn,
@@ -151,7 +97,6 @@ export function useResizableTableColumns({
 
     return {
         resizingColumn,
-        registerHeaderRef,
         startResize,
     };
 }
