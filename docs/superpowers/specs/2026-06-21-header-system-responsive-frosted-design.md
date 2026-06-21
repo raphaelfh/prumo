@@ -1,11 +1,11 @@
 ---
-status: proposed
+status: draft
 last_reviewed: 2026-06-21
 owner: '@raphaelfh'
 ---
 
-> **Status:** Proposed — design brainstormed 2026-06-21. Awaiting user
-> review before an implementation plan is written.
+> **Status:** Draft — design brainstormed 2026-06-21; implementation plan
+> written. Awaiting user review before execution.
 
 # Design: Unified header system — responsive + restrained frosted glass
 
