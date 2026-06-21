@@ -1948,14 +1948,24 @@ def _build_tidy_tables(
     value_map: dict[tuple[Any, ...], Any],
     mode: ExportMode,
 ) -> tuple[TidyTable, ...]:
-    """One publication table per non-container section at its cardinality grain.
+    """One publication table per non-container section at its record grain.
 
-    ``cardinality==MANY`` fans out one row per (article × instance) for ANY
-    role (spec §5.2 — never a ``role==MODEL_SECTION`` allow-list); ``ONE``
-    yields one row per article. Columns are the section fields in their
-    resolved order; values are baked from ``value_map`` (already-resolved
-    scalars — §5.3). The ``MODEL_CONTAINER`` and field-less sections are
-    skipped (nothing to project).
+    The record axis is selected by ROLE first, then cardinality — mirroring
+    ``matrix._resolve_instance_id``:
+
+      * ``MODEL_SECTION`` fans out one row per model instance
+        (``article.model_instances``) regardless of its own cardinality.
+        Production model sections are ``cardinality='one'``; the N-model
+        fan-out is always sourced from ``model_instances``, never from
+        ``section_instances`` (spec §5.2).
+      * non-model ``cardinality==MANY`` fans out one row per instance
+        (``section_instances``).
+      * non-model ``cardinality==ONE`` yields one row per article.
+
+    Columns are the section fields in their resolved order; values are baked
+    from ``value_map`` (already-resolved scalars — §5.3). The
+    ``MODEL_CONTAINER`` and field-less sections are skipped (nothing to
+    project).
     """
     tables: list[TidyTable] = []
     for section in sections:
@@ -1969,20 +1979,30 @@ def _build_tidy_tables(
         for article in articles:
             if article.run_id is None:
                 continue
-            if section.cardinality is ExtractionCardinality.MANY:
-                if section.role is ExtractionEntityRole.MODEL_SECTION:
-                    instances = article.model_instances
-                    label_stem = "Model"
-                else:
-                    instances = article.section_instances.get(section.entity_type_id, ())
-                    label_stem = section.label
+            if section.role is ExtractionEntityRole.MODEL_SECTION:
+                # Role-first: model sections always fan out over model_instances
+                # regardless of their own cardinality (production model sections
+                # are cardinality ONE, yet carry one record per model).
+                for idx, instance_id in enumerate(article.model_instances, start=1):
+                    rows.append(
+                        _tidy_row(
+                            section=section,
+                            article=article,
+                            instance_id=instance_id,
+                            record_label=f"{article.header_label} — Model {idx}",
+                            value_map=value_map,
+                            mode=mode,
+                        )
+                    )
+            elif section.cardinality is ExtractionCardinality.MANY:
+                instances = article.section_instances.get(section.entity_type_id, ())
                 for idx, instance_id in enumerate(instances, start=1):
                     rows.append(
                         _tidy_row(
                             section=section,
                             article=article,
                             instance_id=instance_id,
-                            record_label=f"{article.header_label} — {label_stem} {idx}",
+                            record_label=f"{article.header_label} — {section.label} {idx}",
                             value_map=value_map,
                             mode=mode,
                         )
