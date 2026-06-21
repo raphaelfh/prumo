@@ -1,6 +1,16 @@
 # backend/tests/integration/test_llamaparse_parser.py
 from unittest.mock import MagicMock, patch
 
+from llama_cloud.types.b_box import BBox
+from llama_cloud.types.code_item import CodeItem
+from llama_cloud.types.heading_item import HeadingItem
+from llama_cloud.types.parsing_get_response import (
+    Items,
+    ItemsPageStructuredResultPage,
+    ParsingGetResponse,
+)
+from llama_cloud.types.text_item import TextItem
+
 from app.infrastructure.parsing.base import (
     BLOCK_TYPES,
     assign_char_offsets_to_blocks,
@@ -9,27 +19,35 @@ from app.infrastructure.parsing.base import (
 from app.infrastructure.parsing.llamaparse_parser import LlamaParseParser
 
 
-def _fake_result():
-    # Minimal items tree + page sizes mirroring the agentic granular-bbox shape.
-    # One heading + one box-less item on page 1 (page_height = 800), top-left origin.
-    return MagicMock(
-        pages=[MagicMock(page=1, height=800.0, width=600.0)],
+def _fake_result() -> ParsingGetResponse:
+    # Real llama_cloud 2.x models (NOT a hand-shaped MagicMock — the previous
+    # mock encoded a flat result.items/result.pages shape the SDK never returns,
+    # which is exactly why the prod mapper silently produced zero blocks).
+    # One structured page (height 800, top-left origin): heading + box-less text
+    # + a code item that normalises to paragraph.
+    page = ItemsPageStructuredResultPage(
+        page_number=1,
+        page_height=800.0,
+        page_width=600.0,
+        success=True,
         items=[
-            MagicMock(
+            HeadingItem(
                 type="heading",
-                page=1,
+                level=1,
                 value="Results",
-                bbox={"x": 50.0, "y": 100.0, "w": 200.0, "h": 20.0},
+                md="# Results",
+                bbox=[BBox(x=50.0, y=100.0, w=200.0, h=20.0)],
             ),
-            MagicMock(type="text", page=1, value="A box-less line", bbox=None),
-            MagicMock(
-                type="weird_unknown",
-                page=1,
+            TextItem(type="text", value="A box-less line", md="A box-less line", bbox=None),
+            CodeItem(
+                type="code",
                 value="Mystery",
-                bbox={"x": 10.0, "y": 700.0, "w": 80.0, "h": 12.0},
+                md="`Mystery`",
+                bbox=[BBox(x=10.0, y=700.0, w=80.0, h=12.0)],
             ),
         ],
     )
+    return ParsingGetResponse.model_construct(items=Items(pages=[page]), markdown=None)
 
 
 def test_llamaparse_maps_items_to_blocks_with_yflip():
@@ -47,7 +65,7 @@ def test_llamaparse_maps_items_to_blocks_with_yflip():
         assert kwargs["output_options"] == {"granular_bboxes": ["word", "line", "cell"]}
         assert set(kwargs["expand"]) == {"markdown", "items"}
 
-    # block_type mapping: heading->heading, text->paragraph, unknown->paragraph
+    # block_type mapping: heading->heading, text->paragraph, code->paragraph
     by_text = {b.text: b for b in blocks}
     assert by_text["Results"].block_type == "heading"
     assert by_text["A box-less line"].block_type == "paragraph"
