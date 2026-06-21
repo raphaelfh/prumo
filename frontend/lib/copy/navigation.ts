@@ -67,6 +67,7 @@ export const navigation = {
     feedbackSuccessSent: 'Thanks — your report was sent.',
     viewsExtractionAria: 'Extraction views',
     viewsQualityAria: 'Quality assessment views',
+    viewSwitcherTrigger: 'Switch view',
     sectionDescriptionExtraction: 'Extract structured data using standard templates',
     sectionDescriptionQuality: 'Assess article quality with PROBAST, QUADAS-2, and other risk-of-bias tools',
 } as const;
