@@ -64,7 +64,7 @@ scope; the latter is a follow-up phase).
   reviewers" counter and "0% until you accept" progress derive from
   per-user reviewer state that exists live in `extract`.
 - **Migration.** In-flight production runs in `proposal`/`review` map to
-  `extract` information-preservingly (same data, new label); `consensus`/
+  `extract` without information loss (same data, new label); `consensus`/
   `finalized` are untouched.
 - **QA shares the lifecycle.** QA runs also open in `extract` and publish
   straight `extract → consensus → finalized`; QA keeps its shared-proposal
