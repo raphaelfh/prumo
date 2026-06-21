@@ -247,14 +247,14 @@ class RunLifecycleService:
             run.status = ExtractionRunStatus.COMPLETED.value
         await self.db.flush()
 
-        # Invariant I-1: in REVIEW+, every human proposal must have a
+        # Invariant I-1: in CONSENSUS+, every human proposal must have a
         # corresponding reviewer_decision so the form's per-user read can
         # render the typed value. The autosave path writes proposals
         # regardless of stage, and AI-extraction services advance to
-        # REVIEW without round-tripping through a "confirm" step — so
+        # CONSENSUS without round-tripping through a "confirm" step — so
         # any human input the user typed before the advance would be
         # orphaned without this materialization step.
-        if target == ExtractionRunStage.REVIEW.value:
+        if target == ExtractionRunStage.CONSENSUS.value:
             await self._materialize_human_decisions(run_id)
 
         await self.db.refresh(run)
@@ -490,9 +490,8 @@ class RunLifecycleService:
         are not mutated; the new Run will publish its own (with version+1
         per coordinate via the normal consensus flow).
 
-        The new Run lands in stage=REVIEW so the form can immediately
-        accept ReviewerDecisions over the seeded proposals — same UX as
-        post-AI-extraction.
+        The new Run lands in stage=EXTRACT so the form can immediately
+        record decisions over the seeded proposals.
         """
         # Lock the parent run for the duration of the transaction so two
         # concurrent reopen requests serialise. Inside the locked section
@@ -584,12 +583,7 @@ class RunLifecycleService:
         await self.db.flush()
         await self.db.refresh(new_run)
 
-        # 3. Advance pending → proposal so the seed-proposal writes pass
-        #    the lifecycle precondition.
-        new_run.stage = ExtractionRunStage.PROPOSAL.value
-        await self.db.flush()
-
-        # 4. Seed: each PublishedState in the old run becomes a system
+        # 3. Seed: each PublishedState in the old run becomes a system
         #    ProposalRecord in the new run. The form sees them as the
         #    starting point and the user can keep / edit / reject.
         old_published = (
@@ -616,9 +610,8 @@ class RunLifecycleService:
             )
         await self.db.flush()
 
-        # 5. Advance proposal → review so the form can immediately
-        #    record decisions on the seeded proposals.
-        new_run.stage = ExtractionRunStage.REVIEW.value
+        # 4. Land the child run in EXTRACT so the form can immediately record decisions.
+        new_run.stage = ExtractionRunStage.EXTRACT.value
         await self.db.flush()
         await self.db.refresh(new_run)
         return new_run, True

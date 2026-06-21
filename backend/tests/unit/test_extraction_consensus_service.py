@@ -138,11 +138,10 @@ async def test_record_consensus_raises_when_run_not_found() -> None:
     "stage",
     [
         ExtractionRunStage.PENDING.value,
-        ExtractionRunStage.PROPOSAL.value,
-        ExtractionRunStage.REVIEW.value,
+        ExtractionRunStage.EXTRACT.value,
         ExtractionRunStage.FINALIZED.value,
     ],
-    ids=["pending", "proposal", "review", "finalized"],
+    ids=["pending", "extract", "finalized"],
 )
 async def test_record_consensus_rejects_non_consensus_stage(stage: str) -> None:
     service = _make_service()
@@ -629,7 +628,7 @@ async def test_publish_raises_when_run_not_found() -> None:
 @pytest.mark.asyncio
 async def test_publish_raises_when_run_not_in_consensus() -> None:
     service = _make_service()
-    load_p, _, _ = _patch_helpers(run=_make_run(stage=ExtractionRunStage.REVIEW.value))
+    load_p, _, _ = _patch_helpers(run=_make_run(stage=ExtractionRunStage.EXTRACT.value))
     with load_p, pytest.raises(InvalidConsensusError, match="not 'consensus'"):
         await service.publish(
             run_id=uuid4(),

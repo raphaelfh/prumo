@@ -417,14 +417,14 @@ async def test_qa_session_clones_template_on_first_call(
     ).scalar()
     assert version_count == 1
 
-    # The Run lands in PROPOSAL ready for the UI to record proposals.
+    # The Run lands in EXTRACT ready for the UI to record decisions.
     stage = (
         await db_session.execute(
             text("SELECT stage FROM public.extraction_runs WHERE id = :rid"),
             {"rid": body["run_id"]},
         )
     ).scalar()
-    assert stage == "proposal"
+    assert stage == "extract"
 
 
 @pytest.mark.asyncio
