@@ -1,12 +1,11 @@
 ---
-status: proposed
+status: approved
 last_reviewed: 2026-06-20
 owner: '@raphaelfh'
 ---
 
-> **Status:** Proposed — design approved in brainstorm 2026-06-20, not yet
-> planned/implemented. Next step: `superpowers:writing-plans` to produce a
-> task-level implementation plan.
+> **Status:** Approved — design approved in brainstorm 2026-06-20 and
+> implemented via the table-view UX consolidation plan (PR #351).
 
 # Design: Table-view UX consolidation (status ring, static toolbar, top-bar view-switcher, selection cleanup)
 
