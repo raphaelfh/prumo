@@ -54,8 +54,8 @@ refactor: cleanup duplication + dead code after auto-bug-fix wave
 
 - [ ] `make lint-backend` clean
 - [ ] `make test-backend` passes (note any newly added tests)
-- [ ] `npm run lint --prefix frontend` clean
-- [ ] `npm test --prefix frontend` passes
+- [ ] `npm run lint` clean
+- [ ] `npm run test:run` passes
 - [ ] Manual: <steps a reviewer can reproduce>
 
 ## Out of scope

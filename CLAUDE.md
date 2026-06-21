@@ -24,6 +24,17 @@ owner: '@raphaelfh'
   `frontend/lib/copy/` (no external i18n lib). Hosted on **Vercel**.
 - **Testing**: pytest (backend), vitest (frontend), Playwright (E2E).
 
+## Required plugins
+
+- **superpowers** (`@claude-plugins-official`, pin to the installed
+  6.x) is a required project plugin, declared in
+  `.claude/settings.json`. The `architectural-quality-loop` family and
+  the process skills under `.claude/skills/debugging/` defer to
+  `superpowers:loop`, `writing-plans`, `using-git-worktrees`,
+  `systematic-debugging`, and `verification-before-completion`. Generic
+  engineering process lives there; keep prumo skills to the
+  prumo-specific delta. Without the plugin those skills are incomplete.
+
 ## Layout gotchas (agents get these wrong)
 
 - Frontend tooling runs from the **repo root**: `package.json`,

@@ -57,8 +57,8 @@ Skipping any step is lying, not reviewing.
 | --------------------------------------------- | -------------------------------------------------- |
 | Backend tests pass                            | `make test-backend` — exit 0, no `FAILED` / `ERROR`|
 | Backend lint clean                            | `make lint-backend` — exit 0, no diff after format |
-| Frontend tests pass                           | `npm test --prefix frontend` — exit 0              |
-| Frontend lint + typecheck                     | `npm run lint --prefix frontend` + `tsc --noEmit`  |
+| Frontend tests pass                           | `npm run test:run` — exit 0                        |
+| Frontend lint + typecheck                     | `npm run lint` + `npm run typecheck`               |
 | Migration applies cleanly                     | `cd backend && alembic upgrade head` — exit 0      |
 | Migration is reversible                       | `alembic downgrade -1 && alembic upgrade head`     |
 | Bug fixed                                     | New test reproducing the bug now passes            |
@@ -73,7 +73,7 @@ Skipping any step is lying, not reviewing.
 - Committing because the change "looks small".
 - Trusting an agent's report instead of reading its tool outputs.
 
-Full protocol: `references/verification-before-completion.md`.
+Full protocol: `../debugging/verification-before-completion/SKILL.md` (the canonical gate; `references/verification-before-completion.md` now redirects there).
 
 ---
 
@@ -194,8 +194,8 @@ Why: Stale-cache bugs are silent — users see old data and assume their click f
 
 - [ ] `make lint-backend` clean
 - [ ] `make test-backend` passes (note any newly added tests)
-- [ ] `npm run lint --prefix frontend` clean
-- [ ] `npm test --prefix frontend` passes
+- [ ] `npm run lint` clean
+- [ ] `npm run test:run` passes
 - [ ] Manual: <steps a reviewer can reproduce>
 
 ## Out of scope

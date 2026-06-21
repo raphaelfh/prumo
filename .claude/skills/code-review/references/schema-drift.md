@@ -76,7 +76,7 @@ For every PR that touches `backend/app/models/`:
 - [ ] Open the matching `backend/app/schemas/*.py`. Diff the field set, types, optionality.
 - [ ] Grep the frontend for the response type. Update the TS type if you renamed / added / removed fields.
 - [ ] Run `make test-backend` — Pydantic will explode at deserialization time for many drifts.
-- [ ] Run `npm run typecheck --prefix frontend` — TS will catch the renamed/removed field consumers.
+- [ ] Run `npm run typecheck` — TS will catch the renamed/removed field consumers.
 
 For every PR that adds a column:
 
