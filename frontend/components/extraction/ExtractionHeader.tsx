@@ -36,6 +36,9 @@ export interface ExtractionHeaderProps {
   // App sidebar collapse state + toggle (focus-shell wiring for ⌘B).
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
+  /** Opens the mobile nav drawer (Sheet). Wired to the phone hamburger; the
+   *  desktop SidebarToggle stays on onToggleSidebar. */
+  onOpenMobileNav?: () => void;
 
   // Article navigation
   articles: Article[];
@@ -130,6 +133,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     onBack,
     sidebarCollapsed,
     onToggleSidebar,
+    onOpenMobileNav,
     articles,
     currentArticleId,
     onNavigateToArticle,
@@ -272,7 +276,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
             <Button
               size="header-icon"
               variant="ghost"
-              onClick={onToggleSidebar}
+              onClick={onOpenMobileNav}
               aria-label={t('runs', 'openProjectNav')}
               className="shrink-0 p-0 text-muted-foreground hover:bg-muted/50"
             >

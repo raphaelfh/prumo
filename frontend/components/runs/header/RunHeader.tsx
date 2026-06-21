@@ -1,4 +1,4 @@
-import type { ReactNode, Ref } from 'react';
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { HeaderShell } from '@/components/layout/HeaderShell';
@@ -38,11 +38,9 @@ function Right({ children }: { children: ReactNode }) {
 function RunHeaderRoot({
   value,
   children,
-  rootRef,
 }: {
   value: RunHeaderValue;
   children: ReactNode;
-  rootRef?: Ref<HTMLElement>;
 }) {
   return (
     <RunHeaderProvider value={value}>
@@ -51,7 +49,7 @@ function RunHeaderRoot({
             body is a fixed-height panel split. Shadow stays off (border-only).
             HeaderShell owns the `@container/headerbar` + frosted chrome, so the
             consumer no longer wraps RunHeader in its own container div. */}
-        <HeaderShell position="relative" ref={rootRef}>
+        <HeaderShell position="relative">
           {children}
         </HeaderShell>
       </TooltipProvider>

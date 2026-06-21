@@ -33,22 +33,4 @@ describe('RunHeader through HeaderShell', () => {
     // position="relative" (run pages don't scroll the header out), not sticky.
     expect(header!.className).toContain('relative');
   });
-
-  it('forwards rootRef to the underlying <header> element', () => {
-    let captured: HTMLElement | null = null;
-    render(
-      <RunHeader
-        value={base}
-        rootRef={(el) => {
-          captured = el;
-        }}
-      >
-        <RunHeader.Left>
-          <span>L</span>
-        </RunHeader.Left>
-      </RunHeader>,
-    );
-    expect(captured).not.toBeNull();
-    expect(captured!.tagName).toBe('HEADER');
-  });
 });

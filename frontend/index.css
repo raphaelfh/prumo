@@ -217,8 +217,7 @@
         backdrop-filter: blur(var(--header-blur));
         -webkit-backdrop-filter: blur(var(--header-blur));
     }
-    /* Frosted floating overlay — same surface for menus/popovers, plus the
-       header elevation shadow (overlays always lift). */
+    /* Frosted floating overlay — same surface for menus/popovers. */
     .frosted-overlay {
         background-color: hsl(var(--popover) / var(--header-surface-alpha));
         backdrop-filter: blur(var(--header-blur));

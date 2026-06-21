@@ -13,7 +13,7 @@ import {ProjectContext} from '@/contexts/ProjectContext';
 import {FeedbackButton} from '@/components/feedback/FeedbackButton';
 import {HeaderShell} from '@/components/layout/HeaderShell';
 import {PanelToggleButton} from '@/components/layout/PanelToggleButton';
-import {useScrolled} from '@/components/layout/useHeaderTier';
+import {useScrolled} from '@/components/layout/useScrolled';
 import {TruncatedText} from '@/components/runs/header/TruncatedText';
 import {NotificationCenter} from './NotificationCenter';
 import type {TopbarProps} from '@/types/navigation';

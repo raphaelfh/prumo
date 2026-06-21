@@ -2,6 +2,7 @@ import { type ReactNode, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SidebarProvider, useSidebar } from '@/contexts/SidebarContext';
 import { ProjectSidebar } from '@/components/layout/ProjectSidebar';
+import { MobileSidebar } from '@/components/layout/MobileSidebar';
 import { useKeyboardShortcuts, type Binding } from '@/hooks/useKeyboardShortcuts';
 import type { SidebarTabId } from '@/components/layout/sidebarConfig';
 
@@ -13,7 +14,7 @@ interface RunWorkspaceShellProps {
 
 function ShellInner({ projectId, activeTab, children }: RunWorkspaceShellProps) {
   const navigate = useNavigate();
-  const { toggleSidebar } = useSidebar();
+  const { toggleSidebar, mobileOpen, setMobileOpen } = useSidebar();
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
   // Focus shell only wires ⌘B (sidebar). G-nav is out of scope here so the
@@ -23,6 +24,16 @@ function ShellInner({ projectId, activeTab, children }: RunWorkspaceShellProps) 
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
+      {/* Mobile nav drawer (Sheet) — the focus-mode phone hamburger
+          (RunHeader Left, container < 34rem) opens this. ProjectSidebar is
+          hidden below lg, so it is the only nav surface on phones. projectName
+          is intentionally omitted, mirroring the ProjectSidebar call below. */}
+      <MobileSidebar
+        open={mobileOpen}
+        onOpenChange={setMobileOpen}
+        activeTab={activeTab}
+        onTabChange={(tab) => navigate(`/projects/${projectId}?tab=${tab}`)}
+      />
       <div className="flex flex-1 overflow-hidden">
         {/* projectName is intentionally omitted: ProjectSidebar is unmounted
             while collapsed (the focus default), and SidebarHeader fetches the

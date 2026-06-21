@@ -87,7 +87,7 @@ export default function ExtractionFullScreen() {
   const navigate = useNavigate();
   // App navigation sidebar (provided by RunWorkspaceShell) — wired to the
   // RunHeader.SidebarToggle + ⌘B.
-  const { sidebarCollapsed, toggleSidebar } = useSidebar();
+  const { sidebarCollapsed, toggleSidebar, toggleMobile } = useSidebar();
 
   // ONE stable viewer store shared between the PDF panel and the form panel.
   // useState lazy initializer creates the store exactly once per mount —
@@ -1196,6 +1196,7 @@ export default function ExtractionFullScreen() {
         onBack={handleBack}
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={toggleSidebar}
+        onOpenMobileNav={toggleMobile}
         articles={articles}
         currentArticleId={articleId || ''}
         onNavigateToArticle={handleNavigateToArticle}

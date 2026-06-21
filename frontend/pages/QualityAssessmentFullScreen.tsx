@@ -308,7 +308,7 @@ export default function QualityAssessmentFullScreen() {
 
   // App navigation sidebar (provided by RunWorkspaceShell) — wired to the
   // RunHeader.SidebarToggle + ⌘B.
-  const { sidebarCollapsed, toggleSidebar } = useSidebar();
+  const { sidebarCollapsed, toggleSidebar, toggleMobile } = useSidebar();
 
   // "\" toggles the source (PDF) panel. No J/K — QA has a single article.
   // ``usePdfPanel`` returns a fresh object each render, so hold the toggle in a
@@ -568,7 +568,7 @@ export default function QualityAssessmentFullScreen() {
           <Button
             size="header-icon"
             variant="ghost"
-            onClick={toggleSidebar}
+            onClick={toggleMobile}
             aria-label={t("runs", "openProjectNav")}
             className="shrink-0 p-0 text-muted-foreground hover:bg-muted/50"
           >

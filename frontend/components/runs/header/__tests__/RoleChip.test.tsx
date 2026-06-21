@@ -6,7 +6,7 @@ import { RunHeader } from '@/components/runs/header';
 import { makeRunHeaderValue } from './_headerTestUtils';
 vi.mock('@/lib/copy', () => ({ t: (_n: string, k: string) => k }));
 
-// Omit isBlind/canReveal from base — each test supplies its own role/blind state
+// Base supplies isBlind/canReveal as false; each test overrides role/blind state as needed.
 const base = makeRunHeaderValue();
 
 describe('RunHeader.RoleChip', () => {
