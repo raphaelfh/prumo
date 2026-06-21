@@ -335,14 +335,10 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
         }
         return {...DEFAULT_COLUMN_WIDTHS};
     });
-    const renderedResizableColumns = TABLE_COLUMNS
-        .filter((col) => col.visibleKey == null || visibleColumns[col.visibleKey] === true)
-        .map((col) => col.id);
-    const {registerHeaderRef, startResize} = useResizableTableColumns({
+    const {startResize} = useResizableTableColumns({
         columnWidths,
         setColumnWidths,
         defaultColumnWidths: DEFAULT_COLUMN_WIDTHS,
-        orderedColumns: renderedResizableColumns,
         storageKey: COLUMN_WIDTHS_KEY,
     });
 
@@ -788,7 +784,6 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                               ).map((col) => (
                                   <TableHead
                                       key={col.id}
-                                      ref={(el) => registerHeaderRef(col.id, el)}
                                       className={`relative h-8 text-xs font-medium text-muted-foreground group/head ${TABLE_CELL_CLASS} ${colVisibilityClass(col.breakpoint)}`}
                                       style={getColumnStyle(col.id)}
                                   >

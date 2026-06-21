@@ -6,11 +6,17 @@
  *   past the minimum (raw position below snapCollapseAt) the panel closes on release.
  * - 8px transparent hit area; a 1px neutral bar fades in on hover and stays visible
  *   while dragging.
- * - Smooth animated close (width + opacity to 0) instead of instant unmount.
- * See docs/superpowers/design-system/sidebar-and-panels.md §1.
+ * - Symmetric width-led slide + coordinated content fade on BOTH expand and
+ *   collapse (the same motion in reverse); content keeps a fixed width and is
+ *   clipped so rows never squish during the slide.
+ * - Drag handle exposes a shared Radix tooltip (hover + focus) instead of a
+ *   native title; the caller supplies the (i18n) label and optional shortcut.
+ * See docs/superpowers/design-system/sidebar-and-panels.md §1, §3.
  */
 import React, {useEffect, useRef, useState} from 'react';
 import {cn} from '@/lib/utils';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
+import {KbdBadge, type KbdKey} from '@/components/ui/kbd-badge';
 
 export interface ResizablePanelProps {
   id: string;
@@ -22,6 +28,10 @@ export interface ResizablePanelProps {
   collapsed?: boolean;
   onCollapse?: () => void;
   className?: string;
+  /** Tooltip shown on the drag handle (hover + focus). Caller routes it through copy. */
+  tooltipLabel?: React.ReactNode;
+  /** Optional shortcut chip rendered in the handle tooltip, e.g. ['mod', 'B']. */
+  shortcut?: KbdKey[];
   children: React.ReactNode;
 }
 
@@ -66,6 +76,8 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
   collapsed,
   onCollapse,
   className,
+  tooltipLabel,
+  shortcut,
   children,
 }) => {
   const initialWidth = clamp(readStoredWidth(id, defaultWidth), minWidth, maxWidth);
@@ -75,6 +87,8 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   /** True while the close animation is playing; aside stays mounted but transitions to 0. */
   const [isClosing, setIsClosing] = useState(false);
+  /** True for the first frame after expand so the width transition has a 0 "from". */
+  const [isOpening, setIsOpening] = useState(false);
   const dragStartRef = useRef<{startX: number; startWidth: number; moved: boolean; rawFinal: number} | null>(null);
   const rafRef = useRef<number | null>(null);
   const pendingRef = useRef<{visual: number; raw: number} | null>(null);
@@ -230,66 +244,111 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
     return () => window.removeEventListener('storage', onStorage);
   }, [id, minWidth, maxWidth]);
 
-  // Animate the open → close transition driven by the external `collapsed` prop.
-  // We only kick the animation off when `collapsed` flips from false → true; an initial
-  // render with `collapsed=true` should stay unmounted (no entry animation).
-  // Adjusted during render (not in an effect) so the same <aside> node stays mounted
-  // across the flip and the width/opacity transition can actually play.
+  // Animate BOTH directions, driven by the external `collapsed` prop. State is
+  // adjusted during render (not in an effect) so the same <aside> node stays
+  // mounted across the flip and the width transition can actually play.
+  // - collapse: keep the node mounted (isClosing) and transition width → 0.
+  // - expand: render one frame at width 0 (isOpening) then widen on the next
+  //   animation frame, so the transition has a "from" value instead of popping
+  //   in. An initial `collapsed=true` render stays unmounted (no entry
+  //   animation); an initial `collapsed=false` mount renders full width at once.
   const [prevCollapsed, setPrevCollapsed] = useState(collapsed);
   if (collapsed !== prevCollapsed) {
     setPrevCollapsed(collapsed);
     setIsClosing(!!collapsed);
+    setIsOpening(!collapsed);
   }
   useEffect(() => {
     if (!isClosing) return undefined;
     const t = setTimeout(() => setIsClosing(false), CLOSE_ANIMATION_MS);
     return () => clearTimeout(t);
   }, [isClosing]);
+  useEffect(() => {
+    if (!isOpening) return undefined;
+    // rAF lets the width-0 "from" frame paint so the transition plays. The
+    // timeout is a fallback: if rAF is starved (e.g. a background tab), the panel
+    // still settles to the open width instead of sticking at 0.
+    const raf = requestAnimationFrame(() => setIsOpening(false));
+    const fallback = setTimeout(() => setIsOpening(false), 120);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(fallback);
+    };
+  }, [isOpening]);
 
   if (collapsed && !isClosing) return null;
 
-  const contentOpacity = collapsed ? 0 : 1;
-  const renderedWidth = collapsed ? 0 : visualWidth;
+  // Width is the primary motion; the content fades on a slightly different curve
+  // (trails the width on expand via a small delay, leads on collapse) so the
+  // slide reads as a coordinated Linear/Arc-style motion rather than a flat snap.
+  // The content keeps a fixed width (= the open width) and is clipped by the
+  // aside's overflow-hidden, so rows slide/clip cleanly instead of squishing as
+  // the panel narrows. See docs/superpowers/design-system/sidebar-and-panels.md §3.
+  const showCollapsedDims = collapsed || isOpening;
+  const renderedWidth = showCollapsedDims ? 0 : visualWidth;
+  const contentOpacity = showCollapsedDims ? 0 : 1;
+
+  const handle = (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-valuemin={minWidth}
+      aria-valuemax={maxWidth}
+      aria-valuenow={width}
+      aria-controls={id}
+      tabIndex={0}
+      onMouseDown={onMouseDown}
+      onTouchStart={onTouchStart}
+      onKeyDown={onKeyDown}
+      className={cn(
+        // Wider hit area (8px) for easier grabbing; visual bar centered inside.
+        'absolute top-0 bottom-0 w-2 cursor-col-resize z-10 group/handle',
+        side === 'right' ? '-right-1' : '-left-1',
+        'focus-visible:outline-none',
+      )}
+    >
+      <div
+        className={cn(
+          // Single neutral 1px bar; opacity is the only thing that changes.
+          // Linear/Notion-style: invisible at rest, subtle on hover, slightly stronger while dragging.
+          'pointer-events-none absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px bg-foreground/30 transition-opacity duration-150',
+          isDragging ? 'opacity-100' : 'opacity-0 group-hover/handle:opacity-60',
+        )}
+      />
+    </div>
+  );
 
   return (
     <aside
       className={cn(
         'relative shrink-0 overflow-hidden',
         // Disable the smooth transition during active drag — the cursor drives width directly.
-        isDragging ? '' : 'transition-[width,opacity] duration-200 ease-out motion-reduce:duration-0',
+        isDragging ? '' : 'transition-[width] duration-200 ease-out motion-reduce:duration-0',
         className,
       )}
-      style={{width: `${renderedWidth}px`, opacity: contentOpacity}}
+      style={{width: `${renderedWidth}px`}}
     >
-      {children}
       <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-valuemin={minWidth}
-        aria-valuemax={maxWidth}
-        aria-valuenow={width}
-        aria-controls={id}
-        tabIndex={0}
-        onMouseDown={onMouseDown}
-        onTouchStart={onTouchStart}
-        onKeyDown={onKeyDown}
-        title="Click to collapse · Drag to resize"
+        data-resizable-content
         className={cn(
-          // Wider hit area (8px) for easier grabbing; visual bar centered inside.
-          'absolute top-0 bottom-0 w-2 cursor-col-resize z-10 group/handle',
-          side === 'right' ? '-right-1' : '-left-1',
-          'focus-visible:outline-none',
+          'h-full transition-opacity ease-out motion-reduce:duration-0',
+          isClosing ? 'duration-100' : 'duration-150 delay-75',
         )}
+        style={{width: `${visualWidth}px`, opacity: contentOpacity}}
       >
-        <div
-          className={cn(
-            // Single neutral 1px bar; opacity is the only thing that changes.
-            // Linear/Notion-style: invisible at rest, subtle on hover, slightly stronger while dragging.
-            'pointer-events-none absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px bg-foreground/30 transition-opacity duration-150',
-            isDragging ? 'opacity-100' : 'opacity-0 group-hover/handle:opacity-60',
-          )}
-        />
+        {children}
       </div>
+      {tooltipLabel ? (
+        <Tooltip delayDuration={400}>
+          <TooltipTrigger asChild>{handle}</TooltipTrigger>
+          <TooltipContent side={side === 'right' ? 'right' : 'left'} className="flex items-center gap-2">
+            <span>{tooltipLabel}</span>
+            {shortcut ? <KbdBadge keys={shortcut} /> : null}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        handle
+      )}
     </aside>
   );
 };

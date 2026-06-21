@@ -58,7 +58,6 @@ import {
   useRunReviewers,
 } from '@/hooks/runs';
 import {ConsensusPanel} from '@/components/runs/ConsensusPanel';
-import {ReviewerProgressBadge} from '@/components/runs/ReviewerProgressBadge';
 
 // Components
 import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
@@ -85,9 +84,9 @@ const SCROLL_CONTAINERS_TO_PRESERVE = [
 export default function ExtractionFullScreen() {
   const { projectId, articleId } = useParams();
   const navigate = useNavigate();
-  // App navigation sidebar (provided by RunWorkspaceShell) — wired to the
-  // RunHeader.SidebarToggle + ⌘B.
-  const { sidebarCollapsed, toggleSidebar } = useSidebar();
+  // App navigation sidebar (provided by RunWorkspaceShell). SidebarToggle + ⌘B
+  // collapse the desktop sidebar (lg+); toggleMobile opens the drawer below lg.
+  const { sidebarCollapsed, toggleSidebar, toggleMobile } = useSidebar();
 
   // ONE stable viewer store shared between the PDF panel and the form panel.
   // useState lazy initializer creates the store exactly once per mount —
@@ -1196,6 +1195,7 @@ export default function ExtractionFullScreen() {
         onBack={handleBack}
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={toggleSidebar}
+        onOpenMobileNav={toggleMobile}
         articles={articles}
         currentArticleId={articleId || ''}
         onNavigateToArticle={handleNavigateToArticle}
@@ -1270,26 +1270,18 @@ export default function ExtractionFullScreen() {
         </div>
       ) : null}
 
-      {/* HITL revision/finalized status badges — now shown inline below header,
-          without the orphaned banner wrapper. Reopen moved to header Menu.
-          ReviewerProgressBadge stays here (it's informational, not an action). */}
-      {(parentRunId || (!activeRunId && finalizedRun) || runDetail) ? (
+      {/* HITL revision/finalized status badges. Only rendered when there is a
+          badge to show (revision or published) — otherwise this bordered strip
+          was an empty bar. The "N/M reviewers" counter that used to live here
+          was redundant with the header's Reviewers slot and always read "1/1"
+          in the single-reviewer default, so it has been removed. */}
+      {(parentRunId || isFinalized || (!activeRunId && finalizedRun)) ? (
         <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2 text-xs">
           <HITLStatusBadges
             kind="extraction"
             finalized={isFinalized || (!activeRunId && !!finalizedRun)}
             parentRunId={parentRunId}
           />
-          {runDetail && stage !== 'proposal' ? (
-            // Reviewer decisions only exist from REVIEW onward; showing the
-            // counter during PROPOSAL always read "0/N" and confused users
-            // who were actively filling the form.
-            <ReviewerProgressBadge
-              reviewerCount={reviewerSummary.reviewers.length}
-              requiredReviewerCount={reviewerSummary.requiredReviewerCount}
-              divergentCount={reviewerSummary.divergentCoords.size}
-            />
-          ) : null}
         </div>
       ) : null}
 

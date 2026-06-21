@@ -1,10 +1,10 @@
 ---
 status: stable
-last_reviewed: 2026-05-24
+last_reviewed: 2026-06-21
 owner: '@raphaelfh'
 ---
 
-> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-06-21 · Owner: @raphaelfh
 
 # Side Panels — Design System
 
@@ -20,7 +20,9 @@ This document is the **single source of truth** for any side panel in Prumo: the
   - **Drag** → resize within `[minWidth, maxWidth]`.
   - **Snap-collapse**: releasing below a snap threshold auto-collapses the panel.
   - Cursor is `col-resize` on hover.
-  - Tooltip after 600 ms hover: `Click to collapse <shortcut> · Drag to resize`.
+  - Shared Radix tooltip (not a native `title`) on hover **and** keyboard focus,
+    ~400 ms delay: `Click to collapse · Drag to resize` plus the toggle shortcut
+    chip (e.g. `⌘B`). The label is supplied by the caller via copy.
 - **Keyboard:** every persistent panel has a toggle shortcut. The main sidebar uses `⌘B` (industry standard). Secondary panels define their own (e.g. `⌘\` for an inspector).
 - **Persistence:** width and collapsed state persist in `localStorage` under `prumo:<panel-id>:{width,collapsed}`. Cross-tab sync via the `storage` event.
 
@@ -42,7 +44,7 @@ Anything new must declare these four values explicitly in its `<ResizablePanel>`
 | Border | `border-border/40` |
 | Header height | `h-12` (48 px) with `border-b border-border/40` |
 | Footer | `border-t border-border/40`, padding `p-2` |
-| Width transition | `transition-[width] duration-200 ease-out` |
+| Panel motion | Symmetric on **both** expand and collapse — the same motion in reverse. Width leads on the `aside` (`transition-[width] duration-200 ease-out`); the content fades on the inner wrapper (`duration-150 delay-75` on expand so it trails the width, `duration-100` on collapse so it leads). The inner content keeps a fixed width (= open width) and is clipped by `overflow-hidden`, so rows slide/clip cleanly instead of squishing. `motion-reduce:duration-0` both ways; no entry animation on first mount. |
 
 ## 4. Nav item rules
 
@@ -70,7 +72,19 @@ Anything new must declare these four values explicitly in its `<ResizablePanel>`
 - Component:
   - **Chord** (keys pressed simultaneously): `<KbdBadge keys={["mod","B"]} />` renders as a single chip `⌘B`.
   - **Sequence** (keys pressed one after the other): `<KbdBadge keys={["G","A"]} variant="sequence" />` renders as two adjacent chips `[G] [A]` (Linear/Plane style — no separator).
-- Always visible, never hover-only — passive learning is the goal.
+- **Goal: passive learning** — shortcuts stay discoverable without cluttering the rail.
+- **Mechanism (primary nav rail): reveal on hover *and* keyboard focus.** The chip
+  is hidden at rest (`opacity-0`) and revealed via `group-hover:opacity-100
+  group-focus-visible:opacity-100 transition-opacity duration-75`. Focus parity is
+  mandatory — `:hover` alone strands keyboard users; never hide the binding from
+  assistive tech (the item keeps `aria-keyshortcuts`). This is the 2025–26
+  Linear/Plane/WorkOS default; always-visible inline chips read as toolbar-era.
+- **Always-on surface: the command palette.** Echo each binding right-aligned in
+  ⌘K results so users who never hover still learn it. (This is what keeps passive
+  learning alive after moving the rail chips to reveal-on-hover.)
+- Apply ONE chip-visibility rule across `SidebarNavItem`, `UserMenu`, and
+  `SidebarHeader`; persistent-context chips outside the scrollable nav rail (the
+  switcher and footer) may stay visible since they are not row-dense.
 - Detect macOS via `lib/platform.ts#isMac()` and substitute `⌘` ↔ `Ctrl`.
 - `aria-hidden="true"` (the parent item carries `aria-keyshortcuts`, e.g. `"G P"` for a sequence).
 
