@@ -339,3 +339,36 @@ async def test_form_runs_returns_403_for_non_member(
     }
     resp = await db_client.post(f"{_ARTICLES_URL}/form-runs", json=body)
     assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_form_runs_scopes_resolution_to_body_project_id(
+    db_client: AsyncClient,
+    db_session: AsyncSession,  # noqa: ARG001
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """BOLA: runs are resolved only within the body's project_id.
+
+    Confused-deputy regression. ``primary_profile`` is a member of BOTH
+    projects, so claiming ``secondary_project`` passes the membership gate.
+    The article's run lives in ``primary_project``; scoping the resolver by
+    ``project_id`` must therefore return ``run_id=None`` instead of leaking
+    the cross-project run id. Before the fix ``resolve_form_runs`` filtered
+    only on ``article_ids``+``template_id`` and returned the foreign run.
+    """
+    created = await _create_extraction_run(db_client)  # run in primary_project
+    assert created["id"]
+    article_id = str(SEED.primary_article)
+
+    body = {
+        "article_ids": [article_id],
+        "template_id": str(SEED.primary_template),
+        "project_id": str(SEED.secondary_project),  # claimed project != run's project
+    }
+    resp = await db_client.post(f"{_ARTICLES_URL}/form-runs", json=body)
+    assert resp.status_code == 200, resp.text
+
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert data[0]["article_id"] == article_id
+    assert data[0]["run_id"] is None, "a run from another project must not leak"

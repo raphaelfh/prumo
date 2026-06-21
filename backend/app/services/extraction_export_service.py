@@ -430,7 +430,7 @@ class ExtractionExportService(LoggerMixin):
         map and returns a fully-populated ``ExportLayout``. Columns are
         anchored on the active-version snapshot (spec §5.1).
         """
-        template, version = await self._load_active_template_version(template_id)
+        template, version = await self._load_active_template_version(template_id, project_id)
         project_name = await self._resolve_project_name(project_id)
         sections = await self._load_sections(version.id)
         data_dictionary = _build_data_dictionary(sections)
@@ -734,11 +734,22 @@ class ExtractionExportService(LoggerMixin):
     async def _load_active_template_version(
         self,
         template_id: UUID,
+        project_id: UUID,
     ) -> tuple[ProjectExtractionTemplate, Any]:
-        """Load the project template + its currently-active version row."""
+        """Load the project template + its currently-active version row.
+
+        Scoped by ``project_id`` (defense-in-depth, mirroring the reviewer
+        picker query): a template id belonging to another project must not
+        resolve here even though the caller passed our own project's
+        membership gate — otherwise the async export path would build and
+        upload a workbook carrying a foreign project's template metadata.
+        """
         template = (
             await self.db.execute(
-                select(ProjectExtractionTemplate).where(ProjectExtractionTemplate.id == template_id)
+                select(ProjectExtractionTemplate).where(
+                    ProjectExtractionTemplate.id == template_id,
+                    ProjectExtractionTemplate.project_id == project_id,
+                )
             )
         ).scalar_one_or_none()
         if template is None:

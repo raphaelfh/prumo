@@ -574,6 +574,7 @@ async def resolve_form_runs(
     db: AsyncSession,
     article_ids: list[UUID],
     *,
+    project_id: UUID,
     template_id: UUID,
 ) -> list[ArticleRunRef]:
     """Resolve the latest relevant run per article for the extraction form.
@@ -582,6 +583,11 @@ async def resolve_form_runs(
     - Per article: latest non-terminal run; else latest finalized run.
     - Cancelled runs are excluded.
     - Returns one ArticleRunRef per input article_id (run_id=None when no run).
+
+    Scoped by ``project_id`` (BOLA): the caller's membership is gated on
+    ``project_id``, so runs must be resolved within that project. Without this
+    filter a member of project P could pass ``article_ids`` belonging to a
+    different project Q and read back Q's run ids (confused-deputy IDOR).
     """
     if not article_ids:
         return []
@@ -592,6 +598,7 @@ async def resolve_form_runs(
     stmt = (
         select(ExtractionRun)
         .where(
+            ExtractionRun.project_id == project_id,
             ExtractionRun.article_id.in_(article_ids),
             ExtractionRun.template_id == template_id,
             ExtractionRun.kind == "extraction",
