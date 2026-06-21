@@ -36,4 +36,16 @@ describe('RunHeader.PrimaryAction', () => {
     const { container } = render(<RunHeader value={{ ...base, transition: null }}><RunHeader.Right><RunHeader.PrimaryAction /></RunHeader.Right></RunHeader>);
     expect(container.querySelector('button')).toBeNull();
   });
+  it('shows the transition tooltip on focus when provided', async () => {
+    render(
+      <RunHeader value={{ ...base, transition: { to: 'consensus', label: 'Mark ready →', tooltip: 'Mark ready and open next', gate: { ok: true }, onAdvance: () => {} } }}>
+        <RunHeader.Right><RunHeader.PrimaryAction /></RunHeader.Right>
+      </RunHeader>,
+    );
+    const btn = screen.getByRole('button', { name: 'Mark ready →' });
+    btn.focus();
+    // Radix renders tooltip text twice (visible + a11y mirror) — assert ≥1.
+    const matches = await screen.findAllByText('Mark ready and open next');
+    expect(matches.length).toBeGreaterThan(0);
+  });
 });

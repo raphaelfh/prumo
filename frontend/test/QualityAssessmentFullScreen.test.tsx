@@ -33,6 +33,7 @@ vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
 }));
 
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
+import { SidebarProvider } from "@/contexts/SidebarContext";
 import QualityAssessmentFullScreen from "@/pages/QualityAssessmentFullScreen";
 
 const mockedPermissions = vi.mocked(useComparisonPermissions);
@@ -213,7 +214,11 @@ function renderPage(path = "/projects/p1/articles/a1/quality-assessment/tpl-1") 
         <Routes>
           <Route
             path="/projects/:projectId/articles/:articleId/quality-assessment/:templateId"
-            element={<QualityAssessmentFullScreen />}
+            element={
+              <SidebarProvider>
+                <QualityAssessmentFullScreen />
+              </SidebarProvider>
+            }
           />
         </Routes>
       </MemoryRouter>

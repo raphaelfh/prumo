@@ -71,6 +71,31 @@ entity *noun* is banned. A copy regression guard
 change set live in
 `docs/superpowers/specs/archive/2026-06-20-governance-sweep/2026-05-30-run-user-facing-vocabulary-design.md`.
 
+### 2.2 Stage (DB) vs user-facing phase
+
+The `extraction_run_stage` values
+(`pending` / `proposal` / `review` / `consensus` / `finalized` / `cancelled`)
+are the **internal lifecycle**, NOT the model end users see. The UI presents
+**three phases**:
+
+| User-facing phase | DB stage(s) |
+| --- | --- |
+| **Extract** | `pending`, `proposal`, `review` |
+| **Consensus** | `consensus` |
+| **Finalized** | `finalized` |
+
+Key glossary point: **`review` is not peer review.** It means *reviewing the AI
+suggestions within one's OWN extraction*, and is reached via an invisible
+`proposal → review` auto-advance (`useAutoAdvanceToReview`) the instant the Run
+has content worth reviewing — there is no user action between `proposal` and
+`review`. The shared RunHeader therefore folds `proposal` + `review` into a
+single **Extract** node, so the rail reads Extract → Consensus → Finalized.
+The primary action is one role/phase-aware control: **"Mark ready →"** in
+Extract (advances to consensus; available to every extractor since
+`POST /runs/{id}/advance` is membership-gated) and **"Finalize"** in Consensus
+(manager / consensus only). Design:
+`docs/superpowers/specs/2026-06-20-extraction-header-refinement-design.md`.
+
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:

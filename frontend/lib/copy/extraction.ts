@@ -552,9 +552,10 @@ export const extraction = {
     noModelsAdded: 'No models added',
     noModelsAddedDesc: 'Add a model manually or extract it automatically from the article.',
     // RunHeader (extraction-specific keys — shared header keys now live in the runs namespace)
-    runHeaderSubmitForReview: 'Submit for review',
-    runHeaderReconcile: 'Reconcile',
+    runHeaderMarkReady: 'Mark ready →',
+    runHeaderMarkReadyTooltip: 'Mark this extraction ready for consensus and open the next article.',
     runHeaderFinalize: 'Finalize',
+    runHeaderFinalizeTooltip: 'Lock and publish the agreed values.',
     runHeaderGateBlocked: 'Complete the required fields first',
     runHeaderCompareToggle: 'Compare reviewers',
     runHeaderReopenForRevision: 'Reopen for revision',

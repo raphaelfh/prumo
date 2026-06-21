@@ -9,7 +9,7 @@
  * @component
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type UserRole } from '@/lib/comparison/permissions';
 import { RunHeader, type RunHeaderValue, type StageTransition } from '@/components/runs/header';
@@ -30,6 +30,10 @@ export interface ExtractionHeaderProps {
   projectName: string;
   articleTitle: string;
   onBack: () => void;
+
+  // App sidebar collapse state + toggle (focus-shell wiring for ⌘B).
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 
   // Article navigation
   articles: Article[];
@@ -122,6 +126,8 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     projectName,
     articleTitle,
     onBack,
+    sidebarCollapsed,
+    onToggleSidebar,
     articles,
     currentArticleId,
     onNavigateToArticle,
@@ -157,18 +163,49 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
   // ---- Cmd-K palette state ----
   const [paletteOpen, setPaletteOpen] = useState(false);
 
-  // Global ⌘K / Ctrl+K toggle — cleanup via return, NOT try/finally (React Compiler).
+  // Header keyboard shortcuts (documented in the "?" Help panel). The changing
+  // callbacks/lists live in a ref so the listener registers ONCE (empty deps)
+  // rather than re-binding every render. Cleanup via return, NOT try/finally
+  // (React Compiler). ⌘B (sidebar) is owned by the RunWorkspaceShell, not here.
+  const kbdRef = useRef({ articles, currentArticleId, onNavigateToArticle, onTogglePDF });
+  useEffect(() => {
+    kbdRef.current = { articles, currentArticleId, onNavigateToArticle, onTogglePDF };
+  }, [articles, currentArticleId, onNavigateToArticle, onTogglePDF]);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return;
+      const { articles, currentArticleId, onNavigateToArticle, onTogglePDF } = kbdRef.current;
       const target = e.target as HTMLElement;
       const isEditing =
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
         target.isContentEditable;
-      if (isEditing) return;
-      e.preventDefault();
-      setPaletteOpen((prev) => !prev);
+      // ⌘K / Ctrl+K — toggle the command palette.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        if (isEditing) return;
+        e.preventDefault();
+        setPaletteOpen((prev) => !prev);
+        return;
+      }
+      // Remaining shortcuts are unmodified single keys, never while typing.
+      if (e.metaKey || e.ctrlKey || e.altKey || isEditing) return;
+      if (e.key === 'Escape') {
+        setPaletteOpen(false);
+        return;
+      }
+      if (e.key === '\\') {
+        e.preventDefault();
+        onTogglePDF();
+        return;
+      }
+      if (articles.length > 1 && (e.key === 'j' || e.key === 'J')) {
+        const i = articles.findIndex((a) => a.id === currentArticleId);
+        if (i >= 0 && i < articles.length - 1) onNavigateToArticle(articles[i + 1].id);
+        return;
+      }
+      if (articles.length > 1 && (e.key === 'k' || e.key === 'K')) {
+        const i = articles.findIndex((a) => a.id === currentArticleId);
+        if (i > 0) onNavigateToArticle(articles[i - 1].id);
+      }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => {
@@ -227,6 +264,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
       <div className="@container/headerbar">
         <RunHeader value={headerValue}>
           <RunHeader.Left>
+            <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={onToggleSidebar} />
             <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName, onClick: () => navigate(`/projects/${props.projectId}`) }, { label: articleTitle }]} />
             {articles.length > 1 && (
               <RunHeader.Worklist
@@ -235,6 +273,11 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 onNavigate={onNavigateToArticle}
               />
             )}
+            <RunHeader.Save
+              state={saveState ?? 'idle'}
+              lastSavedAt={lastSavedAt}
+              hidden={stage === 'finalized'}
+            />
             {stage != null && <RunHeader.StageRail />}
           </RunHeader.Left>
 
@@ -244,15 +287,6 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
           </RunHeader.Center>
 
           <RunHeader.Right>
-            {/* Cmd-K hint chip — always visible, opens palette on click */}
-            <button
-              type="button"
-              onClick={() => setPaletteOpen(true)}
-              className="hidden @[48rem]/headerbar:flex items-center gap-1 rounded border border-border/60 bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted transition-colors"
-              aria-label={t('runs', 'commandPaletteOpen')}
-            >
-              <kbd className="font-sans">⌘K</kbd>
-            </button>
             <RunHeader.AIActions
               pendingCount={aiPendingCount}
               canExtract={!!(canRunAI && onExtractWithAI)}
@@ -260,13 +294,9 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
               onExtract={onExtractWithAI ?? (() => {})}
               onOpenSuggestions={props.onAISuggestionsClick}
             />
-            <RunHeader.PanelToggle pressed={showPDF} onToggle={onTogglePDF} />
-            <RunHeader.Save
-              state={saveState ?? 'idle'}
-              lastSavedAt={lastSavedAt}
-              hidden={stage === 'finalized'}
-            />
             <RunHeader.PrimaryAction />
+            <span className="mx-1 h-5 w-px bg-border/60" aria-hidden="true" />
+            <RunHeader.Help />
             <RunHeader.Menu>
               {hasComparison && (
                 <RunHeader.MenuItem onSelect={() => onViewModeChange(viewMode === 'compare' ? 'extract' : 'compare')}>
@@ -281,6 +311,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 </RunHeader.MenuItem>
               )}
             </RunHeader.Menu>
+            <RunHeader.PanelToggle pressed={showPDF} onToggle={onTogglePDF} />
           </RunHeader.Right>
         </RunHeader>
       </div>
