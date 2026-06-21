@@ -14,7 +14,15 @@ This document is the **single source of truth** for any side panel in Prumo: the
 
 ## 1. Behavior model
 
-- **Show / hide is binary.** A panel is fully visible OR fully hidden (`display: none`). No mini icon-only state.
+- **Show / hide is binary for the persisted preference.** The saved state is just
+  open/closed. The **main sidebar** additionally renders, while collapsed, a
+  **56 px mini-rail with a hover/focus peek** that overlays content at the full
+  256 px width. The peek is **transient** — never persisted, never cross-tab
+  synced — and is rendered by a separate `SidebarRail` sibling, not by
+  `ResizablePanel` (whose collapsed state stays a true unmount,
+  `display:none`-equivalent). Pinning open (⌘B) is the normal expand; it pushes
+  content, the peek only overlays. Secondary panels and the per-article focus
+  shell stay strictly binary — the shell collapses to width 0 for max canvas.
 - **Resizable with limits.** Every persistent panel exposes a 4 px drag handle on its outer edge.
   - **Click** → toggle collapse.
   - **Drag** → resize within `[minWidth, maxWidth]`.
@@ -36,6 +44,10 @@ This document is the **single source of truth** for any side panel in Prumo: the
 
 Anything new must declare these four values explicitly in its `<ResizablePanel>` props.
 
+The main sidebar's collapsed **mini-rail is 56 px** (`w-14`); its hover/focus
+**peek overlays at 256 px** (`w-64`). These are not `ResizablePanel` widths — the
+rail is a separate `SidebarRail` component (see §1, §4).
+
 ## 3. Visual tokens
 
 | Aspect | Token / value |
@@ -45,6 +57,7 @@ Anything new must declare these four values explicitly in its `<ResizablePanel>`
 | Header height | `h-12` (48 px) with `border-b border-border/40` |
 | Footer | `border-t border-border/40`, padding `p-2` |
 | Panel motion | Symmetric on **both** expand and collapse — the same motion in reverse. Width leads on the `aside` (`transition-[width] duration-200 ease-out`); the content fades on the inner wrapper (`duration-150 delay-75` on expand so it trails the width, `duration-100` on collapse so it leads). The inner content keeps a fixed width (= open width) and is clipped by `overflow-hidden`, so rows slide/clip cleanly instead of squishing. `motion-reduce:duration-0` both ways; no entry animation on first mount. |
+| Mini-rail / peek | Rail 56 px (`w-14`); peek 256 px (`w-64`) overlay with `shadow-elev-popover`, `transition-[width,box-shadow] duration-[180ms] ease-out`. The 56 px aside clips a fixed 256 px inner (`overflow-hidden`) so rows never reflow; labels/titles reveal via `group-data-[peek=closed]/rail:opacity-0` on the shared content. Hover-in 120 ms, hover-out grace 250 ms; `motion-reduce:duration-0`. |
 
 ## 4. Nav item rules
 
@@ -60,6 +73,12 @@ Anything new must declare these four values explicitly in its `<ResizablePanel>`
 | Inactive | `text-muted-foreground/80 hover:bg-muted/50 hover:text-foreground` |
 | Hover transition | `duration-75` |
 | Active state aria | `aria-current="page"` |
+
+**Collapsed mini-rail variant:** the same nav rows render icon-only at 56 px —
+icon at the left gutter; label, shortcut chip, and section titles hidden via
+`group-data-[peek=closed]/rail:opacity-0` and revealed on peek. It reuses the
+shared `SidebarContent` (one set of focusable buttons — the peek does not
+duplicate the nav), so active-state, copy, and shortcut wiring never drift.
 
 ## 5. Section title rules
 
@@ -104,6 +123,11 @@ All shortcut handlers MUST use the shared `useKeyboardShortcuts` hook so input-f
 - Drag handle: `role="separator" aria-orientation="vertical" aria-controls={panelId} aria-valuemin aria-valuemax aria-valuenow`. Arrow keys adjust ±16 px when focused; Enter/Space toggles collapse.
 - Focus management: collapsing via shortcut returns focus to the topbar toggle; expanding moves focus to the first nav item.
 - Reduced motion: when `prefers-reduced-motion: reduce`, all transitions become `duration-0`.
+- Mini-rail peek (WCAG 1.4.13): keyboard **focus** within the rail opens the peek
+  (focus parity — never hover-only); **Esc** dismisses it without moving the
+  pointer (Dismissable); the 250 ms hover-out grace lets the cursor travel from
+  the rail into the floating panel without it vanishing (Hoverable/Persistent).
+  Collapsed rail glyphs keep `aria-current` and `aria-keyshortcuts`.
 
 ## 9. When you build a new panel
 

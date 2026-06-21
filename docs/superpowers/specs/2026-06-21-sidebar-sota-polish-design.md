@@ -181,8 +181,39 @@ across `SidebarNavItem`, `UserMenu`, `SidebarHeader`.
 
 ## Out of scope
 
-- Mini/icon-rail "hover-peek" collapsed mode (SOTA P2) — natural next
-  step after this ships.
+- Mini/icon-rail "hover-peek" collapsed mode (SOTA P2) — delivered as a
+  follow-up, see below.
 - Re-baselining the run-page `SectionNavRail` active idiom (only
   required if Direction C were chosen; A leaves it alone).
 - Any backend / data-path change.
+
+## Follow-up: hover-peek mini-rail (approved 2026-06-21)
+
+Approved decisions (mockup + selection): **transient overlay** (not a
+state-model change), **main sidebar only**, **explicit ⌘B/click pin**.
+
+- **State model.** `sidebarCollapsed` stays binary; the rail is a third
+  *visual* state shown only while collapsed. No tri-state enum, no storage
+  migration — the persist invariant (and the focus-shell width-0 path)
+  are untouched.
+- **Components.** `SidebarRail` (56 px in-flow slot + an absolute overlay
+  that widens to 256 px on peek, clipping a fixed-256 inner) hosts the
+  shared `SidebarContent` (extracted from `ProjectSidebar`). `useSidebarPeek`
+  owns the hover-in (120 ms) / hover-out grace (250 ms) + focus + Esc.
+  Rail-aware classes (`group-data-[peek=closed]/rail:opacity-0`) on the
+  content's label/chip/title degrade it to icon-only when collapsed and are
+  inert in the full sidebar.
+- **Surfaces.** `ProjectSidebar` gains a `rail` prop; `ProjectLayout` sets it,
+  `RunWorkspaceShell` does not (focus shell keeps width-0).
+- **Pin.** ⌘B / the topbar toggle flips `sidebarCollapsed` (rail ⇆ full,
+  pushing content); hover/focus peek never writes the preference.
+- **A11y.** Focus opens the peek, Esc dismisses, 250 ms grace makes it
+  Hoverable (WCAG 1.4.13); `aria-keyshortcuts`/`aria-current` preserved.
+- **Spec.** Amended `sidebar-and-panels.md` §1 (mini-rail allowed, peek
+  transient), §2 (56/256), §3 (peek motion), §4 (icon-rail variant), §8
+  (WCAG 1.4.13).
+- **Tests.** `useSidebarPeek` (timers/focus/Esc), `SidebarRail`
+  (collapsed default, focus-opens/Esc-closes, hover-in delay).
+
+Out of scope for this follow-up: animating the rail⇆full *pin* width (it is
+an instant swap; only the peek animates).

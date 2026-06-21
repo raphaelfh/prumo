@@ -66,13 +66,13 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
                 {(projectName || 'P')[0].toUpperCase()}
               </span>
             </div>
-            <div className="min-w-0 flex-1 text-left">
+            <div className="min-w-0 flex-1 text-left transition-opacity group-data-[peek=closed]/rail:opacity-0">
               <h2 className="text-[13px] font-medium truncate text-foreground/80">
                 {projectName || t('layout', 'defaultProjectName')}
               </h2>
             </div>
-            <ChevronDown className="h-3 w-3 text-muted-foreground/50" />
-            <KbdBadge keys={['G', 'P']} variant="sequence" className="ml-1" />
+            <ChevronDown className="h-3 w-3 text-muted-foreground/50 transition-opacity group-data-[peek=closed]/rail:opacity-0" />
+            <KbdBadge keys={['G', 'P']} variant="sequence" className="ml-1 transition-opacity group-data-[peek=closed]/rail:opacity-0" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-[260px] p-1 shadow-elev-popover border-border/50">

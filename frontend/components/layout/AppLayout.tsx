@@ -64,6 +64,7 @@ export const ProjectLayout: React.FC<AppLayoutProps> = ({children, className}) =
 
       <div className="flex flex-1 overflow-hidden">
         <ProjectSidebar
+          rail
           activeTab={activeTab}
           onTabChange={changeTab}
           projectName={project?.name}
