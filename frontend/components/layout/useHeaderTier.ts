@@ -13,6 +13,14 @@ function tierForWidth(w: number): HeaderTier {
   return 'spacious';
 }
 
+/**
+ * Returns the responsive tier for a header element based on its observed width.
+ *
+ * @param ref - A STABLE React ref (created once with `useRef`). The effect
+ *   depends on `ref` object identity: if you pass a new object each render
+ *   (e.g. `{ current: el }` inline), the ResizeObserver will disconnect and
+ *   reconnect on every render. Always pass a ref produced by `useRef`.
+ */
 export function useHeaderTier(ref: React.RefObject<HTMLElement | null>): HeaderTier {
   const [tier, setTier] = React.useState<HeaderTier>('spacious');
   React.useEffect(() => {
