@@ -114,3 +114,38 @@ async def test_confirm_does_not_swallow_enqueue_failure(
     ).scalar_one()
     await db_session.refresh(row)
     assert row.extraction_status == "parse_failed"
+
+
+@pytest.mark.asyncio
+async def test_reparse_resets_status_and_enqueues(
+    db_client: AsyncClient, db_session: AsyncSession, member_article
+) -> None:
+    project_id, _, article_id = member_article
+    file = ArticleFile(
+        project_id=project_id,
+        article_id=article_id,
+        file_type="PDF",
+        storage_key=f"{project_id}/{article_id}/old.pdf",
+        extraction_status="parse_failed",
+        extraction_error="boom",
+    )
+    db_session.add(file)
+    await db_session.commit()
+
+    with patch(
+        "app.api.v1.endpoints.article_files.ArticleFileIngestService.enqueue_parse_at_ingest",
+        return_value="task-9",
+    ) as enq:
+        res = await db_client.post(f"/api/v1/article-files/{file.id}/reparse")
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["extractionStatus"] == "pending"
+    enq.assert_called_once()
+    await db_session.refresh(file)
+    assert file.extraction_status == "pending"
+    assert file.extraction_error is None
+
+
+@pytest.mark.asyncio
+async def test_reparse_missing_file_404(db_client: AsyncClient) -> None:
+    res = await db_client.post(f"/api/v1/article-files/{uuid4()}/reparse")
+    assert res.status_code == 404, res.text

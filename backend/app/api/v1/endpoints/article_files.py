@@ -21,6 +21,10 @@ from app.repositories.article_repository import ArticleFileRepository
 from app.schemas.article import ArticleFileResponse, ConfirmUploadRequest
 from app.schemas.common import ApiResponse
 from app.services.article_file_ingest_service import ArticleFileIngestService
+from app.services.article_text_block_read_service import (
+    ArticleFileNotFoundError,
+    get_article_file_project_id,
+)
 from app.services.citation_read_service import ArticleNotFoundError, get_article_project_id
 
 logger = get_logger(__name__)
@@ -78,6 +82,53 @@ async def confirm_article_file_upload(
     except Exception as exc:  # do NOT swallow — surface so the user can retry
         logger.warning(
             "article_file_enqueue_failed",
+            trace_id=trace_id,
+            article_file_id=str(article_file.id),
+            error=str(exc),
+        )
+        article_file.extraction_status = "parse_failed"
+        article_file.extraction_error = f"enqueue failed: {exc}"[:500]
+        await db.commit()
+        raise HTTPException(
+            status_code=503, detail="Failed to schedule parsing; please retry"
+        ) from exc
+
+    return ApiResponse.success(ArticleFileResponse.model_validate(article_file), trace_id=trace_id)
+
+
+@router.post("/article-files/{article_file_id}/reparse")
+async def reparse_article_file(
+    article_file_id: UUID,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse[ArticleFileResponse]:
+    """Re-enqueue a parse for an existing ArticleFile (recovery)."""
+    trace_id = _trace(request)
+    try:
+        project_id = await get_article_file_project_id(db, article_file_id)
+    except ArticleFileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    await ensure_project_member(db, project_id, current_user_sub)
+
+    article_file = await ArticleFileRepository(db).get_by_id(article_file_id)
+    if article_file is None:  # defensive — gate already resolved the project
+        raise HTTPException(status_code=404, detail="Article file not found")
+    article_file.extraction_status = "pending"
+    article_file.extraction_error = None
+    await db.commit()
+    await db.refresh(article_file)
+
+    try:
+        ArticleFileIngestService().enqueue_parse_at_ingest(
+            article_file_id=article_file.id,
+            project_id=project_id,
+            user_id=str(current_user_sub),
+            trace_id=trace_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "article_file_reparse_enqueue_failed",
             trace_id=trace_id,
             article_file_id=str(article_file.id),
             error=str(exc),
