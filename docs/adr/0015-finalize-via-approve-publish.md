@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-06-21
+last_reviewed: 2026-06-22
 owner: '@raphaelfh'
 adr_number: '0015'
 ---
@@ -70,8 +70,8 @@ phase/role-aware: **Mark ready** (reviewer, extract — sets the flag, no advanc
 (manager, consensus — `approve_and_finalize`, enabled only when complete and every
 divergence resolved). This resolves the two-Finalize-button split (I6); the
 `ConsensusPanel` becomes an evaluate-all surface and the legacy header
-`handleFinalize` is unwired (Phase 2 stops writing `instance.status`; full deletion
-is Phase 3).
+`handleFinalize` is unwired (Phase 2 stops writing `instance.status`; fully deleted
+in Phase 3 — see Consequences).
 
 **Per-coordinate consensus writes are role-gated at the API layer (kind-aware).**
 The standalone `POST /api/v1/runs/{id}/consensus` (`record_consensus`) — the
@@ -107,6 +107,14 @@ whole-branch review missed — `approve-finalize` was gated, but the older
 - **Neutral.** Published state remains sparse (only resolved coords). The header
   "Approve & finalize" gate is advisory; the backend gate is authoritative (a
   rejection surfaces as a toast).
+- **Phase 3 — legacy path + column removed.** The `instance.status` write was
+  unwired here in Phase 2; Phase 3 deletes the remainder: the `handleFinalize`
+  caller and `markInstancesCompleted`, the instance-status progress shortcut
+  (row progress is now field-completeness only), and the
+  `extraction_instances.status` column with its `extraction_instance_status`
+  enum (migration `0030_drop_instance_status`). The run lifecycle is owned
+  entirely by `extraction_runs`. Data loss is intentional and accepted; the
+  `downgrade` restores the schema but not the data (no backfill).
 
 ## Validation
 

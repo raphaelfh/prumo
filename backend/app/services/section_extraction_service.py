@@ -29,7 +29,6 @@ from app.models.extraction import (
     ExtractionEntityType,
     ExtractionEvidence,
     ExtractionInstance,
-    ExtractionInstanceStatus,
     ExtractionRun,
     ExtractionRunStage,
     ProjectExtractionTemplate,
@@ -1280,7 +1279,6 @@ class SectionExtractionService(LoggerMixin):
                     "ai_run_id": str(run.id),
                 },
                 created_by=UUID(self.user_id),
-                status=ExtractionInstanceStatus.PENDING.value,
             )
 
             instance = await self._instances.create(new_instance)

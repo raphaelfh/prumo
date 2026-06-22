@@ -2,7 +2,6 @@ export interface RawInstance {
   id: string;
   article_id: string | null;
   entity_type_id: string;
-  status?: string;
 }
 export interface RawState {
   instance_id: string;
@@ -22,7 +21,7 @@ export interface ArticleValueRow {
   value: unknown;
 }
 export interface ArticleProgressData {
-  instances: Array<{ id: string; entity_type_id: string; status?: string }>;
+  instances: Array<{ id: string; entity_type_id: string }>;
   values: ArticleValueRow[];
 }
 
@@ -78,7 +77,7 @@ export function buildArticleValueMap(
   for (const i of instances) {
     if (i.article_id == null) continue;
     const entry = map.get(i.article_id) ?? { instances: [], values: [] };
-    entry.instances.push({ id: i.id, entity_type_id: i.entity_type_id, status: i.status });
+    entry.instances.push({ id: i.id, entity_type_id: i.entity_type_id });
     map.set(i.article_id, entry);
   }
   for (const [instanceId, vals] of valuesByInstance) {

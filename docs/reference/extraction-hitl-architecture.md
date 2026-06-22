@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-06-21
+last_reviewed: 2026-06-22
 owner: '@raphaelfh'
 ---
 
@@ -98,13 +98,15 @@ flag via `POST /runs/{id}/ready` — it does **not** advance the run),
 consensus`), and **"Approve & finalize"** for a manager/consensus in Consensus
 (`POST /runs/{id}/approve-finalize` — publishes every agreed coord then advances,
 enabled only when complete and every divergence is resolved). The legacy header
-`instance.status` finalize path is retired. Design:
+`instance.status` finalize path is gone — its `extraction_instances.status` column
+and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
+`0030_drop_instance_status`); the run lifecycle lives solely on `extraction_runs`. Design:
 `docs/superpowers/specs/2026-06-21-hitl-lifecycle-alignment-design.md`.
 
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0029_reviewer_ready_flag` (post-squash numbering; run
+`0030_drop_instance_status` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 

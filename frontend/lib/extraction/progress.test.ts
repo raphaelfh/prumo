@@ -130,10 +130,9 @@ describe('computeRequiredFieldProgress', () => {
 
 describe('computeRowProgress (article/row level — shared by both list tables)', () => {
   const entityTypes = [et('e1', [field('f1', true), field('f2', true), field('opt', false)])];
-  const inst = (id: string, entityTypeId: string, status?: string) => ({
+  const inst = (id: string, entityTypeId: string) => ({
     id,
     entity_type_id: entityTypeId,
-    status,
   });
   const val = (instance_id: string, field_id: string, value: unknown) => ({
     instance_id,
@@ -162,12 +161,22 @@ describe('computeRowProgress (article/row level — shared by both list tables)'
     expect(pct).toBe(50); // denom = 2 required × 2 instances = 4; filled = 2
   });
 
-  it('all instances completed => 100% (terminal shortcut)', () => {
-    expect(computeRowProgress([inst('i1', 'e1', 'completed')], [], entityTypes)).toBe(100);
+  it('progress is field-completeness only — a legacy completed status no longer shortcuts to 100%', () => {
+    // Pre-Phase-3 the instance-status shortcut returned 100 here. The column is
+    // gone; progress derives solely from filled required fields, so an instance
+    // with no values is 0% regardless of any stray status the caller passes.
+    const rows = [{ id: 'i1', entity_type_id: 'e1', status: 'completed' }];
+    expect(computeRowProgress(rows, [], entityTypes)).toBe(0);
   });
 
-  it('rows without status never trigger the completed shortcut', () => {
-    expect(computeRowProgress([inst('i1', 'e1')], [], entityTypes)).toBe(0);
+  it('reaches 100% from field-completeness alone (instances carry no status)', () => {
+    expect(
+      computeRowProgress(
+        [inst('i1', 'e1')],
+        [val('i1', 'f1', { value: 'a' }), val('i1', 'f2', { value: 'b' })],
+        entityTypes,
+      ),
+    ).toBe(100);
   });
 
   it('QA fallback (no required fields) => instance-based, not a 0% flatline', () => {

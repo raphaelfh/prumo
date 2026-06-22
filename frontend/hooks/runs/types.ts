@@ -191,7 +191,6 @@ export interface RunViewInstanceResponse {
   parent_instance_id: string | null;
   label: string;
   sort_order: number;
-  status: string;
   metadata: Record<string, unknown>;
   project_id: string;
   article_id: string | null;

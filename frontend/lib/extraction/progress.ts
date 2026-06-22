@@ -149,8 +149,6 @@ export function computeRequiredFieldProgress(
 export interface ProgressInstanceRow {
   id: string;
   entity_type_id: string;
-  /** Optional — some list views don't fetch instance status. */
-  status?: string;
 }
 
 export interface ProgressValueRow {
@@ -166,10 +164,11 @@ export interface ProgressValueRow {
  * list-specific shortcuts:
  *
  * - no instances → 0%;
- * - every instance `status === 'completed'` → 100% (terminal; skipped when the
- *   rows carry no status — the field metric still reaches 100% when complete);
  * - templates with no required fields (e.g. some QA tools) fall back to
  *   instance-based progress so they don't flatline at 0%.
+ *
+ * Completion is field-completeness only — there is no per-instance status
+ * (the legacy `extraction_instances.status` column was removed in HITL Phase 3).
  *
  * It builds the `${instanceId}_${fieldId}` value map (unwrapping `{value}`
  * envelopes, treating empty as unfilled) and the true instance set per entity
@@ -181,7 +180,6 @@ export function computeRowProgress(
   entityTypes: ProgressEntityProjection[],
 ): number {
   if (instances.length === 0) return 0;
-  if (instances.every((i) => i.status === 'completed')) return 100;
 
   const hasRequired = entityTypes.some((et) => et.fields.some((f) => f.is_required));
   if (!hasRequired) {

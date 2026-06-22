@@ -5148,10 +5148,6 @@
             "title": "Sort Order",
             "type": "integer"
           },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
           "template_id": {
             "format": "uuid",
             "title": "Template Id",
@@ -5169,7 +5165,6 @@
           "parent_instance_id",
           "label",
           "sort_order",
-          "status",
           "metadata",
           "project_id",
           "article_id",

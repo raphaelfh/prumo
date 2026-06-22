@@ -96,6 +96,49 @@ async def test_migration_0002_round_trip(db_session: AsyncSession) -> None:
     assert enum_after is None, "extraction_source enum must be re-dropped"
 
 
+_COL_PRESENT = text(
+    "SELECT 1 FROM information_schema.columns "
+    "WHERE table_schema='public' AND table_name='extraction_instances' "
+    "AND column_name='status'"
+)
+_ENUM_PRESENT = text("SELECT 1 FROM pg_type WHERE typname = 'extraction_instance_status'")
+
+
+@pytest.mark.asyncio
+async def test_migration_0030_round_trip(db_session: AsyncSession) -> None:
+    """``0030_drop_instance_status`` removes ``extraction_instances.status`` and
+    its enum at head; ``downgrade -1`` restores the schema (column + enum, not
+    the data); ``upgrade head`` re-removes both. Guards against drift between a
+    fresh ``alembic upgrade head`` and ``baseline_v1.sql`` (which still ships the
+    legacy column)."""
+    assert (await db_session.execute(_COL_PRESENT)).scalar() is None, (
+        "extraction_instances.status must be absent at HEAD"
+    )
+    assert (await db_session.execute(_ENUM_PRESENT)).scalar() is None, (
+        "extraction_instance_status enum must be absent at HEAD"
+    )
+
+    _run_alembic("downgrade", "-1")
+    try:
+        await db_session.commit()
+        assert (await db_session.execute(_COL_PRESENT)).scalar() == 1, (
+            "downgrade must restore the status column"
+        )
+        assert (await db_session.execute(_ENUM_PRESENT)).scalar() == 1, (
+            "downgrade must recreate the extraction_instance_status enum"
+        )
+    finally:
+        _run_alembic("upgrade", "head")
+
+    await db_session.commit()
+    assert (await db_session.execute(_COL_PRESENT)).scalar() is None, (
+        "upgrade head must re-drop the status column"
+    )
+    assert (await db_session.execute(_ENUM_PRESENT)).scalar() is None, (
+        "upgrade head must re-drop the extraction_instance_status enum"
+    )
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision() -> None:
     """Pin the head revision id. If a future migration is added without
@@ -104,8 +147,8 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0029_reviewer_ready_flag" in out, (
-        f"Expected head revision '0029_reviewer_ready_flag', got:\n{out}"
+    assert "0030_drop_instance_status" in out, (
+        f"Expected head revision '0030_drop_instance_status', got:\n{out}"
     )
 
 

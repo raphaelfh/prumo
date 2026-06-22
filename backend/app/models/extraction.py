@@ -105,20 +105,6 @@ class ExtractionRunStatus(str, PyEnum):
     FAILED = "failed"
 
 
-class ExtractionInstanceStatus(str, PyEnum):
-    """
-    Status de uma instance de extraction.
-
-    Alinhado with o enum 'extraction_instance_status' in the PostgreSQL.
-    """
-
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    REVIEWED = "reviewed"
-    ARCHIVED = "archived"
-
-
 class ExtractionTemplateGlobal(BaseModel):
     """
     Template global de extraction (CHARMS, PICOS, etc.).
@@ -449,11 +435,6 @@ class ExtractionInstance(BaseModel):
         nullable=False,
     )
 
-    status: Mapped[str] = mapped_column(
-        PostgreSQLEnumType("extraction_instance_status"),
-        default=ExtractionInstanceStatus.PENDING.value,
-        nullable=False,
-    )
     is_template: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
 
     # Relationships

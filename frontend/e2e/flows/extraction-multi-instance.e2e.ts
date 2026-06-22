@@ -126,7 +126,6 @@ test.describe("Extraction multi-instance + all field types", () => {
         label: `Model #${idx}`,
         sort_order: idx,
         created_by: process.env.E2E_USER_ID!,
-        status: "pending",
         metadata: { variant: idx },
       }))
     );
@@ -152,7 +151,6 @@ test.describe("Extraction multi-instance + all field types", () => {
         label: "Single Study Summary",
         sort_order: 1,
         created_by: process.env.E2E_USER_ID!,
-        status: "pending",
         metadata: {},
       },
     ]);
