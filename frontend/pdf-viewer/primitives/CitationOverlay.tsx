@@ -64,7 +64,9 @@ export function CitationOverlay({pageNumber}: CitationOverlayProps) {
   // useEffect is allowed by React Compiler all_errors — no try/finally.
   useEffect(() => {
     if (isActiveOnThisPage && boxRef.current) {
-      boxRef.current.focus();
+      // preventScroll: the Viewer runs its own programmatic smooth-scroll to
+      // the citation; the default focus-scroll would fight it.
+      boxRef.current.focus({preventScroll: true});
     }
   }, [isActiveOnThisPage, activeCitationId]);
 

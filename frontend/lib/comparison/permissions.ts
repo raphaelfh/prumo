@@ -125,19 +125,3 @@ export function isValidUserRole(role: string): role is UserRole {
   return ['manager', 'reviewer', 'viewer', 'consensus'].includes(role);
 }
 
-/**
- * Returns readable label for role
- *
- * @param role - User role
- * @returns English label with emoji
- */
-export function getRoleLabel(role: UserRole): string {
-  const labels: Record<UserRole, string> = {
-      manager: '👑 Manager',
-      consensus: '⚖️ Consensus',
-      reviewer: '✍️ Reviewer',
-      viewer: '👁️ Viewer'
-  };
-  return labels[role];
-}
-

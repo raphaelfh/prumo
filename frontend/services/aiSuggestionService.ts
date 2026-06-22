@@ -123,7 +123,7 @@ export class AISuggestionService {
       `/api/v1/articles/${articleId}/suggestions/history?${params.toString()}`,
     );
 
-    return items.map(mapHistoryItemToSuggestion);
+    return (items ?? []).map(mapHistoryItemToSuggestion);
   }
 
   /**
@@ -196,6 +196,6 @@ export class AISuggestionService {
   }
 
   static async getArticleInstanceIds(articleId: string): Promise<string[]> {
-    return apiClient<string[]>(`/api/v1/articles/${articleId}/instance-ids`);
+    return (await apiClient<string[]>(`/api/v1/articles/${articleId}/instance-ids`)) ?? [];
   }
 }

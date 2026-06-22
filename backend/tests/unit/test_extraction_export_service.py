@@ -1805,7 +1805,7 @@ class TestLoadActiveTemplateVersion:
         svc.db.execute = AsyncMock(return_value=result_mock)
 
         with pytest.raises(NotFoundError):
-            await svc._load_active_template_version(template_id)
+            await svc._load_active_template_version(template_id, uuid4())
 
     @pytest.mark.asyncio
     async def test_template_found_no_version_raises_not_found_error(self, monkeypatch):
@@ -1829,7 +1829,7 @@ class TestLoadActiveTemplateVersion:
         )
 
         with pytest.raises(NotFoundError):
-            await svc._load_active_template_version(template_id)
+            await svc._load_active_template_version(template_id, uuid4())
 
     @pytest.mark.asyncio
     async def test_template_and_version_found_returns_tuple(self, monkeypatch):
@@ -1852,7 +1852,7 @@ class TestLoadActiveTemplateVersion:
             lambda _: version_repo_mock,
         )
 
-        template, version = await svc._load_active_template_version(template_id)
+        template, version = await svc._load_active_template_version(template_id, uuid4())
         assert template is template_mock
         assert version is version_mock
 

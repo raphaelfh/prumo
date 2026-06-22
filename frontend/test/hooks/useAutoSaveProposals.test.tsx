@@ -450,7 +450,9 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
     );
 
     await act(async () => {
-      await result.current.saveNow();
+      // The failed coord makes saveNow reject so a caller can gate run-advance
+      // on a successful flush; saveState still reflects the partial failure.
+      await expect(result.current.saveNow()).rejects.toThrow();
     });
 
     expect(apiClientMock).toHaveBeenCalledTimes(3);
@@ -469,6 +471,31 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
     expect((apiClientMock.mock.calls[0][1] as { body: { field_id: string } }).body.field_id)
       .toBe('b');
     expect(result.current.saveState).toBe('saved');
+  });
+
+  it('saveNow() rejects when a write fails so run-advance can be gated (#5)', async () => {
+    // Regression: performSave used to swallow the rejection and resolve, so
+    // saveNow always resolved and the onMarkReady / onOpenConsensus
+    // `.catch(() => false)` guard was dead — a failed flush advanced the run
+    // (EXTRACT → CONSENSUS) and the unsaved edit was lost. saveNow must reject.
+    apiClientMock.mockRejectedValue(new Error('network drop'));
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        values: { 'inst-1_field-1': 'unsaved-edit' },
+      }),
+    );
+
+    await act(async () => {
+      // Mirror the caller's guard: `.then(() => true).catch(() => false)`.
+      const gated = await result.current
+        .saveNow()
+        .then(() => true)
+        .catch(() => false);
+      expect(gated).toBe(false);
+    });
+    expect(result.current.saveState).toBe('error');
   });
 });
 
@@ -517,7 +544,7 @@ describe('useAutoSaveProposals — state machine', () => {
     );
 
     await act(async () => {
-      await result.current.saveNow();
+      await expect(result.current.saveNow()).rejects.toThrow();
     });
     expect(result.current.saveState).toBe('error');
 
