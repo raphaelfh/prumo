@@ -250,7 +250,10 @@ export default function ExtractionFullScreen() {
     const sectionLabel = et?.label ?? et?.name ?? 'Section';
     for (const f of et?.fields ?? []) {
       const key = `${inst.id}::${f.id}`;
-      extractionAllCoords.push(key);
+      // Evaluate-all shows every TOUCHED coord (agreed + diverging). Untouched
+      // coords (no reviewer decision) are omitted — rendering them as empty
+      // "0 disagreed" rows is noise; the completeness gate covers required gaps.
+      if (reviewerSummary.decisionsByCoord.has(key)) extractionAllCoords.push(key);
       fieldLabelByCoordMap[key] = `${sectionLabel} · ${f.label}`;
     }
   }
@@ -309,7 +312,7 @@ export default function ExtractionFullScreen() {
     if (!finalizedRunId) return;
     setReopening(true);
     await reopenMutation.mutateAsync(finalizedRunId).then(async () => {
-      // The reopen endpoint creates a fresh REVIEW-stage run linked via
+      // The reopen endpoint creates a fresh EXTRACT-stage run linked via
       // parameters.parent_run_id. We refetch the HITL session first so
       // activeRunId points at the new child run; only then do the
       // value / runDetail / finalized-run reads run against the new

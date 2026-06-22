@@ -29,7 +29,7 @@ export function useMarkReady(runId: string) {
       queryClient.invalidateQueries({ queryKey: runsKeys.reviewers(runId) });
     },
     onError: (error) => {
-      toast.error(error.message || t("extraction", "errors_advanceFailed"));
+      toast.error(error.message || t("extraction", "errors_markReadyFailed"));
     },
   });
 }

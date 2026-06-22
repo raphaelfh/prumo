@@ -287,6 +287,11 @@ class ExtractionReviewerReady(BaseModel):
             "reviewer_id",
             name="uq_extraction_reviewer_ready_run_reviewer",
         ),
+        # Declared to match the index created in migration 0029 so autogenerate
+        # does not see DB-only state and emit a spurious DROP INDEX. (The unique
+        # constraint above already covers run_id-prefix reads; this is belt-and-
+        # suspenders + model/DB parity.)
+        Index("ix_extraction_reviewer_ready_run_id", "run_id"),
         {"schema": "public"},
     )
 

@@ -36,6 +36,9 @@ class ExtractionReviewerReadyRepository:
                 set_={
                     "is_ready": is_ready,
                     "marked_ready_at": marked_at,
+                    # BaseModel.updated_at's onupdate hook does not fire on a Core
+                    # ON CONFLICT DO UPDATE, so refresh it explicitly on a toggle.
+                    "updated_at": func.now(),
                 },
             )
         )

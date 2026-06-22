@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps.security import (
+    ensure_project_arbitrator,
     ensure_project_member,
     ensure_project_reviewer,
     get_current_user_sub,
@@ -464,8 +465,12 @@ async def approve_and_finalize_run(
     atomically, in one transaction/commit. This makes the finalize gates (EmptyFinalize/
     IncompleteFinalize) satisfiable naturally for a complete run, retiring the
     no-divergence dead-end. Rejects when a field still diverges unresolved.
+
+    Manager / consensus only — this publishes canonical values and finalizes; the
+    gate lives at the API layer because the service-role session bypasses RLS.
     """
-    await _load_run_and_check_member(db, run_id, current_user_sub)
+    run_summary = await _load_run_and_check_member(db, run_id, current_user_sub)
+    await ensure_project_arbitrator(db, run_summary.project_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:

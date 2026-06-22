@@ -64,6 +64,28 @@ async def ensure_project_reviewer(db: DbSession, project_id: UUID, user_sub: UUI
         )
 
 
+async def ensure_project_arbitrator(db: DbSession, project_id: UUID, user_sub: UUID) -> None:
+    """Enforce an adjudicator role (manager / consensus) at the API layer.
+
+    Mirrors ``ensure_project_member`` but uses the ``is_project_arbitrator`` SQL
+    helper — the roles allowed to resolve consensus and finalize. The DB session
+    runs as service-role (RLS bypassed), so privileged write endpoints
+    (approve-and-finalize) must enforce this gate here, matching the frontend's
+    ``canResolveConflicts`` and the spec's manager/consensus-only finalize.
+    """
+    is_arbitrator = (
+        await db.execute(
+            text("SELECT public.is_project_arbitrator(:pid, :uid) AS ok"),
+            {"pid": str(project_id), "uid": str(user_sub)},
+        )
+    ).scalar_one()
+    if not is_arbitrator:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager or consensus role required",
+        )
+
+
 async def require_project_scope(
     project_id: UUID,
     db: DbSession,

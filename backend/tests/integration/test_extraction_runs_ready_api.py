@@ -152,3 +152,21 @@ async def test_mark_ready_rejects_viewer_member(
     res = await db_client.post(f"/api/v1/runs/{run_id}/ready", json={"ready": True})
     assert res.status_code == 403
     assert "reviewer role required" in res.json()["error"]["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_approve_finalize_rejects_non_arbitrator(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_manager: UUID,  # noqa: ARG001
+) -> None:
+    """approve-finalize is a privileged publish+finalize: a plain reviewer
+    (member but not manager/consensus) is rejected at the API layer."""
+    if not await _seeded(db_session):
+        pytest.skip("Missing fixtures.")
+    run_id = await _create_run(db_client)  # created by the manager
+
+    _auth_as(SEED.reviewer_profile)  # a project reviewer, NOT an arbitrator
+    res = await db_client.post(f"/api/v1/runs/{run_id}/approve-finalize")
+    assert res.status_code == 403
+    assert "manager or consensus role required" in res.json()["error"]["message"].lower()

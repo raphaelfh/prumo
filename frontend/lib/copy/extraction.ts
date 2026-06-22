@@ -94,6 +94,7 @@ export const extraction = {
     errors_autoSaveFailed: 'Error saving data automatically',
     errors_autoSaveUpdateValues: 'Error updating {{n}} values: {{message}}',
     errors_advanceFailed: 'Could not advance the extraction stage',
+    errors_markReadyFailed: 'Could not update your ready signal',
     // useSectionExtraction toasts
     sectionExtractionNoSuggestionsTitle: 'Extraction completed with no suggestions',
     sectionExtractionNoSuggestionsDesc: 'Extraction finished but no suggestions were created. Check that field names match exactly or that the PDF contains the expected data.',
