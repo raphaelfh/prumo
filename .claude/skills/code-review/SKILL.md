@@ -163,6 +163,14 @@ Why: Stale-cache bugs are silent — users see old data and assume their click f
 - [ ] PR targets `dev`, not `main`.
 - [ ] PR title is the same imperative as the headline commit. PR body has the structure below.
 
+### K. Decisions & docs land with the code
+
+- [ ] If this PR makes an architectural decision (new dependency, storage strategy, cross-cutting pattern, core abstraction), the ADR is **in this PR** under `docs/adr/` — superseding, never editing, an existing one. Not a "docs follow-up".
+- [ ] A new/changed endpoint under `backend/app/api/v1/endpoints/` or a new `extraction_*` table updates the matching `docs/reference/` doc (and its `last_reviewed`) in this PR, or the PR body says "no doc change needed".
+- [ ] The PR's **Definition of Done** block (`.github/PULL_REQUEST_TEMPLATE.md`) is filled — evidence ticked, not hoped.
+
+Why: ADRs and reference docs that lag the code drift out of sync — the `glossary-sync` fitness check only catches concept-vocabulary drift, not endpoint/architecture docs. Bind the decision to the diff that makes it.
+
 ---
 
 ## Requesting review
