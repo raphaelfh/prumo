@@ -7,7 +7,7 @@ const AVATAR = ['bg-reviewer-1', 'bg-reviewer-2', 'bg-reviewer-3', 'bg-reviewer-
 
 export function Reviewers() {
   const { stage, reviewers, onJumpToDivergence } = useRunHeader();
-  if (stage === 'proposal' || stage == null || reviewers.count === 0) return null;
+  if (stage == null || reviewers.count === 0) return null;
   const shown = Math.min(reviewers.count, 3);
   return (
     <div className="flex items-center gap-2" data-testid="run-reviewers">

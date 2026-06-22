@@ -46,7 +46,7 @@ class CreateConsensusRequest(BaseModel):
 
 class AdvanceStageRequest(BaseModel):
     target_stage: str = Field(
-        pattern="^(pending|proposal|review|consensus|finalized|cancelled)$",
+        pattern="^(pending|extract|consensus|finalized|cancelled)$",
     )
 
 

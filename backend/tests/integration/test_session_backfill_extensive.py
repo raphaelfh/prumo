@@ -661,7 +661,7 @@ async def test_backfill_creates_runs_continue_to_advance(
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
     """Spec: after backfill, the Run still advances from PENDING to
-    PROPOSAL — the backfill cannot prevent the lifecycle transition."""
+    EXTRACT — the backfill cannot prevent the lifecycle transition."""
     article = await _pick_article(db_session)
     if article is None:
         pytest.skip("Need an article + project")
@@ -698,7 +698,7 @@ async def test_backfill_creates_runs_continue_to_advance(
             {"rid": str(run_id)},
         )
     ).scalar()
-    assert stage == "proposal"
+    assert stage == "extract"
 
 
 async def test_backfill_preserves_user_created_label(

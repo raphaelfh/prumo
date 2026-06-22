@@ -43,7 +43,6 @@ import {useExtractedValues} from '@/hooks/extraction/useExtractedValues';
 import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
 import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
 import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
-import {useAutoAdvanceToReview} from '@/hooks/extraction/useAutoAdvanceToReview';
 import {useAutoSaveProposals} from '@/hooks/runs';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
@@ -194,6 +193,7 @@ export default function ExtractionFullScreen() {
   } = useExtractedValues({
     runId: activeRunId,
     stage,
+    kind: 'extraction',
     proposals,
     currentValues: runDetail?.current_values,
     currentUserId,
@@ -201,7 +201,7 @@ export default function ExtractionFullScreen() {
   });
 
   // Reopen wiring: when the active run is finalized, surface the reopen
-  // affordance. The reopen mutation creates a new REVIEW-stage run with
+  // affordance. The reopen mutation creates a new EXTRACT-stage run with
   // proposals seeded from the published values.
   const {
     finalizedRun,
@@ -349,75 +349,38 @@ export default function ExtractionFullScreen() {
   const { saveState, lastSavedAt, hasUnsavedChanges, saveNow } = useAutoSaveProposals({
     runId: activeRunId,
     stage,
+    // kind drives the write target in 'extract': extraction → /decisions
+    // (per-user ReviewerDecision), QA → /proposals. This is the extraction page.
+    kind: 'extraction',
     values,
     // Server-loaded values are the baseline — opening a run must not re-POST
     // them as fresh proposals (the re-record-on-mount duplication).
     baselineValues: loadedValues,
-    // Only PROPOSAL and REVIEW accept autosave writes. Past that
-    // (consensus, finalized, pending) the backend rejects proposal
-    // writes, which surfaced as a spurious "Error saving data
-    // automatically" toast on opening a consolidated run. Mirrors the
-    // QA full-screen gate; ``!isFinalized`` alone let ``consensus``
-    // through.
+    // Only the editable EXTRACT stage accepts autosave writes. Past that
+    // (consensus, finalized, pending) the backend rejects writes, which
+    // surfaced as a spurious "Error saving data automatically" toast on
+    // opening a consolidated run. Mirrors the QA full-screen gate;
+    // ``!isFinalized`` alone let ``consensus`` through.
     enabled:
-      !!activeRunId &&
-      !loading &&
-      valuesInitialized &&
-      (stage === 'proposal' || stage === 'review'),
+      !!activeRunId && !loading && valuesInitialized && stage === 'extract',
   });
 
-  // "Submit for review" — flush pending edits and advance the run from
-  // PROPOSAL to REVIEW so other reviewers can pick up. Mirrors QA's
-  // ``handlePublish`` shape but stops at REVIEW because Data Extraction
-  // expects multi-reviewer accept/reject before consensus + finalize.
-  // Declared after `useAutoSaveProposals` so the closure picks up the
-  // already-initialized `saveNow` (avoids the temporal-dead-zone crash
-  // on first render).
-  // Cross PROPOSAL -> REVIEW: flush pending edits so the proposer's typed
-  // values are persisted, advance the run (which materializes those human
-  // proposals into that reviewer's own decisions), then refetch. Quiet (no
-  // toast) so it can be driven automatically by ``useAutoAdvanceToReview``;
-  // Drives PROPOSAL→REVIEW silently; reused by ``onMarkReady`` and the
-  // auto-advance hook below.
-  const ensureReviewStage = async () => {
-    if (!activeRunId || stage !== 'proposal') return;
-    await saveNow();
-    await advanceMutation.mutateAsync({ target_stage: 'review' });
-    await Promise.all([refetchRun(), refreshValues()]);
-  };
-
-  // Auto-advance PROPOSAL -> REVIEW the moment the run has content to review:
-  // AI seeded proposals, or the reviewer made their first edit. This is what
-  // makes per-user decisions, the reviewer counter, and "0% until you accept"
-  // correct — the run no longer lingers in PROPOSAL (the multi-user bug class).
-  // Idempotent: the hook never fires outside PROPOSAL and at most once per
-  // transition. Also remediates pre-existing stuck runs the moment they open.
-  const hasProposals = (proposals?.length ?? 0) > 0;
-  useAutoAdvanceToReview({
-    stage,
-    shouldAdvance: hasProposals || hasUnsavedChanges,
-    enabled: !!activeRunId && !loading && valuesInitialized,
-    onAdvance: ensureReviewStage,
-  });
-
-    // "Mark ready" — flush + ensure review + advance REVIEW → CONSENSUS so the
-    // ``ConsensusPanel`` becomes reachable, then open the next article in the
-    // worklist (next-in-order; end-of-queue → back to the list). Available to
-    // EVERY extractor: POST /runs/{id}/advance is membership-gated, not
-    // role-gated. Promise-chain guards (no try/finally) keep the React Compiler
-    // happy and avoid unhandled rejections from the `void onAdvance()` caller.
+    // "Mark ready" — flush pending autosave, then advance EXTRACT → CONSENSUS
+    // so the ``ConsensusPanel`` becomes reachable, and open the next article in
+    // the worklist (next-in-order; end-of-queue → back to the list). Available
+    // to EVERY extractor: POST /runs/{id}/advance is membership-gated, not
+    // role-gated. The run already sits in EXTRACT (session open parks it there
+    // and there is no proposal→review edge anymore), so no pre-advance is
+    // needed. Promise-chain guards (no try/finally) keep the React Compiler
+    // happy and avoid unhandled rejections. Declared after `useAutoSaveProposals`
+    // so the closure picks up the already-initialized `saveNow`.
   const onMarkReady = async () => {
     if (!activeRunId) return;
     // Flush pending autosave before advancing: once the run reaches consensus
-    // the autosave is disabled and proposal writes are rejected, so a debounce
-    // in flight would be lost. ``ensureReviewStage`` already flushes on the
-    // PROPOSAL path, so only the REVIEW path needs this explicit flush.
-    if (stage !== 'proposal') {
-      const saved = await saveNow().then(() => true).catch(() => false);
-      if (!saved) return;
-    }
-    const ensured = await ensureReviewStage().then(() => true).catch(() => false);
-    if (!ensured) return;
+    // the autosave is disabled and writes are rejected, so a debounce in
+    // flight would be lost.
+    const saved = await saveNow().then(() => true).catch(() => false);
+    if (!saved) return;
     const ok = await advanceMutation
       .mutateAsync({ target_stage: 'consensus' })
       .then(() => true)
@@ -1231,9 +1194,9 @@ export default function ExtractionFullScreen() {
         canReveal={canReveal}
         onReveal={onReveal}
         onJumpToDivergence={() => setViewMode('compare')}
-        // AI extraction seeds proposals and only works in PROPOSAL; once the
-        // run is in REVIEW it's a one-time-done step (re-running would error).
-        canRunAI={stage === 'proposal' || stage == null}
+        // AI extraction seeds proposals and only works in EXTRACT; once the
+        // run advances to consensus it's a one-time-done step (re-running errors).
+        canRunAI={stage === 'extract' || stage == null}
         onExtractionComplete={handleExtractionComplete}
         aiSuggestions={aiSuggestions}
         aiPendingCount={Object.keys(aiSuggestions).length}

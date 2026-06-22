@@ -122,7 +122,7 @@ class ModelExtractionService(LoggerMixin):
 
         # 1. Create extraction_run via the unified lifecycle service so the new
         # NOT NULL columns (version_id, hitl_config_snapshot) and the kind
-        # discriminator are populated correctly. Then advance pending → proposal.
+        # discriminator are populated correctly. Then advance pending → extract.
         run = await self._lifecycle.create_run(
             project_id=project_id,
             article_id=article_id,
@@ -135,7 +135,7 @@ class ModelExtractionService(LoggerMixin):
         )
         run = await self._lifecycle.advance_stage(
             run_id=run.id,
-            target_stage=ExtractionRunStage.PROPOSAL,
+            target_stage=ExtractionRunStage.EXTRACT,
             user_id=UUID(self.user_id),
         )
 
@@ -181,13 +181,9 @@ class ModelExtractionService(LoggerMixin):
             )
             phase_durations_ms["create_model_instances"] = (perf_counter() - phase_start) * 1000
 
-            # Advance proposal → review so the form UI can write
+            # The run is already in EXTRACT, where the form UI writes
             # ReviewerDecisions on top of the instances we just created.
-            await self._lifecycle.advance_stage(
-                run_id=run.id,
-                target_stage=ExtractionRunStage.REVIEW,
-                user_id=UUID(self.user_id),
-            )
+            # The collapsed lifecycle has no separate review stage to advance to.
 
             duration = (perf_counter() - start_time) * 1000
 

@@ -56,7 +56,7 @@ const RUN_VIEW_FIXTURE: RunViewResponse = {
     template_id: 'tpl-1',
     kind: 'extraction',
     version_id: 'ver-1',
-    stage: 'proposal',
+    stage: 'extract',
     status: 'active',
     hitl_config_snapshot: {},
     parameters: {},

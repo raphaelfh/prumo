@@ -118,8 +118,8 @@ def test_summary_fans_out_per_model_when_model_container_present():
 
 
 def test_summary_includes_omitted_by_stage():
-    notes = ExportNotes(omitted_articles_by_stage={"review": 3, "no_run": 1})
+    notes = ExportNotes(omitted_articles_by_stage={"extract": 3, "no_run": 1})
     spec = build_summary(_layout((), (), {}, notes=notes))
     flat = _flat(spec)
-    assert "review" in flat
+    assert "extract" in flat
     assert "3" in flat

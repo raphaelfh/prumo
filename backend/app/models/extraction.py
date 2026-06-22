@@ -87,11 +87,10 @@ class ExtractionEntityRole(str, PyEnum):
 
 
 class ExtractionRunStage(str, PyEnum):
-    """Estagio da execucao de extraction (HITL lifecycle)."""
+    """Stage of the extraction execution (HITL lifecycle)."""
 
     PENDING = "pending"
-    PROPOSAL = "proposal"
-    REVIEW = "review"
+    EXTRACT = "extract"
     CONSENSUS = "consensus"
     FINALIZED = "finalized"
     CANCELLED = "cancelled"

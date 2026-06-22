@@ -9,12 +9,12 @@ const base = {
 };
 
 describe('RunHeader.Reviewers', () => {
-  it('renders nothing during proposal', () => {
-    const { container } = render(<RunHeader value={{ ...base, stage: 'proposal', reviewers: { count: 2, required: 3, divergent: 1 } }}><RunHeader.Center><RunHeader.Reviewers /></RunHeader.Center></RunHeader>);
+  it('renders nothing when there are no reviewers', () => {
+    const { container } = render(<RunHeader value={{ ...base, stage: 'extract', reviewers: { count: 0, required: 3, divergent: 0 } }}><RunHeader.Center><RunHeader.Reviewers /></RunHeader.Center></RunHeader>);
     expect(container.querySelector('[data-testid="run-reviewers"]')).toBeNull();
   });
-  it('renders avatars + a divergence chip after proposal', () => {
-    render(<RunHeader value={{ ...base, stage: 'review', reviewers: { count: 2, required: 3, divergent: 3 } }}><RunHeader.Center><RunHeader.Reviewers /></RunHeader.Center></RunHeader>);
+  it('renders avatars + a divergence chip in extract when reviewers exist', () => {
+    render(<RunHeader value={{ ...base, stage: 'extract', reviewers: { count: 2, required: 3, divergent: 3 } }}><RunHeader.Center><RunHeader.Reviewers /></RunHeader.Center></RunHeader>);
     expect(screen.getByTestId('run-reviewers')).toBeInTheDocument();
     expect(screen.getByText('reviewersDiffer')).toBeInTheDocument();
   });

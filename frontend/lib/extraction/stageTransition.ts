@@ -43,9 +43,9 @@ function makeTransition(
 export function buildExtractionTransition(args: BuildTransitionArgs): StageTransition | null {
   const { stage, canResolveConflicts, isComplete, completed, total, onMarkReady, onFinalize, onGuide } = args;
 
-  // Extract phase: proposal + review collapse into one user step. Available to
-  // EVERY extractor — POST /runs/{id}/advance is membership-gated, not role-gated.
-  if (stage === 'proposal' || stage === 'review') {
+  // Extract phase: the single editable stage. Available to EVERY extractor —
+  // POST /runs/{id}/advance is membership-gated, not role-gated.
+  if (stage === 'extract') {
     return makeTransition(
       'consensus',
       t('extraction', 'runHeaderMarkReady'),

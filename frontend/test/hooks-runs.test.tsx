@@ -64,7 +64,7 @@ describe("useRun", () => {
         template_id: "template-1",
         kind: "extraction",
         version_id: "version-1",
-        stage: "proposal",
+        stage: "extract",
         status: "active",
         hitl_config_snapshot: {},
         parameters: {},
@@ -241,7 +241,7 @@ describe("useAdvanceRun", () => {
       template_id: "template-6",
       kind: "extraction",
       version_id: "version-6",
-      stage: "review",
+      stage: "extract",
       status: "active",
       hitl_config_snapshot: {},
       parameters: {},
@@ -255,14 +255,14 @@ describe("useAdvanceRun", () => {
 
     let mutationResult: Awaited<ReturnType<typeof result.current.mutateAsync>> | undefined;
     await act(async () => {
-      mutationResult = await result.current.mutateAsync({ target_stage: "review" });
+      mutationResult = await result.current.mutateAsync({ target_stage: "extract" });
     });
 
     expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs/run-6/advance", {
       method: "POST",
-      body: { target_stage: "review" },
+      body: { target_stage: "extract" },
     });
-    expect(mutationResult?.stage).toBe("review");
+    expect(mutationResult?.stage).toBe("extract");
   });
 });
 

@@ -122,7 +122,7 @@ async def _build_suggestion_review_run(
         user_id=manager_id,
     )
     await lifecycle.advance_stage(
-        run_id=run.id, target_stage=ExtractionRunStage.PROPOSAL, user_id=manager_id
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
 
     proposal_svc = ExtractionProposalService(db)
@@ -134,10 +134,6 @@ async def _build_suggestion_review_run(
         proposed_value={"value": "AI-PROPOSED"},
         confidence_score=0.85,
         rationale="AI rationale",
-    )
-
-    await lifecycle.advance_stage(
-        run_id=run.id, target_stage=ExtractionRunStage.REVIEW, user_id=manager_id
     )
 
     review = ExtractionReviewService(db)
@@ -436,7 +432,7 @@ async def test_load_suggestions_dedup_latest_per_coord(
         user_id=manager_id,
     )
     await lifecycle.advance_stage(
-        run_id=run.id, target_stage=ExtractionRunStage.PROPOSAL, user_id=manager_id
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
 
     proposal_svc = ExtractionProposalService(db_session)
@@ -541,7 +537,7 @@ async def test_get_suggestion_history_limit(
         user_id=manager_id,
     )
     await lifecycle.advance_stage(
-        run_id=run.id, target_stage=ExtractionRunStage.PROPOSAL, user_id=manager_id
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
     proposal_svc = ExtractionProposalService(db_session)
     for i in range(3):

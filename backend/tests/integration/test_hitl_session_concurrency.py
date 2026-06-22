@@ -5,7 +5,7 @@ Covers issues #64, #67, #70, #71 — the HITL session bugs.
 * #64 — concurrent _ensure_instances calls duplicated singleton instances.
 * #67 — InvalidStageTransitionError from advance_stage surfaced as HTTP 500.
 * #70 — concurrent _reuse_or_create_run calls produced duplicate
-        PROPOSAL runs.
+        EXTRACT runs.
 * #71 — _ensure_instances seeded singleton instances even for top-level
         MANY-cardinality entity types.
 """
@@ -334,7 +334,7 @@ async def test_open_or_resume_raises_typed_error_when_run_cancelled_midflight(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Issue #67: if the run is cancelled between the SELECT in
-    _reuse_or_create_run and the internal advance to PROPOSAL, the
+    _reuse_or_create_run and the internal advance to EXTRACT, the
     service must raise InvalidStageTransitionError so the endpoint can
     translate it to a 409. Previously the exception was uncaught and
     bubbled up as a 500."""
@@ -375,13 +375,13 @@ async def test_open_or_resume_raises_typed_error_when_run_cancelled_midflight(
             # need the service to *see* the run as PENDING. Force this by
             # flipping it back to PENDING and re-cancelling in the middle
             # of the call. A simpler equivalent: directly call
-            # advance_stage(target=PROPOSAL) on the cancelled run and
+            # advance_stage(target=EXTRACT) on the cancelled run and
             # confirm InvalidStageTransitionError is raised — that is the
             # exact line that was unhandled in the original bug.
             with pytest.raises(InvalidStageTransitionError):
                 await RunLifecycleService(svc_session).advance_stage(
                     run_id=run.id,
-                    target_stage=ExtractionRunStage.PROPOSAL,
+                    target_stage=ExtractionRunStage.EXTRACT,
                     user_id=profile_id,
                 )
     finally:

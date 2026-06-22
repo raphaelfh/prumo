@@ -42,8 +42,7 @@ export interface CreateConsensusRequest {
 export interface AdvanceStageRequest {
   target_stage:
     | "pending"
-    | "proposal"
-    | "review"
+    | "extract"
     | "consensus"
     | "finalized"
     | "cancelled";

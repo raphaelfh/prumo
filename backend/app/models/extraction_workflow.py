@@ -1,6 +1,6 @@
 """Extraction HITL workflow models.
 
-Five tables back the proposal -> review -> consensus -> published lifecycle:
+Five tables back the extract -> consensus -> published lifecycle:
 - ExtractionProposalRecord: append-only AI/human/system proposals.
 - ExtractionReviewerDecision: append-only per-reviewer accept/reject/edit.
 - ExtractionReviewerState: materialized current state per (reviewer, run, item).

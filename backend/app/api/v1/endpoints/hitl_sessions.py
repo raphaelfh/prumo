@@ -76,7 +76,7 @@ async def open_hitl_session(
     except InvalidStageTransitionError as e:
         # Issue #67: a concurrent request (e.g. an admin cancelling the
         # run) moved the Run out of PENDING between our SELECT and the
-        # internal advance to PROPOSAL. The caller should retry — return
+        # internal advance to EXTRACT. The caller should retry — return
         # 409 Conflict instead of bubbling up an unhandled 500.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
 

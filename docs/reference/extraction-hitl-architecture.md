@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-06-19
+last_reviewed: 2026-06-21
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-06-19 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-06-21 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -22,24 +22,24 @@ The 2026-04-27 refactor merged them into a single extraction-centric stack
 with a `kind` discriminator — `extraction` vs `quality_assessment` — so a
 PROBAST domain is just an `entity_type` with `kind=quality_assessment`,
 its signaling questions are `extraction_fields`, and the entire
-proposal/review/consensus pipeline is shared.
+extract/consensus pipeline is shared.
 
 ## 2. The Run is the unit of work
 
 A **Run** (`extraction_runs`) is the atomic HITL session for one
 `(article × project_template × kind)`. Every proposal, decision, consensus
 ruling, and published value belongs to exactly one Run. A Run progresses
-through six stages, in this order — no skipping:
+through five stages, in this order — no skipping:
 
 ```text
-pending → proposal → review → consensus → finalized
-                                         ↓
-                                    cancelled (terminal at any non-terminal stage)
+pending → extract → consensus → finalized
+                              ↓
+                         cancelled (terminal at any non-terminal stage)
 ```
 
 `stage` is the lifecycle position; `status` is the execution condition
 (`pending` / `running` / `completed` / `failed`). They are orthogonal —
-e.g. a Run can be `stage=proposal, status=running` while the LLM is still
+e.g. a Run can be `stage=extract, status=running` while the LLM is still
 extracting.
 
 When a Run is created it captures two immutable snapshots: `version_id`
@@ -74,22 +74,23 @@ change set live in
 ### 2.2 Stage (DB) vs user-facing phase
 
 The `extraction_run_stage` values
-(`pending` / `proposal` / `review` / `consensus` / `finalized` / `cancelled`)
+(`pending` / `extract` / `consensus` / `finalized` / `cancelled`)
 are the **internal lifecycle**, NOT the model end users see. The UI presents
 **three phases**:
 
 | User-facing phase | DB stage(s) |
 | --- | --- |
-| **Extract** | `pending`, `proposal`, `review` |
+| **Extract** | `pending`, `extract` |
 | **Consensus** | `consensus` |
 | **Finalized** | `finalized` |
 
-Key glossary point: **`review` is not peer review.** It means *reviewing the AI
-suggestions within one's OWN extraction*, and is reached via an invisible
-`proposal → review` auto-advance (`useAutoAdvanceToReview`) the instant the Run
-has content worth reviewing — there is no user action between `proposal` and
-`review`. The shared RunHeader therefore folds `proposal` + `review` into a
-single **Extract** node, so the rail reads Extract → Consensus → Finalized.
+`extract` is the single editable stage (ADR-0014 collapsed the former
+`proposal` + `review` into it). The AI writes `ai` proposals and humans write
+their values **directly as per-user `ReviewerDecision`s** there (a `/proposals`
+human write on an extraction run is rejected — blind-review write defense); there
+is no `proposal → review` auto-advance and no boundary materialization. The
+shared RunHeader maps `extract` to a single **Extract** node, so the rail reads
+Extract → Consensus → Finalized.
 The primary action is one role/phase-aware control: **"Mark ready →"** in
 Extract (advances to consensus; available to every extractor since
 `POST /runs/{id}/advance` is membership-gated) and **"Finalize"** in Consensus
@@ -99,7 +100,7 @@ Extract (advances to consensus; available to every extractor since
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0026_widen_template_snapshot` (post-squash numbering; run
+`0028_run_stage_extract` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -146,7 +147,7 @@ The original 2026-04-27 cut had two transition shims (`ai_suggestions`,
 | `extraction_proposal_source` | `ai`, `human`, `system` | 0012 |
 | `extraction_reviewer_decision` | `accept_proposal`, `reject`, `edit` | 0012 |
 | `extraction_consensus_mode` | `select_existing`, `manual_override` | 0012 |
-| `extraction_run_stage` (rebuilt) | `pending`, `proposal`, `review`, `consensus`, `finalized`, `cancelled` | 0014 |
+| `extraction_run_stage` (rebuilt) | `pending`, `extract`, `consensus`, `finalized`, `cancelled` | 0014, 0028 |
 
 ### RLS — workflow tables (post-0025, reviewer-scoped)
 
@@ -200,7 +201,7 @@ ExtractionTemplateGlobal (kind = extraction | quality_assessment)
             └─ Article + ProjectExtractionTemplate
                  ↓ creates
                  ExtractionRun
-                   ├─ stage = pending → proposal → review → consensus → finalized
+                   ├─ stage = pending → extract → consensus → finalized
                    ├─ version_id (frozen)
                    ├─ hitl_config_snapshot (frozen)
                    │
@@ -330,14 +331,14 @@ Both flows open a session through the unified
 - `kind=quality_assessment` with `global_template_id` → the backend
   clones the global PROBAST/QUADAS-2 template into the project
   (idempotent), ensures one instance per top-level domain for the
-  article, and parks a Run in `proposal`.
+  article, and parks a Run in `extract`.
 - `kind=extraction` with `project_template_id` → no clone, just opens
   or resumes a Run on the existing project template.
 
-Every field change becomes a `human` ProposalRecord; "Publish assessment"
-advances `proposal → review → consensus`, posts a `manual_override`
-consensus per filled field (which materializes PublishedState rows), and
-advances to `finalized`.
+Every field change becomes a `human` ProposalRecord (QA keeps the shared
+proposal track); "Publish assessment" advances `extract → consensus`, posts a
+`manual_override` consensus per filled field (which materializes PublishedState
+rows), and advances to `finalized`.
 
 ### QA / Data-extraction code reuse boundary
 
@@ -438,20 +439,18 @@ publish, AI), keep it in the page-specific component.
   read/write entry point: `findActiveRun` →
   `saveValue` / `acceptProposal` / `rejectValue`.
 
-  **Stage advance (extraction).** For `kind=extraction`, `PROPOSAL` is a
-  transient seeding stage: the AI writes its proposals there (it is a
-  `PROPOSAL`-only operation) and the proposer can pre-fill values. The
-  collaborative surface — per-reviewer decisions, the "X/N reviewers"
-  counter, the "0% until you accept" progress metric — lives in `REVIEW`.
-  The advance `PROPOSAL → REVIEW` is **orchestrated by the frontend**
-  (`frontend/hooks/extraction/useAutoAdvanceToReview.ts`): it fires once the
-  run has proposals or the reviewer makes a first edit. It is NOT done in the
-  AI section-extraction service, because that path runs once per section on
-  the same run and each call requires `PROPOSAL` — advancing there would break
-  batch extraction (see ADR 0010). `advance_stage` materializes each user's
-  `human` proposals into their own `accept_proposal` decisions on the way in,
-  so typed values survive the transition while AI proposals remain suggestions
-  to accept. "Run AI" is disabled once a run is in `REVIEW`.
+  **Stage advance (extraction).** For `kind=extraction`, `EXTRACT` is the single
+  editable stage (ADR-0014): `HITLSessionService.open_or_resume` parks the run
+  there, the AI writes its `ai` proposals, and humans write their values
+  **directly as per-user `ReviewerDecision`s** via `/decisions` (a human
+  `/proposals` write on an extraction run is rejected — blind-review write
+  defense). The collaborative surface — per-reviewer decisions, the "X/N
+  reviewers" counter, the "0% until you accept" progress — therefore exists live
+  in `EXTRACT`; there is **no** `proposal → review` auto-advance and **no**
+  boundary materialization (both removed in ADR-0014, which superseded ADR-0010).
+  AI proposals remain suggestions to accept. The user advances `EXTRACT →
+  CONSENSUS` explicitly via "Mark ready"; "Run AI" is disabled once a run leaves
+  `EXTRACT`.
 
 ## 7. References
 
@@ -475,7 +474,7 @@ publish, AI), keep it in the page-specific component.
     `kind` matches what the caller asked for.
   - `app/services/hitl_session_service.py` — one-shot HITL setup for
     both kinds: clones (QA only) + seeds top-level instances + opens
-    or resumes a Run + advances to PROPOSAL. Surface for
+    or resumes a Run + advances to EXTRACT. Surface for
     `POST /api/v1/hitl/sessions`.
 - **Frontend services:**
   - `frontend/services/extractionValueService.ts` — single entry point

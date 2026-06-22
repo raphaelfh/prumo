@@ -75,7 +75,7 @@ test.describe("Extraction edit + autosave persists through HITL stack", () => {
     const runsBefore = await adminSelect<{ id: string; stage: string }>(
       "extraction_runs",
       `select=id,stage&article_id=eq.${env.articleId}&template_id=eq.${templateId}` +
-        `&stage=in.(pending,proposal,review,consensus)&order=created_at.desc&limit=1`,
+        `&stage=in.(pending,extract,consensus)&order=created_at.desc&limit=1`,
     );
     test.skip(
       runsBefore.length === 0,
@@ -133,7 +133,7 @@ test.describe("Extraction edit + autosave persists through HITL stack", () => {
     );
     const detail = await parseEnvelope<RunDetailResponse>(detailRes);
     expect(detail.ok).toBeTruthy();
-    expect(detail.data.run.stage).toMatch(/review|consensus|finalized/);
+    expect(detail.data.run.stage).toMatch(/extract|consensus|finalized/);
     const editDecisions = detail.data.decisions.filter(
       (d) => d.decision === "edit",
     );

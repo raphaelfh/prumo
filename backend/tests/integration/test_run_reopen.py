@@ -118,7 +118,7 @@ async def _drive_run_to_finalized(
     assert create.status_code == 201, create.text
     run_id = create.json()["data"]["id"]
 
-    for stage in ("proposal", "review", "consensus"):
+    for stage in ("extract", "consensus"):
         adv = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": stage})
         assert adv.status_code == 200, adv.text
 
@@ -201,8 +201,8 @@ async def test_reopen_creates_new_run_seeded_from_published_states(
     assert new_run["project_id"] == project_id
     assert new_run["article_id"] == article_id
     assert new_run["template_id"] == template_id
-    # Lands in REVIEW (so the form can record decisions immediately).
-    assert new_run["stage"] == "review"
+    # Lands in EXTRACT (so the form can record decisions immediately).
+    assert new_run["stage"] == "extract"
     # Lineage is captured in parameters.
     assert new_run["parameters"]["parent_run_id"] == old_run_id
     assert "reopened_at" in new_run["parameters"]
@@ -311,5 +311,5 @@ async def test_reopen_again_after_child_finalized_forks_fresh_run(
     assert second.status_code == 201, second.text
     grandchild = second.json()["data"]
     assert grandchild["id"] != child_id, "must not return the finalized child"
-    assert grandchild["stage"] == "review", "the forked revision must be editable"
+    assert grandchild["stage"] == "extract", "the forked revision must be editable"
     assert grandchild["parameters"]["parent_run_id"] == old_run_id

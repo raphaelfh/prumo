@@ -41,7 +41,7 @@ describe('ExtractionHeader (post legacy-cascade)', () => {
 
   // TDD: Task 9 — re-skin onto RunHeader compound
   it('renders a StageRail navigation landmark', () => {
-    render(<MemoryRouter><ExtractionHeader {...base} stage="proposal" /></MemoryRouter>);
+    render(<MemoryRouter><ExtractionHeader {...base} stage="extract" /></MemoryRouter>);
     expect(screen.getByRole('navigation', { name: 'Run stage' })).toBeInTheDocument();
   });
 
@@ -50,20 +50,20 @@ describe('ExtractionHeader (post legacy-cascade)', () => {
       <MemoryRouter>
         <ExtractionHeader
           {...base}
-          stage="proposal"
+          stage="extract"
           isComplete={true}
           completedFields={5}
           totalFields={5}
           transition={{
-            to: 'review',
-            label: 'Submit for review',
+            to: 'consensus',
+            label: 'Mark ready',
             gate: { ok: true },
             onAdvance: vi.fn(),
           }}
         />
       </MemoryRouter>,
     );
-    const btn = screen.getByRole('button', { name: /submit for review/i });
+    const btn = screen.getByRole('button', { name: /mark ready/i });
     expect(btn.textContent).not.toMatch(/\(.*\)/);
   });
 

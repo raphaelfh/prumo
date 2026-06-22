@@ -23,7 +23,7 @@ import type { RunHeaderValue } from '../RunHeaderContext';
  */
 export const BASE_RUN_HEADER_VALUE: RunHeaderValue = {
   kind: 'extraction',
-  stage: 'review',
+  stage: 'extract',
   isRevision: false,
   isBlind: false,
   canReveal: false,

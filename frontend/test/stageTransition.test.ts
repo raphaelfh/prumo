@@ -20,10 +20,10 @@ function makeArgs(overrides: Partial<Parameters<typeof buildExtractionTransition
 }
 
 describe('buildExtractionTransition', () => {
-  it('Extract phase (proposal) → Mark ready to consensus, available to every extractor', () => {
+  it('Extract phase → Mark ready to consensus, available to every extractor', () => {
     const onMarkReady = vi.fn();
     const r = buildExtractionTransition(
-      makeArgs({ stage: 'proposal', canResolveConflicts: false, isComplete: true, completed: 10, total: 10, onMarkReady }),
+      makeArgs({ stage: 'extract', canResolveConflicts: false, isComplete: true, completed: 10, total: 10, onMarkReady }),
     );
     expect(r).not.toBeNull();
     expect(r!.to).toBe('consensus');
@@ -33,10 +33,10 @@ describe('buildExtractionTransition', () => {
     expect(r!.onAdvance).toBe(onMarkReady);
   });
 
-  it('Extract phase (review) → Mark ready even when canResolveConflicts=false', () => {
+  it('Extract phase → Mark ready even for a manager (canResolveConflicts=true); finalize waits for consensus', () => {
     const onMarkReady = vi.fn();
     const r = buildExtractionTransition(
-      makeArgs({ stage: 'review', canResolveConflicts: false, isComplete: true, completed: 5, total: 5, onMarkReady }),
+      makeArgs({ stage: 'extract', canResolveConflicts: true, isComplete: true, completed: 5, total: 5, onMarkReady }),
     );
     expect(r).not.toBeNull();
     expect(r!.to).toBe('consensus');
@@ -46,7 +46,7 @@ describe('buildExtractionTransition', () => {
 
   it('Extract phase gated (isComplete=false) → gate blocked, onAdvance===onGuide', () => {
     const onGuide = vi.fn();
-    const r = buildExtractionTransition(makeArgs({ stage: 'review', isComplete: false, completed: 3, total: 30, onGuide }));
+    const r = buildExtractionTransition(makeArgs({ stage: 'extract', isComplete: false, completed: 3, total: 30, onGuide }));
     expect(r!.gate.ok).toBe(false);
     expect((r!.gate as { ok: false; remaining: number }).remaining).toBe(27);
     expect(r!.onAdvance).toBe(onGuide);
@@ -86,7 +86,7 @@ describe('buildExtractionTransition', () => {
   });
 
   it('remaining clamps to 0 when completed > total', () => {
-    const r = buildExtractionTransition(makeArgs({ stage: 'proposal', isComplete: false, completed: 35, total: 30 }));
+    const r = buildExtractionTransition(makeArgs({ stage: 'extract', isComplete: false, completed: 35, total: 30 }));
     expect((r!.gate as { ok: false; remaining: number }).remaining).toBe(0);
   });
 });
