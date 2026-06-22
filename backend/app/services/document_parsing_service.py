@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -132,7 +132,15 @@ class DocumentParsingService:
         #    truth for offset arithmetic — do NOT recompute inline).
         assign_char_offsets_to_blocks(blocks)
 
-        # 5. Persist blocks (delete-then-bulk-insert, flush only).
+        # 5. Serialize the block write per file so a concurrent Retry cannot
+        #    interleave two delete-then-insert passes. Transaction-scoped:
+        #    released on commit.
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+            {"k": str(article_file_id)},
+        )
+
+        # Persist blocks (delete-then-bulk-insert, flush only).
         await self._repo.replace_for_file(article_file_id, blocks)
 
         # 6. Update status.
