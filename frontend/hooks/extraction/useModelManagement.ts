@@ -238,7 +238,7 @@ export function useModelManagement({
     });
 
     // Update local state - remove model and capture name for toast
-    let removedModelName = 'Modelo';
+    let removedModelName = 'Model';
     let updatedModels: Model[] = [];
 
     setModels(prev => {
@@ -271,7 +271,6 @@ export function useModelManagement({
       return updatedModels[0].instanceId;
     });
 
-    console.warn('✅ Modelo removido:', removedModelName);
     toast.success(t('extraction', 'modelRemovedSuccess').replace('{{label}}', removedModelName));
   };
 
