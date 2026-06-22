@@ -32,8 +32,9 @@ frontend/
 1. **One read path.** All backend data goes through `apiClient`
    (`integrations/api/client.ts`). Never `fetch()` or `supabase.from(...)` in a
    component/hook/service — the dual read path is the documented slow-load /
-   status-drift / blind-leak incident class (constitution §VI; CI-enforced by
-   `check_frontend_data_path.py`).
+   status-drift / blind-leak incident class (constitution §VI). `supabase.from(`
+   and `import.meta.env.VITE_API_URL` are CI-enforced by
+   `check_frontend_data_path.py`; `fetch()` is a convention enforced at review.
 2. **Services don't throw across the boundary.** `services/*Service.ts` return
    `ErrorResult<T>` via `lib/error-utils.ts:toResult`; the hook maps the result,
    the component renders it. Services never toast.

@@ -8,6 +8,8 @@ through the typed apiClient. Flags, OUTSIDE `frontend/integrations/`:
   - `import.meta.env.VITE_API_URL` — ad-hoc base-URL wiring around the client
 
 Regex-based (does not parse TS); a `.baseline` grandfathers residual sites.
+Note: comments are not exempt — a line containing the pattern in a comment is
+still flagged and must be baselined if intentional.
 
 Exit codes: 0 (baseline matched) | 1 (new violation) | 2 (internal).
 """

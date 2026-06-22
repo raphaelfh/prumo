@@ -81,7 +81,7 @@ run_check "check_react_query_keys.py" \
   python3 "${SCRIPT_DIR}/check_react_query_keys.py"
 
 run_check "check_frontend_data_path.py" \
-  python3 "${SCRIPT_DIR}/check_frontend_data_path.py" "${SCOPE_ARGS[@]}"
+  python3 "${SCRIPT_DIR}/check_frontend_data_path.py"
 
 run_check "check_skill_router_sync.py" \
   python3 "${SCRIPT_DIR}/check_skill_router_sync.py"
