@@ -83,6 +83,7 @@ async def get_run_with_workflow_history(
     *,
     caller_id: UUID,
     can_see_peers: bool,
+    caller_is_arbitrator: bool = False,
 ) -> RunDetailResponse:
     """Aggregate the full read-side view of a Run: header + every workflow
     row (proposals, reviewer decisions, consensus decisions, published
@@ -92,10 +93,12 @@ async def get_run_with_workflow_history(
     Blind-review enforcement (API path): the backend reaches these tables as
     ``service_role`` (RLS bypassed), so this filter — not RLS — guards the
     server read. Unless the caller can see peers (consensus member, or a
-    manager with the live per-kind setting on) or the run is ``finalized``,
+    manager with the live per-kind setting on), the run is ``finalized``, or the
+    caller is an arbitrator and the run has reached ``consensus`` (auto-reveal),
     a reviewer sees only their OWN human proposals and reviewer decisions;
     AI/system proposals, consensus rulings and published states stay visible
-    (shared, post-divergence artifacts).
+    (shared, post-divergence artifacts). ``peers_revealed`` echoes the effective
+    unblind so the client need not re-derive it.
 
     NOTE on the deliberate API-stricter-than-RLS split for managers: the
     reviewer↔reviewer boundary is enforced identically here AND in RLS
@@ -124,7 +127,17 @@ async def get_run_with_workflow_history(
         .all()
     )
 
-    unblinded = can_see_peers or run.stage == ExtractionRunStage.FINALIZED.value
+    # Auto-reveal on consensus entry (run-scoped, arbitrators only): a blind
+    # manager must see peers to adjudicate, so an arbitrator is unblinded once
+    # the run reaches CONSENSUS — mirroring the FINALIZED auto-unblind below.
+    # Plain reviewers stay blind to peers even in consensus. This relaxes only
+    # the manager API path (RLS 0025 already lets arbitrators read peer rows),
+    # so the reviewer↔reviewer lockstep boundary is unchanged.
+    unblinded = (
+        can_see_peers
+        or run.stage == ExtractionRunStage.FINALIZED.value
+        or (run.stage == ExtractionRunStage.CONSENSUS.value and caller_is_arbitrator)
+    )
     if unblinded:
         visible_proposals = proposals
         visible_decisions = decisions
@@ -142,6 +155,7 @@ async def get_run_with_workflow_history(
         decisions=[ReviewerDecisionResponse.model_validate(d) for d in visible_decisions],
         consensus_decisions=[ConsensusDecisionResponse.model_validate(c) for c in consensus],
         published_states=[PublishedStateResponse.model_validate(ps) for ps in published_rows],
+        peers_revealed=unblinded,
     )
 
 
@@ -316,7 +330,12 @@ _CURRENT_VALUE_STAGES = frozenset(
 
 
 async def build_run_view(
-    db: AsyncSession, run_id: UUID, *, caller_id: UUID, can_see_peers: bool
+    db: AsyncSession,
+    run_id: UUID,
+    *,
+    caller_id: UUID,
+    can_see_peers: bool,
+    caller_is_arbitrator: bool = False,
 ) -> RunViewResponse:
     """The one-round-trip run-open view: the blind-filtered run detail plus the
     frozen entity_types tree, the caller's current_values, and the instances
@@ -327,7 +346,11 @@ async def build_run_view(
     ``template_id`` / ``stage`` / ``article_id``, so there is no second ORM
     fetch of the run here."""
     detail = await get_run_with_workflow_history(
-        db, run_id, caller_id=caller_id, can_see_peers=can_see_peers
+        db,
+        run_id,
+        caller_id=caller_id,
+        can_see_peers=can_see_peers,
+        caller_is_arbitrator=caller_is_arbitrator,
     )
 
     entity_types = await _entity_types_for_run(db, detail.run)
@@ -353,6 +376,7 @@ async def build_run_view(
         ready_count=ready["ready_count"],
         reviewer_count=ready["reviewer_count"],
         reviewers_ready=ready["reviewers_ready"],
+        peers_revealed=detail.peers_revealed,
     )
 
 

@@ -61,6 +61,7 @@ from app.services.extraction_run_read_service import (
     caller_can_see_peers,
     get_run_or_raise,
     get_run_with_workflow_history,
+    is_run_arbitrator,
     list_run_participants,
 )
 from app.services.run_lifecycle_service import (
@@ -162,8 +163,13 @@ async def get_run(
     can_see_peers = await caller_can_see_peers(
         db, project_id=run.project_id, user_id=current_user_sub, kind=run.kind
     )
+    is_arbitrator = await is_run_arbitrator(db, run.project_id, current_user_sub)
     detail = await get_run_with_workflow_history(
-        db, run_id, caller_id=current_user_sub, can_see_peers=can_see_peers
+        db,
+        run_id,
+        caller_id=current_user_sub,
+        can_see_peers=can_see_peers,
+        caller_is_arbitrator=is_arbitrator,
     )
     return ApiResponse.success(
         detail,
@@ -184,7 +190,14 @@ async def get_run_view(
     can_see_peers = await caller_can_see_peers(
         db, project_id=run.project_id, user_id=current_user_sub, kind=run.kind
     )
-    view = await build_run_view(db, run_id, caller_id=current_user_sub, can_see_peers=can_see_peers)
+    is_arbitrator = await is_run_arbitrator(db, run.project_id, current_user_sub)
+    view = await build_run_view(
+        db,
+        run_id,
+        caller_id=current_user_sub,
+        can_see_peers=can_see_peers,
+        caller_is_arbitrator=is_arbitrator,
+    )
     return ApiResponse.success(view, trace_id=_trace(request))
 
 

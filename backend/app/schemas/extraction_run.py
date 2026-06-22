@@ -158,6 +158,12 @@ class RunDetailResponse(BaseModel):
     decisions: list[ReviewerDecisionResponse]
     consensus_decisions: list[ConsensusDecisionResponse]
     published_states: list[PublishedStateResponse]
+    # Effective unblind for this caller on this run: can_see_peers OR finalized
+    # OR (consensus AND arbitrator). The client shows the compare/evaluate-all
+    # surface from this rather than re-deriving visibility. Set by
+    # get_run_with_workflow_history from the same `unblinded` local that drives
+    # the row filter, so it cannot drift from the actual filtering.
+    peers_revealed: bool = False
 
 
 class RunViewField(BaseModel):
