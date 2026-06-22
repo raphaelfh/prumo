@@ -93,7 +93,8 @@ The component destructures `{ data, isLoading, error }` from the hook — it nev
 // hooks/runs/useCreateRun.ts
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/integrations/api';
-import { runsKeys, type CreateRunRequest, type RunSummaryResponse } from './types';
+import { extractionKeys } from '@/lib/query-keys';
+import type { CreateRunRequest, RunSummaryResponse } from './types';
 
 export function useCreateRun() {
   const queryClient = useQueryClient();
@@ -102,7 +103,7 @@ export function useCreateRun() {
     mutationFn: (body) =>
       apiClient<RunSummaryResponse>('/api/v1/runs', { method: 'POST', body }),
     onSuccess: (run) => {
-      queryClient.invalidateQueries({ queryKey: runsKeys.detail(run.id) });
+      queryClient.invalidateQueries({ queryKey: extractionKeys.runDetail(run.id) });
     },
   });
 }
@@ -111,6 +112,8 @@ export function useCreateRun() {
 `onSuccess` invalidates the owning key family so lists/detail views re-fetch automatically. Stale-cache bugs are a recurring incident class — always invalidate.
 
 Note: `useCreateRun` calls `apiClient` directly (no service wrapper) because the mutation doesn't need `ErrorResult` — `useMutation` owns the error surface. Either pattern is acceptable for mutations; use `toResult` when you want the service reusable outside a hook.
+
+> **Hook-local key exception:** `hooks/runs/types.ts` also exports a `runsKeys` object for a handful of reviewer-availability queries that have no `lib/query-keys/` counterpart. That is a documented exception — those keys are scoped to the hooks that use them and are not re-exported. All other keys, including run-detail and extraction data, live in `lib/query-keys/` and must be imported from there.
 
 ## Query-key factories — `lib/query-keys/`
 
