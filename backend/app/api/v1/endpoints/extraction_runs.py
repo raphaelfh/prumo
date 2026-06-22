@@ -22,6 +22,7 @@ from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
 from app.schemas.extraction_run import (
     AdvanceStageRequest,
+    ApproveFinalizeResponse,
     ConsensusDecisionResponse,
     ConsensusResultResponse,
     CreateConsensusRequest,
@@ -446,6 +447,60 @@ async def advance_run(
     return ApiResponse.success(
         RunSummaryResponse.model_validate(run),
         trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.post("/{run_id}/approve-finalize")
+async def approve_and_finalize_run(
+    run_id: UUID,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse[ApproveFinalizeResponse]:
+    """One-action consensus → finalized for extraction runs.
+
+    Publishes the agreed value for every existing-instance × field coord that is not
+    yet published (reusing the per-coord consensus path), then advances to FINALIZED —
+    atomically, in one transaction/commit. This makes the finalize gates (EmptyFinalize/
+    IncompleteFinalize) satisfiable naturally for a complete run, retiring the
+    no-divergence dead-end. Rejects when a field still diverges unresolved.
+    """
+    await _load_run_and_check_member(db, run_id, current_user_sub)
+    service = RunLifecycleService(db)
+    trace_id = _trace(request)
+    try:
+        run, published_count = await service.approve_and_finalize(
+            run_id=run_id, user_id=current_user_sub
+        )
+    except CoordinateMismatchError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except InvalidConsensusError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except OptimisticConcurrencyError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except InvalidStageTransitionError as e:
+        logger.warning(
+            "hitl_approve_finalize_rejected",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            error=str(e),
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    await db.commit()
+    logger.info(
+        "hitl_approve_finalized",
+        trace_id=trace_id,
+        run_id=str(run.id),
+        published_count=published_count,
+    )
+    return ApiResponse.success(
+        ApproveFinalizeResponse(
+            run=RunSummaryResponse.model_validate(run),
+            published_count=published_count,
+        ),
+        trace_id=trace_id,
     )
 
 

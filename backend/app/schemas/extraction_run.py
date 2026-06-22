@@ -152,6 +152,14 @@ class RunSummaryResponse(BaseModel):
     created_by: UUID
 
 
+class ApproveFinalizeResponse(BaseModel):
+    """Result of POST /runs/{id}/approve-finalize: the finalized run + how many
+    coords the approve-all step published."""
+
+    run: RunSummaryResponse
+    published_count: int
+
+
 class RunDetailResponse(BaseModel):
     run: RunSummaryResponse
     proposals: list[ProposalRecordResponse]
