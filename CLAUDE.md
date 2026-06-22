@@ -14,6 +14,44 @@ owner: '@raphaelfh'
 - Project history lives in `git log` and `docs/adr/` — do not append
   changelogs to this file. Keep this section to ≤ 5 lines.
 
+## Working principles
+
+These bias toward caution over speed. For trivial changes, use judgment.
+
+- **Think before coding.** State assumptions; if a requirement has multiple
+  readings, surface them — don't choose silently. If a simpler path exists, say
+  so; push back with evidence, not deference. Genuinely unclear, or the call is
+  the user's? Stop and ask — otherwise act, don't re-litigate settled choices.
+  Feature/creative work starts with `superpowers:brainstorming`.
+- **Simplicity first (YAGNI).** The minimum code that solves the asked problem —
+  no speculative abstractions, config, or handling for impossible cases. Any
+  complexity beyond what a principle prescribes must be justified (constitution
+  §Governance). If 200 lines could be 50, rewrite it.
+- **Surgical on unrelated code; clean in code you touch.** Change only what the
+  task requires; match surrounding style; flag unrelated dead code, don't delete
+  it. But where you DO edit, prefer the clean fix over grandfathering a
+  violation — no new legacy left for later.
+- **Goal-driven and verified.** Turn the task into a checkable goal (write the
+  failing test, then make it pass). State a short plan with a verify step each.
+  Evidence before "done" — run the command and read the output, never assert
+  (`code-review` Iron Law; `verification-before-completion`).
+
+## Which skill to load
+
+Load the skill before non-trivial work in its area (skills are on-demand —
+naming them here is what makes them load reliably).
+
+- Backend (FastAPI/SQLAlchemy/Alembic/Celery/RLS) → `backend-development`
+- Frontend structure/data/state (components/hooks/services/stores) → `frontend-development`
+- Frontend visual language (density/layout/empty states) → `frontend-ux`
+- Tailwind/shadcn class mechanics → `ui-styling`
+- Before "done" / PR / review → `code-review`
+- Bug / failing test / weird behavior → `debugging`
+- Tests (Vitest/Playwright/pytest/MSW) → `web-testing`
+- Deploy / promotion / rollback → `deploy-release`
+- Architectural drift sweep → `architectural-quality-loop`
+- Visual feedback loop on a screen → `design-review`
+
 ## Stack
 
 - **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0 async, Alembic,

@@ -25,9 +25,8 @@ Hosting: Railway (backend + worker + Redis) + Vercel (frontend) + Supabase
 - Extraction or quality-assessment → [docs/reference/extraction-hitl-architecture.md](docs/reference/extraction-hitl-architecture.md)
 - Deployment → [docs/reference/deployment.md](docs/reference/deployment.md)
 - Tests → [docs/reference/test-strategy.md](docs/reference/test-strategy.md)
-- Frontend UI / visual changes → the `frontend-ux` + `ui-styling` skills; close
-  the loop with `design-review` (`/design-review <route>`) — render, screenshot,
-  compare to the Plane/Linear target, fix, re-screenshot — before calling a screen done
+- Which skill to load for a given area → the `## Which skill to load` map in
+  [CLAUDE.md](CLAUDE.md) (the always-loaded source; this index mirrors it)
 - An architectural decision → [docs/adr/](docs/adr/)
 
 ## Do not read these (archived / generated)
