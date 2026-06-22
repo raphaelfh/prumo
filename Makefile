@@ -1,4 +1,4 @@
-.PHONY: help setup start start-remote start-cloud _print-env-banner supabase-migrate verify-remote-db stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-migrate-remote db-rollback db-history db-current db-generate db-setup db-seed db-fresh db-lint-migrations dev dev-remote e2e-local e2e-remote test-backend-e2e
+.PHONY: help setup start start-remote start-cloud _print-env-banner supabase-migrate verify-remote-db stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-migrate-remote db-rollback db-history db-current db-generate db-setup db-seed db-fresh db-lint-migrations dev dev-remote e2e-local e2e-remote test-backend-e2e hooks
 
 # Variáveis
 BACKEND_DIR := backend
@@ -32,6 +32,12 @@ help: ## Mostra esta mensagem de ajuda
 setup: ## Configura o ambiente completo (primeira vez)
 	@echo "$(GREEN)🔧 Configurando ambiente de desenvolvimento...$(NC)"
 	@./scripts/setup.sh
+	@$(MAKE) hooks
+
+hooks: ## Install git hooks (pre-push quality gate)
+	@git config core.hooksPath .githooks
+	@chmod +x .githooks/* 2>/dev/null || true
+	@echo "$(GREEN)✅ Git hooks installed (core.hooksPath=.githooks)$(NC)"
 
 start: ## Inicia todos os serviços LOCAIS (Supabase Docker + Backend + Frontend)
 	@echo "$(GREEN)🚀 Iniciando Prumo (ambiente LOCAL)$(NC)"

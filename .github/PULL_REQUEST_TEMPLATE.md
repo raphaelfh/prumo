@@ -31,6 +31,16 @@
 - [ ] Touched docs carry up-to-date `last_reviewed` frontmatter
 - [ ] No broken cross-references (`docs-ci` link check will catch the rest)
 
+## Definition of Done (judgment gate)
+
+<!-- CI already blocks the mechanical gates (fitness, coverage, lint, tests,
+     API-contract) — no merge if they fail. This section is only the judgment
+     calls CI can't make. Drop a row that genuinely doesn't apply (and say so). -->
+
+- [ ] **Authorization** — new/changed project-scoped endpoints check project membership *before* data access; no new BOLA surface (the #1 incident class here)
+- [ ] **Decision captured here** — if this PR makes an architectural decision, the ADR is in THIS PR (supersede, don't edit), not a follow-up
+- [ ] **Code ↔ doc parity** — a new/changed endpoint or `extraction_*` table updates the matching `docs/reference/` doc here, or "no doc change needed"
+
 ## Screenshots (UI changes only)
 
 | Before | After |
