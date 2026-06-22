@@ -8,8 +8,20 @@ paths:
 
 # Frontend conventions (prumo)
 
-Visual language lives in the `frontend-ux` skill; Tailwind/shadcn
-mechanics in `ui-styling`. This file is the always-true core.
+For any non-trivial frontend change, load the `frontend-development` skill
+(structure/data/state) before writing code. Visual language → `frontend-ux`;
+Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
+
+## Structure
+
+- Data flows `component → hook (TanStack Query) → service (apiClient) →
+  backend`. Components never call `fetch()` or `supabase.from(...)` directly
+  (`fetch()` is a convention enforced at review; `supabase.from(` and
+  `import.meta.env.VITE_API_URL` are CI-enforced by
+  `scripts/fitness/check_frontend_data_path.py`).
+- `frontend/services/*Service.ts` functions return `ErrorResult<T>`
+  (`frontend/lib/error-utils.ts:toResult`); they never throw across the
+  boundary and never toast.
 
 ## Data access
 
