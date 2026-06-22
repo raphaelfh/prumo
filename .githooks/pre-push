@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# prumo pre-push gate — fast, deterministic, local.
+#
+# Blocks the push on the cheap CI red-causes (ruff format/check, tsc typecheck)
+# so obviously-broken code never leaves the machine, and REMINDS you to run
+# `/code-review` in Claude Code when the diff touches risk-sensitive paths.
+# The heavy gates (tests, coverage, e2e, mypy ratchet, architectural fitness)
+# stay in CI; the AI review stays interactive — this only nudges.
+#
+# Only checks the layers that actually changed, so it stays fast.
+# Emergency bypass: `git push --no-verify` (it will just go red in CI — don't).
+set -uo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+base="$(git merge-base HEAD origin/dev 2>/dev/null \
+        || git merge-base HEAD dev 2>/dev/null \
+        || git rev-parse HEAD~1 2>/dev/null || echo '')"
+if [ -n "$base" ]; then
+  changed="$(git diff --name-only "$base"...HEAD)"
+else
+  changed="$(git diff --name-only HEAD)"
+fi
+[ -z "$changed" ] && { echo "pre-push: nothing to check."; exit 0; }
+
+rc=0
+echo "▶ pre-push: fast local gate (heavy gates run in CI)"
+
+if printf '%s\n' "$changed" | grep -q '^backend/'; then
+  echo "  • backend: ruff format + check"
+  ( cd "$root/backend" && uv run ruff format --check . && uv run ruff check . ) || rc=1
+fi
+
+if printf '%s\n' "$changed" | grep -qE '\.(ts|tsx)$'; then
+  echo "  • frontend: tsc typecheck"
+  ( cd "$root" && npm run --silent typecheck ) || rc=1
+fi
+
+risky="$(printf '%s\n' "$changed" | grep -E \
+  '^backend/app/api/|^backend/alembic/|^supabase/|^backend/app/services/|^frontend/services/|^frontend/integrations/' || true)"
+if [ -n "$risky" ]; then
+  echo ""
+  echo "⚠ risk-sensitive paths in this push:"
+  printf '%s\n' "$risky" | sed 's/^/      /'
+  echo "  → run /code-review in Claude Code before merging"
+  echo "    (BOLA · RLS · run-state TOCTOU · ApiResponse envelope · TanStack cache)"
+fi
+
+if [ "$rc" -ne 0 ]; then
+  echo "✗ pre-push gate failed — fix the above (emergency bypass: git push --no-verify)"
+  exit 1
+fi
+echo "✓ pre-push gate passed"
+exit 0

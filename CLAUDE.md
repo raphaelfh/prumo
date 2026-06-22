@@ -45,7 +45,9 @@ owner: '@raphaelfh'
 
 ## Commands
 
-- `make setup` — first-time install
+- `make setup` — first-time install (runs `make hooks`)
+- `make hooks` — install the pre-push gate (`.githooks/`): fast ruff/tsc on
+  changed layers + a `/code-review` reminder on risk-sensitive paths
 - `make start` / `make stop` — local stack (Supabase + backend + frontend)
 - `make test-backend` — backend pytest (needs local Supabase Docker)
 - `make lint-backend` — ruff check + format
