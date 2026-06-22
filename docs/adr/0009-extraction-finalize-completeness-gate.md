@@ -1,13 +1,20 @@
 ---
-status: accepted
-last_reviewed: 2026-06-17
+status: superseded
+last_reviewed: 2026-06-21
 owner: '@raphaelfh'
 adr_number: '0009'
+superseded_by: '0015'
 ---
 
 # Block extraction finalize until every required field is filled
 
-> **Status:** Accepted · Date: 2026-06-17 · Deciders: @raphaelfh
+> **Status:** Superseded by [ADR-0015](0015-finalize-via-approve-publish.md) ·
+> Date: 2026-06-17 · Deciders: @raphaelfh
+>
+> **Superseded note (2026-06-21):** the completeness + ≥1-consensus gates remain
+> as authoritative server-side invariants, but ADR-0015 retires the no-divergence
+> *dead-end* — `approve_and_finalize` publishes every agreed coordinate then
+> advances in one transaction, so a complete run always satisfies both gates.
 
 ## Context and Problem Statement
 

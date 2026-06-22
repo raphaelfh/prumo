@@ -91,11 +91,15 @@ human write on an extraction run is rejected — blind-review write defense); th
 is no `proposal → review` auto-advance and no boundary materialization. The
 shared RunHeader maps `extract` to a single **Extract** node, so the rail reads
 Extract → Consensus → Finalized.
-The primary action is one role/phase-aware control: **"Mark ready →"** in
-Extract (advances to consensus; available to every extractor since
-`POST /runs/{id}/advance` is membership-gated) and **"Finalize"** in Consensus
-(manager / consensus only). Design:
-`docs/superpowers/specs/2026-06-20-extraction-header-refinement-design.md`.
+The primary action is one role/phase-aware control (ADR-0015):
+**"Mark ready"** for a reviewer in Extract (sets the advisory per-reviewer ready
+flag via `POST /runs/{id}/ready` — it does **not** advance the run),
+**"Open consensus"** for a manager/consensus in Extract (advances `extract →
+consensus`), and **"Approve & finalize"** for a manager/consensus in Consensus
+(`POST /runs/{id}/approve-finalize` — publishes every agreed coord then advances,
+enabled only when complete and every divergence is resolved). The legacy header
+`instance.status` finalize path is retired. Design:
+`docs/superpowers/specs/2026-06-21-hitl-lifecycle-alignment-design.md`.
 
 ## 3. Database — final schema
 
@@ -417,13 +421,23 @@ publish, AI), keep it in the page-specific component.
   per-run config (display + CRUD only); the backend finalize path does **not**
   read it. Finalize gates are (1) `consensus_count > 0` (`EmptyFinalizeError`)
   and (2) the extraction-only required-field completeness gate (ADR-0009) — see
-  `run_lifecycle_service.py`. `majority` has no vote math; `arbitrator_id` is
-  consumed only for unblinding visibility.
+  `run_lifecycle_service.py`. Both remain invariants but are no longer a dead-end:
+  `approve_and_finalize` (ADR-0015) publishes every agreed coord then advances in
+  one transaction, so a complete run always satisfies them. `majority` has no vote
+  math; `arbitrator_id` is consumed only for unblinding visibility.
+- **ReviewerReady** — advisory per-`(run, reviewer)` "I'm done extracting" flag
+  (`extraction_reviewer_ready`, ADR-0015). Toggled via `POST /runs/{id}/ready`
+  (membership + reviewer-role gated); does **not** gate any transition. The run
+  view exposes an `N/M reviewers ready` hint (`M = max(reviewer_count, N)`).
 - **managers_see_reviewers** — Per-kind manager blind-review policy on
   `projects.settings` (`{extraction, quality_assessment}`, both default
   `false` = managers blind). Read **live** by the API read path
   (`caller_can_see_peers`), not snapshotted onto the run. See §3 and ADR
-  0012.
+  0012. **Consensus auto-reveal (ADR-0015):** independently of this toggle, an
+  arbitrator (manager/consensus) is unblinded once the run reaches `consensus`
+  (run-scoped, mirroring the `finalized` auto-unblind) — no toggle write; plain
+  reviewers stay blind. The run payload's `peers_revealed` echoes the effective
+  unblind.
 
 ### Legacy (fully removed)
 
@@ -449,9 +463,12 @@ publish, AI), keep it in the page-specific component.
   reviewers" counter, the "0% until you accept" progress — therefore exists live
   in `EXTRACT`; there is **no** `proposal → review` auto-advance and **no**
   boundary materialization (both removed in ADR-0014, which superseded ADR-0010).
-  AI proposals remain suggestions to accept. The user advances `EXTRACT →
-  CONSENSUS` explicitly via "Mark ready"; "Run AI" is disabled once a run leaves
-  `EXTRACT`.
+  AI proposals remain suggestions to accept. A manager/consensus advances
+  `EXTRACT → CONSENSUS` explicitly via **"Open consensus"** (ADR-0015); reviewers
+  signal completion with the advisory **"Mark ready"** flag (which does not
+  advance). `CONSENSUS → FINALIZED` is the one-action **"Approve & finalize"**
+  (`approve_and_finalize`: publish every agreed coord, then advance). "Run AI" is
+  disabled once a run leaves `EXTRACT`.
 
 ## 7. References
 
