@@ -676,6 +676,16 @@ export default function QualityAssessmentFullScreen() {
   const showConsensusPanel = ready && inConsensusStage && !!runDetail;
   const showFormStage = ready && !inConsensusStage;
 
+  // Completeness signal for ConsensusPanel's no-divergence finalize fast-path.
+  // QA has no required-field gate (its publish preflight only requires at
+  // least one filled value — see handlePublish), so mirror that here: without
+  // this the panel never receives isComplete, canFinalize stays false, and a
+  // no-divergence QA run shows a wrong "incomplete" message with finalize
+  // disabled.
+  const qaIsComplete = Object.values(values).some(
+    (v) => v !== undefined && v !== null && v !== "",
+  );
+
   const formPanel = (
     <div className="space-y-3 p-4" data-testid="qa-form-panel">
       {error ? (
@@ -706,6 +716,7 @@ export default function QualityAssessmentFullScreen() {
           onFinalize={handleFinalizeFromConsensus}
           isResolving={consensusMutation.isPending}
           isFinalizing={advanceMutation.isPending}
+          isComplete={qaIsComplete}
         />
       ) : null}
 
