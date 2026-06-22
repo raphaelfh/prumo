@@ -738,11 +738,9 @@ class ExtractionExportService(LoggerMixin):
     ) -> tuple[ProjectExtractionTemplate, Any]:
         """Load the project template + its currently-active version row.
 
-        Scoped by ``project_id`` (defense-in-depth, mirroring the reviewer
-        picker query): a template id belonging to another project must not
-        resolve here even though the caller passed our own project's
-        membership gate — otherwise the async export path would build and
-        upload a workbook carrying a foreign project's template metadata.
+        Scoped by ``project_id`` (BOLA): a template id from another project must
+        not resolve even though the caller passed our own project's gate, else
+        the async export path would leak a foreign project's template metadata.
         """
         template = (
             await self.db.execute(
@@ -1961,22 +1959,11 @@ def _build_tidy_tables(
 ) -> tuple[TidyTable, ...]:
     """One publication table per non-container section at its record grain.
 
-    The record axis is selected by ROLE first, then cardinality — mirroring
-    ``matrix._resolve_instance_id``:
-
-      * ``MODEL_SECTION`` fans out one row per model instance
-        (``article.model_instances``) regardless of its own cardinality.
-        Production model sections are ``cardinality='one'``; the N-model
-        fan-out is always sourced from ``model_instances``, never from
-        ``section_instances`` (spec §5.2).
-      * non-model ``cardinality==MANY`` fans out one row per instance
-        (``section_instances``).
-      * non-model ``cardinality==ONE`` yields one row per article.
-
-    Columns are the section fields in their resolved order; values are baked
-    from ``value_map`` (already-resolved scalars — §5.3). The
-    ``MODEL_CONTAINER`` and field-less sections are skipped (nothing to
-    project).
+    Record axis is selected by ROLE first, then cardinality (mirrors
+    ``matrix._resolve_instance_id``): a ``MODEL_SECTION`` fans out one row per
+    ``model_instances`` entry regardless of its own cardinality (spec §5.2);
+    non-model ``MANY`` fans out per ``section_instances``; non-model ``ONE`` is
+    one row per article. ``MODEL_CONTAINER`` and field-less sections are skipped.
     """
     tables: list[TidyTable] = []
     for section in sections:
@@ -1991,44 +1978,26 @@ def _build_tidy_tables(
             if article.run_id is None:
                 continue
             if section.role is ExtractionEntityRole.MODEL_SECTION:
-                # Role-first: model sections always fan out over model_instances
-                # regardless of their own cardinality (production model sections
-                # are cardinality ONE, yet carry one record per model).
-                for idx, instance_id in enumerate(article.model_instances, start=1):
-                    rows.append(
-                        _tidy_row(
-                            section=section,
-                            article=article,
-                            instance_id=instance_id,
-                            record_label=f"{article.header_label} — Model {idx}",
-                            value_map=value_map,
-                            mode=mode,
-                        )
-                    )
+                instances = article.model_instances
+                stem = "Model"
             elif section.cardinality is ExtractionCardinality.MANY:
                 instances = article.section_instances.get(section.entity_type_id, ())
-                for idx, instance_id in enumerate(instances, start=1):
-                    rows.append(
-                        _tidy_row(
-                            section=section,
-                            article=article,
-                            instance_id=instance_id,
-                            record_label=f"{article.header_label} — {section.label} {idx}",
-                            value_map=value_map,
-                            mode=mode,
-                        )
-                    )
+                stem = section.label
             else:
-                instances = article.section_instances.get(section.entity_type_id, ())
-                instance_id = instances[0] if instances else None
-                if instance_id is None:
-                    continue
+                instances = article.section_instances.get(section.entity_type_id, ())[:1]
+                stem = None
+            for idx, instance_id in enumerate(instances, start=1):
+                label = (
+                    article.header_label
+                    if stem is None
+                    else f"{article.header_label} — {stem} {idx}"
+                )
                 rows.append(
                     _tidy_row(
                         section=section,
                         article=article,
                         instance_id=instance_id,
-                        record_label=article.header_label,
+                        record_label=label,
                         value_map=value_map,
                         mode=mode,
                     )
