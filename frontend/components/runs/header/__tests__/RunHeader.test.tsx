@@ -9,7 +9,7 @@ function Probe() {
 }
 
 const baseValue = {
-  kind: 'extraction' as const, stage: 'review' as const, isRevision: false,
+  kind: 'extraction' as const, stage: 'extract' as const, isRevision: false,
   role: 'manager' as const, isBlind: true, canReveal: true,
   progress: { completed: 3, total: 30, pct: 10 },
   reviewers: { count: 2, required: 3, divergent: 1 }, transition: null,
@@ -22,7 +22,7 @@ describe('RunHeader shell', () => {
         <RunHeader.Left><Probe /></RunHeader.Left>
       </RunHeader>,
     );
-    expect(screen.getByTestId('probe')).toHaveTextContent('extraction:review');
+    expect(screen.getByTestId('probe')).toHaveTextContent('extraction:extract');
     expect(screen.getByRole('banner')).toBeInTheDocument();
   });
 

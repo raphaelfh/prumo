@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { stageNodeStates } from '@/components/runs/header/stage';
 
 describe('stageNodeStates (3-node user-facing model)', () => {
-  it('maps proposal AND review to the current Extract node', () => {
-    for (const s of ['proposal', 'review'] as const) {
+  it('maps extract to the current Extract node', () => {
+    for (const s of ['extract'] as const) {
       const nodes = stageNodeStates(s);
       expect(nodes.map((n) => [n.key, n.state])).toEqual([
         ['extract', 'current'],

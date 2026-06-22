@@ -42,11 +42,20 @@ export interface CreateConsensusRequest {
 export interface AdvanceStageRequest {
   target_stage:
     | "pending"
-    | "proposal"
-    | "review"
+    | "extract"
     | "consensus"
     | "finalized"
     | "cancelled";
+}
+
+export interface MarkReadyRequest {
+  ready: boolean;
+}
+
+export interface RunReadyStateResponse {
+  ready_count: number;
+  reviewer_count: number;
+  reviewers_ready: string[];
 }
 
 export interface ProposalRecordResponse {
@@ -120,12 +129,22 @@ export interface RunSummaryResponse {
   created_by: string;
 }
 
+export interface ApproveFinalizeResponse {
+  run: RunSummaryResponse;
+  published_count: number;
+}
+
 export interface RunDetailResponse {
   run: RunSummaryResponse;
   proposals: ProposalRecordResponse[];
   decisions: ReviewerDecisionResponse[];
   consensus_decisions: ConsensusDecisionResponse[];
   published_states: PublishedStateResponse[];
+  /** Effective unblind for this caller on this run (consensus auto-reveal for
+   * arbitrators / finalized / can_see_peers). Drives the compare surface.
+   * Optional in the type only so test fixtures need not construct it — the
+   * backend always sends it; consumers default with `?? false` / `|| ...`. */
+  peers_revealed?: boolean;
 }
 
 export interface RunViewFieldResponse {
@@ -172,7 +191,6 @@ export interface RunViewInstanceResponse {
   parent_instance_id: string | null;
   label: string;
   sort_order: number;
-  status: string;
   metadata: Record<string, unknown>;
   project_id: string;
   article_id: string | null;
@@ -186,6 +204,11 @@ export interface RunViewResponse extends RunDetailResponse {
   entity_types: RunViewEntityType[];
   current_values: RunViewCurrentValue[];
   instances: RunViewInstanceResponse[];
+  /** "N/M reviewers ready" hint (advisory; readiness gates nothing). Optional in
+   * the type only so fixtures need not construct it; backend always sends it. */
+  ready_count?: number;
+  reviewer_count?: number;
+  reviewers_ready?: string[];
 }
 
 export interface ArticleRunRef {

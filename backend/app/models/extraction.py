@@ -87,11 +87,10 @@ class ExtractionEntityRole(str, PyEnum):
 
 
 class ExtractionRunStage(str, PyEnum):
-    """Estagio da execucao de extraction (HITL lifecycle)."""
+    """Stage of the extraction execution (HITL lifecycle)."""
 
     PENDING = "pending"
-    PROPOSAL = "proposal"
-    REVIEW = "review"
+    EXTRACT = "extract"
     CONSENSUS = "consensus"
     FINALIZED = "finalized"
     CANCELLED = "cancelled"
@@ -104,20 +103,6 @@ class ExtractionRunStatus(str, PyEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
-
-
-class ExtractionInstanceStatus(str, PyEnum):
-    """
-    Status de uma instance de extraction.
-
-    Alinhado with o enum 'extraction_instance_status' in the PostgreSQL.
-    """
-
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    REVIEWED = "reviewed"
-    ARCHIVED = "archived"
 
 
 class ExtractionTemplateGlobal(BaseModel):
@@ -450,11 +435,6 @@ class ExtractionInstance(BaseModel):
         nullable=False,
     )
 
-    status: Mapped[str] = mapped_column(
-        PostgreSQLEnumType("extraction_instance_status"),
-        default=ExtractionInstanceStatus.PENDING.value,
-        nullable=False,
-    )
     is_template: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
 
     # Relationships

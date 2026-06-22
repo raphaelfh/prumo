@@ -15,7 +15,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic_ai.exceptions import AgentRunError
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import LoggerMixin
@@ -29,7 +29,6 @@ from app.models.extraction import (
     ExtractionEntityType,
     ExtractionEvidence,
     ExtractionInstance,
-    ExtractionInstanceStatus,
     ExtractionRun,
     ExtractionRunStage,
     ProjectExtractionTemplate,
@@ -37,6 +36,9 @@ from app.models.extraction import (
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,
+    ExtractionReviewerDecision,
+    ExtractionReviewerDecisionType,
+    ExtractionReviewerState,
 )
 from app.repositories import (
     ArticleFileRepository,
@@ -168,9 +170,9 @@ class SectionExtractionService(LoggerMixin):
             existing_run = await self.db.get(ExtractionRun, run_id)
             if existing_run is None:
                 raise ValueError(f"Run {run_id} not found")
-            if existing_run.stage != ExtractionRunStage.PROPOSAL.value:
+            if existing_run.stage != ExtractionRunStage.EXTRACT.value:
                 raise ValueError(
-                    f"Run {run_id} stage is {existing_run.stage}; AI extraction requires PROPOSAL",
+                    f"Run {run_id} stage is {existing_run.stage}; AI extraction requires EXTRACT",
                 )
             run = existing_run
         else:
@@ -187,7 +189,7 @@ class SectionExtractionService(LoggerMixin):
             )
             run = await self._lifecycle.advance_stage(
                 run_id=run.id,
-                target_stage=ExtractionRunStage.PROPOSAL,
+                target_stage=ExtractionRunStage.EXTRACT,
                 user_id=UUID(self.user_id),
             )
             await self._runs.start_run(run.id)
@@ -237,14 +239,14 @@ class SectionExtractionService(LoggerMixin):
             )
             phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
-            # Run stays in PROPOSAL. The HITL session service's
+            # Run stays in EXTRACT. The HITL session service's
             # ``_reuse_or_create_run`` returns this run on next session
             # open (most-recent non-terminal), so ``useExtractedValues``
             # hydrates from ``runDetail.proposals`` and the AI values
-            # show in the form immediately. The user advances to REVIEW
-            # explicitly via "Submit for review" — auto-advancing here
-            # would skip the proposal-stage hydration and leave the
-            # form empty (#bug: AI extraction values not appearing).
+            # show in the form immediately. The user advances to CONSENSUS
+            # explicitly via "Open consensus" — auto-advancing here would
+            # skip the extract-stage hydration and leave the form empty
+            # (#bug: AI extraction values not appearing).
 
             duration = (perf_counter() - start_time) * 1000
 
@@ -331,17 +333,22 @@ class SectionExtractionService(LoggerMixin):
         ``_create_suggestions``.
 
         Stage rules:
-        - The Run must already be in PROPOSAL stage (the HITL session
+        - The Run must already be in EXTRACT stage (the HITL session
           service opens it there).
-        - When ``auto_advance_to_review`` is True the Run advances
-          PROPOSAL → REVIEW after success. QA passes False so the publish
-          flow can drive the lifecycle from PROPOSAL all the way to
-          FINALIZED in one click.
+        - ``auto_advance_to_review`` is retained for API compatibility but
+          is now inert: the collapsed lifecycle has no separate ``review``
+          stage, so the Run stays in EXTRACT after success and reviewers
+          act there directly. The flag's requested value is still recorded
+          in the result for telemetry continuity.
 
         Re-run safety: when ``skip_fields_with_human_proposals`` is True,
-        every field whose latest proposal on this Run is already
-        ``source='human'`` is excluded from the LLM call so the user's
-        edits aren't silently buried under a new AI guess.
+        every field a human has already settled is excluded from the LLM
+        call so the user's work isn't buried under a new AI guess. A field
+        counts as settled on either track — a latest ``source='human'``
+        proposal (the QA surface) or a committed reviewer decision
+        (``edit`` / ``accept_proposal``; the extraction surface, where the
+        blind-review gate routes human values to ``ReviewerDecision`` rows
+        rather than ``human`` proposals).
 
         The system / user prompt is selected from ``run.kind`` +
         ``template.framework`` so PROBAST / QUADAS-2 runs get an
@@ -353,8 +360,8 @@ class SectionExtractionService(LoggerMixin):
         run = await self.db.get(ExtractionRun, run_id)
         if run is None:
             raise ValueError(f"Run {run_id} not found")
-        if run.stage != ExtractionRunStage.PROPOSAL.value:
-            raise ValueError(f"Run {run_id} stage is {run.stage}; AI extraction requires PROPOSAL")
+        if run.stage != ExtractionRunStage.EXTRACT.value:
+            raise ValueError(f"Run {run_id} stage is {run.stage}; AI extraction requires EXTRACT")
 
         template = await self.db.get(ProjectExtractionTemplate, run.template_id)
         framework: str | None = template.framework if template is not None else None
@@ -416,12 +423,10 @@ class SectionExtractionService(LoggerMixin):
                         }
                     )
 
-            if auto_advance_to_review:
-                await self._lifecycle.advance_stage(
-                    run_id=run.id,
-                    target_stage=ExtractionRunStage.REVIEW,
-                    user_id=UUID(self.user_id),
-                )
+            # No stage flip: the collapsed lifecycle has no ``review`` stage,
+            # so a successful AI pass leaves the Run in EXTRACT where reviewers
+            # act directly. ``auto_advance_to_review`` is recorded below for
+            # telemetry but no longer drives a transition.
 
             duration_ms = (perf_counter() - start_time) * 1000
 
@@ -494,10 +499,23 @@ class SectionExtractionService(LoggerMixin):
 
         original_fields = list(full_entity_type.fields or [])
         if skip_fields_with_human_proposals and instance is not None and original_fields:
+            field_ids = [f.id for f in original_fields]
+            # Protect a field from the AI re-run if the human has already
+            # settled it on EITHER track: a ``human`` proposal (the QA
+            # surface still writes these) OR a committed reviewer decision
+            # (the collapsed ``extract`` lifecycle routes human extraction
+            # values to per-reviewer ``ReviewerDecision`` rows, so the
+            # proposal probe alone would miss them — see the blind-review
+            # write gate in ``extraction_proposal_service``).
             human_fields = await self._fields_with_recent_human_proposal(
                 run_id=run.id,
                 instance_id=instance.id,
-                field_ids=[f.id for f in original_fields],
+                field_ids=field_ids,
+            )
+            human_fields |= await self._fields_with_human_decision(
+                run_id=run.id,
+                instance_id=instance.id,
+                field_ids=field_ids,
             )
             filtered = [f for f in original_fields if f.id not in human_fields]
             if not filtered:
@@ -595,6 +613,58 @@ class SectionExtractionService(LoggerMixin):
                 human.add(field_id)
         return human
 
+    async def _fields_with_human_decision(
+        self,
+        *,
+        run_id: UUID,
+        instance_id: UUID,
+        field_ids: list[UUID],
+    ) -> set[UUID]:
+        """Return the subset of ``field_ids`` that already carry a committed
+        human reviewer decision (``edit`` or ``accept_proposal``) on this
+        Run/instance — i.e. a reviewer has settled the field.
+
+        Companion to ``_fields_with_recent_human_proposal`` for the collapsed
+        ``extract`` lifecycle: human *extraction* values land as per-reviewer
+        ``ReviewerDecision`` rows (the blind-review write gate rejects
+        ``human`` proposals for ``kind='extraction'``), so the proposal probe
+        alone can never see them. Re-running AI must not regenerate
+        suggestions over a field a reviewer has already handled, so the skip
+        set unions both probes.
+
+        Reads each reviewer's *current* decision via ``ReviewerState`` — any
+        reviewer who has settled the coord protects it, since AI proposals are
+        shared across reviewers. ``reject`` is intentionally excluded: a
+        rejected field is unresolved, so a fresh AI suggestion is still
+        welcome.
+        """
+        if not field_ids:
+            return set()
+        stmt = (
+            select(
+                ExtractionReviewerState.field_id,
+                ExtractionReviewerDecision.decision,
+            )
+            .join(
+                ExtractionReviewerDecision,
+                and_(
+                    ExtractionReviewerDecision.run_id == ExtractionReviewerState.run_id,
+                    ExtractionReviewerDecision.id == ExtractionReviewerState.current_decision_id,
+                ),
+            )
+            .where(
+                ExtractionReviewerState.run_id == run_id,
+                ExtractionReviewerState.instance_id == instance_id,
+                ExtractionReviewerState.field_id.in_(field_ids),
+            )
+        )
+        rows = (await self.db.execute(stmt)).all()
+        settled = {
+            ExtractionReviewerDecisionType.EDIT.value,
+            ExtractionReviewerDecisionType.ACCEPT_PROPOSAL.value,
+        }
+        return {field_id for field_id, decision in rows if decision in settled}
+
     async def extract_all_sections(
         self,
         project_id: UUID,
@@ -643,7 +713,7 @@ class SectionExtractionService(LoggerMixin):
         )
         run = await self._lifecycle.advance_stage(
             run_id=run.id,
-            target_stage=ExtractionRunStage.PROPOSAL,
+            target_stage=ExtractionRunStage.EXTRACT,
             user_id=UUID(self.user_id),
         )
 
@@ -740,9 +810,9 @@ class SectionExtractionService(LoggerMixin):
                         }
                     )
 
-            # Run stays in PROPOSAL — see ``extract_section`` for the
-            # rationale. The user advances to REVIEW via "Submit for
-            # review" after inspecting the AI-proposed values.
+            # Run stays in EXTRACT — see ``extract_section`` for the
+            # rationale. The user advances to CONSENSUS via "Open consensus"
+            # after inspecting the AI-proposed values.
 
             duration = (perf_counter() - start_time) * 1000
 
@@ -842,7 +912,7 @@ class SectionExtractionService(LoggerMixin):
         )
         run = await self._lifecycle.advance_stage(
             run_id=run.id,
-            target_stage=ExtractionRunStage.PROPOSAL,
+            target_stage=ExtractionRunStage.EXTRACT,
             user_id=UUID(self.user_id),
         )
 
@@ -874,9 +944,9 @@ class SectionExtractionService(LoggerMixin):
             # Generate memory summary (max 200 chars)
             summary = self._generate_extraction_summary(entity_type, extracted_data)
 
-            # Run stays in PROPOSAL — see ``extract_section`` for the
-            # rationale. The user advances to REVIEW via "Submit for
-            # review" after inspecting the AI-proposed values.
+            # Run stays in EXTRACT — see ``extract_section`` for the
+            # rationale. The user advances to CONSENSUS via "Open consensus"
+            # after inspecting the AI-proposed values.
 
             # Complete run
             phase_start = perf_counter()
@@ -1209,7 +1279,6 @@ class SectionExtractionService(LoggerMixin):
                     "ai_run_id": str(run.id),
                 },
                 created_by=UUID(self.user_id),
-                status=ExtractionInstanceStatus.PENDING.value,
             )
 
             instance = await self._instances.create(new_instance)

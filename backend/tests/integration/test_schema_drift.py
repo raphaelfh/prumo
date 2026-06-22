@@ -205,8 +205,7 @@ async def test_extraction_run_stage_enum_values(db_session: AsyncSession) -> Non
     )
     assert list(values) == [
         "pending",
-        "proposal",
-        "review",
+        "extract",
         "consensus",
         "finalized",
         "cancelled",

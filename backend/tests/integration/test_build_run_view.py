@@ -1,6 +1,7 @@
 """build_run_view composes get_run_with_workflow_history (the single blind
 filter) and adds entity_types + current_values. It must NOT re-introduce a
-blind leak, and current_values must be empty in proposal stage."""
+blind leak, and current_values must be empty for an extract-stage run that has
+no recorded decisions yet."""
 
 from __future__ import annotations
 
@@ -34,7 +35,7 @@ async def test_build_run_view_blinds_peer_in_review(db_session: AsyncSession) ->
 
 
 @pytest.mark.asyncio
-async def test_build_run_view_current_values_empty_in_proposal(
+async def test_build_run_view_current_values_empty_in_extract(
     db_session: AsyncSession,
 ) -> None:
     fx = await _proposal_stage_coord(db_session)
@@ -43,9 +44,9 @@ async def test_build_run_view_current_values_empty_in_proposal(
     run_id, _instance_id, _field_id, user_id = fx
 
     view = await build_run_view(db_session, run_id, caller_id=user_id, can_see_peers=False)
-    assert view.run.stage == "proposal"
+    assert view.run.stage == "extract"
     assert view.current_values == [], (
-        "proposal stage must use proposals[] on the client, not server current_values"
+        "an extract-stage run with no recorded decisions has empty current_values"
     )
 
 
@@ -56,7 +57,7 @@ async def test_build_run_view_instances_populated_and_scoped(
     """build_run_view must populate instances scoped to (article_id, template_id).
 
     Creates a fresh run via _proposal_stage_coord (same builder used by
-    test_build_run_view_current_values_empty_in_proposal) so the test always
+    test_build_run_view_current_values_empty_in_extract) so the test always
     executes — it no longer depends on a pre-existing run surviving the seed
     purge.
 
@@ -107,9 +108,9 @@ async def test_build_run_view_instances_populated_and_scoped(
         text(
             "INSERT INTO public.extraction_instances "
             "(id, project_id, template_id, entity_type_id, article_id, "
-            " label, status, created_by) "
+            " label, created_by) "
             "VALUES (:id, :pid, :tid, :etid, :aid, "
-            " 'Foreign Instance (scope test)', 'pending', :created_by)"
+            " 'Foreign Instance (scope test)', :created_by)"
         ),
         {
             "id": str(foreign_instance_id),

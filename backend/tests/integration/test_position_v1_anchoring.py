@@ -144,8 +144,8 @@ async def _insert_run_and_proposal(
             text(
                 "INSERT INTO public.extraction_instances "
                 "(id, project_id, template_id, entity_type_id, article_id, "
-                " label, status, created_by) "
-                "VALUES (:id, :pid, :tid, :etid, :aid, 'anchor-test', 'pending', :cb)"
+                " label, created_by) "
+                "VALUES (:id, :pid, :tid, :etid, :aid, 'anchor-test', :cb)"
             ),
             {
                 "id": str(instance_id),

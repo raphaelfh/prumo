@@ -94,6 +94,7 @@ export const extraction = {
     errors_autoSaveFailed: 'Error saving data automatically',
     errors_autoSaveUpdateValues: 'Error updating {{n}} values: {{message}}',
     errors_advanceFailed: 'Could not advance the extraction stage',
+    errors_markReadyFailed: 'Could not update your ready signal',
     // useSectionExtraction toasts
     sectionExtractionNoSuggestionsTitle: 'Extraction completed with no suggestions',
     sectionExtractionNoSuggestionsDesc: 'Extraction finished but no suggestions were created. Check that field names match exactly or that the PDF contains the expected data.',
@@ -553,7 +554,13 @@ export const extraction = {
     noModelsAddedDesc: 'Add a model manually or extract it automatically from the article.',
     // RunHeader (extraction-specific keys — shared header keys now live in the runs namespace)
     runHeaderMarkReady: 'Mark ready →',
-    runHeaderMarkReadyTooltip: 'Mark this extraction ready for consensus and open the next article.',
+    runHeaderMarkReadyTooltip: 'Signal that you are done extracting this article and open the next one.',
+    runHeaderMarkedReady: 'Marked ready',
+    runHeaderOpenConsensus: 'Open consensus',
+    runHeaderOpenConsensusTooltip: 'Move this article into consensus for review and publishing.',
+    runHeaderApproveFinalize: 'Approve & finalize',
+    runHeaderApproveFinalizeTooltip: 'Publish every agreed value and finalize this article.',
+    runHeaderApproveBlocked: 'Resolve every diverging field and fill all required fields first',
     runHeaderFinalize: 'Finalize',
     runHeaderFinalizeTooltip: 'Lock and publish the agreed values.',
     runHeaderGateBlocked: 'Complete the required fields first',

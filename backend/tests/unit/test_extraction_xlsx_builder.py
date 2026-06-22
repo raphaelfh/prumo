@@ -335,7 +335,7 @@ def test_summary_sheet_lists_omitted_articles_by_stage():
     # The omitted-by-stage tally moved from the legacy Notes sheet onto the
     # Summary sheet (the README sub-builder absorbs the rest of Notes).
     notes = ExportNotes(
-        omitted_articles_by_stage={"review": 4, "no_run": 2},
+        omitted_articles_by_stage={"extract": 4, "no_run": 2},
         template_version_label="CHARMS v1",
         export_mode_label="Consensus",
         generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
@@ -357,7 +357,7 @@ def test_summary_sheet_lists_omitted_articles_by_stage():
     rows = [list(row) for row in _open(data)["Summary"].iter_rows(values_only=True)]
     flat = " ".join(str(c) for row in rows for c in row if c)
     assert "Articles omitted" in flat
-    assert "stage=review" in flat
+    assert "stage=extract" in flat
     assert "stage=no_run" in flat
 
 

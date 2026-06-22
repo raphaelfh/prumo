@@ -11,8 +11,7 @@ const inst = (
   id: string,
   article_id: string,
   entity_type_id = 'e1',
-  status = 'pending',
-): RawInstance => ({ id, article_id, entity_type_id, status });
+): RawInstance => ({ id, article_id, entity_type_id });
 
 describe('buildArticleValueMap', () => {
   it('groups instances + values per article', () => {

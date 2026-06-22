@@ -165,7 +165,7 @@ vi.mock("@/integrations/api", () => ({
           template_id: "tpl-1",
           kind: "quality_assessment",
           version_id: "v-1",
-          stage: "proposal",
+          stage: "extract",
           status: "running",
           hitl_config_snapshot: {},
           parameters: {},

@@ -251,9 +251,7 @@ export default function QualityAssessmentFullScreen() {
       values,
       baselineValues: loadedValues,
       enabled:
-        !!session &&
-        !!runDetail &&
-        (runDetail.run.stage === "proposal" || runDetail.run.stage === "review"),
+        !!session && !!runDetail && runDetail.run.stage === "extract",
     });
 
   // AI suggestions wiring — kind-agnostic hooks reused from Data
@@ -439,13 +437,10 @@ export default function QualityAssessmentFullScreen() {
       // otherwise the consensus loop below would publish stale values.
       await saveNow();
 
+      // Collapsed lifecycle: the run sits in the editable EXTRACT stage; the
+      // publish walks it straight to CONSENSUS (no separate review stage).
       const stage = runDetail.run.stage;
-      if (stage === "proposal") {
-        await advanceMutation.mutateAsync({ target_stage: "review" });
-      }
-      const stageAfterReview =
-        stage === "proposal" || stage === "review" ? "review" : stage;
-      if (stageAfterReview === "review") {
+      if (stage === "extract") {
         await advanceMutation.mutateAsync({ target_stage: "consensus" });
       }
 

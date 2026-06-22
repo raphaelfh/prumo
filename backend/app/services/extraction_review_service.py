@@ -51,9 +51,9 @@ class ExtractionReviewService:
         run = await load_run_for_update(self.db, run_id)
         if run is None:
             raise InvalidDecisionError(f"Run {run_id} not found")
-        if run.stage != ExtractionRunStage.REVIEW.value:
+        if run.stage != ExtractionRunStage.EXTRACT.value:
             raise InvalidDecisionError(
-                f"Cannot record decision: run stage is {run.stage}, not 'review'"
+                f"Cannot record decision: run stage is {run.stage}, not 'extract'"
             )
 
         await assert_coords_coherent(

@@ -69,7 +69,7 @@ async def test_create_run_snapshots_hitl_config_and_active_version(
 
 
 @pytest.mark.asyncio
-async def test_advance_pending_to_proposal_succeeds(
+async def test_advance_pending_to_extract_succeeds(
     db_session: AsyncSession,
 ) -> None:
     fx = await _fixtures(db_session)
@@ -86,15 +86,15 @@ async def test_advance_pending_to_proposal_succeeds(
     )
     advanced = await service.advance_stage(
         run_id=run.id,
-        target_stage=ExtractionRunStage.PROPOSAL,
+        target_stage=ExtractionRunStage.EXTRACT,
         user_id=profile_id,
     )
-    assert advanced.stage == ExtractionRunStage.PROPOSAL.value
+    assert advanced.stage == ExtractionRunStage.EXTRACT.value
     await db_session.rollback()
 
 
 @pytest.mark.asyncio
-async def test_advance_pending_to_review_fails(db_session: AsyncSession) -> None:
+async def test_advance_pending_to_consensus_fails(db_session: AsyncSession) -> None:
     fx = await _fixtures(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
@@ -110,7 +110,7 @@ async def test_advance_pending_to_review_fails(db_session: AsyncSession) -> None
     with pytest.raises(InvalidStageTransitionError):
         await service.advance_stage(
             run_id=run.id,
-            target_stage=ExtractionRunStage.REVIEW,
+            target_stage=ExtractionRunStage.CONSENSUS,
             user_id=profile_id,
         )
     await db_session.rollback()
@@ -161,7 +161,7 @@ async def test_cannot_advance_from_cancelled(db_session: AsyncSession) -> None:
     with pytest.raises(InvalidStageTransitionError):
         await service.advance_stage(
             run_id=run.id,
-            target_stage=ExtractionRunStage.PROPOSAL,
+            target_stage=ExtractionRunStage.EXTRACT,
             user_id=profile_id,
         )
     await db_session.rollback()
@@ -221,8 +221,7 @@ async def test_cannot_finalize_run_without_consensus(
         user_id=profile_id,
     )
     for target in (
-        ExtractionRunStage.PROPOSAL,
-        ExtractionRunStage.REVIEW,
+        ExtractionRunStage.EXTRACT,
         ExtractionRunStage.CONSENSUS,
     ):
         await service.advance_stage(run_id=run.id, target_stage=target, user_id=profile_id)
@@ -316,9 +315,7 @@ async def test_finalize_blocked_until_required_fields_filled(
     await db_session.flush()
 
     lifecycle = RunLifecycleService(db_session)
-    await lifecycle.advance_stage(
-        run_id=run_id, target_stage=ExtractionRunStage.REVIEW, user_id=profile_id
-    )
+    # The session already parked the run in EXTRACT; advance straight to CONSENSUS.
     await lifecycle.advance_stage(
         run_id=run_id, target_stage=ExtractionRunStage.CONSENSUS, user_id=profile_id
     )
@@ -393,9 +390,9 @@ async def test_reopen_after_cancelled_child_creates_fresh_run(
 
     Trigger sequence:
       1. Parent run A finalized (via direct SQL to bypass EmptyFinalizeError).
-      2. Reopen A → child run B (REVIEW).
+      2. Reopen A → child run B (EXTRACT).
       3. Cancel B.
-      4. Reopen A again → must create child run C (REVIEW), not return B.
+      4. Reopen A again → must create child run C (EXTRACT), not return B.
     """
     fx = await _fixtures(db_session)
     if fx is None:
@@ -426,10 +423,10 @@ async def test_reopen_after_cancelled_child_creates_fresh_run(
     # Refresh the parent so the next SELECT sees the FINALIZED stage.
     await db_session.refresh(parent)
 
-    # Step 2: Reopen → child B in REVIEW.
+    # Step 2: Reopen → child B in EXTRACT.
     child_b, created_b = await service.reopen_run(run_id=parent.id, user_id=profile_id)
     assert created_b is True  # fresh fork
-    assert child_b.stage == ExtractionRunStage.REVIEW.value
+    assert child_b.stage == ExtractionRunStage.EXTRACT.value
     child_b_id = child_b.id
 
     # Step 3: Cancel child B.
@@ -443,6 +440,320 @@ async def test_reopen_after_cancelled_child_creates_fresh_run(
     child_c, created_c = await service.reopen_run(run_id=parent.id, user_id=profile_id)
     assert created_c is True  # the cancelled child is not reused → a new fork
     assert child_c.id != child_b_id, "reopen_run returned the cancelled child instead of a new run"
-    assert child_c.stage == ExtractionRunStage.REVIEW.value
+    assert child_c.stage == ExtractionRunStage.EXTRACT.value
 
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_pending_extract_consensus_finalized_path(
+    db_session: AsyncSession,
+) -> None:
+    """The collapsed 3-stage lifecycle: PENDING→EXTRACT→CONSENSUS→FINALIZED.
+
+    Verifies:
+    - PENDING can advance to EXTRACT.
+    - EXTRACT cannot skip directly to FINALIZED (must go through CONSENSUS).
+    """
+    from app.models.extraction_workflow import ExtractionConsensusMode
+    from app.services.extraction_consensus_service import ExtractionConsensusService
+
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+
+    svc = RunLifecycleService(db_session)
+
+    # Own the run state for this article/template (the suite leaks runs).
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
+            "AND article_id = :aid AND template_id = :tid"
+        ),
+        {"pid": str(project_id), "aid": str(article_id), "tid": str(template_id)},
+    )
+
+    run = await svc.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+
+    # PENDING → EXTRACT
+    run = await svc.advance_stage(run_id=run.id, target_stage="extract", user_id=profile_id)
+    assert run.stage == ExtractionRunStage.EXTRACT.value
+
+    # EXTRACT cannot skip to FINALIZED
+    with pytest.raises(InvalidStageTransitionError):
+        await svc.advance_stage(run_id=run.id, target_stage="finalized", user_id=profile_id)
+
+    # EXTRACT → CONSENSUS → FINALIZED (with a consensus decision to satisfy the gate)
+    await svc.advance_stage(run_id=run.id, target_stage="consensus", user_id=profile_id)
+
+    consensus = ExtractionConsensusService(db_session)
+    await consensus.record_consensus(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        consensus_user_id=profile_id,
+        mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+        value={"value": "lifecycle-test"},
+        rationale="test_pending_extract_consensus_finalized_path",
+    )
+
+    finalized = await svc.advance_stage(run_id=run.id, target_stage="finalized", user_id=profile_id)
+    assert finalized.stage == ExtractionRunStage.FINALIZED.value
+
+    await db_session.rollback()
+
+
+async def test_enum_has_extract_not_proposal_review(db_session_real):
+    rows = (
+        (
+            await db_session_real.execute(
+                text("SELECT unnest(enum_range(NULL::public.extraction_run_stage))::text AS v")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert "extract" in rows
+    assert "proposal" not in rows
+    assert "review" not in rows
+
+
+@pytest.mark.asyncio
+async def test_approve_and_finalize_publishes_agreed_and_finalizes(
+    db_session: AsyncSession,
+) -> None:
+    """The no-divergence dead-end fix (spec I2): a run whose required field is
+    filled only by a reviewer decision — with ZERO consensus decisions — cannot
+    finalize via plain advance (EmptyFinalizeError). approve_and_finalize publishes
+    the agreed value and finalizes in one atomic action."""
+    from app.services.extraction_review_service import ExtractionReviewService
+
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :p "
+            "AND article_id = :a AND template_id = :t"
+        ),
+        {"p": str(project_id), "a": str(article_id), "t": str(template_id)},
+    )
+    svc = RunLifecycleService(db_session)
+    run = await svc.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="extract", user_id=profile_id)
+    await ExtractionReviewService(db_session).record_decision(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=profile_id,
+        decision="edit",
+        value={"value": "42"},
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="consensus", user_id=profile_id)
+
+    # Plain finalize would raise EmptyFinalizeError (zero consensus decisions);
+    # approve_and_finalize publishes the agreed value first.
+    finalized, published_count = await svc.approve_and_finalize(run_id=run.id, user_id=profile_id)
+    assert finalized.stage == ExtractionRunStage.FINALIZED.value
+    assert published_count == 1
+
+    published = (
+        (
+            await db_session.execute(
+                text("SELECT value FROM public.extraction_published_states WHERE run_id = :r"),
+                {"r": str(run.id)},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(published) == 1
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_approve_and_finalize_requires_consensus_stage(
+    db_session: AsyncSession,
+) -> None:
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+
+    svc = RunLifecycleService(db_session)
+    run = await svc.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="extract", user_id=profile_id)
+    with pytest.raises(InvalidStageTransitionError):
+        await svc.approve_and_finalize(run_id=run.id, user_id=profile_id)
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_approve_and_finalize_blocks_unfilled_required(
+    db_session: AsyncSession,
+) -> None:
+    """The completeness gate stays a real invariant: a required field with no
+    resolved value still blocks finalize, even via approve_and_finalize. The seed
+    marks nothing required, so we add a required field AND rewrite the run's frozen
+    snapshot (the gate reads requiredness from the snapshot)."""
+    from uuid import uuid4
+
+    from app.models.extraction import ExtractionRun
+    from app.models.extraction_versioning import ExtractionTemplateVersion
+    from app.services.extraction_review_service import ExtractionReviewService
+    from app.services.run_lifecycle_service import IncompleteFinalizeError
+
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+    entity_type_id = SEED.primary_entity_type
+    instance_id = SEED.primary_instance
+    field_a = SEED.primary_field
+
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :p "
+            "AND article_id = :a AND template_id = :t"
+        ),
+        {"p": str(project_id), "a": str(article_id), "t": str(template_id)},
+    )
+    svc = RunLifecycleService(db_session)
+    run = await svc.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+
+    # A second required field with no value; rewrite the frozen snapshot so BOTH
+    # fields are required.
+    field_b = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_fields "
+            "(id, entity_type_id, name, label, field_type, is_required) "
+            "VALUES (:id, :etid, 'second_required', 'Second Required', 'text', true)"
+        ),
+        {"id": str(field_b), "etid": str(entity_type_id)},
+    )
+    run_orm = await db_session.get(ExtractionRun, run.id)
+    version = await db_session.get(ExtractionTemplateVersion, run_orm.version_id)
+    version.schema_ = {
+        "entity_types": [
+            {
+                "id": str(entity_type_id),
+                "fields": [
+                    {"id": str(field_a), "is_required": True},
+                    {"id": str(field_b), "is_required": True},
+                ],
+            }
+        ]
+    }
+    await db_session.flush()
+
+    await svc.advance_stage(run_id=run.id, target_stage="extract", user_id=profile_id)
+    # Fill only field_a; field_b stays unfilled.
+    await ExtractionReviewService(db_session).record_decision(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_a,
+        reviewer_id=profile_id,
+        decision="edit",
+        value={"value": "120"},
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="consensus", user_id=profile_id)
+
+    with pytest.raises(IncompleteFinalizeError):
+        await svc.approve_and_finalize(run_id=run.id, user_id=profile_id)
+
+    # Resolve the second required field via consensus (we are in consensus stage),
+    # then approve_and_finalize publishes the remaining agreed coord and succeeds.
+    from app.models.extraction_workflow import ExtractionConsensusMode
+    from app.services.extraction_consensus_service import ExtractionConsensusService
+
+    await ExtractionConsensusService(db_session).record_consensus(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_b,
+        consensus_user_id=profile_id,
+        mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+        value={"value": "done"},
+        rationale="fill the second required field",
+    )
+    finalized, _ = await svc.approve_and_finalize(run_id=run.id, user_id=profile_id)
+    assert finalized.stage == ExtractionRunStage.FINALIZED.value
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_approve_and_finalize_rejects_unresolved_divergence(
+    db_session: AsyncSession,
+) -> None:
+    """Two reviewers disagree on a coord with no published resolution → approve is
+    rejected (the manager must resolve the divergence first)."""
+    from app.services.extraction_review_service import ExtractionReviewService
+
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+    reviewer_id = SEED.reviewer_profile
+
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :p "
+            "AND article_id = :a AND template_id = :t"
+        ),
+        {"p": str(project_id), "a": str(article_id), "t": str(template_id)},
+    )
+    svc = RunLifecycleService(db_session)
+    run = await svc.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="extract", user_id=profile_id)
+    review = ExtractionReviewService(db_session)
+    await review.record_decision(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=profile_id,
+        decision="edit",
+        value={"value": "M"},
+    )
+    await review.record_decision(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=reviewer_id,
+        decision="edit",
+        value={"value": "R"},
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="consensus", user_id=profile_id)
+
+    with pytest.raises(InvalidStageTransitionError, match="diverge"):
+        await svc.approve_and_finalize(run_id=run.id, user_id=profile_id)
     await db_session.rollback()

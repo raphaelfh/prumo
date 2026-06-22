@@ -262,15 +262,11 @@ async def _seed_finalized_qa_run(
     )
 
     lifecycle = RunLifecycleService(db)
-    await lifecycle.advance_stage(
-        run_id=run_id,
-        target_stage=ExtractionRunStage.REVIEW,
-        user_id=profile_id,
-    )
 
     review_service = ExtractionReviewService(db)
-    # Primary reviewer accepts both verdicts (materialised by the
-    # PROPOSAL→REVIEW transition; recorded explicitly for clarity).
+    # Primary reviewer accepts both verdicts. The run stays in EXTRACT where
+    # these per-reviewer decisions are recorded directly (no boundary
+    # materialization — it was removed with the proposal/review collapse).
     await review_service.record_decision(
         run_id=run_id,
         instance_id=domain1_instance,

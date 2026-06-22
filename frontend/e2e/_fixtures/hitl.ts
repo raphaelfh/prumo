@@ -5,11 +5,11 @@
  * as the active-session key — `/api/v1/hitl/sessions` is idempotent on it.
  * That makes E2E tests that run against a shared seed flake easily: a previous
  * test can leave the active run at `consensus` or `finalized`, and the next
- * test then can't advance it back to `review` to record fresh decisions.
+ * test then can't get a fresh `extract`-stage run to record decisions on.
  *
  * `prepareCleanQaRun` solves that by hard-resetting the run row via the
  * service-role admin client before opening the session, so each test starts
- * from a deterministic `review`-stage run.
+ * from a deterministic `extract`-stage run.
  */
 
 import type { APIRequestContext, APIResponse } from "@playwright/test";
@@ -46,10 +46,11 @@ interface PrepareOptions {
   qaTemplateId: string;
   traceId: string;
   /**
-   * Stage to leave the run in after preparation. Defaults to `review` because
-   * that's where reviewer decisions are accepted.
+   * Stage to leave the run in after preparation. Defaults to `extract` — the
+   * single editable stage where reviewer decisions are accepted (session open
+   * already parks the run there).
    */
-  targetStage?: "proposal" | "review";
+  targetStage?: "extract";
 }
 
 async function expectOk(res: APIResponse, label: string): Promise<void> {
@@ -77,14 +78,14 @@ export async function resetQaRuns(
 }
 
 /**
- * Resets, opens a fresh QA session, advances to `review`, and resolves a
- * concrete (instance, field) coordinate. Returns the IDs callers need to
- * record decisions / consensus picks.
+ * Resets, opens a fresh QA session (which parks the run in `extract`), and
+ * resolves a concrete (instance, field) coordinate. Returns the IDs callers
+ * need to record decisions / consensus picks.
  */
 export async function prepareCleanQaRun(
   opts: PrepareOptions,
 ): Promise<QaRunFixture> {
-  const targetStage = opts.targetStage ?? "review";
+  const targetStage = opts.targetStage ?? "extract";
 
   await resetQaRuns(opts.projectId, opts.articleId);
 
@@ -135,12 +136,12 @@ export async function prepareCleanQaRun(
     );
   }
 
-  if (targetStage === "review") {
-    // /hitl/sessions can return a run already at `review` (the service opens at
-    // review for QA kind), and sibling QA suites that share this (project,
-    // article) fixture can advance it concurrently. The contract here is only
-    // "leave the run at review", so treat "already at review" as success — the
-    // check→advance window must not flake on a review→review transition.
+  if (targetStage === "extract") {
+    // /hitl/sessions opens the QA run directly in `extract` (session open parks
+    // it there). The contract here is only "leave the run at extract", so this
+    // is a no-op verification in the common case; the advance below only fires
+    // if a sibling suite sharing this (project, article) fixture moved it back
+    // to pending, and pending→extract is the one valid forward edge.
     const stageOf = async (): Promise<string> => {
       const detailRes = await opts.request.get(
         `${opts.apiUrl}/api/v1/runs/${session.run_id}`,
@@ -150,20 +151,20 @@ export async function prepareCleanQaRun(
       return (await parseEnvelope<{ run: { stage: string } }>(detailRes)).data
         .run.stage;
     };
-    if ((await stageOf()) !== "review") {
+    if ((await stageOf()) !== "extract") {
       const advanceRes = await opts.request.post(
         `${opts.apiUrl}/api/v1/runs/${session.run_id}/advance`,
         {
           headers: authHeaders(opts.token, opts.traceId),
-          data: { target_stage: "review" },
+          data: { target_stage: "extract" },
           timeout: 15000,
         },
       );
       // A concurrent prepare on the shared fixture may have moved the run to
-      // review between our read and this write; that's the desired end state,
-      // so only fail if it is genuinely not at review afterwards.
-      if (!advanceRes.ok() && (await stageOf()) !== "review") {
-        await expectOk(advanceRes, "advance proposal → review");
+      // extract between our read and this write; that's the desired end state,
+      // so only fail if it is genuinely not at extract afterwards.
+      if (!advanceRes.ok() && (await stageOf()) !== "extract") {
+        await expectOk(advanceRes, "advance pending → extract");
       }
     }
   }

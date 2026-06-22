@@ -12,22 +12,30 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps.security import ensure_project_member, get_current_user_sub
+from app.api.deps.security import (
+    ensure_project_arbitrator,
+    ensure_project_member,
+    ensure_project_reviewer,
+    get_current_user_sub,
+)
 from app.core.deps import DbSession
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
 from app.schemas.extraction_run import (
     AdvanceStageRequest,
+    ApproveFinalizeResponse,
     ConsensusDecisionResponse,
     ConsensusResultResponse,
     CreateConsensusRequest,
     CreateDecisionRequest,
     CreateProposalRequest,
     CreateRunRequest,
+    MarkReadyRequest,
     ProposalRecordResponse,
     PublishedStateResponse,
     ReviewerDecisionResponse,
     RunDetailResponse,
+    RunReadyStateResponse,
     RunReviewersResponse,
     RunSummaryResponse,
     RunViewResponse,
@@ -46,12 +54,16 @@ from app.services.extraction_review_service import (
     ExtractionReviewService,
     InvalidDecisionError,
 )
+from app.services.extraction_reviewer_ready_service import (
+    ExtractionReviewerReadyService,
+)
 from app.services.extraction_run_read_service import (
     RunNotFoundError,
     build_run_view,
     caller_can_see_peers,
     get_run_or_raise,
     get_run_with_workflow_history,
+    is_run_arbitrator,
     list_run_participants,
 )
 from app.services.run_lifecycle_service import (
@@ -153,8 +165,13 @@ async def get_run(
     can_see_peers = await caller_can_see_peers(
         db, project_id=run.project_id, user_id=current_user_sub, kind=run.kind
     )
+    is_arbitrator = await is_run_arbitrator(db, run.project_id, current_user_sub)
     detail = await get_run_with_workflow_history(
-        db, run_id, caller_id=current_user_sub, can_see_peers=can_see_peers
+        db,
+        run_id,
+        caller_id=current_user_sub,
+        can_see_peers=can_see_peers,
+        caller_is_arbitrator=is_arbitrator,
     )
     return ApiResponse.success(
         detail,
@@ -175,7 +192,14 @@ async def get_run_view(
     can_see_peers = await caller_can_see_peers(
         db, project_id=run.project_id, user_id=current_user_sub, kind=run.kind
     )
-    view = await build_run_view(db, run_id, caller_id=current_user_sub, can_see_peers=can_see_peers)
+    is_arbitrator = await is_run_arbitrator(db, run.project_id, current_user_sub)
+    view = await build_run_view(
+        db,
+        run_id,
+        caller_id=current_user_sub,
+        can_see_peers=can_see_peers,
+        caller_is_arbitrator=is_arbitrator,
+    )
     return ApiResponse.success(view, trace_id=_trace(request))
 
 
@@ -284,6 +308,31 @@ async def create_decision(
     )
 
 
+@router.post("/{run_id}/ready")
+async def mark_run_ready(
+    run_id: UUID,
+    body: MarkReadyRequest,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse[RunReadyStateResponse]:
+    """Toggle the caller's per-reviewer "ready" signal for a run.
+
+    Advisory only — it never advances the run (the manager opens consensus
+    manually). Membership-gated AND reviewer-role-gated (a read-only viewer
+    cannot mark ready). Returns the "N/M reviewers ready" hint.
+    """
+    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    await ensure_project_reviewer(db, run.project_id, current_user_sub)
+    service = ExtractionReviewerReadyService(db)
+    await service.mark_ready(run_id=run_id, reviewer_id=current_user_sub, is_ready=body.ready)
+    summary = await service.ready_summary_from(
+        run_id=run_id, hitl_config_snapshot=run.hitl_config_snapshot
+    )
+    await db.commit()
+    return ApiResponse.success(RunReadyStateResponse(**summary), trace_id=_trace(request))
+
+
 @router.post("/{run_id}/consensus", status_code=status.HTTP_201_CREATED)
 async def create_consensus(
     run_id: UUID,
@@ -292,7 +341,25 @@ async def create_consensus(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ConsensusResultResponse]:
-    await _load_run_and_check_member(db, run_id, current_user_sub)
+    # Publishing a consensus decision (and its canonical PublishedState) is a
+    # privileged write. The gate lives at the API layer because the service-role
+    # session bypasses RLS (which already excludes viewers via is_project_reviewer);
+    # without it any project member — including a read-only viewer — could publish
+    # consensus + canonical values.
+    #
+    # The gate is kind-aware because this endpoint backs two flows:
+    #   · extraction → arbitrator-only (manager / consensus), matching ADR-0015 and
+    #     approve-finalize: resolving divergence / publishing values is an adjudicator
+    #     action, not a reviewer one.
+    #   · quality_assessment → reviewer-level: QA "Publish assessment" routes through
+    #     here per filled field and is, by design, available to any reviewer
+    #     (single-reviewer self-publish; see frontend lib/qa/qaTransition). Gating at
+    #     reviewer level keeps that flow working while still excluding viewers.
+    run_summary = await _load_run_and_check_member(db, run_id, current_user_sub)
+    if run_summary.kind == "extraction":
+        await ensure_project_arbitrator(db, run_summary.project_id, current_user_sub)
+    else:
+        await ensure_project_reviewer(db, run_summary.project_id, current_user_sub)
     service = ExtractionConsensusService(db)
     trace_id = _trace(request)
     try:
@@ -402,6 +469,64 @@ async def advance_run(
     )
 
 
+@router.post("/{run_id}/approve-finalize")
+async def approve_and_finalize_run(
+    run_id: UUID,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse[ApproveFinalizeResponse]:
+    """One-action consensus → finalized for extraction runs.
+
+    Publishes the agreed value for every existing-instance × field coord that is not
+    yet published (reusing the per-coord consensus path), then advances to FINALIZED —
+    atomically, in one transaction/commit. This makes the finalize gates (EmptyFinalize/
+    IncompleteFinalize) satisfiable naturally for a complete run, retiring the
+    no-divergence dead-end. Rejects when a field still diverges unresolved.
+
+    Manager / consensus only — this publishes canonical values and finalizes; the
+    gate lives at the API layer because the service-role session bypasses RLS.
+    """
+    run_summary = await _load_run_and_check_member(db, run_id, current_user_sub)
+    await ensure_project_arbitrator(db, run_summary.project_id, current_user_sub)
+    service = RunLifecycleService(db)
+    trace_id = _trace(request)
+    try:
+        run, published_count = await service.approve_and_finalize(
+            run_id=run_id, user_id=current_user_sub
+        )
+    except CoordinateMismatchError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except InvalidConsensusError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except OptimisticConcurrencyError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except InvalidStageTransitionError as e:
+        logger.warning(
+            "hitl_approve_finalize_rejected",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            error=str(e),
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    await db.commit()
+    logger.info(
+        "hitl_approve_finalized",
+        trace_id=trace_id,
+        run_id=str(run.id),
+        published_count=published_count,
+    )
+    return ApiResponse.success(
+        ApproveFinalizeResponse(
+            run=RunSummaryResponse.model_validate(run),
+            published_count=published_count,
+        ),
+        trace_id=trace_id,
+    )
+
+
 @router.get("/{run_id}/reviewers")
 async def list_run_reviewers(
     run_id: UUID,
@@ -440,7 +565,7 @@ async def reopen_run(
 
     Implements the "Option C" reopen flow: previous PublishedState rows
     are seeded into the new Run as ``source='system'`` proposals; the
-    new Run lands in stage=REVIEW so the form picks up where the old
+    new Run lands in stage=EXTRACT so the form picks up where the old
     one left off. Old Run is untouched (audit trail).
     """
     await _load_run_and_check_member(db, run_id, current_user_sub)

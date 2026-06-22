@@ -16,7 +16,7 @@ vi.mock('@/hooks/useProjectsList', () => ({ useProjectsList: () => ({ projects: 
 
 const headerValue = {
   kind: 'extraction' as const,
-  stage: 'review' as const,
+  stage: 'extract' as const,
   isRevision: false,
   isBlind: false,
   canReveal: false,

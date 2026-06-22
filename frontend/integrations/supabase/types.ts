@@ -1091,7 +1091,6 @@ export type Database = {
           parent_instance_id: string | null
           project_id: string
           sort_order: number
-          status: Database["public"]["Enums"]["extraction_instance_status"]
           template_id: string
           updated_at: string
         }
@@ -1107,7 +1106,6 @@ export type Database = {
           parent_instance_id?: string | null
           project_id: string
           sort_order?: number
-          status?: Database["public"]["Enums"]["extraction_instance_status"]
           template_id: string
           updated_at?: string
         }
@@ -1123,7 +1121,6 @@ export type Database = {
           parent_instance_id?: string | null
           project_id?: string
           sort_order?: number
-          status?: Database["public"]["Enums"]["extraction_instance_status"]
           template_id?: string
           updated_at?: string
         }
@@ -1382,6 +1379,51 @@ export type Database = {
           },
           {
             foreignKeyName: "extraction_reviewer_decisions_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "extraction_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      extraction_reviewer_ready: {
+        Row: {
+          created_at: string
+          id: string
+          is_ready: boolean
+          marked_ready_at: string | null
+          reviewer_id: string
+          run_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_ready?: boolean
+          marked_ready_at?: string | null
+          reviewer_id: string
+          run_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_ready?: boolean
+          marked_ready_at?: string | null
+          reviewer_id?: string
+          run_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "extraction_reviewer_ready_reviewer_id_fkey"
+            columns: ["reviewer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "extraction_reviewer_ready_run_id_fkey"
             columns: ["run_id"]
             isOneToOne: false
             referencedRelation: "extraction_runs"
@@ -2167,6 +2209,10 @@ export type Database = {
           user_id: string
         }[]
       }
+      is_project_arbitrator: {
+        Args: { p_project_id: string; p_user_id: string }
+        Returns: boolean
+      }
       is_project_manager: {
         Args: { p_project_id: string; p_user_id: string }
         Returns: boolean
@@ -2198,18 +2244,11 @@ export type Database = {
         | "multiselect"
         | "boolean"
       extraction_framework: "CHARMS" | "PICOS" | "CUSTOM"
-      extraction_instance_status:
-        | "pending"
-        | "in_progress"
-        | "completed"
-        | "reviewed"
-        | "archived"
       extraction_proposal_source: "ai" | "human" | "system"
       extraction_reviewer_decision: "accept_proposal" | "reject" | "edit"
       extraction_run_stage:
         | "pending"
-        | "proposal"
-        | "review"
+        | "extract"
         | "consensus"
         | "finalized"
         | "cancelled"
@@ -2379,19 +2418,11 @@ export const Constants = {
         "boolean",
       ],
       extraction_framework: ["CHARMS", "PICOS", "CUSTOM"],
-      extraction_instance_status: [
-        "pending",
-        "in_progress",
-        "completed",
-        "reviewed",
-        "archived",
-      ],
       extraction_proposal_source: ["ai", "human", "system"],
       extraction_reviewer_decision: ["accept_proposal", "reject", "edit"],
       extraction_run_stage: [
         "pending",
-        "proposal",
-        "review",
+        "extract",
         "consensus",
         "finalized",
         "cancelled",

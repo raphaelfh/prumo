@@ -17,7 +17,7 @@ async def test_run_stage_enum_has_new_values(db_session: AsyncSession) -> None:
         )
     )
     labels = result.scalar()
-    assert labels == ["pending", "proposal", "review", "consensus", "finalized", "cancelled"]
+    assert labels == ["pending", "extract", "consensus", "finalized", "cancelled"]
 
 
 @pytest.mark.asyncio
@@ -26,7 +26,7 @@ async def test_existing_runs_remapped_to_new_stage_values(db_session: AsyncSessi
         text(
             """
             SELECT COUNT(*) FROM public.extraction_runs
-            WHERE stage::text NOT IN ('pending', 'proposal', 'review', 'consensus', 'finalized', 'cancelled')
+            WHERE stage::text NOT IN ('pending', 'extract', 'consensus', 'finalized', 'cancelled')
             """
         )
     )

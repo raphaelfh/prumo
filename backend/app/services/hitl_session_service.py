@@ -9,8 +9,8 @@ Single entry point for both kinds:
   templates are authored per-project, not cloned from a global pool.
 
 Either way, this service ensures the article has one instance per top-level
-entity type, opens (or resumes) a Run, and parks it in ``PROPOSAL`` so the
-UI can immediately record proposals.
+entity type, opens (or resumes) a Run, and parks it in ``EXTRACT`` so the
+UI can immediately record decisions.
 """
 
 from uuid import UUID
@@ -23,7 +23,6 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionEntityType,
     ExtractionInstance,
-    ExtractionInstanceStatus,
     ExtractionRun,
     ExtractionRunStage,
     ProjectExtractionTemplate,
@@ -55,7 +54,7 @@ class HITLSessionInputError(Exception):
 
 
 class HITLSession:
-    """Result envelope: enough state for the UI to start writing proposals."""
+    """Result envelope: enough state for the UI to start recording decisions."""
 
     def __init__(
         self,
@@ -245,7 +244,6 @@ class HITLSessionService:
                 sort_order=et.sort_order,
                 metadata_={"created_via": "hitl_session"},
                 created_by=user_id,
-                status=ExtractionInstanceStatus.PENDING.value,
             )
             pending_instances.append((et.id, inst))
 
@@ -345,7 +343,6 @@ class HITLSessionService:
                             sort_order=child_et.sort_order,
                             metadata_={"created_via": "hitl_session_backfill"},
                             created_by=user_id,
-                            status=ExtractionInstanceStatus.PENDING.value,
                         )
                     )
                     existing_children.add((parent_inst.id, child_et.id))
@@ -367,13 +364,13 @@ class HITLSessionService:
 
         Lookup order:
           1. Latest *non-terminal* run for (project, article, template) —
-             still editable, advance pending → proposal if needed.
+             still editable, advance pending → extract if needed.
           2. Latest *finalized* run — read-only; the UI shows it with a
              "Reopen for revision" button. We do NOT auto-create a new
              run here because that would silently abandon the previously
              published values. Reopen is an explicit action with its own
              endpoint that seeds the new run from the published state.
-          3. No run at all → create a fresh one and advance to PROPOSAL.
+          3. No run at all → create a fresh one and advance to EXTRACT.
 
         Returns ``(run, created)`` where ``created`` is True only when a
         brand-new Run row was inserted (path 3); both reuse paths return
@@ -393,8 +390,7 @@ class HITLSessionService:
                 ExtractionRun.stage.in_(
                     [
                         ExtractionRunStage.PENDING.value,
-                        ExtractionRunStage.PROPOSAL.value,
-                        ExtractionRunStage.REVIEW.value,
+                        ExtractionRunStage.EXTRACT.value,
                         ExtractionRunStage.CONSENSUS.value,
                     ]
                 ),
@@ -430,7 +426,7 @@ class HITLSessionService:
         if run.stage == ExtractionRunStage.PENDING.value:
             run = await self._lifecycle.advance_stage(
                 run_id=run.id,
-                target_stage=ExtractionRunStage.PROPOSAL,
+                target_stage=ExtractionRunStage.EXTRACT,
                 user_id=user_id,
             )
         return run, created

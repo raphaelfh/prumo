@@ -56,6 +56,21 @@ async def auth_as_profile(db_session: AsyncSession) -> AsyncGenerator[UUID, None
         app.dependency_overrides.pop(get_current_user, None)
 
 
+def _auth_as(profile_id: UUID) -> None:
+    """Re-point the auth override mid-test (role switch). Used to set a QA run up
+    as the seed manager, then act as a less-privileged member for the publish."""
+
+    async def override() -> TokenPayload:
+        return TokenPayload(
+            sub=str(profile_id),
+            email="test@example.com",
+            role="authenticated",
+            aal="aal1",
+        )
+
+    app.dependency_overrides[get_current_user] = override
+
+
 async def _pick_article(db: AsyncSession) -> tuple[UUID, UUID] | None:
     row = (await db.execute(text("SELECT id, project_id FROM public.articles LIMIT 1"))).first()
     if row is None:
@@ -205,7 +220,6 @@ async def test_finalize_rejected_from_consensus_stage_when_empty(
         global_template_id=global_template_id,
     )
     run_id = session["run_id"]
-    await _advance(db_client, run_id, "review")
     await _advance(db_client, run_id, "consensus")
 
     res = await db_client.post(
@@ -280,7 +294,6 @@ async def test_single_field_publish_for_each_probast_value(
     )
 
     # Walk through proposal → review → consensus.
-    await _advance(db_client, run_id, "review")
     await _advance(db_client, run_id, "consensus")
 
     await _write_manual_consensus(
@@ -306,6 +319,110 @@ async def test_single_field_publish_for_each_probast_value(
     assert row is not None, "PublishedState row must exist after finalize"
     assert row[0] == {"value": expected_published}
     assert row[1] == 1
+
+
+# ===================== Role gating on the shared consensus endpoint =====================
+
+
+async def _qa_run_in_consensus(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+) -> tuple[str, str, str] | None:
+    """Open a QA run on the seed project/article (where ``reviewer_profile`` is a
+    known reviewer) and advance it to consensus. Returns (run_id, instance_id,
+    field_id), or None when the QA template seed is unavailable (skip).
+
+    Pinned to the seed project/article — NOT ``_pick_article`` (LIMIT 1) — so the
+    membership chain for the reviewer/viewer role switch stays coherent.
+    """
+    global_template_id = await _pick_qa_global_template(db_session)
+    if global_template_id is None:
+        return None
+    await _wipe_qa_runs_for_article(
+        db_session,
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        global_template_id=global_template_id,
+    )
+    session = await _open_qa_session(
+        db_client,
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        global_template_id=global_template_id,
+    )
+    run_id = session["run_id"]
+    et_id_str, instance_id = next(iter(session["instances_by_entity_type"].items()))
+    field_id = await _pick_first_field(db_session, entity_type_id=UUID(et_id_str))
+    await _advance(db_client, run_id, "consensus")
+    return run_id, str(instance_id), str(field_id)
+
+
+@pytest.mark.asyncio
+async def test_qa_consensus_publish_admits_non_arbitrator_reviewer(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """QA 'Publish assessment' posts manual_override consensus per field and is,
+    by design, available to any reviewer (single-reviewer self-publish; see
+    frontend lib/qa/qaTransition). The kind-aware gate must NOT demand an
+    arbitrator for QA runs — a plain reviewer still publishes successfully. This
+    guards against a blunt arbitrator gate that would regress QA."""
+    setup = await _qa_run_in_consensus(db_client, db_session)
+    if setup is None:
+        pytest.skip("Need a seeded QA template")
+    run_id, instance_id, field_id = setup
+
+    _auth_as(SEED.reviewer_profile)  # a project reviewer, NOT an arbitrator
+    res = await db_client.post(
+        f"/api/v1/runs/{run_id}/consensus",
+        json={
+            "instance_id": instance_id,
+            "field_id": field_id,
+            "mode": "manual_override",
+            "value": {"value": "Y"},
+            "rationale": "reviewer self-publish",
+        },
+    )
+    assert res.status_code == 201, res.text
+
+
+@pytest.mark.asyncio
+async def test_qa_consensus_publish_rejects_viewer_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """A read-only viewer is rejected even for QA: the kind-aware gate still
+    requires a reviewer-capable role, matching the workflow RLS (which excludes
+    viewers from writing consensus rows)."""
+    setup = await _qa_run_in_consensus(db_client, db_session)
+    if setup is None:
+        pytest.skip("Need a seeded QA template")
+    run_id, instance_id, field_id = setup
+
+    await db_session.execute(
+        text(
+            "INSERT INTO public.project_members (project_id, user_id, role) "
+            "VALUES (:pid, :uid, 'viewer')"
+        ),
+        {"pid": str(SEED.primary_project), "uid": str(SEED.outsider_profile)},
+    )
+    await db_session.flush()
+
+    _auth_as(SEED.outsider_profile)
+    res = await db_client.post(
+        f"/api/v1/runs/{run_id}/consensus",
+        json={
+            "instance_id": instance_id,
+            "field_id": field_id,
+            "mode": "manual_override",
+            "value": {"value": "Y"},
+            "rationale": "viewer should be blocked",
+        },
+    )
+    assert res.status_code == 403, res.text
+    assert "reviewer role required" in res.json()["error"]["message"].lower()
 
 
 # ===================== Republish updates PublishedState.version =====================
@@ -348,7 +465,6 @@ async def test_republish_same_field_increments_published_version(
         entity_type_id=UUID(et_id_str),
     )
 
-    await _advance(db_client, run_id, "review")
     await _advance(db_client, run_id, "consensus")
     await _write_manual_consensus(
         db_client,
@@ -400,8 +516,8 @@ async def test_republish_same_field_increments_published_version(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "from_stage",
-    ["pending", "proposal", "review"],
-    ids=["from-pending", "from-proposal", "from-review"],
+    ["pending", "extract"],
+    ids=["from-pending", "from-extract"],
 )
 async def test_finalize_rejected_from_wrong_stage(
     db_client: AsyncClient,
@@ -432,25 +548,19 @@ async def test_finalize_rejected_from_wrong_stage(
     )
     run_id = session["run_id"]
 
-    # Walk to the requested stage. PROPOSAL is the default after open.
-    for stage in ("review",):
-        if from_stage == "pending":
-            # Reset to pending — open_or_resume parks at proposal; reverse
-            # by direct SQL since pending → proposal is one-way.
-            await db_session.execute(
-                text(
-                    "UPDATE public.extraction_runs SET stage='pending', "
-                    "status='pending' WHERE id = :rid"
-                ),
-                {"rid": run_id},
-            )
-            await db_session.commit()
-            break
-        if from_stage == "proposal":
-            break
-        await _advance(db_client, run_id, stage)
-        if from_stage == "review":
-            break
+    # Reach the requested stage. EXTRACT is the default after open.
+    if from_stage == "pending":
+        # Reset to pending — open_or_resume parks at extract; reverse
+        # by direct SQL since pending → extract is one-way.
+        await db_session.execute(
+            text(
+                "UPDATE public.extraction_runs SET stage='pending', "
+                "status='pending' WHERE id = :rid"
+            ),
+            {"rid": run_id},
+        )
+        await db_session.commit()
+    # else from_stage == "extract": the run is already parked there after open.
 
     res = await db_client.post(
         f"/api/v1/runs/{run_id}/advance",
@@ -511,7 +621,6 @@ async def test_manual_override_payload_validation(
         entity_type_id=UUID(et_id_str),
     )
 
-    await _advance(db_client, run_id, "review")
     await _advance(db_client, run_id, "consensus")
 
     body: dict[str, Any] = {
@@ -582,7 +691,6 @@ async def test_consensus_rejects_field_from_wrong_template(
         entity_type_id=UUID(foreign_et_id),
     )
 
-    await _advance(db_client, run_id, "review")
     await _advance(db_client, run_id, "consensus")
 
     res = await db_client.post(
@@ -681,7 +789,6 @@ async def test_reopen_modify_republish_preserves_parent_audit(
     )
 
     # Finalize the parent with value Y.
-    await _advance(db_client, run_id, "review")
     await _advance(db_client, run_id, "consensus")
     await _write_manual_consensus(
         db_client,
@@ -809,7 +916,6 @@ async def test_multi_field_publish_records_all_consensus_and_published_rows(
             break
     assert len(pairs) == field_count, "Not enough fields in the seeded template"
 
-    await _advance(db_client, run_id, "review")
     await _advance(db_client, run_id, "consensus")
     values = ["Y", "PY", "PN", "N", "NI", "NA"]
     for i, (iid, fid) in enumerate(pairs):
@@ -845,8 +951,8 @@ async def test_multi_field_publish_records_all_consensus_and_published_rows(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "target",
-    ["proposal", "review", "consensus", "finalized", "cancelled"],
-    ids=["to-proposal", "to-review", "to-consensus", "to-finalized", "to-cancelled"],
+    ["extract", "consensus", "finalized", "cancelled"],
+    ids=["to-extract", "to-consensus", "to-finalized", "to-cancelled"],
 )
 async def test_finalized_run_is_terminal(
     db_client: AsyncClient,
@@ -882,7 +988,6 @@ async def test_finalized_run_is_terminal(
         entity_type_id=UUID(et_id_str),
     )
 
-    await _advance(db_client, run_id, "review")
     await _advance(db_client, run_id, "consensus")
     await _write_manual_consensus(
         db_client,
@@ -907,8 +1012,8 @@ async def test_finalized_run_is_terminal(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "from_stage",
-    ["proposal", "review", "consensus"],
-    ids=["cancel-from-proposal", "cancel-from-review", "cancel-from-consensus"],
+    ["extract", "consensus"],
+    ids=["cancel-from-extract", "cancel-from-consensus"],
 )
 async def test_cancelled_run_blocks_further_writes(
     db_client: AsyncClient,
@@ -941,9 +1046,8 @@ async def test_cancelled_run_blocks_further_writes(
     )
     run_id = session["run_id"]
 
-    # Walk forward to the desired stage before cancelling.
-    if from_stage in ("review", "consensus"):
-        await _advance(db_client, run_id, "review")
+    # Walk forward to the desired stage before cancelling. EXTRACT is the
+    # default after open.
     if from_stage == "consensus":
         await _advance(db_client, run_id, "consensus")
 
@@ -956,7 +1060,7 @@ async def test_cancelled_run_blocks_further_writes(
     # Now any forward transition must reject.
     res = await db_client.post(
         f"/api/v1/runs/{run_id}/advance",
-        json={"target_stage": "proposal"},
+        json={"target_stage": "extract"},
     )
     assert res.status_code == 400
     res = await db_client.post(
@@ -972,11 +1076,10 @@ async def test_cancelled_run_blocks_further_writes(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "stage",
-    ["pending", "proposal", "review", "consensus", "cancelled"],
+    ["pending", "extract", "consensus", "cancelled"],
     ids=[
         "reopen-pending",
-        "reopen-proposal",
-        "reopen-review",
+        "reopen-extract",
         "reopen-consensus",
         "reopen-cancelled",
     ],
@@ -1012,7 +1115,7 @@ async def test_reopen_rejects_non_finalized_runs(
     run_id = session["run_id"]
 
     if stage == "pending":
-        # Reverse from PROPOSAL via direct SQL.
+        # Reverse from EXTRACT via direct SQL.
         await db_session.execute(
             text(
                 "UPDATE public.extraction_runs SET stage='pending', status='pending' "
@@ -1021,13 +1124,11 @@ async def test_reopen_rejects_non_finalized_runs(
             {"rid": run_id},
         )
         await db_session.commit()
-    elif stage == "review":
-        await _advance(db_client, run_id, "review")
     elif stage == "consensus":
-        await _advance(db_client, run_id, "review")
         await _advance(db_client, run_id, "consensus")
     elif stage == "cancelled":
         await _advance(db_client, run_id, "cancelled")
+    # else stage == "extract": the run is already parked there after open.
 
     res = await db_client.post(f"/api/v1/runs/{run_id}/reopen")
     assert res.status_code in (400, 409), res.text
@@ -1079,7 +1180,6 @@ async def test_consensus_currently_accepts_value_outside_allowed_values(
         entity_type_id=UUID(et_id_str),
     )
 
-    await _advance(db_client, run_id, "review")
     await _advance(db_client, run_id, "consensus")
 
     # An arbitrary string — NOT in {Y,PY,PN,N,NI,NA}.

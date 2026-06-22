@@ -407,9 +407,9 @@ async def _seed_minimum_graph(session: AsyncSession) -> None:
             text(
                 "INSERT INTO public.extraction_instances "
                 "(id, project_id, template_id, entity_type_id, article_id, "
-                " label, status, created_by) "
+                " label, created_by) "
                 "VALUES (:id, :pid, :tid, :etid, :aid, "
-                " 'Integration Test Instance', 'pending', :created_by)"
+                " 'Integration Test Instance', :created_by)"
             ),
             {
                 "id": str(PRIMARY_INSTANCE_ID),

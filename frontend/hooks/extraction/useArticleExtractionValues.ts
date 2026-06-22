@@ -51,7 +51,7 @@ export function useArticleExtractionValues(
     queryFn: async (): Promise<Map<string, ArticleProgressData>> => {
       const instRes = await supabase
         .from('extraction_instances')
-        .select('id, article_id, entity_type_id, status')
+        .select('id, article_id, entity_type_id')
         .eq('project_id', projectId as string)
         .eq('template_id', templateId as string);
       if (instRes.error) throw instRes.error;
@@ -59,7 +59,6 @@ export function useArticleExtractionValues(
         id: string;
         article_id: string | null;
         entity_type_id: string;
-        status?: string;
       }>;
       const instanceIds = instances.map((i) => i.id);
       if (instanceIds.length === 0) return new Map();

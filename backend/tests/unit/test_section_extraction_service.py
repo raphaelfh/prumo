@@ -311,18 +311,18 @@ class TestSectionExtractionFullFlow:
         assert result.tokens_total == 150
         service._proposals.record_proposal.assert_awaited()
 
-        # The run lifecycle gets exactly one stage advance: pending → proposal.
-        # The run STAYS in PROPOSAL after AI proposing so ``useExtractedValues``
+        # The run lifecycle gets exactly one stage advance: pending → extract.
+        # The run STAYS in EXTRACT after AI proposing so ``useExtractedValues``
         # can hydrate from ``runDetail.proposals`` and show the values in the
-        # form. The user advances to REVIEW explicitly via "Submit for review".
-        # Auto-advancing here skipped the proposal-stage hydration and left
+        # form. The user advances to CONSENSUS explicitly via "Open consensus".
+        # Auto-advancing here skipped the extract-stage hydration and left
         # the form blank until F5 (#bug: AI extraction values not appearing).
         from app.models.extraction import ExtractionRunStage
 
         advance_calls = service._lifecycle.advance_stage.await_args_list
         target_stages = [call.kwargs.get("target_stage") for call in advance_calls]
-        assert ExtractionRunStage.PROPOSAL in target_stages
-        assert ExtractionRunStage.REVIEW not in target_stages
+        assert ExtractionRunStage.EXTRACT in target_stages
+        assert ExtractionRunStage.CONSENSUS not in target_stages
 
 
 class TestExtractSectionWithExistingRun:
@@ -394,7 +394,7 @@ class TestExtractSectionWithExistingRun:
 
         existing_run = MagicMock()
         existing_run.id = existing_run_id
-        existing_run.stage = ExtractionRunStage.PROPOSAL.value
+        existing_run.stage = ExtractionRunStage.EXTRACT.value
 
         self._wire_pipeline(service, mock_storage, existing_run, entity_type_id)
 
@@ -438,17 +438,17 @@ class TestExtractSectionWithExistingRun:
         assert record_call.kwargs["run_id"] == existing_run_id
 
     @pytest.mark.asyncio
-    async def test_existing_run_id_rejects_non_proposal_stage(self, service, mock_storage):
-        """Run already moved past PROPOSAL → reject (matches extract_for_run)."""
+    async def test_existing_run_id_rejects_non_extract_stage(self, service, mock_storage):
+        """Run already moved past EXTRACT → reject (matches extract_for_run)."""
         from app.models.extraction import ExtractionRunStage
 
         existing_run = MagicMock()
         existing_run.id = uuid4()
-        existing_run.stage = ExtractionRunStage.REVIEW.value
+        existing_run.stage = ExtractionRunStage.CONSENSUS.value
 
         self._wire_pipeline(service, mock_storage, existing_run, uuid4())
 
-        with pytest.raises(ValueError, match="PROPOSAL"):
+        with pytest.raises(ValueError, match="EXTRACT"):
             await service.extract_section(
                 project_id=uuid4(),
                 article_id=uuid4(),
@@ -492,7 +492,7 @@ class TestExtractForRun:
         run.template_id = uuid4()
         from app.models.extraction import ExtractionRunStage
 
-        run.stage = ExtractionRunStage.PROPOSAL.value
+        run.stage = ExtractionRunStage.EXTRACT.value
         run.kind = "quality_assessment"
         return run
 
@@ -556,9 +556,9 @@ class TestExtractForRun:
     async def test_extract_for_run_does_not_advance_when_disabled(
         self, service, qa_run, qa_template
     ):
-        """QA passes auto_advance_to_review=False so its publish flow can
-        drive the run from PROPOSAL → REVIEW → CONSENSUS → FINALIZED in
-        one click."""
+        """``extract_for_run`` never flips the stage: the run stays in EXTRACT
+        and the QA publish flow drives extract → consensus → finalized itself.
+        With ``auto_advance_to_review=False`` no advance is attempted."""
         et = MagicMock()
         et.id = uuid4()
         et.name = "Participants"
@@ -574,9 +574,12 @@ class TestExtractForRun:
         service._lifecycle.advance_stage.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_extract_for_run_advances_when_enabled(self, service, qa_run, qa_template):
-        from app.models.extraction import ExtractionRunStage
-
+    async def test_extract_for_run_does_not_advance_even_when_enabled(
+        self, service, qa_run, qa_template
+    ):
+        """``auto_advance_to_review`` is inert in the collapsed lifecycle:
+        there is no separate review stage, so even with the flag True the run
+        stays in EXTRACT and no stage advance is attempted."""
         et = MagicMock()
         et.id = uuid4()
         et.name = "Participants"
@@ -589,20 +592,16 @@ class TestExtractForRun:
             auto_advance_to_review=True,
         )
 
-        target_stages = [
-            call.kwargs.get("target_stage")
-            for call in service._lifecycle.advance_stage.await_args_list
-        ]
-        assert ExtractionRunStage.REVIEW in target_stages
+        service._lifecycle.advance_stage.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_extract_for_run_rejects_non_proposal_stage(self, service, qa_run, qa_template):
+    async def test_extract_for_run_rejects_non_extract_stage(self, service, qa_run, qa_template):
         from app.models.extraction import ExtractionRunStage
 
-        qa_run.stage = ExtractionRunStage.REVIEW.value
+        qa_run.stage = ExtractionRunStage.CONSENSUS.value
         self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [])
 
-        with pytest.raises(ValueError, match="PROPOSAL"):
+        with pytest.raises(ValueError, match="EXTRACT"):
             await service.extract_for_run(run_id=qa_run.id)
 
     @pytest.mark.asyncio
@@ -680,6 +679,66 @@ class TestFieldsWithRecentHumanProposal:
         assert result == set()
 
 
+class TestFieldsWithHumanDecision:
+    """Re-run safety in the collapsed ``extract`` lifecycle: human
+    *extraction* values land as per-reviewer ``ReviewerDecision`` rows (the
+    blind-review write gate rejects ``human`` proposals for
+    ``kind='extraction'``), so the proposal probe never sees them. A field
+    whose *current* reviewer decision is ``edit`` or ``accept_proposal`` is
+    protected; ``reject`` leaves the field eligible for a fresh AI guess."""
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_set_for_empty_field_ids(self, service):
+        result = await service._fields_with_human_decision(
+            run_id=uuid4(),
+            instance_id=uuid4(),
+            field_ids=[],
+        )
+        assert result == set()
+        # Should short-circuit before hitting the DB.
+        assert getattr(service.db, "execute", None) is None or not (
+            isinstance(service.db.execute, AsyncMock) and service.db.execute.await_count
+        )
+
+    @pytest.mark.asyncio
+    async def test_picks_edit_and_accept_proposal_but_not_reject(self, service):
+        from app.models.extraction_workflow import ExtractionReviewerDecisionType
+
+        f_edit = uuid4()
+        f_accept = uuid4()
+        f_reject = uuid4()
+        rows = [
+            (f_edit, ExtractionReviewerDecisionType.EDIT.value),
+            (f_accept, ExtractionReviewerDecisionType.ACCEPT_PROPOSAL.value),
+            (f_reject, ExtractionReviewerDecisionType.REJECT.value),
+        ]
+        execute_result = MagicMock()
+        execute_result.all.return_value = rows
+        service.db.execute = AsyncMock(return_value=execute_result)
+
+        result = await service._fields_with_human_decision(
+            run_id=uuid4(),
+            instance_id=uuid4(),
+            field_ids=[f_edit, f_accept, f_reject],
+        )
+
+        assert result == {f_edit, f_accept}
+
+    @pytest.mark.asyncio
+    async def test_fields_without_decisions_are_not_in_result(self, service):
+        execute_result = MagicMock()
+        execute_result.all.return_value = []
+        service.db.execute = AsyncMock(return_value=execute_result)
+
+        result = await service._fields_with_human_decision(
+            run_id=uuid4(),
+            instance_id=uuid4(),
+            field_ids=[uuid4()],
+        )
+
+        assert result == set()
+
+
 class TestExtractOneEntityTypeForRun:
     """Field-restoration invariant: after we filter ``full_entity_type.fields``
     to skip human-edited ones, we must restore the original list in a finally
@@ -695,7 +754,7 @@ class TestExtractOneEntityTypeForRun:
         run.project_id = uuid4()
         run.article_id = uuid4()
         run.template_id = uuid4()
-        run.stage = ExtractionRunStage.PROPOSAL.value
+        run.stage = ExtractionRunStage.EXTRACT.value
         run.kind = "extraction"
         return run
 
@@ -725,6 +784,7 @@ class TestExtractOneEntityTypeForRun:
             return {f_skip.id}
 
         service._fields_with_recent_human_proposal = AsyncMock(side_effect=fake_human_probe)
+        service._fields_with_human_decision = AsyncMock(return_value=set())
 
         # LLM + suggestion writes
         service._extract_with_llm = AsyncMock(
@@ -763,6 +823,7 @@ class TestExtractOneEntityTypeForRun:
             return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
         )
         service._fields_with_recent_human_proposal = AsyncMock(return_value={f1.id, f2.id})
+        service._fields_with_human_decision = AsyncMock(return_value=set())
         # If filter logic is wrong the LLM gets called — fail loudly.
         service._extract_with_llm = AsyncMock(
             side_effect=AssertionError("LLM must NOT be called when all fields are human")
@@ -805,6 +866,9 @@ class TestExtractOneEntityTypeForRun:
         service._fields_with_recent_human_proposal = AsyncMock(
             side_effect=AssertionError("human-proposal probe must not run when skip flag is False")
         )
+        service._fields_with_human_decision = AsyncMock(
+            side_effect=AssertionError("human-decision probe must not run when skip flag is False")
+        )
         service._extract_with_llm = AsyncMock(
             return_value=({}, LlmUsage(prompt_tokens=1, completion_tokens=1))
         )
@@ -821,6 +885,57 @@ class TestExtractOneEntityTypeForRun:
         )
 
         service._fields_with_recent_human_proposal.assert_not_called()
+        service._fields_with_human_decision.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skip_set_unions_proposal_and_decision_probes(self, service, run):
+        """The skip set is the UNION of human-proposal fields (the QA track)
+        and human-decision fields (the extraction track). A field protected by
+        EITHER probe is excluded from the LLM call; only the untouched field
+        reaches the model."""
+        f_proposal = MagicMock(id=uuid4())
+        f_proposal.name = "via_proposal"
+        f_decision = MagicMock(id=uuid4())
+        f_decision.name = "via_decision"
+        f_open = MagicMock(id=uuid4())
+        f_open.name = "eligible"
+        f_open.field_type = "string"
+        f_open.description = ""
+        f_open.is_required = False
+
+        full_et = MagicMock()
+        full_et.id = uuid4()
+        full_et.name = "Section"
+        full_et.description = ""
+        full_et.fields = [f_proposal, f_decision, f_open]
+
+        service._entity_types.get_with_fields = AsyncMock(return_value=full_et)
+        service._instances.get_by_article = AsyncMock(
+            return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
+        )
+        service._fields_with_recent_human_proposal = AsyncMock(return_value={f_proposal.id})
+        service._fields_with_human_decision = AsyncMock(return_value={f_decision.id})
+
+        captured: dict[str, list] = {}
+
+        async def fake_llm(*, pdf_text, entity_type, model, kind, framework):  # noqa: ARG001
+            captured["fields"] = [f.id for f in entity_type.fields]
+            return ({}, LlmUsage(prompt_tokens=1, completion_tokens=1))
+
+        service._extract_with_llm = AsyncMock(side_effect=fake_llm)
+        service._create_suggestions = AsyncMock(return_value=0)
+
+        await service._extract_one_entity_type_for_run(
+            run=run,
+            entity_type=MagicMock(id=full_et.id, name="x"),
+            pdf_text="text",
+            framework=None,
+            kind="extraction",
+            skip_fields_with_human_proposals=True,
+            model="gpt-4o-mini",
+        )
+
+        assert captured["fields"] == [f_open.id]
 
 
 # ---------------------------------------------------------------------------
@@ -1612,7 +1727,7 @@ class TestExtractForRunErrorPath:
         run.project_id = uuid4()
         run.article_id = uuid4()
         run.template_id = uuid4()
-        run.stage = ExtractionRunStage.PROPOSAL.value
+        run.stage = ExtractionRunStage.EXTRACT.value
         run.kind = "extraction"
 
         template = MagicMock()

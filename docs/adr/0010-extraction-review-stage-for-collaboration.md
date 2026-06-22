@@ -1,13 +1,20 @@
 ---
-status: accepted
-last_reviewed: 2026-06-18
+status: superseded
+last_reviewed: 2026-06-21
 owner: '@raphaelfh'
+superseded_by: '0014'
 ---
 
 # REVIEW stage as the multi-reviewer data-extraction surface
 
-> **Status:** Accepted · Date: 2026-06-18 · Deciders: @raphaelfh
-> **Supersedes:** N/A · **Superseded by:** N/A
+> **Status:** Superseded by [ADR-0014](0014-collapse-extract-stage.md) (2026-06-21)
+> · Date: 2026-06-18 · Deciders: @raphaelfh
+> **Supersedes:** N/A · **Superseded by:** 0014
+>
+> The `proposal`+`review` split this ADR introduced is collapsed into a single
+> `extract` stage by ADR-0014; humans now write `ReviewerDecision`s directly in
+> `extract`, so the `proposal → review` auto-advance and boundary
+> materialization described below are removed.
 
 ## Context and Problem Statement
 

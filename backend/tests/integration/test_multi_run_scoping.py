@@ -125,7 +125,7 @@ async def test_decision_on_pending_run_is_rejected(db_session: AsyncSession) -> 
     assert pending_run.stage == ExtractionRunStage.PENDING.value
 
     service = ExtractionReviewService(db_session)
-    with pytest.raises(InvalidDecisionError, match="not 'review'"):
+    with pytest.raises(InvalidDecisionError, match="not 'extract'"):
         await service.record_decision(
             run_id=pending_run.id,
             instance_id=instance_id,
@@ -141,9 +141,9 @@ async def test_decision_on_pending_run_is_rejected(db_session: AsyncSession) -> 
 async def test_decision_targets_specific_run_even_with_siblings(
     db_session: AsyncSession,
 ) -> None:
-    """Article carries (PENDING, PROPOSAL, REVIEW) at the same time. A
-    decision on the REVIEW run succeeds and leaves the others untouched —
-    the ReviewerState row is scoped to that run only."""
+    """Article carries (PENDING, EXTRACT, EXTRACT) at the same time. A
+    decision on the editing EXTRACT run succeeds and leaves the others
+    untouched — the ReviewerState row is scoped to that run only."""
     fx = await _coords(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
@@ -162,31 +162,31 @@ async def test_decision_targets_specific_run_even_with_siblings(
         parameters={"reason": "multi-run-scope sibling pending"},
     )
 
-    # Sibling PROPOSAL run — also non-terminal, but no proposals on it.
+    # Sibling EXTRACT run — also non-terminal, but no proposals on it.
     proposal_sibling = await lifecycle.create_run(
         project_id=project_id,
         article_id=article_id,
         project_template_id=template_id,
         user_id=profile_id,
-        parameters={"reason": "multi-run-scope sibling proposal"},
+        parameters={"reason": "multi-run-scope sibling extract"},
     )
     await lifecycle.advance_stage(
         run_id=proposal_sibling.id,
-        target_stage=ExtractionRunStage.PROPOSAL,
+        target_stage=ExtractionRunStage.EXTRACT,
         user_id=profile_id,
     )
 
-    # Active REVIEW-stage run that the user is editing.
+    # Active EXTRACT-stage run that the user is editing.
     target_run = await lifecycle.create_run(
         project_id=project_id,
         article_id=article_id,
         project_template_id=template_id,
         user_id=profile_id,
-        parameters={"reason": "multi-run-scope target review"},
+        parameters={"reason": "multi-run-scope target extract"},
     )
     await lifecycle.advance_stage(
         run_id=target_run.id,
-        target_stage=ExtractionRunStage.PROPOSAL,
+        target_stage=ExtractionRunStage.EXTRACT,
         user_id=profile_id,
     )
     proposal = await ExtractionProposalService(db_session).record_proposal(
@@ -196,11 +196,6 @@ async def test_decision_targets_specific_run_even_with_siblings(
         source=ExtractionProposalSource.AI,
         proposed_value={"value": "ai-suggestion"},
     )
-    await lifecycle.advance_stage(
-        run_id=target_run.id,
-        target_stage=ExtractionRunStage.REVIEW,
-        user_id=profile_id,
-    )
 
     # Stage sanity for the runs we just built. We deliberately do NOT
     # assert anything about the absolute "latest non-terminal sibling" here
@@ -208,7 +203,7 @@ async def test_decision_targets_specific_run_even_with_siblings(
     # and the bug we're guarding against is specifically that the latest
     # (whatever its stage) gets resolved as the target. The decision MUST
     # respect the run id the caller passes in, regardless of what's around.
-    assert target_run.stage == ExtractionRunStage.REVIEW.value
+    assert target_run.stage == ExtractionRunStage.EXTRACT.value
     pending_after = (
         await db_session.execute(
             text("SELECT stage FROM public.extraction_runs WHERE id = :id"),
@@ -222,7 +217,7 @@ async def test_decision_targets_specific_run_even_with_siblings(
             {"id": str(proposal_sibling.id)},
         )
     ).scalar()
-    assert proposal_after == ExtractionRunStage.PROPOSAL.value
+    assert proposal_after == ExtractionRunStage.EXTRACT.value
 
     service = ExtractionReviewService(db_session)
     decision = await service.record_decision(
@@ -279,8 +274,8 @@ async def test_reviewer_state_cannot_point_at_decision_in_other_run(
     review_service = ExtractionReviewService(db_session)
     proposals = ExtractionProposalService(db_session)
 
-    # Build two REVIEW-stage runs, each with one decision on the same coordinate.
-    async def _build_review_run() -> tuple[UUID, UUID]:
+    # Build two EXTRACT-stage runs, each with one decision on the same coordinate.
+    async def _build_extract_run() -> tuple[UUID, UUID]:
         run = await lifecycle.create_run(
             project_id=project_id,
             article_id=article_id,
@@ -290,7 +285,7 @@ async def test_reviewer_state_cannot_point_at_decision_in_other_run(
         )
         await lifecycle.advance_stage(
             run_id=run.id,
-            target_stage=ExtractionRunStage.PROPOSAL,
+            target_stage=ExtractionRunStage.EXTRACT,
             user_id=profile_id,
         )
         proposal = await proposals.record_proposal(
@@ -299,11 +294,6 @@ async def test_reviewer_state_cannot_point_at_decision_in_other_run(
             field_id=field_id,
             source=ExtractionProposalSource.AI,
             proposed_value={"value": "v"},
-        )
-        await lifecycle.advance_stage(
-            run_id=run.id,
-            target_stage=ExtractionRunStage.REVIEW,
-            user_id=profile_id,
         )
         decision = await review_service.record_decision(
             run_id=run.id,
@@ -315,8 +305,8 @@ async def test_reviewer_state_cannot_point_at_decision_in_other_run(
         )
         return run.id, decision.id
 
-    run_a, _decision_a = await _build_review_run()
-    _run_b, decision_b = await _build_review_run()
+    run_a, _decision_a = await _build_extract_run()
+    _run_b, decision_b = await _build_extract_run()
 
     # Try to point run_a's reviewer_state at decision_b (which belongs to
     # run_b). The composite FK should reject it.

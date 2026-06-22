@@ -25,7 +25,7 @@ function makeRunViewResponse(
     template_id: 'tmpl-1',
     kind: 'extraction',
     version_id: 'ver-1',
-    stage: 'review',
+    stage: 'extract',
     status: 'in_progress',
     hitl_config_snapshot: {},
     parameters: {},
@@ -74,7 +74,6 @@ function makeRunViewResponse(
       parent_instance_id: null,
       label: 'Main Study',
       sort_order: 0,
-      status: 'pending' as const,
       metadata: {},
       project_id: 'proj-1',
       article_id: null, // deliberately null to test fallback
@@ -225,12 +224,6 @@ describe('instancesFromRunView', () => {
     (view.instances[0] as unknown as Record<string, unknown>).label = null;
     const [inst] = instancesFromRunView(view);
     expect(inst.label).toBe('');
-  });
-
-  it('passes status through as typed value', () => {
-    const view = makeRunViewResponse();
-    const [inst] = instancesFromRunView(view);
-    expect(inst.status).toBe('pending');
   });
 
   it('maps all remaining scalar fields 1:1', () => {

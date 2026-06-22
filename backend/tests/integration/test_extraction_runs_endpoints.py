@@ -34,6 +34,25 @@ API_PREFIX = "/api/v1/runs"
 # =================== HELPERS ===================
 
 
+def _auth_as(profile_id: UUID) -> None:
+    """Re-point the auth override at a specific profile mid-test (role switch).
+
+    Used to set up a run as the seed manager and then act as a less-privileged
+    member (reviewer / viewer) for the same run, mirroring the role-gate tests
+    in ``test_extraction_runs_ready_api.py``.
+    """
+
+    async def override() -> TokenPayload:
+        return TokenPayload(
+            sub=str(profile_id),
+            email="test@example.com",
+            role="authenticated",
+            aal="aal1",
+        )
+
+    app.dependency_overrides[get_current_user] = override
+
+
 async def _resolve_fixtures(
     db: AsyncSession,  # noqa: ARG001
 ) -> tuple[UUID, UUID, UUID, UUID, UUID, UUID] | None:
@@ -289,7 +308,7 @@ async def test_get_run_with_invalid_uuid_returns_422(
 
 
 @pytest.mark.asyncio
-async def test_advance_pending_to_proposal_returns_200(
+async def test_advance_pending_to_extract_returns_200(
     db_client: AsyncClient,
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
@@ -309,16 +328,16 @@ async def test_advance_pending_to_proposal_returns_200(
 
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/advance",
-        json={"target_stage": "proposal"},
+        json={"target_stage": "extract"},
     )
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["ok"] is True
-    assert payload["data"]["stage"] == "proposal"
+    assert payload["data"]["stage"] == "extract"
 
 
 @pytest.mark.asyncio
-async def test_advance_pending_to_review_returns_400(
+async def test_advance_pending_to_consensus_returns_400(
     db_client: AsyncClient,
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
@@ -336,9 +355,10 @@ async def test_advance_pending_to_review_returns_400(
     )
     run_id = UUID(created["id"])
 
+    # Skipping the editable extract stage is rejected (pending → consensus).
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/advance",
-        json={"target_stage": "review"},
+        json={"target_stage": "consensus"},
     )
     assert response.status_code == 400
     body = response.json()
@@ -379,7 +399,7 @@ async def test_advance_for_nonexistent_run_returns_404(
 ) -> None:
     response = await db_client.post(
         f"{API_PREFIX}/{uuid4()}/advance",
-        json={"target_stage": "proposal"},
+        json={"target_stage": "extract"},
     )
     assert response.status_code == 404
 
@@ -405,7 +425,7 @@ async def test_create_proposal_returns_201(
         template_id=template_id,
     )
     run_id = UUID(created["id"])
-    await _advance(db_client, run_id, "proposal")
+    await _advance(db_client, run_id, "extract")
 
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/proposals",
@@ -446,7 +466,7 @@ async def test_create_proposal_invalid_source_returns_422(
         template_id=template_id,
     )
     run_id = UUID(created["id"])
-    await _advance(db_client, run_id, "proposal")
+    await _advance(db_client, run_id, "extract")
 
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/proposals",
@@ -529,7 +549,7 @@ async def test_create_proposal_with_incoherent_coords_returns_422(
         template_id=template_id,
     )
     run_id = UUID(created["id"])
-    await _advance(db_client, run_id, "proposal")
+    await _advance(db_client, run_id, "extract")
 
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/proposals",
@@ -544,15 +564,16 @@ async def test_create_proposal_with_incoherent_coords_returns_422(
 
 
 @pytest.mark.asyncio
-async def test_create_proposal_human_without_user_id_auto_fills_caller(
+async def test_create_human_proposal_rejected_for_extraction(
     db_client: AsyncClient,
     db_session: AsyncSession,
-    auth_as_profile: UUID,
+    auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
-    """A human proposal without ``source_user_id`` is not an error: the
-    endpoint defaults it to the authenticated caller so clients don't have
-    to thread it through. The CHECK constraint ``human_has_user`` then
-    trivially holds because the auto-filled value is non-null."""
+    """Human writes on an extraction run are rejected at /proposals (400):
+    they must go through /decisions so each reviewer's value lands as a
+    per-user ReviewerDecision (blind-review write defense). The old
+    auto-fill-the-caller behaviour no longer applies — human extraction
+    proposals are forbidden outright."""
     fx = await _resolve_fixtures(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
@@ -565,7 +586,7 @@ async def test_create_proposal_human_without_user_id_auto_fills_caller(
         template_id=template_id,
     )
     run_id = UUID(created["id"])
-    await _advance(db_client, run_id, "proposal")
+    await _advance(db_client, run_id, "extract")
 
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/proposals",
@@ -574,11 +595,10 @@ async def test_create_proposal_human_without_user_id_auto_fills_caller(
             "field_id": str(field_id),
             "source": "human",
             "proposed_value": {"v": "x"},
-            # source_user_id intentionally omitted — endpoint auto-fills.
         },
     )
-    assert response.status_code == 201, response.text
-    assert response.json()["data"]["source_user_id"] == str(auth_as_profile)
+    assert response.status_code == 400, response.text
+    assert "/decisions" in response.json()["error"]["message"]
 
 
 # =================== POST /runs/{id}/decisions ===================
@@ -588,7 +608,7 @@ async def _setup_review_run(
     db_client: AsyncClient,
     db_session: AsyncSession,
 ) -> tuple[UUID, UUID, UUID, UUID]:
-    """Create a run, advance to review, record one AI proposal. Returns
+    """Create a run, advance to extract, record one AI proposal. Returns
     (run_id, instance_id, field_id, proposal_id)."""
     fx = await _resolve_fixtures(db_session)
     if fx is None:
@@ -602,7 +622,7 @@ async def _setup_review_run(
         template_id=template_id,
     )
     run_id = UUID(created["id"])
-    await _advance(db_client, run_id, "proposal")
+    await _advance(db_client, run_id, "extract")
     proposal_resp = await db_client.post(
         f"{API_PREFIX}/{run_id}/proposals",
         json={
@@ -614,7 +634,6 @@ async def _setup_review_run(
     )
     assert proposal_resp.status_code == 201, proposal_resp.text
     proposal_id = UUID(proposal_resp.json()["data"]["id"])
-    await _advance(db_client, run_id, "review")
     return run_id, instance_id, field_id, proposal_id
 
 
@@ -789,6 +808,70 @@ async def test_create_consensus_select_existing_returns_201(
 
 
 @pytest.mark.asyncio
+async def test_create_consensus_rejects_non_arbitrator_reviewer(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """Publishing a consensus decision is an arbitrator action (manager /
+    consensus). A plain project reviewer — a member, and admitted by the
+    workflow RLS — is rejected at the API layer, mirroring approve-finalize
+    and ADR-0015's manager/consensus-only consensus surface. Without the gate
+    the reviewer would publish successfully (201); the gate makes it 403."""
+    run_id, instance_id, field_id, decision_id = await _setup_consensus_run(db_client, db_session)
+
+    _auth_as(SEED.reviewer_profile)  # a project reviewer, NOT an arbitrator
+    response = await db_client.post(
+        f"{API_PREFIX}/{run_id}/consensus",
+        json={
+            "instance_id": str(instance_id),
+            "field_id": str(field_id),
+            "mode": "select_existing",
+            "selected_decision_id": str(decision_id),
+        },
+    )
+    assert response.status_code == 403, response.text
+    assert "manager or consensus role required" in response.json()["error"]["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_consensus_rejects_viewer_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """A read-only viewer member is rejected by the arbitrator gate (distinct
+    from the membership gate, which would otherwise let any member through).
+    This also closes the API-laxer-than-RLS gap: the workflow RLS already
+    excludes viewers from writing consensus rows."""
+    run_id, instance_id, field_id, decision_id = await _setup_consensus_run(db_client, db_session)
+
+    # Make the outsider a VIEWER of the project (shared session → visible to the
+    # API request; rolled back at fixture teardown).
+    await db_session.execute(
+        text(
+            "INSERT INTO public.project_members (project_id, user_id, role) "
+            "VALUES (:pid, :uid, 'viewer')"
+        ),
+        {"pid": str(SEED.primary_project), "uid": str(SEED.outsider_profile)},
+    )
+    await db_session.flush()
+
+    _auth_as(SEED.outsider_profile)
+    response = await db_client.post(
+        f"{API_PREFIX}/{run_id}/consensus",
+        json={
+            "instance_id": str(instance_id),
+            "field_id": str(field_id),
+            "mode": "select_existing",
+            "selected_decision_id": str(decision_id),
+        },
+    )
+    assert response.status_code == 403, response.text
+    assert "manager or consensus role required" in response.json()["error"]["message"].lower()
+
+
+@pytest.mark.asyncio
 async def test_create_consensus_invalid_mode_returns_422(
     db_client: AsyncClient,
     db_session: AsyncSession,
@@ -912,8 +995,8 @@ async def test_full_lifecycle_create_to_finalized(
     run_id = UUID(created["id"])
     assert created["stage"] == "pending"
 
-    # pending -> proposal
-    await _advance(db_client, run_id, "proposal")
+    # pending -> extract
+    await _advance(db_client, run_id, "extract")
 
     # POST proposal
     proposal_resp = await db_client.post(
@@ -928,10 +1011,7 @@ async def test_full_lifecycle_create_to_finalized(
     )
     assert proposal_resp.status_code == 201, proposal_resp.text
 
-    # proposal -> review
-    await _advance(db_client, run_id, "review")
-
-    # POST decision (accept proposal)
+    # POST decision (accept proposal) — recorded in extract; no review stage
     proposal_id = UUID(proposal_resp.json()["data"]["id"])
     decision_resp = await db_client.post(
         f"{API_PREFIX}/{run_id}/decisions",
@@ -945,7 +1025,7 @@ async def test_full_lifecycle_create_to_finalized(
     assert decision_resp.status_code == 201, decision_resp.text
     decision_id = UUID(decision_resp.json()["data"]["id"])
 
-    # review -> consensus
+    # extract -> consensus
     await _advance(db_client, run_id, "consensus")
 
     # POST consensus

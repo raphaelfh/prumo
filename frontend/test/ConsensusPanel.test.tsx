@@ -314,3 +314,91 @@ describe("ConsensusPanel", () => {
     });
   });
 });
+
+describe("ConsensusPanel — evaluate-all (extraction)", () => {
+  function evaluateAllFixtures(): {
+    runDetail: RunDetailResponse;
+    summary: ReviewerSummary;
+  } {
+    // field-1 diverges (Yes/No); field-2 is agreed (Same/Same).
+    const divergent: ReviewerDecisionResponse[] = [
+      decision({ id: "d1a", reviewer_id: "user-a", field_id: "field-1", value: { value: "Yes" } }),
+      decision({ id: "d1b", reviewer_id: "user-b", field_id: "field-1", value: { value: "No" } }),
+    ];
+    const agreed: ReviewerDecisionResponse[] = [
+      decision({ id: "d2a", reviewer_id: "user-a", field_id: "field-2", value: { value: "Same" } }),
+      decision({ id: "d2b", reviewer_id: "user-b", field_id: "field-2", value: { value: "Same" } }),
+    ];
+    const runDetail: RunDetailResponse = {
+      run: {
+        id: "run-1", project_id: "p1", article_id: "a1", template_id: "t1", kind: "extraction",
+        version_id: "v1", stage: "consensus", status: "running",
+        hitl_config_snapshot: { reviewer_count: 2 }, parameters: {}, results: {},
+        created_at: "2026-04-28T09:00:00Z", created_by: "user-a",
+      },
+      proposals: [],
+      decisions: [...divergent, ...agreed],
+      consensus_decisions: [],
+      published_states: [],
+    };
+    const summary: ReviewerSummary = {
+      reviewers: ["user-a", "user-b"],
+      currentDecisions: new Map(),
+      decisionsByCoord: new Map([
+        ["inst-1::field-1", divergent],
+        ["inst-1::field-2", agreed],
+      ]),
+      divergentCoords: new Set(["inst-1::field-1"]),
+      requiredReviewerCount: 2,
+      completionRatio: 1,
+      filledCoords: new Set(["inst-1::field-1", "inst-1::field-2"]),
+      touchedCoords: new Set(["inst-1::field-1", "inst-1::field-2"]),
+    };
+    return { runDetail, summary };
+  }
+
+  it("renders ALL coords (agreed + diverging) and hides the in-panel finalize when showFinalize=false", () => {
+    const { runDetail, summary } = evaluateAllFixtures();
+    render(
+      <ConsensusPanel
+        runDetail={runDetail}
+        summary={summary}
+        fieldLabelByCoord={{
+          "inst-1::field-1": "Sec · Diverging",
+          "inst-1::field-2": "Sec · Agreed",
+        }}
+        evaluateAllCoords={["inst-1::field-1", "inst-1::field-2"]}
+        showFinalize={false}
+        onSelectExisting={vi.fn()}
+        onManualOverride={vi.fn()}
+        onFinalize={vi.fn()}
+      />,
+    );
+    // Both coords render (agreed coord is NOT in divergentCoords yet still shown).
+    expect(screen.getByText("Sec · Diverging")).toBeInTheDocument();
+    expect(screen.getByText("Sec · Agreed")).toBeInTheDocument();
+    expect(screen.getByText("Review every field")).toBeInTheDocument();
+    // The header owns finalize for extraction — no in-panel finalize button.
+    expect(screen.queryByTestId("consensus-finalize-button")).toBeNull();
+  });
+
+  it("evaluate-all with zero divergence renders the grid (not the no-conflicts fast-path)", () => {
+    const { runDetail, summary } = evaluateAllFixtures();
+    summary.divergentCoords = new Set(); // everything agrees
+    render(
+      <ConsensusPanel
+        runDetail={runDetail}
+        summary={summary}
+        fieldLabelByCoord={{ "inst-1::field-2": "Sec · Agreed" }}
+        evaluateAllCoords={["inst-1::field-2"]}
+        showFinalize={false}
+        onSelectExisting={vi.fn()}
+        onManualOverride={vi.fn()}
+        onFinalize={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("consensus-empty")).toBeNull();
+    expect(screen.getByText("Sec · Agreed")).toBeInTheDocument();
+    expect(screen.queryByTestId("consensus-finalize-button")).toBeNull();
+  });
+});

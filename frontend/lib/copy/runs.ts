@@ -20,6 +20,7 @@ export const runs = {
   gateBlocked: 'Complete the required fields first',
   // Reviewers
   reviewersDiffer: '{{count}} differ',
+  reviewersReadyHint: '{{ready}}/{{total}} ready',
   // RoleChip
   blindSuffix: 'blind',
   revealedSuffix: 'revealed',

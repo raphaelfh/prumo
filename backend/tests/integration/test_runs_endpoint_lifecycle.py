@@ -99,12 +99,12 @@ async def test_full_hitl_lifecycle(
     assert run["stage"] == "pending"
     assert run["kind"] == "extraction"
 
-    # 2) Advance to proposal
+    # 2) Advance to extract
     advance_res = await db_client.post(
-        f"/api/v1/runs/{run_id}/advance", json={"target_stage": "proposal"}
+        f"/api/v1/runs/{run_id}/advance", json={"target_stage": "extract"}
     )
     assert advance_res.status_code == 200, advance_res.text
-    assert advance_res.json()["data"]["stage"] == "proposal"
+    assert advance_res.json()["data"]["stage"] == "extract"
 
     # 3) Record AI proposal
     proposal_res = await db_client.post(
@@ -121,13 +121,7 @@ async def test_full_hitl_lifecycle(
     proposal_id = proposal_res.json()["data"]["id"]
     assert UUID(proposal_id)
 
-    # 4) Advance to review
-    advance_res = await db_client.post(
-        f"/api/v1/runs/{run_id}/advance", json={"target_stage": "review"}
-    )
-    assert advance_res.status_code == 200
-
-    # 5) Reviewer accepts the proposal
+    # 4) Reviewer accepts the proposal (run stays in extract; no review stage)
     decision_res = await db_client.post(
         f"/api/v1/runs/{run_id}/decisions",
         json={
@@ -206,8 +200,8 @@ async def test_invalid_stage_transition_returns_400(
     assert create_res.status_code == 201
     run_id = create_res.json()["data"]["id"]
 
-    # pending → review (not allowed; must go pending → proposal first)
-    bad = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": "review"})
+    # pending → consensus (not allowed; must go pending → extract first)
+    bad = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": "consensus"})
     assert bad.status_code == 400
 
 

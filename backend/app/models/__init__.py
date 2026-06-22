@@ -49,6 +49,7 @@ from app.models.extraction_workflow import (
     ExtractionPublishedState,
     ExtractionReviewerDecision,
     ExtractionReviewerDecisionType,
+    ExtractionReviewerReady,
     ExtractionReviewerState,
 )
 from app.models.feedback import FeedbackAttachment, FeedbackReport  # noqa: F401
@@ -147,6 +148,7 @@ __all__ = [
     "ExtractionPublishedState",
     "ExtractionReviewerDecision",
     "ExtractionReviewerDecisionType",
+    "ExtractionReviewerReady",
     "ExtractionReviewerState",
     # Feedback
     "FeedbackReport",
