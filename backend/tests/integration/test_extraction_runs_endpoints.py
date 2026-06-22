@@ -34,6 +34,25 @@ API_PREFIX = "/api/v1/runs"
 # =================== HELPERS ===================
 
 
+def _auth_as(profile_id: UUID) -> None:
+    """Re-point the auth override at a specific profile mid-test (role switch).
+
+    Used to set up a run as the seed manager and then act as a less-privileged
+    member (reviewer / viewer) for the same run, mirroring the role-gate tests
+    in ``test_extraction_runs_ready_api.py``.
+    """
+
+    async def override() -> TokenPayload:
+        return TokenPayload(
+            sub=str(profile_id),
+            email="test@example.com",
+            role="authenticated",
+            aal="aal1",
+        )
+
+    app.dependency_overrides[get_current_user] = override
+
+
 async def _resolve_fixtures(
     db: AsyncSession,  # noqa: ARG001
 ) -> tuple[UUID, UUID, UUID, UUID, UUID, UUID] | None:
@@ -786,6 +805,70 @@ async def test_create_consensus_select_existing_returns_201(
     assert data["consensus"]["mode"] == "select_existing"
     assert data["published"]["version"] == 1
     assert data["published"]["run_id"] == str(run_id)
+
+
+@pytest.mark.asyncio
+async def test_create_consensus_rejects_non_arbitrator_reviewer(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """Publishing a consensus decision is an arbitrator action (manager /
+    consensus). A plain project reviewer — a member, and admitted by the
+    workflow RLS — is rejected at the API layer, mirroring approve-finalize
+    and ADR-0015's manager/consensus-only consensus surface. Without the gate
+    the reviewer would publish successfully (201); the gate makes it 403."""
+    run_id, instance_id, field_id, decision_id = await _setup_consensus_run(db_client, db_session)
+
+    _auth_as(SEED.reviewer_profile)  # a project reviewer, NOT an arbitrator
+    response = await db_client.post(
+        f"{API_PREFIX}/{run_id}/consensus",
+        json={
+            "instance_id": str(instance_id),
+            "field_id": str(field_id),
+            "mode": "select_existing",
+            "selected_decision_id": str(decision_id),
+        },
+    )
+    assert response.status_code == 403, response.text
+    assert "manager or consensus role required" in response.json()["error"]["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_consensus_rejects_viewer_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """A read-only viewer member is rejected by the arbitrator gate (distinct
+    from the membership gate, which would otherwise let any member through).
+    This also closes the API-laxer-than-RLS gap: the workflow RLS already
+    excludes viewers from writing consensus rows."""
+    run_id, instance_id, field_id, decision_id = await _setup_consensus_run(db_client, db_session)
+
+    # Make the outsider a VIEWER of the project (shared session → visible to the
+    # API request; rolled back at fixture teardown).
+    await db_session.execute(
+        text(
+            "INSERT INTO public.project_members (project_id, user_id, role) "
+            "VALUES (:pid, :uid, 'viewer')"
+        ),
+        {"pid": str(SEED.primary_project), "uid": str(SEED.outsider_profile)},
+    )
+    await db_session.flush()
+
+    _auth_as(SEED.outsider_profile)
+    response = await db_client.post(
+        f"{API_PREFIX}/{run_id}/consensus",
+        json={
+            "instance_id": str(instance_id),
+            "field_id": str(field_id),
+            "mode": "select_existing",
+            "selected_decision_id": str(decision_id),
+        },
+    )
+    assert response.status_code == 403, response.text
+    assert "manager or consensus role required" in response.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio

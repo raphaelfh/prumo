@@ -73,6 +73,23 @@ divergence resolved). This resolves the two-Finalize-button split (I6); the
 `handleFinalize` is unwired (Phase 2 stops writing `instance.status`; full deletion
 is Phase 3).
 
+**Per-coordinate consensus writes are role-gated at the API layer (kind-aware).**
+The standalone `POST /api/v1/runs/{id}/consensus` (`record_consensus`) — the
+per-coordinate path behind both the extraction `ConsensusPanel` divergence resolver
+and the QA per-field publish loop — must enforce role, not just membership, because
+the service-role session bypasses RLS (which already admits only `is_project_reviewer`
+to the workflow tables). Without it, any project member — including a read-only
+**viewer** — could publish a consensus decision and its canonical `PublishedState`.
+The gate is kind-aware: **extraction → arbitrator** (`ensure_project_arbitrator`,
+manager/consensus), matching this ADR's manager/consensus-only consensus surface and
+the `approve-finalize` gate; **quality-assessment → reviewer**
+(`ensure_project_reviewer`), because QA "Publish assessment" is by design a
+single-reviewer self-publish (its extract-stage publish is deliberately ungated in
+`frontend/lib/qa/qaTransition.ts`). A blunt arbitrator gate would have regressed QA
+by 403-ing every reviewer's publish. (This closes a gap the original Phase-2
+whole-branch review missed — `approve-finalize` was gated, but the older
+`create_consensus` predated it and stayed membership-only.)
+
 ## Consequences
 
 - **Positive.** A complete no-divergence run finalizes in one action; the gates
@@ -81,9 +98,12 @@ is Phase 3).
   project-wide setting. The ready flag gives the manager a quorum-free signal.
 - **Migration.** `0029_reviewer_ready_flag` adds one table with RLS (member
   SELECT; self + reviewer INSERT/UPDATE). Information-preserving; no backfill.
-- **QA untouched.** `approve_and_finalize` is extraction-only; `ConsensusPanel`'s
+- **QA mostly untouched.** `approve_and_finalize` is extraction-only; `ConsensusPanel`'s
   evaluate-all / `showFinalize` changes are opt-in props QA does not pass, so QA's
-  publish-then-advance and its in-panel finalize button are unchanged.
+  publish-then-advance and its in-panel finalize button are unchanged for
+  reviewers/managers. The one deliberate change: the kind-aware consensus gate above
+  now reviewer-gates QA's per-field publish, so a read-only viewer can no longer
+  publish a QA assessment (it was previously membership-only).
 - **Neutral.** Published state remains sparse (only resolved coords). The header
   "Approve & finalize" gate is advisory; the backend gate is authoritative (a
   rejection surfaces as a toast).
