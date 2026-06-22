@@ -108,9 +108,9 @@ async def test_build_run_view_instances_populated_and_scoped(
         text(
             "INSERT INTO public.extraction_instances "
             "(id, project_id, template_id, entity_type_id, article_id, "
-            " label, status, created_by) "
+            " label, created_by) "
             "VALUES (:id, :pid, :tid, :etid, :aid, "
-            " 'Foreign Instance (scope test)', 'pending', :created_by)"
+            " 'Foreign Instance (scope test)', :created_by)"
         ),
         {
             "id": str(foreign_instance_id),

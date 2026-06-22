@@ -24,7 +24,6 @@ from app.llm.provider import build_model
 from app.models.extraction import (
     ExtractionEntityRole,
     ExtractionInstance,
-    ExtractionInstanceStatus,
     ExtractionRunStage,
 )
 from app.repositories import (
@@ -428,7 +427,6 @@ class ModelExtractionService(LoggerMixin):
                     "ai_run_id": str(run_id),
                 },
                 created_by=UUID(self.user_id),
-                status=ExtractionInstanceStatus.PENDING.value,
             )
 
             # Issue #21: same reasoning as `_create_model_instances`. A failed
@@ -498,7 +496,6 @@ class ModelExtractionService(LoggerMixin):
                     "raw_extraction": model_data,
                 },
                 created_by=UUID(self.user_id),
-                status=ExtractionInstanceStatus.PENDING.value,
             )
 
             # Issue #21: do NOT catch-and-continue here. `create()` calls

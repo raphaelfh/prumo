@@ -23,7 +23,6 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionEntityType,
     ExtractionInstance,
-    ExtractionInstanceStatus,
     ExtractionRun,
     ExtractionRunStage,
     ProjectExtractionTemplate,
@@ -245,7 +244,6 @@ class HITLSessionService:
                 sort_order=et.sort_order,
                 metadata_={"created_via": "hitl_session"},
                 created_by=user_id,
-                status=ExtractionInstanceStatus.PENDING.value,
             )
             pending_instances.append((et.id, inst))
 
@@ -345,7 +343,6 @@ class HITLSessionService:
                             sort_order=child_et.sort_order,
                             metadata_={"created_via": "hitl_session_backfill"},
                             created_by=user_id,
-                            status=ExtractionInstanceStatus.PENDING.value,
                         )
                     )
                     existing_children.add((parent_inst.id, child_et.id))

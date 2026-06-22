@@ -679,13 +679,11 @@ class TestRemainingConstruction:
             templateId=uuid4(),
             entityTypeId=uuid4(),
             label="L",
-            status="draft",
             sortOrder=0,
             createdAt=now,
             updatedAt=now,
         )
         assert resp.article_id is None
-        assert resp.status == "draft"
 
     def test_value_response_from_camel(self) -> None:
         now = "2026-06-13T00:00:00Z"

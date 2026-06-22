@@ -81,9 +81,9 @@ async def _setup_qa_run_with_instance_field(
         text(
             "INSERT INTO public.extraction_instances "
             "(id, project_id, template_id, entity_type_id, article_id, "
-            " label, status, created_by) "
+            " label, created_by) "
             "VALUES (:id, :pid, :tid, :etid, :aid, "
-            " 'QA Test Instance', 'pending', :uid)"
+            " 'QA Test Instance', :uid)"
         ),
         {
             "id": str(instance_id),

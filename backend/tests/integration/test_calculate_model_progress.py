@@ -133,12 +133,10 @@ async def project_with_run(db_session: AsyncSession) -> AsyncGenerator[dict, Non
             """
             INSERT INTO public.extraction_instances
                 (id, project_id, article_id, template_id, entity_type_id,
-                 parent_instance_id, label, sort_order, status, created_by)
+                 parent_instance_id, label, sort_order, created_by)
             VALUES
-                (:p, :proj, :art, :tid, :pet, NULL, 'Model 1', 0,
-                 'pending'::extraction_instance_status, :uid),
-                (:c, :proj, :art, :tid, :cet, :p, 'Model 1 - Sub', 0,
-                 'pending'::extraction_instance_status, :uid)
+                (:p, :proj, :art, :tid, :pet, NULL, 'Model 1', 0, :uid),
+                (:c, :proj, :art, :tid, :cet, :p, 'Model 1 - Sub', 0, :uid)
             """
         ),
         {

@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-06-21
+last_reviewed: 2026-06-22
 owner: '@raphaelfh'
 ---
 
@@ -247,9 +247,11 @@ each ships green:
    "Open consensus", auto-reveal, evaluate-all `ConsensusPanel`, "Approve &
    finalize" (publish-all → advance), header phase-aware action. New ADR
    superseding the finalize parts of ADR-0009.
-3. **Delete the legacy finalize path** — `handleFinalize`,
+3. **Delete the legacy finalize path** ✅ **(done — Phase 3)** — `handleFinalize`,
    `markInstancesCompleted`, the `instance.status` progress shortcut; progress
-   from field-completeness. (Pure cleanup once 2 lands.)
+   from field-completeness, plus dropping the `extraction_instances.status`
+   column + `extraction_instance_status` enum (migration `0030_drop_instance_status`,
+   ADR-0015 Consequences). (Pure cleanup once 2 lands.)
 
 QA-shared surfaces (`ConsensusPanel`, lifecycle) are touched in stage 2 — guard
 QA's publish-then-advance there.

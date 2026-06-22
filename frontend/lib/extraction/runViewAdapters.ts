@@ -97,8 +97,6 @@ export function entityTypesFromRunView(
  *   ``string``) to satisfy ``ExtractionInstance.article_id: string``.
  * - ``label``: guarded with ``?? ''`` — the interface models it as a
  *   required string.
- * - ``status``: cast to the union literal type; the server is the source
- *   of truth.
  *
  * Returns ``[]`` when ``view.instances`` is undefined or empty.
  */
@@ -116,7 +114,6 @@ export function instancesFromRunView(view: RunViewResponse): ExtractionInstance[
     parent_instance_id: inst.parent_instance_id,
     label: inst.label ?? '',
     sort_order: inst.sort_order,
-    status: inst.status as ExtractionInstance['status'],
     metadata: inst.metadata,
     created_by: inst.created_by,
     created_at: inst.created_at,
