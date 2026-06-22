@@ -14,9 +14,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runsKeys } from "@/hooks/runs/types";
 import {
   useAdvanceRun,
+  useApproveFinalize,
   useCreateConsensus,
   useCreateDecision,
   useCreateRun,
+  useMarkReady,
   useRun,
   type RunDetailResponse,
 } from "@/hooks/runs";
@@ -263,6 +265,72 @@ describe("useAdvanceRun", () => {
       body: { target_stage: "extract" },
     });
     expect(mutationResult?.stage).toBe("extract");
+  });
+});
+
+describe("useMarkReady", () => {
+  it("POSTs /api/v1/runs/{runId}/ready and invalidates detail + reviewers", async () => {
+    apiClientMock.mockResolvedValueOnce({
+      ready_count: 1,
+      reviewer_count: 1,
+      reviewers_ready: ["user-1"],
+    });
+
+    const { wrapper, queryClient } = createWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useMarkReady("run-ready"), { wrapper });
+
+    let mutationResult: Awaited<ReturnType<typeof result.current.mutateAsync>> | undefined;
+    await act(async () => {
+      mutationResult = await result.current.mutateAsync({ ready: true });
+    });
+
+    expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs/run-ready/ready", {
+      method: "POST",
+      body: { ready: true },
+    });
+    expect(mutationResult?.ready_count).toBe(1);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-ready") });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: runsKeys.reviewers("run-ready") });
+  });
+});
+
+describe("useApproveFinalize", () => {
+  it("POSTs /api/v1/runs/{runId}/approve-finalize and invalidates detail", async () => {
+    apiClientMock.mockResolvedValueOnce({
+      run: {
+        id: "run-af",
+        project_id: "p",
+        article_id: "a",
+        template_id: "t",
+        kind: "extraction",
+        version_id: "v",
+        stage: "finalized",
+        status: "completed",
+        hitl_config_snapshot: {},
+        parameters: {},
+        results: {},
+        created_at: "2026-04-26T12:00:00Z",
+        created_by: "user-1",
+      },
+      published_count: 3,
+    });
+
+    const { wrapper, queryClient } = createWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useApproveFinalize("run-af"), { wrapper });
+
+    let mutationResult: Awaited<ReturnType<typeof result.current.mutateAsync>> | undefined;
+    await act(async () => {
+      mutationResult = await result.current.mutateAsync();
+    });
+
+    expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs/run-af/approve-finalize", {
+      method: "POST",
+    });
+    expect(mutationResult?.run.stage).toBe("finalized");
+    expect(mutationResult?.published_count).toBe(3);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-af") });
   });
 });
 

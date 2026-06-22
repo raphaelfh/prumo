@@ -443,6 +443,54 @@
         "title": "ApiResponse[Annotated[Union[SingleSectionResult, BatchSectionResult], FieldInfo(annotation=NoneType, required=True, discriminator='mode')]]",
         "type": "object"
       },
+      "ApiResponse_ApproveFinalizeResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApproveFinalizeResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ApproveFinalizeResponse]",
+        "type": "object"
+      },
       "ApiResponse_ArticleFileResponse_": {
         "properties": {
           "data": {
@@ -1451,6 +1499,54 @@
         "title": "ApiResponse[RunDetailResponse]",
         "type": "object"
       },
+      "ApiResponse_RunReadyStateResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunReadyStateResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[RunReadyStateResponse]",
+        "type": "object"
+      },
       "ApiResponse_RunReviewersResponse_": {
         "properties": {
           "data": {
@@ -2075,6 +2171,24 @@
           "ok"
         ],
         "title": "ApiResponse[list[dict[str, Any]]]",
+        "type": "object"
+      },
+      "ApproveFinalizeResponse": {
+        "description": "Result of POST /runs/{id}/approve-finalize: the finalized run + how many\ncoords the approve-all step published.",
+        "properties": {
+          "published_count": {
+            "title": "Published Count",
+            "type": "integer"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunSummaryResponse"
+          }
+        },
+        "required": [
+          "run",
+          "published_count"
+        ],
+        "title": "ApproveFinalizeResponse",
         "type": "object"
       },
       "ArticleFileListItem": {
@@ -3954,6 +4068,18 @@
         "title": "ManagerReviewVisibilityRead",
         "type": "object"
       },
+      "MarkReadyRequest": {
+        "description": "Toggle the caller's per-reviewer \"I'm done extracting\" flag for a run.",
+        "properties": {
+          "ready": {
+            "default": true,
+            "title": "Ready",
+            "type": "boolean"
+          }
+        },
+        "title": "MarkReadyRequest",
+        "type": "object"
+      },
       "ModelExtractionRequest": {
         "description": "Request for extraction de modelos de predicao.",
         "properties": {
@@ -4517,6 +4643,11 @@
             "title": "Decisions",
             "type": "array"
           },
+          "peers_revealed": {
+            "default": false,
+            "title": "Peers Revealed",
+            "type": "boolean"
+          },
           "proposals": {
             "items": {
               "$ref": "#/components/schemas/ProposalRecordResponse"
@@ -4543,6 +4674,34 @@
           "published_states"
         ],
         "title": "RunDetailResponse",
+        "type": "object"
+      },
+      "RunReadyStateResponse": {
+        "description": "The \"N/M reviewers ready\" hint. Advisory only \u2014 readiness gates nothing.\n\n``reviewer_count`` is ``max(hitl_config reviewer_count, ready_count)`` so the\nhint never reads \"N of M\" with N > M (the configured count is often the inert\ndefault of 1).",
+        "properties": {
+          "ready_count": {
+            "title": "Ready Count",
+            "type": "integer"
+          },
+          "reviewer_count": {
+            "title": "Reviewer Count",
+            "type": "integer"
+          },
+          "reviewers_ready": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Reviewers Ready",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ready_count",
+          "reviewer_count",
+          "reviewers_ready"
+        ],
+        "title": "RunReadyStateResponse",
         "type": "object"
       },
       "RunReviewerProfile": {
@@ -5060,6 +5219,11 @@
             "title": "Instances",
             "type": "array"
           },
+          "peers_revealed": {
+            "default": false,
+            "title": "Peers Revealed",
+            "type": "boolean"
+          },
           "proposals": {
             "items": {
               "$ref": "#/components/schemas/ProposalRecordResponse"
@@ -5072,6 +5236,24 @@
               "$ref": "#/components/schemas/PublishedStateResponse"
             },
             "title": "Published States",
+            "type": "array"
+          },
+          "ready_count": {
+            "default": 0,
+            "title": "Ready Count",
+            "type": "integer"
+          },
+          "reviewer_count": {
+            "default": 0,
+            "title": "Reviewer Count",
+            "type": "integer"
+          },
+          "reviewers_ready": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Reviewers Ready",
             "type": "array"
           },
           "run": {
@@ -7928,6 +8110,55 @@
         ]
       }
     },
+    "/api/v1/runs/{run_id}/approve-finalize": {
+      "post": {
+        "description": "One-action consensus \u2192 finalized for extraction runs.\n\nPublishes the agreed value for every existing-instance \u00d7 field coord that is not\nyet published (reusing the per-coord consensus path), then advances to FINALIZED \u2014\natomically, in one transaction/commit. This makes the finalize gates (EmptyFinalize/\nIncompleteFinalize) satisfiable naturally for a complete run, retiring the\nno-divergence dead-end. Rejects when a field still diverges unresolved.",
+        "operationId": "approve_and_finalize_run_api_v1_runs__run_id__approve_finalize_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApproveFinalizeResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Approve And Finalize Run",
+        "tags": [
+          "extraction-runs"
+        ]
+      }
+    },
     "/api/v1/runs/{run_id}/consensus": {
       "post": {
         "operationId": "create_consensus_api_v1_runs__run_id__consensus_post",
@@ -8097,6 +8328,65 @@
           }
         ],
         "summary": "Create Proposal",
+        "tags": [
+          "extraction-runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/ready": {
+      "post": {
+        "description": "Toggle the caller's per-reviewer \"ready\" signal for a run.\n\nAdvisory only \u2014 it never advances the run (the manager opens consensus\nmanually). Membership-gated AND reviewer-role-gated (a read-only viewer\ncannot mark ready). Returns the \"N/M reviewers ready\" hint.",
+        "operationId": "mark_run_ready_api_v1_runs__run_id__ready_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkReadyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RunReadyStateResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Mark Run Ready",
         "tags": [
           "extraction-runs"
         ]

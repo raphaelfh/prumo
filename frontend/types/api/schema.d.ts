@@ -711,6 +711,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/approve-finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve And Finalize Run
+         * @description One-action consensus → finalized for extraction runs.
+         *
+         *     Publishes the agreed value for every existing-instance × field coord that is not
+         *     yet published (reusing the per-coord consensus path), then advances to FINALIZED —
+         *     atomically, in one transaction/commit. This makes the finalize gates (EmptyFinalize/
+         *     IncompleteFinalize) satisfiable naturally for a complete run, retiring the
+         *     no-divergence dead-end. Rejects when a field still diverges unresolved.
+         */
+        post: operations["approve_and_finalize_run_api_v1_runs__run_id__approve_finalize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/consensus": {
         parameters: {
             query?: never;
@@ -756,6 +782,30 @@ export interface paths {
         put?: never;
         /** Create Proposal */
         post: operations["create_proposal_api_v1_runs__run_id__proposals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Run Ready
+         * @description Toggle the caller's per-reviewer "ready" signal for a run.
+         *
+         *     Advisory only — it never advances the run (the manager opens consensus
+         *     manually). Membership-gated AND reviewer-role-gated (a read-only viewer
+         *     cannot mark ready). Returns the "N/M reviewers ready" hint.
+         */
+        post: operations["mark_run_ready_api_v1_runs__run_id__ready_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1157,6 +1207,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[ApproveFinalizeResponse] */
+        ApiResponse_ApproveFinalizeResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ApproveFinalizeResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[ArticleFileResponse] */
         ApiResponse_ArticleFileResponse_: {
             /** @description Dados da resposta */
@@ -1514,6 +1581,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[RunReadyStateResponse] */
+        ApiResponse_RunReadyStateResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["RunReadyStateResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[RunReviewersResponse] */
         ApiResponse_RunReviewersResponse_: {
             /** @description Dados da resposta */
@@ -1737,6 +1821,16 @@ export interface components {
              * @description rastreamento
              */
             trace_id?: string | null;
+        };
+        /**
+         * ApproveFinalizeResponse
+         * @description Result of POST /runs/{id}/approve-finalize: the finalized run + how many
+         *     coords the approve-all step published.
+         */
+        ApproveFinalizeResponse: {
+            /** Published Count */
+            published_count: number;
+            run: components["schemas"]["RunSummaryResponse"];
         };
         /**
          * ArticleFileListItem
@@ -2636,6 +2730,17 @@ export interface components {
             quality_assessment: boolean;
         };
         /**
+         * MarkReadyRequest
+         * @description Toggle the caller's per-reviewer "I'm done extracting" flag for a run.
+         */
+        MarkReadyRequest: {
+            /**
+             * Ready
+             * @default true
+             */
+            ready: boolean;
+        };
+        /**
          * ModelExtractionRequest
          * @description Request for extraction de modelos de predicao.
          */
@@ -2920,11 +3025,32 @@ export interface components {
             consensus_decisions: components["schemas"]["ConsensusDecisionResponse"][];
             /** Decisions */
             decisions: components["schemas"]["ReviewerDecisionResponse"][];
+            /**
+             * Peers Revealed
+             * @default false
+             */
+            peers_revealed: boolean;
             /** Proposals */
             proposals: components["schemas"]["ProposalRecordResponse"][];
             /** Published States */
             published_states: components["schemas"]["PublishedStateResponse"][];
             run: components["schemas"]["RunSummaryResponse"];
+        };
+        /**
+         * RunReadyStateResponse
+         * @description The "N/M reviewers ready" hint. Advisory only — readiness gates nothing.
+         *
+         *     ``reviewer_count`` is ``max(hitl_config reviewer_count, ready_count)`` so the
+         *     hint never reads "N of M" with N > M (the configured count is often the inert
+         *     default of 1).
+         */
+        RunReadyStateResponse: {
+            /** Ready Count */
+            ready_count: number;
+            /** Reviewer Count */
+            reviewer_count: number;
+            /** Reviewers Ready */
+            reviewers_ready: string[];
         };
         /**
          * RunReviewerProfile
@@ -3188,10 +3314,27 @@ export interface components {
             entity_types: components["schemas"]["RunViewEntityType"][];
             /** Instances */
             instances: components["schemas"]["RunViewInstance"][];
+            /**
+             * Peers Revealed
+             * @default false
+             */
+            peers_revealed: boolean;
             /** Proposals */
             proposals: components["schemas"]["ProposalRecordResponse"][];
             /** Published States */
             published_states: components["schemas"]["PublishedStateResponse"][];
+            /**
+             * Ready Count
+             * @default 0
+             */
+            ready_count: number;
+            /**
+             * Reviewer Count
+             * @default 0
+             */
+            reviewer_count: number;
+            /** Reviewers Ready */
+            reviewers_ready?: string[];
             run: components["schemas"]["RunSummaryResponse"];
         };
         /**
@@ -4778,6 +4921,37 @@ export interface operations {
             };
         };
     };
+    approve_and_finalize_run_api_v1_runs__run_id__approve_finalize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ApproveFinalizeResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_consensus_api_v1_runs__run_id__consensus_post: {
         parameters: {
             query?: never;
@@ -4870,6 +5044,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_ProposalRecordResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_run_ready_api_v1_runs__run_id__ready_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkReadyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RunReadyStateResponse_"];
                 };
             };
             /** @description Validation Error */
