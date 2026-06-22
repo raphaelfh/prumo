@@ -150,12 +150,6 @@ WHERE tablename IN ('extraction_instances', 'extracted_values')
   AND indexname LIKE 'idx_%unique%'
 ORDER BY tablename, indexname;
 
-SELECT typname, enumlabel
-FROM pg_type t
-JOIN pg_enum e ON t.oid = e.enumtypid
-WHERE typname = 'extraction_instance_status'
-ORDER BY e.enumsortorder;
-
 SELECT constraint_name, check_clause
 FROM information_schema.check_constraints
 WHERE constraint_name = 'chk_extraction_instances_metadata_object';
@@ -175,12 +169,6 @@ FROM pg_indexes
 WHERE tablename IN ('extraction_instances', 'extracted_values')
   AND indexname LIKE 'idx_%unique%'
 ORDER BY tablename, indexname;
-
-SELECT typname, enumlabel
-FROM pg_type t
-JOIN pg_enum e ON t.oid = e.enumtypid
-WHERE typname = 'extraction_instance_status'
-ORDER BY e.enumsortorder;
 
 SELECT constraint_name, check_clause
 FROM information_schema.check_constraints
