@@ -74,6 +74,51 @@ def test_cardinality_one_model_section_emits_one_row_per_model():
     assert rows[0].values == ("Logistic regression",)
 
 
+def test_cardinality_many_study_section_fans_out_over_section_instances():
+    # Non-model MANY branch: one row per section_instance (not model_instances).
+    field_id = uuid4()
+    section = SectionDescriptor(
+        entity_type_id=uuid4(),
+        label="Outcomes",
+        role=ExtractionEntityRole.STUDY_SECTION,
+        parent_entity_type_id=None,
+        fields=(
+            FieldDescriptor(
+                field_id=field_id,
+                label="Name",
+                type=ExtractionFieldType.TEXT,
+                allowed_values=(),
+                parent_section_id=uuid4(),
+            ),
+        ),
+        cardinality=ExtractionCardinality.MANY,
+    )
+    run_id = uuid4()
+    i1, i2 = uuid4(), uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        header_label="Gaca, 2011",
+        run_id=run_id,
+        run_stage=None,
+        version_id=None,
+        model_instances=(),
+        section_instances={section.entity_type_id: (i1, i2)},
+    )
+    value_map = {
+        (run_id, i1, field_id): "OS",
+        (run_id, i2, field_id): "PFS",
+    }
+
+    tables = _build_tidy_tables((section,), (article,), value_map, ExportMode.CONSENSUS)
+
+    rows = tables[0].rows
+    assert [r.values[0] for r in rows] == ["OS", "PFS"]
+    assert [r.record_label for r in rows] == [
+        "Gaca, 2011 — Outcomes 1",
+        "Gaca, 2011 — Outcomes 2",
+    ]
+
+
 def test_cardinality_one_model_section_fans_out_over_multiple_models():
     field_id = uuid4()
     section = _model_section(field_id)
