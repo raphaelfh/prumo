@@ -50,12 +50,16 @@ jobs:
       - name: Run Ruff (format check)
         run: uv run ruff format --check .
 
-      # MyPy is advisory: 43 files in app/ have accumulated type-error debt
-      # from before CI started running. Surface the findings without blocking
-      # the required check, then chip away at the debt in focused PRs.
-      # TODO: drop `|| true` once mypy clean.
-      - name: Run MyPy (type check, advisory)
-        run: uv run mypy app --ignore-missing-imports || true
+      # MyPy ratchet: the app still carries type-error debt that predates CI,
+      # so an aggregate clean run is not required yet — but NO NEW errors may be
+      # introduced (constitution §V: "do not add new errors"). The committed
+      # backend/.mypy_baseline is an allow-list of (file, error-code) pairs that
+      # only shrinks; any new pair fails this required check. After fixing
+      # errors, tighten the baseline in the same PR:
+      #   uv run mypy app --ignore-missing-imports > mypy.out || true
+      #   uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline --input mypy.out --update
+      - name: Run MyPy (no-new-errors ratchet)
+        run: '{ uv run mypy app --ignore-missing-imports || true; } | uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline'
 
   # =================== ARCHITECTURAL FITNESS ===================
   # REQUIRED gate (promoted from advisory on 2026-05-20 after baselines hit
