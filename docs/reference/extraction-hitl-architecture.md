@@ -100,7 +100,7 @@ Extract (advances to consensus; available to every extractor since
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0028_run_stage_extract` (post-squash numbering; run
+`0029_reviewer_ready_flag` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -115,6 +115,7 @@ in any PR that adds an `extraction_*` migration).
 | `extraction_reviewer_states` | Materialized | Current `decision_id` per `(run, reviewer, instance, field)`. Upserted alongside each decision so reads are O(1). Unique `(run_id, reviewer_id, instance_id, field_id)`. |
 | `extraction_consensus_decisions` | **Yes** | Conflict resolution: `select_existing` (arbitrator picks a reviewer decision) or `manual_override` (writes value + rationale directly). |
 | `extraction_published_states` | Mutable with version | Canonical value per `(run, instance, field)` with optimistic concurrency. Update uses `WHERE version = :expected` so 0 rows = 409 conflict. |
+| `extraction_reviewer_ready` | Upsert | Per-`(run, reviewer)` advisory "I'm done extracting" flag (`is_ready`, `marked_ready_at`). Unique `(run_id, reviewer_id)`. Does **not** gate any stage transition; surfaces the "N/M reviewers ready" hint. Added `0029` (HITL Phase 2). |
 
 ### Pre-existing tables — evolved
 
