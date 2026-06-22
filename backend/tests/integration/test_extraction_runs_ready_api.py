@@ -64,6 +64,10 @@ async def test_mark_ready_idempotent_toggle_and_view(
     if not await _seeded(db_session):
         pytest.skip("Missing fixtures.")
     run_id = await _create_run(db_client)
+    # Advance to extract (the run's normal UI state) — the N/M ready hint is only
+    # computed for extract/consensus stages on the run-view.
+    adv = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": "extract"})
+    assert adv.status_code == 200, adv.text
 
     # Mark ready.
     res = await db_client.post(f"/api/v1/runs/{run_id}/ready", json={"ready": True})

@@ -328,6 +328,16 @@ _CURRENT_VALUE_STAGES = frozenset(
     }
 )
 
+# The "N/M reviewers ready" hint only matters while reviewers are still
+# extracting or the manager is in consensus; for pending/finalized/cancelled
+# runs it is meaningless, so skip the per-request DB read there.
+_READY_HINT_STAGES = frozenset(
+    {
+        ExtractionRunStage.EXTRACT.value,
+        ExtractionRunStage.CONSENSUS.value,
+    }
+)
+
 
 async def build_run_view(
     db: AsyncSession,
@@ -360,9 +370,12 @@ async def build_run_view(
         else []
     )
     instances = await _instances_for_run(db, detail.run)
-    ready = await ExtractionReviewerReadyService(db).ready_summary_from(
-        run_id=run_id, hitl_config_snapshot=detail.run.hitl_config_snapshot
-    )
+    if detail.run.stage in _READY_HINT_STAGES:
+        ready = await ExtractionReviewerReadyService(db).ready_summary_from(
+            run_id=run_id, hitl_config_snapshot=detail.run.hitl_config_snapshot
+        )
+    else:
+        ready = {"ready_count": 0, "reviewer_count": 0, "reviewers_ready": []}
 
     return RunViewResponse(
         run=detail.run,

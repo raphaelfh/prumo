@@ -328,62 +328,24 @@ class RunLifecycleService:
             ).all()
         }
 
-        proposal_values: dict[UUID, Any] = dict(
-            (
-                await self.db.execute(
-                    select(
-                        ExtractionProposalRecord.id,
-                        ExtractionProposalRecord.proposed_value,
-                    ).where(ExtractionProposalRecord.run_id == run.id)
-                )
-            ).all()
-        )
-
-        state_rows = (
-            await self.db.execute(
-                select(
-                    ExtractionReviewerState.instance_id,
-                    ExtractionReviewerState.field_id,
-                    ExtractionReviewerDecision.decision,
-                    ExtractionReviewerDecision.value,
-                    ExtractionReviewerDecision.proposal_record_id,
-                )
-                .join(
-                    ExtractionReviewerDecision,
-                    and_(
-                        ExtractionReviewerDecision.run_id == ExtractionReviewerState.run_id,
-                        ExtractionReviewerDecision.id
-                        == ExtractionReviewerState.current_decision_id,
-                    ),
-                )
-                .where(ExtractionReviewerState.run_id == run.id)
-            )
-        ).all()
-
-        # coord -> {distinct_unwrapped_key: original_envelope}
-        by_coord: dict[tuple[UUID, UUID], dict[str, Any]] = {}
-        for instance_id, field_id, decision, value, proposal_record_id in state_rows:
+        # One pass over each reviewer's current value: first distinct value per
+        # unpublished coord is the publish candidate; a second DIFFERENT value
+        # (compared on the unwrapped scalar) demotes the coord to unresolved.
+        to_publish: dict[tuple[UUID, UUID], Any] = {}
+        seen_key: dict[tuple[UUID, UUID], str] = {}
+        unresolved: set[tuple[UUID, UUID]] = set()
+        for instance_id, field_id, resolved in await self._resolved_reviewer_values(run.id):
             coord = (instance_id, field_id)
-            if coord in published_coords:
-                continue
-            if decision == ExtractionReviewerDecisionType.REJECT.value:
-                continue
-            resolved = value
-            if resolved is None and proposal_record_id is not None:
-                resolved = proposal_values.get(proposal_record_id)
-            if not _is_value_filled(resolved):
+            if coord in published_coords or coord in unresolved:
                 continue
             key = json.dumps(_unwrap_value(resolved), sort_keys=True, default=str)
-            by_coord.setdefault(coord, {}).setdefault(key, resolved)
-
-        to_publish: dict[tuple[UUID, UUID], Any] = {}
-        unresolved: list[tuple[UUID, UUID]] = []
-        for coord, variants in by_coord.items():
-            if len(variants) == 1:
-                to_publish[coord] = next(iter(variants.values()))
-            else:
-                unresolved.append(coord)
-        return to_publish, unresolved
+            if coord not in seen_key:
+                seen_key[coord] = key
+                to_publish[coord] = resolved
+            elif seen_key[coord] != key:
+                del to_publish[coord]
+                unresolved.add(coord)
+        return to_publish, list(unresolved)
 
     async def _find_unfilled_required_coords(self, run: ExtractionRun) -> list[tuple[UUID, UUID]]:
         """Return ``(instance_id, field_id)`` for every required field that
@@ -451,6 +413,22 @@ class RunLifecycleService:
             if _is_value_filled(value):
                 filled.add((instance_id, field_id))
 
+        for instance_id, field_id, _resolved in await self._resolved_reviewer_values(run_id):
+            filled.add((instance_id, field_id))
+
+        return filled
+
+    async def _resolved_reviewer_values(self, run_id: UUID) -> list[tuple[UUID, UUID, Any]]:
+        """Each reviewer's current non-empty resolved value envelope per coord:
+        ``(instance_id, field_id, envelope)``.
+
+        ``reject`` decisions are skipped; an ``accept_proposal`` whose decision row
+        carries no value resolves through the referenced proposal's
+        ``proposed_value``; empty values (``None`` / ``""`` after one envelope peel)
+        are dropped. Shared by the finalize completeness gate (``_filled_coords``)
+        and the approve-all resolver (``_agreed_unpublished_values``) so the
+        resolution semantics live in one place.
+        """
         proposal_values: dict[UUID, Any] = dict(
             (
                 await self.db.execute(
@@ -482,6 +460,8 @@ class RunLifecycleService:
                 .where(ExtractionReviewerState.run_id == run_id)
             )
         ).all()
+
+        resolved_values: list[tuple[UUID, UUID, Any]] = []
         for instance_id, field_id, decision, value, proposal_record_id in state_rows:
             if decision == ExtractionReviewerDecisionType.REJECT.value:
                 continue
@@ -489,9 +469,8 @@ class RunLifecycleService:
             if resolved is None and proposal_record_id is not None:
                 resolved = proposal_values.get(proposal_record_id)
             if _is_value_filled(resolved):
-                filled.add((instance_id, field_id))
-
-        return filled
+                resolved_values.append((instance_id, field_id, resolved))
+        return resolved_values
 
     async def reopen_run(
         self,
