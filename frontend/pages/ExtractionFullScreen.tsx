@@ -239,23 +239,19 @@ export default function ExtractionFullScreen() {
 
   const inConsensusStage = runDetail?.run.stage === 'consensus';
 
-  // {instance::field} → "Section · Field" label map for ConsensusPanel.
-  // Built from the loaded entity_types + their child fields. entity_types
-  // and fields now come from RunView (runDetail) via the adapters — not
-  // from useExtractionData. We use the instance label (entityType.label)
-  // plus a truncated field id from the run detail's decisions when available.
+  // {instance::field} → "Section · Field" label map AND the full evaluate-all
+  // coord list for the ConsensusPanel. Built from every existing instance ×
+  // its entity type's snapshot fields (real labels), so the evaluate-all surface
+  // shows every field — agreed and diverging — not just touched/divergent ones.
   const fieldLabelByCoordMap: Record<string, string> = {};
+  const extractionAllCoords: string[] = [];
   for (const inst of instances) {
     const et = entityTypes.find((e) => e.id === inst.entity_type_id);
     const sectionLabel = et?.label ?? et?.name ?? 'Section';
-    // Decisions + proposals carry the field id but not the label;
-    // fall back to the field id when nothing else is known. The
-    // ConsensusPanel still renders correctly — just shows the id.
-    const seenFields = new Set<string>();
-    for (const d of runDetail?.decisions ?? []) {
-      if (d.instance_id !== inst.id || seenFields.has(d.field_id)) continue;
-      seenFields.add(d.field_id);
-      fieldLabelByCoordMap[`${inst.id}::${d.field_id}`] = `${sectionLabel} · ${d.field_id.slice(0, 8)}…`;
+    for (const f of et?.fields ?? []) {
+      const key = `${inst.id}::${f.id}`;
+      extractionAllCoords.push(key);
+      fieldLabelByCoordMap[key] = `${sectionLabel} · ${f.label}`;
     }
   }
   const fieldLabelByCoord = fieldLabelByCoordMap;
@@ -1106,6 +1102,11 @@ export default function ExtractionFullScreen() {
           required: reviewerSummary.requiredReviewerCount,
           // divergentCoords is a Set<string> — .size gives the count
           divergent: reviewerSummary.divergentCoords.size,
+          // Advisory "N/M ready" hint — only while extracting (helps the
+          // manager decide when to open consensus). Backend always sends these.
+          ...(stage === 'extract' && runDetail
+            ? { ready: runDetail.ready_count ?? 0, readyTotal: runDetail.reviewer_count ?? 0 }
+            : {}),
         }}
         canReveal={canReveal}
         onReveal={onReveal}
@@ -1179,7 +1180,9 @@ export default function ExtractionFullScreen() {
             onFinalize={handleApproveFinalize}
             isComplete={isComplete}
             isResolving={consensusMutation.isPending}
-            isFinalizing={advanceMutation.isPending}
+            isFinalizing={advanceMutation.isPending || approveFinalize.isPending}
+            evaluateAllCoords={extractionAllCoords}
+            showFinalize={false}
           />
         </div>
       ) : null}

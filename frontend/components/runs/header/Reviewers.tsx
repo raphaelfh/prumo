@@ -19,6 +19,19 @@ export function Reviewers() {
           <span className="flex h-[18px] items-center rounded-full border-2 border-background bg-muted px-1 text-[10px] text-muted-foreground">+{reviewers.count - shown}</span>
         )}
       </div>
+      {reviewers.ready != null && reviewers.readyTotal != null && (
+        <span
+          className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
+          data-testid="run-reviewers-ready"
+          title={t('runs', 'reviewersReadyHint')
+            .replace('{{ready}}', String(reviewers.ready))
+            .replace('{{total}}', String(reviewers.readyTotal))}
+        >
+          {t('runs', 'reviewersReadyHint')
+            .replace('{{ready}}', String(reviewers.ready))
+            .replace('{{total}}', String(reviewers.readyTotal))}
+        </span>
+      )}
       {reviewers.divergent > 0 && (
         <button
           type="button"
