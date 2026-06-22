@@ -138,6 +138,7 @@ unblind
 unblinded
 unblinding
 unblinds
+ungated
 univariable
 upserted
 upserts

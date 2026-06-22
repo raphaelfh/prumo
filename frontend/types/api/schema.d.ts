@@ -729,6 +729,9 @@ export interface paths {
          *     atomically, in one transaction/commit. This makes the finalize gates (EmptyFinalize/
          *     IncompleteFinalize) satisfiable naturally for a complete run, retiring the
          *     no-divergence dead-end. Rejects when a field still diverges unresolved.
+         *
+         *     Manager / consensus only — this publishes canonical values and finalizes; the
+         *     gate lives at the API layer because the service-role session bypasses RLS.
          */
         post: operations["approve_and_finalize_run_api_v1_runs__run_id__approve_finalize_post"];
         delete?: never;

@@ -8112,7 +8112,7 @@
     },
     "/api/v1/runs/{run_id}/approve-finalize": {
       "post": {
-        "description": "One-action consensus \u2192 finalized for extraction runs.\n\nPublishes the agreed value for every existing-instance \u00d7 field coord that is not\nyet published (reusing the per-coord consensus path), then advances to FINALIZED \u2014\natomically, in one transaction/commit. This makes the finalize gates (EmptyFinalize/\nIncompleteFinalize) satisfiable naturally for a complete run, retiring the\nno-divergence dead-end. Rejects when a field still diverges unresolved.",
+        "description": "One-action consensus \u2192 finalized for extraction runs.\n\nPublishes the agreed value for every existing-instance \u00d7 field coord that is not\nyet published (reusing the per-coord consensus path), then advances to FINALIZED \u2014\natomically, in one transaction/commit. This makes the finalize gates (EmptyFinalize/\nIncompleteFinalize) satisfiable naturally for a complete run, retiring the\nno-divergence dead-end. Rejects when a field still diverges unresolved.\n\nManager / consensus only \u2014 this publishes canonical values and finalizes; the\ngate lives at the API layer because the service-role session bypasses RLS.",
         "operationId": "approve_and_finalize_run_api_v1_runs__run_id__approve_finalize_post",
         "parameters": [
           {
