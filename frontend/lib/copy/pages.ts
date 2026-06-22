@@ -57,6 +57,8 @@ export const pages = {
     extractionScreenErrorArticleNotFound: 'Error: Article data not found',
     extractionScreenErrorNoInstances: 'Error: No extraction instances found',
     extractionScreenFinalizeSuccess: 'Extraction completed successfully!',
+    extractionScreenReopenSuccess: 'Extraction reopened for revision.',
+    extractionScreenReopenError: 'Failed to reopen extraction',
     extractionScreenErrorUpdateStatus: 'Error updating instance status',
     extractionScreenErrorPermission: 'Permission error: You do not have permission to finalize this extraction',
     extractionScreenErrorRelatedData: 'Error: Related data not found. Reload the page and try again',

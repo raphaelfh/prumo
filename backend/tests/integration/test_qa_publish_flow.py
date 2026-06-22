@@ -56,6 +56,21 @@ async def auth_as_profile(db_session: AsyncSession) -> AsyncGenerator[UUID, None
         app.dependency_overrides.pop(get_current_user, None)
 
 
+def _auth_as(profile_id: UUID) -> None:
+    """Re-point the auth override mid-test (role switch). Used to set a QA run up
+    as the seed manager, then act as a less-privileged member for the publish."""
+
+    async def override() -> TokenPayload:
+        return TokenPayload(
+            sub=str(profile_id),
+            email="test@example.com",
+            role="authenticated",
+            aal="aal1",
+        )
+
+    app.dependency_overrides[get_current_user] = override
+
+
 async def _pick_article(db: AsyncSession) -> tuple[UUID, UUID] | None:
     row = (await db.execute(text("SELECT id, project_id FROM public.articles LIMIT 1"))).first()
     if row is None:
@@ -304,6 +319,110 @@ async def test_single_field_publish_for_each_probast_value(
     assert row is not None, "PublishedState row must exist after finalize"
     assert row[0] == {"value": expected_published}
     assert row[1] == 1
+
+
+# ===================== Role gating on the shared consensus endpoint =====================
+
+
+async def _qa_run_in_consensus(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+) -> tuple[str, str, str] | None:
+    """Open a QA run on the seed project/article (where ``reviewer_profile`` is a
+    known reviewer) and advance it to consensus. Returns (run_id, instance_id,
+    field_id), or None when the QA template seed is unavailable (skip).
+
+    Pinned to the seed project/article — NOT ``_pick_article`` (LIMIT 1) — so the
+    membership chain for the reviewer/viewer role switch stays coherent.
+    """
+    global_template_id = await _pick_qa_global_template(db_session)
+    if global_template_id is None:
+        return None
+    await _wipe_qa_runs_for_article(
+        db_session,
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        global_template_id=global_template_id,
+    )
+    session = await _open_qa_session(
+        db_client,
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        global_template_id=global_template_id,
+    )
+    run_id = session["run_id"]
+    et_id_str, instance_id = next(iter(session["instances_by_entity_type"].items()))
+    field_id = await _pick_first_field(db_session, entity_type_id=UUID(et_id_str))
+    await _advance(db_client, run_id, "consensus")
+    return run_id, str(instance_id), str(field_id)
+
+
+@pytest.mark.asyncio
+async def test_qa_consensus_publish_admits_non_arbitrator_reviewer(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """QA 'Publish assessment' posts manual_override consensus per field and is,
+    by design, available to any reviewer (single-reviewer self-publish; see
+    frontend lib/qa/qaTransition). The kind-aware gate must NOT demand an
+    arbitrator for QA runs — a plain reviewer still publishes successfully. This
+    guards against a blunt arbitrator gate that would regress QA."""
+    setup = await _qa_run_in_consensus(db_client, db_session)
+    if setup is None:
+        pytest.skip("Need a seeded QA template")
+    run_id, instance_id, field_id = setup
+
+    _auth_as(SEED.reviewer_profile)  # a project reviewer, NOT an arbitrator
+    res = await db_client.post(
+        f"/api/v1/runs/{run_id}/consensus",
+        json={
+            "instance_id": instance_id,
+            "field_id": field_id,
+            "mode": "manual_override",
+            "value": {"value": "Y"},
+            "rationale": "reviewer self-publish",
+        },
+    )
+    assert res.status_code == 201, res.text
+
+
+@pytest.mark.asyncio
+async def test_qa_consensus_publish_rejects_viewer_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """A read-only viewer is rejected even for QA: the kind-aware gate still
+    requires a reviewer-capable role, matching the workflow RLS (which excludes
+    viewers from writing consensus rows)."""
+    setup = await _qa_run_in_consensus(db_client, db_session)
+    if setup is None:
+        pytest.skip("Need a seeded QA template")
+    run_id, instance_id, field_id = setup
+
+    await db_session.execute(
+        text(
+            "INSERT INTO public.project_members (project_id, user_id, role) "
+            "VALUES (:pid, :uid, 'viewer')"
+        ),
+        {"pid": str(SEED.primary_project), "uid": str(SEED.outsider_profile)},
+    )
+    await db_session.flush()
+
+    _auth_as(SEED.outsider_profile)
+    res = await db_client.post(
+        f"/api/v1/runs/{run_id}/consensus",
+        json={
+            "instance_id": instance_id,
+            "field_id": field_id,
+            "mode": "manual_override",
+            "value": {"value": "Y"},
+            "rationale": "viewer should be blocked",
+        },
+    )
+    assert res.status_code == 403, res.text
+    assert "reviewer role required" in res.json()["error"]["message"].lower()
 
 
 # ===================== Republish updates PublishedState.version =====================

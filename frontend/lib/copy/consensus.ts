@@ -77,6 +77,7 @@ export const consensus = {
 
     // --- Runtime divergence-resolution panel (ConsensusPanel) ---
     panelResolveTitle: 'Resolve divergence',
+    panelEvaluateAllTitle: 'Review every field',
     panelFieldsResolvedOne: '{{resolved}}/{{total}} field resolved.',
     panelFieldsResolvedOther: '{{resolved}}/{{total}} fields resolved.',
     panelFinalize: 'Finalize',

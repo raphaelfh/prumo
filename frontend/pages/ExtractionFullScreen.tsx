@@ -18,13 +18,12 @@
 import {useEffect, useMemo, useState} from 'react';
 import {useNavigate, useParams} from 'react-router-dom';
 import {toast} from 'sonner';
-import {extractionInstanceService, markInstancesCompleted} from '@/services/extractionInstanceService';
+import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {getRequiredUserId} from '@/services/authService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
 import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
-import {errorTracker} from '@/services/errorTracking';
 import {ResizablePanel, ResizablePanelGroup} from '@/components/ui/resizable';
 import {Button} from '@/components/ui/button';
 import {Loader2} from 'lucide-react';
@@ -50,7 +49,9 @@ import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
 import {
   useAdvanceRun,
+  useApproveFinalize,
   useCreateConsensus,
+  useMarkReady,
   useReopenRun,
   useReviewerSummary,
   useRun,
@@ -113,7 +114,6 @@ export default function ExtractionFullScreen() {
   });
 
   // Local state
-  const [submitting, setSubmitting] = useState(false);
   // Current reviewer id from AuthContext (zero network) — was a
   // supabase.auth.getUser() round-trip + a serial gate on run open.
   const { userId } = useCurrentUser();
@@ -229,26 +229,32 @@ export default function ExtractionFullScreen() {
   // Mutations needed for consensus resolution + finalize.
   const advanceMutation = useAdvanceRun(activeRunId ?? '');
   const consensusMutation = useCreateConsensus(activeRunId ?? '');
+  // Per-reviewer ready flag (advisory; does not advance) + the one-action
+  // consensus → finalized (publish-all then advance, backend-atomic).
+  const markReady = useMarkReady(activeRunId ?? '');
+  const approveFinalize = useApproveFinalize(activeRunId ?? '');
+  // The header PrimaryAction spinner reflects any in-flight primary mutation.
+  const submitting =
+    markReady.isPending || advanceMutation.isPending || approveFinalize.isPending;
 
   const inConsensusStage = runDetail?.run.stage === 'consensus';
 
-  // {instance::field} → "Section · Field" label map for ConsensusPanel.
-  // Built from the loaded entity_types + their child fields. entity_types
-  // and fields now come from RunView (runDetail) via the adapters — not
-  // from useExtractionData. We use the instance label (entityType.label)
-  // plus a truncated field id from the run detail's decisions when available.
+  // {instance::field} → "Section · Field" label map AND the full evaluate-all
+  // coord list for the ConsensusPanel. Built from every existing instance ×
+  // its entity type's snapshot fields (real labels), so the evaluate-all surface
+  // shows every field — agreed and diverging — not just touched/divergent ones.
   const fieldLabelByCoordMap: Record<string, string> = {};
+  const extractionAllCoords: string[] = [];
   for (const inst of instances) {
     const et = entityTypes.find((e) => e.id === inst.entity_type_id);
     const sectionLabel = et?.label ?? et?.name ?? 'Section';
-    // Decisions + proposals carry the field id but not the label;
-    // fall back to the field id when nothing else is known. The
-    // ConsensusPanel still renders correctly — just shows the id.
-    const seenFields = new Set<string>();
-    for (const d of runDetail?.decisions ?? []) {
-      if (d.instance_id !== inst.id || seenFields.has(d.field_id)) continue;
-      seenFields.add(d.field_id);
-      fieldLabelByCoordMap[`${inst.id}::${d.field_id}`] = `${sectionLabel} · ${d.field_id.slice(0, 8)}…`;
+    for (const f of et?.fields ?? []) {
+      const key = `${inst.id}::${f.id}`;
+      // Evaluate-all shows every TOUCHED coord (agreed + diverging). Untouched
+      // coords (no reviewer decision) are omitted — rendering them as empty
+      // "0 disagreed" rows is noise; the completeness gate covers required gaps.
+      if (reviewerSummary.decisionsByCoord.has(key)) extractionAllCoords.push(key);
+      fieldLabelByCoordMap[key] = `${sectionLabel} · ${f.label}`;
     }
   }
   const fieldLabelByCoord = fieldLabelByCoordMap;
@@ -283,19 +289,20 @@ export default function ExtractionFullScreen() {
     await refetchRun();
   };
 
-  const handleFinalizeFromConsensus = async () => {
+  // "Approve & finalize": one action that publishes every agreed coord then
+  // advances consensus → finalized (backend-atomic). The backend gate rejections
+  // (unresolved divergence / incomplete required fields) surface via
+  // useApproveFinalize.onError as a toast; the promise-chain guard (no try/finally)
+  // keeps the React Compiler happy and skips the success path on failure.
+  const handleApproveFinalize = async () => {
     if (!activeRunId) return;
-    // The backend completeness/consensus gate (ADR 0009) can reject this
-    // advance. useAdvanceRun's onError already toasts the message; we just
-    // need to skip the success path instead of throwing an unhandled
-    // rejection (the panel calls this via `void onFinalize()`).
-    const ok = await advanceMutation
-      .mutateAsync({ target_stage: 'finalized' })
+    const ok = await approveFinalize
+      .mutateAsync()
       .then(() => true)
       .catch(() => false);
     if (!ok) return;
     await Promise.all([refetchRun(), refreshValues(), refreshFinalizedRun()]);
-    toast.success('Extraction finalized.');
+    toast.success(t('pages', 'extractionScreenFinalizeSuccess'));
   };
 
   // Plain-identifier dep so the compiler can track this dep without
@@ -305,7 +312,7 @@ export default function ExtractionFullScreen() {
     if (!finalizedRunId) return;
     setReopening(true);
     await reopenMutation.mutateAsync(finalizedRunId).then(async () => {
-      // The reopen endpoint creates a fresh REVIEW-stage run linked via
+      // The reopen endpoint creates a fresh EXTRACT-stage run linked via
       // parameters.parent_run_id. We refetch the HITL session first so
       // activeRunId points at the new child run; only then do the
       // value / runDetail / finalized-run reads run against the new
@@ -313,10 +320,10 @@ export default function ExtractionFullScreen() {
       // on the finalized run and the revision badge never appears.
       await sessionResult.refetch();
       await Promise.all([refreshValues(), refreshFinalizedRun(), refetchRun()]);
-      toast.success('Extraction reopened for revision.');
+      toast.success(t('pages', 'extractionScreenReopenSuccess'));
     }).catch((err: unknown) => {
       toast.error(
-        err instanceof Error ? err.message : 'Failed to reopen extraction',
+        err instanceof Error ? err.message : t('pages', 'extractionScreenReopenError'),
       );
     });
     setReopening(false);
@@ -365,24 +372,19 @@ export default function ExtractionFullScreen() {
       !!activeRunId && !loading && valuesInitialized && stage === 'extract',
   });
 
-    // "Mark ready" — flush pending autosave, then advance EXTRACT → CONSENSUS
-    // so the ``ConsensusPanel`` becomes reachable, and open the next article in
-    // the worklist (next-in-order; end-of-queue → back to the list). Available
-    // to EVERY extractor: POST /runs/{id}/advance is membership-gated, not
-    // role-gated. The run already sits in EXTRACT (session open parks it there
-    // and there is no proposal→review edge anymore), so no pre-advance is
-    // needed. Promise-chain guards (no try/finally) keep the React Compiler
-    // happy and avoid unhandled rejections. Declared after `useAutoSaveProposals`
-    // so the closure picks up the already-initialized `saveNow`.
+    // "Mark ready" (reviewer) — flush pending autosave, set the per-reviewer
+    // ready flag (advisory; does NOT advance the run), then open the next article
+    // in the worklist. The run stays in EXTRACT — the manager opens consensus
+    // separately. Re-editing after marking ready stays possible (autosave is live
+    // in EXTRACT); the flag is advisory and not auto-cleared. Promise-chain guards
+    // (no try/finally) keep the React Compiler happy. Declared after
+    // `useAutoSaveProposals` so the closure picks up the initialized `saveNow`.
   const onMarkReady = async () => {
     if (!activeRunId) return;
-    // Flush pending autosave before advancing: once the run reaches consensus
-    // the autosave is disabled and writes are rejected, so a debounce in
-    // flight would be lost.
     const saved = await saveNow().then(() => true).catch(() => false);
     if (!saved) return;
-    const ok = await advanceMutation
-      .mutateAsync({ target_stage: 'consensus' })
+    const ok = await markReady
+      .mutateAsync({ ready: true })
       .then(() => true)
       .catch(() => false);
     if (!ok) return;
@@ -392,6 +394,22 @@ export default function ExtractionFullScreen() {
         ? `/projects/${projectId}/extraction/${nextId}`
         : `/projects/${projectId}?tab=extraction`,
     );
+  };
+
+    // "Open consensus" (manager/consensus) — flush autosave, then advance
+    // EXTRACT → CONSENSUS so the evaluate-all surface becomes reachable. A blind
+    // manager is auto-revealed server-side on consensus entry (run-scoped), surfaced
+    // via runDetail.peers_revealed after the refetch below.
+  const onOpenConsensus = async () => {
+    if (!activeRunId) return;
+    const saved = await saveNow().then(() => true).catch(() => false);
+    if (!saved) return;
+    const ok = await advanceMutation
+      .mutateAsync({ target_stage: 'consensus' })
+      .then(() => true)
+      .catch(() => false);
+    if (!ok) return;
+    await refetchRun().catch(() => undefined);
   };
 
     // Permissions hook (controls comparison access) — extraction screen.
@@ -405,13 +423,22 @@ export default function ExtractionFullScreen() {
     // server-blinded runDetail (reviewerSummary.decisionsByCoord) — no
     // separate fetch. Compare is offered only when the caller may see peers
     // (manager/consensus, per the live setting) AND peers actually exist.
+  // peers_revealed (backend, run-scoped) OR the persistent per-kind setting:
+  // a manager auto-revealed on consensus entry sees the compare surface without
+  // flipping the project toggle. Keep the size>0 guard so we never show an empty grid.
   const canCompare =
-    permissions.canSeeOthers && reviewerSummary.decisionsByCoord.size > 0;
+    (runDetail?.peers_revealed || permissions.canSeeOthers) &&
+    reviewerSummary.decisionsByCoord.size > 0;
 
-  // Manager reveal: only a manager in blind mode may lift the veil for their
-  // own project. Promise-chain form (no try/finally) satisfies the React
-  // Compiler panicThreshold constraint.
-  const canReveal = permissions.userRole === 'manager' && permissions.isBlindMode;
+  // Manager reveal (the persistent project-toggle): offered only to a blind
+  // manager DURING extract. Once the run reaches consensus the run-scoped
+  // auto-reveal covers it, so the persistent toggle is no longer surfaced.
+  // Promise-chain form (no try/finally) satisfies the React Compiler.
+  const canReveal =
+    permissions.userRole === 'manager' &&
+    permissions.isBlindMode &&
+    stage === 'extract' &&
+    !runDetail?.peers_revealed;
   const onReveal = () => {
     void setManagerReviewVisibility(projectId || '', 'extraction', true)
       .then(() => permissions.refresh())
@@ -810,133 +837,6 @@ export default function ExtractionFullScreen() {
     }
   };
 
-  const handleFinalize = async () => {
-    if (!isComplete) {
-        toast.error(t('pages', 'extractionScreenCompleteRequiredFields'));
-      return;
-    }
-
-      // Validate required data
-    if (!articleId || !projectId) {
-        extractionLogger.error('handleFinalize', 'Incomplete data to finalize extraction', undefined, {
-        articleId,
-        projectId
-      });
-        toast.error(t('pages', 'extractionScreenErrorArticleNotFound'));
-      return;
-    }
-
-      // Validate that there are instances to update
-    if (!instances || instances.length === 0) {
-        extractionLogger.warn('handleFinalize', 'No instances found to finalize', {
-        articleId,
-        projectId
-      });
-        toast.error(t('pages', 'extractionScreenErrorNoInstances'));
-      return;
-    }
-
-    setSubmitting(true);
-
-    const logger = extractionLogger;
-    logger.info('handleFinalize', 'Starting extraction finalization', {
-      articleId,
-      projectId,
-      instancesCount: instances.length,
-      instanceIds: instances.map(i => i.id)
-    });
-
-    // Step 1: flush pending saves — translate save errors into a user-visible
-    // message and bail out early so the run is not left half-progressed.
-    logger.debug('handleFinalize', 'Salvando valores pendentes...', {
-      valuesCount: Object.keys(values).length
-    });
-    let saveOk = true;
-    await saveNow().catch((saveError: unknown) => {
-      saveOk = false;
-      const err = saveError instanceof Error
-        ? saveError
-        : new Error((saveError as any)?.message || 'Erro desconhecido ao salvar valores');
-      logger.error('handleFinalize', 'Erro ao salvar valores pendentes', err, {
-        errorMessage: err.message,
-        errorCode: (saveError as any)?.code,
-      });
-      errorTracker.captureError(err, {
-        component: 'ExtractionFullScreen',
-        action: 'handleFinalize',
-        projectId,
-        articleId,
-        metadata: {
-          step: 'saveValues',
-          errorCode: (saveError as any)?.code,
-          errorDetails: (saveError as any)?.details,
-        },
-      });
-      const msg = `${t('extraction', 'errors_saveValues')}: ${err.message || t('common', 'errors_unknownError')}`;
-      logger.error('handleFinalize', 'Failed to finalize extraction', err, {articleId, projectId, finalError: msg});
-      toast.error(msg, {duration: 6000});
-      setSubmitting(false);
-    });
-    if (!saveOk) return;
-    logger.info('handleFinalize', 'Valores salvos com sucesso');
-
-    // Step 2: mark instances completed — markInstancesCompleted returns ErrorResult
-    // so no throw/catch needed; branch on .ok.
-    const instanceIds = instances.map(i => i.id);
-    logger.debug('handleFinalize', 'Updating instance statuses...', {
-      instanceIds,
-      instancesCount: instanceIds.length
-    });
-
-    const markResult = await markInstancesCompleted(articleId!, instanceIds);
-    if (!markResult.ok) {
-      const updateError = markResult.error;
-      logger.error('handleFinalize', 'Error updating instance statuses', updateError, {
-        instanceIds,
-        articleId,
-      });
-      errorTracker.captureError(updateError, {
-        component: 'ExtractionFullScreen',
-        action: 'handleFinalize',
-        projectId,
-        articleId,
-        metadata: {step: 'updateInstances', instanceIds},
-      });
-      const errorMessage = updateError.message || t('pages', 'extractionScreenErrorFinalizeUnknown');
-      logger.error('handleFinalize', 'Failed to finalize extraction', updateError, {articleId, projectId, finalError: errorMessage});
-      toast.error(errorMessage, {duration: 6000});
-      setSubmitting(false);
-      return;
-    }
-
-    const updatedIds = markResult.data.updatedIds;
-    const updatedCount = updatedIds.length;
-    if (updatedCount === 0) {
-      logger.warn('handleFinalize', 'No instances were updated', {instanceIds, articleId});
-      const noUpdateMsg = t('pages', 'extractionScreenNoInstanceUpdated');
-      logger.error('handleFinalize', 'Failed to finalize extraction', new Error(noUpdateMsg), {articleId, projectId, finalError: noUpdateMsg});
-      toast.error(noUpdateMsg, {duration: 6000});
-      setSubmitting(false);
-      return;
-    }
-    if (updatedCount < instanceIds.length) {
-      logger.warn('handleFinalize', 'Some instances were not updated', {
-        expected: instanceIds.length,
-        actual: updatedCount,
-        instanceIds,
-      });
-    }
-
-    logger.info('handleFinalize', 'Extraction finalized successfully', {
-      articleId,
-      instancesUpdated: updatedCount,
-      totalInstances: instanceIds.length
-    });
-
-    toast.success(t('pages', 'extractionScreenFinalizeSuccess'));
-    setSubmitting(false);
-    handleBack();
-  };
 
   // Single render gate. ``no-fields`` is reported ONLY when the run is loaded
   // and genuinely carries no entity types — a missing run (open/fetch failed or
@@ -1132,16 +1032,32 @@ export default function ExtractionFullScreen() {
   };
 
   // Stage-driven transition for the RunHeader PrimaryAction slot.
-  // buildExtractionTransition() owns all label/gate logic; the legacy
-  // onFinalize/finalizeLabel block is removed.
+  // buildExtractionTransition() owns all label/gate logic (Mark ready / Open
+  // consensus / Approve & finalize). The legacy header finalize path is gone.
+  //
+  // divergencesResolved: every diverging coord carries a consensus decision (a
+  // no-divergence run is trivially resolved). isReady: the caller already marked
+  // themselves ready. Both feed the consensus / extract phase-aware actions.
+  const resolvedCoordKeys = new Set(
+    (runDetail?.consensus_decisions ?? []).map(
+      (c) => `${c.instance_id}::${c.field_id}`,
+    ),
+  );
+  const divergencesResolved = [...reviewerSummary.divergentCoords].every((c) =>
+    resolvedCoordKeys.has(c),
+  );
+  const isReady = (runDetail?.reviewers_ready ?? []).includes(currentUserId);
   const transition = buildExtractionTransition({
     stage,
     canResolveConflicts: permissions.canResolveConflicts,
     isComplete,
     completed: completedFields,
     total: totalFields,
+    divergencesResolved,
+    isReady,
     onMarkReady,
-    onFinalize: handleFinalize,
+    onOpenConsensus,
+    onApproveFinalize: handleApproveFinalize,
     onGuide,
   });
 
@@ -1176,7 +1092,6 @@ export default function ExtractionFullScreen() {
         lastSavedAt={lastSavedAt}
         hasUnsavedChanges={hasUnsavedChanges}
         isComplete={isComplete}
-        onFinalize={handleFinalize}
         submitting={submitting}
         templateId={template?.id}
         templateName={template?.name}
@@ -1190,6 +1105,11 @@ export default function ExtractionFullScreen() {
           required: reviewerSummary.requiredReviewerCount,
           // divergentCoords is a Set<string> — .size gives the count
           divergent: reviewerSummary.divergentCoords.size,
+          // Advisory "N/M ready" hint — only while extracting (helps the
+          // manager decide when to open consensus). Backend always sends these.
+          ...(stage === 'extract' && runDetail
+            ? { ready: runDetail.ready_count ?? 0, readyTotal: runDetail.reviewer_count ?? 0 }
+            : {}),
         }}
         canReveal={canReveal}
         onReveal={onReveal}
@@ -1260,10 +1180,12 @@ export default function ExtractionFullScreen() {
             avatarById={reviewerProfiles.avatarById}
             onSelectExisting={handleSelectExisting}
             onManualOverride={handleManualOverride}
-            onFinalize={handleFinalizeFromConsensus}
+            onFinalize={handleApproveFinalize}
             isComplete={isComplete}
             isResolving={consensusMutation.isPending}
-            isFinalizing={advanceMutation.isPending}
+            isFinalizing={advanceMutation.isPending || approveFinalize.isPending}
+            evaluateAllCoords={extractionAllCoords}
+            showFinalize={false}
           />
         </div>
       ) : null}

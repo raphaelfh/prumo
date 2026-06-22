@@ -63,7 +63,10 @@ export interface ExtractionHeaderProps {
   lastSavedAt?: Date | null;
   hasUnsavedChanges?: boolean;
   isComplete: boolean;
-  onFinalize: () => void;
+  /** @deprecated Legacy header finalize path; the primary action now flows
+   * through `transition` (Mark ready / Open consensus / Approve & finalize).
+   * Optional + unused; full removal is HITL Phase 3. */
+  onFinalize?: () => void;
   /** @deprecated Pass transition instead; kept for backward compat. */
   finalizeLabel?: string;
   submitting?: boolean;

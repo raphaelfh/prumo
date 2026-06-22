@@ -26,6 +26,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -36,6 +37,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -246,6 +248,55 @@ class ExtractionReviewerState(BaseModel):
 
     def __repr__(self) -> str:
         return f"<ExtractionReviewerState run={self.run_id} reviewer={self.reviewer_id}>"
+
+
+class ExtractionReviewerReady(BaseModel):
+    """Per-reviewer "I'm done extracting" signal for a run.
+
+    Run+reviewer grain (one row per reviewer per run), NOT per-coordinate like
+    ``ExtractionReviewerState``. Advisory: the manager/consensus opens consensus
+    manually; this flag never auto-advances the run. ``id``/``created_at``/
+    ``updated_at`` come from ``BaseModel``.
+    """
+
+    __tablename__ = "extraction_reviewer_ready"
+
+    run_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.extraction_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    reviewer_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    is_ready: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    marked_ready_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "reviewer_id",
+            name="uq_extraction_reviewer_ready_run_reviewer",
+        ),
+        # Declared to match the index created in migration 0029 so autogenerate
+        # does not see DB-only state and emit a spurious DROP INDEX. (The unique
+        # constraint above already covers run_id-prefix reads; this is belt-and-
+        # suspenders + model/DB parity.)
+        Index("ix_extraction_reviewer_ready_run_id", "run_id"),
+        {"schema": "public"},
+    )
+
+    def __repr__(self) -> str:
+        return f"<ExtractionReviewerReady run={self.run_id} reviewer={self.reviewer_id} ready={self.is_ready}>"
 
 
 class ExtractionConsensusDecision(BaseModel):

@@ -74,6 +74,18 @@ export interface ConsensusPanelProps {
   /** Disable interactive controls during inflight mutations. */
   isResolving?: boolean;
   isFinalizing?: boolean;
+  /**
+   * Evaluate-all mode (extraction): the full template-ordered coord list
+   * (`${instance}::${field}`) to render — agreed coords included, not just
+   * divergent. When omitted (QA), the panel renders divergent-only (legacy).
+   */
+  evaluateAllCoords?: string[];
+  /**
+   * Render the in-panel finalize button. Default true (QA owns finalize here).
+   * Extraction sets false — the header PrimaryAction owns "Approve & finalize"
+   * (one source of truth, spec I6).
+   */
+  showFinalize?: boolean;
 }
 
 interface CoordRowProps {
@@ -323,6 +335,8 @@ export function ConsensusPanel({
   isComplete = false,
   isResolving = false,
   isFinalizing = false,
+  evaluateAllCoords,
+  showFinalize = true,
 }: ConsensusPanelProps) {
   const resolvedByCoord = (() => {
     const m = new Map<string, ConsensusDecisionResponse>();
@@ -333,14 +347,21 @@ export function ConsensusPanel({
   })();
 
   const divergentList = [...summary.divergentCoords];
+  // Evaluate-all (extraction): render every coord; QA renders divergent-only.
+  const evaluateAll = evaluateAllCoords != null;
+  const coordList = evaluateAll ? evaluateAllCoords : divergentList;
 
+  // Progress always tracks the DIVERGENT coords (the ones needing arbitration),
+  // independent of which coords are rendered.
   const resolvedCount = divergentList.filter((c) => resolvedByCoord.has(c)).length;
   const totalCount = divergentList.length;
   const allResolved = totalCount > 0 && resolvedCount === totalCount;
   const progressPct =
     totalCount === 0 ? 100 : Math.round((resolvedCount / totalCount) * 100);
 
-  if (totalCount === 0) {
+  // No-divergence fast-path applies only to the divergent-only view (QA). In
+  // evaluate-all (extraction) the full grid renders even with zero divergence.
+  if (!evaluateAll && totalCount === 0) {
     // No divergent coords to resolve. But "no divergence" is NOT the same as
     // "ready to publish": the run still needs every required field filled
     // (ADR 0009) and at least one consensus decision (EmptyFinalizeError).
@@ -388,38 +409,44 @@ export function ConsensusPanel({
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold">
-              {t("consensus", "panelResolveTitle")}
+              {evaluateAll
+                ? t("consensus", "panelEvaluateAllTitle")
+                : t("consensus", "panelResolveTitle")}
             </h2>
-            <p className="text-xs text-muted-foreground">
-              {(totalCount === 1
-                ? t("consensus", "panelFieldsResolvedOne")
-                : t("consensus", "panelFieldsResolvedOther")
-              )
-                .replace("{{resolved}}", String(resolvedCount))
-                .replace("{{total}}", String(totalCount))}
-            </p>
+            {totalCount > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                {(totalCount === 1
+                  ? t("consensus", "panelFieldsResolvedOne")
+                  : t("consensus", "panelFieldsResolvedOther")
+                )
+                  .replace("{{resolved}}", String(resolvedCount))
+                  .replace("{{total}}", String(totalCount))}
+              </p>
+            ) : null}
           </div>
-          <Button
-            size="sm"
-            onClick={() => void onFinalize()}
-            disabled={!allResolved || isFinalizing}
-            data-testid="consensus-finalize-button"
-          >
-            {isFinalizing
-              ? t("consensus", "panelFinalizing")
-              : allResolved
-                ? t("consensus", "panelFinalize")
-                : t("consensus", "panelLeft").replace(
-                    "{{count}}",
-                    String(totalCount - resolvedCount),
-                  )}
-          </Button>
+          {showFinalize ? (
+            <Button
+              size="sm"
+              onClick={() => void onFinalize()}
+              disabled={!allResolved || isFinalizing}
+              data-testid="consensus-finalize-button"
+            >
+              {isFinalizing
+                ? t("consensus", "panelFinalizing")
+                : allResolved
+                  ? t("consensus", "panelFinalize")
+                  : t("consensus", "panelLeft").replace(
+                      "{{count}}",
+                      String(totalCount - resolvedCount),
+                    )}
+            </Button>
+          ) : null}
         </div>
-        <Progress value={progressPct} className="h-2" />
+        {totalCount > 0 ? <Progress value={progressPct} className="h-2" /> : null}
       </div>
 
       <div className="space-y-3">
-        {divergentList.map((coordKey) => {
+        {coordList.map((coordKey) => {
           const decisions = summary.decisionsByCoord.get(coordKey) ?? [];
           const [instanceId, fieldId] = coordKey.split("::");
           const fieldLabel = fieldLabelByCoord[coordKey] ?? coordKey;

@@ -1,5 +1,6 @@
 """Run lifecycle service: create + advance stage with precondition checks."""
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -20,6 +21,7 @@ from app.models.extraction import (
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.models.extraction_workflow import (
     ExtractionConsensusDecision,
+    ExtractionConsensusMode,
     ExtractionProposalRecord,
     ExtractionProposalSource,
     ExtractionPublishedState,
@@ -27,6 +29,8 @@ from app.models.extraction_workflow import (
     ExtractionReviewerDecisionType,
     ExtractionReviewerState,
 )
+from app.services._extraction_run_lock import load_run_for_update
+from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_config_service import HitlConfigService
 
@@ -249,6 +253,100 @@ class RunLifecycleService:
         await self.db.refresh(run)
         return run
 
+    async def approve_and_finalize(
+        self, *, run_id: UUID, user_id: UUID
+    ) -> tuple[ExtractionRun, int]:
+        """Atomically publish every agreed-but-unpublished coord, then finalize.
+
+        The single-action "Approve & finalize" for extraction: each existing-instance
+        × field coord that has a single unambiguous resolved reviewer value and no
+        ``PublishedState`` yet is published via
+        ``ExtractionConsensusService.record_consensus`` (a ``manual_override``), then the
+        run advances CONSENSUS → FINALIZED. Because the publishes and the finalize gates
+        run in the SAME transaction, ``EmptyFinalizeError`` and ``IncompleteFinalizeError``
+        become satisfiable naturally (the no-divergence dead-end is gone). Coords whose
+        reviewers still diverge unresolved are rejected so the manager resolves them
+        first via the per-coord consensus endpoint. Extraction-only — QA publishes via
+        its own flow.
+        """
+        run = await load_run_for_update(self.db, run_id)
+        if run is None:
+            raise ValueError(f"Run {run_id} not found")
+        if run.kind != TemplateKind.EXTRACTION.value:
+            raise InvalidStageTransitionError(
+                "approve_and_finalize applies to extraction runs only; "
+                "quality-assessment runs publish via their own flow."
+            )
+        if run.stage != ExtractionRunStage.CONSENSUS.value:
+            raise InvalidStageTransitionError(
+                f"approve_and_finalize requires stage 'consensus', got '{run.stage}'."
+            )
+        to_publish, unresolved = await self._agreed_unpublished_values(run)
+        if unresolved:
+            raise InvalidStageTransitionError(
+                f"Cannot approve run {run_id}: {len(unresolved)} field(s) still diverge. "
+                "Resolve each diverging field before finalizing."
+            )
+        consensus = ExtractionConsensusService(self.db)
+        for (instance_id, field_id), envelope in to_publish.items():
+            await consensus.record_consensus(
+                run_id=run_id,
+                instance_id=instance_id,
+                field_id=field_id,
+                consensus_user_id=user_id,
+                mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+                value=envelope,
+                rationale="Approved: reviewers agree (Phase 2 approve-all).",
+            )
+        finalized = await self.advance_stage(
+            run_id=run_id, target_stage=ExtractionRunStage.FINALIZED, user_id=user_id
+        )
+        return finalized, len(to_publish)
+
+    async def _agreed_unpublished_values(
+        self, run: ExtractionRun
+    ) -> tuple[dict[tuple[UUID, UUID], Any], list[tuple[UUID, UUID]]]:
+        """Per existing-instance × field coord with NO ``PublishedState`` yet: the single
+        agreed value envelope to publish, plus the coords that still diverge unresolved.
+
+        Distinctness is compared on the UNWRAPPED scalar (so ``{"value": "x"}`` from two
+        reviewers counts as agreement), but the ORIGINAL envelope is published — it goes
+        straight into ``PublishedState.value``. Mirrors ``_filled_coords`` resolution
+        (``reject`` skipped; ``accept_proposal`` resolves through the referenced
+        proposal). One distinct value → publishable; ≥2 → unresolved divergence; coords
+        already carrying a ``PublishedState`` (manager-resolved) are skipped.
+        """
+        published_coords = {
+            (instance_id, field_id)
+            for instance_id, field_id in (
+                await self.db.execute(
+                    select(
+                        ExtractionPublishedState.instance_id,
+                        ExtractionPublishedState.field_id,
+                    ).where(ExtractionPublishedState.run_id == run.id)
+                )
+            ).all()
+        }
+
+        # One pass over each reviewer's current value: first distinct value per
+        # unpublished coord is the publish candidate; a second DIFFERENT value
+        # (compared on the unwrapped scalar) demotes the coord to unresolved.
+        to_publish: dict[tuple[UUID, UUID], Any] = {}
+        seen_key: dict[tuple[UUID, UUID], str] = {}
+        unresolved: set[tuple[UUID, UUID]] = set()
+        for instance_id, field_id, resolved in await self._resolved_reviewer_values(run.id):
+            coord = (instance_id, field_id)
+            if coord in published_coords or coord in unresolved:
+                continue
+            key = json.dumps(_unwrap_value(resolved), sort_keys=True, default=str)
+            if coord not in seen_key:
+                seen_key[coord] = key
+                to_publish[coord] = resolved
+            elif seen_key[coord] != key:
+                del to_publish[coord]
+                unresolved.add(coord)
+        return to_publish, list(unresolved)
+
     async def _find_unfilled_required_coords(self, run: ExtractionRun) -> list[tuple[UUID, UUID]]:
         """Return ``(instance_id, field_id)`` for every required field that
         lacks a resolved value on this run.
@@ -315,6 +413,22 @@ class RunLifecycleService:
             if _is_value_filled(value):
                 filled.add((instance_id, field_id))
 
+        for instance_id, field_id, _resolved in await self._resolved_reviewer_values(run_id):
+            filled.add((instance_id, field_id))
+
+        return filled
+
+    async def _resolved_reviewer_values(self, run_id: UUID) -> list[tuple[UUID, UUID, Any]]:
+        """Each reviewer's current non-empty resolved value envelope per coord:
+        ``(instance_id, field_id, envelope)``.
+
+        ``reject`` decisions are skipped; an ``accept_proposal`` whose decision row
+        carries no value resolves through the referenced proposal's
+        ``proposed_value``; empty values (``None`` / ``""`` after one envelope peel)
+        are dropped. Shared by the finalize completeness gate (``_filled_coords``)
+        and the approve-all resolver (``_agreed_unpublished_values``) so the
+        resolution semantics live in one place.
+        """
         proposal_values: dict[UUID, Any] = dict(
             (
                 await self.db.execute(
@@ -346,6 +460,8 @@ class RunLifecycleService:
                 .where(ExtractionReviewerState.run_id == run_id)
             )
         ).all()
+
+        resolved_values: list[tuple[UUID, UUID, Any]] = []
         for instance_id, field_id, decision, value, proposal_record_id in state_rows:
             if decision == ExtractionReviewerDecisionType.REJECT.value:
                 continue
@@ -353,9 +469,8 @@ class RunLifecycleService:
             if resolved is None and proposal_record_id is not None:
                 resolved = proposal_values.get(proposal_record_id)
             if _is_value_filled(resolved):
-                filled.add((instance_id, field_id))
-
-        return filled
+                resolved_values.append((instance_id, field_id, resolved))
+        return resolved_values
 
     async def reopen_run(
         self,

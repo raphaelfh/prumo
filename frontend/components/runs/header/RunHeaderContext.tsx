@@ -23,7 +23,14 @@ export interface RunHeaderValue {
   canReveal: boolean;
   onReveal?: () => void;
   progress: { completed: number; total: number; pct: number };
-  reviewers: { count: number; required: number; divergent: number };
+  reviewers: {
+    count: number;
+    required: number;
+    divergent: number;
+    /** "N/M reviewers ready" advisory hint (extract stage). Omitted when N/A. */
+    ready?: number;
+    readyTotal?: number;
+  };
   transition: StageTransition | null;
   submitting?: boolean;
   onJumpToDivergence?: () => void;

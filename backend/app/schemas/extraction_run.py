@@ -50,6 +50,12 @@ class AdvanceStageRequest(BaseModel):
     )
 
 
+class MarkReadyRequest(BaseModel):
+    """Toggle the caller's per-reviewer "I'm done extracting" flag for a run."""
+
+    ready: bool = True
+
+
 # ----- Response schemas -----
 
 
@@ -116,6 +122,18 @@ class ConsensusResultResponse(BaseModel):
     published: PublishedStateResponse
 
 
+class RunReadyStateResponse(BaseModel):
+    """The "N/M reviewers ready" hint. Advisory only — readiness gates nothing.
+
+    ``reviewer_count`` is ``max(hitl_config reviewer_count, ready_count)`` so the
+    hint never reads "N of M" with N > M (the configured count is often the inert
+    default of 1)."""
+
+    ready_count: int
+    reviewer_count: int
+    reviewers_ready: list[UUID]
+
+
 class RunSummaryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -134,12 +152,26 @@ class RunSummaryResponse(BaseModel):
     created_by: UUID
 
 
+class ApproveFinalizeResponse(BaseModel):
+    """Result of POST /runs/{id}/approve-finalize: the finalized run + how many
+    coords the approve-all step published."""
+
+    run: RunSummaryResponse
+    published_count: int
+
+
 class RunDetailResponse(BaseModel):
     run: RunSummaryResponse
     proposals: list[ProposalRecordResponse]
     decisions: list[ReviewerDecisionResponse]
     consensus_decisions: list[ConsensusDecisionResponse]
     published_states: list[PublishedStateResponse]
+    # Effective unblind for this caller on this run: can_see_peers OR finalized
+    # OR (consensus AND arbitrator). The client shows the compare/evaluate-all
+    # surface from this rather than re-deriving visibility. Set by
+    # get_run_with_workflow_history from the same `unblinded` local that drives
+    # the row filter, so it cannot drift from the actual filtering.
+    peers_revealed: bool = False
 
 
 class RunViewField(BaseModel):
@@ -230,6 +262,10 @@ class RunViewResponse(RunDetailResponse):
     entity_types: list[RunViewEntityType]
     current_values: list[RunViewCurrentValue]
     instances: list[RunViewInstance]
+    # Per-reviewer "ready" hint (advisory; see RunReadyStateResponse).
+    ready_count: int = 0
+    reviewer_count: int = 0
+    reviewers_ready: list[UUID] = Field(default_factory=list)
 
 
 class RunReviewerProfile(BaseModel):

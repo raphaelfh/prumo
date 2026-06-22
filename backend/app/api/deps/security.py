@@ -22,25 +22,61 @@ async def get_current_user_sub(user: CurrentUser) -> UUID:
         )
 
 
-async def ensure_project_member(db: DbSession, project_id: UUID, user_sub: UUID) -> None:
-    """Enforce project-membership at the API layer.
+async def _ensure_project_role(
+    db: DbSession, *, sql: str, project_id: UUID, user_sub: UUID, error: str
+) -> None:
+    """Run a parameterised ``public.is_project_*`` boolean and 403 when false.
 
-    The DB session runs as service-role (RLS bypassed); enforce membership
-    manually using the same SQL helper the RLS policies use. Plain async
-    helper (not a FastAPI dependency) so callers can pass a ``project_id``
-    sourced from the request body — see hitl_sessions / extraction_runs.
+    The DB session runs as service-role (RLS bypassed), so these gates must live
+    at the API layer using the same SQL helpers the RLS policies use. ``sql`` is a
+    module-internal literal (never request-derived) — no injection surface.
     """
-    is_member = (
+    allowed = (
         await db.execute(
-            text("SELECT public.is_project_member(:pid, :uid) AS ok"),
+            text(sql),
             {"pid": str(project_id), "uid": str(user_sub)},
         )
     ).scalar_one()
-    if not is_member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Project access denied",
-        )
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=error)
+
+
+async def ensure_project_member(db: DbSession, project_id: UUID, user_sub: UUID) -> None:
+    """Enforce project-membership. Plain async helper (not a FastAPI dependency)
+    so callers can pass a ``project_id`` from the request body — see
+    hitl_sessions / extraction_runs."""
+    await _ensure_project_role(
+        db,
+        sql="SELECT public.is_project_member(:pid, :uid) AS ok",
+        project_id=project_id,
+        user_sub=user_sub,
+        error="Project access denied",
+    )
+
+
+async def ensure_project_reviewer(db: DbSession, project_id: UUID, user_sub: UUID) -> None:
+    """Enforce a reviewer-capable role (manager / reviewer / consensus) — a
+    read-only *viewer* is rejected. For reviewer-only write paths (mark-ready)."""
+    await _ensure_project_role(
+        db,
+        sql="SELECT public.is_project_reviewer(:pid, :uid) AS ok",
+        project_id=project_id,
+        user_sub=user_sub,
+        error="Reviewer role required",
+    )
+
+
+async def ensure_project_arbitrator(db: DbSession, project_id: UUID, user_sub: UUID) -> None:
+    """Enforce an adjudicator role (manager / consensus) — the roles allowed to
+    resolve consensus and finalize. For privileged write paths (approve-and-finalize),
+    matching the frontend's ``canResolveConflicts`` and the spec's finalize rule."""
+    await _ensure_project_role(
+        db,
+        sql="SELECT public.is_project_arbitrator(:pid, :uid) AS ok",
+        project_id=project_id,
+        user_sub=user_sub,
+        error="Manager or consensus role required",
+    )
 
 
 async def require_project_scope(
