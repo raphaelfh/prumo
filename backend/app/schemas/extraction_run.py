@@ -243,7 +243,6 @@ class RunViewInstance(BaseModel):
     parent_instance_id: UUID | None
     label: str
     sort_order: int
-    status: str
     metadata: dict[str, Any] = Field(validation_alias="metadata_")
     project_id: UUID
     article_id: UUID | None

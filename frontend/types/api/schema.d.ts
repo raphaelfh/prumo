@@ -3286,8 +3286,6 @@ export interface components {
             project_id: string;
             /** Sort Order */
             sort_order: number;
-            /** Status */
-            status: string;
             /**
              * Template Id
              * Format: uuid

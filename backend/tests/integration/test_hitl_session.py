@@ -1152,9 +1152,8 @@ async def test_session_backfills_singleton_children_added_after_model_creation(
                 """
                 INSERT INTO public.extraction_instances
                     (project_id, article_id, template_id, entity_type_id,
-                     parent_instance_id, label, sort_order, status, created_by)
+                     parent_instance_id, label, sort_order, created_by)
                 VALUES (:pid, :aid, :tid, :etid, NULL, 'XGBoost', 0,
-                        'pending'::extraction_instance_status,
                         (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1))
                 RETURNING id
                 """
@@ -1277,9 +1276,8 @@ async def test_session_backfill_is_idempotent(
                 """
                 INSERT INTO public.extraction_instances
                     (project_id, article_id, template_id, entity_type_id,
-                     parent_instance_id, label, sort_order, status, created_by)
+                     parent_instance_id, label, sort_order, created_by)
                 VALUES (:pid, :aid, :tid, :etid, NULL, 'XGBoost', 0,
-                        'pending'::extraction_instance_status,
                         (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1))
                 RETURNING id
                 """

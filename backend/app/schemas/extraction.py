@@ -361,7 +361,6 @@ class InstanceResponse(BaseModel):
     entity_type_id: UUID = Field(..., alias="entityTypeId")
     parent_instance_id: UUID | None = Field(default=None, alias="parentInstanceId")
     label: str
-    status: str
     sort_order: int = Field(..., alias="sortOrder")
     created_at: datetime = Field(..., alias="createdAt")
     updated_at: datetime = Field(..., alias="updatedAt")

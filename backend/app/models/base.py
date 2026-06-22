@@ -50,7 +50,6 @@ POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
         "cancelled",
     ],
     "extraction_run_status": ["pending", "running", "completed", "failed"],
-    "extraction_instance_status": ["pending", "in_progress", "completed", "reviewed", "archived"],
     # Extraction versioning + HITL config enums
     "hitl_config_scope_kind": ["project", "template"],
     "consensus_rule": ["unanimous", "majority", "arbitrator"],

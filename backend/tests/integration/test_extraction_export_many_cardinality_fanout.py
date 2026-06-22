@@ -110,9 +110,9 @@ async def seeded_export_fixture(
             text(
                 "INSERT INTO public.extraction_instances "
                 "(id, project_id, template_id, entity_type_id, article_id, "
-                " label, sort_order, status, created_by) "
+                " label, sort_order, created_by) "
                 "VALUES (:id, :pid, :tid, :etid, :aid, :label, :so, "
-                " 'pending', :created_by)"
+                " :created_by)"
             ),
             {
                 "id": str(instance_id),

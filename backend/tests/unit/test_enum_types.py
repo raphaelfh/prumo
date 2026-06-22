@@ -18,7 +18,6 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
     ExtractionFramework,
-    ExtractionInstanceStatus,
     ExtractionRunStage,
     ExtractionRunStatus,
 )
@@ -90,7 +89,6 @@ class TestPostgreSQLEnumValuesMapping:
             "extraction_entity_role",
             "extraction_run_stage",
             "extraction_run_status",
-            "extraction_instance_status",
             "hitl_config_scope_kind",
             "consensus_rule",
             "template_kind",
@@ -126,7 +124,6 @@ class TestPythonEnumsMatchPostgreSQL:
             (ExtractionCardinality, "extraction_cardinality"),
             (ExtractionRunStage, "extraction_run_stage"),
             (ExtractionRunStatus, "extraction_run_status"),
-            (ExtractionInstanceStatus, "extraction_instance_status"),
         ],
     )
     def test_python_enum_matches_postgresql(
@@ -157,7 +154,6 @@ class TestPythonEnumsMatchPostgreSQL:
             (ExtractionCardinality, "extraction_cardinality"),
             (ExtractionRunStage, "extraction_run_stage"),
             (ExtractionRunStatus, "extraction_run_status"),
-            (ExtractionInstanceStatus, "extraction_instance_status"),
         ],
     )
     def test_python_enum_is_str_subclass(self, python_enum: type[PyEnum], postgres_enum_name: str):
@@ -170,10 +166,6 @@ class TestPythonEnumsMatchPostgreSQL:
 
 class TestEnumDefaults:
     """Testes para valores padrão dos ENUMs."""
-
-    def test_extraction_instance_status_default(self):
-        """Verifica valor padrão de ExtractionInstanceStatus."""
-        assert ExtractionInstanceStatus.PENDING.value == "pending"
 
     def test_extraction_run_status_default(self):
         """Verifica valor padrão de ExtractionRunStatus."""
@@ -206,7 +198,6 @@ class TestEnumCreationFromString:
             (ExtractionCardinality, "one"),
             (ExtractionRunStage, "extract"),
             (ExtractionRunStatus, "pending"),
-            (ExtractionInstanceStatus, "pending"),
         ],
     )
     def test_enum_from_valid_string(self, python_enum: type[PyEnum], valid_value: str):
@@ -225,7 +216,6 @@ class TestEnumCreationFromString:
             ExtractionCardinality,
             ExtractionRunStage,
             ExtractionRunStatus,
-            ExtractionInstanceStatus,
         ],
     )
     def test_enum_from_invalid_string_raises(self, python_enum: type[PyEnum]):

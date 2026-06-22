@@ -24,7 +24,7 @@ function entity(id: string, role: ExtractionEntityTypeWithFields['role'], cardin
 function instance(id: string, entity_type_id: string, parent_instance_id: string | null = null): ExtractionInstance {
   return {
     id, project_id: 'p', article_id: 'a', template_id: 't', entity_type_id,
-    parent_instance_id, label: id, sort_order: 0, status: 'pending',
+    parent_instance_id, label: id, sort_order: 0,
     metadata: null, created_by: 'u', created_at: '', updated_at: '',
   };
 }
