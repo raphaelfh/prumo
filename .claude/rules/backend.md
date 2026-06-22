@@ -6,8 +6,15 @@ paths:
 
 # Backend conventions (prumo)
 
-Deep dives live in the `backend-development` skill and
-`docs/reference/` — this file is the always-true core.
+For any non-trivial backend change, load the `backend-development` skill
+before writing code (deep dives also in `docs/reference/`). This file is the
+always-true core.
+
+## Repository vs service SQL
+
+Use a repository (`backend/app/repositories/`) when a query is reused by >1
+service, or the entity has several distinct query shapes. Otherwise inline
+`select()` in the owning service. Repositories call `flush()`, never `commit()`.
 
 ## Layering (CI-enforced by `scripts/fitness/check_layered_arch.py`)
 
