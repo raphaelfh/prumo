@@ -58,6 +58,7 @@ from app.schemas.extraction_run import (
     RunViewInstance,
     RunViewResponse,
 )
+from app.services.extraction_reviewer_ready_service import ExtractionReviewerReadyService
 
 
 class RunNotFoundError(Exception):
@@ -336,6 +337,9 @@ async def build_run_view(
         else []
     )
     instances = await _instances_for_run(db, detail.run)
+    ready = await ExtractionReviewerReadyService(db).ready_summary_from(
+        run_id=run_id, hitl_config_snapshot=detail.run.hitl_config_snapshot
+    )
 
     return RunViewResponse(
         run=detail.run,
@@ -346,6 +350,9 @@ async def build_run_view(
         entity_types=entity_types,
         current_values=current_values,
         instances=instances,
+        ready_count=ready["ready_count"],
+        reviewer_count=ready["reviewer_count"],
+        reviewers_ready=ready["reviewers_ready"],
     )
 
 

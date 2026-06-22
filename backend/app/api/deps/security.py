@@ -43,6 +43,27 @@ async def ensure_project_member(db: DbSession, project_id: UUID, user_sub: UUID)
         )
 
 
+async def ensure_project_reviewer(db: DbSession, project_id: UUID, user_sub: UUID) -> None:
+    """Enforce a reviewer-capable role (manager / reviewer / consensus) at the API layer.
+
+    Mirrors ``ensure_project_member`` but uses the ``is_project_reviewer`` SQL
+    helper (the same predicate the workflow RLS policies use), so a read-only
+    *viewer* is rejected. The DB session runs as service-role (RLS bypassed), so
+    this gate must live at the API layer for write paths that are reviewer-only.
+    """
+    is_reviewer = (
+        await db.execute(
+            text("SELECT public.is_project_reviewer(:pid, :uid) AS ok"),
+            {"pid": str(project_id), "uid": str(user_sub)},
+        )
+    ).scalar_one()
+    if not is_reviewer:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Reviewer role required",
+        )
+
+
 async def require_project_scope(
     project_id: UUID,
     db: DbSession,

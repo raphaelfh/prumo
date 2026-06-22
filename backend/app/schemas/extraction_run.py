@@ -50,6 +50,12 @@ class AdvanceStageRequest(BaseModel):
     )
 
 
+class MarkReadyRequest(BaseModel):
+    """Toggle the caller's per-reviewer "I'm done extracting" flag for a run."""
+
+    ready: bool = True
+
+
 # ----- Response schemas -----
 
 
@@ -114,6 +120,18 @@ class PublishedStateResponse(BaseModel):
 class ConsensusResultResponse(BaseModel):
     consensus: ConsensusDecisionResponse
     published: PublishedStateResponse
+
+
+class RunReadyStateResponse(BaseModel):
+    """The "N/M reviewers ready" hint. Advisory only — readiness gates nothing.
+
+    ``reviewer_count`` is ``max(hitl_config reviewer_count, ready_count)`` so the
+    hint never reads "N of M" with N > M (the configured count is often the inert
+    default of 1)."""
+
+    ready_count: int
+    reviewer_count: int
+    reviewers_ready: list[UUID]
 
 
 class RunSummaryResponse(BaseModel):
@@ -230,6 +248,10 @@ class RunViewResponse(RunDetailResponse):
     entity_types: list[RunViewEntityType]
     current_values: list[RunViewCurrentValue]
     instances: list[RunViewInstance]
+    # Per-reviewer "ready" hint (advisory; see RunReadyStateResponse).
+    ready_count: int = 0
+    reviewer_count: int = 0
+    reviewers_ready: list[UUID] = Field(default_factory=list)
 
 
 class RunReviewerProfile(BaseModel):

@@ -12,7 +12,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps.security import ensure_project_member, get_current_user_sub
+from app.api.deps.security import (
+    ensure_project_member,
+    ensure_project_reviewer,
+    get_current_user_sub,
+)
 from app.core.deps import DbSession
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
@@ -24,10 +28,12 @@ from app.schemas.extraction_run import (
     CreateDecisionRequest,
     CreateProposalRequest,
     CreateRunRequest,
+    MarkReadyRequest,
     ProposalRecordResponse,
     PublishedStateResponse,
     ReviewerDecisionResponse,
     RunDetailResponse,
+    RunReadyStateResponse,
     RunReviewersResponse,
     RunSummaryResponse,
     RunViewResponse,
@@ -45,6 +51,9 @@ from app.services.extraction_proposal_service import (
 from app.services.extraction_review_service import (
     ExtractionReviewService,
     InvalidDecisionError,
+)
+from app.services.extraction_reviewer_ready_service import (
+    ExtractionReviewerReadyService,
 )
 from app.services.extraction_run_read_service import (
     RunNotFoundError,
@@ -282,6 +291,31 @@ async def create_decision(
         ReviewerDecisionResponse.model_validate(record),
         trace_id=trace_id,
     )
+
+
+@router.post("/{run_id}/ready")
+async def mark_run_ready(
+    run_id: UUID,
+    body: MarkReadyRequest,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse[RunReadyStateResponse]:
+    """Toggle the caller's per-reviewer "ready" signal for a run.
+
+    Advisory only — it never advances the run (the manager opens consensus
+    manually). Membership-gated AND reviewer-role-gated (a read-only viewer
+    cannot mark ready). Returns the "N/M reviewers ready" hint.
+    """
+    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    await ensure_project_reviewer(db, run.project_id, current_user_sub)
+    service = ExtractionReviewerReadyService(db)
+    await service.mark_ready(run_id=run_id, reviewer_id=current_user_sub, is_ready=body.ready)
+    summary = await service.ready_summary_from(
+        run_id=run_id, hitl_config_snapshot=run.hitl_config_snapshot
+    )
+    await db.commit()
+    return ApiResponse.success(RunReadyStateResponse(**summary), trace_id=_trace(request))
 
 
 @router.post("/{run_id}/consensus", status_code=status.HTTP_201_CREATED)
