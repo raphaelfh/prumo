@@ -44,10 +44,10 @@ direct inspection of `dev` at `ff1c99c1`. The headline facts:
   `useCitationHighlight`. The PDF-bbox stack (`useCitationHighlight`,
   `CitationOverlay`) is **orphaned** from the extraction flow. **ADR-0013 was
   never updated** and still claims highlight is "canvas-only" — now false.
-- **Model is hardcoded.** `gpt-4o-mini` is a string literal in **7 production
-  files**; `OPENAI_DEFAULT_MODEL` exists in config but is **never read at
-  runtime**. `build_model(model_name, *, api_key)` is **OpenAI-only** — it ignores
-  any provider and always builds `OpenAIChatModel`. However, BYOK key storage for
+- **Model is hardcoded.** `gpt-4o-mini` is a string literal in **12 places across
+  6 production files**; `OPENAI_DEFAULT_MODEL` exists in config but is **never read
+  at runtime** (a dead artifact). `build_model(model_name, *, api_key)` is
+  **OpenAI-only** — it ignores any provider and always builds `OpenAIChatModel`. However, BYOK key storage for
   Claude **already exists**: `user_api_keys.provider` allows
   `('openai','anthropic','gemini','grok','llama_cloud')` (CHECK constraint,
   migration 0027 + baseline) and `SUPPORTED_PROVIDERS` lists them. The only gap
@@ -66,30 +66,50 @@ the *same representation* the reader renders and citations anchor against.
 **Staged:**
 
 - **P1 (core win):** add the pure `render_blocks_to_markdown(blocks) -> str`;
-  feed the LLM the block-markdown of the whole article, bounded by a token
-  budget, **surfacing overflow** (structured log + a typed "truncated N/M blocks"
-  signal on the result) instead of a silent mid-context chop. Fallback to today's
-  pypdf path when an article has **no blocks yet** (the two-tier state ADR-0011
-  promised but never wired).
+  **assemble the article's block-markdown once per run** and thread it through the
+  per-entity-type extraction loop (do **not** re-assemble per section), bounded by
+  a model-aware token budget, **surfacing overflow** (structured log + a typed
+  `truncated` flag on `AssemblyInfo`) instead of a silent mid-context chop. The
+  **pypdf fallback** (when an article has no blocks yet — the two-tier state
+  ADR-0011 promised but never wired) **passes through the same budgeted
+  assembler**, so no path can send unbounded text. `model_identification` consumes
+  the same whole-document budgeted markdown (it must see the full paper to find
+  every model).
 - **P2 (enhancement, may defer):** section-aware block *selection* — feed only
-  the blocks relevant to the entity-type being extracted. This depends on a
-  reliable section→block mapping we do not yet have; if reliable detection is not
-  cheap, P2 is deferred and P1's budgeted full-doc window stands. **No silent
-  truncation in either stage.**
+  the blocks relevant to the entity-type being extracted. Depends on a reliable
+  section→block mapping we do not yet have; if reliable detection is not cheap, P2
+  is deferred and P1's budgeted full-doc window stands. **No silent truncation in
+  either stage.**
+
+**Cost model (assemble-once + observe).** A run makes one LLM call per
+entity-type, and `schema.py` further chunks fields (≤14/chunk, OpenAI strict-mode
+limit) into additional calls — so per-run input ≈ (entity-types × field-chunks) ×
+budget. Assembling **once and reusing** removes redundant re-assembly; we **log
+per-run token/cost** for observability but add **no hard per-run ceiling yet**
+(YAGNI until we have real numbers).
 
 **Out of scope:** vision-to-model / table-vision pass (deferred per ADR-0011);
 the enriched markdown tier (`markdown_enriched` column stays unbuilt).
 
 ### B1 — Text-first citations; delete the orphaned bbox stack
 
-Markdown-locate is the **sole** citation-highlight surface. The orphaned
-`useCitationHighlight`, `CitationOverlay`, the canvas overlay rendering, and their
-tests are **deleted** (closes the existing follow-up `task_987a3c69`). The backend
-keeps producing the **text/char-range** anchor; it stops *producing* bbox rects,
-but `parse_position`/`citation_read_service` stay **backward-compatible** with any
-hybrid-shaped positions already stored in prod (`extraction_evidence.position` is
-JSONB — no data migration, no read break). ADR-0013's "Highlight limitation"
-section is superseded.
+Markdown-locate is the **sole** citation-highlight surface. **B1 is frontend-only.**
+The orphaned `useCitationHighlight`, `CitationOverlay`, the canvas overlay
+rendering, and their tests are **deleted** (closes the existing follow-up
+`task_987a3c69`). The deletion is **coordinated in one commit** — remove the
+`CitationOverlay` import+usage from `Viewer.tsx` in the same change that deletes
+the file, to avoid an intermediate build break.
+
+**The backend anchor contract is left unchanged.** Markdown-locate matches on the
+evidence **quote text** (`evidence.text`), not the backend anchor, and
+`build_anchor` already emits only `TextCitationAnchor` (prose) /
+`HybridCitationAnchor` (table/figure) — it **never emits** `RegionCitationAnchor`.
+So there is no reason to touch `build_anchor`, `parse_position`, or
+`schemas/extraction.py`: no contract drift, no `schema.d.ts` regeneration, no
+backward-compat read break (`extraction_evidence.position` is JSONB regardless).
+`RegionCitationAnchor` stays defined for tolerant reads of any historical rows.
+ADR-0013's "Highlight limitation" section is superseded; **canvas mode remains for
+navigation only.**
 
 Figure/table coverage under text-first: tables render as GFM (cell text is
 searchable), figure captions are `figure_caption` text blocks (searchable); only
@@ -98,15 +118,24 @@ a bare image region cited with no quotable text degrades to a nearest-block flas
 
 ### C1 — One configurable model/provider; Claude selectable; keep pydantic-ai
 
-Keep `pydantic-ai` (NativeOutput structured output works; the whole prompt/
-extractor/validator layer is built on it; switching is a large rewrite for no
-concrete gain). Collapse the 7 `gpt-4o-mini` literals into **one authoritative
-configurable setting** actually read at runtime. `build_model` gains a
-**provider branch** (OpenAI now, Anthropic added) via the existing pydantic-ai
-extras; `APIKeyService` resolves the provider's BYOK/global key. **The live
-default model is unchanged in this effort** — flipping to Claude becomes a config/
-deploy decision, not a code change. Parser default is **verify-and-locked**, not
-churned (the crash + ignored-key bugs were already fixed by #359).
+Keep `pydantic-ai` (the whole prompt/extractor/validator layer is built on it;
+switching is a large rewrite for no concrete gain). Collapse the **12 hardcoded
+`gpt-4o-mini` defaults across 6 files** into **one authoritative configurable
+setting** actually read at runtime (`OPENAI_DEFAULT_MODEL` is currently a dead
+artifact). `build_model(provider, model_name, *, api_key)` gains a **provider
+branch** (OpenAI now, Anthropic added) via the existing pydantic-ai extras.
+
+**Provider-aware structured output (the trap).** OpenAI uses `NativeOutput`
+(JSON-schema `response_format`); **Anthropic has no `response_format`** and
+pydantic-ai drives Anthropic structured output via **tool-calling (`ToolOutput`)**.
+`extractor.py` must select `output_type` by provider
+(`NativeOutput(model) if provider == "openai" else ToolOutput(model)`) or Claude
+silently fails. **Claude is BYOK-only in this effort** — `APIKeyService` already
+resolves a user's `anthropic` BYOK key; **no global `ANTHROPIC_API_KEY` fallback is
+wired** (decided 2026-06-23). **The live default model/provider is unchanged** —
+flipping to Claude is a per-project/per-request choice once a BYOK key exists.
+Parser default is **verify-and-locked**, not churned (the crash + ignored-key bugs
+were already fixed by #359).
 
 ## 3. Migrations
 
@@ -114,11 +143,13 @@ churned (the crash + ignored-key bugs were already fixed by #359).
 
 - A1 — `render_blocks_to_markdown` is a pure on-demand projection (ADR-0013, no
   column); the assembler reads the existing `article_text_blocks` (table 0006).
-- B1 — `extraction_evidence.position` is JSONB; the anchor-contract change is
-  Pydantic-schema/code only.
+- B1 — frontend-only deletion; the backend anchor contract is **unchanged** (no
+  schema edit, no `schema.d.ts` regen). `extraction_evidence.position` is JSONB
+  regardless.
 - C1 — `user_api_keys.provider` already permits `anthropic` (CHECK constraint
-  since baseline/0027); `SUPPORTED_PROVIDERS` already lists it. No new column,
-  enum, or constraint.
+  since baseline/0027); `SUPPORTED_PROVIDERS` already lists it; the Fernet
+  encryption + RLS on that table are provider-agnostic. Claude is **BYOK-only**
+  (no global key). No new column, enum, constraint, or migration.
 
 (Consequently the `test_migration_roundtrip` head-pin / `downgrade -1` gotcha
 does not apply to this effort.)
@@ -130,36 +161,37 @@ does not apply to this effort.)
 | Layer | Change |
 | --- | --- |
 | Infrastructure | `app/infrastructure/parsing/base.py`: add pure `render_blocks_to_markdown(blocks) -> str` beside `concat_page_text`. Deterministic GFM tables, `#` headings, lists, reading order. |
-| Service helper | New token-budgeted assembler (pure function or small helper class) that takes ordered blocks + a token budget + the active model and returns `(markdown, AssemblyInfo)` where `AssemblyInfo` carries `total_blocks`, `included_blocks`, `truncated: bool`, `est_tokens`. Token estimate via `tiktoken` for OpenAI models, char/4 heuristic fallback. |
-| Service | `section_extraction_service` / `model_extraction_service`: read persisted blocks (`ArticleTextBlockRepository.list_ordered_for_file`), assemble budgeted markdown, pass to `_extract_with_llm`. **Fallback to pypdf** when no blocks exist. Surface `AssemblyInfo.truncated` in structured logs + the run/section result. |
-| Prompts | `prompts/__init__.py`: delete `MAX_PDF_CHARS`; the three `render(...)` functions receive pre-assembled, budgeted text. |
+| Assembler | New **pure** module `app/llm/assembler.py`: `assemble(blocks, *, model_name, budget_tokens) -> (markdown, AssemblyInfo)`. `AssemblyInfo` is a **typed Pydantic model** (`app/schemas/extraction.py`): `total_blocks`, `included_blocks`, `truncated: bool`, `est_tokens`. Token estimate via `tiktoken` for OpenAI, char/4 heuristic fallback (Anthropic skew documented in a unit test). |
+| Service | `section_extraction_service` / `model_extraction_service`: fetch blocks once (`ArticleTextBlockRepository.list_ordered_for_file`), `assemble` **once per run**, **thread the markdown through the entity-type loop** (no re-assembly). When **no blocks exist**, the **pypdf text is routed through the same `assemble`** (budgeted, never unbounded). Log `AssemblyInfo.truncated` + per-run est-tokens. |
+| Prompts | `prompts/__init__.py`: delete `MAX_PDF_CHARS`; all **three** `render(...)` sites (`section_extraction`, `model_identification`, `quality_assessment`) receive pre-assembled, budgeted text. |
 
 ### B1
 
 | Layer | Change |
 | --- | --- |
-| Frontend (delete) | `frontend/hooks/extraction/useCitationHighlight.ts` (+ tests), `frontend/pdf-viewer/primitives/CitationOverlay.tsx` (+ tests/a11y), the `Viewer.tsx` overlay render, dead copy keys. Confirm no other live importer first (`usePageHandle` reference is the audit boundary). |
+| Frontend (delete, one commit) | `frontend/hooks/extraction/useCitationHighlight.ts` (+ tests), `frontend/pdf-viewer/primitives/CitationOverlay.tsx` (+ tests/a11y), the `CitationOverlay` import+render in `Viewer.tsx`, dead copy keys — all in a **single commit** so the build never breaks mid-way. (Confirmed orphaned: the AI popover uses `useReaderLocate`; `usePageHandle` does not import the hook in active code.) |
 | Frontend (keep) | `useReaderLocate` markdown-locate stays the only surface. |
-| Backend | `evidence_anchor_service.build_anchor`: produce text/char-range anchor; stop emitting rects. `schemas/extraction.py` + `citation_read_service.parse_position`: keep tolerant parsing of historical hybrid/region shapes (no break), but the **emitted** contract is text-first. |
-| Docs | Supersede ADR-0013 §"Highlight limitation"; cross-reference from ADR-0011. |
+| Backend | **No change.** `build_anchor` already emits Text/Hybrid (never Region) and markdown-locate matches on `evidence.text`. Leaving the contract intact avoids `schema.d.ts` drift and historical-read breakage. |
+| Docs | Supersede ADR-0013 §"Highlight limitation" (markdown-locate is the citation surface; canvas = navigation-only); cross-reference from ADR-0011. |
 
 ### C1
 
 | Layer | Change |
 | --- | --- |
-| Config | `app/core/config.py`: one authoritative `LLM_PROVIDER` + `LLM_DEFAULT_MODEL` (read at runtime); `ANTHROPIC_*`; `LLM_TIMEOUT_SECONDS`. Defaults preserve current OpenAI behavior. |
-| Provider | `provider.py::build_model(provider, model_name, *, api_key)`: OpenAI branch (current) + Anthropic branch (`pydantic-ai-slim[anthropic]` extra). `MissingLLMKeyError` message becomes provider-aware. |
-| Service/endpoints | Replace the 7 `"gpt-4o-mini"` literals with the config default; thread `provider` from request/project through to `build_model`; `APIKeyService` resolves the chosen provider's key. |
-| Extractor | `extractor.py`: `asyncio.wait_for(agent.run(...), timeout=settings.LLM_TIMEOUT_SECONDS)`. |
+| Config | `app/core/config.py`: `LLM_PROVIDER` (default `"openai"`), `LLM_DEFAULT_MODEL` (default the current OpenAI model), `LLM_TIMEOUT_SECONDS`. **No global `ANTHROPIC_API_KEY`** (Claude is BYOK-only). Defaults preserve current behavior exactly. |
+| Provider | `provider.py::build_model(provider, model_name, *, api_key)`: OpenAI branch (current) + Anthropic branch (`pydantic-ai-slim[anthropic]` extra). `MissingLLMKeyError` message provider-aware. |
+| Extractor | `extractor.py`: select `output_type` by provider (`NativeOutput` for OpenAI, `ToolOutput` for Anthropic). **Timeout at the client/model level** (OpenAI/Anthropic clients accept a `timeout`) so the in-flight request is actually aborted; `asyncio.wait_for` only as a backstop. |
+| Service/endpoints | Replace the 12 `"gpt-4o-mini"` literals with the config default; thread `provider` request→service→`build_model`; `APIKeyService.get_key_for_provider` resolves the chosen provider's BYOK key. |
+| Errors | New `app/llm/errors.py`: `PermanentLLMError` / `TransientLLMError`. `UsageLimitExceeded` (reask budget exhausted = bad schema/template) → permanent. Timeout/connection/5xx/rate-limit → transient. |
 
 ## 5. Reliability bug fixes (error-handling design)
 
 | # | Bug | Fix |
 | --- | --- | --- |
-| 3 | Batch exception swallowing (`section_extraction_service.py` ~385–424 & ~761–811): per-section errors caught, logged, execution continues — a half-failed batch reports success. | Aggregate **per-section status** into the typed batch result. Policy: a batch where **every** section failed (or zero output produced) **fails the run** (`status=failed`); partial failures complete but surface the failed-section list — never silent. |
-| 4 | No timeout on `agent.run()`. | `asyncio.wait_for` with configurable `LLM_TIMEOUT_SECONDS`; timeout → typed transient error → task retry path. |
-| 5 | Celery retry: fixed 60s delay, no transient/permanent split (`extraction_tasks.py`). | `retry_backoff=True` + jitter + `retry_backoff_max`; **fail-fast (no retry)** on permanent errors (`MissingLLMKeyError`, missing PDF/file, template/validation); retry only transient (timeout, rate-limit, 5xx). |
-| 7 | Schema chunk dedup last-win (`schema.py` ~118): duplicate field names silently drop data. | **Fail-closed**: raise a typed `SchemaBuildError` naming the duplicate `(entity_type, field_name)` so the template is fixed. *(Open: disambiguate-and-warn alternative — see §8.)* |
+| 3 | Batch exception swallowing (`section_extraction_service.py` ~385–424 & ~761–811): per-section errors caught, logged, execution continues — a half-failed batch reports success. | Aggregate **per-section status** into the typed batch result. **Fail-closed threshold:** if `failed_sections == total_sections` **or** `total_suggestions_created == 0`, raise `BatchAllSectionsFailed` (→ run `FAILED`, `ApiResponse(ok=False)`); partial failures complete but surface the failed-section list — never silent. |
+| 4 | No timeout on `agent.run()`. | **Client-level timeout** on the OpenAI/Anthropic model (aborts the request), `LLM_TIMEOUT_SECONDS`-configured; `asyncio.wait_for` backstop. Timeout raises `TransientLLMError` → Celery retry. |
+| 5 | Celery retry: fixed 60s delay, no transient/permanent split (`extraction_tasks.py`). | Classify via `app/llm/errors.py`: `retry_backoff=True` + jitter + `retry_backoff_max` for `TransientLLMError`; **fail-fast (no retry)** for `PermanentLLMError` (`MissingLLMKeyError`, missing PDF/file, template/validation, `UsageLimitExceeded`). |
+| 7 | Schema chunk dedup last-win (`schema.py` ~118): duplicate field names silently drop data. | **Fail-closed (decided):** raise `app.llm.schema.SchemaBuildError(entity_type_id, field_name)` naming the duplicate so the template is fixed — silent merge could mismap evidence. |
 | 10 | No full-chain integration test. | Add it (see §6). |
 
 **Non-fixes (disproven premises) — guarded, not patched:**
@@ -172,20 +204,34 @@ does not apply to this effort.)
 
 ## 6. Testing strategy (TDD — failing test first for every behavioral change)
 
-- **Full-chain integration test (item 10):** blocks fixture → assembler →
+- **Full-chain integration test (item 10):** blocks fixture → `assemble` →
   `build_output_models` → mocked `extract_structured` → `record_proposal` +
   `build_anchor` evidence → `citation_read_service` read. Asserts the anchor char
-  range maps back to the correct block and the proposal+evidence materialize.
-- **Endpoint-coroutine unit tests:** call the extraction endpoint coroutines
-  directly (not only via httpx ASGI) to cover handler lines the diff-cover gate
-  misses (the documented ASGI blind spot).
-- **Unit:** `render_blocks_to_markdown` (deterministic GFM/headings/order); the
-  budgeted assembler (`truncated` flag set when over budget, never silent); the
-  pypdf fallback when no blocks; timeout path; retry classification
-  (permanent→no-retry, transient→backoff); schema duplicate-name handling; the
-  three non-fix guard tests (#6/#8/#9).
-- **Frontend:** deletion leaves the suite green; markdown-locate tests remain the
-  citation coverage; no dangling imports.
+  range maps back to the correct block and proposal+evidence materialize. This is a
+  **happy-path schema/anchor** test — it mocks the LLM and therefore **cannot**
+  catch provider-output drift (see next).
+- **Provider-output tests:** drive `extract_structured` with a `FunctionModel`
+  returning a realistic **Anthropic tool-call-shaped** payload to prove `ToolOutput`
+  parsing works; an **opt-in live Anthropic smoke** test (`@pytest.mark.llm`,
+  `PRUMO_LLM_SMOKE=1`, never in CI) round-trips a real Claude call + budget assembly.
+- **Endpoint-coroutine unit tests:** call the changed endpoint coroutines directly
+  (not only via httpx ASGI) to cover provider-threading + the two service paths
+  (blocks-assemble vs pypdf-fallback) the diff-cover gate misses (documented ASGI
+  blind spot).
+- **Unit:** `render_blocks_to_markdown` (deterministic GFM/headings/order);
+  `assemble` (`truncated` set over budget, never silent; tiktoken-vs-heuristic
+  skew); pypdf fallback routed through `assemble`; client-timeout path; retry
+  classification (permanent→no-retry, transient→backoff); `SchemaBuildError` on
+  duplicate field names; **batch partial-failure** (mixed surfaces the failed list;
+  all-fail raises). The QA prompt path (`quality_assessment`) is covered alongside
+  `section_extraction`.
+- **Design-stability assertions (not "guard tests"):** #6 (`.format()` literal
+  pass-through with brace-laden inputs), #8 (key validated at endpoint entry), #9
+  (run stays in `extract` after AI extraction) — each documents *why the design
+  choice matters and what refactor would break it*.
+- **Frontend:** measure coverage with the overlay tests removed; if it drops below
+  the ratchet (62/80/85), add compensating `useReaderLocate`/markdown-locate tests.
+  No dangling imports; suite green.
 - **Gates:** `make lint-backend`, `make test-backend`, `npm run lint`,
   `npm run test:run` — all green, output pasted as evidence before "done".
 
@@ -196,23 +242,36 @@ does not apply to this effort.)
 2. **A1** — renderer + budgeted assembler + wire blocks→LLM + windowing + pypdf
    fallback + full-chain integration test (#10); note ADR-0011's block-input now
    built.
-3. **B1** — frontend bbox-stack deletion + backend anchor simplification + ADR-0013
-   supersession.
+3. **B1** — frontend-only bbox-stack deletion (one commit) + ADR-0013 supersession
+   (backend anchor untouched).
 
 Each PR: conventional commit, squash-merged, all gates green, `code-review` before
 "done".
 
-## 8. Open decisions to confirm at spec review
+## 8. Decisions resolved at spec review (2026-06-23, post adversarial review)
 
-1. **#7 policy** — fail-closed `SchemaBuildError` (recommended; silent merge can
-   mismap evidence) **vs.** disambiguate duplicate names with a suffix + warning
-   (preserves data, changes the field-name contract). Default in this spec:
-   **fail-closed**.
-2. **A1 P2** — build section-aware block *selection* now, or ship P1
-   (budgeted full-doc window) and defer P2 until a reliable section→block mapping
-   exists? Default: **ship P1, defer P2**.
-3. **C1 default** — confirm the live default model stays the current OpenAI model
-   in this effort (no behavior/cost flip). Default: **unchanged**.
+1. **#7 duplicate field names** — **fail-closed** `SchemaBuildError` (silent merge
+   could mismap evidence). *Resolved.*
+2. **A1 P2** — **ship P1** (assemble-once, budgeted full-doc window), **defer P2**
+   (section-aware selection) until a reliable section→block mapping exists.
+   *Resolved.*
+3. **C1 default model** — **unchanged** (current OpenAI model); Claude is selectable
+   per-project/request via BYOK. *Resolved.*
+4. **Anthropic key** — **BYOK-only**; no global `ANTHROPIC_API_KEY` fallback in this
+   effort. *Resolved.*
+5. **Per-run cost** — **assemble-once + log** per-run tokens; **no hard ceiling**
+   yet (YAGNI). *Resolved.*
+
+### Adversarial review (2026-06-23): refuted claims, deliberately not acted on
+
+- `build_anchor` never instantiates `RegionCitationAnchor` (only Text/Hybrid) — no
+  emit-path change needed.
+- `usePageHandle` does not import `useCitationHighlight` in active code — deletion
+  is safe.
+- `build_anchor` is already typed `-> PositionV1 | None` — no typing gap.
+- `DocumentParser.parse()` is monolithic (all-or-raise) — no partial-blocks state
+  for A1 to defend against.
+- C1 and A1 do not both edit `MAX_PDF_CHARS` — no cross-phase merge conflict.
 
 ## 9. Non-goals
 
