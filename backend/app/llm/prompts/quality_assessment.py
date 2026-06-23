@@ -2,7 +2,7 @@
 (PROBAST / QUADAS-2). Same response shape as section extraction so the
 downstream proposal writes are identical."""
 
-from app.llm.prompts import MAX_PDF_CHARS, content_version, render_memory_section
+from app.llm.prompts import content_version, render_memory_section
 
 NAME = "quality_assessment"
 
@@ -54,5 +54,5 @@ def render(
         entity_name=entity_name,
         entity_description=entity_description,
         memory_section=render_memory_section(memory_context),
-        article_text=article_text[:MAX_PDF_CHARS],
+        article_text=article_text,
     )
