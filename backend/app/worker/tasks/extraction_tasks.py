@@ -9,14 +9,26 @@ module's docstring for the event-loop rationale.
 
 from __future__ import annotations
 
+import random
 from typing import Any
 from uuid import UUID
 
 from celery import Task
 
 from app.core.config import settings
+from app.llm.errors import is_transient_llm_error
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
+
+_RETRY_BASE_SECONDS = 60
+_RETRY_MAX_SECONDS = 600
+
+
+def _retry_countdown(retries: int) -> float:
+    """Exponential backoff with jitter, with the final value capped at the
+    max (so jitter never pushes a retry past _RETRY_MAX_SECONDS)."""
+    base = min(_RETRY_BASE_SECONDS * (2**retries), _RETRY_MAX_SECONDS)
+    return min(base + random.uniform(0, base * 0.1), float(_RETRY_MAX_SECONDS))
 
 
 @celery_app.task(
@@ -101,7 +113,9 @@ def extract_section_task(
     try:
         return run_task(run)
     except Exception as exc:
-        self.retry(exc=exc)
+        if not is_transient_llm_error(exc):
+            raise  # permanent: fail fast, no retry
+        raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
 
 
 @celery_app.task(
@@ -197,7 +211,9 @@ def extract_models_task(
     try:
         return run_task(run)
     except Exception as exc:
-        self.retry(exc=exc)
+        if not is_transient_llm_error(exc):
+            raise  # permanent: fail fast, no retry
+        raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
 
 
 @celery_app.task(
