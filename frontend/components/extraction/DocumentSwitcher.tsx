@@ -4,12 +4,11 @@
  * Presentational dropdown over an article's files (MAIN + supplements), with a
  * per-file parse-status dot. Selecting a document is the caller's concern
  * (it also clears viewer citations/search/page to avoid cross-document leak).
- * `ReparseButton` recovers a `parse_failed` file in-place — the same recovery
- * the Articles dialog offers, surfaced where the failure is seen.
- * `ParseStatusControl` is a status-aware sibling that adds a confirm dialog for
- * re-parsing a successfully-parsed file and an error tooltip for parse failures.
+ * `ParseStatusControl` is a status-aware control that shows parse status and
+ * surfaces a contextual re-parse action (with a confirm dialog for already-parsed
+ * files and an error tooltip for parse failures).
  */
-import { memo, useState } from 'react';
+import { memo } from 'react';
 import { cva } from 'class-variance-authority';
 import { Loader2 } from 'lucide-react';
 
@@ -35,11 +34,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { FILE_ROLE_LABELS, type FileRole } from '@/lib/file-constants';
 import { t } from '@/lib/copy';
 import { cn } from '@/lib/utils';
-import { articleKeys } from '@/lib/query-keys';
-import { reparseArticleFile } from '@/services/articlesService';
 import type { ArticleFileListItem } from '@/services/articleFilesService';
-import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import { useReparseArticleFile } from '@/hooks/extraction/useReparseArticleFile';
 
 // Module-level cva — kept at module scope to satisfy React Compiler (no inline objects).
@@ -128,46 +123,6 @@ function DocumentSwitcherComponent({
 
 export const DocumentSwitcher = memo(DocumentSwitcherComponent);
 DocumentSwitcher.displayName = 'DocumentSwitcher';
-
-export interface ReparseButtonProps {
-  articleFileId: string;
-  articleId: string;
-}
-
-/** Re-enqueue a parse for a `parse_failed` file and refresh the file + blocks. */
-export function ReparseButton({ articleFileId, articleId }: ReparseButtonProps) {
-  const queryClient = useQueryClient();
-  const [busy, setBusy] = useState(false);
-
-  const onClick = () => {
-    setBusy(true);
-    reparseArticleFile(articleFileId)
-      .then((res) => {
-        if (!res.ok) {
-          toast.error(res.error.message || t('pdf', 'docReparseError'));
-          return;
-        }
-        toast.success(t('pdf', 'docReparseQueued'));
-        void queryClient.invalidateQueries({ queryKey: articleKeys.files(articleId) });
-        void queryClient.invalidateQueries({
-          queryKey: articleKeys.textBlocks(articleFileId),
-        });
-      })
-      .finally(() => setBusy(false));
-  };
-
-  return (
-    <Button
-      size="sm"
-      variant="outline"
-      className="h-7 shrink-0 text-xs"
-      disabled={busy}
-      onClick={onClick}
-    >
-      {t('pdf', 'docReparse')}
-    </Button>
-  );
-}
 
 export interface ParseStatusControlProps {
   articleId: string;

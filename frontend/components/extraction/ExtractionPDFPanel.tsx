@@ -12,7 +12,7 @@ import {ResizableHandle, ResizablePanel} from '@/components/ui/resizable';
 import {PrumoPdfViewer} from '@prumo/pdf-viewer';
 import type {ViewerState} from '@prumo/pdf-viewer';
 import {useArticleDocuments} from '@/hooks/extraction/useArticleDocuments';
-import {DocumentSwitcher, ReparseButton} from './DocumentSwitcher';
+import {DocumentSwitcher, ParseStatusControl} from './DocumentSwitcher';
 
 export interface ExtractionPDFPanelProps {
   articleId: string;
@@ -77,11 +77,8 @@ function ExtractionPDFPanelComponent({
                 selectedFileId={selectedFileId}
                 onSelect={handleSelect}
               />
-              {selectedFile?.extractionStatus === 'parse_failed' && (
-                <ReparseButton
-                  articleFileId={selectedFile.id}
-                  articleId={articleId}
-                />
+              {selectedFile && (
+                <ParseStatusControl articleId={articleId} file={selectedFile} />
               )}
             </div>
           )}

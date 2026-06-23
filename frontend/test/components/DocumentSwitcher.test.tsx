@@ -8,7 +8,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 vi.mock("@/integrations/api", () => ({ apiClient: vi.fn() }));
-vi.mock("@/services/articlesService", () => ({ reparseArticleFile: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/copy", () => ({ t: (_n: string, k: string) => k }));
 
