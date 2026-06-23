@@ -26,6 +26,8 @@ OutputT = TypeVar("OutputT", bound=BaseModel)
 # Under BYOK the key is the user's — a runaway reask loop is their bill.
 # Note: this caps REQUESTS per call, not tokens; per-request token spend
 # is bounded by the model's context window and visible per-span in Logfire.
+# LLM_TIMEOUT_SECONDS (below) bounds each HTTP request, so the worst-case
+# wall-clock for one call is ~ request_limit × LLM_TIMEOUT_SECONDS.
 DEFAULT_USAGE_LIMITS = UsageLimits(request_limit=5)
 
 
@@ -51,9 +53,10 @@ class LlmUsage:
 def _output_for(model: Model, output_model: type[OutputT]) -> NativeOutput | ToolOutput:
     """OpenAI supports JSON-schema response_format (NativeOutput); Anthropic
     has no response_format, so structured output must use tool-calling
-    (ToolOutput). Detection is by class name to avoid importing the optional
-    anthropic package and to leave test models (FunctionModel) on NativeOutput."""
-    if type(model).__name__ == "AnthropicModel":
+    (ToolOutput). ``model.system`` is the provider name carried by every
+    pydantic-ai model ("openai"/"anthropic"/"function"...) — robust to
+    subclasses/wrappers, and it leaves OpenAI and test models on NativeOutput."""
+    if getattr(model, "system", "") == "anthropic":
         return ToolOutput(output_model)
     return NativeOutput(output_model)
 

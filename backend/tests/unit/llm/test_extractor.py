@@ -119,16 +119,13 @@ class _OutModel(BaseModel):
     value: str
 
 
-class _FakeAnthropic:  # only the class name matters to _output_for
-    pass
-
-
-_FakeAnthropic.__name__ = "AnthropicModel"
+class _FakeAnthropic:  # only the .system provider name matters to _output_for
+    system = "anthropic"
 
 
 def test_output_for_uses_native_for_non_anthropic():
-    # Any model whose class is not AnthropicModel (OpenAI, FunctionModel, etc.)
-    # stays on NativeOutput; a bare object stands in for "not Anthropic".
+    # Any model whose provider is not "anthropic" (OpenAI, FunctionModel, or a
+    # bare object with no .system) stays on NativeOutput.
     assert isinstance(_output_for(object(), _OutModel), NativeOutput)
 
 

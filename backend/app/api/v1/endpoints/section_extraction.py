@@ -30,7 +30,10 @@ from app.services.run_lifecycle_service import (
     TemplateNotFoundError,
     TemplateVersionNotFoundError,
 )
-from app.services.section_extraction_service import SectionExtractionService
+from app.services.section_extraction_service import (
+    BatchAllSectionsFailed,
+    SectionExtractionService,
+)
 from app.utils.rate_limiter import limiter
 
 router = APIRouter()
@@ -117,14 +120,14 @@ async def extract_section(
 
         # Buscar API key do user (BYOK) with fallback for global
         api_key_service = APIKeyService(db=db, user_id=user.sub)
-        user_openai_key = await api_key_service.get_key_for_provider("openai")
+        user_llm_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
 
         service = SectionExtractionService(
             db=db,
             user_id=user.sub,
             storage=storage,
             trace_id=trace_id,
-            openai_api_key=user_openai_key,
+            openai_api_key=user_llm_key,
         )
 
         # Dispatch table (ordered — earlier branches win on overlapping
@@ -314,6 +317,20 @@ async def extract_section(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="PDF not found. Upload a PDF first.",
+        ) from e
+    except BatchAllSectionsFailed as e:
+        # The service already rolled back data writes and marked the run FAILED
+        # (rollback_and_fail). Commit that terminal status so the failed run is
+        # visible to status polls — the generic handler below would roll it back.
+        await db.commit()
+        logger.warning(
+            "section_extraction_all_failed",
+            trace_id=trace_id,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Section extraction failed: {e}",
         ) from e
     except Exception as e:
         rollback_start = perf_counter()
