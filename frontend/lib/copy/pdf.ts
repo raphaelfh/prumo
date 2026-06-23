@@ -81,6 +81,11 @@ export const pdf = {
     docReparse: 'Re-parse',
     docReparseQueued: 'Re-parse queued',
     docReparseError: 'Failed to queue re-parse',
+    docParseErrorLabel: 'Parse error',
+    docReparseConfirmTitle: 'Re-parse this document?',
+    docReparseConfirmBody:
+      'Re-parsing rebuilds the document text. Existing citation highlights for this file may shift and need re-checking.',
+    docReparseConfirmCta: 'Re-parse',
 } as const;
 
 export type PdfCopy = typeof pdf;
