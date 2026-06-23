@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps.security import ensure_project_member, get_current_user_sub
+from app.core.config import settings
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
@@ -143,7 +144,7 @@ async def extract_section(
                 template_id=payload.template_id,
                 entity_type_id=payload.entity_type_id,
                 parent_instance_id=payload.parent_instance_id,
-                model=payload.model or "gpt-4o-mini",
+                model=payload.model or settings.LLM_DEFAULT_MODEL,
                 run_id=payload.run_id,
             )
 
@@ -177,7 +178,7 @@ async def extract_section(
                 run_id=payload.run_id,
                 skip_fields_with_human_proposals=payload.skip_fields_with_human_proposals,
                 auto_advance_to_review=payload.auto_advance_to_review,
-                model=payload.model or "gpt-4o-mini",
+                model=payload.model or settings.LLM_DEFAULT_MODEL,
             )
 
             db_commit_start = perf_counter()
@@ -215,7 +216,7 @@ async def extract_section(
                 parent_instance_id=payload.parent_instance_id,  # type: ignore
                 section_ids=payload.section_ids,
                 pdf_text=payload.pdf_text,
-                model=payload.model or "gpt-4o-mini",
+                model=payload.model or settings.LLM_DEFAULT_MODEL,
             )
 
             db_commit_start = perf_counter()

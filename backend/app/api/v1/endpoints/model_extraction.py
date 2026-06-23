@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps.security import ensure_project_member, get_current_user_sub
+from app.core.config import settings
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
@@ -172,7 +173,7 @@ async def extract_models(
             project_id=payload.project_id,
             article_id=payload.article_id,
             template_id=payload.template_id,
-            model=payload.model or "gpt-4o-mini",
+            model=payload.model or settings.LLM_DEFAULT_MODEL,
         )
 
         db_commit_start = perf_counter()

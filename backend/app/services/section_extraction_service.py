@@ -133,7 +133,7 @@ class SectionExtractionService(LoggerMixin):
         template_id: UUID,
         entity_type_id: UUID,
         parent_instance_id: UUID | None = None,
-        model: str = "gpt-4o-mini",
+        model: str = settings.LLM_DEFAULT_MODEL,
         run_id: UUID | None = None,
     ) -> SectionExtractionResult:
         """
@@ -320,7 +320,7 @@ class SectionExtractionService(LoggerMixin):
         run_id: UUID,
         skip_fields_with_human_proposals: bool = False,
         auto_advance_to_review: bool = True,
-        model: str = "gpt-4o-mini",
+        model: str = settings.LLM_DEFAULT_MODEL,
     ) -> BatchExtractionResult:
         """
         Run AI extraction over an *existing* Run, iterating top-level
@@ -674,7 +674,7 @@ class SectionExtractionService(LoggerMixin):
         parent_instance_id: UUID,
         section_ids: list[UUID] | None = None,
         pdf_text: str | None = None,
-        model: str = "gpt-4o-mini",
+        model: str = settings.LLM_DEFAULT_MODEL,
     ) -> BatchExtractionResult:
         """
         Extract all child sections from a model with summarized memory.

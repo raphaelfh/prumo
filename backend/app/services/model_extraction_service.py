@@ -103,7 +103,7 @@ class ModelExtractionService(LoggerMixin):
         project_id: UUID,
         article_id: UUID,
         template_id: UUID,
-        model: str = "gpt-4o-mini",
+        model: str = settings.LLM_DEFAULT_MODEL,
     ) -> ModelExtractionResult:
         """
         Extract prediction models from an article.

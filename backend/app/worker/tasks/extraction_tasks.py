@@ -14,6 +14,7 @@ from uuid import UUID
 
 from celery import Task
 
+from app.core.config import settings
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
 
@@ -67,7 +68,7 @@ def extract_section_task(
                 api_key = openai_api_key
                 if not api_key:
                     api_key_service = APIKeyService(db=session, user_id=user_id)
-                    api_key = await api_key_service.get_key_for_provider("openai")
+                    api_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
 
                 service = SectionExtractionService(
                     db=session,
@@ -147,7 +148,7 @@ def extract_models_task(
                 api_key = openai_api_key
                 if not api_key:
                     api_key_service = APIKeyService(db=session, user_id=user_id)
-                    api_key = await api_key_service.get_key_for_provider("openai")
+                    api_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
 
                 service = ModelExtractionService(
                     db=session,
