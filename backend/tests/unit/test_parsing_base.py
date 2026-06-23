@@ -20,6 +20,7 @@ from app.infrastructure.parsing.base import (
     assign_char_offsets_to_blocks,
     concat_page_text,
     normalize_block_type,
+    render_blocks_to_markdown,
 )
 
 # ---------------------------------------------------------------------------
@@ -303,3 +304,68 @@ class TestDocumentParserABC:
         parser = ConcreteParser()
         result = parser.parse(b"")
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# render_blocks_to_markdown
+# ---------------------------------------------------------------------------
+
+
+class TestRenderBlocksToMarkdown:
+    def _b(self, page, idx, text, block_type="paragraph"):
+        return ParsedBlock(
+            page_number=page,
+            block_index=idx,
+            text=text,
+            char_start=0,
+            char_end=len(text),
+            bbox={},
+            block_type=block_type,
+        )
+
+    def test_reading_order_across_pages(self) -> None:
+        md = render_blocks_to_markdown([self._b(2, 0, "Second page"), self._b(1, 0, "First page")])
+        assert md.index("First page") < md.index("Second page")
+
+    def test_heading_becomes_h2_marker(self) -> None:
+        md = render_blocks_to_markdown([self._b(1, 0, "Methods", "heading")])
+        assert "## Methods" in md
+
+    def test_list_item_becomes_bullet(self) -> None:
+        md = render_blocks_to_markdown([self._b(1, 0, "first point", "list_item")])
+        assert "- first point" in md
+
+    def test_header_footer_chrome_suppressed(self) -> None:
+        md = render_blocks_to_markdown(
+            [
+                self._b(1, 0, "Journal Name", "header"),
+                self._b(1, 1, "Real content.", "paragraph"),
+                self._b(1, 2, "Page 1 of 9", "footer"),
+            ]
+        )
+        assert "Real content." in md
+        assert "Journal Name" not in md
+        assert "Page 1 of 9" not in md
+
+    def test_contiguous_cells_render_as_gfm_table(self) -> None:
+        md = render_blocks_to_markdown(
+            [
+                self._b(1, 0, "Name", "table_cell"),
+                self._b(1, 1, "Age", "table_cell"),
+                self._b(1, 2, "Alice", "table_cell"),
+                self._b(1, 3, "30", "table_cell"),
+            ]
+        )
+        assert "| Name" in md and "| Alice" in md
+        assert "|-" in md  # a GFM separator row exists
+
+    def test_figure_caption_is_plain_text(self) -> None:
+        md = render_blocks_to_markdown([self._b(1, 0, "Figure 1. Flowchart.", "figure_caption")])
+        assert md == "Figure 1. Flowchart."
+
+    def test_deterministic(self) -> None:
+        blocks = [self._b(1, 1, "B"), self._b(1, 0, "A", "heading")]
+        assert render_blocks_to_markdown(blocks) == render_blocks_to_markdown(blocks)
+
+    def test_empty_input_returns_empty_string(self) -> None:
+        assert render_blocks_to_markdown([]) == ""
