@@ -35,6 +35,7 @@ from app.repositories import (
     ExtractionTemplateRepository,
     GlobalTemplateRepository,
 )
+from app.services.extraction_prompt_input import build_prompt_input
 from app.services.pdf_processor import PDFProcessor
 from app.services.run_lifecycle_service import RunLifecycleService
 
@@ -150,15 +151,18 @@ class ModelExtractionService(LoggerMixin):
         )
 
         try:
-            # 2. Fetch PDF
+            # 2-3. Assemble budgeted block-markdown prompt input (pypdf fallback inside).
             phase_start = perf_counter()
-            pdf_data = await self._get_pdf(article_id)
-            phase_durations_ms["fetch_pdf"] = (perf_counter() - phase_start) * 1000
-
-            # 3. Processar texto do PDF
-            phase_start = perf_counter()
-            pdf_text = await self.pdf_processor.extract_text(pdf_data)
-            phase_durations_ms["extract_pdf_text"] = (perf_counter() - phase_start) * 1000
+            pdf_text, _, _ = await build_prompt_input(
+                db=self.db,
+                article_files=self._article_files,
+                pdf_processor=self.pdf_processor,
+                get_pdf=self._get_pdf,
+                article_id=article_id,
+                model=model,
+                logger=self.logger,
+            )
+            phase_durations_ms["assemble_prompt"] = (perf_counter() - phase_start) * 1000
 
             # 4. Fetch template and entity types
             phase_start = perf_counter()
