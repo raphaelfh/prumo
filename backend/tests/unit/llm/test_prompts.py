@@ -1,7 +1,6 @@
-"""Prompt templates: rendering, truncation, and stable content versions."""
+"""Prompt templates: rendering (full-text, no truncation) and stable content versions."""
 
 from app.llm.prompts import (
-    MAX_PDF_CHARS,
     content_version,
     model_identification,
     quality_assessment,
@@ -33,17 +32,17 @@ def test_memory_section_empty_and_populated():
     assert "PREVIOUSLY EXTRACTED SECTIONS" in rendered
 
 
-def test_section_extraction_render_includes_context_and_truncates():
+def test_section_extraction_render_includes_context_and_full_text():
     prompt = section_extraction.render(
         entity_name="Population",
         entity_description="Who was studied",
-        article_text="§" * (MAX_PDF_CHARS + 5000),
+        article_text="§" * 20_000,
         memory_context=[{"entity_type_name": "Methods", "summary": "RCT"}],
     )
     assert "Section: Population" in prompt
     assert "Who was studied" in prompt
     assert "1. Methods: RCT" in prompt
-    assert prompt.count("§") == MAX_PDF_CHARS
+    assert prompt.count("§") == 20_000  # no truncation — assembler owns the budget
 
 
 def test_quality_assessment_render_mentions_framework():
@@ -62,10 +61,10 @@ def test_quality_assessment_render_mentions_framework():
 
 def test_model_identification_render_and_output_model():
     prompt = model_identification.render(
-        container_label="prediction models", article_text="§" * (MAX_PDF_CHARS + 10)
+        container_label="prediction models", article_text="§" * 20_000
     )
     assert "prediction models" in prompt
-    assert prompt.count("§") == MAX_PDF_CHARS
+    assert prompt.count("§") == 20_000  # no truncation
     output = model_identification.ModelIdentificationOutput.model_validate(
         {"models": [{"name": "Cox model"}]}
     )

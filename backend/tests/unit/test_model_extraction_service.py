@@ -51,6 +51,7 @@ def service(mock_db, mock_storage):
         ) as mock_instance_repo,
         patch("app.services.model_extraction_service.ExtractionRunRepository") as mock_run_repo,
         patch("app.services.model_extraction_service.RunLifecycleService") as mock_lifecycle_cls,
+        patch("app.services.extraction_prompt_input.ArticleTextBlockRepository") as mock_block_repo,
     ):
         mock_pdf_instance = MagicMock()
         mock_pdf.return_value = mock_pdf_instance
@@ -83,6 +84,10 @@ def service(mock_db, mock_storage):
         mock_lifecycle_instance.advance_stage = AsyncMock()
         mock_lifecycle_cls.return_value = mock_lifecycle_instance
 
+        # build_prompt_input fetches blocks; return none so the flow falls back
+        # to the per-test extract_text mock (no blocks for the article).
+        mock_block_repo.return_value.list_ordered_for_file = AsyncMock(return_value=[])
+
         svc = ModelExtractionService(
             db=mock_db,
             user_id="12345678-1234-1234-1234-123456789012",
@@ -98,7 +103,10 @@ def service(mock_db, mock_storage):
         svc._runs = mock_run_repo_instance
         svc._lifecycle = mock_lifecycle_instance
 
-        return svc
+        # yield (not return) so the patches above — notably the runtime-resolved
+        # ArticleTextBlockRepository used by build_prompt_input — stay active
+        # during the test, not just during construction.
+        yield svc
 
 
 class TestModelExtractionPDF:
@@ -605,3 +613,31 @@ class TestFullExtractionFlow:
 
         assert result.total_models == 0
         assert result.models_created == []
+
+
+@pytest.mark.asyncio
+async def test_identify_models_sends_full_text_no_truncation(service):
+    """model_identification consumes the full assembled text — the legacy 15k
+    truncation is gone (A1); _identify_models threads article_text verbatim."""
+    captured: dict[str, str] = {}
+
+    async def _fake_extract(**kwargs):
+        captured["user_prompt"] = kwargs["user_prompt"]
+        output = MagicMock()
+        output.models = []
+        return output, MagicMock()
+
+    long_text = "MODEL_SECTION_MARKER\n" + ("token " * 8000)  # far over the old 15k chars
+    template = MagicMock()
+    template.id = "tpl"
+    template.entity_types = []
+
+    with (
+        patch("app.services.model_extraction_service.extract_structured", _fake_extract),
+        patch("app.services.model_extraction_service.build_model", return_value=MagicMock()),
+    ):
+        models, _ = await service._identify_models(long_text, template, "gpt-4o-mini")
+
+    assert models == []
+    assert "MODEL_SECTION_MARKER" in captured["user_prompt"]
+    assert long_text in captured["user_prompt"]  # full text present — no prefix cut

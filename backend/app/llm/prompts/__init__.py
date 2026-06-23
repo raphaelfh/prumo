@@ -8,9 +8,6 @@ every production trace resolves to an exact git version of the prompt.
 
 import hashlib
 
-# Truncation budget carried over from the legacy prompts.
-MAX_PDF_CHARS = 15_000
-
 
 def content_version(*parts: str) -> str:
     digest = hashlib.sha256("\n---\n".join(parts).encode("utf-8")).hexdigest()
