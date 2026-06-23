@@ -32,41 +32,18 @@ section is promoted to rank 0 (highest priority), ahead of Abstract.  All
 other ranks shift down by one.  The ranking is a static look-up — no
 embeddings or ML.
 
-**Table reconstruction**: contiguous ``table_cell`` runs on the same page
-are detected by scanning blocks in reading order.  A run break occurs when a
-non-cell block is encountered OR when the page changes.  Each run is
-serialised as a simple markdown table.  The column count is inferred from the
-first row (the longest prefix of cells before the grid wraps — estimated by
-looking for repeated column-count patterns; if inference fails, all cells
-are placed in a single-column table).
-
-**concat_page_text reuse**: the assembler calls the canonical
-``concat_page_text`` imported from ``app.infrastructure.parsing.base`` to
-produce per-page text strings.  Local copies of the input blocks are built
-so that ``assign_char_offsets_to_blocks`` can mutate them without ever
-touching the caller's ORM objects (which would cause spurious SQLAlchemy
-dirty-tracking and unwanted UPDATEs).  Prose blocks are sourced from the
-canonical surface via ``page_texts[page][cs:ce]``, which is content-identical
-to ``block.text`` by construction but guarantees byte-for-byte alignment with
-what the evidence-anchorer will index.
-
-**Scope**: pure function, no DB, no IO, no globals.  This module is
-intentionally unwired — the call sites in ``section_extraction_service`` and
-``model_extraction_service`` are wired in a separate follow-up task.
+**Scope**: pure function, no DB, no IO, no globals.  Section serialization
+delegates to ``render_blocks_to_markdown`` (one GFM codepath shared with the
+reader).
 """
 
 from __future__ import annotations
 
-import math
 import re
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from app.infrastructure.parsing.base import (
-    ParsedBlock,
-    assign_char_offsets_to_blocks,
-    concat_page_text,
-)
+from app.infrastructure.parsing.base import render_blocks_to_markdown
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -84,11 +61,13 @@ class DroppedSection:
             serialised text (including the heading marker).
         rank: The priority rank assigned to this section (lower = higher
             priority, i.e. kept sections have lower rank numbers).
+        block_count: Number of blocks in the dropped section.
     """
 
     title: str
     char_count: int
     rank: int
+    block_count: int
 
 
 # ---------------------------------------------------------------------------
@@ -163,125 +142,19 @@ class _Section:
     blocks: list[_Block] = field(default_factory=list)
 
 
-def _is_chrome(block: _Block) -> bool:
-    """Return True for page chrome blocks (header / footer) that add noise."""
-    return block.block_type in ("header", "footer")
-
-
-# ---------------------------------------------------------------------------
-# Table reconstruction
-# ---------------------------------------------------------------------------
-
-_CELL_SEP = " | "
-_ROW_SEP_CHAR = "-"
-
-
-def _infer_column_count(cell_texts: list[str]) -> int:
-    """Heuristically infer the number of columns in a table.
-
-    Tries column counts from 2 to min(8, n) and picks the one where
-    n % cols == 0 (exact fit) and cols is smallest.  Falls back to 1.
-    """
-    n = len(cell_texts)
-    if n <= 1:
-        return 1
-    for cols in range(2, min(9, n + 1)):
-        if n % cols == 0:
-            return cols
-    # No exact fit — use the square-root heuristic (rounded up), capped at 8
-    return min(8, max(2, math.ceil(math.sqrt(n))))
-
-
-def _render_table(cell_texts: list[str]) -> str:
-    """Render *cell_texts* as a markdown table string."""
-    if not cell_texts:
-        return ""
-    cols = _infer_column_count(cell_texts)
-    rows: list[list[str]] = []
-    for i in range(0, len(cell_texts), cols):
-        row = cell_texts[i : i + cols]
-        # Pad the last row if it is short
-        while len(row) < cols:
-            row.append("")
-        rows.append(row)
-
-    # Compute column widths
-    col_widths = [max(len(r[c]) for r in rows) for c in range(cols)]
-
-    def _fmt_row(row: list[str]) -> str:
-        cells = [r.ljust(w) for r, w in zip(row, col_widths, strict=True)]
-        return "| " + _CELL_SEP.join(cells) + " |"
-
-    def _separator() -> str:
-        return "|-" + "-|-".join(_ROW_SEP_CHAR * w for w in col_widths) + "-|"
-
-    lines = [_fmt_row(rows[0]), _separator()]
-    for row in rows[1:]:
-        lines.append(_fmt_row(row))
-    return "\n".join(lines)
-
-
 # ---------------------------------------------------------------------------
 # Internal: serialize a section's blocks into a text string
 # ---------------------------------------------------------------------------
 
 
-def _serialize_section(
-    section: _Section,
-    page_texts: dict[int, str],
-    offsets: dict[tuple[int, int], tuple[int, int]],
-) -> str:
-    """Serialise *section* into a text string (heading marker + body).
-
-    Prose blocks are sourced from *page_texts* via *offsets* — the canonical
-    surface produced by ``concat_page_text`` — so that the assembler's output
-    is byte-for-byte consistent with what the evidence-anchorer indexes.
-    Table-cell text is taken directly from the block (cells are not indexed by
-    the anchorer via char offsets).
-
-    Args:
-        section: The section to serialise.
-        page_texts: Mapping of ``page_number → concatenated page string``
-            produced by ``concat_page_text`` on local block copies.
-        offsets: Mapping of ``(page_number, block_index) → (char_start, char_end)``
-            derived from ``assign_char_offsets_to_blocks`` on local block copies.
-    """
+def _serialize_section(section: _Section) -> str:
+    """Serialise a section: ``## title`` marker + body via render_blocks_to_markdown."""
     parts: list[str] = []
-
     if section.title:
         parts.append(f"## {section.title}")
-
-    # Walk blocks, coalescing contiguous table_cell runs.
-    # A run breaks when block type changes away from table_cell, or page changes.
-    i = 0
-    blocks = section.blocks
-    while i < len(blocks):
-        block = blocks[i]
-
-        if _is_chrome(block):
-            i += 1
-            continue
-
-        if block.block_type == "table_cell":
-            # Collect the contiguous run — cells use .text directly
-            run: list[str] = []
-            current_page = block.page_number
-            while (
-                i < len(blocks)
-                and blocks[i].block_type == "table_cell"
-                and blocks[i].page_number == current_page
-            ):
-                run.append(blocks[i].text)
-                i += 1
-            parts.append(_render_table(run))
-        else:
-            # Route prose through the canonical surface so offsets align with
-            # what the evidence-anchorer will index in concat_page_text.
-            cs, ce = offsets[(block.page_number, block.block_index)]
-            prose = page_texts[block.page_number][cs:ce]
-            parts.append(prose)
-            i += 1
-
+    body = render_blocks_to_markdown(section.blocks)
+    if body:
+        parts.append(body)
     return "\n".join(parts)
 
 
@@ -360,11 +233,9 @@ def assemble(
 
     Notes:
         - Pure function: no DB, no IO, no globals.
-        - Input blocks are never mutated; local ``ParsedBlock`` copies are used
-          so that ``assign_char_offsets_to_blocks`` does not dirty SQLAlchemy
-          ORM objects.
-        - Prose text is sourced from ``concat_page_text`` (canonical surface)
-          so char offsets match what the evidence-anchorer indexes.
+        - Input blocks are never mutated.
+        - Section body text is produced by ``render_blocks_to_markdown``
+          (ADR-0013: one GFM codepath shared with the reader).
         - ``header`` and ``footer`` blocks are suppressed (page chrome).
         - Contiguous ``table_cell`` blocks on the same page are coalesced into
           a markdown table.
@@ -377,35 +248,13 @@ def assemble(
     # 1. Sort into reading order (page asc, block_index asc).
     sorted_blocks: list[_Block] = sorted(blocks, key=lambda b: (b.page_number, b.block_index))
 
-    # 2. Build local ParsedBlock copies so assign_char_offsets_to_blocks can
-    #    mutate them without ever touching the caller's ORM objects.
-    copies = [
-        ParsedBlock(
-            page_number=b.page_number,
-            block_index=b.block_index,
-            text=b.text,
-            char_start=0,
-            char_end=0,
-            bbox=getattr(b, "bbox", {"x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0}),
-            block_type=b.block_type,
-        )
-        for b in sorted_blocks
-    ]
-    assign_char_offsets_to_blocks(copies)  # mutates the COPIES only
-    page_texts = concat_page_text(copies)  # canonical per-page text
-    offsets: dict[tuple[int, int], tuple[int, int]] = {
-        (c.page_number, c.block_index): (c.char_start, c.char_end) for c in copies
-    }
-
-    # 3. Segment into sections.
+    # 2. Segment into sections.
     sections = _segment_into_sections(sorted_blocks, focus)
 
-    # 4. Serialise each section to compute its character cost.
-    serialised: list[tuple[_Section, str]] = [
-        (sec, _serialize_section(sec, page_texts, offsets)) for sec in sections
-    ]
+    # 3. Serialise each section to compute its character cost.
+    serialised: list[tuple[_Section, str]] = [(sec, _serialize_section(sec)) for sec in sections]
 
-    # 5. Check if everything fits within budget.
+    # 4. Check if everything fits within budget.
     #    Join with double newline between sections.
     separator = "\n\n"
     full_text_parts = [text for _, text in serialised if text]
@@ -414,7 +263,7 @@ def assemble(
     if len(full_text) <= budget:
         return full_text, []
 
-    # 6. Over budget: select whole sections greedily, highest priority first.
+    # 5. Over budget: select whole sections greedily, highest priority first.
     #    Within the same rank, preserve original document order (stable sort).
     #    We keep track of original indices so we can reconstruct document order
     #    for kept sections.
@@ -442,10 +291,11 @@ def assemble(
                     title=sec.title or "<preamble>",
                     char_count=len(text),
                     rank=sec.rank,
+                    block_count=len(sec.blocks),
                 )
             )
 
-    # 7. Reconstruct in original document order.
+    # 6. Reconstruct in original document order.
     kept_parts = [text for i, _, text in indexed if i in kept_indices]
     result_text = separator.join(kept_parts)
 

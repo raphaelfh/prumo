@@ -19,7 +19,7 @@ from app.infrastructure.parsing.base import (
     assign_char_offsets_to_blocks,
     concat_page_text,
 )
-from app.services.extraction_block_assembler import DroppedSection, assemble
+from app.llm.assembler import DroppedSection, assemble
 
 # ---------------------------------------------------------------------------
 # Helpers
