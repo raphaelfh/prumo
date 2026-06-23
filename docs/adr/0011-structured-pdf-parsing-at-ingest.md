@@ -182,6 +182,15 @@ Concretely, respecting the existing layering:
 
 ### Consequences
 
+> **Status update (2026-06-23, A1):** the grounded-extraction *block-input half*
+> is now built. Extraction feeds the LLM a budgeted **markdown projection of
+> `article_text_blocks`** (`infrastructure/parsing/base.py::render_blocks_to_markdown`
+> → `app/llm/assembler.py::assemble_for_model`, threaded by
+> `app/services/extraction_prompt_input.py::build_prompt_input`); the 15k
+> `MAX_PDF_CHARS` truncation is retired at all three prompt sites and the no-blocks
+> `pypdf` fallback flows through the *same* budgeted assembler. Migration-free.
+> Plan: `docs/superpowers/plans/2026-06-23-extraction-a1-block-input.md`.
+
 - Good — one persisted artifact serves both the LLM (structured text) and the
   reviewer (`bbox` highlight); `bbox` anchoring and verbatim verification
   become possible; the 15k truncation and the extract-and-discard pattern are
