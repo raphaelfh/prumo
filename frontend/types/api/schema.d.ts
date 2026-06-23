@@ -1847,6 +1847,8 @@ export interface components {
              * Format: date-time
              */
             createdAt: string;
+            /** Extractionerror */
+            extractionError?: string | null;
             /**
              * Extractionstatus
              * @default pending

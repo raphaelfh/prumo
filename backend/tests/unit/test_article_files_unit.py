@@ -314,3 +314,33 @@ async def test_reparse_endpoint_defensive_404_when_service_returns_none() -> Non
                 current_user_sub=uuid4(),
             )
     assert exc.value.status_code == 404
+
+
+# --------------------------------------------------------------------------
+# list_article_files endpoint
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_article_files_includes_extraction_error() -> None:
+    """A parse_failed file surfaces its extraction_error in the list item."""
+    from app.api.v1.endpoints.article_files import list_article_files
+
+    aid, pid = uuid4(), uuid4()
+    failed = _fake_article_file(aid, pid, status="parse_failed")
+    failed.extraction_error = "libxcb.so.1: cannot open shared object file"
+
+    with (
+        patch(f"{_EP}.get_article_project_id", AsyncMock(return_value=pid)),
+        patch(f"{_EP}.ensure_project_member", AsyncMock()),
+        patch(f"{_EP}.ArticleFileService") as svc,
+    ):
+        svc.return_value.list_for_article = AsyncMock(return_value=[failed])
+        resp = await list_article_files(
+            article_id=aid,
+            request=_request(),
+            db=AsyncMock(),
+            current_user_sub=uuid4(),
+        )
+    item = resp.data[0]
+    assert item.extraction_error == "libxcb.so.1: cannot open shared object file"
