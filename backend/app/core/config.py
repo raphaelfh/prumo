@@ -91,7 +91,15 @@ class Settings(BaseSettings):
     # =================== OPENAI ===================
     # Optional: global fallback when user does not have BYOK configured
     OPENAI_API_KEY: str | None = None
-    OPENAI_DEFAULT_MODEL: str = "gpt-4o-mini"
+
+    # =================== LLM (provider-agnostic) ===================
+    # Single authoritative model/provider for AI extraction. The former
+    # OPENAI_DEFAULT_MODEL was defined but never read at runtime; it is
+    # collapsed here. Claude is selectable by setting LLM_PROVIDER="anthropic"
+    # plus an "anthropic" BYOK key (no global Anthropic key is configured).
+    LLM_PROVIDER: str = "openai"
+    LLM_DEFAULT_MODEL: str = "gpt-4o-mini"
+    LLM_TIMEOUT_SECONDS: float = 120.0
 
     # =================== PARSING ===================
     # Per-project default resolution is "auto" (see ParserSettingsService +
