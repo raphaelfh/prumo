@@ -27,7 +27,9 @@ _RETRY_MAX_SECONDS = 600
 def _retry_countdown(retries: int) -> float:
     """Exponential backoff with jitter, with the final value capped at the
     max (so jitter never pushes a retry past _RETRY_MAX_SECONDS)."""
-    base = min(_RETRY_BASE_SECONDS * (2**retries), _RETRY_MAX_SECONDS)
+    # float() pins the type: mypy infers ``2**retries`` as Any (the exponent
+    # sign is unknown), which would otherwise poison the declared float return.
+    base = float(min(_RETRY_BASE_SECONDS * 2**retries, _RETRY_MAX_SECONDS))
     return min(base + random.uniform(0, base * 0.1), float(_RETRY_MAX_SECONDS))
 
 

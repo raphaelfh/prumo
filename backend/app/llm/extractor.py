@@ -50,7 +50,9 @@ class LlmUsage:
         )
 
 
-def _output_for(model: Model, output_model: type[OutputT]) -> NativeOutput | ToolOutput:
+def _output_for(
+    model: Model, output_model: type[OutputT]
+) -> NativeOutput[OutputT] | ToolOutput[OutputT]:
     """OpenAI supports JSON-schema response_format (NativeOutput); Anthropic
     has no response_format, so structured output must use tool-calling
     (ToolOutput). ``model.system`` is the provider name carried by every

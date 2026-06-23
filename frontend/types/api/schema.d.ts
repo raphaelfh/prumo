@@ -2505,7 +2505,7 @@ export interface components {
             max_tokens?: number | null;
             /**
              * Model
-             * @description Modelo OpenAI a usar
+             * @description Model to use
              * @default gpt-4o-mini
              */
             model: string;
@@ -2757,7 +2757,7 @@ export interface components {
             articleId: string;
             /**
              * Model
-             * @description Modelo OpenAI a usar
+             * @description Model to use
              * @default gpt-4o-mini
              */
             model: string | null;
@@ -3372,7 +3372,7 @@ export interface components {
             extractAllSections: boolean;
             /**
              * Model
-             * @description Modelo OpenAI a usar
+             * @description Model to use
              * @default gpt-4o-mini
              */
             model: string | null;
