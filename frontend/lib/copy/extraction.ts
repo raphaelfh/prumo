@@ -841,9 +841,11 @@ export const extraction = {
     aiEvidenceClickTitle: 'Click to view evidence',
     aiEvidenceClickAria: 'View evidence for this suggestion',
     evidenceCitedAria: 'Cited evidence',
-    // AISuggestionEvidence – citation highlight
-    evidenceNotLocated: "Couldn't locate in source",
-    evidenceJumpToSource: 'Jump to source in PDF',
+    // AISuggestionDetailsPopover – header + sections
+    aiSuggestionDetailsTitle: 'Suggestion details',
+    aiRationaleLabel: 'Rationale',
+    // AISuggestionEvidence – markdown-first citation locate
+    evidenceLocate: 'Locate in document',
     // CitationLiveRegion – aria-live jump announcement
     citationJumpAnnouncement: 'Jumped to cited source on page {{n}}',
     // CitationOverlay – focusable active highlight box
