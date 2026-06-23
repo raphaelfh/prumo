@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import pytest
 from pydantic_ai.exceptions import ModelHTTPError, UsageLimitExceeded
@@ -23,7 +25,7 @@ def test_usage_limit_exceeded_is_permanent():
 
 
 def test_timeout_is_transient():
-    assert is_transient_llm_error(TimeoutError()) is True
+    assert is_transient_llm_error(asyncio.TimeoutError()) is True
     assert is_transient_llm_error(httpx.TimeoutException("t")) is True
     assert is_transient_llm_error(httpx.ConnectError("c")) is True
 
