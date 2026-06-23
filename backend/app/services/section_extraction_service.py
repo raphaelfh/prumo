@@ -81,6 +81,12 @@ class BatchExtractionResult:
     sections: list[dict[str, Any]]
 
 
+class BatchAllSectionsFailed(Exception):
+    """Every section in a batch extraction failed — the run is failed (not
+    reported as a success). Permanent by default: app/llm/errors.py classifies
+    unknown exception types as non-retryable."""
+
+
 class SectionExtractionService(LoggerMixin):
     """
     Service for template section extraction.
@@ -428,6 +434,9 @@ class SectionExtractionService(LoggerMixin):
             # so a successful AI pass leaves the Run in EXTRACT where reviewers
             # act directly. ``auto_advance_to_review`` is recorded below for
             # telemetry but no longer drives a transition.
+
+            if top_level and successful == 0:
+                raise BatchAllSectionsFailed(f"All {failed} section(s) failed for run {run.id}.")
 
             duration_ms = (perf_counter() - start_time) * 1000
 
@@ -814,6 +823,9 @@ class SectionExtractionService(LoggerMixin):
             # Run stays in EXTRACT — see ``extract_section`` for the
             # rationale. The user advances to CONSENSUS via "Open consensus"
             # after inspecting the AI-proposed values.
+
+            if total_sections and successful == 0:
+                raise BatchAllSectionsFailed(f"All {failed} section(s) failed for run {run.id}.")
 
             duration = (perf_counter() - start_time) * 1000
 
