@@ -107,8 +107,10 @@ _ENUM_PRESENT = text("SELECT 1 FROM pg_type WHERE typname = 'extraction_instance
 @pytest.mark.asyncio
 async def test_migration_0030_round_trip(db_session: AsyncSession) -> None:
     """``0030_drop_instance_status`` removes ``extraction_instances.status`` and
-    its enum at head; ``downgrade -1`` restores the schema (column + enum, not
-    the data); ``upgrade head`` re-removes both. Guards against drift between a
+    its enum at head; downgrading below 0030 (to its parent ``0029``) restores
+    the schema (column + enum, not the data); ``upgrade head`` re-removes both.
+    Downgrades to the explicit parent revision (not ``-1``) so the test stays
+    correct as later migrations stack on top. Guards against drift between a
     fresh ``alembic upgrade head`` and ``baseline_v1.sql`` (which still ships the
     legacy column)."""
     assert (await db_session.execute(_COL_PRESENT)).scalar() is None, (
@@ -118,7 +120,7 @@ async def test_migration_0030_round_trip(db_session: AsyncSession) -> None:
         "extraction_instance_status enum must be absent at HEAD"
     )
 
-    _run_alembic("downgrade", "-1")
+    _run_alembic("downgrade", "0029_reviewer_ready_flag")
     try:
         await db_session.commit()
         assert (await db_session.execute(_COL_PRESENT)).scalar() == 1, (
@@ -147,8 +149,8 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0030_drop_instance_status" in out, (
-        f"Expected head revision '0030_drop_instance_status', got:\n{out}"
+    assert "0031_unique_atb_idx" in out, (
+        f"Expected head revision '0031_unique_atb_idx', got:\n{out}"
     )
 
 

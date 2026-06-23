@@ -4,10 +4,13 @@
  * Presentational dropdown over an article's files (MAIN + supplements), with a
  * per-file parse-status dot. Selecting a document is the caller's concern
  * (it also clears viewer citations/search/page to avoid cross-document leak).
- * `ReparseButton` recovers a `parse_failed` file in-place — the same recovery
- * the Articles dialog offers, surfaced where the failure is seen.
+ * `ParseStatusControl` is a status-aware control that shows parse status and
+ * surfaces a contextual re-parse action (with a confirm dialog for already-parsed
+ * files and an error tooltip for parse failures).
  */
-import { memo, useState } from 'react';
+import { memo } from 'react';
+import { cva } from 'class-variance-authority';
+import { Loader2 } from 'lucide-react';
 
 import {
   Select,
@@ -16,20 +19,36 @@ import {
   SelectTrigger,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FILE_ROLE_LABELS, type FileRole } from '@/lib/file-constants';
 import { t } from '@/lib/copy';
 import { cn } from '@/lib/utils';
-import { articleKeys } from '@/lib/query-keys';
-import { reparseArticleFile } from '@/services/articlesService';
 import type { ArticleFileListItem } from '@/services/articleFilesService';
-import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { useReparseArticleFile } from '@/hooks/extraction/useReparseArticleFile';
 
-const STATUS_DOT: Record<string, string> = {
-  parsed: 'bg-emerald-500',
-  pending: 'bg-amber-500 animate-pulse',
-  parse_failed: 'bg-red-500',
-};
+// Module-level cva — kept at module scope to satisfy React Compiler (no inline objects).
+const statusDot = cva('h-1.5 w-1.5 shrink-0 rounded-full', {
+  variants: {
+    status: {
+      parsed: 'bg-success',
+      pending: 'bg-warning animate-pulse',
+      parse_failed: 'bg-destructive',
+      unknown: 'bg-muted-foreground/40',
+    },
+  },
+  defaultVariants: { status: 'unknown' },
+});
 
 function roleLabel(role: string): string {
   return FILE_ROLE_LABELS[role as FileRole] ?? role;
@@ -44,6 +63,12 @@ export interface DocumentSwitcherProps {
   selectedFileId: string | null;
   onSelect: (id: string) => void;
   className?: string;
+}
+
+type ParseStatus = 'parsed' | 'pending' | 'parse_failed' | 'unknown';
+
+function toStatus(s: string): ParseStatus {
+  return s === 'parsed' || s === 'pending' || s === 'parse_failed' ? s : 'unknown';
 }
 
 function DocumentSwitcherComponent({
@@ -68,10 +93,7 @@ function DocumentSwitcherComponent({
           {selected && (
             <span
               aria-hidden
-              className={cn(
-                'h-1.5 w-1.5 shrink-0 rounded-full',
-                STATUS_DOT[selected.extractionStatus] ?? 'bg-muted-foreground/40',
-              )}
+              className={statusDot({ status: toStatus(selected.extractionStatus) })}
             />
           )}
           <span className="truncate">
@@ -85,10 +107,7 @@ function DocumentSwitcherComponent({
             <span className="flex items-center gap-2">
               <span
                 aria-hidden
-                className={cn(
-                  'h-1.5 w-1.5 shrink-0 rounded-full',
-                  STATUS_DOT[file.extractionStatus] ?? 'bg-muted-foreground/40',
-                )}
+                className={statusDot({ status: toStatus(file.extractionStatus) })}
               />
               <span className="truncate">{fileLabel(file)}</span>
               <span className="ml-1 shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -105,42 +124,92 @@ function DocumentSwitcherComponent({
 export const DocumentSwitcher = memo(DocumentSwitcherComponent);
 DocumentSwitcher.displayName = 'DocumentSwitcher';
 
-export interface ReparseButtonProps {
-  articleFileId: string;
+export interface ParseStatusControlProps {
   articleId: string;
+  file: ArticleFileListItem;
 }
 
-/** Re-enqueue a parse for a `parse_failed` file and refresh the file + blocks. */
-export function ReparseButton({ articleFileId, articleId }: ReparseButtonProps) {
-  const queryClient = useQueryClient();
-  const [busy, setBusy] = useState(false);
+/**
+ * Status-aware control showing parse status + a contextual re-parse action.
+ * - `pending`     → spinner + "Processing…" + ghost Retry
+ * - `parsed`      → "Ready" + low-emphasis Re-parse behind an AlertDialog confirm
+ * - `parse_failed`→ "Parse failed" (error in Tooltip) + prominent Retry parse
+ */
+export function ParseStatusControl({ articleId, file }: ParseStatusControlProps) {
+  const status = toStatus(file.extractionStatus);
+  const reparse = useReparseArticleFile(articleId);
+  const fire = () => reparse.mutate(file.id);
 
-  const onClick = () => {
-    setBusy(true);
-    reparseArticleFile(articleFileId)
-      .then((res) => {
-        if (!res.ok) {
-          toast.error(res.error.message || t('pdf', 'docReparseError'));
-          return;
-        }
-        toast.success(t('pdf', 'docReparseQueued'));
-        void queryClient.invalidateQueries({ queryKey: articleKeys.files(articleId) });
-        void queryClient.invalidateQueries({
-          queryKey: articleKeys.textBlocks(articleFileId),
-        });
-      })
-      .finally(() => setBusy(false));
-  };
+  const label =
+    status === 'parsed' ? t('pdf', 'docStatusReady')
+    : status === 'pending' ? t('pdf', 'docStatusPending')
+    : status === 'parse_failed' ? t('pdf', 'docStatusFailed')
+    : '';
+
+  const reparseAction =
+    status === 'parsed' ? (
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            disabled={reparse.isPending}
+            aria-label={t('pdf', 'docReparse')}
+          >
+            {t('pdf', 'docReparse')}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('pdf', 'docReparseConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('pdf', 'docReparseConfirmBody')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common', 'cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={fire} aria-label={t('pdf', 'docReparseConfirmCta')}>
+              {t('pdf', 'docReparseConfirmCta')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    ) : status !== 'unknown' ? (
+      <Button
+        size="sm"
+        variant={status === 'parse_failed' ? 'outline' : 'ghost'}
+        className="h-7 text-xs"
+        disabled={reparse.isPending}
+        onClick={fire}
+        aria-label={t('pdf', 'docReparse')}
+      >
+        {t('pdf', 'docReparse')}
+      </Button>
+    ) : null;
 
   return (
-    <Button
-      size="sm"
-      variant="outline"
-      className="h-7 shrink-0 text-xs"
-      disabled={busy}
-      onClick={onClick}
-    >
-      {t('pdf', 'docReparse')}
-    </Button>
+    <div className="flex items-center gap-1.5 shrink-0 text-[11px] text-muted-foreground">
+      {status === 'pending' ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} aria-hidden />
+      ) : (
+        <span aria-hidden className={statusDot({ status })} />
+      )}
+
+      {status === 'parse_failed' ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="cursor-default">{label}</span>
+          </TooltipTrigger>
+          <TooltipContent>
+            {file.extractionError
+              ? `${t('pdf', 'docParseErrorLabel')}: ${file.extractionError}`
+              : t('pdf', 'docParseErrorUnknown')}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        <span>{label}</span>
+      )}
+
+      {reparseAction}
+    </div>
   );
 }

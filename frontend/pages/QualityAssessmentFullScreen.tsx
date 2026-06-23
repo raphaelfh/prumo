@@ -33,7 +33,7 @@ import { PrumoPdfViewer } from "@prumo/pdf-viewer";
 import { useArticleDocuments } from "@/hooks/extraction/useArticleDocuments";
 import {
   DocumentSwitcher,
-  ReparseButton,
+  ParseStatusControl,
 } from "@/components/extraction/DocumentSwitcher";
 import { Badge } from "@/components/ui/badge";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
@@ -650,13 +650,9 @@ export default function QualityAssessmentFullScreen() {
             selectedFileId={documents.selectedFileId}
             onSelect={documents.setSelectedFileId}
           />
-          {documents.selectedFile?.extractionStatus === "parse_failed" &&
-            articleId && (
-              <ReparseButton
-                articleFileId={documents.selectedFile.id}
-                articleId={articleId}
-              />
-            )}
+          {documents.selectedFile && (
+            <ParseStatusControl articleId={articleId} file={documents.selectedFile} />
+          )}
         </div>
       )}
       <div className="min-h-0 flex-1">
