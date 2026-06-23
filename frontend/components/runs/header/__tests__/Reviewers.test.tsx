@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { RunHeader } from '@/components/runs/header';
-vi.mock('@/lib/copy', () => ({ t: (_n: string, k: string) => k }));
+// Mock returns the key for most strings (existing tests rely on this) but
+// returns the real template for keys that need interpolation in assertions.
+vi.mock('@/lib/copy', () => ({
+  t: (_n: string, k: string) =>
+    k === 'reviewersOfExpected' ? '{{count}} of {{required}} reviewers' : k,
+}));
 
 const base = {
   kind: 'extraction' as const, isRevision: false, role: 'manager' as const, isBlind: false,
@@ -17,5 +22,9 @@ describe('RunHeader.Reviewers', () => {
     render(<RunHeader value={{ ...base, stage: 'extract', reviewers: { count: 2, required: 3, divergent: 3 } }}><RunHeader.Center><RunHeader.Reviewers /></RunHeader.Center></RunHeader>);
     expect(screen.getByTestId('run-reviewers')).toBeInTheDocument();
     expect(screen.getByText('reviewersDiffer')).toBeInTheDocument();
+  });
+  it("shows 'N of M reviewers' when required is known", () => {
+    render(<RunHeader value={{ ...base, stage: 'consensus', reviewers: { count: 1, required: 3, divergent: 0 } }}><RunHeader.Center><RunHeader.Reviewers /></RunHeader.Center></RunHeader>);
+    expect(screen.getByTestId('run-reviewers-count')).toHaveTextContent('1 of 3 reviewers');
   });
 });
