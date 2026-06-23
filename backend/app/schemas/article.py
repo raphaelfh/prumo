@@ -210,6 +210,7 @@ class ArticleFileListItem(BaseModel):
     file_type: str = Field(..., alias="fileType")
     original_filename: str | None = Field(default=None, alias="originalFilename")
     extraction_status: str = Field(default="pending", alias="extractionStatus")
+    extraction_error: str | None = Field(default=None, alias="extractionError")
     bytes: int | None = None
     storage_key: str = Field(..., alias="storageKey")
     created_at: datetime = Field(..., alias="createdAt")

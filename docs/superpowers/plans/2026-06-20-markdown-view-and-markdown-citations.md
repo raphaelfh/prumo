@@ -1037,3 +1037,53 @@ rules from the constitution + `.claude/rules/`):
      earliest overlapping source span; for a multi-page prose run this is the
      first page only. Acceptable for highlight (we scroll there); confirm that is
      the desired behaviour vs storing all spanned pages.
+
+---
+
+## Amendments (2026-06-22)
+
+> Source: [`docs/superpowers/specs/2026-06-22-parse-recovery-affordance-and-markdown-execution-design.md`](../specs/2026-06-22-parse-recovery-affordance-and-markdown-execution-design.md)
+> (Workstream B), after an adversarial review. Apply these BEFORE executing the
+> phases above. They do not change the architecture — they correct stale
+> premises and an ADR conflict.
+
+1. **Amend ADR-0013 FIRST (new prerequisite, before Phase 3).** Phase 3 sets
+   `READ_FROM_BLOCKS` default `True`, removes `MAX_PDF_CHARS`, and raises the
+   prompt budget 15k→120k — i.e. markdown becomes the **default extraction
+   input**. ADR-0013 currently says blocks stay the default ("no two competing
+   extraction inputs by default"). Amend ADR-0013 (status → accepted; record the
+   decision + the bake-off evidence that markdown beats the block-assembler)
+   before landing Phase 3, and treat the 15k→120k budget change as its **own
+   verification** (latency / cost / extraction-quality), not a silent default.
+
+2. **Stale `readerBlocks` premise (#359 shipped after this plan was written).**
+   The Phase-5 claim "today neither panel passes `readerBlocks`; this adds
+   `readerMarkdown`" (≈ plan line 841) is now **false** — both panels already
+   pass `readerBlocks`/`readerLoading`
+   (`ExtractionPDFPanel.tsx:92`, `QualityAssessmentFullScreen.tsx:665`). Task 5.2
+   / 5.3 must **REPLACE** the wired props, not add new ones.
+
+3. **Answer to Open question 1 (reader-blocks fallback): YES, keep it.**
+   `ReaderTextBlock` is a **public viewer-barrel export** (removing it is a
+   breaking package API change). Keep a blocks-based fallback render until the
+   markdown endpoint (Phase 4) ships and is verified; only then retire the flat
+   dump (Task 7.1). Do not delete `ReaderTextBlock` / `useArticleTextBlocks` —
+   they still feed citation anchoring.
+
+4. **`prose` must be registered.** `@tailwindcss/typography` is installed but
+   NOT in `tailwind.config.ts` `plugins[]`; register it for `prose prose-sm`,
+   and add a `components` override so markdown tables match the dense extraction
+   table aesthetic (`ExtractionInterface.tsx:406-448`). Close the loop with a
+   `design-review` pass.
+
+5. **Process gates.** After the dep add: `npm audit --audit-level=high`
+   (security-audit gate fires on lockfile changes) and
+   `node scripts/enumerate_compiler_bailouts.mjs` (panicThreshold `all_errors`).
+   Add `rehype/remark/sanitize/nh3/GFM/markdown` to `.github/cspell-words.txt`.
+   Drive-by: fix the Portuguese comment at `AISuggestionEvidence.tsx:154` when
+   that file is touched.
+
+6. **Stack is confirmed correct as written:** `react-markdown` + `remark-gfm` +
+   `rehype-sanitize`. Do **not** add `rehype-raw` (the ADR forbids raw without
+   sanitize; the markdown is server-projected GFM) or `remark-breaks` (blocks are
+   joined with `\n\n`).

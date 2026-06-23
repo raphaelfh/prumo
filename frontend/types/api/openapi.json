@@ -2210,6 +2210,17 @@
             "title": "Createdat",
             "type": "string"
           },
+          "extractionError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extractionerror"
+          },
           "extractionStatus": {
             "default": "pending",
             "title": "Extractionstatus",

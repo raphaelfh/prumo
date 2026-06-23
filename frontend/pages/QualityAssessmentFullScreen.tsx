@@ -33,7 +33,7 @@ import { PrumoPdfViewer } from "@prumo/pdf-viewer";
 import { useArticleDocuments } from "@/hooks/extraction/useArticleDocuments";
 import {
   DocumentSwitcher,
-  ReparseButton,
+  ParseStatusControl,
 } from "@/components/extraction/DocumentSwitcher";
 import { Badge } from "@/components/ui/badge";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
@@ -650,13 +650,9 @@ export default function QualityAssessmentFullScreen() {
             selectedFileId={documents.selectedFileId}
             onSelect={documents.setSelectedFileId}
           />
-          {documents.selectedFile?.extractionStatus === "parse_failed" &&
-            articleId && (
-              <ReparseButton
-                articleFileId={documents.selectedFile.id}
-                articleId={articleId}
-              />
-            )}
+          {documents.selectedFile && (
+            <ParseStatusControl articleId={articleId} file={documents.selectedFile} />
+          )}
         </div>
       )}
       <div className="min-h-0 flex-1">
@@ -675,6 +671,16 @@ export default function QualityAssessmentFullScreen() {
   const ready = !loading && !error && !!template && !!session;
   const showConsensusPanel = ready && inConsensusStage && !!runDetail;
   const showFormStage = ready && !inConsensusStage;
+
+  // Completeness signal for ConsensusPanel's no-divergence finalize fast-path.
+  // QA has no required-field gate (its publish preflight only requires at
+  // least one filled value — see handlePublish), so mirror that here: without
+  // this the panel never receives isComplete, canFinalize stays false, and a
+  // no-divergence QA run shows a wrong "incomplete" message with finalize
+  // disabled.
+  const qaIsComplete = Object.values(values).some(
+    (v) => v !== undefined && v !== null && v !== "",
+  );
 
   const formPanel = (
     <div className="space-y-3 p-4" data-testid="qa-form-panel">
@@ -706,6 +712,7 @@ export default function QualityAssessmentFullScreen() {
           onFinalize={handleFinalizeFromConsensus}
           isResolving={consensusMutation.isPending}
           isFinalizing={advanceMutation.isPending}
+          isComplete={qaIsComplete}
         />
       ) : null}
 

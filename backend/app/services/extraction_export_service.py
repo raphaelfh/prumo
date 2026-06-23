@@ -430,7 +430,7 @@ class ExtractionExportService(LoggerMixin):
         map and returns a fully-populated ``ExportLayout``. Columns are
         anchored on the active-version snapshot (spec §5.1).
         """
-        template, version = await self._load_active_template_version(template_id)
+        template, version = await self._load_active_template_version(template_id, project_id)
         project_name = await self._resolve_project_name(project_id)
         sections = await self._load_sections(version.id)
         data_dictionary = _build_data_dictionary(sections)
@@ -734,11 +734,20 @@ class ExtractionExportService(LoggerMixin):
     async def _load_active_template_version(
         self,
         template_id: UUID,
+        project_id: UUID,
     ) -> tuple[ProjectExtractionTemplate, Any]:
-        """Load the project template + its currently-active version row."""
+        """Load the project template + its currently-active version row.
+
+        Scoped by ``project_id`` (BOLA): a template id from another project must
+        not resolve even though the caller passed our own project's gate, else
+        the async export path would leak a foreign project's template metadata.
+        """
         template = (
             await self.db.execute(
-                select(ProjectExtractionTemplate).where(ProjectExtractionTemplate.id == template_id)
+                select(ProjectExtractionTemplate).where(
+                    ProjectExtractionTemplate.id == template_id,
+                    ProjectExtractionTemplate.project_id == project_id,
+                )
             )
         ).scalar_one_or_none()
         if template is None:
@@ -1948,14 +1957,13 @@ def _build_tidy_tables(
     value_map: dict[tuple[Any, ...], Any],
     mode: ExportMode,
 ) -> tuple[TidyTable, ...]:
-    """One publication table per non-container section at its cardinality grain.
+    """One publication table per non-container section at its record grain.
 
-    ``cardinality==MANY`` fans out one row per (article × instance) for ANY
-    role (spec §5.2 — never a ``role==MODEL_SECTION`` allow-list); ``ONE``
-    yields one row per article. Columns are the section fields in their
-    resolved order; values are baked from ``value_map`` (already-resolved
-    scalars — §5.3). The ``MODEL_CONTAINER`` and field-less sections are
-    skipped (nothing to project).
+    Record axis is selected by ROLE first, then cardinality (mirrors
+    ``matrix._resolve_instance_id``): a ``MODEL_SECTION`` fans out one row per
+    ``model_instances`` entry regardless of its own cardinality (spec §5.2);
+    non-model ``MANY`` fans out per ``section_instances``; non-model ``ONE`` is
+    one row per article. ``MODEL_CONTAINER`` and field-less sections are skipped.
     """
     tables: list[TidyTable] = []
     for section in sections:
@@ -1969,35 +1977,27 @@ def _build_tidy_tables(
         for article in articles:
             if article.run_id is None:
                 continue
-            if section.cardinality is ExtractionCardinality.MANY:
-                if section.role is ExtractionEntityRole.MODEL_SECTION:
-                    instances = article.model_instances
-                    label_stem = "Model"
-                else:
-                    instances = article.section_instances.get(section.entity_type_id, ())
-                    label_stem = section.label
-                for idx, instance_id in enumerate(instances, start=1):
-                    rows.append(
-                        _tidy_row(
-                            section=section,
-                            article=article,
-                            instance_id=instance_id,
-                            record_label=f"{article.header_label} — {label_stem} {idx}",
-                            value_map=value_map,
-                            mode=mode,
-                        )
-                    )
-            else:
+            if section.role is ExtractionEntityRole.MODEL_SECTION:
+                instances = article.model_instances
+                stem = "Model"
+            elif section.cardinality is ExtractionCardinality.MANY:
                 instances = article.section_instances.get(section.entity_type_id, ())
-                instance_id = instances[0] if instances else None
-                if instance_id is None:
-                    continue
+                stem = section.label
+            else:
+                instances = article.section_instances.get(section.entity_type_id, ())[:1]
+                stem = None
+            for idx, instance_id in enumerate(instances, start=1):
+                label = (
+                    article.header_label
+                    if stem is None
+                    else f"{article.header_label} — {stem} {idx}"
+                )
                 rows.append(
                     _tidy_row(
                         section=section,
                         article=article,
                         instance_id=instance_id,
-                        record_label=article.header_label,
+                        record_label=label,
                         value_map=value_map,
                         mode=mode,
                     )

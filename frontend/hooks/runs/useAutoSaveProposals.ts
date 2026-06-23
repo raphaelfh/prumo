@@ -160,7 +160,7 @@ export function useAutoSaveProposals(
   const [lastSavedByKey, setLastSavedByKey] = useState<Record<string, string>>({});
   // React state is async, so ``saveState === 'saving'`` cannot be used
   // as a synchronous lock across overlapping ``performSave`` invocations.
-  const activeSavePromiseRef = useRef<Promise<void> | null>(null);
+  const activeSavePromiseRef = useRef<Promise<boolean> | null>(null);
 
   const computeDirtyEntries = (): Array<[string, unknown]> =>
     selectDirtyEntries(
@@ -169,7 +169,7 @@ export function useAutoSaveProposals(
       baselineRef.current,
     );
 
-  const performSave = (): Promise<void> => {
+  const performSave = (): Promise<boolean> => {
     // Serialize concurrent saves: wait for any in-flight batch, swallowing
     // its error (the owner invocation surfaces it; queued calls still retry
     // dirty values that weren't acknowledged).
@@ -177,7 +177,7 @@ export function useAutoSaveProposals(
       ? activeSavePromiseRef.current.catch(() => undefined)
       : Promise.resolve();
 
-    const savePromise: Promise<void> = waitForActive.then(() => {
+    const savePromise: Promise<boolean> = waitForActive.then(() => {
       const currentRunId = runIdRef.current;
       // Skip when there's no run, autosave is disabled, or the run stage
       // does not accept writes (consensus/finalized/pending). The stage
@@ -188,10 +188,10 @@ export function useAutoSaveProposals(
         !enabledRef.current ||
         !isWritableStage(stageRef.current)
       )
-        return;
+        return true;
 
       const dirty = computeDirtyEntries();
-      if (dirty.length === 0) return;
+      if (dirty.length === 0) return true;
 
       setSaveState('saving');
       setError(null);
@@ -253,7 +253,7 @@ export function useAutoSaveProposals(
       });
 
       return batchPromise.then(
-        () => undefined,
+        () => true,
         (err: unknown) => {
           const message =
             err instanceof Error
@@ -263,6 +263,11 @@ export function useAutoSaveProposals(
           setError(message);
           setSaveState('error');
           toast.error(t('extraction', 'errors_autoSaveFailed'));
+          // Resolve to `false` (not reject) so fire-and-forget callers
+          // (debounce / unmount / pagehide) never raise an unhandled
+          // rejection; `saveNow` reads this flag and rejects for callers that
+          // gate a run-stage advance on a successful flush.
+          return false;
         },
       );
     }).finally(() => {
@@ -357,7 +362,13 @@ export function useAutoSaveProposals(
       clearTimeout(debounceRef.current);
       debounceRef.current = undefined;
     }
-    await performSave();
+    const ok = await performSave();
+    if (!ok) {
+      // Reject so callers that gate a run-stage advance on a successful flush
+      // (onMarkReady / onOpenConsensus `.catch(() => false)`) actually block
+      // instead of advancing past unsaved edits.
+      throw new Error('autosave failed');
+    }
   };
 
   // Re-evaluate the dirty diff whenever ``values`` changes (user typed)

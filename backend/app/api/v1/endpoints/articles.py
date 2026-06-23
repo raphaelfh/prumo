@@ -106,7 +106,9 @@ async def post_form_runs(
     """
     await ensure_project_member(db, body.project_id, current_user_sub)
 
-    refs = await resolve_form_runs(db, body.article_ids, template_id=body.template_id)
+    refs = await resolve_form_runs(
+        db, body.article_ids, project_id=body.project_id, template_id=body.template_id
+    )
     return ApiResponse.success(refs, trace_id=_trace(request))
 
 
