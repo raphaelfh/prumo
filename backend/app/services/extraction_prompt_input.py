@@ -28,7 +28,7 @@ async def build_prompt_input(
     article_id: UUID,
     model: str,
     logger: Any,
-) -> tuple[str, list, UUID | None]:
+) -> tuple[str, list[Any], UUID | None]:
     """Return ``(markdown, anchor_blocks, anchor_file_id)`` for *article_id*.
 
     Uses persisted ``article_text_blocks`` when present; otherwise wraps pypdf
@@ -37,13 +37,13 @@ async def build_prompt_input(
     evidence anchoring (no second fetch).
     """
     main_file = await article_files.get_latest_pdf(article_id)
-    blocks: list = (
+    blocks: list[Any] = (
         await ArticleTextBlockRepository(db).list_ordered_for_file(main_file.id)
         if main_file is not None
         else []
     )
     anchor_file_id = main_file.id if main_file is not None else None
-    source = (
+    source: list[Any] = (
         blocks
         if blocks
         else blocks_from_plain_text(await pdf_processor.extract_text(await get_pdf(article_id)))
