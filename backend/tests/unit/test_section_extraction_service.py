@@ -40,9 +40,7 @@ def service(mock_db, mock_storage):
     with (
         patch("app.services.section_extraction_service.PDFProcessor") as mock_pdf,
         patch("app.services.section_extraction_service.ArticleFileRepository") as mock_article_repo,
-        patch(
-            "app.services.section_extraction_service.ArticleTextBlockRepository"
-        ) as mock_block_repo,
+        patch("app.services.extraction_prompt_input.ArticleTextBlockRepository") as mock_block_repo,
         patch(
             "app.services.section_extraction_service.ExtractionEntityTypeRepository"
         ) as mock_entity_repo,
@@ -56,6 +54,9 @@ def service(mock_db, mock_storage):
         patch("app.services.section_extraction_service.RunLifecycleService") as mock_lifecycle_cls,
     ):
         mock_pdf_instance = MagicMock()
+        # build_prompt_input falls back to extract_text when an article has no
+        # blocks (get_latest_pdf → None below); make the call awaitable.
+        mock_pdf_instance.extract_text = AsyncMock(return_value="extracted article text")
         mock_pdf.return_value = mock_pdf_instance
 
         # Mock repositories
@@ -287,7 +288,7 @@ class TestSectionExtractionFullFlow:
                 "app.services.section_extraction_service.ExtractionInstance"
             ) as mock_instance_class,
             patch(
-                "app.services.section_extraction_service.ArticleTextBlockRepository"
+                "app.services.extraction_prompt_input.ArticleTextBlockRepository"
             ) as mock_blk_repo,
         ):
             mock_created_instance = MagicMock()
@@ -403,7 +404,7 @@ class TestExtractSectionWithExistingRun:
                 "app.services.section_extraction_service.ExtractionInstance"
             ) as mock_instance_class,
             patch(
-                "app.services.section_extraction_service.ArticleTextBlockRepository"
+                "app.services.extraction_prompt_input.ArticleTextBlockRepository"
             ) as mock_blk_repo,
         ):
             inst = MagicMock()
@@ -565,6 +566,7 @@ class TestExtractForRun:
         et.fields = []
         et.parent_entity_type_id = None
         self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [et])
+        service._assemble_prompt_text = AsyncMock(return_value="article text")
 
         await service.extract_for_run(
             run_id=qa_run.id,
@@ -586,6 +588,7 @@ class TestExtractForRun:
         et.fields = []
         et.parent_entity_type_id = None
         self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [et])
+        service._assemble_prompt_text = AsyncMock(return_value="article text")
 
         await service.extract_for_run(
             run_id=qa_run.id,
@@ -1424,6 +1427,7 @@ class TestExtractSectionLlmFailure:
         from pydantic_ai import UnexpectedModelBehavior
 
         run = self._wire_pipeline(service, mock_storage)
+        service._assemble_prompt_text = AsyncMock(return_value="article text")
 
         service._extract_with_llm = AsyncMock(
             side_effect=UnexpectedModelBehavior("reask exhausted")
@@ -1495,21 +1499,17 @@ class TestExtractAllSections:
 
         service._instances.get_by_id = AsyncMock(return_value=None)
         service._entity_types.get_children = AsyncMock(return_value=[])
-        mock_file = MagicMock()
-        mock_file.storage_key = "test.pdf"
-        service._article_files.get_latest_pdf = AsyncMock(return_value=mock_file)
-        service.storage.download = AsyncMock(return_value=b"%PDF")
-        service.pdf_processor.extract_text = AsyncMock(return_value="pdf text")
+        service._assemble_prompt_text = AsyncMock(return_value="pdf text")
 
         await service.extract_all_sections(
             project_id=uuid4(),
             article_id=uuid4(),
             template_id=uuid4(),
             parent_instance_id=uuid4(),
-            # No pdf_text provided → should fetch from storage
+            # No pdf_text provided → _assemble_prompt_text is invoked
         )
 
-        service._article_files.get_latest_pdf.assert_awaited_once()
+        service._assemble_prompt_text.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_batch_collects_failed_sections(self, service):
@@ -1757,6 +1757,7 @@ class TestExtractForRunErrorPath:
         )
         service.storage.download = AsyncMock(return_value=b"%PDF")
         service.pdf_processor.extract_text = AsyncMock(return_value="text")
+        service._assemble_prompt_text = AsyncMock(return_value="article text")
 
         good_et = MagicMock()
         good_et.id = uuid4()

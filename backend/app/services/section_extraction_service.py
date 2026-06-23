@@ -47,8 +47,8 @@ from app.repositories import (
     ExtractionInstanceRepository,
     ExtractionRunRepository,
 )
-from app.repositories.article_text_block_repository import ArticleTextBlockRepository
 from app.services.evidence_anchor_service import build_anchor
+from app.services.extraction_prompt_input import build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.pdf_processor import PDFProcessor
 from app.services.run_lifecycle_service import RunLifecycleService
@@ -131,6 +131,23 @@ class SectionExtractionService(LoggerMixin):
         self._lifecycle = RunLifecycleService(db)
         # Proposal service: append-only writes to extraction_proposal_records.
         self._proposals = ExtractionProposalService(db)
+        # Run-scoped anchor stash: populated once per run by build_prompt_input,
+        # reused by _create_suggestions for evidence anchoring (no second fetch).
+        self._run_anchor_blocks: list = []
+        self._run_anchor_file_id: UUID | None = None
+
+    async def _assemble_prompt_text(self, article_id: UUID, model: str) -> str:
+        """Budgeted block-markdown prompt input; stashes run anchor blocks on self."""
+        text, self._run_anchor_blocks, self._run_anchor_file_id = await build_prompt_input(
+            db=self.db,
+            article_files=self._article_files,
+            pdf_processor=self.pdf_processor,
+            get_pdf=self._get_pdf,
+            article_id=article_id,
+            model=model,
+            logger=self.logger,
+        )
+        return text
 
     async def extract_section(
         self,
@@ -210,15 +227,10 @@ class SectionExtractionService(LoggerMixin):
         )
 
         try:
-            # 2. Fetch PDF
+            # 2-3. Assemble budgeted block-markdown prompt input (pypdf fallback inside).
             phase_start = perf_counter()
-            pdf_data = await self._get_pdf(article_id)
-            phase_durations_ms["fetch_pdf"] = (perf_counter() - phase_start) * 1000
-
-            # 3. Process text
-            phase_start = perf_counter()
-            pdf_text = await self.pdf_processor.extract_text(pdf_data)
-            phase_durations_ms["extract_pdf_text"] = (perf_counter() - phase_start) * 1000
+            pdf_text = await self._assemble_prompt_text(article_id, model)
+            phase_durations_ms["assemble_prompt"] = (perf_counter() - phase_start) * 1000
 
             # 4. Fetch entity type and fields
             phase_start = perf_counter()
@@ -383,8 +395,7 @@ class SectionExtractionService(LoggerMixin):
         failed = 0
 
         try:
-            pdf_data = await self._get_pdf(run.article_id)
-            pdf_text = await self.pdf_processor.extract_text(pdf_data)
+            pdf_text = await self._assemble_prompt_text(run.article_id, model)
 
             top_level = await self._top_level_entity_types_for_template(run.template_id)
 
@@ -743,14 +754,11 @@ class SectionExtractionService(LoggerMixin):
         total_tokens = 0
 
         try:
-            # 1. Fetch/process PDF (once)
+            # 1. Assemble block-markdown prompt input once per run.
             if not pdf_text:
                 phase_start = perf_counter()
-                pdf_data = await self._get_pdf(article_id)
-                pdf_text = await self.pdf_processor.extract_text(pdf_data)
-                phase_durations_ms["fetch_and_extract_pdf_text"] = (
-                    perf_counter() - phase_start
-                ) * 1000
+                pdf_text = await self._assemble_prompt_text(article_id, model)
+                phase_durations_ms["assemble_prompt"] = (perf_counter() - phase_start) * 1000
 
             # 2. Fetch child entity types
             phase_start = perf_counter()
@@ -1303,22 +1311,10 @@ class SectionExtractionService(LoggerMixin):
                 entity_type_id=str(entity_type_id),
             )
 
-        # Resolve the article's main PDF file and its text blocks once, so
-        # build_anchor can ground each evidence quote to a PositionV1 anchor.
-        # Guard: missing main file or no blocks → empty list; safe fallback
-        # keeps position={} and the LLM's page_number (no exception raised).
-        _anchor_blocks: list = []
-        _anchor_file_id: UUID | None = None
-        try:
-            _main_file = await self._article_files.get_latest_pdf(article_id)
-            if _main_file is not None:
-                _anchor_file_id = _main_file.id
-                _anchor_blocks = await ArticleTextBlockRepository(self.db).list_ordered_for_file(
-                    _main_file.id
-                )
-        except Exception:
-            _anchor_blocks = []
-            _anchor_file_id = None
+        # Blocks were fetched once per run by _assemble_prompt_text; reuse them here
+        # to ground each evidence quote to a PositionV1 anchor (empty → position={}).
+        _anchor_blocks = self._run_anchor_blocks
+        _anchor_file_id = self._run_anchor_file_id
 
         # Record one ProposalRecord per extracted field. Evidence cited by
         # the LLM is stored as a real extraction_evidence row linked to
