@@ -123,13 +123,9 @@ export default function ExtractionFullScreen() {
   const [showPDF, setShowPDF] = useState(false);
   const [viewMode, setViewMode] = useState<'extract' | 'compare'>('extract');
 
-  // Locating a citation (from an AI-suggestion popover) reveals the document
-  // panel if it is collapsed, so the reader can scroll + flash the cited
-  // passage. The helper fires only on a new locate request.
-  useEffect(
-    () => subscribeReaderLocate(viewerStore, () => setShowPDF(true)),
-    [viewerStore],
-  );
+  // A citation-locate (from an AI-suggestion popover) reveals the document panel
+  // if collapsed, so the reader can scroll + flash the cited passage.
+  useEffect(() => subscribeReaderLocate(viewerStore, () => setShowPDF(true)), [viewerStore]);
 
     // AI extraction progress state
   const [aiExtractionState, setAiExtractionState] = useState<{
