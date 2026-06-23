@@ -16,6 +16,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage, extract_structured
@@ -327,7 +328,7 @@ class ModelExtractionService(LoggerMixin):
                 container_label=container_label,
                 article_text=pdf_text,
             ),
-            model=build_model(model, api_key=self._llm_api_key),
+            model=build_model(settings.LLM_PROVIDER, model, api_key=self._llm_api_key),
             prompt_name=model_identification.NAME,
             prompt_version=model_identification.VERSION,
         )

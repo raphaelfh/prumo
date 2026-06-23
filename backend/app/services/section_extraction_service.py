@@ -18,6 +18,7 @@ from pydantic_ai.exceptions import AgentRunError
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage, extract_structured
@@ -1171,7 +1172,7 @@ class SectionExtractionService(LoggerMixin):
             )
             return {}, LlmUsage()
 
-        llm_model = build_model(model, api_key=self._llm_api_key)
+        llm_model = build_model(settings.LLM_PROVIDER, model, api_key=self._llm_api_key)
 
         extracted_data: dict[str, Any] = {}
         usage = LlmUsage()
