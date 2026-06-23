@@ -1520,13 +1520,24 @@ class TestExtractAllSections:
         parent.entity_type_id = uuid4()
         service._instances.get_by_id = AsyncMock(return_value=parent)
 
-        child1 = MagicMock()
-        child1.id = uuid4()
-        child1.name = "Section A"
-        service._entity_types.get_children = AsyncMock(return_value=[child1])
+        child_ok = MagicMock()
+        child_ok.id = uuid4()
+        child_ok.name = "Section OK"
+        child_ok.label = "Section OK"
+        child_bad = MagicMock()
+        child_bad.id = uuid4()
+        child_bad.name = "Section A"
+        child_bad.label = "Section A"
+        service._entity_types.get_children = AsyncMock(return_value=[child_ok, child_bad])
 
-        # _extract_section_with_memory raises for child1
-        service._extract_section_with_memory = AsyncMock(side_effect=RuntimeError("llm error"))
+        # First section succeeds, second raises — a partial-failure batch
+        # completes (the all-failed guard does not fire) and records the failure.
+        service._extract_section_with_memory = AsyncMock(
+            side_effect=[
+                {"suggestions_created": 1, "tokens_total": 10, "summary": "ok"},
+                RuntimeError("llm error"),
+            ]
+        )
 
         result = await service.extract_all_sections(
             project_id=uuid4(),
@@ -1536,10 +1547,10 @@ class TestExtractAllSections:
             pdf_text="text",
         )
 
+        assert result.successful_sections == 1
         assert result.failed_sections == 1
-        assert result.successful_sections == 0
-        section_entry = result.sections[0]
-        assert section_entry["success"] is False
+        failed_entry = next(s for s in result.sections if s["success"] is False)
+        assert failed_entry["entity_type_name"] == "Section A"
 
     @pytest.mark.asyncio
     async def test_batch_accumulates_memory_history(self, service):
@@ -1668,9 +1679,13 @@ class TestExtractAllSections:
     @pytest.mark.asyncio
     async def test_section_llm_failure_runs_real_split_handler(self, service):
         """Drive the REAL _extract_section_with_memory with the LLM seam
-        raising: its split except-handler must fail_run the section run
-        (session healthy) and never touch rollback_and_fail."""
+        raising: its split except-handler fails the SECTION run (session
+        healthy) before re-raising. When it is the only section, the batch is
+        all-failed and raises BatchAllSectionsFailed (run failed, not a false
+        success)."""
         from pydantic_ai import UnexpectedModelBehavior
+
+        from app.services.section_extraction_service import BatchAllSectionsFailed
 
         batch_run = self._make_run()
         section_run = self._make_run()
@@ -1696,20 +1711,20 @@ class TestExtractAllSections:
             side_effect=UnexpectedModelBehavior("reask budget exhausted")
         )
 
-        result = await service.extract_all_sections(
-            project_id=uuid4(),
-            article_id=uuid4(),
-            template_id=uuid4(),
-            parent_instance_id=uuid4(),
-            pdf_text="text",
-        )
+        with pytest.raises(BatchAllSectionsFailed):
+            await service.extract_all_sections(
+                project_id=uuid4(),
+                article_id=uuid4(),
+                template_id=uuid4(),
+                parent_instance_id=uuid4(),
+                pdf_text="text",
+            )
 
-        assert result.failed_sections == 1
+        # The real split handler failed the SECTION run before the batch guard.
         service._runs.fail_run.assert_awaited_once()
         failed_run_id, error_message = service._runs.fail_run.await_args.args
         assert failed_run_id == section_run.id
         assert "reask budget exhausted" in error_message
-        service._runs.rollback_and_fail.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -1743,18 +1758,26 @@ class TestExtractForRunErrorPath:
         service.storage.download = AsyncMock(return_value=b"%PDF")
         service.pdf_processor.extract_text = AsyncMock(return_value="text")
 
-        failing_et = MagicMock()
-        failing_et.id = uuid4()
-        failing_et.name = "BadSection"
+        good_et = MagicMock()
+        good_et.id = uuid4()
+        good_et.name = "GoodSection"
+        bad_et = MagicMock()
+        bad_et.id = uuid4()
+        bad_et.name = "BadSection"
 
         scalars = MagicMock()
-        scalars.all.return_value = [failing_et]
+        scalars.all.return_value = [good_et, bad_et]
         execute_result = MagicMock()
         execute_result.scalars.return_value = scalars
         service.db.execute = AsyncMock(return_value=execute_result)
 
-        service._entity_types.get_with_fields = AsyncMock(
-            side_effect=RuntimeError("type fetch error")
+        # One entity succeeds, one raises — a partial-failure batch completes
+        # (the all-failed guard does not fire) and records the failed entity.
+        service._extract_one_entity_type_for_run = AsyncMock(
+            side_effect=[
+                {"suggestions_created": 1, "tokens_total": 10},
+                RuntimeError("type fetch error"),
+            ]
         )
 
         service._runs.start_run = AsyncMock()
@@ -1764,9 +1787,10 @@ class TestExtractForRunErrorPath:
 
         result = await service.extract_for_run(run_id=run.id)
 
+        assert result.successful_sections == 1
         assert result.failed_sections == 1
-        assert result.sections[0]["success"] is False
-        assert "type fetch error" in result.sections[0]["error"]
+        failed_entry = next(s for s in result.sections if s["success"] is False)
+        assert "type fetch error" in failed_entry["error"]
 
 
 # ---------------------------------------------------------------------------
