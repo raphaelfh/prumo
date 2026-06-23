@@ -9,7 +9,8 @@ Tests cover:
   no mid-section/mid-table cut.
 - In-budget: nothing past a naive 15k char cut is silently lost.
 - Optional ``focus`` hint biases section priority deterministically.
-- Prose routes through canonical concat_page_text surface.
+- Prose equals block.text (== the canonical concat_page_text slice by construction);
+  serialization now delegates to render_blocks_to_markdown.
 - Input blocks are never mutated by assemble().
 - Over-budget fallback pops WHOLE sections (never string-splits on separator).
 """

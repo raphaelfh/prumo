@@ -1,4 +1,4 @@
-"""Prompt templates: rendering, truncation, and stable content versions."""
+"""Prompt templates: rendering (full-text, no truncation) and stable content versions."""
 
 from app.llm.prompts import (
     content_version,

@@ -1469,6 +1469,10 @@ class TestExtractAllSections:
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
         service._runs.fail_run = AsyncMock()
+        # Batch tests exercise the flow, not assembly: stub the prompt-text source
+        # (the elif path also calls it for its stash side-effect when pdf_text is
+        # supplied). Tests that assert on it re-assign their own mock below.
+        service._assemble_prompt_text = AsyncMock(return_value="article text")
 
     @pytest.mark.asyncio
     async def test_batch_with_no_child_sections(self, service):
@@ -1509,6 +1513,31 @@ class TestExtractAllSections:
             # No pdf_text provided → _assemble_prompt_text is invoked
         )
 
+        service._assemble_prompt_text.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_batch_with_supplied_pdf_text_still_populates_anchor_stash(self, service):
+        """When a caller supplies pdf_text (the assembly fast-path is skipped), the
+        run anchor stash must STILL be populated so _create_suggestions can ground
+        evidence — otherwise evidence silently gets position={} despite blocks
+        existing. Regression guard for the build_prompt_input wiring."""
+        run = self._make_run()
+        self._minimal_lifecycle_wire(service, run)
+
+        service._instances.get_by_id = AsyncMock(return_value=None)
+        service._entity_types.get_children = AsyncMock(return_value=[])
+        service._assemble_prompt_text = AsyncMock(return_value="ignored")
+        assert service._run_anchor_blocks == []  # empty stash at the start of the run
+
+        await service.extract_all_sections(
+            project_id=uuid4(),
+            article_id=uuid4(),
+            template_id=uuid4(),
+            parent_instance_id=uuid4(),
+            pdf_text="caller-supplied precomputed text",
+        )
+
+        # The elif branch invokes _assemble_prompt_text for its stash side-effect.
         service._assemble_prompt_text.assert_awaited()
 
     @pytest.mark.asyncio
@@ -1593,8 +1622,9 @@ class TestExtractAllSections:
         service._lifecycle.advance_stage = AsyncMock(return_value=run)
         service._runs.start_run = AsyncMock()
         service._runs.rollback_and_fail = AsyncMock()
+        service._assemble_prompt_text = AsyncMock(return_value="text")
 
-        # Make the PDF fetch explode unexpectedly (before any section loops)
+        # Make the instance fetch explode unexpectedly (after assembly, before loops)
         service._instances.get_by_id = AsyncMock(side_effect=RuntimeError("db exploded"))
 
         with pytest.raises(RuntimeError, match="db exploded"):
@@ -1696,6 +1726,7 @@ class TestExtractAllSections:
         service._runs.complete_run = AsyncMock()
         service._runs.fail_run = AsyncMock()
         service._runs.rollback_and_fail = AsyncMock()
+        service._assemble_prompt_text = AsyncMock(return_value="text")
 
         parent = MagicMock()
         parent.entity_type_id = uuid4()

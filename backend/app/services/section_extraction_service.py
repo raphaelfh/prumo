@@ -759,6 +759,9 @@ class SectionExtractionService(LoggerMixin):
                 phase_start = perf_counter()
                 pdf_text = await self._assemble_prompt_text(article_id, model)
                 phase_durations_ms["assemble_prompt"] = (perf_counter() - phase_start) * 1000
+            elif not self._run_anchor_blocks:
+                # pdf_text supplied → assembly skipped; still populate anchor stash.
+                await self._assemble_prompt_text(article_id, model)
 
             # 2. Fetch child entity types
             phase_start = perf_counter()
