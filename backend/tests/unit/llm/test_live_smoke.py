@@ -37,7 +37,7 @@ async def test_live_extraction_round_trip():
             output_model=SmokeOutput,
             system_prompt="You answer geography questions as structured data.",
             user_prompt="What is the capital of France?",
-            model=build_model("gpt-4o-mini"),
+            model=build_model("openai", "gpt-4o-mini"),
             prompt_name="live_smoke",
             prompt_version="live",
         )

@@ -3,7 +3,7 @@ Extraction Endpoints Integration Tests.
 """
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -152,6 +152,67 @@ class TestSectionExtractionEndpoints:
             assert data.get("trace_id") == trace_id
             assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
             guard.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_all_sections_failed_commits_failed_status(self) -> None:
+        """An all-failed batch (BatchAllSectionsFailed) returns 500 AND commits
+        the FAILED status — it must NOT be discarded by the generic rollback
+        handler, so the failed run stays visible to status polls."""
+        from httpx import ASGITransport
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.core.deps import get_current_user, get_db, get_supabase
+        from app.core.security import TokenPayload
+        from app.main import app
+        from app.services.section_extraction_service import BatchAllSectionsFailed
+
+        spy_db = AsyncMock(spec=AsyncSession)
+
+        async def _override_db():
+            yield spy_db
+
+        async def _override_user():
+            return TokenPayload(sub=str(uuid4()), email="t@e.com", role="authenticated", aal="aal1")
+
+        app.dependency_overrides[get_db] = _override_db
+        app.dependency_overrides[get_current_user] = _override_user
+        app.dependency_overrides[get_supabase] = lambda: MagicMock()
+        try:
+            with (
+                patch(
+                    "app.api.v1.endpoints.section_extraction.SectionExtractionService"
+                ) as mock_svc_cls,
+                patch(
+                    "app.api.v1.endpoints.section_extraction._check_request_scope",
+                    new_callable=AsyncMock,
+                ),
+                patch("app.api.v1.endpoints.section_extraction.create_storage_adapter"),
+                patch("app.api.v1.endpoints.section_extraction.APIKeyService") as mock_keys_cls,
+            ):
+                mock_keys_cls.return_value.get_key_for_provider = AsyncMock(return_value="sk-test")
+                mock_svc_cls.return_value.extract_for_run = AsyncMock(
+                    side_effect=BatchAllSectionsFailed("all 3 sections failed")
+                )
+
+                async with AsyncClient(
+                    transport=ASGITransport(app=app), base_url="http://test"
+                ) as ac:
+                    resp = await ac.post(
+                        "/api/v1/extraction/sections",
+                        json={
+                            "projectId": str(uuid4()),
+                            "articleId": str(uuid4()),
+                            "templateId": str(uuid4()),
+                            "runId": str(uuid4()),
+                        },
+                    )
+
+            assert resp.status_code == 500
+            # FAILED status committed (persisted), never rolled back.
+            spy_db.commit.assert_awaited()
+            spy_db.rollback.assert_not_awaited()
+        finally:
+            app.dependency_overrides.clear()
 
 
 class TestModelExtractionEndpoints:

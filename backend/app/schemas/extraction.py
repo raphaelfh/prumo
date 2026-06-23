@@ -10,13 +10,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.config import settings
+
 # =================== COMMON SCHEMAS ===================
 
 
 class ExtractionOptions(BaseModel):
     """Opcoes de extraction."""
 
-    model: str = Field(default="gpt-4o-mini", description="Modelo OpenAI a usar")
+    model: str = Field(default=settings.LLM_DEFAULT_MODEL, description="Model to use")
     temperature: float = Field(default=0.1, ge=0, le=2)
     max_tokens: int | None = Field(default=None, ge=100, le=16000)
 
@@ -72,8 +74,8 @@ class SectionExtractionRequest(BaseModel):
     # Opcoes de extraction
     options: ExtractionOptions | None = None
     model: str | None = Field(
-        default="gpt-4o-mini",
-        description="Modelo OpenAI a usar",
+        default=settings.LLM_DEFAULT_MODEL,
+        description="Model to use",
     )
 
     # Reuse an existing run instead of creating a new one. Used by the
@@ -222,8 +224,8 @@ class ModelExtractionRequest(BaseModel):
 
     # Opcoes de extraction
     model: str | None = Field(
-        default="gpt-4o-mini",
-        description="Modelo OpenAI a usar",
+        default=settings.LLM_DEFAULT_MODEL,
+        description="Model to use",
     )
     options: ExtractionOptions | None = None
 

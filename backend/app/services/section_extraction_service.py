@@ -18,6 +18,7 @@ from pydantic_ai.exceptions import AgentRunError
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage, extract_structured
@@ -80,6 +81,12 @@ class BatchExtractionResult:
     sections: list[dict[str, Any]]
 
 
+class BatchAllSectionsFailed(Exception):
+    """Every section in a batch extraction failed — the run is failed (not
+    reported as a success). Permanent by default: app/llm/errors.py classifies
+    unknown exception types as non-retryable."""
+
+
 class SectionExtractionService(LoggerMixin):
     """
     Service for template section extraction.
@@ -132,7 +139,7 @@ class SectionExtractionService(LoggerMixin):
         template_id: UUID,
         entity_type_id: UUID,
         parent_instance_id: UUID | None = None,
-        model: str = "gpt-4o-mini",
+        model: str = settings.LLM_DEFAULT_MODEL,
         run_id: UUID | None = None,
     ) -> SectionExtractionResult:
         """
@@ -319,7 +326,7 @@ class SectionExtractionService(LoggerMixin):
         run_id: UUID,
         skip_fields_with_human_proposals: bool = False,
         auto_advance_to_review: bool = True,
-        model: str = "gpt-4o-mini",
+        model: str = settings.LLM_DEFAULT_MODEL,
     ) -> BatchExtractionResult:
         """
         Run AI extraction over an *existing* Run, iterating top-level
@@ -427,6 +434,9 @@ class SectionExtractionService(LoggerMixin):
             # so a successful AI pass leaves the Run in EXTRACT where reviewers
             # act directly. ``auto_advance_to_review`` is recorded below for
             # telemetry but no longer drives a transition.
+
+            if top_level and successful == 0:
+                raise BatchAllSectionsFailed(f"All {failed} section(s) failed for run {run.id}.")
 
             duration_ms = (perf_counter() - start_time) * 1000
 
@@ -673,7 +683,7 @@ class SectionExtractionService(LoggerMixin):
         parent_instance_id: UUID,
         section_ids: list[UUID] | None = None,
         pdf_text: str | None = None,
-        model: str = "gpt-4o-mini",
+        model: str = settings.LLM_DEFAULT_MODEL,
     ) -> BatchExtractionResult:
         """
         Extract all child sections from a model with summarized memory.
@@ -813,6 +823,9 @@ class SectionExtractionService(LoggerMixin):
             # Run stays in EXTRACT — see ``extract_section`` for the
             # rationale. The user advances to CONSENSUS via "Open consensus"
             # after inspecting the AI-proposed values.
+
+            if total_sections and successful == 0:
+                raise BatchAllSectionsFailed(f"All {failed} section(s) failed for run {run.id}.")
 
             duration = (perf_counter() - start_time) * 1000
 
@@ -1171,7 +1184,7 @@ class SectionExtractionService(LoggerMixin):
             )
             return {}, LlmUsage()
 
-        llm_model = build_model(model, api_key=self._llm_api_key)
+        llm_model = build_model(settings.LLM_PROVIDER, model, api_key=self._llm_api_key)
 
         extracted_data: dict[str, Any] = {}
         usage = LlmUsage()

@@ -9,13 +9,28 @@ module's docstring for the event-loop rationale.
 
 from __future__ import annotations
 
+import random
 from typing import Any
 from uuid import UUID
 
 from celery import Task
 
+from app.core.config import settings
+from app.llm.errors import is_transient_llm_error
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
+
+_RETRY_BASE_SECONDS = 60
+_RETRY_MAX_SECONDS = 600
+
+
+def _retry_countdown(retries: int) -> float:
+    """Exponential backoff with jitter, with the final value capped at the
+    max (so jitter never pushes a retry past _RETRY_MAX_SECONDS)."""
+    # float() pins the type: mypy infers ``2**retries`` as Any (the exponent
+    # sign is unknown), which would otherwise poison the declared float return.
+    base = float(min(_RETRY_BASE_SECONDS * 2**retries, _RETRY_MAX_SECONDS))
+    return min(base + random.uniform(0, base * 0.1), float(_RETRY_MAX_SECONDS))
 
 
 @celery_app.task(
@@ -67,7 +82,7 @@ def extract_section_task(
                 api_key = openai_api_key
                 if not api_key:
                     api_key_service = APIKeyService(db=session, user_id=user_id)
-                    api_key = await api_key_service.get_key_for_provider("openai")
+                    api_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
 
                 service = SectionExtractionService(
                     db=session,
@@ -100,7 +115,9 @@ def extract_section_task(
     try:
         return run_task(run)
     except Exception as exc:
-        self.retry(exc=exc)
+        if not is_transient_llm_error(exc):
+            raise  # permanent: fail fast, no retry
+        raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
 
 
 @celery_app.task(
@@ -147,7 +164,7 @@ def extract_models_task(
                 api_key = openai_api_key
                 if not api_key:
                     api_key_service = APIKeyService(db=session, user_id=user_id)
-                    api_key = await api_key_service.get_key_for_provider("openai")
+                    api_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
 
                 service = ModelExtractionService(
                     db=session,
@@ -196,7 +213,9 @@ def extract_models_task(
     try:
         return run_task(run)
     except Exception as exc:
-        self.retry(exc=exc)
+        if not is_transient_llm_error(exc):
+            raise  # permanent: fail fast, no retry
+        raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
 
 
 @celery_app.task(

@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps.security import ensure_project_member, get_current_user_sub
+from app.core.config import settings
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
@@ -158,21 +159,21 @@ async def extract_models(
 
         # Buscar API key do user (BYOK) with fallback for global
         api_key_service = APIKeyService(db=db, user_id=user.sub)
-        user_openai_key = await api_key_service.get_key_for_provider("openai")
+        user_llm_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
 
         service = ModelExtractionService(
             db=db,
             user_id=user.sub,
             storage=storage,
             trace_id=trace_id,
-            openai_api_key=user_openai_key,
+            openai_api_key=user_llm_key,
         )
 
         result = await service.extract(
             project_id=payload.project_id,
             article_id=payload.article_id,
             template_id=payload.template_id,
-            model=payload.model or "gpt-4o-mini",
+            model=payload.model or settings.LLM_DEFAULT_MODEL,
         )
 
         db_commit_start = perf_counter()
