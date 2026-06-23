@@ -48,6 +48,7 @@ function ExtractionPDFPanelComponent({
     // search, or scroll position over (cross-document leak, MF-8).
     const actions = store?.getState().actions;
     actions?.clearCitations();
+    actions?.clearReaderLocate();
     actions?.clearSearch();
     actions?.goToPage(1);
     setSelectedFileId(id);

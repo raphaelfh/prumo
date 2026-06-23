@@ -43,6 +43,22 @@ export interface SearchState {
 /** Display mode — see `setMode` for semantics. */
 export type ViewerMode = 'canvas' | 'reader';
 
+/**
+ * A request to locate a quote inside the reader (markdown) view.
+ *
+ * Citation locating is markdown-first: rather than projecting a fragile PDF
+ * bbox, the reader finds the block whose text contains `quote`, scrolls it into
+ * view, and flashes it. `nonce` makes repeated locates of the same quote
+ * re-trigger (a plain value change wouldn't).
+ */
+export interface ReaderLocateRequest {
+  quote: string;
+  /** 1-indexed page hint, or null when unknown. */
+  page: number | null;
+  /** Monotonically increasing — bump to re-fire the same quote. */
+  nonce: number;
+}
+
 export interface ViewerState {
   // Document
   source: PDFSource | null;
@@ -70,6 +86,12 @@ export interface ViewerState {
   citations: ReadonlyMap<CitationId, Citation>;
   activeCitationId: CitationId | null;
 
+  /**
+   * Pending reader-locate request (markdown-first citation locating). The
+   * reader primitive consumes this to scroll + flash the matching block.
+   */
+  readerLocate: ReaderLocateRequest | null;
+
   // Search
   search: SearchState;
 
@@ -90,6 +112,12 @@ export interface ViewerActions {
   setScale(scale: number): void;
   setRotation(rotation: PageRotation): void;
   setMode(mode: ViewerMode): void;
+
+  // Reader-locate (markdown-first citation locating)
+  /** Switch to reader mode and request the reader to find + flash `quote`. */
+  locateInReader(quote: string, page?: number | null): void;
+  /** Clear any pending reader-locate request (e.g. on document switch). */
+  clearReaderLocate(): void;
 
   // Citations
   addCitation(citation: Citation): void;

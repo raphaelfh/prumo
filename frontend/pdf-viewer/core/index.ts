@@ -3,6 +3,7 @@ export type * from './types';
 
 // Runtime
 export {createViewerStore} from './store';
+export {subscribeReaderLocate} from './subscribeReaderLocate';
 export {
   ViewerProvider,
   useViewerStore,

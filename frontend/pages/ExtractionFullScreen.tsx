@@ -70,7 +70,7 @@ import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtraction
 import {useModelManagement} from '@/hooks/extraction/useModelManagement';
 import {usePreserveScroll} from '@/hooks/usePreserveScroll';
 import {t} from '@/lib/copy';
-import {ViewerProvider, createViewerStore} from '@prumo/pdf-viewer';
+import {ViewerProvider, createViewerStore, subscribeReaderLocate} from '@prumo/pdf-viewer';
 
 const SCROLL_CONTAINERS_TO_PRESERVE = [
   // Form panel — actual scroll happens on radix' inner viewport node.
@@ -122,6 +122,14 @@ export default function ExtractionFullScreen() {
   // UI state
   const [showPDF, setShowPDF] = useState(false);
   const [viewMode, setViewMode] = useState<'extract' | 'compare'>('extract');
+
+  // Locating a citation (from an AI-suggestion popover) reveals the document
+  // panel if it is collapsed, so the reader can scroll + flash the cited
+  // passage. The helper fires only on a new locate request.
+  useEffect(
+    () => subscribeReaderLocate(viewerStore, () => setShowPDF(true)),
+    [viewerStore],
+  );
 
     // AI extraction progress state
   const [aiExtractionState, setAiExtractionState] = useState<{

@@ -1,33 +1,25 @@
 /**
- * AI suggestion details modal (rationale + evidence) - Extraction
+ * AI suggestion details — rationale + cited evidence.
  *
- * Uses viewport-centered Dialog so content is never clipped.
- * Same strategy as Assessment. Responsive, with internal scroll.
- *
- * When `articleId` is provided (and the component is mounted inside the shared
- * ViewerProvider at ExtractionFullScreen level), the evidence block gains a
- * "jump to source" button via useCitationHighlight.
+ * Rendered as a non-modal, anchored Popover (not a full-screen modal): it
+ * floats beside its trigger in the form panel and never covers the document
+ * viewer. That is what makes "Locate in document" usable — clicking it closes
+ * the popover and the reader, still visible on the right, scrolls to and
+ * flashes the cited passage (markdown-first locate, via the shared viewer
+ * store). Outside a ViewerProvider the locate affordance is simply absent.
  */
 
 import {useState} from 'react';
-import {Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,} from '@/components/ui/dialog';
-import {ScrollArea} from '@/components/ui/scroll-area';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import {Sparkles} from 'lucide-react';
 import {AISuggestionEvidence} from '../AISuggestionEvidence';
 import {t} from '@/lib/copy';
 import type {AISuggestion} from '@/hooks/extraction/ai/useAISuggestions';
-import {useArticleCitations} from '@/hooks/articles/useArticleCitations';
-import {matchEvidenceToCitation} from '@/services/citationsService';
-import {useCitationHighlight} from '@/hooks/extraction/useCitationHighlight';
-
-// -----------------------------------------------------------------------------
-// Constantes de layout (viewport-safe, alinhado ao Assessment)
-// -----------------------------------------------------------------------------
-
-const DIALOG_CONTENT_CLASS =
-  'max-w-[min(420px,calc(100vw-2rem))] w-[calc(100vw-2rem)] max-h-[85vh] h-[85vh] p-0 gap-0 flex flex-col z-[100] overflow-hidden';
-
-const SCROLL_AREA_CLASS = 'flex-1 min-h-0 min-w-0';
+import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -35,8 +27,7 @@ const SCROLL_AREA_CLASS = 'flex-1 min-h-0 min-w-0';
 
 function hasSuggestionDetails(suggestion: AISuggestion): boolean {
   const hasReasoning = !!suggestion.reasoning?.trim();
-  const hasEvidence =
-    !!suggestion.evidence?.text?.trim();
+  const hasEvidence = !!suggestion.evidence?.text?.trim();
   return hasReasoning || hasEvidence;
 }
 
@@ -47,42 +38,40 @@ function hasSuggestionDetails(suggestion: AISuggestion): boolean {
 interface AISuggestionDetailsPopoverProps {
   suggestion: AISuggestion;
   trigger: React.ReactNode;
-  /** Article id. When provided (and inside a ViewerProvider) enables the
-   *  citation highlight on the evidence block. */
+  /**
+   * Reserved: the article the suggestion belongs to. Locating now drives the
+   * shared viewer store (no per-article fetch), so this is no longer required —
+   * kept optional for call-site backward compatibility.
+   */
   articleId?: string;
 }
 
 // -----------------------------------------------------------------------------
-// Inner component — holds the citation-highlight hooks.
-// Separated so the hooks only run when the modal is open.
+// Evidence section — owns the reader-locate wiring.
 // -----------------------------------------------------------------------------
 
 interface EvidenceSectionProps {
   evidence: {text: string; pageNumber?: number | null};
-  articleId: string | undefined;
+  onClose: () => void;
 }
 
-function EvidenceSection({evidence, articleId}: EvidenceSectionProps) {
-  const citations = useArticleCitations(articleId);
-  const {highlight, isAvailable} = useCitationHighlight();
+function EvidenceSection({evidence, onClose}: EvidenceSectionProps) {
+  const {locate, isAvailable} = useReaderLocate();
 
-  const matched =
-    articleId != null
-      ? matchEvidenceToCitation(
-          {text: evidence.text, pageNumber: evidence.pageNumber ?? undefined},
-          citations.data ?? [],
-        )
-      : null;
+  // Locate in the document reader, then close the popover so the (still
+  // visible) viewer shows the flash unobstructed.
+  const onLocate = isAvailable
+    ? () => {
+        locate(evidence.text, evidence.pageNumber ?? null);
+        onClose();
+      }
+    : undefined;
 
   return (
     <section className="space-y-2" aria-label={t('extraction', 'evidenceCitedAria')}>
       <AISuggestionEvidence
-        evidence={{
-          text: evidence.text,
-          pageNumber: evidence.pageNumber ?? null,
-        }}
-        citation={matched}
-        onHighlight={isAvailable && articleId != null ? highlight : undefined}
+        evidence={{text: evidence.text, pageNumber: evidence.pageNumber ?? null}}
+        onLocate={onLocate}
       />
     </section>
   );
@@ -95,7 +84,6 @@ function EvidenceSection({evidence, articleId}: EvidenceSectionProps) {
 export function AISuggestionDetailsPopover({
   suggestion,
   trigger,
-  articleId,
 }: AISuggestionDetailsPopoverProps) {
   const [open, setOpen] = useState(false);
 
@@ -107,44 +95,40 @@ export function AISuggestionDetailsPopover({
   const evidence = suggestion.evidence;
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent
-        className={DIALOG_CONTENT_CLASS}
-        aria-describedby={undefined}
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent
+        align="start"
+        side="bottom"
+        className="w-[380px] max-w-[calc(100vw-1.5rem)] overflow-hidden p-0"
       >
-        <DialogHeader className="p-4 pr-12 pb-3 border-b shrink-0 space-y-0">
-          <DialogTitle className="flex items-center gap-2 text-base">
-            <Sparkles className="h-4 w-4 text-ai shrink-0" />
-              Suggestion details
-          </DialogTitle>
-        </DialogHeader>
+        <div className="flex items-center gap-2 border-b px-4 py-3">
+          <Sparkles className="h-4 w-4 shrink-0 text-ai" />
+          <span className="text-sm font-semibold">
+            {t('extraction', 'aiSuggestionDetailsTitle')}
+          </span>
+        </div>
 
-        <ScrollArea className={SCROLL_AREA_CLASS}>
-          <div className="p-4 pt-3 space-y-5 min-w-0">
-            {hasReasoning && (
-              <section className="space-y-2" aria-label="Justificativa">
-                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Justificativa
-                </div>
-                <p className="text-sm text-foreground whitespace-pre-wrap break-words leading-relaxed">
-                  {suggestion.reasoning}
-                </p>
-              </section>
-            )}
+        <div className="max-h-[min(60vh,28rem)] space-y-4 overflow-y-auto p-4">
+          {hasReasoning && (
+            <section className="space-y-1.5" aria-label={t('extraction', 'aiRationaleLabel')}>
+              <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t('extraction', 'aiRationaleLabel')}
+              </div>
+              <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
+                {suggestion.reasoning}
+              </p>
+            </section>
+          )}
 
-            {evidence?.text?.trim() && (
-              <EvidenceSection
-                evidence={{
-                  text: evidence.text,
-                  pageNumber: evidence.pageNumber ?? null,
-                }}
-                articleId={articleId}
-              />
-            )}
-          </div>
-        </ScrollArea>
-      </DialogContent>
-    </Dialog>
+          {evidence?.text?.trim() && (
+            <EvidenceSection
+              evidence={{text: evidence.text, pageNumber: evidence.pageNumber ?? null}}
+              onClose={() => setOpen(false)}
+            />
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
