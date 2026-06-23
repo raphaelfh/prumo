@@ -26,6 +26,7 @@ const initialData: ViewerData = {
   mode: 'canvas',
   citations: new Map<CitationId, Citation>(),
   activeCitationId: null,
+  readerLocate: null,
   search: initialSearch,
 };
 
@@ -87,6 +88,18 @@ export function createViewerStore(
 
       setMode(mode: ViewerMode) {
         set({mode});
+      },
+
+      locateInReader(quote: string, page?: number | null) {
+        const prevNonce = get().readerLocate?.nonce ?? 0;
+        set({
+          mode: 'reader',
+          readerLocate: {quote, page: page ?? null, nonce: prevNonce + 1},
+        });
+      },
+
+      clearReaderLocate() {
+        set({readerLocate: null});
       },
 
       addCitation(citation: Citation) {
