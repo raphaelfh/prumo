@@ -15,8 +15,10 @@ from typing import Any, TypeVar
 
 import logfire
 from pydantic import BaseModel
-from pydantic_ai import Agent, NativeOutput, UsageLimits
+from pydantic_ai import Agent, NativeOutput, ToolOutput, UsageLimits
 from pydantic_ai.models import Model
+
+from app.core.config import settings
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
 
@@ -46,6 +48,16 @@ class LlmUsage:
         )
 
 
+def _output_for(model: Model, output_model: type[OutputT]) -> NativeOutput | ToolOutput:
+    """OpenAI supports JSON-schema response_format (NativeOutput); Anthropic
+    has no response_format, so structured output must use tool-calling
+    (ToolOutput). Detection is by class name to avoid importing the optional
+    anthropic package and to leave test models (FunctionModel) on NativeOutput."""
+    if type(model).__name__ == "AnthropicModel":
+        return ToolOutput(output_model)
+    return NativeOutput(output_model)
+
+
 async def extract_structured(
     *,
     output_model: type[OutputT],
@@ -60,10 +72,10 @@ async def extract_structured(
 ) -> tuple[OutputT, LlmUsage]:
     agent: Agent[None, OutputT] = Agent(
         model,
-        output_type=NativeOutput(output_model),
+        output_type=_output_for(model, output_model),
         instructions=system_prompt,
         retries={"output": output_retries},
-        model_settings={"temperature": 0.1},
+        model_settings={"temperature": 0.1, "timeout": settings.LLM_TIMEOUT_SECONDS},
     )
     for validator in validators:
         agent.output_validator(validator)
