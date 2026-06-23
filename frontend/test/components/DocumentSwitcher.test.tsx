@@ -107,4 +107,13 @@ describe("ParseStatusControl", () => {
     renderControl({ id: "f3", extractionStatus: "pending" });
     expect(screen.getByText("docStatusPending")).toBeInTheDocument();
   });
+
+  it("pending: Retry button POSTs to reparse endpoint", async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValue({});
+    renderControl({ id: "f4", extractionStatus: "pending" });
+    fireEvent.click(screen.getByRole("button", { name: /docReparse/ }));
+    await waitFor(() => {
+      expect(apiClient).toHaveBeenCalledWith("/api/v1/article-files/f4/reparse", { method: "POST" });
+    });
+  });
 });

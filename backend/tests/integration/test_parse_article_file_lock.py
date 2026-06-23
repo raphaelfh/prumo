@@ -20,7 +20,7 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.parsing.base import ParsedBlock
+from app.infrastructure.parsing.base import DocumentParser, ParsedBlock
 from tests.integration.conftest import SEED
 
 # ---------------------------------------------------------------------------
@@ -28,7 +28,7 @@ from tests.integration.conftest import SEED
 # ---------------------------------------------------------------------------
 
 
-class _StubParser:
+class _StubParser(DocumentParser):
     """Returns a single ParsedBlock — enough for a successful parse path."""
 
     def parse(self, pdf_bytes: bytes) -> list[ParsedBlock]:  # noqa: ARG002
@@ -124,4 +124,20 @@ async def test_parse_acquires_advisory_lock_before_write(
 
     assert any("pg_advisory_xact_lock" in c for c in calls), (
         "lock not acquired; observed SQL calls:\n" + "\n".join(f"  {c!r}" for c in calls)
+    )
+
+    # Lock must precede the block write (DELETE or INSERT on article_text_blocks).
+    lock_idx = next(i for i, c in enumerate(calls) if "pg_advisory_xact_lock" in c)
+    write_candidates = [
+        i
+        for i, c in enumerate(calls)
+        if "article_text_blocks" in c and ("DELETE" in c.upper() or "INSERT" in c.upper())
+    ]
+    assert write_candidates, "no block write detected; observed SQL calls:\n" + "\n".join(
+        f"  {c!r}" for c in calls
+    )
+    first_write_idx = min(write_candidates)
+    assert lock_idx < first_write_idx, (
+        f"lock (index {lock_idx}) did not precede block write (index {first_write_idx}); "
+        "calls:\n" + "\n".join(f"  [{i}] {c!r}" for i, c in enumerate(calls))
     )

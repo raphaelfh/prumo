@@ -82,6 +82,7 @@ export const pdf = {
     docReparseQueued: 'Re-parse queued',
     docReparseError: 'Failed to queue re-parse',
     docParseErrorLabel: 'Parse error',
+    docParseErrorUnknown: 'Parse failed — no error details recorded',
     docReparseConfirmTitle: 'Re-parse this document?',
     docReparseConfirmBody:
       'Re-parsing rebuilds the document text. Existing citation highlights for this file may shift and need re-checking.',

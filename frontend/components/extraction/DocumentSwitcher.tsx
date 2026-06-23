@@ -154,13 +154,15 @@ export function ParseStatusControl({ articleId, file }: ParseStatusControlProps)
         <span aria-hidden className={statusDot({ status })} />
       )}
 
-      {status === 'parse_failed' && file.extractionError ? (
+      {status === 'parse_failed' ? (
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="cursor-default">{label}</span>
           </TooltipTrigger>
           <TooltipContent>
-            {t('pdf', 'docParseErrorLabel')}: {file.extractionError}
+            {file.extractionError
+              ? `${t('pdf', 'docParseErrorLabel')}: ${file.extractionError}`
+              : t('pdf', 'docParseErrorUnknown')}
           </TooltipContent>
         </Tooltip>
       ) : (
