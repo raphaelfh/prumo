@@ -146,6 +146,46 @@ export function ParseStatusControl({ articleId, file }: ParseStatusControlProps)
     : status === 'parse_failed' ? t('pdf', 'docStatusFailed')
     : '';
 
+  const reparseAction =
+    status === 'parsed' ? (
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            disabled={reparse.isPending}
+            aria-label={t('pdf', 'docReparse')}
+          >
+            {t('pdf', 'docReparse')}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('pdf', 'docReparseConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('pdf', 'docReparseConfirmBody')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common', 'cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={fire} aria-label={t('pdf', 'docReparseConfirmCta')}>
+              {t('pdf', 'docReparseConfirmCta')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    ) : status !== 'unknown' ? (
+      <Button
+        size="sm"
+        variant={status === 'parse_failed' ? 'outline' : 'ghost'}
+        className="h-7 text-xs"
+        disabled={reparse.isPending}
+        onClick={fire}
+        aria-label={t('pdf', 'docReparse')}
+      >
+        {t('pdf', 'docReparse')}
+      </Button>
+    ) : null;
+
   return (
     <div className="flex items-center gap-1.5 shrink-0 text-[11px] text-muted-foreground">
       {status === 'pending' ? (
@@ -169,46 +209,7 @@ export function ParseStatusControl({ articleId, file }: ParseStatusControlProps)
         <span>{label}</span>
       )}
 
-      {status === 'parsed' ? (
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 text-xs"
-              disabled={reparse.isPending}
-              aria-label={t('pdf', 'docReparse')}
-            >
-              {t('pdf', 'docReparse')}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('pdf', 'docReparseConfirmTitle')}</AlertDialogTitle>
-              <AlertDialogDescription>{t('pdf', 'docReparseConfirmBody')}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('common', 'cancel')}</AlertDialogCancel>
-              <AlertDialogAction onClick={fire} aria-label={t('pdf', 'docReparseConfirmCta')}>
-                {t('pdf', 'docReparseConfirmCta')}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      ) : (
-        (status === 'parse_failed' || status === 'pending') && (
-          <Button
-            size="sm"
-            variant={status === 'parse_failed' ? 'outline' : 'ghost'}
-            className="h-7 text-xs"
-            disabled={reparse.isPending}
-            onClick={fire}
-            aria-label={t('pdf', 'docReparse')}
-          >
-            {t('pdf', 'docReparse')}
-          </Button>
-        )
-      )}
+      {reparseAction}
     </div>
   );
 }

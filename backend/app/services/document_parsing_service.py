@@ -136,7 +136,7 @@ class DocumentParsingService:
         #    interleave two delete-then-insert passes. Transaction-scoped:
         #    released on commit.
         await self.db.execute(
-            text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
             {"k": str(article_file_id)},
         )
 

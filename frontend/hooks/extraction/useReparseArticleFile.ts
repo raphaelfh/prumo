@@ -1,10 +1,9 @@
-// frontend/hooks/extraction/useReparseArticleFile.ts
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { apiClient } from "@/integrations/api";
 import { t } from "@/lib/copy";
-import { articleKeys } from "@/lib/query-keys/articles";
+import { articleKeys } from "@/lib/query-keys";
 
 /** Re-enqueue a parse for an ArticleFile and refresh the file list + reader blocks. */
 export function useReparseArticleFile(articleId: string) {
