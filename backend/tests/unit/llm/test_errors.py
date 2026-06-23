@@ -25,10 +25,12 @@ def test_usage_limit_exceeded_is_permanent():
 def test_timeout_is_transient():
     assert is_transient_llm_error(TimeoutError()) is True
     assert is_transient_llm_error(httpx.TimeoutException("t")) is True
+    assert is_transient_llm_error(httpx.ConnectError("c")) is True
 
 
 @pytest.mark.parametrize(
-    "status,expected", [(429, True), (503, True), (500, True), (401, False), (400, False)]
+    "status,expected",
+    [(429, True), (502, True), (503, True), (504, True), (500, True), (401, False), (400, False)],
 )
 def test_model_http_error_classified_by_status(status, expected):
     err = ModelHTTPError(status_code=status, model_name="m", body=None)
