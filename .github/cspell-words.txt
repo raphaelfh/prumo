@@ -222,3 +222,4 @@ MarkItDown
 remark
 bleach
 torch
+fitz
