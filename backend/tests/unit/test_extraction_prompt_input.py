@@ -93,7 +93,7 @@ async def test_on_demand_parse_when_no_blocks(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_raises_when_no_pdf_file(monkeypatch) -> None:
+async def test_raises_when_no_pdf_file() -> None:
     """FileNotFoundError when get_latest_pdf returns None."""
     article_files = MagicMock()
     article_files.get_latest_pdf = AsyncMock(return_value=None)
@@ -124,7 +124,7 @@ async def test_falls_back_to_assembler_when_markdown_over_budget(monkeypatch) ->
     monkeypatch.setattr(f"{_EP}.ArticleTextBlockRepository", lambda _db: repo)
 
     # Force estimate_tokens to return a value over budget
-    monkeypatch.setattr(f"{_EP}.estimate_tokens", lambda text, model: 999_999)
+    monkeypatch.setattr(f"{_EP}.estimate_tokens", lambda _text, _model: 999_999)
 
     from app.schemas.extraction import AssemblyInfo
 
