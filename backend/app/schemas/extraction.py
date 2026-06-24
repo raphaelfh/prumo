@@ -12,6 +12,25 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.config import settings
 
+# =================== INTERNAL ASSEMBLY SCHEMAS ===================
+
+
+class AssemblyInfo(BaseModel):
+    """Internal (non-API) record for one prompt assembly — logged per run for
+    token/cost observability and to surface windowing overflow.
+
+    Deliberately NOT referenced by any endpoint response model, so it never
+    enters the OpenAPI/schema.d.ts contract.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    total_blocks: int
+    included_blocks: int
+    truncated: bool
+    est_tokens: int
+
+
 # =================== COMMON SCHEMAS ===================
 
 

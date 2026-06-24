@@ -100,6 +100,12 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "openai"
     LLM_DEFAULT_MODEL: str = "gpt-4o-mini"
     LLM_TIMEOUT_SECONDS: float = 120.0
+    # Token budget for the per-run block-markdown assembly window (A1). A paper
+    # under this budget is sent in full; above it the assembler drops whole
+    # low-priority sections (IMRaD ranking) and logs AssemblyInfo.truncated.
+    # Leaves headroom on a 128k-context model for system prompt + schema + output
+    # + reask. No hard per-run cost ceiling (logged, not enforced — spec §8.5).
+    LLM_ASSEMBLY_BUDGET_TOKENS: int = 96_000
 
     # =================== PARSING ===================
     # Per-project default resolution is "auto" (see ParserSettingsService +

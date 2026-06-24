@@ -9,7 +9,8 @@ Tests cover:
   no mid-section/mid-table cut.
 - In-budget: nothing past a naive 15k char cut is silently lost.
 - Optional ``focus`` hint biases section priority deterministically.
-- Prose routes through canonical concat_page_text surface.
+- Prose equals block.text (== the canonical concat_page_text slice by construction);
+  serialization now delegates to render_blocks_to_markdown.
 - Input blocks are never mutated by assemble().
 - Over-budget fallback pops WHOLE sections (never string-splits on separator).
 """
@@ -19,7 +20,14 @@ from app.infrastructure.parsing.base import (
     assign_char_offsets_to_blocks,
     concat_page_text,
 )
-from app.services.extraction_block_assembler import DroppedSection, assemble
+from app.llm.assembler import (
+    DroppedSection,
+    assemble,
+    assemble_for_model,
+    blocks_from_plain_text,
+    estimate_tokens,
+)
+from app.schemas.extraction import AssemblyInfo
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -509,3 +517,69 @@ class TestCanonicalSurface:
             assert b.char_end == original_ends[i], (
                 f"Block {i} char_end was mutated: {original_ends[i]} → {b.char_end}"
             )
+
+
+# ---------------------------------------------------------------------------
+# 8. Model-aware assemble wrapper
+# ---------------------------------------------------------------------------
+
+
+class TestAssembleForModel:
+    def _imrad(self) -> list[ParsedBlock]:
+        return [
+            _b(1, 0, "Abstract", "heading"),
+            _b(1, 1, "A" * 400, "paragraph"),
+            _b(2, 0, "Results", "heading"),
+            _b(2, 1, "B" * 400, "paragraph"),
+            _b(3, 0, "References", "heading"),
+            _b(3, 1, "C" * 400, "paragraph"),
+        ]
+
+    def test_returns_markdown_and_assembly_info(self) -> None:
+        text, info = assemble_for_model(
+            self._imrad(), model_name="gpt-4o-mini", budget_tokens=100_000
+        )
+        assert isinstance(info, AssemblyInfo)
+        assert info.truncated is False
+        assert info.total_blocks == 6
+        assert info.included_blocks == 6
+        assert info.est_tokens > 0
+        assert "Abstract" in text and "Results" in text
+
+    def test_truncated_flag_set_when_over_budget(self) -> None:
+        # budget_tokens * 4 chars must be smaller than the full doc (~1.2k chars)
+        text, info = assemble_for_model(self._imrad(), model_name="gpt-4o-mini", budget_tokens=120)
+        assert info.truncated is True
+        assert info.included_blocks < info.total_blocks
+        assert len(text) <= 120 * 4
+
+    def test_est_tokens_uses_tiktoken_for_openai(self) -> None:
+        # tiktoken counts real tokens; a 400-char ASCII run is far fewer than 400 tokens.
+        n = estimate_tokens("word " * 400, "gpt-4o-mini")
+        assert 300 < n < 500
+
+    def test_heuristic_skew_for_anthropic_model(self) -> None:
+        # Anthropic models are not encodable by tiktoken → char/4 heuristic. Document
+        # the skew: the heuristic differs from the OpenAI tokeniser for the same text.
+        text = "Heterogeneous clinical-trial endpoints, n=412 (95% CI)."
+        heuristic = estimate_tokens(text, "claude-opus-4-8")  # falls back to len//4
+        assert heuristic == max(1, len(text) // 4)
+        openai = estimate_tokens(text, "gpt-4o-mini")
+        assert heuristic != openai  # documented skew between heuristic and tiktoken
+
+    def test_blocks_from_plain_text_splits_on_page_markers(self) -> None:
+        blocks = blocks_from_plain_text("[Page 1]\nIntro text.\n\n[Page 2]\nMethods text.")
+        assert [b.page_number for b in blocks] == [1, 2]
+        assert blocks[0].text == "Intro text." and blocks[0].block_type == "paragraph"
+
+    def test_blocks_from_plain_text_no_markers_single_block(self) -> None:
+        blocks = blocks_from_plain_text("just some flat text")
+        assert len(blocks) == 1 and blocks[0].page_number == 1
+
+    def test_fallback_text_flows_through_same_budgeted_assembler(self) -> None:
+        # A long marker-less pypdf string, wrapped + budgeted, never returns unbounded.
+        text, info = assemble_for_model(
+            blocks_from_plain_text("X" * 5000), model_name="gpt-4o-mini", budget_tokens=100
+        )
+        assert len(text) <= 100 * 4
+        assert info.truncated is True

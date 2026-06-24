@@ -32,6 +32,8 @@ async def test_extract_for_run_raises_when_all_sections_fail():
     )
     svc._get_pdf = AsyncMock(return_value=b"%PDF")
     svc.pdf_processor = SimpleNamespace(extract_text=AsyncMock(return_value="text"))
+    # build_prompt_input fetches the latest PDF file first; no blocks → pypdf fallback.
+    svc._article_files = SimpleNamespace(get_latest_pdf=AsyncMock(return_value=None))
     entity_type = SimpleNamespace(id="e1", name="Sec")
     svc._top_level_entity_types_for_template = AsyncMock(return_value=[entity_type])
     # Every entity-type extraction fails -> successful == 0.
