@@ -140,15 +140,25 @@ function CoordRow({
   reviewerLabelById,
   avatarById,
   resolved,
+  peersRevealed,
   disabled,
   onSelectExisting,
   onManualOverride,
 }: CoordRowProps) {
+  const [editing, setEditing] = useState(false);
   const [overrideOpen, setOverrideOpen] = useState(variant === "required_gap");
   const [overrideValue, setOverrideValue] = useState("");
   const [overrideRationale, setOverrideRationale] = useState("");
 
   const isResolved = !!resolved;
+
+  const resolvedReviewerName =
+    resolved?.mode === "select_existing"
+      ? (() => {
+          const d = decisions.find((x) => x.id === resolved.selected_decision_id);
+          return d ? reviewerLabel(d.reviewer_id, reviewerLabelById) : null;
+        })()
+      : null;
   const stack = decisions.map((d) => ({
     id: d.reviewer_id,
     name: reviewerLabel(d.reviewer_id, reviewerLabelById),
@@ -220,131 +230,169 @@ function CoordRow({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-3">
-        {decisions.length > 0 ? (
-          <div className="grid gap-2 md:grid-cols-2">
-            {decisions.map((d) => {
-              const value = unwrap(d.value);
-              const isReject = d.decision === "reject";
-              return (
-                <div
-                  key={d.id}
-                  className={cn(
-                    "rounded border p-3 text-sm",
-                    isReject
-                      ? "border-destructive/30 bg-destructive/5"
-                      : "border-border/60",
-                  )}
-                  data-testid={`consensus-decision-${d.id}`}
-                >
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <span className="font-medium">
-                      {reviewerLabel(d.reviewer_id, reviewerLabelById)}
-                    </span>
-                  </div>
-                  <pre className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
-                    {isReject
-                      ? t("consensus", "panelRejected")
-                      : JSON.stringify(value, null, 2)}
-                  </pre>
-                  {!isResolved ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-2 h-7 text-xs"
-                      disabled={disabled || isReject}
-                      onClick={() => void onSelectExisting(d.id)}
-                      data-testid={`consensus-accept-${d.id}`}
-                    >
-                      {t("consensus", "panelUseThisValue")}
-                    </Button>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
-
-        {!isResolved ? (
-          overrideOpen ? (
-            <div
-              className="space-y-2 rounded border border-dashed p-3"
-              data-testid={`consensus-override-${coordKey}`}
-            >
-              <Label htmlFor={`override-value-${coordKey}`} className="text-xs">
-                {t("consensus", "panelCustomValueLabel")}
-              </Label>
-              <Input
-                id={`override-value-${coordKey}`}
-                value={overrideValue}
-                onChange={(e) => setOverrideValue(e.target.value)}
-                placeholder={t("consensus", "panelCustomValuePlaceholder")}
-                disabled={disabled}
-              />
-              <Label
-                htmlFor={`override-rationale-${coordKey}`}
-                className="text-xs"
-              >
-                {t("consensus", "panelRationaleLabel")}
-              </Label>
-              <Textarea
-                id={`override-rationale-${coordKey}`}
-                value={overrideRationale}
-                onChange={(e) => setOverrideRationale(e.target.value)}
-                placeholder={t("consensus", "panelRationalePlaceholder")}
-                rows={2}
-                disabled={disabled}
-              />
-              <div className="flex justify-end gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setOverrideOpen(false);
-                    setOverrideValue("");
-                    setOverrideRationale("");
-                  }}
-                  disabled={disabled}
-                >
-                  {t("consensus", "cancel")}
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={
-                    disabled ||
-                    overrideValue.trim() === "" ||
-                    overrideRationale.trim() === ""
-                  }
-                  onClick={async () => {
-                    let parsed: unknown;
-                    try {
-                      parsed = JSON.parse(overrideValue);
-                    } catch {
-                      parsed = overrideValue;
-                    }
-                    await onManualOverride(parsed, overrideRationale.trim());
-                    setOverrideOpen(false);
-                    setOverrideValue("");
-                    setOverrideRationale("");
-                  }}
-                  data-testid={`consensus-override-submit-${coordKey}`}
-                >
-                  {t("consensus", "panelPublishOverride")}
-                </Button>
-              </div>
+        {isResolved && !editing ? (
+          <div
+            className="space-y-2 rounded border border-success/30 bg-success/5 p-3 text-sm"
+            data-testid={`consensus-resolved-${coordKey}`}
+          >
+            <div className="text-xs font-medium text-muted-foreground">
+              {t("consensus", "resolvedValueLabel")} ·{" "}
+              {resolved!.mode === "manual_override"
+                ? t("consensus", "resolvedCustom")
+                : peersRevealed && resolvedReviewerName
+                  ? t("consensus", "resolvedFromReviewer").replace("{{reviewer}}", resolvedReviewerName)
+                  : t("consensus", "resolvedCustom")}
             </div>
-          ) : (
+            <pre className="whitespace-pre-wrap break-words text-xs">
+              {(() => {
+                const v = unwrap(resolved!.value);
+                return typeof v === "string" ? v : JSON.stringify(v, null, 2);
+              })()}
+            </pre>
+            {resolved!.rationale ? (
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium">{t("consensus", "resolvedRationaleLabel")}:</span>{" "}
+                <span>{resolved!.rationale}</span>
+              </p>
+            ) : null}
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setOverrideOpen(true)}
-              disabled={disabled}
-              data-testid={`consensus-override-toggle-${coordKey}`}
+              className="h-7 text-xs focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => setEditing(true)}
             >
-              <Edit3 className="mr-1 h-3 w-3" />
-              {t("consensus", "panelOverrideWithCustom")}
+              {t("consensus", "change")}
             </Button>
-          )
-        ) : null}
+          </div>
+        ) : (
+          <>
+            {decisions.length > 0 ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                {decisions.map((d) => {
+                  const value = unwrap(d.value);
+                  const isReject = d.decision === "reject";
+                  return (
+                    <div
+                      key={d.id}
+                      className={cn(
+                        "rounded border p-3 text-sm",
+                        isReject
+                          ? "border-destructive/30 bg-destructive/5"
+                          : "border-border/60",
+                      )}
+                      data-testid={`consensus-decision-${d.id}`}
+                    >
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="font-medium">
+                          {reviewerLabel(d.reviewer_id, reviewerLabelById)}
+                        </span>
+                      </div>
+                      <pre className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                        {isReject
+                          ? t("consensus", "panelRejected")
+                          : JSON.stringify(value, null, 2)}
+                      </pre>
+                      {!isResolved ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 h-7 text-xs"
+                          disabled={disabled || isReject}
+                          onClick={() => void onSelectExisting(d.id)}
+                          data-testid={`consensus-accept-${d.id}`}
+                        >
+                          {t("consensus", "panelUseThisValue")}
+                        </Button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {overrideOpen ? (
+              <div
+                className="space-y-2 rounded border border-dashed p-3"
+                data-testid={`consensus-override-${coordKey}`}
+              >
+                <Label htmlFor={`override-value-${coordKey}`} className="text-xs">
+                  {t("consensus", "panelCustomValueLabel")}
+                </Label>
+                <Input
+                  id={`override-value-${coordKey}`}
+                  value={overrideValue}
+                  onChange={(e) => setOverrideValue(e.target.value)}
+                  placeholder={t("consensus", "panelCustomValuePlaceholder")}
+                  disabled={disabled}
+                />
+                <Label
+                  htmlFor={`override-rationale-${coordKey}`}
+                  className="text-xs"
+                >
+                  {t("consensus", "panelRationaleLabel")}
+                </Label>
+                <Textarea
+                  id={`override-rationale-${coordKey}`}
+                  value={overrideRationale}
+                  onChange={(e) => setOverrideRationale(e.target.value)}
+                  placeholder={t("consensus", "panelRationalePlaceholder")}
+                  rows={2}
+                  disabled={disabled}
+                />
+                <div className="flex justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setOverrideOpen(false);
+                      setOverrideValue("");
+                      setOverrideRationale("");
+                      setEditing(false);
+                    }}
+                    disabled={disabled}
+                  >
+                    {t("consensus", "cancel")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={
+                      disabled ||
+                      overrideValue.trim() === "" ||
+                      overrideRationale.trim() === ""
+                    }
+                    onClick={async () => {
+                      let parsed: unknown;
+                      try {
+                        parsed = JSON.parse(overrideValue);
+                      } catch {
+                        parsed = overrideValue;
+                      }
+                      await onManualOverride(parsed, overrideRationale.trim());
+                      setOverrideOpen(false);
+                      setOverrideValue("");
+                      setOverrideRationale("");
+                      setEditing(false);
+                    }}
+                    data-testid={`consensus-override-submit-${coordKey}`}
+                  >
+                    {t("consensus", "panelPublishOverride")}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setOverrideOpen(true)}
+                disabled={disabled}
+                data-testid={`consensus-override-toggle-${coordKey}`}
+              >
+                <Edit3 className="mr-1 h-3 w-3" />
+                {t("consensus", "panelOverrideWithCustom")}
+              </Button>
+            )}
+          </>
+        )}
       </CardContent>
     </Card>
   );

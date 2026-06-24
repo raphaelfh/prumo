@@ -388,6 +388,32 @@ describe("ConsensusPanel", () => {
     });
   });
 
+  it("shows the published custom value + rationale + a Change button when resolved", async () => {
+    const { runDetail, summary } = makeFixtures(); // divergent inst-1::field-1
+    const resolved = consensusDecision({
+      instance_id: "inst-1",
+      field_id: "field-1",
+      mode: "manual_override",
+      value: { value: "Reconciled" },
+      rationale: "agreed offline",
+    });
+    render(
+      <ConsensusPanel
+        runDetail={{ ...runDetail, consensus_decisions: [resolved] }}
+        summary={summary}
+        requiredCoords={[]}
+        peersRevealed={true}
+        onSelectExisting={vi.fn()}
+        onManualOverride={vi.fn()}
+        onFinalize={vi.fn()}
+        showFinalize={false}
+      />,
+    );
+    expect(screen.getByText("Reconciled")).toBeInTheDocument();
+    expect(screen.getByText("agreed offline")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change" })).toBeInTheDocument();
+  });
+
   it("extraction: renders the nothing-to-reconcile hint when no buckets and no in-panel finalize", () => {
     const summary: ReviewerSummary = {
       reviewers: ["user-a"],

@@ -103,6 +103,13 @@ export const consensus = {
         'Why publish a value none of the reviewers picked?',
     panelPublishOverride: 'Publish override',
     panelReviewerFallback: 'Reviewer {{id}}…',
+
+    // Resolved-state summary (Task 5)
+    resolvedValueLabel: 'Published value',
+    resolvedFromReviewer: 'from {{reviewer}}',
+    resolvedCustom: 'custom value',
+    resolvedRationaleLabel: 'Rationale',
+    change: 'Change',
 } as const;
 
 export type ConsensusCopy = typeof consensus;
