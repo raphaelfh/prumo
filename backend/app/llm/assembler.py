@@ -40,6 +40,7 @@ reader).
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -210,7 +211,7 @@ def _segment_into_sections(
 
 
 def assemble(
-    blocks: list[_Block],
+    blocks: Sequence[_Block],
     budget: int,
     focus: str | None = None,
 ) -> tuple[str, list[DroppedSection]]:
@@ -341,7 +342,7 @@ def estimate_tokens(text: str, model_name: str) -> int:
 
 
 def assemble_for_model(
-    blocks: list[_Block],
+    blocks: Sequence[_Block],
     *,
     model_name: str,
     budget_tokens: int,

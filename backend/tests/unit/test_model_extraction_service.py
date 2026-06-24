@@ -629,6 +629,7 @@ async def test_build_prompt_input_called_with_correct_kwargs(service):
 
     with (
         patch("app.services.model_extraction_service.build_prompt_input", mock_bpi),
+        patch("app.services.model_extraction_service.build_model", MagicMock()),
         patch(
             "app.services.model_extraction_service.extract_structured",
             AsyncMock(

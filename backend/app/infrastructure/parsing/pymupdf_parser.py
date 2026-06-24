@@ -12,9 +12,12 @@ No DB / IO / HTTP — pure given the bytes.
 
 from __future__ import annotations
 
+from typing import Any
+
 import fitz  # PyMuPDF
 
 from app.infrastructure.parsing.base import (
+    DocumentParser,
     ParsedBlock,
     assign_char_offsets_to_blocks,
     normalize_block_type,
@@ -26,7 +29,7 @@ _HEADING_SIZE_RATIO = 1.25
 _HEADING_MAX_CHARS = 120
 
 
-def _block_text(block: dict) -> str:
+def _block_text(block: dict[str, Any]) -> str:
     lines = []
     for line in block.get("lines", []):
         spans = [s.get("text", "") for s in line.get("spans", [])]
@@ -36,18 +39,18 @@ def _block_text(block: dict) -> str:
     return "\n".join(lines).strip()
 
 
-def _block_max_size(block: dict) -> float:
+def _block_max_size(block: dict[str, Any]) -> float:
     sizes = [s.get("size", 0.0) for line in block.get("lines", []) for s in line.get("spans", [])]
     return max(sizes) if sizes else 0.0
 
 
-class PymupdfParser:
+class PymupdfParser(DocumentParser):
     """DocumentParser implementation backed by PyMuPDF (fitz)."""
 
     def parse(self, pdf_bytes: bytes) -> list[ParsedBlock]:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         try:
-            raw: list[tuple[int, dict]] = []
+            raw: list[tuple[int, dict[str, Any]]] = []
             for page_index in range(doc.page_count):
                 page = doc.load_page(page_index)
                 page_dict = page.get_text("dict")

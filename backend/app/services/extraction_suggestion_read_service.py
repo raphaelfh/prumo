@@ -194,7 +194,7 @@ async def load_suggestions(
                 proposal_record_id=p.id,
                 text_content=ev.text_content,
                 page_number=ev.page_number,
-                block_ids=_extract_block_ids(ev),
+                blockIds=_extract_block_ids(ev),
             )
             if ev is not None
             else None
@@ -289,7 +289,7 @@ async def get_suggestion_history(
                 proposal_record_id=p.id,
                 text_content=ev.text_content,
                 page_number=ev.page_number,
-                block_ids=_extract_block_ids(ev),
+                blockIds=_extract_block_ids(ev),
             )
             if ev is not None
             else None
