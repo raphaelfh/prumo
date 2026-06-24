@@ -110,6 +110,11 @@ export const consensus = {
     resolvedCustom: 'custom value',
     resolvedRationaleLabel: 'Rationale',
     change: 'Change',
+
+    // Soft-warn before finalize (Task 6)
+    finalizeWarnTitle: 'Finalize anyway?',
+    finalizeWarnMissingReviewers: 'Only {{count}} of {{required}} expected reviewers submitted.',
+    finalizeWarnSingleFiller: '{{count}} field(s) were filled by a single reviewer.',
 } as const;
 
 export type ConsensusCopy = typeof consensus;
