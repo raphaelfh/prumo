@@ -38,7 +38,11 @@ dependencies = [
     "logfire[fastapi,celery]>=3.0.0",
     # PDF Processing
     "pypdf>=5.0.0",
-    "docling>=2.0.0",
+    # Pinned: the parser stack is drift-sensitive — an unpinned rapidocr bump to
+    # 3.9 (PP-OCRv6) broke prod via docling's OCR default. OCR is now disabled in
+    # DoclingParser so rapidocr drift is harmless, but pinning docling itself
+    # stops its own API/model drift. Bump deliberately and re-test.
+    "docling==2.104.0",
     # Observability
     "structlog>=24.0.0",
     # Rate Limiting

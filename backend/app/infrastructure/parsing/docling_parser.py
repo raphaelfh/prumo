@@ -5,17 +5,29 @@ lazy-imported inside parse() so app boot and non-parsing tests stay light.
 Maps docling DocItem labels onto the closed block_type set, reads bbox from
 each item's prov, and emits ParsedBlock with char offsets as 0 placeholders
 (DocumentParsingService assigns real offsets).
+
+OCR is disabled: our inputs are born-digital scientific PDFs with an embedded
+text layer, so OCR adds nothing. docling's default ``do_ocr=True`` loads
+RapidOCR, whose torch backend crashes on the PP-OCRv6 default it adopted in
+3.9 ("Unsupported configuration: torch.PP-OCRv6.det.small") when onnxruntime
+is absent. Disabling OCR skips the RapidOCR import entirely. Table structure
+stays on (FAST + cell matching: cell text comes verbatim from the PDF text
+layer) since scientific tables are load-bearing for extraction.
 """
 
 from __future__ import annotations
 
 import tempfile
+from typing import TYPE_CHECKING
 
 from app.infrastructure.parsing.base import (
     DocumentParser,
     ParsedBlock,
     normalize_block_type,
 )
+
+if TYPE_CHECKING:
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
 
 # docling label.value -> our closed block_type
 _LABEL_MAP = {
@@ -30,18 +42,56 @@ _LABEL_MAP = {
 }
 
 
+def _pdf_pipeline_options() -> PdfPipelineOptions:
+    """Build the PDF pipeline options for the self-hosted parser.
+
+    OCR off (born-digital text layer; avoids the RapidOCR/PP-OCRv6/torch crash),
+    table structure on in FAST mode with cell matching, accelerator pinned to
+    CPU (the worker has no GPU). Lazy-imports docling to keep app boot light.
+    """
+    from docling.datamodel.accelerator_options import (
+        AcceleratorDevice,
+        AcceleratorOptions,
+    )
+    from docling.datamodel.pipeline_options import (
+        PdfPipelineOptions,
+        TableFormerMode,
+        TableStructureOptions,
+    )
+
+    options = PdfPipelineOptions()
+    options.do_ocr = False
+    options.do_table_structure = True
+    options.table_structure_options = TableStructureOptions(
+        mode=TableFormerMode.FAST,
+        do_cell_matching=True,
+    )
+    options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
+    return options
+
+
 class DoclingParser(DocumentParser):
     """Self-hosted layout parser. Implements the DocumentParser port."""
 
     def parse(self, pdf_bytes: bytes) -> list[ParsedBlock]:
-        from docling.document_converter import DocumentConverter
+        from docling.datamodel.base_models import InputFormat
+        from docling.document_converter import (
+            DocumentConverter,
+            PdfFormatOption,
+        )
         from docling_core.types.doc import TableItem
+
+        converter = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(pipeline_options=_pdf_pipeline_options())
+            }
+        )
 
         # docling reads from a path; write the bytes to a temp file.
         with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
             tmp.write(pdf_bytes)
             tmp.flush()
-            doc = DocumentConverter().convert(tmp.name).document
+            doc = converter.convert(tmp.name).document
 
         blocks: list[ParsedBlock] = []
         per_page_index: dict[int, int] = {}

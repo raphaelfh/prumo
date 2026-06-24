@@ -4188,7 +4188,7 @@ requires-dist = [
     { name = "celery-types", marker = "extra == 'dev'", specifier = ">=0.22.0" },
     { name = "cryptography", specifier = ">=43.0.0" },
     { name = "diff-cover", marker = "extra == 'dev'", specifier = ">=10.0" },
-    { name = "docling", specifier = ">=2.0.0" },
+    { name = "docling", specifier = "==2.104.0" },
     { name = "email-validator", specifier = ">=2.0.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "greenlet", specifier = ">=3.0.0" },
