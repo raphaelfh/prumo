@@ -21,6 +21,7 @@ def test_parse_returns_blocks_with_bbox_and_offsets_ready():
     assert b.block_index == 0
     assert b.block_type in BLOCK_TYPES
     assert set(b.bbox) == {"x", "y", "width", "height"}
+    assert b.char_end > b.char_start
     assert "patients" in " ".join(x.text for x in blocks)
 
 

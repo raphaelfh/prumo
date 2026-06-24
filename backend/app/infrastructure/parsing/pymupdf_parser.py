@@ -60,7 +60,7 @@ class PymupdfParser:
             if not raw:
                 raise ValueError("PymupdfParser produced no text blocks")
 
-            sizes = [_block_max_size(b) for _, b in raw if _block_max_size(b) > 0]
+            sizes = [s for _, b in raw if (s := _block_max_size(b)) > 0]
             median = sorted(sizes)[len(sizes) // 2] if sizes else 0.0
 
             blocks: list[ParsedBlock] = []
