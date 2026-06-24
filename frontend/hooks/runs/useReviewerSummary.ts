@@ -69,9 +69,31 @@ function reviewerKey(
 }
 
 /**
- * Equality check that is permissive about wrapping (`{value: X}` vs `X`)
- * and uses JSON canonicalization for deeper structures. Rejects compare
- * equal to each other; "edit X" and "edit Y" don't.
+ * Canonical JSON with object keys sorted recursively — matches the backend's
+ * `json.dumps(value, sort_keys=True)` so the two agreement checks stay in lock
+ * step (Phase B finding F1). Key order never affects equality; a differing
+ * sibling key (e.g. `unit`) does.
+ *
+ * Caveat: JS has no int/float distinction, so `5` and `5.0` both stringify to
+ * `"5"` here while the backend keeps `5` vs `5.0`. Harmless in practice — form
+ * values are stored as strings (`"5"`), never bare JSON numbers — so a numeric
+ * mismatch would only arise from a non-form writer, which is out of scope.
+ */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
+}
+
+/**
+ * Agreement check on the FULL value envelope (Phase B, decision G): two
+ * reviewers agree only when their whole stored value matches, so `5 mg` vs
+ * `5 g` (`{value, unit}` differing on `unit`) is divergence — not the false
+ * agreement the old unit-stripped `unwrap` produced. A single-key `{value: X}`
+ * still compares equal across reviewers. Rejects compare equal to each other;
+ * a reject vs a non-reject never does.
  */
 function decisionsAgree(
   a: ReviewerDecisionResponse,
@@ -80,14 +102,14 @@ function decisionsAgree(
   if (a.decision === "reject" && b.decision === "reject") return true;
   if (a.decision === "reject" || b.decision === "reject") return false;
 
-  const av = unwrap(a.value);
-  const bv = unwrap(b.value);
-  return JSON.stringify(av) === JSON.stringify(bv);
+  return stableStringify(a.value) === stableStringify(b.value);
 }
 
 /**
- * Peel one `{value: X}` envelope. Exported so RunReviewerComparison renders
- * values the exact way this summary aggregates/compares them (one peel rule).
+ * Peel one `{value: X}` envelope for DISPLAY. Exported so RunReviewerComparison
+ * renders values the same way this summary aggregates them. Agreement is no
+ * longer decided by peeling — `decisionsAgree` compares the full envelope
+ * (Phase B, decision G).
  */
 export function unwrap(raw: unknown): unknown {
   if (

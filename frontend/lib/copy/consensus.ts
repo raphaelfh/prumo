@@ -93,7 +93,7 @@ export const consensus = {
     panelOverrideWithCustom: 'Override with custom value',
     panelCustomValueLabel: 'Custom value (JSON; use a string for free-text fields)',
     panelCustomValuePlaceholder: '"Low" or {"text": "..."}',
-    panelRationaleLabel: 'Rationale (required)',
+    panelRationaleLabel: 'Rationale (optional)',
     panelRationalePlaceholder:
         'Why publish a value none of the reviewers picked?',
     panelPublishOverride: 'Publish override',

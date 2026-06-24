@@ -757,3 +757,204 @@ async def test_approve_and_finalize_rejects_unresolved_divergence(
     with pytest.raises(InvalidStageTransitionError, match="diverge"):
         await svc.approve_and_finalize(run_id=run.id, user_id=profile_id)
     await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_approve_and_finalize_treats_unit_difference_as_divergence(
+    db_session: AsyncSession,
+) -> None:
+    """Phase B (decision G) — comparison contract: agreement is keyed on the FULL
+    stored envelope, not the unit-stripped scalar. This feeds the ``{value, unit}``
+    shape directly (the value remaining after one ``{value: …}`` peel): the old key
+    ``_unwrap_value(resolved)`` collapsed it to ``"5"`` and FALSELY agreed on
+    ``5 mg`` vs ``5 g``; the full-envelope key keeps the unit, so the coord is a
+    conflict and approve_and_finalize must REJECT. (The form double-wraps unit
+    values as ``{value: {value, unit}}`` — see the production-fidelity test below —
+    so this synthetic shape isolates the one-level-peel behaviour the fix targets.)"""
+    from app.services.extraction_review_service import ExtractionReviewService
+
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+    reviewer_id = SEED.reviewer_profile
+
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :p "
+            "AND article_id = :a AND template_id = :t"
+        ),
+        {"p": str(project_id), "a": str(article_id), "t": str(template_id)},
+    )
+    svc = RunLifecycleService(db_session)
+    run = await svc.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="extract", user_id=profile_id)
+    review = ExtractionReviewService(db_session)
+    await review.record_decision(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=profile_id,
+        decision="edit",
+        value={"value": "5", "unit": "mg"},
+    )
+    await review.record_decision(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=reviewer_id,
+        decision="edit",
+        value={"value": "5", "unit": "g"},
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="consensus", user_id=profile_id)
+
+    with pytest.raises(InvalidStageTransitionError, match="diverge"):
+        await svc.approve_and_finalize(run_id=run.id, user_id=profile_id)
+
+    # Nothing was auto-published — the conflict must be resolved by the manager.
+    published = (
+        await db_session.execute(
+            text("SELECT count(*) FROM public.extraction_published_states WHERE run_id = :r"),
+            {"r": str(run.id)},
+        )
+    ).scalar()
+    assert published == 0
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_approve_and_finalize_publishes_identical_full_envelope(
+    db_session: AsyncSession,
+) -> None:
+    """Phase B (decision G) guardrail: when two reviewers submit the SAME full
+    envelope (value AND unit), it is still agreement — approve_and_finalize
+    publishes the single value and finalizes. The envelope is published verbatim
+    (unit preserved), not the unwrapped scalar. A single-key ``{value: X}`` must
+    likewise keep agreeing across reviewers — only differing siblings diverge."""
+    from app.services.extraction_review_service import ExtractionReviewService
+
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+    reviewer_id = SEED.reviewer_profile
+
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :p "
+            "AND article_id = :a AND template_id = :t"
+        ),
+        {"p": str(project_id), "a": str(article_id), "t": str(template_id)},
+    )
+    svc = RunLifecycleService(db_session)
+    run = await svc.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="extract", user_id=profile_id)
+    review = ExtractionReviewService(db_session)
+    envelope = {"value": "5", "unit": "mg"}
+    await review.record_decision(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=profile_id,
+        decision="edit",
+        value=dict(envelope),
+    )
+    await review.record_decision(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=reviewer_id,
+        decision="edit",
+        value=dict(envelope),
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="consensus", user_id=profile_id)
+
+    finalized, published_count = await svc.approve_and_finalize(run_id=run.id, user_id=profile_id)
+    assert finalized.stage == ExtractionRunStage.FINALIZED.value
+    assert published_count == 1
+
+    published_value = (
+        await db_session.execute(
+            text("SELECT value FROM public.extraction_published_states WHERE run_id = :r"),
+            {"r": str(run.id)},
+        )
+    ).scalar()
+    assert published_value == envelope  # full envelope preserved, unit intact
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_approve_and_finalize_real_form_double_wrapped_unit_diverges(
+    db_session: AsyncSession,
+) -> None:
+    """Phase B (decision G) — production fidelity. The form does NOT store a bare
+    ``{value, unit}``: the autosave builds ``{value, unit}`` and ``writeRunFieldValue``
+    wraps it again, so the reviewer decision value is ``{value: {value, unit}}``
+    (frontend/services/extractionRunService.ts). This test feeds that exact stored
+    shape — ``{value: {value:"5", unit:"mg"}}`` vs ``{value: {value:"5", unit:"g"}}`` —
+    and confirms approve_and_finalize REJECTS and publishes nothing. (With this
+    double-wrapped shape the old one-level ``_unwrap_value`` already kept the unit,
+    so this guards that the full-envelope key does not regress the real path.)"""
+    from app.services.extraction_review_service import ExtractionReviewService
+
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+    reviewer_id = SEED.reviewer_profile
+
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :p "
+            "AND article_id = :a AND template_id = :t"
+        ),
+        {"p": str(project_id), "a": str(article_id), "t": str(template_id)},
+    )
+    svc = RunLifecycleService(db_session)
+    run = await svc.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="extract", user_id=profile_id)
+    review = ExtractionReviewService(db_session)
+    await review.record_decision(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=profile_id,
+        decision="edit",
+        value={"value": {"value": "5", "unit": "mg"}},
+    )
+    await review.record_decision(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=reviewer_id,
+        decision="edit",
+        value={"value": {"value": "5", "unit": "g"}},
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="consensus", user_id=profile_id)
+
+    with pytest.raises(InvalidStageTransitionError, match="diverge"):
+        await svc.approve_and_finalize(run_id=run.id, user_id=profile_id)
+
+    published = (
+        await db_session.execute(
+            text("SELECT count(*) FROM public.extraction_published_states WHERE run_id = :r"),
+            {"r": str(run.id)},
+        )
+    ).scalar()
+    assert published == 0
+    await db_session.rollback()

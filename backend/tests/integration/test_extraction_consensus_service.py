@@ -156,9 +156,11 @@ async def test_select_existing_requires_decision_id(
 
 
 @pytest.mark.asyncio
-async def test_manual_override_requires_value_and_rationale(
+async def test_manual_override_requires_value(
     db_session: AsyncSession,
 ) -> None:
+    """A ``manual_override`` with no value is still rejected (Phase B relaxed
+    only the rationale requirement, not the value)."""
     fx = await _setup_consensus_run(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
@@ -175,6 +177,41 @@ async def test_manual_override_requires_value_and_rationale(
             value=None,
             rationale=None,
         )
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_manual_override_allows_null_rationale(
+    db_session: AsyncSession,
+) -> None:
+    """Phase B (decision F): the consensus rationale is OPTIONAL.
+
+    A ``manual_override`` with a value but ``rationale=None`` is accepted —
+    both the DB CHECK ``manual_override_complete`` (relaxed in alembic 0032)
+    and the service guard now require only ``value``. The PublishedState is
+    written exactly as for a rationale-bearing override. This rides the real
+    Postgres CHECK constraint, which is invisible to the mock-driven unit
+    twin, so it must live here.
+    """
+    fx = await _setup_consensus_run(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, profile_id, _ = fx
+
+    service = ExtractionConsensusService(db_session)
+    consensus, published = await service.record_consensus(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        consensus_user_id=profile_id,
+        mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+        value={"value": "5", "unit": "mg"},
+        rationale=None,
+    )
+    assert consensus.mode == "manual_override"
+    assert consensus.rationale is None
+    assert published.version == 1
+    assert published.value == {"value": "5", "unit": "mg"}
     await db_session.rollback()
 
 
