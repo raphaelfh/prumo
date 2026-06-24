@@ -1,4 +1,3 @@
-import type {Citation, CitationId} from './citation';
 import type {PDFDocumentHandle, PageRotation} from './engine';
 import type {PDFSource} from './source';
 
@@ -82,10 +81,6 @@ export interface ViewerState {
    */
   mode: ViewerMode;
 
-  // Citations
-  citations: ReadonlyMap<CitationId, Citation>;
-  activeCitationId: CitationId | null;
-
   /**
    * Pending reader-locate request (markdown-first citation locating). The
    * reader primitive consumes this to scroll + flash the matching block.
@@ -118,12 +113,6 @@ export interface ViewerActions {
   locateInReader(quote: string, page?: number | null): void;
   /** Clear any pending reader-locate request (e.g. on document switch). */
   clearReaderLocate(): void;
-
-  // Citations
-  addCitation(citation: Citation): void;
-  removeCitation(id: CitationId): void;
-  clearCitations(): void;
-  setActiveCitation(id: CitationId | null): void;
 
   // Search
   setSearchQuery(query: string): void;

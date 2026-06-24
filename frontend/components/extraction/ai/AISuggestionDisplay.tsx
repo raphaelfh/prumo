@@ -20,7 +20,6 @@ interface AISuggestionDisplayProps {
   suggestion: AISuggestion;
   instanceId: string;
   fieldId: string;
-  articleId?: string;
   onAccept?: () => void;
   onReject?: () => void;
   loading?: boolean;
@@ -40,7 +39,6 @@ export function AISuggestionDisplay({
   suggestion,
   instanceId: _instanceId,
   fieldId: _fieldId,
-  articleId,
   onAccept,
   onReject,
   loading = false,
@@ -58,7 +56,6 @@ export function AISuggestionDisplay({
           {hasDetails ? (
             <AISuggestionDetailsPopover
               suggestion={suggestion}
-              articleId={articleId}
               trigger={
                 <div
                   className={triggerAreaClass}

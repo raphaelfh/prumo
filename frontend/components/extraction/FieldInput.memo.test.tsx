@@ -64,7 +64,6 @@ function baseProps(isActionLoading: () => 'accept' | 'reject' | null) {
     value: '', // empty → suggestion is shown, no manual value
     onChange: vi.fn(),
     projectId: 'p1',
-    articleId: 'a1',
     aiSuggestion: PENDING_SUGGESTION,
     onAcceptAI: vi.fn(),
     onRejectAI: vi.fn(),

@@ -1,5 +1,4 @@
 import {createStore, type StoreApi} from 'zustand';
-import type {Citation, CitationId} from './citation';
 import type {PDFDocumentHandle, PageRotation} from './engine';
 import type {PDFSource} from './source';
 import type {LoadStatus, SearchState, ViewerActions, ViewerMode, ViewerState} from './state';
@@ -24,8 +23,6 @@ const initialData: ViewerData = {
   scale: 1,
   rotation: 0,
   mode: 'canvas',
-  citations: new Map<CitationId, Citation>(),
-  activeCitationId: null,
   readerLocate: null,
   search: initialSearch,
 };
@@ -43,12 +40,10 @@ export function createViewerStore(
 ): StoreApi<ViewerState> {
   return createStore<ViewerState>((set, get) => {
     // Captured once so reset() restores caller-supplied overrides
-    // (not just module defaults) and uses a fresh citations Map
-    // to avoid sharing references across stores.
+    // (not just module defaults).
     const buildResetState = (): ViewerData => ({
       ...initialData,
       ...initial,
-      citations: new Map<CitationId, Citation>(),
     });
 
     const actions: ViewerActions = {
@@ -100,29 +95,6 @@ export function createViewerStore(
 
       clearReaderLocate() {
         set({readerLocate: null});
-      },
-
-      addCitation(citation: Citation) {
-        const next = new Map(get().citations);
-        next.set(citation.id, citation);
-        set({citations: next});
-      },
-
-      removeCitation(id: CitationId) {
-        const next = new Map(get().citations);
-        next.delete(id);
-        set({citations: next});
-      },
-
-      clearCitations() {
-        set({
-          citations: new Map<CitationId, Citation>(),
-          activeCitationId: null,
-        });
-      },
-
-      setActiveCitation(id: CitationId | null) {
-        set({activeCitationId: id});
       },
 
       setSearchQuery(query: string) {

@@ -188,29 +188,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/articles/{article_id}/citations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Article Citations Endpoint
-         * @description Return all v1-shape citations attached to ``article_id``.
-         *
-         *     Unanchored rows (hallucinated or pre-ingestion) are included with
-         *     ``verified=False``; anchored rows carry ``verified=True`` + ``anchorKind``.
-         */
-        get: operations["list_article_citations_endpoint_api_v1_articles__article_id__citations_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/articles/{article_id}/files": {
         parameters: {
             query?: never;
@@ -3915,37 +3892,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_Union_RunSummaryResponse__NoneType__"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_article_citations_endpoint_api_v1_articles__article_id__citations_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                article_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_list_dict_str__Any___"];
                 };
             };
             /** @description Validation Error */

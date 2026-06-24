@@ -761,7 +761,6 @@ export default function QualityAssessmentFullScreen() {
                       handleValueChange(instanceId, fieldId, value)
                     }
                     projectId={projectId}
-                    articleId={articleId}
                     defaultOpen={idx === 0}
                     reviewerActivity={{
                       decisionsByCoord: reviewerSummary.decisionsByCoord,

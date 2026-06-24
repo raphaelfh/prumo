@@ -3,7 +3,8 @@
  *
  * Presentational dropdown over an article's files (MAIN + supplements), with a
  * per-file parse-status dot. Selecting a document is the caller's concern
- * (it also clears viewer citations/search/page to avoid cross-document leak).
+ * (it also clears the viewer's locate highlight, search, and page to avoid
+ * cross-document leak).
  * `ParseStatusControl` is a status-aware control that shows parse status and
  * surfaces a contextual re-parse action (with a confirm dialog for already-parsed
  * files and an error tooltip for parse failures).
