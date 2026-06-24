@@ -50,8 +50,8 @@ def create_document_parser(
         llama_cloud_key: resolved LlamaCloud key (BYOK > global), or None.
 
     Returns:
-        A DocumentParser instance. Falls back to the self-hosted DoclingParser
-        whenever the cloud path is unavailable.
+        A DocumentParser instance. Falls back to the free PyMuPDF parser
+        when the cloud path is unavailable or the backend is unrecognised.
     """
     # Lazy imports: the heavy docling/llama_cloud deps must not load at module
     # import time. PymupdfParser is light (base fitz) so it can import eagerly,
