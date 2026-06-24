@@ -58,10 +58,7 @@ import {
   useRunReviewers,
 } from '@/hooks/runs';
 import {ConsensusPanel} from '@/components/runs/ConsensusPanel';
-import {classifyReconciliation} from '@/lib/runs/reconciliation';
-import {countExpectedReviewers} from '@/lib/runs/reviewerExpectation';
-import {computeFinalizeWarning} from '@/lib/runs/finalizeWarning';
-import {useProjectMembers} from '@/hooks/hitl/useProjectMembers';
+import {useConsensusReconciliation} from '@/hooks/extraction/useConsensusReconciliation';
 
 // Components
 import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
@@ -247,41 +244,19 @@ export default function ExtractionFullScreen() {
 
   const inConsensusStage = runDetail?.run.stage === 'consensus';
 
-  // {instance::field} → "Section · Field" label map for the ConsensusPanel.
-  // Built from every existing instance × its entity type's snapshot fields, so
-  // every coord — agreed, diverging, or a required gap — gets a real label.
-  const fieldLabelByCoordMap: Record<string, string> = {};
-  const requiredCoords: string[] = [];
-  for (const inst of instances) {
-    const et = entityTypes.find((e) => e.id === inst.entity_type_id);
-    const sectionLabel = et?.label ?? et?.name ?? 'Section';
-    for (const f of et?.fields ?? []) {
-      const key = `${inst.id}::${f.id}`;
-      fieldLabelByCoordMap[key] = `${sectionLabel} · ${f.label}`;
-      if (f.is_required) requiredCoords.push(key);
-    }
-  }
-  const fieldLabelByCoord = fieldLabelByCoordMap;
-
-  // Role-derived expected reviewer count: at least the actual participants,
-  // or the count of reviewer+manager roles in the project (whichever is higher).
-  const members = useProjectMembers(projectId ?? '');
-  const expectedReviewerCount = Math.max(
-    reviewerSummary.reviewers.length,
-    countExpectedReviewers(members.data ?? []),
-  );
-
-  // Classify reconciliation buckets for the soft-warn (singleFiller count).
-  const reconciliation = classifyReconciliation({
-    divergentCoords: reviewerSummary.divergentCoords,
-    decisionCountByCoord: new Map(
-      [...reviewerSummary.decisionsByCoord].map(([k, v]) => [k, v.length]),
-    ),
-    participantCount: reviewerSummary.reviewers.length,
+  // Consensus-page derived values: coord→label map, required coords,
+  // expected reviewer count, and pre-built finalize-warning message.
+  const {
+    fieldLabelByCoord,
     requiredCoords,
-    publishedCoords: new Set(
-      (runDetail?.published_states ?? []).map((p) => `${p.instance_id}::${p.field_id}`),
-    ),
+    expectedReviewerCount,
+    finalizeWarning,
+  } = useConsensusReconciliation({
+    runDetail,
+    reviewerSummary,
+    instances,
+    entityTypes,
+    projectId,
   });
 
   const handleSelectExisting = async (params: {
@@ -319,29 +294,10 @@ export default function ExtractionFullScreen() {
   // (unresolved divergence / incomplete required fields) surface via
   // useApproveFinalize.onError as a toast; the promise-chain guard (no try/finally)
   // keeps the React Compiler happy and skips the success path on failure.
-  // Soft-warn: if fewer reviewers submitted than expected, or any field was
-  // filled by only one reviewer, show a confirm dialog before finalizing.
+  // Soft-warn: pre-built by useConsensusReconciliation; one line here.
   const handleApproveFinalize = async () => {
     if (!activeRunId) return;
-    const warning = computeFinalizeWarning({
-      participantCount: reviewerSummary.reviewers.length,
-      expectedReviewerCount,
-      singleFillerCount: reconciliation.singleFiller.length,
-    });
-    if (warning.shouldWarn) {
-      const lines = warning.reasons.map((r) =>
-        r === 'missing_reviewers'
-          ? t('consensus', 'finalizeWarnMissingReviewers')
-              .replace('{{count}}', String(reviewerSummary.reviewers.length))
-              .replace('{{required}}', String(expectedReviewerCount))
-          : t('consensus', 'finalizeWarnSingleFiller')
-              .replace('{{count}}', String(reconciliation.singleFiller.length)),
-      );
-      const proceed = window.confirm(
-        `${t('consensus', 'finalizeWarnTitle')}\n\n${lines.join('\n')}`,
-      );
-      if (!proceed) return;
-    }
+    if (finalizeWarning.shouldWarn && !window.confirm(finalizeWarning.confirmMessage)) return;
     const ok = await approveFinalize.mutateAsync().then(() => true).catch(() => false);
     if (!ok) return;
     await Promise.all([refetchRun(), refreshValues(), refreshFinalizedRun()]);
