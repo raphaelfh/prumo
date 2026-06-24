@@ -47,6 +47,18 @@ function setup(value: HitlConfigPayload, members = MEMBERS) {
 }
 
 describe('ConsensusConfigForm', () => {
+  it('no longer renders a reviewers-per-article input', () => {
+    render(
+      <ConsensusConfigForm
+        value={{ reviewer_count: 1, consensus_rule: 'unanimous', arbitrator_id: null }}
+        onChange={vi.fn()}
+        members={[]}
+      />,
+    );
+    expect(screen.queryByLabelText(/reviewers per article/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/consensus rule/i)).toBeInTheDocument();
+  });
+
   it('hides the arbitrator picker for non-arbitrator rules', () => {
     setup({
       reviewer_count: 1,
@@ -77,23 +89,6 @@ describe('ConsensusConfigForm', () => {
     expect(onChange).toHaveBeenCalledWith({
       reviewer_count: 2,
       consensus_rule: 'majority',
-      arbitrator_id: null,
-    });
-  });
-
-  it('clamps reviewer_count to the configured max', () => {
-    const { onChange } = setup({
-      reviewer_count: 1,
-      consensus_rule: 'unanimous',
-      arbitrator_id: null,
-    });
-    const input = screen.getByLabelText(
-      /Reviewers per article/i,
-    ) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: '999' } });
-    expect(onChange).toHaveBeenCalledWith({
-      reviewer_count: 20, // default max
-      consensus_rule: 'unanimous',
       arbitrator_id: null,
     });
   });

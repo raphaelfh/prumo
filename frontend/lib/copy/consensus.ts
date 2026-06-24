@@ -34,9 +34,6 @@ export const consensus = {
     templatesRemoveOverride: 'Remove override',
 
     // Form fields
-    reviewerCountLabel: 'Reviewers per article',
-    reviewerCountHint:
-        'How many reviewers must submit decisions before consensus is evaluated.',
     ruleLabel: 'Consensus rule',
     ruleHint:
         'How the canonical value is chosen once enough reviewers have decided.',
