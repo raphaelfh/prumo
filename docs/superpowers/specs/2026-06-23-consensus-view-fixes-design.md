@@ -200,7 +200,9 @@ blocking coords (a defensive nice-to-have — the FE already surfaces every stat
 
 ## Phasing
 - **Phase A — frontend only, no migration:** A, B, C, D, E. Unblocks the view and
-  makes the surface multi-reviewer-adequate.
+  makes the surface multi-reviewer-adequate. **✅ Implemented 2026-06-24**
+  (commits `68cb0778..8a65cd6f`; 856 tests green, lint clean, whole-branch review
+  "ready to merge", design-review passed at 1280/560).
 - **Phase B — backend + frontend:** F (optional rationale migration) and G
   (full-envelope compare + test).
 
