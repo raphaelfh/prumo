@@ -77,13 +77,12 @@ export const consensus = {
 
     // --- Runtime divergence-resolution panel (ConsensusPanel) ---
     panelResolveTitle: 'Resolve divergence',
-    panelEvaluateAllTitle: 'Review every field',
     sectionConflictsTitle: 'Conflicts',
     sectionConflictsDesc: 'Reviewers gave different values. Resolve each.',
     sectionAttentionTitle: 'Needs attention',
     sectionAttentionDesc: 'Single-reviewer answers and unfilled required fields.',
-    sectionAgreedTitle: 'Agreed',
-    sectionAgreedHint: '{{count}} fields agreed — published automatically on finalize.',
+    sectionAgreedHintOne: '1 field agreed — published automatically on finalize.',
+    sectionAgreedHintOther: '{{count}} fields agreed — published automatically on finalize.',
     badgeRequiredGap: 'Required · not filled',
     badgeSingleFiller: 'Only one reviewer',
     nothingToReconcile: 'Nothing to reconcile. Use “Approve & finalize” in the header.',
@@ -91,13 +90,6 @@ export const consensus = {
     panelFieldsResolvedOther: '{{resolved}}/{{total}} fields resolved.',
     panelFinalize: 'Finalize',
     panelFinalizing: 'Finalizing…',
-    panelLeft: '{{count}} left',
-    panelNoConflictsTitle: 'No conflicts to resolve.',
-    panelReadyToFinalize:
-        'All required fields are filled. You can finalize now.',
-    panelBlockedIncomplete:
-        'Fill every required field before you can finalize.',
-    panelBlockedNoDecision: 'Publish at least one field before finalizing.',
     panelReviewerDisagreedOne: '{{count}} reviewer disagreed.',
     panelReviewersDisagreedOther: '{{count}} reviewers disagreed.',
     panelResolved: 'Resolved',

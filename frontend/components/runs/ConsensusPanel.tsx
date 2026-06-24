@@ -431,7 +431,10 @@ export function ConsensusPanel({
     resolvedByCoord.has(c),
   );
   const canFinalize =
-    conflictsResolved && buckets.requiredGaps.length === 0 && isComplete;
+    conflictsResolved &&
+    buckets.requiredGaps.length === 0 &&
+    isComplete &&
+    runDetail.consensus_decisions.length > 0;
 
   return (
     <div className="space-y-4 p-4" data-testid="consensus-panel">
@@ -537,10 +540,10 @@ function AgreedSummary({
         className="flex w-full items-center justify-between text-left text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span>
-          {t("consensus", "sectionAgreedHint").replace(
-            "{{count}}",
-            String(coords.length),
-          )}
+          {(coords.length === 1
+            ? t("consensus", "sectionAgreedHintOne")
+            : t("consensus", "sectionAgreedHintOther")
+          ).replace("{{count}}", String(coords.length))}
         </span>
         <span aria-hidden="true">{open ? "▾" : "▸"}</span>
       </button>

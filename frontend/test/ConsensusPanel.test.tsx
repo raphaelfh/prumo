@@ -171,7 +171,7 @@ describe("ConsensusPanel", () => {
         showFinalize={false}
       />,
     );
-    expect(screen.getByTestId("consensus-section-agreed")).toHaveTextContent("1 fields agreed");
+    expect(screen.getByTestId("consensus-section-agreed")).toHaveTextContent("1 field agreed");
     expect(screen.getByTestId("consensus-section-attention")).toHaveTextContent("S · Required");
   });
 
@@ -240,6 +240,45 @@ describe("ConsensusPanel", () => {
       />,
     );
 
+    expect(screen.getByTestId("consensus-finalize-button")).toBeDisabled();
+  });
+
+  it("QA: disables finalize when all agreed but consensus_decisions is empty", () => {
+    // Agreements-only run: no divergent coords, isComplete, but zero consensus decisions.
+    // Backend rejects finalize with EmptyFinalizeError when consensus_count===0.
+    const agreeDecisions: ReviewerDecisionResponse[] = [
+      decision({ id: "d1", reviewer_id: "user-a", instance_id: "i", field_id: "ag", value: { value: "Yes" } }),
+      decision({ id: "d2", reviewer_id: "user-b", instance_id: "i", field_id: "ag", value: { value: "Yes" } }),
+    ];
+    const agreedSummary: ReviewerSummary = {
+      reviewers: ["user-a", "user-b"],
+      currentDecisions: new Map(),
+      decisionsByCoord: new Map([["i::ag", agreeDecisions]]),
+      divergentCoords: new Set(),
+      requiredReviewerCount: 2,
+      completionRatio: 1,
+      filledCoords: new Set(["i::ag"]),
+      touchedCoords: new Set(["i::ag"]),
+    };
+    const runDetail = {
+      ...makeFixtures().runDetail,
+      decisions: agreeDecisions,
+      consensus_decisions: [] as ConsensusDecisionResponse[],
+      published_states: [],
+    };
+    render(
+      <ConsensusPanel
+        runDetail={runDetail}
+        summary={agreedSummary}
+        requiredCoords={[]}
+        peersRevealed={true}
+        isComplete={true}
+        onSelectExisting={vi.fn()}
+        onManualOverride={vi.fn()}
+        onFinalize={vi.fn()}
+        showFinalize={true}
+      />,
+    );
     expect(screen.getByTestId("consensus-finalize-button")).toBeDisabled();
   });
 
