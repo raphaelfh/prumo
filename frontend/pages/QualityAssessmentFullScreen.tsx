@@ -713,6 +713,8 @@ export default function QualityAssessmentFullScreen() {
           isResolving={consensusMutation.isPending}
           isFinalizing={advanceMutation.isPending}
           isComplete={qaIsComplete}
+          requiredCoords={[]}
+          peersRevealed={!!runDetail.peers_revealed}
         />
       ) : null}
 

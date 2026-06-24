@@ -243,21 +243,15 @@ export default function ExtractionFullScreen() {
 
   const inConsensusStage = runDetail?.run.stage === 'consensus';
 
-  // {instance::field} → "Section · Field" label map AND the full evaluate-all
-  // coord list for the ConsensusPanel. Built from every existing instance ×
-  // its entity type's snapshot fields (real labels), so the evaluate-all surface
-  // shows every field — agreed and diverging — not just touched/divergent ones.
+  // {instance::field} → "Section · Field" label map for the ConsensusPanel.
+  // Built from every existing instance × its entity type's snapshot fields, so
+  // every coord — agreed, diverging, or a required gap — gets a real label.
   const fieldLabelByCoordMap: Record<string, string> = {};
-  const extractionAllCoords: string[] = [];
   for (const inst of instances) {
     const et = entityTypes.find((e) => e.id === inst.entity_type_id);
     const sectionLabel = et?.label ?? et?.name ?? 'Section';
     for (const f of et?.fields ?? []) {
       const key = `${inst.id}::${f.id}`;
-      // Evaluate-all shows every TOUCHED coord (agreed + diverging). Untouched
-      // coords (no reviewer decision) are omitted — rendering them as empty
-      // "0 disagreed" rows is noise; the completeness gate covers required gaps.
-      if (reviewerSummary.decisionsByCoord.has(key)) extractionAllCoords.push(key);
       fieldLabelByCoordMap[key] = `${sectionLabel} · ${f.label}`;
     }
   }
@@ -1188,7 +1182,8 @@ export default function ExtractionFullScreen() {
             isComplete={isComplete}
             isResolving={consensusMutation.isPending}
             isFinalizing={advanceMutation.isPending || approveFinalize.isPending}
-            evaluateAllCoords={extractionAllCoords}
+            requiredCoords={[]}
+            peersRevealed={!!runDetail.peers_revealed}
             showFinalize={false}
           />
         </div>
