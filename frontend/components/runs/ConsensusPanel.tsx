@@ -259,13 +259,40 @@ function CoordRow({
               variant="outline"
               size="sm"
               className="h-7 text-xs focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => setEditing(true)}
+              onClick={() => {
+                setEditing(true);
+                if (resolved!.mode === "manual_override") {
+                  setOverrideOpen(true);
+                  const v = unwrap(resolved!.value);
+                  setOverrideValue(typeof v === "string" ? v : JSON.stringify(v));
+                  setOverrideRationale(resolved!.rationale ?? "");
+                }
+              }}
             >
               {t("consensus", "change")}
             </Button>
           </div>
         ) : (
           <>
+            {isResolved && editing ? (
+              <div className="flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => {
+                    setEditing(false);
+                    setOverrideOpen(false);
+                    setOverrideValue("");
+                    setOverrideRationale("");
+                  }}
+                  disabled={disabled}
+                  data-testid={`consensus-cancel-edit-${coordKey}`}
+                >
+                  {t("consensus", "cancel")}
+                </Button>
+              </div>
+            ) : null}
             {decisions.length > 0 ? (
               <div className="grid gap-2 md:grid-cols-2">
                 {decisions.map((d) => {
@@ -292,7 +319,7 @@ function CoordRow({
                           ? t("consensus", "panelRejected")
                           : JSON.stringify(value, null, 2)}
                       </pre>
-                      {!isResolved ? (
+                      {(!isResolved || editing) ? (
                         <Button
                           variant="outline"
                           size="sm"
