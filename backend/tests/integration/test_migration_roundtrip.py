@@ -141,6 +141,53 @@ async def test_migration_0030_round_trip(db_session: AsyncSession) -> None:
     )
 
 
+# Identify the manual_override CHECK by its CONTENT (it references the
+# 'manual_override' mode), not its name: SQLAlchemy's naming convention
+# prefixes the declared name to ``ck_extraction_consensus_decisions_*``, and we
+# don't want the test coupled to that. The sibling select_existing CHECK does
+# not mention 'manual_override', so this match is unambiguous in both states.
+_OVERRIDE_CHECK_DEF = text(
+    "SELECT pg_get_constraintdef(c.oid) "
+    "FROM pg_constraint c "
+    "JOIN pg_class t ON t.oid = c.conrelid "
+    "JOIN pg_namespace n ON n.oid = t.relnamespace "
+    "WHERE t.relname = 'extraction_consensus_decisions' "
+    "AND n.nspname = 'public' "
+    "AND c.contype = 'c' "
+    "AND pg_get_constraintdef(c.oid) LIKE '%manual_override%'"
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0032_round_trip(db_session: AsyncSession) -> None:
+    """``0032_optional_rationale`` relaxes the CHECK ``manual_override_complete``
+    to require only ``value`` (rationale optional). At head the constraint no
+    longer mentions ``rationale``; downgrading to the explicit parent ``0031``
+    restores the stricter expression; ``upgrade head`` relaxes it again.
+    Downgrades to the explicit parent (not ``-1``) so the test stays correct as
+    later migrations stack on top."""
+    def_at_head = (await db_session.execute(_OVERRIDE_CHECK_DEF)).scalar()
+    assert def_at_head is not None and "rationale" not in def_at_head, (
+        f"manual_override_complete must not require rationale at HEAD, got: {def_at_head}"
+    )
+
+    _run_alembic("downgrade", "0031_unique_atb_idx")
+    try:
+        await db_session.commit()
+        def_down = (await db_session.execute(_OVERRIDE_CHECK_DEF)).scalar()
+        assert def_down is not None and "rationale" in def_down, (
+            f"downgrade must restore the rationale requirement, got: {def_down}"
+        )
+    finally:
+        _run_alembic("upgrade", "head")
+
+    await db_session.commit()
+    def_after = (await db_session.execute(_OVERRIDE_CHECK_DEF)).scalar()
+    assert def_after is not None and "rationale" not in def_after, (
+        f"upgrade head must re-relax the constraint, got: {def_after}"
+    )
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision() -> None:
     """Pin the head revision id. If a future migration is added without
@@ -149,8 +196,8 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0031_unique_atb_idx" in out, (
-        f"Expected head revision '0031_unique_atb_idx', got:\n{out}"
+    assert "0032_optional_rationale" in out, (
+        f"Expected head revision '0032_optional_rationale', got:\n{out}"
     )
 
 

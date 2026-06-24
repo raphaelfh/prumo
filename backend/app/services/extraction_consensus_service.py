@@ -76,8 +76,11 @@ class ExtractionConsensusService:
 
         if mode_value == "select_existing" and selected_decision_id is None:
             raise InvalidConsensusError("mode='select_existing' requires selected_decision_id")
-        if mode_value == "manual_override" and (value is None or rationale is None):
-            raise InvalidConsensusError("mode='manual_override' requires both value and rationale")
+        # Rationale is optional (Phase B, decision F): only the value is required.
+        # The DB CHECK ``manual_override_complete`` is relaxed in lockstep
+        # (alembic 0032) so the two guards stay identical.
+        if mode_value == "manual_override" and value is None:
+            raise InvalidConsensusError("mode='manual_override' requires a value")
 
         # Resolve value to publish: from selected reviewer decision or from manual override
         if mode_value == "select_existing":

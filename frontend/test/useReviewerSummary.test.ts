@@ -164,6 +164,112 @@ describe("useReviewerSummary", () => {
     expect(result.current.divergentCoords.has("i1::f2")).toBe(false);
   });
 
+  it("compares the full value envelope: a differing unit is divergence, an identical envelope is agreement", () => {
+    // Phase B (decision G): agreement is decided on the whole stored value, not
+    // the unit-stripped scalar. `5 mg` vs `5 g` agree on the number but differ
+    // on the unit → divergence; the same full envelope from both → agreement.
+    const { result } = renderHook(() =>
+      useReviewerSummary(
+        runDetail({
+          decisions: [
+            decision({
+              reviewer_id: "user-a",
+              instance_id: "i1",
+              field_id: "f1",
+              value: { value: "5", unit: "mg" },
+            }),
+            decision({
+              reviewer_id: "user-b",
+              instance_id: "i1",
+              field_id: "f1",
+              value: { value: "5", unit: "g" },
+            }),
+            decision({
+              reviewer_id: "user-a",
+              instance_id: "i1",
+              field_id: "f2",
+              value: { value: "5", unit: "mg" },
+            }),
+            decision({
+              reviewer_id: "user-b",
+              instance_id: "i1",
+              field_id: "f2",
+              value: { value: "5", unit: "mg" },
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(result.current.divergentCoords.has("i1::f1")).toBe(true);
+    expect(result.current.divergentCoords.has("i1::f2")).toBe(false);
+  });
+
+  it("production-fidelity: real double-wrapped form shape diverges on unit, agrees when identical", () => {
+    // The form stores unit values double-wrapped: useAutoSaveProposals builds
+    // {value, unit}, then writeRunFieldValue wraps again → decision.value =
+    // {value: {value, unit}} (extractionRunService.ts). Confirm decisionsAgree
+    // (via divergentCoords) handles that real shape: unit differs → divergence;
+    // identical double-wrapped envelope → agreement.
+    const { result } = renderHook(() =>
+      useReviewerSummary(
+        runDetail({
+          decisions: [
+            decision({
+              reviewer_id: "user-a",
+              instance_id: "i1",
+              field_id: "f1",
+              value: { value: { value: "5", unit: "mg" } },
+            }),
+            decision({
+              reviewer_id: "user-b",
+              instance_id: "i1",
+              field_id: "f1",
+              value: { value: { value: "5", unit: "g" } },
+            }),
+            decision({
+              reviewer_id: "user-a",
+              instance_id: "i1",
+              field_id: "f2",
+              value: { value: { value: "5", unit: "mg" } },
+            }),
+            decision({
+              reviewer_id: "user-b",
+              instance_id: "i1",
+              field_id: "f2",
+              value: { value: { value: "5", unit: "mg" } },
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(result.current.divergentCoords.has("i1::f1")).toBe(true);
+    expect(result.current.divergentCoords.has("i1::f2")).toBe(false);
+  });
+
+  it("ignores object key order when comparing envelopes (canonical, matches backend sort_keys)", () => {
+    const { result } = renderHook(() =>
+      useReviewerSummary(
+        runDetail({
+          decisions: [
+            decision({
+              reviewer_id: "user-a",
+              instance_id: "i1",
+              field_id: "f1",
+              value: { value: "5", unit: "mg" },
+            }),
+            decision({
+              reviewer_id: "user-b",
+              instance_id: "i1",
+              field_id: "f1",
+              value: { unit: "mg", value: "5" },
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(result.current.divergentCoords.has("i1::f1")).toBe(false);
+  });
+
   it("treats reject as not equal to a positive value but equal to another reject", () => {
     const { result } = renderHook(() =>
       useReviewerSummary(
