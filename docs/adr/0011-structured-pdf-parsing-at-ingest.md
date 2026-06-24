@@ -177,7 +177,7 @@ Concretely, respecting the existing layering:
   caveat are in the ingest plan). A vision-LLM-native backend (page images/PDF
   through `extract_structured()`) rounds out the slate. The bake-off
   (Docling/MinerU/LiteParse vs LlamaParse `agentic`) decides the recommended
-  backend; Docling is the no-key fallback path.
+  backend; `pymupdf` (base PyMuPDF / `fitz`) is the no-key fallback path. Docling is opt-in only.
 
 ### Consequences
 
@@ -189,11 +189,12 @@ Concretely, respecting the existing layering:
 > `MAX_PDF_CHARS` truncation is retired at all three prompt sites and the no-blocks
 > `pypdf` fallback flows through the *same* budgeted assembler. Migration-free.
 > Plan: `docs/superpowers/plans/2026-06-23-extraction-a1-block-input.md`.
+> Updated 2026-06-24: the `pypdf` fallback has since been removed — `build_prompt_input` runs `PymupdfParser` once via `DocumentParsingService` and persists blocks + `content_markdown`.
 
 - Good — one persisted artifact serves both the LLM (structured text) and the
   reviewer (`bbox` highlight); `bbox` anchoring and verbatim verification
   become possible; the 15k truncation and the extract-and-discard pattern are
-  retired; the no-key Docling fallback path has no cloud egress.
+  retired; the no-key `pymupdf` fallback path has no cloud egress.
 - Good — this finishes an already-migrated schema and an already-working read
   path rather than designing new infrastructure.
 - Bad — ingestion gains a heavier parse step (added latency and worker compute,

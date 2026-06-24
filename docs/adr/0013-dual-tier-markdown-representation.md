@@ -104,9 +104,9 @@ contract (blocks own anchoring; markdown is a projection) and kills the
 - **Free default tier (`$0`).** A single pure
   `render_blocks_to_markdown(blocks) -> str` (GFM tables, `#` headings from
   `heading` blocks, lists, reading order) lives beside `concat_page_text` in
-  `app/infrastructure/parsing/base.py`. It is **derived on demand** (cached per
-  `content_version`, recomputed only when blocks change) — no column, no drift,
-  deterministic, no egress. The extraction block assembler (grounded-extraction
+  `app/infrastructure/parsing/base.py`. It is **stored** in a `content_markdown`
+  column written atomically with the blocks (`content_version` increments on every
+  rewrite, so drift is structurally impossible) — deterministic, no egress. The extraction block assembler (grounded-extraction
   plan) **calls this same function** to serialize table sections, so the prompt's
   tables and the viewer's tables are byte-identical (one table-serialization
   codepath). When Phase 0 locks a parser with good native markdown (Docling
@@ -147,14 +147,11 @@ contract (blocks own anchoring; markdown is a projection) and kills the
   fetched through a typed, BOLA-safe `GET /api/v1/article-files/{id}/markdown?tier=`
   (resolve `project_id` → `ensure_project_member()` first, `ApiResponse` + typed
   model, `apiClient` — no raw Storage URL, no `supabase.from`).
-- **Highlight limitation.** Pixel-`bbox` `PositionV1` highlight is **canvas-only**.
-  The markdown string is a different coordinate space than `concat_page_text`
-  (markdown syntax + reordering), so the anchoring service's char offsets are
-  not portable into the markdown DOM and `RegionCitationAnchor`s have no geometry
-  there.
-  Clicking evidence in markdown mode **switches to canvas, then highlights**, or
-  falls back to a best-effort quote-substring match with an "open in PDF to
-  verify position" affordance. No highlight parity is promised across modes.
+- **Highlight.** Evidence anchors persist `block_ids` (`block_index` values);
+  the reader locates evidence by `(page, block_index)` first (`findBlockByIndex`),
+  with a quote-substring fallback. Highlight in the markdown reader is therefore
+  deterministic via persisted `(page, block_index)` anchors — canvas-only no
+  longer applies to the markdown path.
 
 ### Consequences
 
@@ -168,16 +165,18 @@ contract (blocks own anchoring; markdown is a projection) and kills the
   sanitization + an XSS test are mandatory, not optional.
 - Bad — the enriched tier adds a stored column, a cloud-egress path (opt-in),
   and non-determinism.
-- Neutral — highlight is canvas-only; markdown mode degrades to switch-to-canvas
-  or a best-effort quote match.
+- Neutral — highlight in the markdown reader is deterministic via persisted
+  `(page, block_index)` anchors with a quote-substring fallback (canvas-only
+  no longer applies to the markdown path).
 
 ## Validation
 
 - Tier fidelity is judged by **TEDS + an LLM-judge + section recall**, not
   content cell-F1 (which mis-ranked a flat dump above a correct grid in the
   8-paper bake-off; see `docs/superpowers/quality-runs/2026-06-19-parsing-bakeoff-pilot.md`).
-  Add the free block-projection (PyMuPDF/`pymupdf4llm` reference) to the Phase-0
-  bake-off slate; the enriched engine choice is gated on that same bake-off
+  Add the free block-projection (`render_blocks_to_markdown` over base `fitz`
+  blocks — not `pymupdf4llm`) to the Phase-0 bake-off slate; the enriched engine
+  choice is gated on that same bake-off
   (likely the same engine emitting both blocks and markdown).
 - Tests: `render_blocks_to_markdown` unit (deterministic GFM tables, headings,
   reading order); the assembler reuses it (one table-serialization codepath);
@@ -222,7 +221,10 @@ contract (blocks own anchoring; markdown is a projection) and kills the
 - Empirical basis: `docs/superpowers/quality-runs/2026-06-19-parsing-bakeoff-pilot.md`
   (the 8-paper PyMuPDF/Docling/MarkItDown run — the full bake-off scoreboard and
   the content-F1-mis-ranks-structure lesson).
-- Library docs: `pymupdf4llm.to_markdown` (<https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/>);
+- Library docs: PyMuPDF (`fitz`) base API (<https://pymupdf.readthedocs.io/en/latest/>)
+  — the shipped free tier uses `render_blocks_to_markdown` over base `fitz` blocks,
+  not `pymupdf4llm` (which was considered but not adopted); `pymupdf4llm.to_markdown`
+  remains a forward-looking research reference only (not shipped).
   MarkItDown `llm_client` is image-only, `docintel_endpoint` = Azure Document
   Intelligence (<https://github.com/microsoft/markitdown>).
 - Related: ADR 0011 (structured parsing), ADR 0012 (manager blind review),
