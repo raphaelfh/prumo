@@ -340,11 +340,11 @@ export default function ExtractionFullScreen() {
   // extraction completes. See usePreserveScroll for the rAF dance.
   const preserveScroll = usePreserveScroll(SCROLL_CONTAINERS_TO_PRESERVE);
 
-    // Auto-save hook — writes `human` proposals during PROPOSAL stage
+    // Auto-save hook — writes `human` proposals during the `extract` stage
     // and per-user ``ReviewerDecision`` rows (decision='edit') during
-    // REVIEW stage. The stage-aware target preserves the blind-review
+    // the `consensus` stage. The stage-aware target preserves the blind-review
     // contract for multi-reviewer runs: each reviewer's typing during
-    // REVIEW lands in their own decision stream and the run view's
+    // `consensus` lands in their own decision stream and the run view's
     // ``currentValues`` are resolved per reviewer_id (Layer 2 of the
     // multi-reviewer blind fix).
     //
@@ -491,7 +491,7 @@ export default function ExtractionFullScreen() {
   });
 
   // Full AI extraction — mirrors HeaderMoreMenu wiring exactly.
-  // When an active run is available (PROPOSAL stage), ``extractForRun``
+  // When an active run is available (in `extract` stage), ``extractForRun``
   // reuses it (preserving human proposals). Otherwise ``extractFullAI``
   // creates a fresh run via the legacy multi-step orchestration.
   const { extractFullAI, loading: extractingFullAI, progress: extractionProgress } = useFullAIExtraction({
@@ -966,7 +966,7 @@ export default function ExtractionFullScreen() {
         await new Promise(resolve => setTimeout(resolve, 1500));
 
         await preserveScroll(async () => {
-          // AI extraction creates a *new* run in PROPOSAL stage (see
+          // AI extraction creates a *new* run in `extract` stage (see
           // ``SectionExtractionService.extract_section``); the proposals
           // live on that new run, not on the session run the page was
           // bound to. Refetch the HITL session first so ``activeRunId``
