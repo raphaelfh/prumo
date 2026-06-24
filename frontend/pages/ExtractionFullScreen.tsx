@@ -146,8 +146,8 @@ export default function ExtractionFullScreen() {
 
   // Open / resume the HITL session for this (article × project_template).
   // Mirrors the QA flow: the backend ensures an extraction Run exists,
-  // seeds top-level instances if missing, and parks it in PROPOSAL so
-  // the autosave (which writes `human` proposals) can fire immediately.
+  // seeds top-level instances if missing, and parks it in `extract` so
+  // the autosave (which persists the user's own values) can fire immediately.
   const sessionResult = useExtractionSession({
     projectId,
     articleId,
@@ -481,10 +481,9 @@ export default function ExtractionFullScreen() {
     // (no runId) lookup that immediately gets superseded by the
     // run-scoped one. Pure waste; same UX outcome.
     enabled: !!articleId && !!projectId && !!activeRunId,
-    // The run lives in PROPOSAL while the user edits, so a
-    // ReviewerDecision write would be rejected (decisions only land on
-    // REVIEW). Bubble accept/reject to the form pipeline instead — the
-    // autosave records each as a fresh `human` proposal.
+    // On this screen accept/reject does not write to the backend directly:
+    // the value bubbles to the form pipeline and the autosave persists it as
+    // the user's own value on the `extract`-stage run, keeping one write path.
     acceptStrategy: 'human-proposal',
     onSuggestionAccepted: handleAISuggestionAccepted,
     onSuggestionRejected: handleAISuggestionRejected
