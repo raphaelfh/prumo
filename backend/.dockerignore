@@ -1,0 +1,17 @@
+# Keep the build context small and secret-free. The Dockerfile only needs
+# pyproject.toml, uv.lock, README.md, app/, alembic/, alembic.ini.
+.venv
+venv
+.env
+.env.*
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+tests/
+.git/
+*.egg-info/
