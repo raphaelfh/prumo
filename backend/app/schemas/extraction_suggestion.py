@@ -4,17 +4,22 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EvidenceResponse(BaseModel):
     """Evidence snippet attached to a proposal record."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     proposal_record_id: UUID | None
     text_content: str | None
     page_number: int | None
+    block_ids: list[int] = Field(
+        default_factory=list,
+        alias="blockIds",
+        description="block_index values for deterministic reader highlight",
+    )
 
 
 class AISuggestionItem(BaseModel):

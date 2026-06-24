@@ -9,6 +9,7 @@ Tests:
 4. Endpoint GET /{article_id}/instance-ids — 200 + 403 BOLA.
 5. Endpoint GET /{article_id}/suggestions — 200 + 403 BOLA.
 6. Endpoint GET /{article_id}/suggestions/history — 200 + 403 BOLA.
+7. Service: evidence.block_ids is populated from position.anchor.blockIds.
 
 Pattern: mirrors test_run_view_endpoint.py / test_run_resolution_endpoints.py
   - db_client (real-DB AsyncClient from backend/tests/conftest.py)
@@ -29,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
-from app.models.extraction import ExtractionRunStage
+from app.models.extraction import ExtractionEvidence, ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionProposalSource,
     ExtractionReviewerDecisionType,
@@ -757,4 +758,239 @@ async def test_get_suggestion_history_excludes_foreign_article_instance(
         "IDOR guard failed: get_suggestion_history returned history for an instance "
         "that belongs to a different article than the one passed as article_id. "
         f"Got {len(history)} items, expected 0."
+    )
+
+
+# ---------------------------------------------------------------------------
+# BLOCK IDS TESTS (Task 7)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_load_suggestions_evidence_block_ids_populated(
+    db_session: AsyncSession,
+) -> None:
+    """evidence.block_ids is populated from position.anchor.blockIds (load_suggestions).
+
+    Creates a run + proposal + evidence row with a PositionV1 hybrid anchor
+    that carries blockIds=[2].  Asserts that load_suggestions returns
+    evidence.block_ids == [2] (and the alias blockIds round-trips via model_dump).
+    """
+    project_id = SEED.primary_project
+    article_id = SEED.primary_article
+    template_id = SEED.primary_template
+    instance_id = SEED.primary_instance
+    field_id = SEED.primary_field
+    manager_id = SEED.primary_profile
+
+    lifecycle = RunLifecycleService(db_session)
+    run = await lifecycle.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+
+    proposal_svc = ExtractionProposalService(db_session)
+    proposal = await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": "BLOCK-ID-TEST"},
+    )
+    await db_session.flush()
+
+    # Insert an evidence row with a PositionV1 hybrid anchor carrying blockIds=[2].
+    # charStart/charEnd are the PDFTextRange aliases; x/y/width/height are PDFRect fields.
+    position_payload = {
+        "version": 1,
+        "anchor": {
+            "kind": "hybrid",
+            "range": {"page": 1, "charStart": 0, "charEnd": 10},
+            "rect": {"x": 0.0, "y": 0.0, "width": 100.0, "height": 20.0},
+            "quote": "test quote",
+            "blockIds": [2],
+        },
+    }
+    db_session.add(
+        ExtractionEvidence(
+            id=uuid4(),
+            project_id=project_id,
+            article_id=article_id,
+            run_id=run.id,
+            proposal_record_id=proposal.id,
+            page_number=1,
+            text_content="test quote",
+            created_by=manager_id,
+            position=position_payload,
+        )
+    )
+    await db_session.flush()
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=article_id,
+        caller_id=manager_id,
+        run_id=run.id,
+    )
+
+    assert result.count >= 1
+    suggestion = next(
+        s for s in result.suggestions if s.proposed_value == {"value": "BLOCK-ID-TEST"}
+    )
+    assert suggestion.evidence is not None
+    assert suggestion.evidence.block_ids == [2], (
+        f"Expected evidence.block_ids == [2], got {suggestion.evidence.block_ids}"
+    )
+    # Alias round-trip: model_dump(by_alias=True) must emit blockIds
+    dumped = suggestion.evidence.model_dump(by_alias=True)
+    assert dumped["blockIds"] == [2], f"blockIds alias missing from serialized evidence: {dumped}"
+
+
+@pytest.mark.asyncio
+async def test_get_suggestion_history_evidence_block_ids_populated(
+    db_session: AsyncSession,
+) -> None:
+    """evidence.block_ids is populated from position.anchor.blockIds (get_suggestion_history).
+
+    Same setup as the load_suggestions variant — confirms BOTH call sites
+    in the read service surface block_ids correctly.
+    """
+    project_id = SEED.primary_project
+    article_id = SEED.primary_article
+    template_id = SEED.primary_template
+    instance_id = SEED.primary_instance
+    field_id = SEED.primary_field
+    manager_id = SEED.primary_profile
+
+    lifecycle = RunLifecycleService(db_session)
+    run = await lifecycle.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+
+    proposal_svc = ExtractionProposalService(db_session)
+    proposal = await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": "BLOCK-ID-HISTORY-TEST"},
+    )
+    await db_session.flush()
+
+    position_payload = {
+        "version": 1,
+        "anchor": {
+            "kind": "hybrid",
+            "range": {"page": 3, "charStart": 5, "charEnd": 20},
+            "rect": {"x": 10.0, "y": 10.0, "width": 80.0, "height": 15.0},
+            "quote": "history quote",
+            "blockIds": [2],
+        },
+    }
+    db_session.add(
+        ExtractionEvidence(
+            id=uuid4(),
+            project_id=project_id,
+            article_id=article_id,
+            run_id=run.id,
+            proposal_record_id=proposal.id,
+            page_number=3,
+            text_content="history quote",
+            created_by=manager_id,
+            position=position_payload,
+        )
+    )
+    await db_session.flush()
+
+    history = await get_suggestion_history(db_session, instance_id, field_id, article_id=article_id)
+
+    matched = next(
+        (h for h in history if h.proposed_value == {"value": "BLOCK-ID-HISTORY-TEST"}),
+        None,
+    )
+    assert matched is not None, "Expected proposal not found in history"
+    assert matched.evidence is not None
+    assert matched.evidence.block_ids == [2], (
+        f"Expected evidence.block_ids == [2], got {matched.evidence.block_ids}"
+    )
+    dumped = matched.evidence.model_dump(by_alias=True)
+    assert dumped["blockIds"] == [2], f"blockIds alias missing from serialized evidence: {dumped}"
+
+
+@pytest.mark.asyncio
+async def test_load_suggestions_evidence_block_ids_empty_when_no_position(
+    db_session: AsyncSession,
+) -> None:
+    """evidence.block_ids defaults to [] when position is None or missing anchor."""
+    project_id = SEED.primary_project
+    article_id = SEED.primary_article
+    template_id = SEED.primary_template
+    instance_id = SEED.primary_instance
+    field_id = SEED.primary_field
+    manager_id = SEED.primary_profile
+
+    lifecycle = RunLifecycleService(db_session)
+    run = await lifecycle.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+
+    proposal_svc = ExtractionProposalService(db_session)
+    proposal = await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": "NO-POSITION-TEST"},
+    )
+    await db_session.flush()
+
+    # Evidence row with position=None (legacy row)
+    db_session.add(
+        ExtractionEvidence(
+            id=uuid4(),
+            project_id=project_id,
+            article_id=article_id,
+            run_id=run.id,
+            proposal_record_id=proposal.id,
+            page_number=1,
+            text_content="no position",
+            created_by=manager_id,
+            position=None,
+        )
+    )
+    await db_session.flush()
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=article_id,
+        caller_id=manager_id,
+        run_id=run.id,
+    )
+
+    assert result.count >= 1
+    suggestion = next(
+        s for s in result.suggestions if s.proposed_value == {"value": "NO-POSITION-TEST"}
+    )
+    assert suggestion.evidence is not None
+    assert suggestion.evidence.block_ids == [], (
+        f"Expected evidence.block_ids == [] for no-position evidence, got {suggestion.evidence.block_ids}"
     )
