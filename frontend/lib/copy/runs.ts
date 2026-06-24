@@ -21,6 +21,7 @@ export const runs = {
   // Reviewers
   reviewersDiffer: '{{count}} differ',
   reviewersReadyHint: '{{ready}}/{{total}} ready',
+  reviewersOfExpected: '{{count}} of {{required}} reviewers',
   // RoleChip
   blindSuffix: 'blind',
   revealedSuffix: 'revealed',

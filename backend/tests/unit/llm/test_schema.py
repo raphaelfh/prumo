@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from app.llm.schema import (
     OPENAI_STRICT_PROPERTY_BUDGET,
+    SchemaBuildError,
     build_output_models,
     dump_extraction,
 )
@@ -32,6 +33,17 @@ def _field(
 
 def _entity_type(fields):
     return SimpleNamespace(name="study_section", description="A section", fields=fields)
+
+
+def test_duplicate_field_names_fail_closed():
+    et = _entity_type([_field(name="Notes"), _field(name="Notes")])
+    with pytest.raises(SchemaBuildError, match="Notes"):
+        build_output_models(et)
+
+
+def test_unique_field_names_still_build():
+    et = _entity_type([_field(name="A"), _field(name="B")])
+    assert len(build_output_models(et)) == 1
 
 
 def test_no_fields_returns_no_models():
@@ -191,19 +203,17 @@ def test_required_field_hint_lands_in_schema_description():
     assert "Required field" in prop["description"]
 
 
-def test_duplicate_field_names_last_occurrence_wins():
+def test_duplicate_field_names_fail_closed_across_types():
+    # Even when the duplicates differ in type, the name collision fails closed
+    # rather than silently dropping the earlier field (the former last-win bug).
     first = _field(name="risk", field_type="text")
     second = _field(
         name="risk",
         field_type="select",
         allowed_values={"options": [{"value": "Low"}, {"value": "High"}]},
     )
-    [model] = build_output_models(_entity_type([first, second]))
-    assert len(model.model_fields) == 1
-    instance = model.model_validate(
-        {"risk": {"value": "Low", "confidence": 0.5, "reasoning": None, "evidence": None}}
-    )
-    assert dump_extraction(instance)["risk"]["value"] == "Low"
+    with pytest.raises(SchemaBuildError, match="risk"):
+        build_output_models(_entity_type([first, second]))
 
 
 def test_json_schema_satisfies_strict_mode_contract():

@@ -16,6 +16,11 @@ OPENAI_STRICT_PROPERTY_BUDGET = 100
 _PROPERTIES_PER_FIELD = 7
 
 
+class SchemaBuildError(ValueError):
+    """A template cannot be turned into an output schema (e.g. duplicate
+    field names within one entity type — which would silently drop data)."""
+
+
 class Evidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -112,11 +117,19 @@ def build_output_models(entity_type: Any) -> list[type[BaseModel]]:
     the LLM call entirely.
     """
     fields = list(getattr(entity_type, "fields", None) or [])
-    # Duplicate names within an entity type last-win, matching the legacy
-    # field_map semantics — extraction_fields has no (entity_type, name)
-    # unique constraint.
-    deduped: dict[str, Any] = {str(field.name): field for field in fields}
-    fields = list(deduped.values())
+    # Fail closed on duplicate names: extraction_fields has no
+    # (entity_type, name) unique constraint, and a silent last-win merge would
+    # drop the earlier field's data and could mismap its evidence.
+    seen: set[str] = set()
+    for field in fields:
+        name = str(field.name)
+        if name in seen:
+            raise SchemaBuildError(
+                f"Duplicate field name {name!r} in entity type "
+                f"{getattr(entity_type, 'id', '?')}: extraction_fields has no "
+                "(entity_type, name) unique constraint; fix the template."
+            )
+        seen.add(name)
     if not fields:
         return []
     max_fields = max(1, OPENAI_STRICT_PROPERTY_BUDGET // _PROPERTIES_PER_FIELD)

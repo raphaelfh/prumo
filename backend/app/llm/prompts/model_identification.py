@@ -6,7 +6,7 @@ the container's children."""
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.llm.prompts import MAX_PDF_CHARS, content_version
+from app.llm.prompts import content_version
 
 NAME = "model_identification"
 
@@ -44,5 +44,5 @@ VERSION = content_version(SYSTEM_PROMPT, _USER_TEMPLATE)
 def render(*, container_label: str, article_text: str) -> str:
     return _USER_TEMPLATE.format(
         container_label=container_label,
-        article_text=article_text[:MAX_PDF_CHARS],
+        article_text=article_text,
     )

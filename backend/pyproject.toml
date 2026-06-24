@@ -34,7 +34,7 @@ dependencies = [
     "supabase>=2.0.0",
     # AI/LLM
     "openai>=1.0.0",
-    "pydantic-ai-slim[openai]>=1.107.0,<2.0.0",
+    "pydantic-ai-slim[openai,anthropic]>=1.107.0,<2.0.0",
     "logfire[fastapi,celery]>=3.0.0",
     # PDF Processing
     "pypdf>=5.0.0",
@@ -106,7 +106,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # Multiline fixture strings use indented blank lines; trailing space in SQL snippets.
-"tests/**" = ["W291", "W293"]
+# UP041: Allow explicit asyncio.TimeoutError in tests for clarity
+"tests/**" = ["W291", "W293", "UP041"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

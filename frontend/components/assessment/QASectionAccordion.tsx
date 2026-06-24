@@ -38,7 +38,6 @@ interface QASectionAccordionProps {
   values: Record<string, unknown>;
   onValueChange: (fieldId: string, value: unknown) => void;
   projectId: string;
-  articleId: string;
   defaultOpen?: boolean;
   /**
    * Real instance id for this domain. Required for AI suggestions to
@@ -92,7 +91,6 @@ export function QASectionAccordion({
   values,
   onValueChange,
   projectId,
-  articleId,
   defaultOpen = false,
   reviewerActivity,
   instanceId: instanceIdProp,
@@ -210,7 +208,6 @@ export function QASectionAccordion({
                       value={values[field.id]}
                       onChange={(v) => onValueChange(field.id, v)}
                       projectId={projectId}
-                      articleId={articleId}
                       aiSuggestion={aiSuggestion}
                       onAcceptAI={
                         onAcceptAI
@@ -265,7 +262,6 @@ export function QASectionAccordion({
                         value={values[field.id]}
                         onChange={(v) => onValueChange(field.id, v)}
                         projectId={projectId}
-                        articleId={articleId}
                         aiSuggestion={aiSuggestion}
                         onAcceptAI={
                           onAcceptAI

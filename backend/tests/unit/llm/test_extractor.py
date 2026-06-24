@@ -4,10 +4,17 @@ import json
 
 import pytest
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_ai import ModelResponse, ModelRetry, TextPart, UnexpectedModelBehavior
+from pydantic_ai import (
+    ModelResponse,
+    ModelRetry,
+    NativeOutput,
+    TextPart,
+    ToolOutput,
+    UnexpectedModelBehavior,
+)
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from app.llm.extractor import LlmUsage, extract_structured
+from app.llm.extractor import LlmUsage, _output_for, extract_structured
 
 
 class Demo(BaseModel):
@@ -106,3 +113,21 @@ def test_llm_usage_addition():
         prompt_tokens=1, completion_tokens=2
     )
     assert (total.prompt_tokens, total.completion_tokens, total.total_tokens) == (11, 7, 18)
+
+
+class _OutModel(BaseModel):
+    value: str
+
+
+class _FakeAnthropic:  # only the .system provider name matters to _output_for
+    system = "anthropic"
+
+
+def test_output_for_uses_native_for_non_anthropic():
+    # Any model whose provider is not "anthropic" (OpenAI, FunctionModel, or a
+    # bare object with no .system) stays on NativeOutput.
+    assert isinstance(_output_for(object(), _OutModel), NativeOutput)
+
+
+def test_output_for_uses_tooloutput_for_anthropic():
+    assert isinstance(_output_for(_FakeAnthropic(), _OutModel), ToolOutput)

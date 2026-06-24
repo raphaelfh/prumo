@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-06-22
+last_reviewed: 2026-06-23
 owner: '@raphaelfh'
 ---
 
@@ -294,6 +294,17 @@ exception.
 defined next to their prompt module. Template-driven schemas whose shape
 depends on the active template version are built at runtime by
 `backend/app/llm/schema.py::build_output_models`.
+
+**Article-text input (A1, 2026-06-23).** The `article_text` passed to each
+`render(...)` is no longer raw `pypdf` text truncated at 15k. The extraction
+services call `build_prompt_input` (`app/services/extraction_prompt_input.py`),
+which fetches `article_text_blocks` **once per run** and assembles a budgeted
+**markdown projection** of the blocks via
+`app/llm/assembler.py::assemble_for_model` (a deterministic
+`render_blocks_to_markdown` + IMRaD-aware token-budget windowing). When an
+article has no blocks yet, the `pypdf` fallback is wrapped into synthetic blocks
+and routed through the *same* budgeted assembler — no path sends unbounded text.
+See ADR-0011 (block input) and ADR-0013 (markdown projection).
 
 Unit tests for the prompt layer live in
 `backend/tests/unit/llm/test_prompts.py`.

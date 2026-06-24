@@ -26,8 +26,11 @@ the concatenation or offset logic.  The function is the single source of
 truth.
 """
 
+import math
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
 # ---------------------------------------------------------------------------
 # Closed block-type vocabulary
@@ -216,3 +219,94 @@ class DocumentParser(ABC):
         Raises:
             ValueError: If *pdf_bytes* cannot be parsed as a PDF.
         """
+
+
+# ---------------------------------------------------------------------------
+# render_blocks_to_markdown — canonical block→GFM projection (ADR-0013)
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class BlockLike(Protocol):
+    """Structural type satisfied by both ``ParsedBlock`` and ``ArticleTextBlock``."""
+
+    page_number: int
+    block_index: int
+    text: str
+    block_type: str
+
+
+_MD_TABLE_CELL_SEP = " | "
+_MD_TABLE_RULE_CHAR = "-"
+
+
+def _infer_column_count(cell_texts: list[str]) -> int:
+    """Heuristically infer a table's column count from its flat cell list."""
+    n = len(cell_texts)
+    if n <= 1:
+        return 1
+    for cols in range(2, min(9, n + 1)):
+        if n % cols == 0:
+            return cols
+    return min(8, max(2, math.ceil(math.sqrt(n))))
+
+
+def _render_table(cell_texts: list[str]) -> str:
+    """Render a flat list of table-cell texts as a deterministic GFM table."""
+    if not cell_texts:
+        return ""
+    cols = _infer_column_count(cell_texts)
+    rows: list[list[str]] = []
+    for i in range(0, len(cell_texts), cols):
+        row = cell_texts[i : i + cols]
+        while len(row) < cols:
+            row.append("")
+        rows.append(row)
+    widths = [max(len(r[c]) for r in rows) for c in range(cols)]
+
+    def _fmt(row: list[str]) -> str:
+        cells = [r.ljust(w) for r, w in zip(row, widths, strict=True)]
+        return "| " + _MD_TABLE_CELL_SEP.join(cells) + " |"
+
+    rule = "|-" + "-|-".join(_MD_TABLE_RULE_CHAR * w for w in widths) + "-|"
+    return "\n".join([_fmt(rows[0]), rule, *(_fmt(r) for r in rows[1:])])
+
+
+def render_blocks_to_markdown(blocks: Sequence[BlockLike]) -> str:
+    """Project article text blocks to deterministic GFM markdown (ADR-0013 free tier).
+
+    Reading order (page asc, block_index asc); ``## `` headings; ``- `` list
+    items; contiguous same-page ``table_cell`` runs coalesced into a GFM table;
+    ``paragraph`` / ``figure_caption`` as plain text; ``header`` / ``footer``
+    page chrome suppressed. Pure: no DB, no IO. The extraction assembler
+    serialises each kept section through this function so the prompt's tables and
+    the reader's tables are byte-identical (one serialization codepath).
+    """
+    ordered = sorted(blocks, key=lambda b: (b.page_number, b.block_index))
+    parts: list[str] = []
+    i = 0
+    while i < len(ordered):
+        block = ordered[i]
+        if block.block_type in ("header", "footer"):
+            i += 1
+            continue
+        if block.block_type == "table_cell":
+            page = block.page_number
+            run: list[str] = []
+            while (
+                i < len(ordered)
+                and ordered[i].block_type == "table_cell"
+                and ordered[i].page_number == page
+            ):
+                run.append(ordered[i].text)
+                i += 1
+            parts.append(_render_table(run))
+            continue
+        if block.block_type == "heading":
+            parts.append(f"## {block.text}")
+        elif block.block_type == "list_item":
+            parts.append(f"- {block.text}")
+        else:
+            parts.append(block.text)
+        i += 1
+    return "\n".join(p for p in parts if p)

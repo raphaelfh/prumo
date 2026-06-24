@@ -25,6 +25,14 @@ export function Reviewers() {
           <span className="flex h-[18px] items-center rounded-full border-2 border-background bg-muted px-1 text-[10px] text-muted-foreground">+{reviewers.count - shown}</span>
         )}
       </div>
+      <span
+        className="text-[11px] text-muted-foreground"
+        data-testid="run-reviewers-count"
+      >
+        {t('runs', 'reviewersOfExpected')
+          .replace('{{count}}', String(reviewers.count))
+          .replace('{{required}}', String(reviewers.required))}
+      </span>
       {readyLabel && (
         <span
           className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"

@@ -3563,7 +3563,7 @@
           },
           "model": {
             "default": "gpt-4o-mini",
-            "description": "Modelo OpenAI a usar",
+            "description": "Model to use",
             "title": "Model",
             "type": "string"
           },
@@ -4109,7 +4109,7 @@
               }
             ],
             "default": "gpt-4o-mini",
-            "description": "Modelo OpenAI a usar",
+            "description": "Model to use",
             "title": "Model"
           },
           "options": {
@@ -5333,7 +5333,7 @@
               }
             ],
             "default": "gpt-4o-mini",
-            "description": "Modelo OpenAI a usar",
+            "description": "Model to use",
             "title": "Model"
           },
           "options": {
@@ -6432,55 +6432,6 @@
         "summary": "Get Active Run",
         "tags": [
           "articles"
-        ]
-      }
-    },
-    "/api/v1/articles/{article_id}/citations": {
-      "get": {
-        "description": "Return all v1-shape citations attached to ``article_id``.\n\nUnanchored rows (hallucinated or pre-ingestion) are included with\n``verified=False``; anchored rows carry ``verified=True`` + ``anchorKind``.",
-        "operationId": "list_article_citations_endpoint_api_v1_articles__article_id__citations_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "article_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Article Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_list_dict_str__Any___"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "List Article Citations Endpoint",
-        "tags": [
-          "citations"
         ]
       }
     },

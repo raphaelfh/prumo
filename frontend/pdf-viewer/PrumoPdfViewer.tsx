@@ -4,7 +4,6 @@ import {Viewer} from './primitives/Viewer';
 import {CanvasLayer} from './primitives/CanvasLayer';
 import {TextLayer} from './primitives/TextLayer';
 import {Reader, type ReaderTextBlock} from './primitives/Reader';
-import {CitationLiveRegion} from './primitives/CitationLiveRegion';
 import {Toolbar} from './ui/Toolbar';
 import {SearchBar} from './ui/SearchBar';
 import {LoadingState} from './ui/LoadingState';
@@ -77,8 +76,6 @@ export function PrumoPdfViewer({
       <Viewer.Root source={source} store={store} className="flex flex-col flex-1 min-h-0 min-w-0">
         {toolbar && <Toolbar onSearchToggle={() => setSearchOpen((v) => !v)} />}
         <SearchBar open={searchOpen} onClose={() => setSearchOpen(false)} />
-        {/* aria-live region: announces citation jumps to screen readers (canvas + reader mode) */}
-        <CitationLiveRegion />
         <ViewerContent
           readerBlocks={readerBlocks}
           readerLoading={readerLoading}
