@@ -54,20 +54,25 @@ def create_document_parser(
         whenever the cloud path is unavailable.
     """
     # Lazy imports: the heavy docling/llama_cloud deps must not load at module
-    # import time (app boot, tests that never parse).
+    # import time. PymupdfParser is light (base fitz) so it can import eagerly,
+    # but keep it lazy for symmetry.
     from app.infrastructure.parsing.docling_parser import DoclingParser
     from app.infrastructure.parsing.llamaparse_parser import LlamaParseParser
+    from app.infrastructure.parsing.pymupdf_parser import PymupdfParser
 
-    backend = (getattr(settings, "PARSER_BACKEND", "docling") or "docling").lower()
+    backend = (getattr(settings, "PARSER_BACKEND", "pymupdf") or "pymupdf").lower()
 
     if backend == "llamaparse":
         key = llama_cloud_key or getattr(settings, "LLAMA_CLOUD_API_KEY", None)
         if not key:
-            _logger.warning("parser_gate_llamaparse_no_key_fallback_docling")
-            return DoclingParser()
+            _logger.warning("parser_gate_llamaparse_no_key_fallback_pymupdf")
+            return PymupdfParser()
         return LlamaParseParser(api_key=key)
 
-    if backend != "docling":
-        _logger.warning("parser_gate_unknown_backend_fallback_docling", backend=backend)
+    if backend == "docling":
+        return DoclingParser()
 
-    return DoclingParser()
+    if backend != "pymupdf":
+        _logger.warning("parser_gate_unknown_backend_fallback_pymupdf", backend=backend)
+
+    return PymupdfParser()

@@ -110,9 +110,9 @@ class Settings(BaseSettings):
     # =================== PARSING ===================
     # Per-project default resolution is "auto" (see ParserSettingsService +
     # parsing_tasks._run_parse): the LlamaParse cloud parser when a llama_cloud
-    # key is configured, else the self-hosted Docling parser. This scalar is
-    # only the factory's last-resort fallback when no per-call backend is given.
-    PARSER_BACKEND: str = "docling"
+    # key is configured, else the free PyMuPDF parser. This scalar is only the
+    # factory's last-resort fallback when no per-call backend is given.
+    PARSER_BACKEND: str = "pymupdf"
     # Optional global LlamaCloud key; per-user BYOK (APIKeyService) takes
     # precedence over this global fallback.
     LLAMA_CLOUD_API_KEY: str | None = None

@@ -2,17 +2,17 @@
 from types import SimpleNamespace
 
 from app.core.factories import create_document_parser
-from app.infrastructure.parsing.docling_parser import DoclingParser
 from app.infrastructure.parsing.llamaparse_parser import LlamaParseParser
+from app.infrastructure.parsing.pymupdf_parser import PymupdfParser
 
 
-def _settings(backend="docling", llama_key=None):
+def _settings(backend="pymupdf", llama_key=None):
     return SimpleNamespace(PARSER_BACKEND=backend, LLAMA_CLOUD_API_KEY=llama_key)
 
 
-def test_default_backend_is_docling():
+def test_default_backend_is_pymupdf():
     parser = create_document_parser(_settings())
-    assert isinstance(parser, DoclingParser)
+    assert isinstance(parser, PymupdfParser)
 
 
 def test_llamaparse_with_key():
@@ -23,14 +23,14 @@ def test_llamaparse_with_key():
     assert isinstance(parser, LlamaParseParser)
 
 
-def test_llamaparse_without_key_falls_back_to_docling():
+def test_llamaparse_without_key_falls_back_to_pymupdf():
     parser = create_document_parser(
         _settings(backend="llamaparse", llama_key=None),
         llama_cloud_key=None,
     )
-    assert isinstance(parser, DoclingParser)
+    assert isinstance(parser, PymupdfParser)
 
 
-def test_unknown_backend_falls_back_to_docling():
+def test_unknown_backend_falls_back_to_pymupdf():
     parser = create_document_parser(_settings(backend="bogus"))
-    assert isinstance(parser, DoclingParser)
+    assert isinstance(parser, PymupdfParser)
