@@ -83,8 +83,6 @@ export const consensus = {
     badgeRequiredGap: 'Required · not filled',
     badgeSingleFiller: 'Only one reviewer',
     nothingToReconcile: 'Nothing to reconcile. Use “Approve & finalize” in the header.',
-    panelFieldsResolvedOne: '{{resolved}}/{{total}} field resolved.',
-    panelFieldsResolvedOther: '{{resolved}}/{{total}} fields resolved.',
     panelFinalize: 'Finalize',
     panelFinalizing: 'Finalizing…',
     panelReviewerDisagreedOne: '{{count}} reviewer disagreed.',
