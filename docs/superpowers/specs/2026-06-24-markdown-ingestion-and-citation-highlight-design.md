@@ -62,7 +62,9 @@ comment flagged near `frontend/pages/ExtractionFullScreen.tsx:969`.
   extractions.
 - Feed the **stored** markdown directly into the AI extraction prompt.
 - Run a **simple `pymupdf` parse only when the PDF has never been parsed**, and
-  **persist** its output so it is never re-run.
+  **persist** its output on a successful run so it is never re-run. (A failed
+  run rolls back the parse; the next attempt re-parses — cheap and
+  deterministic.)
 - Keep citation/evidence anchoring consistent and make the markdown-viewer
   highlight **deterministic** (right location, already highlighted).
 - Leave **no related legacy** behind (code, columns, docs).
@@ -237,8 +239,10 @@ VIEW:
   - `PymupdfParser` unit: blocks, ordering, block_type, bbox presence.
   - `replace_for_file` writes `content_markdown` + bumps `content_version`
     atomically (deferred-trigger / real session).
-  - On-demand inline parse: unparsed article → first extraction persists blocks +
-    markdown; second extraction performs **no** parse (assert parser not called).
+  - On-demand inline parse: unparsed article → first **successful** extraction
+    persists blocks + markdown; second extraction performs **no** parse (assert
+    parser not called). A failed run rolls back the parse; the next attempt
+    re-parses — cheap and deterministic.
   - `build_prompt_input` returns stored markdown under budget; budgeted blocks
     over budget; emits `source`.
   - Evidence write persists `block_ids`.

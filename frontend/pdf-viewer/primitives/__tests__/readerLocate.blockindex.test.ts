@@ -17,4 +17,7 @@ describe('findBlockByIndex', () => {
   it('returns null on empty blockIds', () => {
     expect(findBlockByIndex(blocks, 1, [])).toBeNull();
   });
+  it('returns null when page is null (block_index is page-relative)', () => {
+    expect(findBlockByIndex(blocks, null, [0])).toBeNull();
+  });
 });

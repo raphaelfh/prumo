@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,9 +41,11 @@ from app.schemas.extraction_suggestion import (
 
 def _extract_block_ids(ev: ExtractionEvidence) -> list[int]:
     """Return block_ids from the stored PositionV1 anchor, or [] on missing/invalid position."""
+    if not ev.position:
+        return []
     try:
         pos = parse_position(ev.position)
-    except Exception:
+    except (ValidationError, ValueError):
         return []
     if pos is None:
         return []

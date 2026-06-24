@@ -3,8 +3,10 @@
 Reads the STORED content_markdown when it fits the token budget; otherwise falls
 back to the section-aware assembler over the persisted blocks (IMRaD whole-section
 dropping). When the article was never parsed, runs the simple PymupdfParser ONCE
-via DocumentParsingService (persisting blocks + content_markdown) so it is never
-re-run and citations/highlights anchor. No unbounded pypdf path remains.
+via DocumentParsingService (persisting blocks + content_markdown so the parse is
+never re-run on a successful run). A failed run rolls back the transaction, which
+discards the parse; the next attempt re-parses — cheap and deterministic.
+No unbounded pypdf path remains.
 """
 
 from __future__ import annotations
@@ -42,7 +44,9 @@ async def build_prompt_input(
 
     if not blocks:
         # On-demand: parse once with the simple parser, persist blocks +
-        # content_markdown, then reload. Never re-runs on the next call.
+        # content_markdown, then reload. Persisted on a successful run (a
+        # successful run is never re-parsed); a failed run rolls back the parse
+        # and the next attempt re-parses — cheap and deterministic.
         parsing = DocumentParsingService(
             db=db,
             user_id=user_id,

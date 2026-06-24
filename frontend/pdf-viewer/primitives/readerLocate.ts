@@ -46,6 +46,9 @@ export function findBlockByIndex(
   blockIds: readonly number[],
 ): string | null {
   if (!blockIds.length) return null;
+  // block_index is PAGE-RELATIVE: without a page, the same index could match
+  // the wrong block on a different page.
+  if (page == null) return null;
   const wanted = new Set(blockIds);
   const hit = blocks.find(
     (b) => (page == null || b.pageNumber === page) && wanted.has(b.blockIndex),
