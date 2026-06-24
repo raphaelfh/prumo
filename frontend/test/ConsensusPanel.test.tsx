@@ -388,6 +388,47 @@ describe("ConsensusPanel", () => {
     });
   });
 
+  it("enables the override submit with an empty rationale and labels it optional (Phase B)", async () => {
+    const { runDetail, summary } = makeFixtures();
+    const onManualOverride = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <ConsensusPanel
+        runDetail={runDetail}
+        summary={summary}
+        requiredCoords={[]}
+        peersRevealed={true}
+        onSelectExisting={vi.fn()}
+        onManualOverride={onManualOverride}
+        onFinalize={vi.fn()}
+        showFinalize={false}
+      />,
+    );
+
+    await user.click(
+      screen.getByTestId("consensus-override-toggle-inst-1::field-1"),
+    );
+
+    // Rationale label now reads "(optional)" — never "(required)".
+    expect(screen.getByText(/Rationale \(optional\)/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Rationale \(required\)/i)).toBeNull();
+
+    // Type only a value, leave the rationale empty.
+    await user.type(screen.getByLabelText(/Custom value/i), '"Maybe"');
+
+    const submit = screen.getByTestId("consensus-override-submit-inst-1::field-1");
+    expect(submit).toBeEnabled();
+
+    await user.click(submit);
+    expect(onManualOverride).toHaveBeenCalledWith({
+      instanceId: "inst-1",
+      fieldId: "field-1",
+      value: "Maybe",
+      rationale: "",
+    });
+  });
+
   it("shows the published custom value + rationale + a Change button when resolved", async () => {
     const { runDetail, summary } = makeFixtures(); // divergent inst-1::field-1
     const resolved = consensusDecision({

@@ -359,7 +359,9 @@ class ExtractionConsensusDecision(BaseModel):
             name="select_existing_has_decision",
         ),
         CheckConstraint(
-            "mode <> 'manual_override' OR (value IS NOT NULL AND rationale IS NOT NULL)",
+            # Rationale is optional (Phase B, decision F) — only the value is
+            # required for a manual override. See alembic 0032.
+            "mode <> 'manual_override' OR value IS NOT NULL",
             name="manual_override_complete",
         ),
         {"schema": "public"},
