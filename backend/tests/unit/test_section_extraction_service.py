@@ -38,9 +38,9 @@ def mock_storage():
 def service(mock_db, mock_storage):
     """Fixture do SectionExtractionService com mocks."""
     with (
-        patch("app.services.section_extraction_service.PDFProcessor") as mock_pdf,
         patch("app.services.section_extraction_service.ArticleFileRepository") as mock_article_repo,
         patch("app.services.extraction_prompt_input.ArticleTextBlockRepository") as mock_block_repo,
+        patch("app.services.extraction_prompt_input.DocumentParsingService") as mock_parsing_cls,
         patch(
             "app.services.section_extraction_service.ExtractionEntityTypeRepository"
         ) as mock_entity_repo,
@@ -53,24 +53,26 @@ def service(mock_db, mock_storage):
         patch("app.services.section_extraction_service.ExtractionRunRepository") as mock_run_repo,
         patch("app.services.section_extraction_service.RunLifecycleService") as mock_lifecycle_cls,
     ):
-        mock_pdf_instance = MagicMock()
-        # build_prompt_input falls back to extract_text when an article has no
-        # blocks (get_latest_pdf → None below); make the call awaitable.
-        mock_pdf_instance.extract_text = AsyncMock(return_value="extracted article text")
-        mock_pdf.return_value = mock_pdf_instance
-
         # Mock repositories
         mock_article_repo_instance = MagicMock()
-        # get_latest_pdf is async; return None so _create_suggestions falls
-        # back to position={} (no blocks → safe fallback, no anchor attempt).
-        mock_article_repo_instance.get_latest_pdf = AsyncMock(return_value=None)
+        # Return a mock file with content_markdown so build_prompt_input doesn't
+        # need to trigger an on-demand parse in unit tests. Individual tests that
+        # want to exercise _assemble_prompt_text can mock it on the service directly.
+        mock_file = MagicMock()
+        mock_file.content_markdown = "mocked article text"
+        mock_article_repo_instance.get_latest_pdf = AsyncMock(return_value=mock_file)
         mock_article_repo.return_value = mock_article_repo_instance
 
-        # ArticleTextBlockRepository is instantiated inside _create_suggestions;
-        # mock the class so the constructor returns a proper async mock.
+        # ArticleTextBlockRepository: return non-empty blocks so the on-demand
+        # parse branch is not triggered by default.
         mock_block_repo_instance = MagicMock()
-        mock_block_repo_instance.list_ordered_for_file = AsyncMock(return_value=[])
+        mock_block_repo_instance.list_ordered_for_file = AsyncMock(return_value=[MagicMock()])
         mock_block_repo.return_value = mock_block_repo_instance
+
+        # DocumentParsingService: no-op in unit tests (on-demand parse not needed).
+        mock_parsing_instance = MagicMock()
+        mock_parsing_instance.parse_article_file = AsyncMock(return_value=None)
+        mock_parsing_cls.return_value = mock_parsing_instance
 
         mock_entity_repo_instance = MagicMock()
         mock_entity_repo.return_value = mock_entity_repo_instance
@@ -99,7 +101,6 @@ def service(mock_db, mock_storage):
             storage=mock_storage,
             trace_id="trace-123",
         )
-        svc.pdf_processor = mock_pdf_instance
         svc._article_files = mock_article_repo_instance
         svc._entity_types = mock_entity_repo_instance
         svc._instances = mock_instance_repo_instance
@@ -271,8 +272,8 @@ class TestSectionExtractionFullFlow:
         # Mock instances (for _create_suggestions)
         service._instances.get_by_article = AsyncMock(return_value=[])
 
-        # Mock PDF processor
-        service.pdf_processor.extract_text = AsyncMock(return_value="Extracted text from PDF")
+        # Mock the prompt assembly seam
+        service._assemble_prompt_text = AsyncMock(return_value="Extracted text from PDF")
 
         # Mock the typed LLM call seam
         service._extract_with_llm = AsyncMock(
@@ -346,7 +347,7 @@ class TestExtractSectionWithExistingRun:
         mock_file.storage_key = "test.pdf"
         service._article_files.get_latest_pdf = AsyncMock(return_value=mock_file)
         mock_storage.download = AsyncMock(return_value=b"%PDF-1.4 test")
-        service.pdf_processor.extract_text = AsyncMock(return_value="text")
+        service._assemble_prompt_text = AsyncMock(return_value="text")
 
         mock_field = MagicMock()
         mock_field.name = "field_1"
@@ -516,7 +517,7 @@ class TestExtractForRun:
             return_value=MagicMock(storage_key="x.pdf")
         )
         service.storage.download = AsyncMock(return_value=b"%PDF")
-        service.pdf_processor.extract_text = AsyncMock(return_value="article text")
+        service._assemble_prompt_text = AsyncMock(return_value="article text")
 
         async def fake_get_with_fields(et_id):
             for et in top_level_entity_types:
@@ -1398,7 +1399,7 @@ class TestExtractSectionLlmFailure:
         mock_file.storage_key = "test.pdf"
         service._article_files.get_latest_pdf = AsyncMock(return_value=mock_file)
         mock_storage.download = AsyncMock(return_value=b"%PDF-1.4 test")
-        service.pdf_processor.extract_text = AsyncMock(return_value="text")
+        service._assemble_prompt_text = AsyncMock(return_value="text")
 
         mock_field = MagicMock()
         mock_field.name = "field_1"
@@ -1787,7 +1788,6 @@ class TestExtractForRunErrorPath:
             return_value=MagicMock(storage_key="f.pdf")
         )
         service.storage.download = AsyncMock(return_value=b"%PDF")
-        service.pdf_processor.extract_text = AsyncMock(return_value="text")
         service._assemble_prompt_text = AsyncMock(return_value="article text")
 
         good_et = MagicMock()

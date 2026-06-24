@@ -37,7 +37,6 @@ def mock_storage():
 def service(mock_db, mock_storage):
     """ModelExtractionService fixture with mocks."""
     with (
-        patch("app.services.model_extraction_service.PDFProcessor") as mock_pdf,
         patch("app.services.model_extraction_service.ArticleFileRepository") as mock_article_repo,
         patch(
             "app.services.model_extraction_service.ExtractionTemplateRepository"
@@ -51,13 +50,14 @@ def service(mock_db, mock_storage):
         ) as mock_instance_repo,
         patch("app.services.model_extraction_service.ExtractionRunRepository") as mock_run_repo,
         patch("app.services.model_extraction_service.RunLifecycleService") as mock_lifecycle_cls,
-        patch("app.services.extraction_prompt_input.ArticleTextBlockRepository") as mock_block_repo,
+        patch(
+            "app.services.model_extraction_service.build_prompt_input",
+            AsyncMock(return_value=("mocked article text", [], None)),
+        ),
     ):
-        mock_pdf_instance = MagicMock()
-        mock_pdf.return_value = mock_pdf_instance
-
         # Mock repositories
         mock_article_repo_instance = MagicMock()
+        mock_article_repo_instance.get_latest_pdf = AsyncMock(return_value=MagicMock())
         mock_article_repo.return_value = mock_article_repo_instance
 
         mock_template_repo_instance = MagicMock()
@@ -84,17 +84,12 @@ def service(mock_db, mock_storage):
         mock_lifecycle_instance.advance_stage = AsyncMock()
         mock_lifecycle_cls.return_value = mock_lifecycle_instance
 
-        # build_prompt_input fetches blocks; return none so the flow falls back
-        # to the per-test extract_text mock (no blocks for the article).
-        mock_block_repo.return_value.list_ordered_for_file = AsyncMock(return_value=[])
-
         svc = ModelExtractionService(
             db=mock_db,
             user_id="12345678-1234-1234-1234-123456789012",
             storage=mock_storage,
             trace_id="trace-123",
         )
-        svc.pdf_processor = mock_pdf_instance
         svc._article_files = mock_article_repo_instance
         svc._templates = mock_template_repo_instance
         svc._global_templates = mock_global_repo_instance
@@ -103,9 +98,8 @@ def service(mock_db, mock_storage):
         svc._runs = mock_run_repo_instance
         svc._lifecycle = mock_lifecycle_instance
 
-        # yield (not return) so the patches above — notably the runtime-resolved
-        # ArticleTextBlockRepository used by build_prompt_input — stay active
-        # during the test, not just during construction.
+        # yield (not return) so the build_prompt_input patch stays active
+        # during the test body, not just during construction.
         yield svc
 
 
@@ -385,11 +379,6 @@ class TestFullExtractionFlow:
         mock_instance.metadata = {}
         service._instances.create = AsyncMock(return_value=mock_instance)
 
-        # Mock PDF processor
-        service.pdf_processor.extract_text = AsyncMock(
-            return_value="PDF text with models described..."
-        )
-
         # Mock ExtractionInstance class to avoid SQLAlchemy mapper issues
         with (
             patch(
@@ -467,8 +456,6 @@ class TestFullExtractionFlow:
         # Inject a DB-style failure on instance creation.
         service._instances.create = AsyncMock(side_effect=RuntimeError("FK violation"))
 
-        service.pdf_processor.extract_text = AsyncMock(return_value="text")
-
         with (
             patch(
                 "app.services.model_extraction_service.extract_structured",
@@ -535,8 +522,6 @@ class TestFullExtractionFlow:
         service._runs.complete_run = AsyncMock()
         service._runs.rollback_and_fail = AsyncMock()
 
-        service.pdf_processor.extract_text = AsyncMock(return_value="text")
-
         with (
             patch(
                 "app.services.model_extraction_service.extract_structured",
@@ -590,8 +575,6 @@ class TestFullExtractionFlow:
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
         service._runs.fail_run = AsyncMock()
-
-        service.pdf_processor.extract_text = AsyncMock(return_value="Generic text")
 
         with (
             patch(

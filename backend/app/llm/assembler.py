@@ -43,7 +43,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from app.infrastructure.parsing.base import ParsedBlock, render_blocks_to_markdown
+from app.infrastructure.parsing.base import render_blocks_to_markdown
 from app.schemas.extraction import AssemblyInfo
 
 try:
@@ -361,41 +361,3 @@ def assemble_for_model(
         est_tokens=estimate_tokens(text, model_name),
     )
     return text, info
-
-
-def blocks_from_plain_text(text: str) -> list[ParsedBlock]:
-    """Wrap pypdf-extracted plain text into per-page ``paragraph`` blocks so the
-    no-blocks fallback flows through the SAME budgeted assembler (never unbounded).
-    Splits on the ``[Page N]`` markers ``PDFProcessor.extract_text`` emits; text
-    with no markers becomes a single page-1 block."""
-    blocks: list[ParsedBlock] = []
-    segments = re.split(r"\[Page (\d+)\]\n", text)
-    # re.split keeps captured groups interleaved: ['', '1', body1, '2', body2, ...]
-    for page_str, body in zip(segments[1::2], segments[2::2], strict=False):
-        stripped = body.strip()
-        if stripped:
-            blocks.append(
-                ParsedBlock(
-                    page_number=int(page_str),
-                    block_index=0,
-                    text=stripped,
-                    char_start=0,
-                    char_end=len(stripped),
-                    bbox={},
-                    block_type="paragraph",
-                )
-            )
-    if not blocks and text.strip():
-        stripped = text.strip()
-        blocks.append(
-            ParsedBlock(
-                page_number=1,
-                block_index=0,
-                text=stripped,
-                char_start=0,
-                char_end=len(stripped),
-                bbox={},
-                block_type="paragraph",
-            )
-        )
-    return blocks
