@@ -38,6 +38,7 @@ dependencies = [
     "logfire[fastapi,celery]>=3.0.0",
     # PDF Processing
     "pypdf>=5.0.0",
+    "pymupdf>=1.24.0",  # fitz — simple/free parser (PymupdfParser)
     # Pinned: the parser stack is drift-sensitive — an unpinned rapidocr bump to
     # 3.9 (PP-OCRv6) broke prod via docling's OCR default. OCR is now disabled in
     # DoclingParser so rapidocr drift is harmless, but pinning docling itself
