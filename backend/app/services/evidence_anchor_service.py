@@ -619,12 +619,14 @@ def build_anchor(
             range=text_range,
             rect=PDFRect(**m.bbox_union),
             quote=quote,
+            block_ids=m.block_ids,
         )
     else:
         anchor = TextCitationAnchor(
             kind="text",
             range=text_range,
             quote=quote,
+            block_ids=m.block_ids,
         )
 
     return PositionV1(version=1, anchor=anchor)
