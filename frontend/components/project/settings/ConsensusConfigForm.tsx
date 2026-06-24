@@ -5,7 +5,6 @@
 
 import { Info } from 'lucide-react';
 
-import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -28,10 +27,6 @@ export interface ConsensusConfigFormProps {
   members: ProjectMemberSummary[];
   membersLoading?: boolean;
   disabled?: boolean;
-  /** Minimum reviewer_count allowed (defaults to 1). */
-  minReviewers?: number;
-  /** Maximum reviewer_count allowed (defaults to 20). */
-  maxReviewers?: number;
 }
 
 export function ConsensusConfigForm({
@@ -40,17 +35,8 @@ export function ConsensusConfigForm({
   members,
   membersLoading = false,
   disabled = false,
-  minReviewers = 1,
-  maxReviewers = 20,
 }: ConsensusConfigFormProps) {
   const arbitratorEligible = members.filter((m) => m.role === 'consensus' || m.role === 'manager');
-
-  const handleReviewerCountChange = (raw: string) => {
-    const parsed = Number.parseInt(raw, 10);
-    if (Number.isNaN(parsed)) return;
-    const clamped = Math.min(maxReviewers, Math.max(minReviewers, parsed));
-    onChange({ ...value, reviewer_count: clamped });
-  };
 
   const handleRuleChange = (rule: ConsensusRule) => {
     if (rule === 'arbitrator') {
@@ -73,23 +59,6 @@ export function ConsensusConfigForm({
 
   return (
     <div className="space-y-4">
-      <SettingsField
-        label={t('consensus', 'reviewerCountLabel')}
-        hint={t('consensus', 'reviewerCountHint')}
-        htmlFor="reviewer-count"
-      >
-        <Input
-          id="reviewer-count"
-          type="number"
-          min={minReviewers}
-          max={maxReviewers}
-          value={value.reviewer_count}
-          onChange={(e) => handleReviewerCountChange(e.target.value)}
-          disabled={disabled}
-          className="w-32"
-        />
-      </SettingsField>
-
       <SettingsField
         label={t('consensus', 'ruleLabel')}
         hint={t('consensus', 'ruleHint')}

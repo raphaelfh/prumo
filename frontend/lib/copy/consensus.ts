@@ -34,9 +34,6 @@ export const consensus = {
     templatesRemoveOverride: 'Remove override',
 
     // Form fields
-    reviewerCountLabel: 'Reviewers per article',
-    reviewerCountHint:
-        'How many reviewers must submit decisions before consensus is evaluated.',
     ruleLabel: 'Consensus rule',
     ruleHint:
         'How the canonical value is chosen once enough reviewers have decided.',
@@ -77,18 +74,17 @@ export const consensus = {
 
     // --- Runtime divergence-resolution panel (ConsensusPanel) ---
     panelResolveTitle: 'Resolve divergence',
-    panelEvaluateAllTitle: 'Review every field',
-    panelFieldsResolvedOne: '{{resolved}}/{{total}} field resolved.',
-    panelFieldsResolvedOther: '{{resolved}}/{{total}} fields resolved.',
+    sectionConflictsTitle: 'Conflicts',
+    sectionConflictsDesc: 'Reviewers gave different values. Resolve each.',
+    sectionAttentionTitle: 'Needs attention',
+    sectionAttentionDesc: 'Single-reviewer answers and unfilled required fields.',
+    sectionAgreedHintOne: '1 field agreed — published automatically on finalize.',
+    sectionAgreedHintOther: '{{count}} fields agreed — published automatically on finalize.',
+    badgeRequiredGap: 'Required · not filled',
+    badgeSingleFiller: 'Only one reviewer',
+    nothingToReconcile: 'Nothing to reconcile. Use “Approve & finalize” in the header.',
     panelFinalize: 'Finalize',
     panelFinalizing: 'Finalizing…',
-    panelLeft: '{{count}} left',
-    panelNoConflictsTitle: 'No conflicts to resolve.',
-    panelReadyToFinalize:
-        'All required fields are filled. You can finalize now.',
-    panelBlockedIncomplete:
-        'Fill every required field before you can finalize.',
-    panelBlockedNoDecision: 'Publish at least one field before finalizing.',
     panelReviewerDisagreedOne: '{{count}} reviewer disagreed.',
     panelReviewersDisagreedOther: '{{count}} reviewers disagreed.',
     panelResolved: 'Resolved',
@@ -102,6 +98,18 @@ export const consensus = {
         'Why publish a value none of the reviewers picked?',
     panelPublishOverride: 'Publish override',
     panelReviewerFallback: 'Reviewer {{id}}…',
+
+    // Resolved-state summary (Task 5)
+    resolvedValueLabel: 'Published value',
+    resolvedFromReviewer: 'from {{reviewer}}',
+    resolvedCustom: 'custom value',
+    resolvedRationaleLabel: 'Rationale',
+    change: 'Change',
+
+    // Soft-warn before finalize (Task 6)
+    finalizeWarnTitle: 'Finalize anyway?',
+    finalizeWarnMissingReviewers: 'Only {{count}} of {{required}} expected reviewers submitted.',
+    finalizeWarnSingleFiller: '{{count}} field(s) were filled by a single reviewer.',
 } as const;
 
 export type ConsensusCopy = typeof consensus;

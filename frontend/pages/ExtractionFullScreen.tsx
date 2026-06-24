@@ -58,6 +58,7 @@ import {
   useRunReviewers,
 } from '@/hooks/runs';
 import {ConsensusPanel} from '@/components/runs/ConsensusPanel';
+import {useConsensusReconciliation} from '@/hooks/extraction/useConsensusReconciliation';
 
 // Components
 import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
@@ -243,25 +244,20 @@ export default function ExtractionFullScreen() {
 
   const inConsensusStage = runDetail?.run.stage === 'consensus';
 
-  // {instance::field} → "Section · Field" label map AND the full evaluate-all
-  // coord list for the ConsensusPanel. Built from every existing instance ×
-  // its entity type's snapshot fields (real labels), so the evaluate-all surface
-  // shows every field — agreed and diverging — not just touched/divergent ones.
-  const fieldLabelByCoordMap: Record<string, string> = {};
-  const extractionAllCoords: string[] = [];
-  for (const inst of instances) {
-    const et = entityTypes.find((e) => e.id === inst.entity_type_id);
-    const sectionLabel = et?.label ?? et?.name ?? 'Section';
-    for (const f of et?.fields ?? []) {
-      const key = `${inst.id}::${f.id}`;
-      // Evaluate-all shows every TOUCHED coord (agreed + diverging). Untouched
-      // coords (no reviewer decision) are omitted — rendering them as empty
-      // "0 disagreed" rows is noise; the completeness gate covers required gaps.
-      if (reviewerSummary.decisionsByCoord.has(key)) extractionAllCoords.push(key);
-      fieldLabelByCoordMap[key] = `${sectionLabel} · ${f.label}`;
-    }
-  }
-  const fieldLabelByCoord = fieldLabelByCoordMap;
+  // Consensus-page derived values: coord→label map, required coords,
+  // expected reviewer count, and pre-built finalize-warning message.
+  const {
+    fieldLabelByCoord,
+    requiredCoords,
+    expectedReviewerCount,
+    finalizeWarning,
+  } = useConsensusReconciliation({
+    runDetail,
+    reviewerSummary,
+    instances,
+    entityTypes,
+    projectId,
+  });
 
   const handleSelectExisting = async (params: {
     instanceId: string;
@@ -298,12 +294,11 @@ export default function ExtractionFullScreen() {
   // (unresolved divergence / incomplete required fields) surface via
   // useApproveFinalize.onError as a toast; the promise-chain guard (no try/finally)
   // keeps the React Compiler happy and skips the success path on failure.
+  // Soft-warn: pre-built by useConsensusReconciliation; one line here.
   const handleApproveFinalize = async () => {
     if (!activeRunId) return;
-    const ok = await approveFinalize
-      .mutateAsync()
-      .then(() => true)
-      .catch(() => false);
+    if (finalizeWarning.shouldWarn && !window.confirm(finalizeWarning.confirmMessage)) return;
+    const ok = await approveFinalize.mutateAsync().then(() => true).catch(() => false);
     if (!ok) return;
     await Promise.all([refetchRun(), refreshValues(), refreshFinalizedRun()]);
     toast.success(t('pages', 'extractionScreenFinalizeSuccess'));
@@ -1106,13 +1101,13 @@ export default function ExtractionFullScreen() {
         isRevision={!!parentRunId}
         reviewers={{
           count: reviewerSummary.reviewers.length,
-          required: reviewerSummary.requiredReviewerCount,
+          required: expectedReviewerCount,
           // divergentCoords is a Set<string> — .size gives the count
           divergent: reviewerSummary.divergentCoords.size,
           // Advisory "N/M ready" hint — only while extracting (helps the
           // manager decide when to open consensus). Backend always sends these.
           ...(stage === 'extract' && runDetail
-            ? { ready: runDetail.ready_count ?? 0, readyTotal: runDetail.reviewer_count ?? 0 }
+            ? { ready: runDetail.ready_count ?? 0, readyTotal: expectedReviewerCount }
             : {}),
         }}
         canReveal={canReveal}
@@ -1172,28 +1167,6 @@ export default function ExtractionFullScreen() {
         </div>
       ) : null}
 
-      {/* Consensus stage takes over the form area: reviewers diverged
-          and need to resolve. Same component the QA page uses. */}
-      {inConsensusStage && runDetail ? (
-        <div className="border-b bg-muted/20 px-4 py-3" data-testid="extraction-consensus-area">
-          <ConsensusPanel
-            runDetail={runDetail}
-            summary={reviewerSummary}
-            fieldLabelByCoord={fieldLabelByCoord}
-            reviewerLabelById={reviewerProfiles.labelById}
-            avatarById={reviewerProfiles.avatarById}
-            onSelectExisting={handleSelectExisting}
-            onManualOverride={handleManualOverride}
-            onFinalize={handleApproveFinalize}
-            isComplete={isComplete}
-            isResolving={consensusMutation.isPending}
-            isFinalizing={advanceMutation.isPending || approveFinalize.isPending}
-            evaluateAllCoords={extractionAllCoords}
-            showFinalize={false}
-          />
-        </div>
-      ) : null}
-
       {/* Main content — wrapped in ViewerProvider so both the PDF viewer and
           the form panel resolve useViewerStore/useViewerStoreApi to the same
           store instance. The viewer also receives store={viewerStore} so
@@ -1203,54 +1176,75 @@ export default function ExtractionFullScreen() {
       <div className="flex-1 overflow-hidden">
         <ViewerProvider store={viewerStore}>
         <ResizablePanelGroup direction="horizontal">
-            {/* Extraction form (left) - Extracted to isolated component */}
+            {/* Left panel: ConsensusPanel in consensus stage; ExtractionFormPanel otherwise */}
           <ResizablePanel
             id="extraction-form"
             order={1}
             defaultSize={showPDF ? 50 : 100}
             minSize={30}
           >
-            <ExtractionFormPanel
-              viewMode={viewMode}
-              showPDF={showPDF}
-              formViewProps={{
-                studyLevelSections,
-                modelParentEntityType,
-                modelChildSections,
-                instances,
-                values,
-                updateValue,
-                aiSuggestions,
-                acceptSuggestion,
-                rejectSuggestion,
-                getSuggestionsHistory,
-                isActionLoading,
-                models,
-                activeModelId,
-                setActiveModelId,
-                onAddModel: handleAddModel,
-                onRemoveModel: handleRemoveModel,
-                onRefreshModels: refreshModels,
-                onRefreshInstances: handleRefreshInstances,
-                getInstancesForModel,
-                handleAddInstance,
-                handleRemoveInstance,
-                projectId: projectId || '',
-                articleId: articleId || '',
-                templateId: template?.id || '',
-                runId: activeRunId,
-                modelsLoading,
-                onExtractionComplete: handleExtractionComplete,
-              }}
-              compareViewProps={{
-                decisionsByCoord: reviewerSummary.decisionsByCoord,
-                entityTypes,
-                instances,
-                ownValues: values,
-                reviewerLabelById: reviewerProfiles.labelById,
-                reviewerAvatarById: reviewerProfiles.avatarById,
-              }}
-            />
+            {inConsensusStage && runDetail ? (
+              <div className="h-full min-h-0 overflow-y-auto" data-testid="extraction-consensus-area">
+                <ConsensusPanel
+                  runDetail={runDetail}
+                  summary={reviewerSummary}
+                  requiredCoords={requiredCoords}
+                  peersRevealed={!!runDetail.peers_revealed}
+                  fieldLabelByCoord={fieldLabelByCoord}
+                  reviewerLabelById={reviewerProfiles.labelById}
+                  avatarById={reviewerProfiles.avatarById}
+                  onSelectExisting={handleSelectExisting}
+                  onManualOverride={handleManualOverride}
+                  onFinalize={handleApproveFinalize}
+                  isComplete={isComplete}
+                  isResolving={consensusMutation.isPending}
+                  isFinalizing={advanceMutation.isPending || approveFinalize.isPending}
+                  showFinalize={false}
+                />
+              </div>
+            ) : (
+              <ExtractionFormPanel
+                viewMode={viewMode}
+                showPDF={showPDF}
+                formViewProps={{
+                  studyLevelSections,
+                  modelParentEntityType,
+                  modelChildSections,
+                  instances,
+                  values,
+                  updateValue,
+                  aiSuggestions,
+                  acceptSuggestion,
+                  rejectSuggestion,
+                  getSuggestionsHistory,
+                  isActionLoading,
+                  models,
+                  activeModelId,
+                  setActiveModelId,
+                  onAddModel: handleAddModel,
+                  onRemoveModel: handleRemoveModel,
+                  onRefreshModels: refreshModels,
+                  onRefreshInstances: handleRefreshInstances,
+                  getInstancesForModel,
+                  handleAddInstance,
+                  handleRemoveInstance,
+                  projectId: projectId || '',
+                  articleId: articleId || '',
+                  templateId: template?.id || '',
+                  runId: activeRunId,
+                  modelsLoading,
+                  onExtractionComplete: handleExtractionComplete,
+                }}
+                compareViewProps={{
+                  decisionsByCoord: reviewerSummary.decisionsByCoord,
+                  entityTypes,
+                  instances,
+                  ownValues: values,
+                  reviewerLabelById: reviewerProfiles.labelById,
+                  reviewerAvatarById: reviewerProfiles.avatarById,
+                }}
+              />
+            )}
           </ResizablePanel>
 
             {/* PDF Viewer (right, optional) - renders the handle + panel */}
