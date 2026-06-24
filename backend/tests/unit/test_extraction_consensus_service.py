@@ -209,20 +209,22 @@ async def test_select_existing_requires_decision_id() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("value", "rationale"),
-    [(None, "r"), ({"v": "x"}, None), (None, None)],
-    ids=["missing-value", "missing-rationale", "both-missing"],
+    [(None, "r"), (None, None)],
+    ids=["missing-value-with-rationale", "missing-value-no-rationale"],
 )
-async def test_manual_override_requires_value_and_rationale(
+async def test_manual_override_requires_value(
     value: dict | None,
     rationale: str | None,
 ) -> None:
+    """A ``manual_override`` still requires a value; rationale is optional
+    (Phase B, decision F), so the only rejected case is a missing value."""
     service = _make_service()
     load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
     with (
         load_p,
         coh_p,
         repo_p,
-        pytest.raises(InvalidConsensusError, match="requires both value and rationale"),
+        pytest.raises(InvalidConsensusError, match="requires a value"),
     ):
         await service.record_consensus(
             run_id=uuid4(),
@@ -233,6 +235,29 @@ async def test_manual_override_requires_value_and_rationale(
             value=value,
             rationale=rationale,
         )
+
+
+@pytest.mark.asyncio
+async def test_manual_override_allows_null_rationale() -> None:
+    """Phase B (decision F): a ``manual_override`` with a value but no rationale
+    is accepted — the service guard requires only ``value``. (The DB CHECK is
+    relaxed in lockstep; that half is covered by the integration twin.)"""
+    service = _make_service()
+    service._published.insert_first_if_absent.return_value = _make_published(version=1)
+    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
+    with load_p, coh_p, repo_p:
+        consensus, published = await service.record_consensus(
+            run_id=uuid4(),
+            instance_id=uuid4(),
+            field_id=uuid4(),
+            consensus_user_id=uuid4(),
+            mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+            value={"value": "5", "unit": "mg"},
+            rationale=None,
+        )
+    assert consensus.mode == "manual_override"
+    assert consensus.rationale is None
+    assert published.version == 1
 
 
 # =================== record_consensus: select_existing resolution ===================

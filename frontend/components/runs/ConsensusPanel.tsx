@@ -382,11 +382,9 @@ function CoordRow({
                   </Button>
                   <Button
                     size="sm"
-                    disabled={
-                      disabled ||
-                      overrideValue.trim() === "" ||
-                      overrideRationale.trim() === ""
-                    }
+                    // Rationale is optional (Phase B, decision F): only a
+                    // non-empty value gates the publish.
+                    disabled={disabled || overrideValue.trim() === ""}
                     onClick={async () => {
                       let parsed: unknown;
                       try {

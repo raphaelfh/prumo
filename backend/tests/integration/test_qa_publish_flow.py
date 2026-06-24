@@ -571,7 +571,7 @@ async def test_finalize_rejected_from_wrong_stage(
     assert "cannot transition" in res.json()["error"]["message"].lower()
 
 
-# ===================== Manual override requires rationale =====================
+# ===================== Manual override requires only a value =====================
 
 
 @pytest.mark.asyncio
@@ -579,10 +579,10 @@ async def test_finalize_rejected_from_wrong_stage(
     ("value_payload", "rationale", "expected_status", "ids"),
     [
         ({"value": "Y"}, "with rationale", 201, "happy-path"),
-        ({"value": "Y"}, None, 400, "missing-rationale"),
+        ({"value": "Y"}, None, 201, "optional-rationale"),
         (None, "rationale alone", 400, "missing-value"),
     ],
-    ids=["happy-path", "missing-rationale", "missing-value"],
+    ids=["happy-path", "optional-rationale", "missing-value"],
 )
 async def test_manual_override_payload_validation(
     db_client: AsyncClient,
@@ -593,9 +593,9 @@ async def test_manual_override_payload_validation(
     expected_status: int,
     ids: str,  # noqa: ARG001
 ) -> None:
-    """manual_override requires both ``value`` and ``rationale``. Either
-    being absent rejects the request before any DB write, so the run is
-    untouched and republish can retry cleanly."""
+    """manual_override requires only a ``value``; the ``rationale`` is optional
+    (Phase B, decision F). A missing value still rejects the request before any
+    DB write, so the run is untouched and republish can retry cleanly."""
     article = await _pick_article(db_session)
     global_template_id = await _pick_qa_global_template(db_session)
     if article is None or global_template_id is None:

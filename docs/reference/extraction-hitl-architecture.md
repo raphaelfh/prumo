@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-06-23
+last_reviewed: 2026-06-24
 owner: '@raphaelfh'
 ---
 
@@ -106,7 +106,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0030_drop_instance_status` (post-squash numbering; run
+`0032_optional_rationale` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -119,7 +119,7 @@ in any PR that adds an `extraction_*` migration).
 | `extraction_proposal_records` | **Yes** | One row per proposed value for a `(run, instance, field)` triplet. Source: `ai` / `human` / `system`. CHECK: `human` requires `source_user_id`. Append-only of *changes*: `ExtractionProposalService.record_proposal` no-ops when the value is identical to the latest row for the same coord+source(+user), so a client replaying an unchanged value (form remount, retry) doesn't grow a duplicate. |
 | `extraction_reviewer_decisions` | **Yes** | One row per reviewer decision: `accept_proposal` / `reject` / `edit`. CHECKs enforce that `accept_proposal` carries a `proposal_record_id` and `edit` carries a `value`. Same idempotent-re-record rule as proposals: an unchanged decision replay (same decision+value+proposal) is a no-op. |
 | `extraction_reviewer_states` | Materialized | Current `decision_id` per `(run, reviewer, instance, field)`. Upserted alongside each decision so reads are O(1). Unique `(run_id, reviewer_id, instance_id, field_id)`. |
-| `extraction_consensus_decisions` | **Yes** | Conflict resolution: `select_existing` (arbitrator picks a reviewer decision) or `manual_override` (writes value + rationale directly). |
+| `extraction_consensus_decisions` | **Yes** | Conflict resolution: `select_existing` (arbitrator picks a reviewer decision) or `manual_override` (writes a value directly; rationale optional since `0032_optional_rationale`). CHECK `manual_override_complete` requires only `value` for an override. |
 | `extraction_published_states` | Mutable with version | Canonical value per `(run, instance, field)` with optimistic concurrency. Update uses `WHERE version = :expected` so 0 rows = 409 conflict. |
 | `extraction_reviewer_ready` | Upsert | Per-`(run, reviewer)` advisory "I'm done extracting" flag (`is_ready`, `marked_ready_at`). Unique `(run_id, reviewer_id)`. Does **not** gate any stage transition; surfaces the "N/M reviewers ready" hint. Added `0029` (HITL Phase 2). |
 
@@ -415,7 +415,7 @@ publish, AI), keep it in the page-specific component.
   alongside every new decision.
 - **ConsensusDecision** — Append-only resolution when reviewers diverge.
   `select_existing` (arbitrator picks a reviewer decision) or
-  `manual_override` (writes value + rationale).
+  `manual_override` (writes a value directly; rationale optional).
 - **PublishedState** — Canonical published value per `(run, instance,
   field)`, with an integer `version` for optimistic concurrency.
 - **Evidence** — Polymorphic — points at a PDF (article_file_id, page,

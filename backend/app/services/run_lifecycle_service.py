@@ -309,12 +309,14 @@ class RunLifecycleService:
         """Per existing-instance × field coord with NO ``PublishedState`` yet: the single
         agreed value envelope to publish, plus the coords that still diverge unresolved.
 
-        Distinctness is compared on the UNWRAPPED scalar (so ``{"value": "x"}`` from two
-        reviewers counts as agreement), but the ORIGINAL envelope is published — it goes
-        straight into ``PublishedState.value``. Mirrors ``_filled_coords`` resolution
-        (``reject`` skipped; ``accept_proposal`` resolves through the referenced
-        proposal). One distinct value → publishable; ≥2 → unresolved divergence; coords
-        already carrying a ``PublishedState`` (manager-resolved) are skipped.
+        Distinctness is compared on the FULL value envelope (Phase B, decision G):
+        ``{"value":"5","unit":"mg"}`` and ``{"value":"5","unit":"g"}`` are a conflict, not
+        agreement — keying on the unit-stripped scalar used to publish one unit silently.
+        The original envelope is published verbatim into ``PublishedState.value``. Mirrors
+        ``_filled_coords`` resolution (``reject`` skipped; ``accept_proposal`` resolves
+        through the referenced proposal). One distinct envelope → publishable; ≥2 →
+        unresolved divergence; coords already carrying a ``PublishedState``
+        (manager-resolved) are skipped.
         """
         published_coords = {
             (instance_id, field_id)
@@ -330,7 +332,8 @@ class RunLifecycleService:
 
         # One pass over each reviewer's current value: first distinct value per
         # unpublished coord is the publish candidate; a second DIFFERENT value
-        # (compared on the unwrapped scalar) demotes the coord to unresolved.
+        # (compared on the FULL envelope, so a unit/structured difference counts)
+        # demotes the coord to unresolved.
         to_publish: dict[tuple[UUID, UUID], Any] = {}
         seen_key: dict[tuple[UUID, UUID], str] = {}
         unresolved: set[tuple[UUID, UUID]] = set()
@@ -338,7 +341,7 @@ class RunLifecycleService:
             coord = (instance_id, field_id)
             if coord in published_coords or coord in unresolved:
                 continue
-            key = json.dumps(_unwrap_value(resolved), sort_keys=True, default=str)
+            key = json.dumps(resolved, sort_keys=True, default=str)
             if coord not in seen_key:
                 seen_key[coord] = key
                 to_publish[coord] = resolved
