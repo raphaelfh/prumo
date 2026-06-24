@@ -18,9 +18,6 @@ export interface ArticleFile {
   original_filename: string | null;
   bytes: number | null;
   md5: string | null;
-    // Fields for text extraction (future implementation)
-    text_raw?: string | null;           // Raw extracted text
-    text_html?: string | null;          // HTML extracted text
   extraction_status?: string | null;  // pending, processing, completed, failed
     extraction_error?: string | null;   // Error message if failed
     extracted_at?: string | null;       // Extraction date/time

@@ -42,8 +42,8 @@ async def _run_parse(
     async def _body(session: AsyncSession) -> dict[str, Any]:
         # Per-project parser preference: "auto" | "llamaparse" | "docling".
         # "auto" (the default) prefers the LlamaParse cloud backend when a
-        # llama_cloud key resolves, falling back to the self-hosted Docling
-        # parser otherwise. An explicit "docling" never looks up a key.
+        # llama_cloud key resolves, falling back to the free PyMuPDF parser
+        # otherwise. An explicit "docling" never looks up a key.
         pref = await ParserSettingsService(session).get_for_project(UUID(project_id))
 
         # BYOK llama_cloud key (BYOK > global); fetched only when the cloud
@@ -57,7 +57,7 @@ async def _run_parse(
         elif pref == "llamaparse":
             backend = "llamaparse"
         else:  # auto
-            backend = "llamaparse" if llama_key else "docling"
+            backend = "llamaparse" if llama_key else "pymupdf"
 
         # Build a minimal settings-like namespace that overrides PARSER_BACKEND
         # for this call without mutating the global settings object.

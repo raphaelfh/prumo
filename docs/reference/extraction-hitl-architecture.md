@@ -6,7 +6,7 @@ owner: '@raphaelfh'
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-06-21 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-06-24 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -106,7 +106,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0032_optional_rationale` (post-squash numbering; run
+`0033_article_markdown_cols` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -295,16 +295,20 @@ defined next to their prompt module. Template-driven schemas whose shape
 depends on the active template version are built at runtime by
 `backend/app/llm/schema.py::build_output_models`.
 
-**Article-text input (A1, 2026-06-23).** The `article_text` passed to each
+**Article-text input (2026-06-24).** The `article_text` passed to each
 `render(...)` is no longer raw `pypdf` text truncated at 15k. The extraction
 services call `build_prompt_input` (`app/services/extraction_prompt_input.py`),
-which fetches `article_text_blocks` **once per run** and assembles a budgeted
-**markdown projection** of the blocks via
+which uses the **stored `article_files.content_markdown`** column directly when
+it fits within `LLM_ASSEMBLY_BUDGET_TOKENS`; otherwise it falls back to
 `app/llm/assembler.py::assemble_for_model` (a deterministic
-`render_blocks_to_markdown` + IMRaD-aware token-budget windowing). When an
-article has no blocks yet, the `pypdf` fallback is wrapped into synthetic blocks
-and routed through the *same* budgeted assembler — no path sends unbounded text.
-See ADR-0011 (block input) and ADR-0013 (markdown projection).
+`render_blocks_to_markdown` + IMRaD-aware whole-section dropping). The assembly
+event is logged as `extraction.assembly` with a `source` field:
+`stored_markdown` or `budgeted_blocks`. When an article has never been parsed,
+`build_prompt_input` runs `PymupdfParser` **once** via `DocumentParsingService`
+and persists blocks + `content_markdown` atomically — it is never re-parsed
+afterward. The `pypdf` fallback (`pdf_processor.py`, `blocks_from_plain_text`,
+the `pypdf` dep) has been **removed**; no unbounded-text path remains.
+See ADR-0011 (block input) and ADR-0013 (stored markdown + deterministic highlight).
 
 Unit tests for the prompt layer live in
 `backend/tests/unit/llm/test_prompts.py`.

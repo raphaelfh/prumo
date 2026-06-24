@@ -10,6 +10,7 @@
 export interface LocatableBlock {
   id: string;
   pageNumber: number;
+  blockIndex: number;
   text: string;
 }
 
@@ -30,6 +31,29 @@ function normalize(s: string): string {
 function stripTrailingEllipsis(s: string): string {
   const stripped = s.replace(/[.…]+$/, '').trim();
   return stripped || s;
+}
+
+/**
+ * Deterministic locate by (page, block_index); the reader's preferred path.
+ *
+ * Returns the id of the first block whose pageNumber matches `page` (or any
+ * page when `page` is null/undefined) AND whose blockIndex is in `blockIds`.
+ * Returns null when `blockIds` is empty or nothing matches.
+ */
+export function findBlockByIndex(
+  blocks: readonly LocatableBlock[],
+  page: number | null | undefined,
+  blockIds: readonly number[],
+): string | null {
+  if (!blockIds.length) return null;
+  // block_index is PAGE-RELATIVE: without a page, the same index could match
+  // the wrong block on a different page.
+  if (page == null) return null;
+  const wanted = new Set(blockIds);
+  const hit = blocks.find(
+    (b) => (page == null || b.pageNumber === page) && wanted.has(b.blockIndex),
+  );
+  return hit ? hit.id : null;
 }
 
 /**

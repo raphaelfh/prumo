@@ -19,7 +19,7 @@ import {cn} from '@/lib/utils';
 import {useViewerStoreApiOptional} from '../core/context';
 import {subscribeReaderLocate} from '../core/subscribeReaderLocate';
 import {MarkdownContent} from '../markdown/MarkdownContent';
-import {findBlockForQuote} from './readerLocate';
+import {findBlockByIndex, findBlockForQuote} from './readerLocate';
 
 export interface ReaderTextBlock {
   id: string;
@@ -115,7 +115,9 @@ function Reader({blocks, emptyState, loading, loadingState, className}: ReaderPr
         const root = rootRef.current;
         if (!root) return;
 
-        const matchedId = findBlockForQuote(blocksRef.current, req.quote, req.page);
+        const matchedId =
+          findBlockByIndex(blocksRef.current, req.page, req.blockIds ?? []) ??
+          findBlockForQuote(blocksRef.current, req.quote, req.page);
         let target: Element | null = matchedId
           ? root.querySelector(`[data-block-id="${cssEscape(matchedId)}"]`)
           : null;

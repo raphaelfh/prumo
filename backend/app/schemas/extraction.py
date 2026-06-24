@@ -505,6 +505,11 @@ class TextCitationAnchor(BaseModel):
         default=None,
         description="Optional canonical text used for highlight matching",
     )
+    block_ids: list[int] = Field(
+        default_factory=list,
+        alias="blockIds",
+        description="block_index values (per page) the quote matched; reader highlight key",
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -515,6 +520,11 @@ class RegionCitationAnchor(BaseModel):
     kind: Literal["region"]
     page: int = Field(..., ge=1, description="1-indexed page the rect is on")
     rect: PDFRect
+    block_ids: list[int] = Field(
+        default_factory=list,
+        alias="blockIds",
+        description="block_index values (per page) the quote matched; reader highlight key",
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -526,6 +536,11 @@ class HybridCitationAnchor(BaseModel):
     range: PDFTextRange
     rect: PDFRect
     quote: str
+    block_ids: list[int] = Field(
+        default_factory=list,
+        alias="blockIds",
+        description="block_index values (per page) the quote matched; reader highlight key",
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 

@@ -42,6 +42,7 @@ export interface AISuggestion {
   evidence?: {
     text: string;
     pageNumber?: number | null;
+    blockIds: number[];
   };
 }
 

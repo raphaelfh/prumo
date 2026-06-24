@@ -277,8 +277,8 @@ async def test_auto_default_with_key_selects_llamaparse(db_session_real: AsyncSe
 
 
 @pytest.mark.asyncio
-async def test_auto_default_without_key_selects_docling(db_session_real: AsyncSession) -> None:
-    """No per-project setting (auto) + no key → Docling fallback."""
+async def test_auto_default_without_key_selects_pymupdf(db_session_real: AsyncSession) -> None:
+    """No per-project setting (auto) + no key → PyMuPDF fallback."""
     await _clear_parsing_setting(db_session_real, SEED.primary_project)
     file_id = await _insert_article_file(
         db_session_real, project_id=SEED.primary_project, article_id=SEED.primary_article
@@ -288,7 +288,7 @@ async def test_auto_default_without_key_selects_docling(db_session_real: AsyncSe
             db_session_real, file_id=file_id, llama_key=None
         )
         key_lookup.assert_awaited_once_with("llama_cloud")
-        assert factory.call_args.args[0].PARSER_BACKEND == "docling"
+        assert factory.call_args.args[0].PARSER_BACKEND == "pymupdf"
         assert factory.call_args.kwargs["llama_cloud_key"] is None
     finally:
         await _cleanup(db_session_real, file_id=file_id)

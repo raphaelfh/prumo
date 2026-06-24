@@ -50,9 +50,9 @@ def test_llamaparse_unavailable_without_key(monkeypatch) -> None:
     assert LlamaParseRunner().available() is False
 
 
-def test_pymupdf_unavailable_when_lib_absent() -> None:
-    # pymupdf is not a backend dependency; the import check is False here.
-    assert PyMuPDFRunner().available() is False
+def test_pymupdf_available_as_backend_dependency() -> None:
+    # pymupdf (fitz) is a backend dependency since Task 3; always available here.
+    assert PyMuPDFRunner().available() is True
 
 
 def test_markitdown_unavailable_when_lib_absent() -> None:

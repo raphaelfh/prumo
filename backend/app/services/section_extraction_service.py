@@ -50,7 +50,6 @@ from app.repositories import (
 from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
-from app.services.pdf_processor import PDFProcessor
 from app.services.run_lifecycle_service import RunLifecycleService
 
 
@@ -118,7 +117,6 @@ class SectionExtractionService(LoggerMixin):
         self.user_id = user_id
         self.storage = storage
         self.trace_id = trace_id
-        self.pdf_processor = PDFProcessor()
         self._llm_api_key = openai_api_key
 
         # Repositories
@@ -141,11 +139,12 @@ class SectionExtractionService(LoggerMixin):
         text, self._run_anchor_blocks, self._run_anchor_file_id = await build_prompt_input(
             db=self.db,
             article_files=self._article_files,
-            pdf_processor=self.pdf_processor,
-            get_pdf=self._get_pdf,
+            storage=self.storage,
             article_id=article_id,
             model=model,
             logger=self.logger,
+            user_id=self.user_id,
+            trace_id=self.trace_id,
         )
         return text
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,12 +30,26 @@ from app.models.extraction_workflow import (
     ExtractionReviewerDecisionType,
     ExtractionReviewerState,
 )
+from app.schemas.extraction import parse_position
 from app.schemas.extraction_suggestion import (
     AISuggestionHistoryItem,
     AISuggestionItem,
     AISuggestionsResponse,
     EvidenceResponse,
 )
+
+
+def _extract_block_ids(ev: ExtractionEvidence) -> list[int]:
+    """Return block_ids from the stored PositionV1 anchor, or [] on missing/invalid position."""
+    if not ev.position:
+        return []
+    try:
+        pos = parse_position(ev.position)
+    except (ValidationError, ValueError):
+        return []
+    if pos is None:
+        return []
+    return list(pos.anchor.block_ids)
 
 
 async def get_article_instance_ids(db: AsyncSession, article_id: UUID) -> list[UUID]:
@@ -179,6 +194,7 @@ async def load_suggestions(
                 proposal_record_id=p.id,
                 text_content=ev.text_content,
                 page_number=ev.page_number,
+                blockIds=_extract_block_ids(ev),
             )
             if ev is not None
             else None
@@ -273,6 +289,7 @@ async def get_suggestion_history(
                 proposal_record_id=p.id,
                 text_content=ev.text_content,
                 page_number=ev.page_number,
+                blockIds=_extract_block_ids(ev),
             )
             if ev is not None
             else None

@@ -54,6 +54,8 @@ export interface ReaderLocateRequest {
   quote: string;
   /** 1-indexed page hint, or null when unknown. */
   page: number | null;
+  /** block_index values for deterministic reader highlight (preferred over quote). */
+  blockIds: number[];
   /** Monotonically increasing — bump to re-fire the same quote. */
   nonce: number;
 }
@@ -110,7 +112,7 @@ export interface ViewerActions {
 
   // Reader-locate (markdown-first citation locating)
   /** Switch to reader mode and request the reader to find + flash `quote`. */
-  locateInReader(quote: string, page?: number | null): void;
+  locateInReader(quote: string, page?: number | null, blockIds?: number[]): void;
   /** Clear any pending reader-locate request (e.g. on document switch). */
   clearReaderLocate(): void;
 
