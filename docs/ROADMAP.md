@@ -25,6 +25,7 @@ This file records only the **top-level milestones** (one bullet each) — the
 
 ## Recently shipped (2026-Q2)
 
+- ✅ Stored-markdown ingestion + deterministic citation highlight — `content_markdown` written atomically with blocks (migration `0033`); PyMuPDF free default; highlight anchored by `(page, block_index)`; `pypdf` path removed (2026-06-24).
 - ✅ Extraction data-path consolidation — single API read path (ADR 0007); shipped via #228/#324 (2026-06).
 - ✅ Extraction-centric HITL unification (2026-04-27).
 - ✅ Role column promotion + template clone topological sort (2026-05-18 → 2026-05-19).

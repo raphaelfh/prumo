@@ -1,14 +1,42 @@
 ---
-status: proposed
-last_reviewed: 2026-06-21
+status: accepted
+last_reviewed: 2026-06-24
 owner: '@raphaelfh'
 adr_number: '0013'
 ---
 
 # Dual-tier markdown representation of a paper
 
-> **Status:** Proposed · Date: 2026-06-19 · Deciders: @raphaelfh
+> **Status:** Accepted · Date: 2026-06-19 · Deciders: @raphaelfh
 > **Supersedes:** N/A · **Superseded by:** N/A
+
+## Update (2026-06-24, shipped)
+
+The free tier is now a **stored** `article_files.content_markdown TEXT` column
+(migration `0033_article_markdown_cols`), written **atomically** with
+`article_text_blocks` inside `DocumentParsingService.parse_article_file` via
+`render_blocks_to_markdown(blocks)` in a single transaction protected by an
+advisory lock. A companion `content_version INT` column increments on every
+rewrite, so drift between the stored string and the blocks is structurally
+impossible.
+
+The earlier wording — "derived on demand (cached per `content_version`,
+recomputed only when blocks change) — no column" — is superseded.
+
+**Parser default.** `PARSER_BACKEND` now defaults to `pymupdf` (base PyMuPDF /
+`fitz`, real bbox). The `auto` value resolves to LlamaParse if a `llama_cloud`
+key is available, otherwise to `pymupdf`. Docling is opt-in only (explicit
+`docling` selection). The earlier text saying `auto` falls back to self-hosted
+Docling is superseded.
+
+**Highlight.** Evidence anchors persist `block_ids` (block_index values,
+alias `blockIds`); the suggestions payload carries `evidence.blockIds`; the
+reader locates by `(page, block_index)` first (`findBlockByIndex`), with a
+quote-match fallback. Highlight in the markdown path is therefore deterministic,
+superseding the "canvas-only" caveat for the markdown reader.
+
+The enriched tier (vision-enriched blocks + stored `markdown_enriched`) has not
+yet been built.
 
 ## Context and Problem Statement
 

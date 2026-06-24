@@ -1,6 +1,6 @@
 ---
 status: proposed
-last_reviewed: 2026-06-21
+last_reviewed: 2026-06-24
 owner: '@raphaelfh'
 adr_number: '0011'
 ---
@@ -87,12 +87,11 @@ JATS XML, and supplementary files.
 
 Chosen option: **Option D (hybrid self-hosted parse at ingest + targeted vision
 table pass)**, because the two leading requirements pull toward different
-solution classes and only a hybrid satisfies both. **The per-project parser
-setting defaults to `auto`: `auto` uses the LlamaParse cloud parser when a
-`llama_cloud` BYOK key is configured for the project's user, and otherwise falls
-back to the self-hosted Docling parser.** A project may explicitly force
-`llamaparse` or `docling` (the legacy value `standard` means `docling`). There is
-no PHI check anywhere in this selection. The relative ranking of the two backends
+solution classes and only a hybrid satisfies both. **The per-project parser setting defaults to `pymupdf` (base PyMuPDF / `fitz`,
+real bbox, no egress).** `auto` resolves to the LlamaParse cloud parser when a
+`llama_cloud` BYOK key is configured for the project's user, and otherwise to
+`pymupdf`. Docling is opt-in only (explicit `docling` selection; the legacy value
+`standard` maps to `docling`). There is no PHI check anywhere in this selection. The relative ranking of the two backends
 is confirmed-or-overturned by the Phase-0 bake-off.
 On the available 2024–2026 benchmarks — OmniDocBench (CVPR 2025) and recent
 table/formula benchmarks, which
@@ -164,13 +163,13 @@ Concretely, respecting the existing layering:
   one-off task; until a given article has blocks, extraction falls back to
   today's lazy `pypdf` path so nothing breaks (a temporary two-tier state).
   Re-uploading a file cascade-deletes its blocks (`ON DELETE CASCADE`).
-- **Parser backends are pluggable; the per-project setting defaults to `auto`.**
-  Via the `create_document_parser(settings, *, llama_cloud_key=None)` factory
-  (above): on `auto`, the factory returns the **LlamaParse (LlamaCloud)
-  `agentic`** backend when a `llama_cloud` BYOK key is configured for the
-  project's user, and otherwise falls back to the **self-hosted Docling** parser
-  (CPU-first, no egress). A project may explicitly force `llamaparse` or
-  `docling` (legacy `standard` == `docling`); there is no PHI gate. **LlamaParse**
+- **Parser backends are pluggable; the per-project setting defaults to
+  `pymupdf`.** Via the `create_document_parser(settings, *, llama_cloud_key=None)`
+  factory (above): `pymupdf` (base PyMuPDF / `fitz`, real bbox, no egress) is
+  the free default. `auto` resolves to **LlamaParse (LlamaCloud) `agentic`**
+  when a `llama_cloud` BYOK key is configured, else to `pymupdf`. A project may
+  explicitly force `llamaparse`, `pymupdf`, or `docling` (legacy `standard` ==
+  `docling`; Docling is opt-in only); there is no PHI gate. **LlamaParse**
   (cloud, v2 SDK `llama-cloud >= 2.1`) returns markdown plus *granular
   word/line/cell bounding boxes* that map onto `article_text_blocks` +
   `PositionV1` (provenance lives in that JSONL sidecar, not the markdown string;
@@ -207,11 +206,11 @@ Concretely, respecting the existing layering:
   `pydantic-ai` multimodal input (verified on the pinned 1.107), so there is no
   SDK divergence; the cost is the `[anthropic]` / `[google]` extras and a second
   provider branch in `build_model()`.
-- Neutral — parser choice is deferred to a bake-off; until backfill completes,
-  pre-existing articles keep working on the legacy `pypdf` path (a temporary
-  two-tier experience); the dead text columns and the unused `pdf-lib`
-  dependency are dropped by the grounded-extraction plan (Phase 3), which owns
-  the exact column list.
+- Neutral — parser choice is deferred to a bake-off; for articles that have
+  never been parsed, `build_prompt_input` runs `PymupdfParser` once via
+  `DocumentParsingService` and persists blocks + `content_markdown` — the `pypdf`
+  fallback path and `pdf_processor.py` have been removed (2026-06-24); the dead
+  `text_raw`/`text_html` columns were dropped in migration `0033_article_markdown_cols`.
 
 ## Validation
 
