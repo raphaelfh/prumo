@@ -20,7 +20,7 @@ schema items** described in
 
 Currently exposed:
 
-- **Headless core (Phase 1a):** `PDFSource`, `PDFRect`, `PDFTextRange`, `Citation`,
+- **Headless core (Phase 1a):** `PDFSource`, `PDFRect`, `PDFTextRange`,
   `PDFEngine`, `ViewerState`, `createViewerStore(initial?)`, `<ViewerProvider>`,
   `useViewerStore<T>(selector)`, `useViewerStoreApi()`.
 - **Engine (Phase 1b):** `PdfJsEngineImpl` against pdfjs-dist v5 — load,
@@ -84,7 +84,6 @@ import {
 import type {
   ViewerState,
   PDFSource,
-  Citation,
   PDFEngine,
 } from '@prumo/pdf-viewer';
 ```

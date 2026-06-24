@@ -5,9 +5,8 @@ import {createViewerStore} from '../core/store';
 import type {PDFPageHandle} from '../core/engine';
 
 // Fallback store for the case where usePageHandle renders OUTSIDE a
-// ViewerProvider — e.g. the QA screen mounts citation hooks (useCitationHighlight)
-// with no PDF viewer present. Its `document` is null, so the hook returns null
-// instead of throwing. Module-level + read-only: shared and never mutated.
+// ViewerProvider. Its `document` is null, so the hook returns null instead of
+// throwing. Module-level + read-only: shared and never mutated.
 const NO_PROVIDER_STORE = createViewerStore();
 
 export function usePageHandle(pageNumber: number): PDFPageHandle | null {

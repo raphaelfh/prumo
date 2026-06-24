@@ -297,7 +297,6 @@ function QAHarness() {
       values={valuesForDomain}
       onValueChange={(fid, value) => fill('inst-1', fid, value)}
       projectId="p"
-      articleId="a"
       defaultOpen
       instanceId="inst-1"
       aiSuggestions={hook.suggestions}
