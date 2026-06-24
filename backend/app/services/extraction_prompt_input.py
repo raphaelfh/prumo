@@ -55,9 +55,10 @@ async def build_prompt_input(
         blocks = await repo.list_ordered_for_file(main_file.id)
 
     stored_md = main_file.content_markdown or ""
-    if stored_md and estimate_tokens(stored_md, model) <= settings.LLM_ASSEMBLY_BUDGET_TOKENS:
+    est = estimate_tokens(stored_md, model) if stored_md else 0
+    if stored_md and est <= settings.LLM_ASSEMBLY_BUDGET_TOKENS:
         text, source = stored_md, "stored_markdown"
-        info_truncated, est, included = False, estimate_tokens(stored_md, model), len(blocks)
+        info_truncated, included = False, len(blocks)
     else:
         text, info = assemble_for_model(
             blocks, model_name=model, budget_tokens=settings.LLM_ASSEMBLY_BUDGET_TOKENS

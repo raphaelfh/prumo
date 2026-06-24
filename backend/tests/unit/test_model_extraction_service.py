@@ -599,6 +599,60 @@ class TestFullExtractionFlow:
 
 
 @pytest.mark.asyncio
+async def test_build_prompt_input_called_with_correct_kwargs(service):
+    """build_prompt_input is awaited with storage/user_id/trace_id from the service.
+
+    Uses the existing ``service`` fixture (user_id="12345678-...", trace_id="trace-123",
+    storage=mock_storage) and replaces the module-level build_prompt_input with a
+    fresh AsyncMock so the wiring from extract() → build_prompt_input is exercised
+    (not masked by the fixture's own patch).
+    """
+    mock_bpi = AsyncMock(return_value=("md", [], None))
+    project_id = uuid4()
+    article_id = uuid4()
+    template_id = uuid4()
+    run_id = uuid4()
+
+    # Minimal setup for the extract() flow beyond the prompt-assembly step.
+    mock_template = MagicMock()
+    mock_template.entity_types = []
+    service._templates.get_with_entity_types = AsyncMock(return_value=mock_template)
+    service._entity_types.get_by_role = AsyncMock(return_value=None)
+
+    mock_run = MagicMock()
+    mock_run.id = run_id
+    service._lifecycle.create_run = AsyncMock(return_value=mock_run)
+    service._lifecycle.advance_stage = AsyncMock(return_value=mock_run)
+    service._runs.start_run = AsyncMock()
+    service._runs.complete_run = AsyncMock()
+    service._runs.rollback_and_fail = AsyncMock()
+
+    with (
+        patch("app.services.model_extraction_service.build_prompt_input", mock_bpi),
+        patch(
+            "app.services.model_extraction_service.extract_structured",
+            AsyncMock(
+                return_value=(
+                    MagicMock(models=[]),
+                    MagicMock(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+                )
+            ),
+        ),
+    ):
+        await service.extract(
+            project_id=project_id,
+            article_id=article_id,
+            template_id=template_id,
+        )
+
+    mock_bpi.assert_awaited_once()
+    kwargs = mock_bpi.await_args.kwargs
+    assert kwargs["user_id"] == service.user_id
+    assert kwargs["trace_id"] == service.trace_id
+    assert kwargs["storage"] is service.storage
+
+
+@pytest.mark.asyncio
 async def test_identify_models_sends_full_text_no_truncation(service):
     """model_identification consumes the full assembled text — the legacy 15k
     truncation is gone (A1); _identify_models threads article_text verbatim."""

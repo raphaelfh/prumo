@@ -2017,3 +2017,37 @@ class TestExtractWithLlmWiring:
         assert "CONTEXT FROM PREVIOUSLY EXTRACTED SECTIONS" in user_prompt
         assert "Participants" in user_prompt
         assert "N=100 patients" in user_prompt
+
+
+# ---------------------------------------------------------------------------
+# build_prompt_input call-site wiring — _assemble_prompt_text
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_prompt_input_called_with_correct_kwargs(mock_db, mock_storage):
+    """_assemble_prompt_text passes storage/user_id/trace_id from the service
+    to build_prompt_input. Bypasses _wire_pipeline so the real method runs."""
+    mock_bpi = AsyncMock(return_value=("md", [], None))
+    with (
+        patch("app.services.section_extraction_service.ArticleFileRepository"),
+        patch("app.services.section_extraction_service.ExtractionEntityTypeRepository"),
+        patch("app.services.section_extraction_service.ExtractionInstanceRepository"),
+        patch("app.services.section_extraction_service.ExtractionProposalService"),
+        patch("app.services.section_extraction_service.ExtractionRunRepository"),
+        patch("app.services.section_extraction_service.RunLifecycleService"),
+        patch("app.services.section_extraction_service.build_prompt_input", mock_bpi),
+    ):
+        svc = SectionExtractionService(
+            db=mock_db,
+            user_id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            storage=mock_storage,
+            trace_id="trace-section-wiring",
+        )
+        await svc._assemble_prompt_text(uuid4(), "gpt-4o-mini")
+
+    mock_bpi.assert_awaited_once()
+    kwargs = mock_bpi.await_args.kwargs
+    assert kwargs["user_id"] == "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    assert kwargs["trace_id"] == "trace-section-wiring"
+    assert kwargs["storage"] is mock_storage
