@@ -43,6 +43,7 @@ function mapItemToSuggestion(item: AISuggestionItem): AISuggestion {
       ? {
           text: item.evidence.text_content,
           pageNumber: item.evidence.page_number ?? null,
+          blockIds: item.evidence.blockIds ?? [],
         }
       : undefined,
   };
@@ -64,6 +65,7 @@ function mapHistoryItemToSuggestion(
       ? {
           text: item.evidence.text_content,
           pageNumber: item.evidence.page_number ?? null,
+          blockIds: item.evidence.blockIds ?? [],
         }
       : undefined,
   };

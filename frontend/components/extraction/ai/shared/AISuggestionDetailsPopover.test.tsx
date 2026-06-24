@@ -38,7 +38,7 @@ const suggestion = {
   confidence: 0.9,
   reasoning: 'Because of this evidence.',
   timestamp: new Date('2024-01-01T00:00:00Z'),
-  evidence: {text: 'test evidence', pageNumber: 2},
+  evidence: {text: 'test evidence', pageNumber: 2, blockIds: [5]},
 };
 
 function Wrapper({children}: {children: ReactNode}) {
@@ -76,7 +76,7 @@ describe('AISuggestionDetailsPopover — reader-locate wiring', () => {
 
     await user.click(locateBtn);
     expect(locateSpy).toHaveBeenCalledOnce();
-    expect(locateSpy).toHaveBeenCalledWith('test evidence', 2);
+    expect(locateSpy).toHaveBeenCalledWith('test evidence', 2, [5]);
 
     // Popover closed → content unmounts.
     await waitFor(() => {
