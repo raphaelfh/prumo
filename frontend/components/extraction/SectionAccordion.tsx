@@ -255,7 +255,6 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       onRemove={() => props.onRemoveInstance?.(instance.id)}
                       canRemove={true}
                       projectId={projectId}
-                      articleId={articleId}
                       aiSuggestions={props.aiSuggestions}
                       onAcceptAI={props.onAcceptAI}
                       onRejectAI={props.onRejectAI}
@@ -294,7 +293,6 @@ export function SectionAccordion(props: SectionAccordionProps) {
                         onValueChange(instances[0].id, field.id, value)
                       }
                       projectId={projectId}
-                      articleId={articleId}
                       aiSuggestion={props.aiSuggestions?.[key]}
                       onAcceptAI={() => props.onAcceptAI?.(instances[0].id, field.id)}
                       onRejectAI={() => props.onRejectAI?.(instances[0].id, field.id)}

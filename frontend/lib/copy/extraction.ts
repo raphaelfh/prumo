@@ -846,10 +846,6 @@ export const extraction = {
     aiRationaleLabel: 'Rationale',
     // AISuggestionEvidence – markdown-first citation locate
     evidenceLocate: 'Locate in document',
-    // CitationLiveRegion – aria-live jump announcement
-    citationJumpAnnouncement: 'Jumped to cited source on page {{n}}',
-    // CitationOverlay – focusable active highlight box
-    citationHighlightLabel: 'Cited source highlight',
 } as const;
 
 export type ExtractionCopy = typeof extraction;

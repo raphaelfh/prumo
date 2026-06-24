@@ -11,7 +11,6 @@ from app.api.v1.endpoints import (
     article_text_blocks,
     articles,
     articles_export,
-    citations,
     extraction_export,
     extraction_runs,
     feedback,
@@ -93,12 +92,6 @@ api_router.include_router(
     parser_settings.router,
     prefix="/projects",
     tags=["projects"],
-)
-
-api_router.include_router(
-    citations.router,
-    prefix="/articles",
-    tags=["citations"],
 )
 
 api_router.include_router(

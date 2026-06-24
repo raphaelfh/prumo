@@ -36,7 +36,6 @@ interface InstanceCardProps {
   onRemove?: () => void;
   canRemove: boolean;
   projectId: string;
-  articleId: string;
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void>;
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
@@ -47,7 +46,7 @@ interface InstanceCardProps {
 // =================== COMPONENT ===================
 
 export function InstanceCard(props: InstanceCardProps) {
-  const { instance, index, fields, values, onRemove, canRemove, projectId, articleId } = props;
+  const { instance, index, fields, values, onRemove, canRemove, projectId } = props;
 
   const [isEditingLabel, setIsEditingLabel] = useState(false);
   const [editedLabel, setEditedLabel] = useState(instance.label);
@@ -191,7 +190,6 @@ export function InstanceCard(props: InstanceCardProps) {
               value={values[key]}
               onChange={(value) => props.onValueChange(field.id, value)}
               projectId={projectId}
-              articleId={articleId}
               aiSuggestion={suggestion}
               onAcceptAI={() => {
                   // Wrapper to pass instanceId with fieldId

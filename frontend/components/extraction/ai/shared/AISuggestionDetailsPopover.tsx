@@ -38,12 +38,6 @@ function hasSuggestionDetails(suggestion: AISuggestion): boolean {
 interface AISuggestionDetailsPopoverProps {
   suggestion: AISuggestion;
   trigger: React.ReactNode;
-  /**
-   * Reserved: the article the suggestion belongs to. Locating now drives the
-   * shared viewer store (no per-article fetch), so this is no longer required —
-   * kept optional for call-site backward compatibility.
-   */
-  articleId?: string;
 }
 
 // -----------------------------------------------------------------------------

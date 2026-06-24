@@ -2,7 +2,7 @@
  * Re-export of all type modules in the core/ directory.
  *
  * Convention: domain types live in their own files
- * (coordinates.ts, source.ts, engine.ts, citation.ts, state.ts).
+ * (coordinates.ts, source.ts, engine.ts, state.ts).
  * This barrel is provided for consumers that prefer a single import.
  */
 
@@ -30,17 +30,6 @@ export type {
   TextContent,
   TextItem,
 } from './engine';
-
-export type {
-  Citation,
-  CitationId,
-  CitationAnchor,
-  TextCitationAnchor,
-  RegionCitationAnchor,
-  HybridCitationAnchor,
-  CitationMetadata,
-  CitationStyle,
-} from './citation';
 
 export type {
   LoadStatus,

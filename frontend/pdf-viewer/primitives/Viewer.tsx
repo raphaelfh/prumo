@@ -1,7 +1,6 @@
 import {useEffect, useRef, type ReactNode} from 'react';
 import {ViewerProvider, useViewerStore, useViewerStoreApi} from '../core/context';
 import {useDocumentLoader} from '../hooks/useDocumentLoader';
-import {CitationOverlay} from './CitationOverlay';
 import type {PDFSource} from '../core/source';
 import type {StoreApi} from 'zustand';
 import type {ViewerState} from '../core/state';
@@ -181,7 +180,6 @@ function Page({
     // and colour the document author intended.
     <div data-page-number={pageNumber} className="relative shadow-md bg-white">
       {children}
-      <CitationOverlay pageNumber={pageNumber} />
     </div>
   );
 }

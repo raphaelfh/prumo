@@ -11,6 +11,4 @@ export const articleKeys = {
     [...articleKeys.all, 'files', articleId] as const,
   textBlocks: (articleFileId: string) =>
     [...articleKeys.all, 'text-blocks', articleFileId] as const,
-  citations: (articleId: string) =>
-    [...articleKeys.all, 'citations', articleId] as const,
 } as const;

@@ -47,7 +47,6 @@ function ExtractionPDFPanelComponent({
     // Switching documents must not carry the previous file's highlights,
     // search, or scroll position over (cross-document leak, MF-8).
     const actions = store?.getState().actions;
-    actions?.clearCitations();
     actions?.clearReaderLocate();
     actions?.clearSearch();
     actions?.goToPage(1);

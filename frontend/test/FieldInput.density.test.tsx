@@ -14,7 +14,7 @@ const field = {
 describe('FieldInput density', () => {
   it('uses the capped-left container-query grid, not the viewport breakpoint', () => {
     const { container } = render(
-      <FieldInput field={field} instanceId="i1" value="" onChange={() => {}} projectId="p" articleId="a" />,
+      <FieldInput field={field} instanceId="i1" value="" onChange={() => {}} projectId="p" />,
     );
     const row = container.querySelector('[data-field-row]') as HTMLElement;
     expect(row.className).toContain('@md:grid-cols-[minmax(0,232px)_1fr]');

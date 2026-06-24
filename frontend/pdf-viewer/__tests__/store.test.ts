@@ -13,8 +13,6 @@ describe('createViewerStore', () => {
     expect(state.currentPage).toBe(1);
     expect(state.scale).toBe(1);
     expect(state.rotation).toBe(0);
-    expect(state.citations.size).toBe(0);
-    expect(state.activeCitationId).toBeNull();
     expect(typeof state.actions.goToPage).toBe('function');
   });
 
@@ -78,31 +76,6 @@ describe('createViewerStore', () => {
     expect(store.getState().currentPage).toBe(10);
   });
 
-  it('addCitation puts an entry in the citations map; removeCitation drops it', () => {
-    const store = createViewerStore();
-    const cite = {
-      id: 'c1',
-      anchor: {kind: 'text' as const, range: {page: 1, charStart: 0, charEnd: 5}},
-    };
-    store.getState().actions.addCitation(cite);
-    expect(store.getState().citations.get('c1')).toEqual(cite);
-    store.getState().actions.removeCitation('c1');
-    expect(store.getState().citations.has('c1')).toBe(false);
-  });
-
-  it('clearCitations empties the map and unsets activeCitationId', () => {
-    const store = createViewerStore();
-    const cite = {
-      id: 'c1',
-      anchor: {kind: 'text' as const, range: {page: 1, charStart: 0, charEnd: 5}},
-    };
-    store.getState().actions.addCitation(cite);
-    store.getState().actions.setActiveCitation('c1');
-    store.getState().actions.clearCitations();
-    expect(store.getState().citations.size).toBe(0);
-    expect(store.getState().activeCitationId).toBeNull();
-  });
-
   it('reset returns to initial state', () => {
     const store = createViewerStore();
     store.getState().actions.setScale(2);
@@ -135,18 +108,6 @@ describe('createViewerStore', () => {
     const store = createViewerStore({scale: 1.5, currentPage: 7});
     expect(store.getState().scale).toBe(1.5);
     expect(store.getState().currentPage).toBe(7);
-  });
-
-  it('removeCitation of a non-existent id is a no-op', () => {
-    const store = createViewerStore();
-    expect(() => store.getState().actions.removeCitation('does-not-exist')).not.toThrow();
-    expect(store.getState().citations.size).toBe(0);
-  });
-
-  it('setActiveCitation accepts an id not present in the citations map', () => {
-    const store = createViewerStore();
-    store.getState().actions.setActiveCitation('not-in-map');
-    expect(store.getState().activeCitationId).toBe('not-in-map');
   });
 
   it('reset is idempotent — calling it twice does not throw', () => {
