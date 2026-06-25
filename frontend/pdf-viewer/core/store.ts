@@ -85,11 +85,11 @@ export function createViewerStore(
         set({mode});
       },
 
-      locateInReader(quote: string, page?: number | null) {
+      locateInReader(quote: string, page?: number | null, blockIds: number[] = []) {
         const prevNonce = get().readerLocate?.nonce ?? 0;
         set({
           mode: 'reader',
-          readerLocate: {quote, page: page ?? null, nonce: prevNonce + 1},
+          readerLocate: {quote, page: page ?? null, blockIds, nonce: prevNonce + 1},
         });
       },
 

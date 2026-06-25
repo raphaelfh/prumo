@@ -263,3 +263,44 @@ async def test_parse_article_file_parser_error_sets_parse_failed_and_reraises(
         await db_session_real.commit()
     finally:
         await _cleanup(db_session_real, file_id=file_id)
+
+
+@pytest.mark.asyncio
+async def test_parse_persists_content_markdown_and_bumps_version(
+    db_session_real: AsyncSession,
+) -> None:
+    """After a successful parse, content_markdown == render_blocks_to_markdown(blocks)
+    and content_version is incremented by one, in the same transaction as the blocks."""
+    from app.infrastructure.parsing.base import render_blocks_to_markdown
+
+    file_id = await _insert_article_file(
+        db_session_real,
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+    )
+    try:
+        storage = FakeStorageAdapter()
+        parser = FakeParser()
+        service = DocumentParsingService(
+            db=db_session_real,
+            user_id=str(SEED.primary_profile),
+            storage=storage,
+            parser=parser,
+            trace_id="test-trace-md",
+        )
+
+        article_file = (
+            await db_session_real.execute(select(ArticleFile).where(ArticleFile.id == file_id))
+        ).scalar_one()
+        before = article_file.content_version
+
+        await service.parse_article_file(file_id)
+        await db_session_real.refresh(article_file)
+
+        expected_md = render_blocks_to_markdown(FakeParser.FIXED_BLOCKS)
+        assert article_file.content_markdown == expected_md
+        assert article_file.content_version == before + 1
+
+        await db_session_real.commit()
+    finally:
+        await _cleanup(db_session_real, file_id=file_id)

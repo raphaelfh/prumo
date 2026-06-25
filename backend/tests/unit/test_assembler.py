@@ -24,7 +24,6 @@ from app.llm.assembler import (
     DroppedSection,
     assemble,
     assemble_for_model,
-    blocks_from_plain_text,
     estimate_tokens,
 )
 from app.schemas.extraction import AssemblyInfo
@@ -566,20 +565,3 @@ class TestAssembleForModel:
         assert heuristic == max(1, len(text) // 4)
         openai = estimate_tokens(text, "gpt-4o-mini")
         assert heuristic != openai  # documented skew between heuristic and tiktoken
-
-    def test_blocks_from_plain_text_splits_on_page_markers(self) -> None:
-        blocks = blocks_from_plain_text("[Page 1]\nIntro text.\n\n[Page 2]\nMethods text.")
-        assert [b.page_number for b in blocks] == [1, 2]
-        assert blocks[0].text == "Intro text." and blocks[0].block_type == "paragraph"
-
-    def test_blocks_from_plain_text_no_markers_single_block(self) -> None:
-        blocks = blocks_from_plain_text("just some flat text")
-        assert len(blocks) == 1 and blocks[0].page_number == 1
-
-    def test_fallback_text_flows_through_same_budgeted_assembler(self) -> None:
-        # A long marker-less pypdf string, wrapped + budgeted, never returns unbounded.
-        text, info = assemble_for_model(
-            blocks_from_plain_text("X" * 5000), model_name="gpt-4o-mini", budget_tokens=100
-        )
-        assert len(text) <= 100 * 4
-        assert info.truncated is True

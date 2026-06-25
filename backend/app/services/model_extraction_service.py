@@ -36,7 +36,6 @@ from app.repositories import (
     GlobalTemplateRepository,
 )
 from app.services.extraction_prompt_input import build_prompt_input
-from app.services.pdf_processor import PDFProcessor
 from app.services.run_lifecycle_service import RunLifecycleService
 
 
@@ -85,7 +84,6 @@ class ModelExtractionService(LoggerMixin):
         self.user_id = user_id
         self.storage = storage
         self.trace_id = trace_id
-        self.pdf_processor = PDFProcessor()
         self._llm_api_key = openai_api_key
 
         # Repositories
@@ -151,16 +149,17 @@ class ModelExtractionService(LoggerMixin):
         )
 
         try:
-            # 2-3. Assemble budgeted block-markdown prompt input (pypdf fallback inside).
+            # 2-3. Assemble budgeted block-markdown prompt input (on-demand parse inside).
             phase_start = perf_counter()
             pdf_text, _, _ = await build_prompt_input(
                 db=self.db,
                 article_files=self._article_files,
-                pdf_processor=self.pdf_processor,
-                get_pdf=self._get_pdf,
+                storage=self.storage,
                 article_id=article_id,
                 model=model,
                 logger=self.logger,
+                user_id=self.user_id,
+                trace_id=self.trace_id,
             )
             phase_durations_ms["assemble_prompt"] = (perf_counter() - phase_start) * 1000
 

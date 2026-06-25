@@ -45,7 +45,7 @@ interface AISuggestionDetailsPopoverProps {
 // -----------------------------------------------------------------------------
 
 interface EvidenceSectionProps {
-  evidence: {text: string; pageNumber?: number | null};
+  evidence: {text: string; pageNumber?: number | null; blockIds?: number[]};
   onClose: () => void;
 }
 
@@ -56,7 +56,7 @@ function EvidenceSection({evidence, onClose}: EvidenceSectionProps) {
   // visible) viewer shows the flash unobstructed.
   const onLocate = isAvailable
     ? () => {
-        locate(evidence.text, evidence.pageNumber ?? null);
+        locate(evidence.text, evidence.pageNumber ?? null, evidence.blockIds ?? []);
         onClose();
       }
     : undefined;
@@ -117,7 +117,7 @@ export function AISuggestionDetailsPopover({
 
           {evidence?.text?.trim() && (
             <EvidenceSection
-              evidence={{text: evidence.text, pageNumber: evidence.pageNumber ?? null}}
+              evidence={{text: evidence.text, pageNumber: evidence.pageNumber ?? null, blockIds: evidence.blockIds ?? []}}
               onClose={() => setOpen(false)}
             />
           )}

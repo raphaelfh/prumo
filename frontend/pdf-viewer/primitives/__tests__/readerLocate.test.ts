@@ -2,10 +2,10 @@ import {describe, expect, it} from 'vitest';
 import {findBlockForQuote, type LocatableBlock} from '../readerLocate';
 
 const blocks: LocatableBlock[] = [
-  {id: 'b1', pageNumber: 1, text: 'SMART-CARE is a **prospective, multicenter, observational** cohort study enrolling 300 adult patients with CHF.'},
-  {id: 'b2', pageNumber: 1, text: '# Methods'},
-  {id: 'b3', pageNumber: 2, text: 'Patients were followed for six months.'},
-  {id: 'b4', pageNumber: 2, text: '| Age ≥ 18 years | Pregnancy |'},
+  {id: 'b1', pageNumber: 1, blockIndex: 0, text: 'SMART-CARE is a **prospective, multicenter, observational** cohort study enrolling 300 adult patients with CHF.'},
+  {id: 'b2', pageNumber: 1, blockIndex: 1, text: '# Methods'},
+  {id: 'b3', pageNumber: 2, blockIndex: 0, text: 'Patients were followed for six months.'},
+  {id: 'b4', pageNumber: 2, blockIndex: 1, text: '| Age ≥ 18 years | Pregnancy |'},
 ];
 
 describe('findBlockForQuote', () => {

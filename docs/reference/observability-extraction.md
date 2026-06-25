@@ -1,10 +1,10 @@
 ---
 status: stable
-last_reviewed: 2026-06-20
+last_reviewed: 2026-06-24
 owner: '@raphaelfh'
 ---
 
-> **Status:** Stable · Last reviewed: 2026-06-20 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-06-24 · Owner: @raphaelfh
 
 # Extraction Observability
 
@@ -13,6 +13,21 @@ owner: '@raphaelfh'
 > into extraction); they are retained for historical dashboards, while new
 > emitters use `extraction_*`. Glossary:
 > [extraction-hitl-architecture.md](./extraction-hitl-architecture.md).
+
+## Article-text assembly events
+
+`extraction.assembly` is emitted by `build_prompt_input`
+(`app/services/extraction_prompt_input.py`) each time it assembles the
+article text passed to the LLM:
+
+| Field | Values | Meaning |
+|-------|--------|---------|
+| `source` | `stored_markdown` | Input taken directly from `article_files.content_markdown` (within `LLM_ASSEMBLY_BUDGET_TOKENS`). |
+| `source` | `budgeted_blocks` | Stored markdown exceeded the budget; fell back to `assemble_for_model` (IMRaD whole-section dropping). |
+
+Suggested query: filter `event_name=extraction.assembly`, group by `source` to
+track the proportion of articles that use the fast stored-markdown path vs. the
+block assembler fallback.
 
 ## Core metrics
 

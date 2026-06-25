@@ -85,7 +85,6 @@ async function ensureArticleText(projectId: string, articleId: string): Promise<
         file_type: "pdf",
         storage_key: `e2e-fixtures/${articleId}.pdf`,
         original_filename: "e2e-fixture.pdf",
-        text_raw: F.FIXTURE_ARTICLE_BLOCKS.join("\n\n"),
         extraction_status: "completed",
       },
     ]);

@@ -33,7 +33,11 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.infrastructure.parsing.base import DocumentParser, assign_char_offsets_to_blocks
+from app.infrastructure.parsing.base import (
+    DocumentParser,
+    assign_char_offsets_to_blocks,
+    render_blocks_to_markdown,
+)
 from app.infrastructure.storage.base import StorageAdapter
 from app.models.article import ArticleFile
 from app.repositories.article_text_block_repository import ArticleTextBlockRepository
@@ -142,6 +146,12 @@ class DocumentParsingService:
 
         # Persist blocks (delete-then-bulk-insert, flush only).
         await self._repo.replace_for_file(article_file_id, blocks)
+
+        # Project the persisted blocks to stored markdown (ADR-0013). Written in
+        # the SAME transaction + advisory lock as the blocks, so the markdown can
+        # never drift from the blocks. content_version bumps on every rewrite.
+        article_file.content_markdown = render_blocks_to_markdown(blocks)
+        article_file.content_version = (article_file.content_version or 0) + 1
 
         # 6. Update status.
         article_file.extraction_status = "parsed"

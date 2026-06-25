@@ -2305,6 +2305,11 @@ export interface components {
          * @description Evidence snippet attached to a proposal record.
          */
         EvidenceResponse: {
+            /**
+             * Blockids
+             * @description block_index values for deterministic reader highlight
+             */
+            blockIds?: number[];
             /** Page Number */
             page_number: number | null;
             /** Proposal Record Id */

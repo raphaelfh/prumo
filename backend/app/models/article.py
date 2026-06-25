@@ -214,9 +214,11 @@ class ArticleFile(BaseModel):
         nullable=True,
     )
 
-    # Texto extraido
-    text_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
-    text_html: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Stored block-projection markdown (ADR-0013): written atomically with
+    # article_text_blocks in DocumentParsingService. content_version bumps on
+    # every blocks rewrite so it can never drift from the blocks.
+    content_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
     # Status de extraction
     extraction_status: Mapped[str] = mapped_column(

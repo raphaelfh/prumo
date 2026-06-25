@@ -217,6 +217,7 @@ describe('AISuggestionService.loadSuggestions', () => {
     expect(result.suggestions['inst-1_f-1'].evidence).toEqual({
       text: 'verbatim quote',
       pageNumber: 3,
+      blockIds: [],
     });
   });
 
@@ -304,7 +305,7 @@ describe('AISuggestionService.getHistory', () => {
     ]);
     const result = await AISuggestionService.getHistory('art-1', 'inst-1', 'f-1');
     expect(result).toHaveLength(1);
-    expect(result[0].evidence).toEqual({ text: 'quote', pageNumber: 2 });
+    expect(result[0].evidence).toEqual({ text: 'quote', pageNumber: 2, blockIds: [] });
     expect(result[0].value).toBe('V');
     expect(result[0].runId).toBe('run-A');
     // History items have no server status — default to 'pending'

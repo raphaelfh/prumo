@@ -13,8 +13,8 @@ import {useCallback} from 'react';
 import {useViewerStoreApiOptional} from '@/pdf-viewer/core/context';
 
 export interface UseReaderLocateReturn {
-  /** Switch to reader mode and locate `quote` (optionally page-hinted). */
-  locate: (quote: string, page?: number | null) => void;
+  /** Switch to reader mode and locate `quote` (optionally page-hinted, optionally block-index-hinted). */
+  locate: (quote: string, page?: number | null, blockIds?: number[]) => void;
   /** True when a viewer store is present and `locate` will do something. */
   isAvailable: boolean;
 }
@@ -23,8 +23,8 @@ export function useReaderLocate(): UseReaderLocateReturn {
   const storeApi = useViewerStoreApiOptional();
 
   const locate = useCallback(
-    (quote: string, page?: number | null) => {
-      storeApi?.getState().actions.locateInReader(quote, page ?? null);
+    (quote: string, page?: number | null, blockIds?: number[]) => {
+      storeApi?.getState().actions.locateInReader(quote, page ?? null, blockIds ?? []);
     },
     [storeApi],
   );

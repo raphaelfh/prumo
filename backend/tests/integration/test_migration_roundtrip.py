@@ -188,6 +188,45 @@ async def test_migration_0032_round_trip(db_session: AsyncSession) -> None:
     )
 
 
+_ARTICLE_FILES_COLS = text(
+    "SELECT column_name FROM information_schema.columns "
+    "WHERE table_schema = 'public' AND table_name = 'article_files' "
+    "AND column_name IN ('content_markdown', 'content_version', 'text_raw', 'text_html')"
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0033_round_trip(db_session: AsyncSession) -> None:
+    """``0033_article_markdown_cols`` adds ``content_markdown`` + ``content_version``
+    and drops the dead ``text_raw`` / ``text_html`` columns. Downgrading to the
+    explicit parent ``0032_optional_rationale`` inverts the operation; upgrading to
+    head applies it again. Downgrades to the explicit parent (not ``-1``) so the
+    test stays correct as later migrations stack on top."""
+    cols_at_head = set((await db_session.execute(_ARTICLE_FILES_COLS)).scalars().all())
+    assert "content_markdown" in cols_at_head, "content_markdown must exist at HEAD"
+    assert "content_version" in cols_at_head, "content_version must exist at HEAD"
+    assert "text_raw" not in cols_at_head, "text_raw must be dropped at HEAD"
+    assert "text_html" not in cols_at_head, "text_html must be dropped at HEAD"
+
+    _run_alembic("downgrade", "0032_optional_rationale")
+    try:
+        await db_session.commit()
+        cols_down = set((await db_session.execute(_ARTICLE_FILES_COLS)).scalars().all())
+        assert "text_raw" in cols_down, "downgrade must restore text_raw"
+        assert "text_html" in cols_down, "downgrade must restore text_html"
+        assert "content_markdown" not in cols_down, "downgrade must drop content_markdown"
+        assert "content_version" not in cols_down, "downgrade must drop content_version"
+    finally:
+        _run_alembic("upgrade", "head")
+
+    await db_session.commit()
+    cols_after = set((await db_session.execute(_ARTICLE_FILES_COLS)).scalars().all())
+    assert "content_markdown" in cols_after, "upgrade head must restore content_markdown"
+    assert "content_version" in cols_after, "upgrade head must restore content_version"
+    assert "text_raw" not in cols_after, "upgrade head must re-drop text_raw"
+    assert "text_html" not in cols_after, "upgrade head must re-drop text_html"
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision() -> None:
     """Pin the head revision id. If a future migration is added without
@@ -196,8 +235,8 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0032_optional_rationale" in out, (
-        f"Expected head revision '0032_optional_rationale', got:\n{out}"
+    assert "0033_article_markdown_cols" in out, (
+        f"Expected head revision '0033_article_markdown_cols', got:\n{out}"
     )
 
 
