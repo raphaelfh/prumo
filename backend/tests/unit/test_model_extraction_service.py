@@ -103,45 +103,6 @@ def service(mock_db, mock_storage):
         yield svc
 
 
-class TestModelExtractionPDF:
-    """Tests for PDF fetch and download."""
-
-    @pytest.mark.asyncio
-    async def test_get_pdf_success(self, service, mock_storage):
-        """Test successful PDF fetch."""
-        article_id = uuid4()
-        pdf_content = b"%PDF-1.4 test content"
-
-        # Mock article_files repository
-        mock_file = MagicMock()
-        mock_file.storage_key = "test-project/article.pdf"
-        service._article_files.get_latest_pdf = AsyncMock(return_value=mock_file)
-
-        # Mock storage adapter - note: takes (bucket, key)
-        mock_storage.download = AsyncMock(return_value=pdf_content)
-
-        result = await service._get_pdf(article_id)
-
-        assert result == pdf_content
-        service._article_files.get_latest_pdf.assert_called_once_with(article_id)
-        mock_storage.download.assert_called_once_with("articles", "test-project/article.pdf")
-
-    @pytest.mark.asyncio
-    async def test_get_pdf_not_found(
-        self,
-        service,
-        mock_storage,  # noqa: ARG002
-    ):
-        """Test error when PDF not found."""
-        article_id = uuid4()
-
-        # Mock article_files repository returns None
-        service._article_files.get_latest_pdf = AsyncMock(return_value=None)
-
-        with pytest.raises(FileNotFoundError, match="PDF not found"):
-            await service._get_pdf(article_id)
-
-
 class TestModelExtractionTemplate:
     """Tests for template lookup."""
 
@@ -336,7 +297,7 @@ class TestFullExtractionFlow:
         run_id = uuid4()
         entity_type_id = uuid4()
 
-        # Mock _get_pdf
+        # Mock PDF storage + article-file lookup
         pdf_content = b"%PDF test"
         mock_storage.download = AsyncMock(return_value=pdf_content)
 
@@ -547,7 +508,7 @@ class TestFullExtractionFlow:
         template_id = uuid4()
         run_id = uuid4()
 
-        # Mock _get_pdf
+        # Mock PDF storage + article-file lookup
         pdf_content = b"%PDF test"
         mock_storage.download = AsyncMock(return_value=pdf_content)
 
