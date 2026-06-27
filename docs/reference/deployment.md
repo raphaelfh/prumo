@@ -1,14 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-06-20
+last_reviewed: 2026-06-27
 owner: '@raphaelfh'
 ---
 
-> **Status:** Stable · Last reviewed: 2026-05-31 · Owner: @raphaelfh
+> **Status:** Stable · Owner: @raphaelfh
 
 # Deployment
-
-Last updated: 2026-05-31 (Vercel ↔ Supabase integration + frontend env-var rules).
 
 ## Topology
 
@@ -90,7 +88,7 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 | `DATABASE_URL` | Supabase pooler (used for app traffic) |
 | `DIRECT_DATABASE_URL` | Supabase direct (used by Alembic at boot) |
 | `OPENAI_API_KEY` | OpenAI dashboard |
-| `OPENAI_DEFAULT_MODEL` | `gpt-4o-mini` |
+| `LLM_DEFAULT_MODEL` | `gpt-4o-mini` — set with `LLM_PROVIDER`; the former `OPENAI_DEFAULT_MODEL` was defined but never read at runtime |
 | `DEBUG` | `false` |
 | `RATE_LIMIT_PER_MINUTE` | `60` |
 | `PROJECT_NAME` | `Prumo API` |
@@ -182,7 +180,7 @@ The worker does NOT run Alembic — it boots after the web service via Celery st
 
 1. Create it locally: `cd backend && alembic revision --autogenerate -m "description"`.
 2. Test locally: `alembic upgrade head` against the local stack.
-3. Open a PR, merge to `main`. Railway will autodeploy `web`, which runs Alembic before booting gunicorn.
+3. Open a PR to `dev`. Once merged, promote `dev → main` via a merge-commit PR, not a fast-forward push (see the deploy-release skill runbook for the commands). Railway then deploys `web`, which runs Alembic before booting gunicorn.
 
 Auth/storage migrations still go through Supabase CLI (see `docs/reference/migrations.md`).
 
@@ -207,7 +205,9 @@ on the head commit passes).
   deployment is marked `SKIPPED` and stays pending until a newer
   commit's CI goes green.
 - Push to `dev` → no deploy. Use `dev` for staging-style integration;
-  promote to `main` to ship.
+  promote `dev → main` to ship — via a merge-commit PR, not a
+  fast-forward push (`main` carries merge commits dev lacks). See the
+  deploy-release skill for the commands + runbook.
 
 ### What CI gates the deploy on
 
@@ -239,6 +239,16 @@ head commit. As of 2026-05-24 the relevant ones for backend code:
 5. **`backend-build`** — Docker image build.
 6. **`frontend-lint`** + **`frontend-build`** + the E2E gates when the
    corresponding secrets are configured.
+7. **`docs-ci`** — runs on the same push. Railway's "Wait for CI" waits
+   for the **full** Actions suite (CI **and** `docs-ci`), so a `docs-ci`
+   that reports SKIPPED (path-filtered) can wedge the deploy — recover
+   per the deploy-release skill (push a newer commit, or `railway up`
+   from the repo root).
+
+After a deploy, the `post-deploy-smoke` workflow (push-triggered +
+hourly) re-checks `/health`, the frontend, and a CORS preflight from the
+prod origin; a failure emails the owner. It is the deploy safety net,
+not a gate.
 
 Override the env-driven thresholds via repo variables
 (`PRUMO_DIFF_COVERAGE_MIN`, `PRUMO_CRITICAL_COVERAGE_MIN`) when
@@ -251,8 +261,10 @@ where coverage temporarily dips while the spec is in flight — manual
 deploys remain available:
 
 ```bash
-railway up backend --path-as-root --service web --detach -m "<msg>"
-railway up backend --path-as-root --service worker --detach -m "<msg>"
+# run from the repo ROOT — the older `backend --path-as-root` form is
+# broken and bash-guard-blocked (see the deploy-release skill)
+railway up --service web --detach -m "<msg>"
+railway up --service worker --detach -m "<msg>"
 ```
 
 Use this sparingly. Manual deploys bypass the gates; if you are
