@@ -34,14 +34,16 @@ function stripTrailingEllipsis(s: string): string {
 // ---------------------------------------------------------------------------
 // Index map builder
 //
-// Boundary invariant: when normalization collapses whitespace that spans a
-// text-node boundary (e.g. the original text ends with spaces and the next
-// node starts mid-word), the single collapsed space character in the output is
-// attributed to the FOLLOWING token's start position (the first non-space
-// character in the next node, or the next node offset 0 when it begins with
-// non-space). This ensures both start and end of a matched range always land
-// on a real, non-whitespace character in the source nodes, so Range.toString()
-// returns the expected text.
+// Boundary invariant: each emitted normalized character maps to its OWN source
+// position. A collapsed-whitespace space is attributed to the source position
+// of the first whitespace character of the run that produced it (offset `i` in
+// its node), even when that run spans a text-node boundary. Correctness of the
+// returned Range does not depend on which source char a collapsed space points
+// at: the search string is normalized AND trailing/leading-trimmed, so it never
+// begins or ends with a space. The match's start (positions[matchStart]) and
+// end (positions[matchEnd-1]) therefore always land on real, non-whitespace
+// source characters, so Range.toString() returns the expected text; the
+// collapsed spaces only ever sit strictly inside the range.
 // ---------------------------------------------------------------------------
 
 interface SourcePos {
@@ -79,12 +81,9 @@ function buildIndexMap(block: Element): IndexMap {
         // Collapse: only emit one space per run, and only when it would not be
         // the very first character (mirrors .trim() on leading space).
         if (!lastWasSpace && normalizedText.length > 0) {
-          // Boundary invariant: attribute the collapsed space to the position
-          // of the character that FOLLOWS in the source. We defer emission by
-          // recording a placeholder, but since we need the *current* position
-          // as a fallback for trailing space, we store it tentatively.
-          // Simpler approach: emit the space attributed to the current offset
-          // (the space char itself), consistent with the char-by-char walk.
+          // Emit one collapsed space, attributed to this whitespace char's own
+          // source position (see the boundary invariant above — collapsed
+          // spaces only sit inside a match, never at its start/end).
           positions.push({node: textNode, offset: i});
           normalizedText += ' ';
           lastWasSpace = true;
@@ -119,8 +118,7 @@ export function isHighlightApiSupported(): boolean {
   return (
     typeof Highlight !== 'undefined' &&
     typeof CSS !== 'undefined' &&
-     
-    !!((CSS as any).highlights)
+    !!(CSS as any).highlights
   );
 }
 
@@ -160,13 +158,11 @@ export function locateQuoteRange(block: Element, quote: string): Range | null {
 /** Register the citation highlight over `range`. No-op when unsupported. */
 export function setCitationHighlight(range: Range): void {
   if (!isHighlightApiSupported()) return;
-   
   (CSS as any).highlights.set(CITATION_HIGHLIGHT_NAME, new Highlight(range));
 }
 
 /** Remove the citation highlight. No-op when unsupported or absent. */
 export function clearCitationHighlight(): void {
   if (!isHighlightApiSupported()) return;
-   
   (CSS as any).highlights.delete(CITATION_HIGHLIGHT_NAME);
 }
