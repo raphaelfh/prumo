@@ -45,15 +45,15 @@ Every migration file follows this shape:
 ```python
 """<one-line imperative summary>
 
-Revision ID: YYYYMMDD_NNNN
-Revises: YYYYMMDD_NNNN-1
+Revision ID: 0034_<short_kebab_summary>
+Revises: 0033_article_markdown_cols
 Create Date: YYYY-MM-DD
 """
 
 from alembic import op
 
-revision = "YYYYMMDD_NNNN"
-down_revision = "YYYYMMDD_NNNN-1"
+revision = "0034_<short_kebab_summary>"
+down_revision = "0033_article_markdown_cols"
 
 
 def upgrade() -> None:
@@ -83,10 +83,15 @@ every line, rewrite the docstring, split into one-change-per-file.
 
 ## Naming + ordering
 
-- File name: `YYYYMMDD_NNNN_<short_kebab_summary>.py`. Date is the day
-  the migration was *written*; NNNN is the next sequential number across
-  the whole repo (no per-day reset).
-- `revision` matches the date+number prefix.
+- File name: `00NN_<short_kebab_summary>.py` — `NN` is the next
+  sequential number after the current head (post-squash the chain
+  restarted at `0001_baseline_v1`; the legacy `YYYYMMDD_NNNN` form
+  survives only in `versions/archive/`).
+- `revision` matches the `00NN_<summary>` filename prefix, and **must be
+  ≤ 32 chars** (`alembic_version.version_num` is `character varying(32)`; an
+  over-long id fails at *apply* time — breaking CI Backend Tests and the
+  Railway `alembic upgrade head` deploy, and `--sql` offline does not
+  catch it). `.claude/rules/backend.md` enforces this.
 - `down_revision` points at the previous head — never branch.
 
 ## When to squash
