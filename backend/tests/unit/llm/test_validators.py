@@ -20,7 +20,15 @@ def _instance(evidence):
     )
     [model] = build_output_models(SimpleNamespace(name="s", description="", fields=[field]))
     return model.model_validate(
-        {"population": {"value": "x", "confidence": 0.5, "reasoning": None, "evidence": evidence}}
+        {
+            "population": {
+                "value": "x",
+                "confidence": 0.5,
+                "reasoning": None,
+                "evidence": evidence,
+                "status": "found",
+            }
+        }
     )
 
 
