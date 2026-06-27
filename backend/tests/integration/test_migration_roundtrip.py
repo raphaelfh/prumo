@@ -227,6 +227,38 @@ async def test_migration_0033_round_trip(db_session: AsyncSession) -> None:
     assert "text_html" not in cols_after, "upgrade head must re-drop text_html"
 
 
+_EVIDENCE_ATTR_LABEL_COL = text(
+    "SELECT 1 FROM information_schema.columns "
+    "WHERE table_schema = 'public' AND table_name = 'extraction_evidence' "
+    "AND column_name = 'attribution_label'"
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0034_round_trip(db_session: AsyncSession) -> None:
+    """``0034_evidence_attr_label`` adds ``extraction_evidence.attribution_label``.
+    Downgrading to the explicit parent ``0033_article_markdown_cols`` drops it;
+    upgrading to head restores it. Downgrades to the explicit parent (not ``-1``)
+    so the test stays correct as later migrations stack on top."""
+    assert (await db_session.execute(_EVIDENCE_ATTR_LABEL_COL)).scalar() == 1, (
+        "attribution_label must exist at HEAD"
+    )
+
+    _run_alembic("downgrade", "0033_article_markdown_cols")
+    try:
+        await db_session.commit()
+        assert (await db_session.execute(_EVIDENCE_ATTR_LABEL_COL)).scalar() is None, (
+            "downgrade must drop attribution_label"
+        )
+    finally:
+        _run_alembic("upgrade", "head")
+
+    await db_session.commit()
+    assert (await db_session.execute(_EVIDENCE_ATTR_LABEL_COL)).scalar() == 1, (
+        "upgrade head must restore attribution_label"
+    )
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision() -> None:
     """Pin the head revision id. If a future migration is added without
@@ -235,8 +267,8 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0033_article_markdown_cols" in out, (
-        f"Expected head revision '0033_article_markdown_cols', got:\n{out}"
+    assert "0034_evidence_attr_label" in out, (
+        f"Expected head revision '0034_evidence_attr_label', got:\n{out}"
     )
 
 

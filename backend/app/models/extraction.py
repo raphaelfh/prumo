@@ -516,6 +516,7 @@ class ExtractionEvidence(BaseModel):
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     position: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default={}, nullable=True)
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attribution_label: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
