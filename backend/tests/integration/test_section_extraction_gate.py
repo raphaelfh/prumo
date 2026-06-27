@@ -9,7 +9,7 @@ Two assertions:
   b) A "not_found" field produces NO proposal row (abstention).
 
 Patches:
-  - ``section_extraction_service.gate_evidence`` → deterministic async stub
+  - ``app.llm.entailment.gate_evidence`` → deterministic async stub
     returning ``"entailed"`` (no real LLM call).
   - ``section_extraction_service.build_model`` → no-op (gate stub bypasses it,
     but it must not raise MissingLLMKeyError on the build call).
@@ -29,6 +29,7 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.llm.entailment as entailment_mod
 from app.infrastructure.parsing.base import ParsedBlock
 from app.models.extraction import ExtractionEvidence, ExtractionRunStage
 from app.services import section_extraction_service as ses
@@ -98,14 +99,14 @@ async def test_evidence_gets_attribution_label_and_not_found_skipped(
     """
 
     # --- stub gate_evidence to return "entailed" without any LLM call ---
-    async def _stub_gate(*, field_label: str, value: str, premise: str, model: Any) -> str:
+    async def _stub_gate(**_kwargs: Any) -> str:
         return "entailed"
 
-    monkeypatch.setattr(ses, "gate_evidence", _stub_gate)
+    monkeypatch.setattr(entailment_mod, "gate_evidence", _stub_gate)
 
     # --- stub build_model to avoid MissingLLMKeyError ---
     fake_model = MagicMock()
-    monkeypatch.setattr(ses, "build_model", lambda *a, **kw: fake_model)
+    monkeypatch.setattr(ses, "build_model", lambda *_a, **_kw: fake_model)
 
     run = await _build_run_in_extract(db_session_real)
 
@@ -235,13 +236,13 @@ async def test_gate_exception_degrades_not_aborts(
       (c) Proposal count is unchanged — the proposal was still written.
     """
 
-    async def _raising_gate(*, field_label: str, value: str, premise: str, model: Any) -> str:
+    async def _raising_gate(**_kwargs: Any) -> str:
         raise RuntimeError("judge down")
 
-    monkeypatch.setattr(ses, "gate_evidence", _raising_gate)
+    monkeypatch.setattr(entailment_mod, "gate_evidence", _raising_gate)
 
     fake_model = MagicMock()
-    monkeypatch.setattr(ses, "build_model", lambda *a, **kw: fake_model)
+    monkeypatch.setattr(ses, "build_model", lambda *_a, **_kw: fake_model)
 
     run = await _build_run_in_extract(db_session_real)
 

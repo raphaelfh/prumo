@@ -9,7 +9,6 @@ Implements:
 - SQLAlchemy repository pattern
 """
 
-import asyncio
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
@@ -22,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
-from app.llm.entailment import gate_evidence
+from app.llm.entailment import GateSpec, run_entailment_gate
 from app.llm.extractor import LlmUsage, extract_structured
 from app.llm.prompts import quality_assessment, section_extraction
 from app.llm.provider import MissingLLMKeyError, build_model
@@ -1329,12 +1328,9 @@ class SectionExtractionService(LoggerMixin):
         _anchor_blocks = self._run_anchor_blocks
         _anchor_file_id = self._run_anchor_file_id
 
-        # Build a fast page→blocks index for premise construction (gate step).
-        _blocks_by_idx: dict[int, Any] = dict(enumerate(_anchor_blocks))
-
-        # Accumulate (evidence_row, field_label, value_str, premise) for gate calls.
-        # Only status="found" fields with evidence are judged.
-        _gated: list[tuple[ExtractionEvidence, str, str, str]] = []
+        # Per-field gate queues: specs for the helper, rows to assign labels back.
+        _gate_specs: list[GateSpec] = []
+        _gate_rows: list[ExtractionEvidence] = []
 
         # Record one ProposalRecord per extracted field. Evidence cited by
         # the LLM is stored as a real extraction_evidence row linked to
@@ -1411,68 +1407,27 @@ class SectionExtractionService(LoggerMixin):
                 )
                 self.db.add(ev_row)
 
-                # Queue for entailment gate if this is a found field with evidence.
-                field_status = value.get("status") if isinstance(value, dict) else None
-                if field_status == "found" and _quote:
-                    # Build premise: cited block text + one neighbour on each side.
-                    if _pos is not None and _anchor_blocks:
-                        # Find the cited block index by page/char range.
-                        cited_idx = next(
-                            (
-                                i
-                                for i, b in enumerate(_anchor_blocks)
-                                if b.page_number == _pos.anchor.range.page
-                                and b.char_start <= _pos.anchor.range.char_start
-                                and b.char_end >= _pos.anchor.range.char_end
-                            ),
-                            None,
-                        )
-                        if cited_idx is not None:
-                            parts = [
-                                _blocks_by_idx[j].text
-                                for j in (cited_idx - 1, cited_idx, cited_idx + 1)
-                                if j in _blocks_by_idx
-                            ]
-                            premise = "\n".join(parts)
-                        else:
-                            premise = _quote
-                    else:
-                        premise = _quote
-                    _gated.append(
-                        (
-                            ev_row,
-                            field_label_map.get(field_name, field_name),
-                            str(inner_value),
-                            premise,
+                # Queue for entailment gate: found fields with evidence only.
+                if isinstance(value, dict) and value.get("status") == "found" and _quote:
+                    _gate_specs.append(
+                        GateSpec(
+                            field_label=field_label_map.get(field_name, field_name),
+                            value_str=str(inner_value),
+                            quote=_quote,
+                            pos=_pos,
+                            anchor_blocks=_anchor_blocks,
                         )
                     )
+                    _gate_rows.append(ev_row)
 
             count += 1
 
-        # Run the entailment gate concurrently over found-with-evidence rows.
-        if _gated:
-            _sem = asyncio.Semaphore(8)
+        # Run the entailment gate; premise-building + fan-out live in the helper.
+        if _gate_specs:
             _judge_model = build_model(settings.LLM_PROVIDER, model, api_key=self._llm_api_key)
-
-            async def _judge_one(fl: str, v: str, p: str) -> str:
-                async with _sem:
-                    return await gate_evidence(
-                        field_label=fl, value=v, premise=p, model=_judge_model
-                    )
-
-            labels = await asyncio.gather(
-                *[_judge_one(fl, v, p) for (_row, fl, v, p) in _gated],
-                return_exceptions=True,
-            )
-            for (row, *_ctx), label in zip(_gated, labels, strict=True):
-                if isinstance(label, BaseException):
-                    self.logger.warning(
-                        "entailment_gate_failed",
-                        field=_ctx[0] if _ctx else None,
-                        error=str(label),
-                    )
-                    # Leave attribution_label as NULL — degrade, do not abort.
-                else:
+            labels = await run_entailment_gate(_gate_specs, _judge_model, self.logger)
+            for row, label in zip(_gate_rows, labels, strict=True):
+                if label is not None:
                     row.attribution_label = label
 
         await self.db.flush()
