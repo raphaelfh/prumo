@@ -9,6 +9,7 @@ Implements:
 - SQLAlchemy repository pattern
 """
 
+import asyncio
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
+from app.llm.entailment import gate_evidence
 from app.llm.extractor import LlmUsage, extract_structured
 from app.llm.prompts import quality_assessment, section_extraction
 from app.llm.provider import MissingLLMKeyError, build_model
@@ -254,6 +256,7 @@ class SectionExtractionService(LoggerMixin):
                 parent_instance_id=parent_instance_id,
                 extracted_data=extracted_data,
                 run=run,
+                model=model,
             )
             phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -557,6 +560,7 @@ class SectionExtractionService(LoggerMixin):
                 parent_instance_id=None,
                 extracted_data=extracted_data,
                 run=run,
+                model=model,
             )
             return {
                 "suggestions_created": suggestions_created,
@@ -961,6 +965,7 @@ class SectionExtractionService(LoggerMixin):
                 parent_instance_id=parent_instance_id,
                 extracted_data=extracted_data,
                 run=run,
+                model=model,
             )
             section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -1221,6 +1226,7 @@ class SectionExtractionService(LoggerMixin):
         parent_instance_id: UUID | None,
         extracted_data: dict[str, Any],
         run: ExtractionRun,
+        model: str = settings.LLM_DEFAULT_MODEL,
     ) -> int:
         """
         Create extraction suggestions in database via repository.
@@ -1235,6 +1241,7 @@ class SectionExtractionService(LoggerMixin):
             parent_instance_id: Parent instance ID.
             extracted_data: Extracted data.
             run: ExtractionRun used to link suggestions.
+            model: LLM model name (used to build the entailment judge model).
 
         Returns:
             Number of created suggestions.
@@ -1261,8 +1268,12 @@ class SectionExtractionService(LoggerMixin):
 
         # Build field_name -> field_id map
         field_map: dict[str, UUID] = {}
+        field_label_map: dict[str, str] = {}
         for field in entity_type.fields or []:
             field_map[field.name] = field.id
+            field_label_map[field.name] = (
+                field.label if hasattr(field, "label") and field.label else field.name
+            )
 
         # Fetch existing instance
         instances = await self._instances.get_by_article(article_id, entity_type_id)
@@ -1318,11 +1329,22 @@ class SectionExtractionService(LoggerMixin):
         _anchor_blocks = self._run_anchor_blocks
         _anchor_file_id = self._run_anchor_file_id
 
+        # Build a fast page→blocks index for premise construction (gate step).
+        _blocks_by_idx: dict[int, Any] = dict(enumerate(_anchor_blocks))
+
+        # Accumulate (evidence_row, field_label, value_str, premise) for gate calls.
+        # Only status="found" fields with evidence are judged.
+        _gated: list[tuple[ExtractionEvidence, str, str, str]] = []
+
         # Record one ProposalRecord per extracted field. Evidence cited by
         # the LLM is stored as a real extraction_evidence row linked to
         # the proposal via proposal_record_id.
         for field_name, value in extracted_data.items():
             if value is None:
+                continue
+
+            # Abstention: skip fields the LLM could not resolve.
+            if isinstance(value, dict) and value.get("status") in ("not_found", "ambiguous"):
                 continue
 
             field_id = field_map.get(field_name)
@@ -1376,21 +1398,71 @@ class SectionExtractionService(LoggerMixin):
                 else:
                     _position = {}
                     _page_num = evidence_meta.get("page_number")
-                self.db.add(
-                    ExtractionEvidence(
-                        project_id=project_id,
-                        article_id=article_id,
-                        article_file_id=_anchor_file_id if _pos is not None else None,
-                        run_id=run.id,
-                        proposal_record_id=proposal.id,
-                        page_number=_page_num,
-                        text_content=evidence_meta.get("text"),
-                        position=_position,
-                        created_by=UUID(self.user_id),
-                    )
+                ev_row = ExtractionEvidence(
+                    project_id=project_id,
+                    article_id=article_id,
+                    article_file_id=_anchor_file_id if _pos is not None else None,
+                    run_id=run.id,
+                    proposal_record_id=proposal.id,
+                    page_number=_page_num,
+                    text_content=evidence_meta.get("text"),
+                    position=_position,
+                    created_by=UUID(self.user_id),
                 )
+                self.db.add(ev_row)
+
+                # Queue for entailment gate if this is a found field with evidence.
+                field_status = value.get("status") if isinstance(value, dict) else None
+                if field_status == "found" and _quote:
+                    # Build premise: cited block text + one neighbour on each side.
+                    if _pos is not None and _anchor_blocks:
+                        # Find the cited block index by page/char range.
+                        cited_idx = next(
+                            (
+                                i
+                                for i, b in enumerate(_anchor_blocks)
+                                if b.page_number == _pos.anchor.range.page
+                                and b.char_start <= _pos.anchor.range.char_start
+                                and b.char_end >= _pos.anchor.range.char_end
+                            ),
+                            None,
+                        )
+                        if cited_idx is not None:
+                            parts = [
+                                _blocks_by_idx[j].text
+                                for j in (cited_idx - 1, cited_idx, cited_idx + 1)
+                                if j in _blocks_by_idx
+                            ]
+                            premise = "\n".join(parts)
+                        else:
+                            premise = _quote
+                    else:
+                        premise = _quote
+                    _gated.append(
+                        (
+                            ev_row,
+                            field_label_map.get(field_name, field_name),
+                            str(inner_value),
+                            premise,
+                        )
+                    )
 
             count += 1
+
+        # Run the entailment gate concurrently over found-with-evidence rows.
+        if _gated:
+            _sem = asyncio.Semaphore(8)
+            _judge_model = build_model(settings.LLM_PROVIDER, model, api_key=self._llm_api_key)
+
+            async def _judge_one(fl: str, v: str, p: str) -> str:
+                async with _sem:
+                    return await gate_evidence(
+                        field_label=fl, value=v, premise=p, model=_judge_model
+                    )
+
+            labels = await asyncio.gather(*[_judge_one(fl, v, p) for (_row, fl, v, p) in _gated])
+            for (row, *_), label in zip(_gated, labels, strict=True):
+                row.attribution_label = label
 
         await self.db.flush()
 
