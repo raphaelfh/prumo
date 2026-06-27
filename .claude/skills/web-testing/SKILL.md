@@ -36,7 +36,7 @@ Is the bug a race / timing / fixture leak?          -> read references/flakiness
 | Full backend suite                                | `make test-backend`                                                                    |
 | One backend test                                  | `cd backend && pytest tests/integration/test_run_lifecycle_service.py -k advance_pending` |
 | Run backend tests with stdout                     | `cd backend && pytest -s -vv tests/path/to/test.py::test_name`                         |
-| Full frontend unit suite                          | `npm test`                                                                             |
+| Full frontend unit suite                          | `npm run test:run`                                                                     |
 | One Vitest file                                   | `npx vitest run frontend/test/ConsensusPanel.test.tsx -t "renders"`                    |
 | Vitest watch (TDD)                                | `npx vitest frontend/test/...`                                                         |
 | Playwright (all projects)                         | `npx playwright test`                                                                  |
