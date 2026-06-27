@@ -200,25 +200,83 @@ describe('AISuggestionService.loadSuggestions', () => {
     expect(sug.evidence).toBeUndefined(); // evidence=null → undefined
   });
 
-  it('maps evidence when present', async () => {
+  it('maps evidence list when present (single item)', async () => {
     (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       suggestions: [
         makeItem({
-          evidence: {
-            text_content: 'verbatim quote',
-            page_number: 3,
-            proposal_record_id: 'p-1',
-          },
+          evidence: [
+            {
+              text_content: 'verbatim quote',
+              page_number: 3,
+              proposal_record_id: 'p-1',
+              rank: 0,
+              attributionLabel: null,
+              blockIds: [],
+            },
+          ],
         }),
       ],
       count: 1,
     });
     const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
-    expect(result.suggestions['inst-1_f-1'].evidence).toEqual({
-      text: 'verbatim quote',
-      pageNumber: 3,
-      blockIds: [],
+    expect(result.suggestions['inst-1_f-1'].evidence).toEqual([
+      {text: 'verbatim quote', pageNumber: 3, blockIds: [], attributionLabel: null, rank: 0},
+    ]);
+  });
+
+  it('maps multi-citation evidence list sorted by rank with attributionLabel', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({
+          evidence: [
+            {
+              text_content: 'secondary quote',
+              page_number: 5,
+              proposal_record_id: 'p-1',
+              rank: 1,
+              attributionLabel: 'weak',
+              blockIds: [10],
+            },
+            {
+              text_content: 'primary quote',
+              page_number: 2,
+              proposal_record_id: 'p-1',
+              rank: 0,
+              attributionLabel: 'entailed',
+              blockIds: [1, 2],
+            },
+          ],
+        }),
+      ],
+      count: 1,
     });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    const evidence = result.suggestions['inst-1_f-1'].evidence;
+    expect(evidence).toHaveLength(2);
+    // rank 0 must be first
+    expect(evidence![0]).toEqual({
+      text: 'primary quote',
+      pageNumber: 2,
+      blockIds: [1, 2],
+      attributionLabel: 'entailed',
+      rank: 0,
+    });
+    expect(evidence![1]).toEqual({
+      text: 'secondary quote',
+      pageNumber: 5,
+      blockIds: [10],
+      attributionLabel: 'weak',
+      rank: 1,
+    });
+  });
+
+  it('returns undefined evidence when evidence list is empty', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [makeItem({evidence: []})],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].evidence).toBeUndefined();
   });
 
   it("uses server-provided status='accepted'", async () => {
@@ -285,7 +343,7 @@ describe('AISuggestionService.getHistory', () => {
     expect(path).toContain('limit=10');
   });
 
-  it('returns mapped history items with evidence', async () => {
+  it('returns mapped history items with evidence (array shape)', async () => {
     (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
       {
         id: 'p-1',
@@ -296,16 +354,23 @@ describe('AISuggestionService.getHistory', () => {
         confidence_score: 0.8,
         rationale: null,
         created_at: '2026-04-28T10:00:00Z',
-        evidence: {
-          text_content: 'quote',
-          page_number: 2,
-          proposal_record_id: 'p-1',
-        },
+        evidence: [
+          {
+            text_content: 'quote',
+            page_number: 2,
+            proposal_record_id: 'p-1',
+            rank: 0,
+            attributionLabel: null,
+            blockIds: [],
+          },
+        ],
       },
     ]);
     const result = await AISuggestionService.getHistory('art-1', 'inst-1', 'f-1');
     expect(result).toHaveLength(1);
-    expect(result[0].evidence).toEqual({ text: 'quote', pageNumber: 2, blockIds: [] });
+    expect(result[0].evidence).toEqual([
+      {text: 'quote', pageNumber: 2, blockIds: [], attributionLabel: null, rank: 0},
+    ]);
     expect(result[0].value).toBe('V');
     expect(result[0].runId).toBe('run-A');
     // History items have no server status — default to 'pending'

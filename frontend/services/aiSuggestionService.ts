@@ -14,6 +14,7 @@ import { ExtractionValueService } from '@/services/extractionValueService';
 import type {
   AISuggestion,
   AISuggestionHistoryItem,
+  EvidenceCitation,
   LoadSuggestionsResult,
 } from '@/types/ai-extraction';
 import { getSuggestionKey } from '@/types/ai-extraction';
@@ -23,6 +24,22 @@ import type { components } from '@/types/api/schema';
 type AISuggestionItem = components['schemas']['AISuggestionItem'];
 type AISuggestionHistoryItemServer = components['schemas']['AISuggestionHistoryItem'];
 type AISuggestionsResponse = components['schemas']['AISuggestionsResponse'];
+
+type ServerEvidenceItem = components['schemas']['EvidenceResponse'];
+
+function mapEvidenceList(
+  list: ServerEvidenceItem[] | null | undefined,
+): EvidenceCitation[] | undefined {
+  if (!list || list.length === 0) return undefined;
+  const sorted = [...list].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
+  return sorted.map((e) => ({
+    text: e.text_content ?? '',
+    pageNumber: e.page_number ?? null,
+    blockIds: e.blockIds ?? [],
+    attributionLabel: (e.attributionLabel as EvidenceCitation['attributionLabel']) ?? null,
+    rank: e.rank ?? 0,
+  }));
+}
 
 function unwrapValue(raw: { [key: string]: unknown } | null | undefined): unknown {
   if (raw === null || raw === undefined) return '';
@@ -39,13 +56,7 @@ function mapItemToSuggestion(item: AISuggestionItem): AISuggestion {
     reasoning: item.rationale ?? '',
     status: (item.status ?? 'pending') as AISuggestion['status'],
     timestamp: new Date(item.created_at),
-    evidence: item.evidence?.text_content
-      ? {
-          text: item.evidence.text_content,
-          pageNumber: item.evidence.page_number ?? null,
-          blockIds: item.evidence.blockIds ?? [],
-        }
-      : undefined,
+    evidence: mapEvidenceList(item.evidence),
   };
 }
 
@@ -61,13 +72,7 @@ function mapHistoryItemToSuggestion(
     // History items have no server-side status (raw proposal trail)
     status: 'pending',
     timestamp: new Date(item.created_at),
-    evidence: item.evidence?.text_content
-      ? {
-          text: item.evidence.text_content,
-          pageNumber: item.evidence.page_number ?? null,
-          blockIds: item.evidence.blockIds ?? [],
-        }
-      : undefined,
+    evidence: mapEvidenceList(item.evidence),
   };
 }
 

@@ -26,6 +26,18 @@ export type SupportedAIModel = 'gpt-4o-mini' | 'gpt-4o' | 'gpt-5';
 // =================== AI SUGGESTIONS (presentation shape) ===================
 
 /**
+ * A single cited evidence passage attached to an AI proposal.
+ * Ordered by `rank` (0 = primary, lowest confidence-distance to the proposal).
+ */
+export interface EvidenceCitation {
+  text: string;
+  pageNumber?: number | null;
+  blockIds: number[];
+  attributionLabel?: 'entailed' | 'weak' | 'unsupported' | null;
+  rank: number;
+}
+
+/**
  * Presentation shape an extraction-UI consumer renders. There's no longer
  * a backing `ai_suggestions` table — the equivalent rows live in
  * `extraction_proposal_records` (filtered by `source='ai'`) and are
@@ -39,11 +51,8 @@ export interface AISuggestion {
   reasoning: string; // empty string when null
   status: SuggestionStatus;
   timestamp: Date; // proposal created_at parsed
-  evidence?: {
-    text: string;
-    pageNumber?: number | null;
-    blockIds: number[];
-  };
+  /** Ordered by rank (0 = primary). Empty array when no evidence. */
+  evidence?: EvidenceCitation[];
 }
 
 /**
