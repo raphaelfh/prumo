@@ -42,6 +42,7 @@ def _proposal(**over: object) -> AIProposalRow:
         "evidence_text": "evidence",
         "evidence_pages": "4",
         "proposed_at": datetime(2026, 5, 23, 10, 0, 0, tzinfo=UTC),
+        "model_used": "gpt-4o",
         "reviewer_outcome": "accepted",
         "final_value_used": "Yes",
     }
@@ -59,7 +60,9 @@ def test_header_and_placeholder_when_no_rows() -> None:
     assert spec.title == "AI metadata"
     assert spec.rows[0][0].value == "Article"
     assert spec.rows[0][4].value == "AI proposed value"
-    assert spec.rows[0][11].value == "Final value used"
+    # "Model used" now at 0-based index 10; "Final value used" shifted to 12.
+    assert spec.rows[0][10].value == "Model used"
+    assert spec.rows[0][12].value == "Final value used"
     assert spec.rows[1][0].value == "(No AI proposals recorded for the selected articles.)"
 
 
@@ -70,9 +73,21 @@ def test_one_row_per_proposal_in_canonical_order() -> None:
     assert row[0].value == "Gaca, 2011"
     assert row[2].value == 1
     assert row[3].value == "1.1 Dose"
-    # Value columns (E/L) render via the shared format helper.
+    # Value columns (E/M) render via the shared format helper.
     assert row[4].value == "5 mg"
-    assert row[11].value == "Yes"
-    # Timestamp is ISO-8601 text (SheetSpec IR is scalar-only).
+    # Timestamp unchanged at 0-based index 9.
     assert row[9].value == "2026-05-23T10:00:00+00:00"
-    assert row[10].value == "accepted"
+    # "Model used" at 0-based index 10 (NEW).
+    assert row[10].value == "gpt-4o"
+    # "Reviewer outcome" shifted to 0-based index 11.
+    assert row[11].value == "accepted"
+    # "Final value used" shifted to 0-based index 12.
+    assert row[12].value == "Yes"
+
+
+def test_model_used_empty_string_when_not_set() -> None:
+    """model_used defaults to empty string when the run has no parameters["model"]."""
+    spec = build_ai_metadata(_layout(include_ai_metadata=True, rows=(_proposal(model_used=""),)))
+    assert spec is not None
+    row = spec.rows[1]
+    assert row[10].value == ""

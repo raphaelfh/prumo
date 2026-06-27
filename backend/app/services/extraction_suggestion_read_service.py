@@ -149,10 +149,12 @@ async def load_suggestions(
         .scalars()
         .all()
     )
-    evidence_by_proposal: dict[UUID, ExtractionEvidence] = {}
+    evidence_by_proposal: dict[UUID, list[ExtractionEvidence]] = {}
     for ev in evidence_rows:
-        if ev.proposal_record_id and ev.proposal_record_id not in evidence_by_proposal:
-            evidence_by_proposal[ev.proposal_record_id] = ev
+        if ev.proposal_record_id:
+            evidence_by_proposal.setdefault(ev.proposal_record_id, []).append(ev)
+    for rows in evidence_by_proposal.values():
+        rows.sort(key=lambda e: (e.rank, str(e.id)))
 
     # --- Step 4: load CALLER's reviewer_states → decisions (blind boundary) ---
     # NOTE: this query is intentionally NOT filtered by article — article scope is
@@ -188,17 +190,17 @@ async def load_suggestions(
     # --- Step 5: build response items ---
     items: list[AISuggestionItem] = []
     for p in deduped:
-        ev = evidence_by_proposal.get(p.id)
-        evidence_resp = (
+        evidence_list = [
             EvidenceResponse(
                 proposal_record_id=p.id,
                 text_content=ev.text_content,
                 page_number=ev.page_number,
                 blockIds=_extract_block_ids(ev),
+                rank=ev.rank,
+                attributionLabel=ev.attribution_label,
             )
-            if ev is not None
-            else None
-        )
+            for ev in evidence_by_proposal.get(p.id, [])
+        ]
         coord = (p.instance_id, p.field_id)
         status = _resolve_status(decision_by_coord.get(coord))
         items.append(
@@ -213,7 +215,7 @@ async def load_suggestions(
                 else None,
                 rationale=p.rationale,
                 created_at=p.created_at,
-                evidence=evidence_resp,
+                evidence=evidence_list,
                 status=status,
             )
         )
@@ -276,24 +278,26 @@ async def get_suggestion_history(
         .scalars()
         .all()
     )
-    evidence_by_proposal: dict[UUID, ExtractionEvidence] = {}
+    evidence_by_proposal: dict[UUID, list[ExtractionEvidence]] = {}
     for ev in evidence_rows:
-        if ev.proposal_record_id and ev.proposal_record_id not in evidence_by_proposal:
-            evidence_by_proposal[ev.proposal_record_id] = ev
+        if ev.proposal_record_id:
+            evidence_by_proposal.setdefault(ev.proposal_record_id, []).append(ev)
+    for rows in evidence_by_proposal.values():
+        rows.sort(key=lambda e: (e.rank, str(e.id)))
 
     items: list[AISuggestionHistoryItem] = []
     for p in proposals:
-        ev = evidence_by_proposal.get(p.id)
-        evidence_resp = (
+        evidence_list = [
             EvidenceResponse(
                 proposal_record_id=p.id,
                 text_content=ev.text_content,
                 page_number=ev.page_number,
                 blockIds=_extract_block_ids(ev),
+                rank=ev.rank,
+                attributionLabel=ev.attribution_label,
             )
-            if ev is not None
-            else None
-        )
+            for ev in evidence_by_proposal.get(p.id, [])
+        ]
         items.append(
             AISuggestionHistoryItem(
                 id=p.id,
@@ -306,7 +310,7 @@ async def get_suggestion_history(
                 else None,
                 rationale=p.rationale,
                 created_at=p.created_at,
-                evidence=evidence_resp,
+                evidence=evidence_list,
             )
         )
 

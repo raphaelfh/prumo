@@ -34,13 +34,17 @@ _HEADERS: tuple[str, ...] = (
     "Evidence text",
     "Evidence page(s)",
     "Proposed at",
+    "Model used",
     "Reviewer outcome",
     "Final value used",
 )
 #: 1-based column indices carrying resolved extraction values — rendered
 #: like matrix cells via the shared helper (number+unit / Yes survive).
-_VALUE_COLS: frozenset[int] = frozenset({5, 12})
-#: 1-based column index of the ``proposed_at`` timestamp.
+#: Col 5 = "AI proposed value"; col 13 = "Final value used" (shifted +1
+#: after the "Model used" column was inserted between "Proposed at" and
+#: "Reviewer outcome").
+_VALUE_COLS: frozenset[int] = frozenset({5, 13})
+#: 1-based column index of the ``proposed_at`` timestamp (unchanged).
 _TIMESTAMP_COL = 10
 _HEADER_STYLE = CellStyle(bold=True, align="center")
 _COL_WIDTH = 22.0

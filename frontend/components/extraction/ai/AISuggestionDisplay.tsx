@@ -28,7 +28,8 @@ interface AISuggestionDisplayProps {
 
 function hasSuggestionDetails(suggestion: AISuggestion): boolean {
   const hasReasoning = !!suggestion.reasoning?.trim();
-  const hasEvidence = !!suggestion.evidence?.text?.trim();
+  const hasEvidence =
+    (suggestion.evidence?.length ?? 0) > 0 && !!suggestion.evidence?.[0]?.text?.trim();
   return hasReasoning || hasEvidence;
 }
 

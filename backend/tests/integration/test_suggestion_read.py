@@ -843,12 +843,12 @@ async def test_load_suggestions_evidence_block_ids_populated(
     suggestion = next(
         s for s in result.suggestions if s.proposed_value == {"value": "BLOCK-ID-TEST"}
     )
-    assert suggestion.evidence is not None
-    assert suggestion.evidence.block_ids == [2], (
-        f"Expected evidence.block_ids == [2], got {suggestion.evidence.block_ids}"
+    assert isinstance(suggestion.evidence, list) and len(suggestion.evidence) >= 1
+    assert suggestion.evidence[0].block_ids == [2], (
+        f"Expected evidence[0].block_ids == [2], got {suggestion.evidence[0].block_ids}"
     )
     # Alias round-trip: model_dump(by_alias=True) must emit blockIds
-    dumped = suggestion.evidence.model_dump(by_alias=True)
+    dumped = suggestion.evidence[0].model_dump(by_alias=True)
     assert dumped["blockIds"] == [2], f"blockIds alias missing from serialized evidence: {dumped}"
 
 
@@ -921,11 +921,11 @@ async def test_get_suggestion_history_evidence_block_ids_populated(
         None,
     )
     assert matched is not None, "Expected proposal not found in history"
-    assert matched.evidence is not None
-    assert matched.evidence.block_ids == [2], (
-        f"Expected evidence.block_ids == [2], got {matched.evidence.block_ids}"
+    assert isinstance(matched.evidence, list) and len(matched.evidence) >= 1
+    assert matched.evidence[0].block_ids == [2], (
+        f"Expected evidence[0].block_ids == [2], got {matched.evidence[0].block_ids}"
     )
-    dumped = matched.evidence.model_dump(by_alias=True)
+    dumped = matched.evidence[0].model_dump(by_alias=True)
     assert dumped["blockIds"] == [2], f"blockIds alias missing from serialized evidence: {dumped}"
 
 
@@ -990,7 +990,199 @@ async def test_load_suggestions_evidence_block_ids_empty_when_no_position(
     suggestion = next(
         s for s in result.suggestions if s.proposed_value == {"value": "NO-POSITION-TEST"}
     )
-    assert suggestion.evidence is not None
-    assert suggestion.evidence.block_ids == [], (
-        f"Expected evidence.block_ids == [] for no-position evidence, got {suggestion.evidence.block_ids}"
+    assert isinstance(suggestion.evidence, list) and len(suggestion.evidence) >= 1
+    assert suggestion.evidence[0].block_ids == [], (
+        f"Expected evidence[0].block_ids == [] for no-position evidence, got {suggestion.evidence[0].block_ids}"
     )
+
+
+# ---------------------------------------------------------------------------
+# ORDERED EVIDENCE LIST TESTS (Task 5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_load_suggestions_evidence_ordered_list(
+    db_session: AsyncSession,
+) -> None:
+    """load_suggestions returns evidence as an ordered list (rank asc) with rank + attribution_label.
+
+    Seed a proposal with two evidence rows:
+      - rank=1, attribution_label='entailed', text='rank-1'
+      - rank=0, attribution_label=None, text='rank-0'
+    Assert evidence is a length-2 list, ordered rank-0 then rank-1, with
+    attribution_label preserved.
+    """
+    project_id = SEED.primary_project
+    article_id = SEED.primary_article
+    template_id = SEED.primary_template
+    instance_id = SEED.primary_instance
+    field_id = SEED.primary_field
+    manager_id = SEED.primary_profile
+
+    lifecycle = RunLifecycleService(db_session)
+    run = await lifecycle.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+
+    proposal_svc = ExtractionProposalService(db_session)
+    proposal = await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": "ORDERED-EVIDENCE-TEST"},
+    )
+    await db_session.flush()
+
+    # rank=1 row inserted first, rank=0 second — service must order by rank asc
+    db_session.add(
+        ExtractionEvidence(
+            id=uuid4(),
+            project_id=project_id,
+            article_id=article_id,
+            run_id=run.id,
+            proposal_record_id=proposal.id,
+            page_number=2,
+            text_content="rank-1",
+            created_by=manager_id,
+            position=None,
+            rank=1,
+            attribution_label="entailed",
+        )
+    )
+    db_session.add(
+        ExtractionEvidence(
+            id=uuid4(),
+            project_id=project_id,
+            article_id=article_id,
+            run_id=run.id,
+            proposal_record_id=proposal.id,
+            page_number=1,
+            text_content="rank-0",
+            created_by=manager_id,
+            position=None,
+            rank=0,
+            attribution_label=None,
+        )
+    )
+    await db_session.flush()
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=article_id,
+        caller_id=manager_id,
+        run_id=run.id,
+    )
+
+    suggestion = next(
+        (s for s in result.suggestions if s.proposed_value == {"value": "ORDERED-EVIDENCE-TEST"}),
+        None,
+    )
+    assert suggestion is not None, "Expected proposal not found"
+
+    # evidence must be a list now (not EvidenceResponse | None)
+    assert isinstance(suggestion.evidence, list), (
+        f"evidence should be a list, got {type(suggestion.evidence)}"
+    )
+    assert len(suggestion.evidence) == 2, (
+        f"Expected 2 evidence items, got {len(suggestion.evidence)}"
+    )
+
+    # ordered by rank ascending: rank-0 first, rank-1 second
+    assert suggestion.evidence[0].rank == 0, (
+        f"First evidence item should have rank=0, got {suggestion.evidence[0].rank}"
+    )
+    assert suggestion.evidence[0].text_content == "rank-0"
+    assert suggestion.evidence[0].attribution_label is None
+
+    assert suggestion.evidence[1].rank == 1, (
+        f"Second evidence item should have rank=1, got {suggestion.evidence[1].rank}"
+    )
+    assert suggestion.evidence[1].text_content == "rank-1"
+    assert suggestion.evidence[1].attribution_label == "entailed"
+
+
+@pytest.mark.asyncio
+async def test_load_suggestions_evidence_legacy_length_one(
+    db_session: AsyncSession,
+) -> None:
+    """Backward-compat: a proposal with a single evidence row returns a length-1 list.
+
+    rank=0, attribution_label=None (legacy defaults).
+    """
+    project_id = SEED.primary_project
+    article_id = SEED.primary_article
+    template_id = SEED.primary_template
+    instance_id = SEED.primary_instance
+    field_id = SEED.primary_field
+    manager_id = SEED.primary_profile
+
+    lifecycle = RunLifecycleService(db_session)
+    run = await lifecycle.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+
+    proposal_svc = ExtractionProposalService(db_session)
+    proposal = await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": "LEGACY-SINGLE-EVIDENCE"},
+    )
+    await db_session.flush()
+
+    db_session.add(
+        ExtractionEvidence(
+            id=uuid4(),
+            project_id=project_id,
+            article_id=article_id,
+            run_id=run.id,
+            proposal_record_id=proposal.id,
+            page_number=1,
+            text_content="legacy single evidence",
+            created_by=manager_id,
+            position=None,
+            rank=0,
+            attribution_label=None,
+        )
+    )
+    await db_session.flush()
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=article_id,
+        caller_id=manager_id,
+        run_id=run.id,
+    )
+
+    suggestion = next(
+        (s for s in result.suggestions if s.proposed_value == {"value": "LEGACY-SINGLE-EVIDENCE"}),
+        None,
+    )
+    assert suggestion is not None, "Expected proposal not found"
+
+    # backward-compat: single evidence row → length-1 list
+    assert isinstance(suggestion.evidence, list), (
+        f"evidence should be a list, got {type(suggestion.evidence)}"
+    )
+    assert len(suggestion.evidence) == 1, (
+        f"Expected 1 evidence item, got {len(suggestion.evidence)}"
+    )
+    assert suggestion.evidence[0].rank == 0
+    assert suggestion.evidence[0].attribution_label is None

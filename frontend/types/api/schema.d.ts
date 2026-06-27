@@ -1013,7 +1013,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            evidence: components["schemas"]["EvidenceResponse"] | null;
+            /** Evidence */
+            evidence: components["schemas"]["EvidenceResponse"][];
             /**
              * Field Id
              * Format: uuid
@@ -1053,7 +1054,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            evidence: components["schemas"]["EvidenceResponse"] | null;
+            /** Evidence */
+            evidence: components["schemas"]["EvidenceResponse"][];
             /**
              * Field Id
              * Format: uuid
@@ -2305,6 +2307,8 @@ export interface components {
          * @description Evidence snippet attached to a proposal record.
          */
         EvidenceResponse: {
+            /** Attributionlabel */
+            attributionLabel?: string | null;
             /**
              * Blockids
              * @description block_index values for deterministic reader highlight
@@ -2314,6 +2318,11 @@ export interface components {
             page_number: number | null;
             /** Proposal Record Id */
             proposal_record_id: string | null;
+            /**
+             * Rank
+             * @default 0
+             */
+            rank: number;
             /** Text Content */
             text_content: string | null;
         };

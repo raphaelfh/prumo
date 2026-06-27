@@ -1,11 +1,11 @@
 """extraction_fields rows → runtime Pydantic output models.
 
 Builds one Pydantic model per chunk of fields. OpenAI strict-mode schemas
-allow ~100 properties and each extraction field expands to ~7 (value,
-confidence, reasoning, evidence{text, page_number} + the container), so
-large UI-built templates are split into multiple calls and merged by the
-caller. DB field names are mapped through aliases so any template name —
-spaces, parentheses, leading digits — round-trips safely.
+allow ~100 properties and each extraction field expands to ~8 (value,
+confidence, reasoning, status, evidence list[{text, page_number}] + the
+container), so large UI-built templates are split into multiple calls and
+merged by the caller. DB field names are mapped through aliases so any
+template name — spaces, parentheses, leading digits — round-trips safely.
 """
 
 from typing import Any, Literal
@@ -104,8 +104,13 @@ def _field_result_model(field: Any, index: int) -> type[BaseModel]:
             Field(description="1-2 sentence justification for the value, null if none."),
         ),
         evidence=(
-            Evidence | None,
-            Field(description="Supporting quote from the article, null if none."),
+            list[Evidence],
+            Field(
+                description=(
+                    "Up to 3 short verbatim quotes from the article supporting the "
+                    "value, most direct first; [] when status is not_found."
+                ),
+            ),
         ),
         status=(
             Literal["found", "not_found", "ambiguous"],

@@ -21,14 +21,11 @@
             "type": "string"
           },
           "evidence": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/EvidenceResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "items": {
+              "$ref": "#/components/schemas/EvidenceResponse"
+            },
+            "title": "Evidence",
+            "type": "array"
           },
           "field_id": {
             "format": "uuid",
@@ -101,14 +98,11 @@
             "type": "string"
           },
           "evidence": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/EvidenceResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "items": {
+              "$ref": "#/components/schemas/EvidenceResponse"
+            },
+            "title": "Evidence",
+            "type": "array"
           },
           "field_id": {
             "format": "uuid",
@@ -3195,6 +3189,17 @@
       "EvidenceResponse": {
         "description": "Evidence snippet attached to a proposal record.",
         "properties": {
+          "attributionLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributionlabel"
+          },
           "blockIds": {
             "description": "block_index values for deterministic reader highlight",
             "items": {
@@ -3225,6 +3230,11 @@
               }
             ],
             "title": "Proposal Record Id"
+          },
+          "rank": {
+            "default": 0,
+            "title": "Rank",
+            "type": "integer"
           },
           "text_content": {
             "anyOf": [

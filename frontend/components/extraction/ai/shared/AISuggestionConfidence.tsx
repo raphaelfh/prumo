@@ -28,7 +28,8 @@ export function AISuggestionConfidence({
 }: AISuggestionConfidenceProps) {
   const confidencePercent = calculateConfidencePercent(suggestion.confidence);
   const hasReasoning = !!suggestion.reasoning?.trim();
-  const hasEvidence = !!suggestion.evidence?.text?.trim();
+  const hasEvidence =
+    (suggestion.evidence?.length ?? 0) > 0 && !!suggestion.evidence?.[0]?.text?.trim();
   const hasDetails = hasReasoning || hasEvidence;
 
     // When used as part of trigger (value + % clickable), only render the %

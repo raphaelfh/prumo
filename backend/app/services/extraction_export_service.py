@@ -210,6 +210,7 @@ class AIProposalRow:
     evidence_text: str  # joined with ' | ' when multiple
     evidence_pages: str  # joined with ', ' when multiple
     proposed_at: datetime
+    model_used: str  # resolved from run.parameters["model"]; "" when absent
     reviewer_outcome: str  # accepted | rejected | edited (best-effort) | pending | superseded
     final_value_used: Any  # None when not published
 
@@ -1740,6 +1741,19 @@ class ExtractionExportService(LoggerMixin):
         ).all()
         section_label_by_entity: dict[UUID, str] = dict(ent_label_rows)
 
+        # 6. Model per run — resolved from run.parameters["model"] (set at
+        # dispatch time). Falls back to "" for older runs without the key.
+        run_param_rows = (
+            await self.db.execute(
+                select(ExtractionRun.id, ExtractionRun.parameters).where(
+                    ExtractionRun.id.in_(run_ids)
+                )
+            )
+        ).all()
+        model_by_run: dict[UUID, str] = {
+            rid: (params or {}).get("model", "") for rid, params in run_param_rows
+        }
+
         # Field-label fallback when a field is not in the template snapshot
         # (rare; happens when the run was finalized on an older version).
         missing_field_ids = {
@@ -1796,6 +1810,7 @@ class ExtractionExportService(LoggerMixin):
                     )
                 ),
                 proposed_at=ts,
+                model_used=model_by_run.get(rid, ""),
                 reviewer_outcome=outcome,
                 final_value_used=final_value,
             )
