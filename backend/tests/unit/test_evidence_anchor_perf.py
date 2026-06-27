@@ -30,9 +30,12 @@ from app.infrastructure.parsing.base import (
 from app.services.evidence_anchor_service import build_anchor, match
 
 # A hard wall-clock ceiling for a single anchor call against the whole document.
-# The bounded matcher completes in single-digit milliseconds; the old unbounded
-# sweep took seconds-to-tens-of-seconds on this fixture.
-_BUDGET_SECONDS = 0.5
+# The bounded matcher completes in tens of milliseconds locally; the old unbounded
+# sweep took 15.8s for ONE page (>100s over this 12-page fixture). The budget is
+# set well above the slowest path on a shared CI runner (~0.7s, ~8x our local box)
+# yet ~30x below a single old page, so it still fails hard if the quadratic blowup
+# is ever reintroduced while tolerating CI scheduling/contention variance.
+_BUDGET_SECONDS = 5.0
 
 _PAGE_COUNT = 12
 # Per page, roughly 4000-8000 chars of prose spread over a handful of blocks.
