@@ -13,7 +13,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 OPENAI_STRICT_PROPERTY_BUDGET = 100
-_PROPERTIES_PER_FIELD = 7
+_PROPERTIES_PER_FIELD = 8  # value, confidence, reasoning, evidence{text,page}, status
 
 
 class SchemaBuildError(ValueError):
@@ -106,6 +106,16 @@ def _field_result_model(field: Any, index: int) -> type[BaseModel]:
         evidence=(
             Evidence | None,
             Field(description="Supporting quote from the article, null if none."),
+        ),
+        status=(
+            Literal["found", "not_found", "ambiguous"],
+            Field(
+                description=(
+                    "found = the value is present and supported by the article; "
+                    "not_found = the article does not contain it; "
+                    "ambiguous = present but unclear/conflicting."
+                ),
+            ),
         ),
     )
 

@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.llm.schema import (
+    _PROPERTIES_PER_FIELD,
     OPENAI_STRICT_PROPERTY_BUDGET,
     SchemaBuildError,
     build_output_models,
@@ -60,6 +61,7 @@ def test_text_field_round_trip():
                 "confidence": 0.9,
                 "reasoning": "stated in methods",
                 "evidence": {"text": "We enrolled adults...", "page_number": 3},
+                "status": "found",
             }
         }
     )
@@ -72,7 +74,15 @@ def test_text_field_round_trip():
 def test_value_may_be_null_when_not_found():
     [model] = build_output_models(_entity_type([_field()]))
     instance = model.model_validate(
-        {"population": {"value": None, "confidence": 0.0, "reasoning": None, "evidence": None}}
+        {
+            "population": {
+                "value": None,
+                "confidence": 0.0,
+                "reasoning": None,
+                "evidence": None,
+                "status": "not_found",
+            }
+        }
     )
     assert dump_extraction(instance)["population"]["value"] is None
 
@@ -86,10 +96,26 @@ def test_select_field_rejects_out_of_enum_value():
     [model] = build_output_models(_entity_type([field]))
     with pytest.raises(ValidationError):
         model.model_validate(
-            {"risk": {"value": "Medium", "confidence": 0.5, "reasoning": None, "evidence": None}}
+            {
+                "risk": {
+                    "value": "Medium",
+                    "confidence": 0.5,
+                    "reasoning": None,
+                    "evidence": None,
+                    "status": "found",
+                }
+            }
         )
     instance = model.model_validate(
-        {"risk": {"value": "Low", "confidence": 0.5, "reasoning": None, "evidence": None}}
+        {
+            "risk": {
+                "value": "Low",
+                "confidence": 0.5,
+                "reasoning": None,
+                "evidence": None,
+                "status": "found",
+            }
+        }
     )
     assert dump_extraction(instance)["risk"]["value"] == "Low"
 
@@ -108,6 +134,7 @@ def test_multiselect_field_is_list_of_enum():
                 "confidence": 0.8,
                 "reasoning": None,
                 "evidence": None,
+                "status": "found",
             }
         }
     )
@@ -120,6 +147,7 @@ def test_multiselect_field_is_list_of_enum():
                     "confidence": 0.8,
                     "reasoning": None,
                     "evidence": None,
+                    "status": "found",
                 }
             }
         )
@@ -129,7 +157,15 @@ def test_confidence_out_of_range_rejected():
     [model] = build_output_models(_entity_type([_field()]))
     with pytest.raises(ValidationError):
         model.model_validate(
-            {"population": {"value": "x", "confidence": 1.2, "reasoning": None, "evidence": None}}
+            {
+                "population": {
+                    "value": "x",
+                    "confidence": 1.2,
+                    "reasoning": None,
+                    "evidence": None,
+                    "status": "found",
+                }
+            }
         )
 
 
@@ -141,8 +177,20 @@ def test_number_and_boolean_types():
     [model] = build_output_models(_entity_type(fields))
     instance = model.model_validate(
         {
-            "sample_size": {"value": 412, "confidence": 1.0, "reasoning": None, "evidence": None},
-            "multicentre": {"value": True, "confidence": 1.0, "reasoning": None, "evidence": None},
+            "sample_size": {
+                "value": 412,
+                "confidence": 1.0,
+                "reasoning": None,
+                "evidence": None,
+                "status": "found",
+            },
+            "multicentre": {
+                "value": True,
+                "confidence": 1.0,
+                "reasoning": None,
+                "evidence": None,
+                "status": "found",
+            },
         }
     )
     data = dump_extraction(instance)
@@ -159,6 +207,7 @@ def test_field_name_with_spaces_round_trips_via_alias():
                 "confidence": 1.0,
                 "reasoning": None,
                 "evidence": None,
+                "status": "found",
             }
         }
     )
@@ -170,7 +219,7 @@ def test_chunking_splits_large_templates():
     fields = [_field(name=f"field_{i}") for i in range(n_fields)]
     models = build_output_models(_entity_type(fields))
     assert len(models) >= 2
-    per_chunk = OPENAI_STRICT_PROPERTY_BUDGET // 7
+    per_chunk = OPENAI_STRICT_PROPERTY_BUDGET // _PROPERTIES_PER_FIELD
     total = sum(len(m.model_fields) for m in models)
     assert total == n_fields
     assert all(len(m.model_fields) <= per_chunk for m in models)
@@ -186,12 +235,14 @@ def test_extra_fields_forbidden():
                     "confidence": 0.5,
                     "reasoning": None,
                     "evidence": None,
+                    "status": "found",
                 },
                 "hallucinated": {
                     "value": "y",
                     "confidence": 0.5,
                     "reasoning": None,
                     "evidence": None,
+                    "status": "found",
                 },
             }
         )
@@ -247,12 +298,19 @@ def test_integer_and_bare_list_type_mappings():
     [model] = build_output_models(_entity_type(fields))
     instance = model.model_validate(
         {
-            "n_events": {"value": 17, "confidence": 1.0, "reasoning": None, "evidence": None},
+            "n_events": {
+                "value": 17,
+                "confidence": 1.0,
+                "reasoning": None,
+                "evidence": None,
+                "status": "found",
+            },
             "keywords": {
                 "value": ["sepsis", "icu"],
                 "confidence": 0.9,
                 "reasoning": None,
                 "evidence": None,
+                "status": "found",
             },
         }
     )
@@ -265,7 +323,15 @@ def test_empty_allowed_values_falls_back_to_scalar():
     field = _field(name="risk", field_type="select", allowed_values=[])
     [model] = build_output_models(_entity_type([field]))
     instance = model.model_validate(
-        {"risk": {"value": "anything goes", "confidence": 0.5, "reasoning": None, "evidence": None}}
+        {
+            "risk": {
+                "value": "anything goes",
+                "confidence": 0.5,
+                "reasoning": None,
+                "evidence": None,
+                "status": "found",
+            }
+        }
     )
     assert dump_extraction(instance)["risk"]["value"] == "anything goes"
 

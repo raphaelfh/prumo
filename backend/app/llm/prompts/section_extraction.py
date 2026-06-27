@@ -7,7 +7,11 @@ NAME = "section_extraction"
 SYSTEM_PROMPT = (
     "You are an expert at extracting structured data from scientific "
     "articles. For each field, provide the value, your confidence level "
-    "(0-1), and brief reasoning."
+    "(0-1), and brief reasoning. "
+    'If the article does not contain the value, set status="not_found", value=null, and evidence=null'
+    ' — do NOT invent a value or a quote. Use status="ambiguous" when the value is present but'
+    ' unclear or conflicting. Only set status="found" when you can quote a passage that supports'
+    " the value."
 )
 
 _USER_TEMPLATE = """Extract the following information from the scientific article:
