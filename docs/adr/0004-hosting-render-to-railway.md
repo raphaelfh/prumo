@@ -25,7 +25,9 @@ Redis plugin.
 - Both `web` and `worker` build from `backend/Dockerfile`.
 - IaC committed as `railway.toml`.
 - Deploys are GitHub-App driven from `main`, gated by **Wait for CI**.
-- Fallback when CI is red: `railway up backend --path-as-root --service <name>`.
+- Fallback when CI is red: `railway up` from the repo root (the older
+  `backend --path-as-root` form is broken and bash-guard-blocked — see
+  `docs/reference/deployment.md` / the deploy-release skill).
 
 ## Consequences
 
