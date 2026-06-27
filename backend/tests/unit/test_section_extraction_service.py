@@ -1867,8 +1867,20 @@ class TestExtractWithLlmWiring:
         [model_cls] = build_output_models(entity_type)
         output = model_cls.model_validate(
             {
-                "field_0": {"value": "150", "confidence": 0.9, "reasoning": None, "evidence": None},
-                "field_1": {"value": "RCT", "confidence": 0.8, "reasoning": None, "evidence": None},
+                "field_0": {
+                    "value": "150",
+                    "confidence": 0.9,
+                    "reasoning": None,
+                    "evidence": None,
+                    "status": "found",
+                },
+                "field_1": {
+                    "value": "RCT",
+                    "confidence": 0.8,
+                    "reasoning": None,
+                    "evidence": None,
+                    "status": "found",
+                },
             }
         )
         mock_x = AsyncMock(return_value=(output, LlmUsage(prompt_tokens=100, completion_tokens=50)))
@@ -1901,6 +1913,7 @@ class TestExtractWithLlmWiring:
                         "confidence": 0.5,
                         "reasoning": None,
                         "evidence": None,
+                        "status": "found",
                     }
                     for info in model_cls.model_fields.values()
                 }
@@ -1929,7 +1942,15 @@ class TestExtractWithLlmWiring:
         entity_type = self._entity_type(1)
         [model_cls] = build_output_models(entity_type)
         output = model_cls.model_validate(
-            {"field_0": {"value": "v", "confidence": 0.5, "reasoning": None, "evidence": None}}
+            {
+                "field_0": {
+                    "value": "v",
+                    "confidence": 0.5,
+                    "reasoning": None,
+                    "evidence": None,
+                    "status": "found",
+                }
+            }
         )
         mock_x = AsyncMock(return_value=(output, LlmUsage(prompt_tokens=1, completion_tokens=1)))
         with (
@@ -1957,7 +1978,15 @@ class TestExtractWithLlmWiring:
         entity_type = self._entity_type(1)
         [model_cls] = build_output_models(entity_type)
         output = model_cls.model_validate(
-            {"field_0": {"value": "Low", "confidence": 0.5, "reasoning": None, "evidence": None}}
+            {
+                "field_0": {
+                    "value": "Low",
+                    "confidence": 0.5,
+                    "reasoning": None,
+                    "evidence": None,
+                    "status": "found",
+                }
+            }
         )
         mock_x = AsyncMock(return_value=(output, LlmUsage(prompt_tokens=1, completion_tokens=1)))
         with (
@@ -1998,7 +2027,15 @@ class TestExtractWithLlmWiring:
         entity_type = self._entity_type(1)
         [model_cls] = build_output_models(entity_type)
         output = model_cls.model_validate(
-            {"field_0": {"value": "v", "confidence": 0.5, "reasoning": None, "evidence": None}}
+            {
+                "field_0": {
+                    "value": "v",
+                    "confidence": 0.5,
+                    "reasoning": None,
+                    "evidence": None,
+                    "status": "found",
+                }
+            }
         )
         mock_x = AsyncMock(return_value=(output, LlmUsage(prompt_tokens=1, completion_tokens=1)))
         with (
