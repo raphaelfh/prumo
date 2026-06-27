@@ -31,16 +31,23 @@ normalised character ``i`` began.  A matched normalised span ``[ns, ne)`` maps
 back to the original span ``[norm_to_orig[ns], norm_to_orig[ne])`` (with
 ``ne == len(norm)`` mapping to ``len(original)``).
 
-**Bounded, deterministic fuzz.**  OCR noise (a few wrong characters) should
-still match.  Matching is tried in two tiers:
+**Bounded, deterministic fuzz (two passes).**  OCR noise (a few wrong
+characters) should still match, but an *exact* hit must never lose to a fuzzy
+hit, and the search must stay fast enough for the synchronous extraction write
+path (the old per-position sliding-window sweep ran in tens of seconds on a real
+multi-page PDF and timed out the worker).  So matching runs in two passes:
 
-1. *Exact* substring search of the folded quote inside the folded page text.
-2. If absent, a bounded sliding-window fuzzy search using
-   :class:`difflib.SequenceMatcher` (stdlib — pure, deterministic, no new
-   dependency).  Candidate windows are sized around the quote length; the best
-   similarity ratio ≥ ``fuzz_threshold`` wins.  The window length band is
-   bounded (``±FUZZ_LEN_SLACK`` fraction of the quote length) so cost stays
-   linear-ish and the result is reproducible.
+1. **Exact pass (every page).**  ``str.find`` of the folded quote inside each
+   folded page.  If ANY page matches exactly, the best is picked by the
+   deterministic tie-break and returned — fuzzy is never run.  This is both more
+   correct (an exact match always wins) and the dominant performance win.
+2. **Fuzzy pass (only when no page matched exactly and ``fuzz_threshold < 1.0``).**
+   Linear per page: a single :meth:`difflib.SequenceMatcher.find_longest_match`
+   pass locates the best alignment, a cheap page gate scores that one window and
+   skips the page if it is far below threshold, and otherwise a SMALL constant
+   grid of windows around the anchor is scored with ``ratio``.  The best
+   similarity ratio ≥ ``fuzz_threshold`` wins.  Stdlib only — pure,
+   deterministic, no new dependency.
 
 The fuzz unit is a **similarity ratio in [0.0, 1.0]** (``SequenceMatcher.ratio``
 — ``2*M/T`` where ``M`` is matched chars and ``T`` is total chars of both
@@ -71,7 +78,7 @@ session).
 from __future__ import annotations
 
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Protocol, runtime_checkable
@@ -99,16 +106,36 @@ from app.schemas.extraction import (
 #: (exact match only).
 DEFAULT_FUZZ_THRESHOLD: float = 0.85
 
-#: Fractional slack on the candidate window length during fuzzy search.  We try
-#: window lengths from ``(1 - slack) * len(quote)`` to ``(1 + slack) * len(quote)``
-#: so OCR noise that inserts/deletes a few characters is still reachable while
-#: the search stays bounded.
+#: Fractional slack on the candidate window length during fuzzy search.  The
+#: fuzzy search anchors the quote against the page with a single
+#: ``SequenceMatcher.find_longest_match`` pass, then probes only a SMALL constant
+#: band of candidate windows around that anchor.  Window lengths range from
+#: ``(1 - slack) * len(quote)`` to ``(1 + slack) * len(quote)`` so OCR noise that
+#: inserts/deletes a few characters is still reachable while the search stays
+#: linear in the page length.
 _FUZZ_LEN_SLACK: float = 0.25
 
-#: Step (in characters) of the longer window length probed during fuzzy search.
-#: Length 1 below the upper bound is always probed too; this only coarsens the
-#: *length* sweep, not the *position* sweep (which is exhaustive).
-_FUZZ_LEN_STEP: int = 1
+#: Position offsets (in characters) probed on either side of the anchor returned
+#: by ``find_longest_match``.  The longest common block can sit anywhere inside
+#: the quote, so we slide the window start a couple of characters around the
+#: implied alignment to recover the best-scoring region.  Kept tiny so the
+#: candidate count per page stays a small constant
+#: (``len(_FUZZ_POS_OFFSETS) * len(window_lengths)``).
+_FUZZ_POS_OFFSETS: tuple[int, ...] = (-2, 0, 2)
+
+#: Candidate window-length offsets (fractions of the quote length) probed around
+#: the quote length, so a few inserted/deleted characters are still reachable.
+#: A small fixed tuple fixes the number of ``.ratio()`` evaluations per page at a
+#: constant regardless of page length.
+_FUZZ_LEN_FRACTIONS: tuple[float, ...] = (-_FUZZ_LEN_SLACK, 0.0, _FUZZ_LEN_SLACK)
+
+#: A page whose best-aligned full-length window scores below
+#: ``fuzz_threshold * _FUZZ_PAGE_GATE`` is skipped entirely — the small candidate
+#: grid around the anchor cannot recover enough to cross the threshold, so there
+#: is no point scoring the rest of the grid.  This makes a non-matching page cost
+#: ONE ``.ratio()`` instead of the whole grid.  Slightly below 1.0 so a window a
+#: couple of characters off the ideal alignment is still explored.
+_FUZZ_PAGE_GATE: float = 0.9
 
 #: Block types considered "prose" for anchor-variant selection.
 #: Any block whose type is NOT in this set (i.e. ``table_cell`` or
@@ -275,6 +302,23 @@ def _best_exact(norm_page: str, norm_quote: str) -> _PageCandidate | None:
     return _PageCandidate(norm_start=idx, norm_end=idx + len(norm_quote), ratio=1.0)
 
 
+def _fuzzy_anchor(norm_page: str, norm_quote: str) -> int | None:
+    """Return the page offset where *norm_quote* best aligns, or ``None``.
+
+    Instead of sweeping every character position (``O(page_len)`` windows, each
+    an ``O(win_len)`` ratio → the quadratic blow-up that timed out production), we
+    locate the best-aligned region in a SINGLE ``find_longest_match`` pass.  The
+    longest common substring sits at quote index ``a`` / page index ``b``, so the
+    quote's start aligns at ``b - a`` in the page (clamped into range).
+    """
+    page_len = len(norm_page)
+    matcher = SequenceMatcher(autojunk=False, a=norm_quote, b=norm_page)
+    block = matcher.find_longest_match(0, len(norm_quote), 0, page_len)
+    if block.size == 0:
+        return None
+    return min(max(0, block.b - block.a), page_len - 1)
+
+
 def _best_fuzzy(
     norm_page: str,
     norm_quote: str,
@@ -282,41 +326,63 @@ def _best_fuzzy(
 ) -> _PageCandidate | None:
     """Return the best fuzzy match of *norm_quote* in *norm_page* (or ``None``).
 
-    Slides windows of length within ``±_FUZZ_LEN_SLACK`` of the quote length and
-    keeps the highest ``SequenceMatcher.ratio`` ≥ *fuzz_threshold*.  Ties on
-    ratio break toward the earliest ``norm_start`` then the shortest window,
-    which keeps the result deterministic.
+    Linear in the page length.  A single ``SequenceMatcher.find_longest_match``
+    pass locates the best-aligned region (:func:`_fuzzy_anchor`).  The full-length
+    window at that anchor is scored first as a cheap PAGE GATE: a page whose best
+    alignment scores far below the threshold cannot be recovered by the tiny
+    candidate grid, so it is skipped after a single ``.ratio()`` (this is what
+    keeps a non-matching page cheap).  Otherwise a SMALL constant grid of windows
+    around the anchor — a few position offsets × a few lengths within
+    ``±_FUZZ_LEN_SLACK`` of the quote length — is scored, and the highest ratio
+    ≥ *fuzz_threshold* wins.  Ties on ratio break toward the earliest
+    ``norm_start`` then the shortest window, so the result is deterministic.
+
+    Preserves OCR tolerance: a quote with a handful of substituted characters
+    aligns cleanly (substitutions don't shift the alignment), so its full-length
+    anchor window scores well above the threshold and the gate lets it through.
     """
     q_len = len(norm_quote)
     page_len = len(norm_page)
     if q_len == 0 or page_len == 0:
         return None
 
-    min_len = max(1, int(q_len * (1.0 - _FUZZ_LEN_SLACK)))
-    max_len = min(page_len, int(q_len * (1.0 + _FUZZ_LEN_SLACK)) + 1)
+    anchor = _fuzzy_anchor(norm_page, norm_quote)
+    if anchor is None:
+        return None
 
     matcher = SequenceMatcher(autojunk=False)
     matcher.set_seq2(norm_quote)
 
+    # Cheap page gate: score the full-length window at the primary anchor.  If
+    # even that best-aligned window is well below the threshold, no nearby window
+    # can cross it — skip the rest of the grid for this page.
+    gate_end = min(anchor + q_len, page_len)
+    matcher.set_seq1(norm_page[anchor:gate_end])
+    if matcher.ratio() < fuzz_threshold * _FUZZ_PAGE_GATE:
+        return None
+
+    # A small, fixed grid of window starts × lengths around the anchor so a few
+    # inserted/deleted characters are still reachable.
+    starts = sorted({min(max(0, anchor + off), page_len - 1) for off in _FUZZ_POS_OFFSETS})
+    window_lengths = sorted(
+        {max(1, q_len + int(q_len * frac)) for frac in _FUZZ_LEN_FRACTIONS} | {q_len}
+    )
+
     best: _PageCandidate | None = None
-    # Probe a small band of window lengths so insertions/deletions are reachable.
-    window_lengths = sorted(set(range(min_len, max_len + 1, _FUZZ_LEN_STEP)) | {q_len})
-    for win_len in window_lengths:
-        if win_len <= 0 or win_len > page_len:
-            continue
-        for start in range(0, page_len - win_len + 1):
-            end = start + win_len
-            matcher.set_seq1(norm_page[start:end])
-            # real_quick_ratio / quick_ratio are deterministic upper bounds;
-            # use them to skip windows that cannot beat the current best.
-            if best is not None and matcher.real_quick_ratio() < best.ratio:
+    for start in starts:
+        for win_len in window_lengths:
+            end = min(start + win_len, page_len)
+            if end <= start:
                 continue
-            if matcher.quick_ratio() < fuzz_threshold:
+            matcher.set_seq1(norm_page[start:end])
+            # real_quick_ratio is a deterministic upper bound; skip windows that
+            # cannot beat the current best before paying for the full ratio.
+            if best is not None and matcher.real_quick_ratio() < best.ratio:
                 continue
             ratio = matcher.ratio()
             if ratio < fuzz_threshold:
                 continue
-            if best is None or _fuzzy_better(ratio, start, win_len, best):
+            if best is None or _fuzzy_better(ratio, start, end - start, best):
                 best = _PageCandidate(norm_start=start, norm_end=end, ratio=ratio)
     return best
 
@@ -513,19 +579,59 @@ def match(
     for page_blocks in blocks_by_page.values():
         page_blocks.sort(key=lambda b: b.block_index)
 
-    best_result: AnchorMatch | None = None
-    best_key: tuple[int, int, int] | None = None  # (page, char_start, -overlap_len)
-
-    # Iterate pages in ascending order for deterministic earliest-page tie-break.
+    # Pre-normalise every page once (reused by both the exact and fuzzy passes).
+    norm_pages: dict[int, tuple[str, list[int], str]] = {}
     for page in sorted(page_texts):
         original = page_texts[page]
         norm_page, norm_to_orig = _normalize_with_index_map(original)
-        if not norm_page:
-            continue
+        if norm_page:
+            norm_pages[page] = (norm_page, norm_to_orig, original)
 
-        candidate = _best_exact(norm_page, norm_quote)
-        if candidate is None and fuzz_threshold < 1.0:
-            candidate = _best_fuzzy(norm_page, norm_quote, fuzz_threshold)
+    # Pass 1 — EXACT only, every page.  An exact substring match on ANY page must
+    # win over any fuzzy match (an exact hit is always more trustworthy and is
+    # cheap: ``str.find``), so when at least one page matches exactly we pick the
+    # best by the deterministic tie-break and RETURN without ever running fuzzy.
+    # This is the dominant performance win — the unbounded fuzzy sweep only runs
+    # in the rare absent-exact case, and never when a verbatim quote exists.
+    exact_result = _best_over_pages(
+        norm_pages,
+        blocks_by_page,
+        lambda norm_page, _norm_to_orig: _best_exact(norm_page, norm_quote),
+    )
+    if exact_result is not None:
+        return exact_result
+
+    # Pass 2 — bounded fuzzy, only when NO page matched exactly and fuzz is on.
+    if fuzz_threshold >= 1.0:
+        return None
+    return _best_over_pages(
+        norm_pages,
+        blocks_by_page,
+        lambda norm_page, _norm_to_orig: _best_fuzzy(norm_page, norm_quote, fuzz_threshold),
+    )
+
+
+def _best_over_pages(
+    norm_pages: dict[int, tuple[str, list[int], str]],
+    blocks_by_page: dict[int, list[ParsedBlock]],
+    find_candidate: Callable[[str, list[int]], _PageCandidate | None],
+) -> AnchorMatch | None:
+    """Run *find_candidate* on every page and return the best :class:`AnchorMatch`.
+
+    Shared by both passes of :func:`match`.  *find_candidate* locates a
+    normalised-coordinate :class:`_PageCandidate` for one page (exact or fuzzy);
+    this helper resolves it to an ORIGINAL span, validates the fold-back
+    invariant, and applies the deterministic tie-break (earliest page, then
+    earliest original ``char_start``, then the longest contiguous overlap).
+    Pages are visited in ascending order so the earliest-page tie-break holds.
+    """
+    best_result: AnchorMatch | None = None
+    best_key: tuple[int, int, int] | None = None  # (page, char_start, -overlap_len)
+
+    for page in sorted(norm_pages):
+        norm_page, norm_to_orig, original = norm_pages[page]
+
+        candidate = find_candidate(norm_page, norm_to_orig)
         if candidate is None:
             continue
 
