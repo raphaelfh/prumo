@@ -1,6 +1,7 @@
 """Unit tests for the runtime schema builder (DB field rows → Pydantic models)."""
 
 from types import SimpleNamespace
+from typing import get_args, get_origin
 
 import pytest
 from pydantic import ValidationError
@@ -8,7 +9,9 @@ from pydantic import ValidationError
 from app.llm.schema import (
     _PROPERTIES_PER_FIELD,
     OPENAI_STRICT_PROPERTY_BUDGET,
+    Evidence,
     SchemaBuildError,
+    _field_result_model,
     build_output_models,
     dump_extraction,
 )
@@ -346,10 +349,6 @@ def test_llm_description_preferred_when_both_set():
 # ---------------------------------------------------------------------------
 # Task 1: evidence is list[Evidence]
 # ---------------------------------------------------------------------------
-
-from typing import get_args, get_origin
-
-from app.llm.schema import Evidence, _field_result_model
 
 
 def _field_bare(name="primary_outcome", field_type="text", required=True):

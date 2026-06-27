@@ -38,7 +38,7 @@ const suggestion = {
   confidence: 0.9,
   reasoning: 'Because of this evidence.',
   timestamp: new Date('2024-01-01T00:00:00Z'),
-  evidence: {text: 'test evidence', pageNumber: 2, blockIds: [5]},
+  evidence: [{text: 'test evidence', pageNumber: 2, blockIds: [5], rank: 0, attributionLabel: null}],
 };
 
 function Wrapper({children}: {children: ReactNode}) {
