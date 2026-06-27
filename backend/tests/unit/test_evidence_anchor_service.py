@@ -543,6 +543,29 @@ class TestFuzzyDeterminismAndCoverage:
         sliced = page_text[first.char_start : first.char_end]
         assert sliced.startswith("alpha bravo")
 
+    def test_fuzzy_anchor_lure_does_not_drop_legitimate_match(self) -> None:
+        """A quote token that repeats EARLIER as a longer common block must not
+        steal the fuzzy anchor and cause a legitimate match to be dropped.
+
+        Regression for the anchor-lure bug: anchoring on only the single longest
+        common run made ``find_longest_match`` lock onto the earlier "result"
+        (inside "results"), the tiny offset grid could not reach the true
+        alignment later in the page, and the page gate then rejected the whole
+        page → ``None`` for an OCR-noisy quote the exhaustive sweep WOULD have
+        found (ratio 0.88 ≥ the 0.85 threshold).  Seeding anchors from EVERY
+        sizable common run recovers it.
+        """
+        # "result" appears early (in "results"), luring the longest-match anchor;
+        # the true (noisy) alignment "results the renal" is later on the page.
+        blocks = [make_block(1, 0, "the renal results then results the renal arm")]
+        quote = "resultf tah renal"  # OCR-noisy for "results the renal"
+        result = match(quote, blocks)
+        assert result is not None  # must NOT be dropped
+        assert result.block_ids == [0]
+        page_text = _original_page_text(blocks)[1]
+        sliced = page_text[result.char_start : result.char_end]
+        assert sliced == "results the renal"  # the true later alignment, not the lure
+
 
 # ---------------------------------------------------------------------------
 # Graceful degradation — match() must never raise (Fix: graceful post-condition)
