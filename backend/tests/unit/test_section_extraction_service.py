@@ -1832,14 +1832,14 @@ class TestExtractWithLlmWiring:
                     "value": "150",
                     "confidence": 0.9,
                     "reasoning": None,
-                    "evidence": None,
+                    "evidence": [],
                     "status": "found",
                 },
                 "field_1": {
                     "value": "RCT",
                     "confidence": 0.8,
                     "reasoning": None,
-                    "evidence": None,
+                    "evidence": [],
                     "status": "found",
                 },
             }
@@ -1873,7 +1873,7 @@ class TestExtractWithLlmWiring:
                         "value": "v",
                         "confidence": 0.5,
                         "reasoning": None,
-                        "evidence": None,
+                        "evidence": [],
                         "status": "found",
                     }
                     for info in model_cls.model_fields.values()
@@ -1908,7 +1908,7 @@ class TestExtractWithLlmWiring:
                     "value": "v",
                     "confidence": 0.5,
                     "reasoning": None,
-                    "evidence": None,
+                    "evidence": [],
                     "status": "found",
                 }
             }
@@ -1944,7 +1944,7 @@ class TestExtractWithLlmWiring:
                     "value": "Low",
                     "confidence": 0.5,
                     "reasoning": None,
-                    "evidence": None,
+                    "evidence": [],
                     "status": "found",
                 }
             }
@@ -1993,7 +1993,7 @@ class TestExtractWithLlmWiring:
                     "value": "v",
                     "confidence": 0.5,
                     "reasoning": None,
-                    "evidence": None,
+                    "evidence": [],
                     "status": "found",
                 }
             }
