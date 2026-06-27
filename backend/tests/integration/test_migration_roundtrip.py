@@ -259,6 +259,37 @@ async def test_migration_0034_round_trip(db_session: AsyncSession) -> None:
     )
 
 
+_EVIDENCE_RANK_COL = text(
+    "SELECT 1 FROM information_schema.columns "
+    "WHERE table_schema = 'public' AND table_name = 'extraction_evidence' "
+    "AND column_name = 'rank'"
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0035_round_trip(db_session: AsyncSession) -> None:
+    """0035 adds extraction_evidence.rank (server_default '0', backfilling
+    legacy rows to 0). Downgrade to the explicit parent 0034_evidence_attr_label
+    drops it; upgrade head restores it. Backfill is proven by the server_default
+    at the column level (no data: SEED seeds no evidence rows and a raw INSERT
+    would violate the NOT NULL FKs + workflow_target_present CHECK)."""
+    assert (await db_session.execute(_EVIDENCE_RANK_COL)).scalar() == 1, "rank must exist at HEAD"
+
+    _run_alembic("downgrade", "0034_evidence_attr_label")
+    try:
+        await db_session.commit()
+        assert (await db_session.execute(_EVIDENCE_RANK_COL)).scalar() is None, (
+            "downgrade must drop rank"
+        )
+    finally:
+        _run_alembic("upgrade", "head")
+
+    await db_session.commit()
+    assert (await db_session.execute(_EVIDENCE_RANK_COL)).scalar() == 1, (
+        "upgrade head must restore rank"
+    )
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision() -> None:
     """Pin the head revision id. If a future migration is added without
@@ -267,9 +298,7 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0034_evidence_attr_label" in out, (
-        f"Expected head revision '0034_evidence_attr_label', got:\n{out}"
-    )
+    assert "0035_evidence_rank" in out, f"Expected head revision '0035_evidence_rank', got:\n{out}"
 
 
 @pytest.mark.asyncio
