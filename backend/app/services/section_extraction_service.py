@@ -53,6 +53,9 @@ from app.services.extraction_prompt_input import build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.run_lifecycle_service import RunLifecycleService
 
+# Maximum number of evidence rows written per extracted field.
+EVIDENCE_CAP = 3
+
 
 @dataclass
 class SectionExtractionResult:
@@ -1346,20 +1349,38 @@ class SectionExtractionService(LoggerMixin):
 
             confidence_score: float | None = None
             reasoning: str | None = None
-            evidence_meta: dict[str, Any] | None = None
 
             if isinstance(value, dict):
                 confidence_score = value.get("confidence")
                 reasoning = value.get("reasoning")
                 raw_evidence = value.get("evidence")
-                if isinstance(raw_evidence, dict) and raw_evidence.get("text"):
-                    evidence_meta = {
+                inner_value = value.get("value", value)
+            else:
+                raw_evidence = None
+                inner_value = value
+
+            # Build evidence_items list (cap at EVIDENCE_CAP).
+            # Supports both the new list shape (P1) and the legacy single-dict
+            # shape (P0) so old LLM responses continue to work.
+            evidence_items: list[dict[str, Any]] = []
+            if isinstance(raw_evidence, list):
+                for e in raw_evidence:
+                    if isinstance(e, dict) and (e.get("text") or "").strip():
+                        evidence_items.append(
+                            {
+                                "text": str(e["text"]).strip(),
+                                "page_number": e.get("page_number"),
+                            }
+                        )
+            elif isinstance(raw_evidence, dict) and (raw_evidence.get("text") or "").strip():
+                # LEGACY tolerance: old P0 shape was a single evidence dict → one row, rank 0.
+                evidence_items.append(
+                    {
                         "text": str(raw_evidence["text"]).strip(),
                         "page_number": raw_evidence.get("page_number"),
                     }
-                inner_value = value.get("value", value)
-            else:
-                inner_value = value
+                )
+            evidence_items = evidence_items[:EVIDENCE_CAP]
 
             # JSONB column on proposed_value is dict-typed; always wrap so
             # scalars/lists round-trip predictably and the frontend can read
@@ -1376,36 +1397,37 @@ class SectionExtractionService(LoggerMixin):
                 rationale=reasoning,
             )
 
-            if evidence_meta:
-                _quote = evidence_meta.get("text") or ""
-                _pos = build_anchor(_quote, _anchor_blocks) if _anchor_blocks and _quote else None
-                if _pos is not None:
-                    _position: dict = _pos.model_dump(by_alias=True, mode="json")
-                    _page_num = _pos.anchor.range.page
+            for rank, item in enumerate(evidence_items):
+                quote = item["text"]
+                pos = build_anchor(quote, _anchor_blocks) if _anchor_blocks and quote else None
+                if pos is not None:
+                    position: dict = pos.model_dump(by_alias=True, mode="json")
+                    page_num = pos.anchor.range.page
                 else:
-                    _position = {}
-                    _page_num = evidence_meta.get("page_number")
+                    position = {}
+                    page_num = item.get("page_number")
                 ev_row = ExtractionEvidence(
                     project_id=project_id,
                     article_id=article_id,
-                    article_file_id=_anchor_file_id if _pos is not None else None,
+                    article_file_id=_anchor_file_id if pos is not None else None,
                     run_id=run.id,
                     proposal_record_id=proposal.id,
-                    page_number=_page_num,
-                    text_content=evidence_meta.get("text"),
-                    position=_position,
+                    page_number=page_num,
+                    text_content=quote,
+                    position=position,
+                    rank=rank,
                     created_by=UUID(self.user_id),
                 )
                 self.db.add(ev_row)
 
                 # Queue for entailment gate: found fields with evidence only.
-                if isinstance(value, dict) and value.get("status") == "found" and _quote:
+                if isinstance(value, dict) and value.get("status") == "found" and quote:
                     _gate_specs.append(
                         GateSpec(
                             field_label=field_label_map.get(field_name, field_name),
                             value_str=str(inner_value),
-                            quote=_quote,
-                            pos=_pos,
+                            quote=quote,
+                            pos=pos,
                             anchor_blocks=_anchor_blocks,
                         )
                     )
