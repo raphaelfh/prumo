@@ -612,8 +612,7 @@ async def test_model_used_resolved_from_run_parameters(
 
     Two runs with different ``parameters["model"]`` values are each
     represented by one AI proposal. The AIProposalRow for each proposal
-    must carry the model from its run. A run without a "model" key must
-    yield an empty string (graceful degradation for older runs).
+    must carry the model from its OWN run, proving per-run isolation.
     """
     coord = await _coord(db_session)
     if coord is None:
@@ -631,6 +630,23 @@ async def test_model_used_resolved_from_run_parameters(
     run_a.parameters = {"model": "gpt-4o-mini"}
     await db_session.flush()
 
+    # Run B — cloned from run_a's metadata but with a different model.
+    # We insert directly to avoid _make_run deleting run_a.
+    run_b = ExtractionRun(
+        project_id=run_a.project_id,
+        article_id=run_a.article_id,
+        template_id=run_a.template_id,
+        kind=run_a.kind,
+        version_id=run_a.version_id,
+        hitl_config_snapshot=run_a.hitl_config_snapshot,
+        stage=run_a.stage,
+        status=run_a.status,
+        parameters={"model": "gpt-4o"},
+        created_by=run_a.created_by,
+    )
+    db_session.add(run_b)
+    await db_session.flush()
+
     proposal_a = uuid4()
     db_session.add(
         _ai_proposal(
@@ -641,9 +657,20 @@ async def test_model_used_resolved_from_run_parameters(
             value="value-a",
         )
     )
+    proposal_b = uuid4()
+    db_session.add(
+        _ai_proposal(
+            proposal_id=proposal_b,
+            run_id=run_b.id,
+            instance_id=instance_id,
+            field_id=field_id,
+            value="value-b",
+        )
+    )
     await db_session.flush()
 
-    rows = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
+    # Query run_a's proposals — must carry run_a's model.
+    rows_a = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
         articles=(
             _article(
                 article_id=article_id,
@@ -658,8 +685,27 @@ async def test_model_used_resolved_from_run_parameters(
         mode=ExportMode.CONSENSUS,
         target_reviewer_id=None,
     )
-    assert len(rows) == 1
-    assert rows[0].model_used == "gpt-4o-mini"
+    assert len(rows_a) == 1
+    assert rows_a[0].model_used == "gpt-4o-mini"
+
+    # Query run_b's proposals — must carry run_b's model.
+    rows_b = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
+        articles=(
+            _article(
+                article_id=article_id,
+                run_id=run_b.id,
+                run_stage=run_b.stage,
+                entity_type_id=entity_type_id,
+                instance_id=instance_id,
+            ),
+        ),
+        sections=(_section(entity_type_id=entity_type_id, field_id=field_id),),
+        value_map={},
+        mode=ExportMode.CONSENSUS,
+        target_reviewer_id=None,
+    )
+    assert len(rows_b) == 1
+    assert rows_b[0].model_used == "gpt-4o"
 
     await db_session.rollback()
 
@@ -713,7 +759,5 @@ async def test_model_used_empty_when_parameters_absent(
     )
     assert len(rows) == 1
     assert rows[0].model_used == ""
-
-    await db_session.rollback()
 
     await db_session.rollback()
