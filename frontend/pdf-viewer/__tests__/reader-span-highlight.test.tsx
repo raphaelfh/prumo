@@ -97,9 +97,12 @@ describe('<Reader> precise span highlight (CSS Custom Highlight API)', () => {
       </ViewerProvider>,
     );
 
-    // Locate resolves to block b1 by page, but this quote is not in its text.
+    // Force matchedId truthy by blockIndex ([0] = b1) so the block flashes, but
+    // pass a quote absent from b1's rendered text: locateQuoteRange returns null
+    // and the guarded setCitationHighlight is skipped (the integration null path,
+    // not just the matchedId short-circuit).
     act(() => {
-      viewer.getState().actions.locateInReader('a passage absent from the block', 1);
+      viewer.getState().actions.locateInReader('a passage absent from the block', 1, [0]);
     });
 
     expect(store.has(CITATION_HIGHLIGHT_NAME)).toBe(false);
