@@ -1,0 +1,14 @@
+/* Precise citation-span highlight (CSS Custom Highlight API), layered over the
+   block-flash. Semantic + dark-mode aware; degrades to nothing where the API is
+   unsupported (the block-flash remains). */
+::highlight(citation-quote) {
+  background-color: hsl(var(--primary) / 0.25);
+  color: inherit;
+  border-radius: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  ::highlight(citation-quote) {
+    background-color: hsl(var(--primary) / 0.35);
+  }
+}
