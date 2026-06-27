@@ -14,7 +14,11 @@ _SYSTEM_TEMPLATE = (
     "verbatim quote from the article as evidence whenever possible. "
     "Be conservative: when the article does not provide enough "
     "information to decide, prefer the value that captures uncertainty "
-    "(e.g., 'No information' or 'Probably no') over guessing."
+    "(e.g., 'No information' or 'Probably no') over guessing. "
+    'If the article does not contain the value, set status="not_found", value=null, and evidence=null'
+    ' — do NOT invent a value or a quote. Use status="ambiguous" when the value is present but'
+    ' unclear or conflicting. Only set status="found" when you can quote a passage that supports'
+    " the value."
 )
 
 _USER_TEMPLATE = """Assess the following domain of {framework_label} for the study below.

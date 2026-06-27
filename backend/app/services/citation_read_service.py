@@ -45,12 +45,26 @@ async def list_article_citations(db: AsyncSession, article_id: UUID) -> list[dic
     rather than skipped. This surfaces hallucination / no-blocks-yet signals
     to callers without ever raising in the read path.
 
+    Two independent flags are computed per row:
+
+    - ``anchored`` (internal) — True iff ``position`` parses to a valid
+      PositionV1 anchor (``evidence_is_grounded``).  Drives whether
+      ``anchorKind`` and ``anchor`` are populated.
+    - ``verified`` — True iff ``attribution_label == "entailed"``.  For legacy
+      rows where ``attribution_label`` is NULL, falls back to ``anchored`` so
+      old behaviour is preserved.
+
+    These are deliberately decoupled: a "weak" or "unsupported" row that *is*
+    anchored still carries its full ``anchor`` payload so the UI can render a
+    highlight (amber, in a later phase).
+
     Wire shape per item:
-    - ``id``         — UUID string
-    - ``verified``   — True iff position parses to a valid PositionV1 anchor
-    - ``anchorKind`` — "text" | "region" | "hybrid" when verified, else None
-    - ``anchor``     — camelCase anchor dict when verified, else None (always present; check ``c["anchor"] is None`` for unanchored rows)
-    - ``metadata``   — pageNumber / textContent / source (always present)
+    - ``id``               — UUID string
+    - ``verified``         — True iff entailed (or anchored, for legacy rows)
+    - ``attributionLabel`` — raw label string ("entailed" | "weak" | "unsupported") or None
+    - ``anchorKind``       — "text" | "region" | "hybrid" when anchored, else None
+    - ``anchor``           — camelCase anchor dict when anchored, else None
+    - ``metadata``         — pageNumber / textContent / source (always present)
     """
     rows = (
         (
@@ -67,8 +81,14 @@ async def list_article_citations(db: AsyncSession, article_id: UUID) -> list[dic
     citations: list[dict[str, Any]] = []
     for row in rows:
         position = row.position
-        verified = evidence_is_grounded(position)
+        # anchored: drives whether anchor/anchorKind are populated (highlight).
+        anchored = evidence_is_grounded(position)
         kind = anchor_kind(position)
+
+        # verified: "entailed" trust flag, decoupled from anchored.
+        # Legacy rows (attribution_label IS NULL) fall back to anchored.
+        label = row.attribution_label
+        verified = (label == "entailed") if label is not None else anchored
 
         metadata: dict[str, Any] = {}
         if row.page_number is not None:
@@ -88,16 +108,24 @@ async def list_article_citations(db: AsyncSession, article_id: UUID) -> list[dic
         item: dict[str, Any] = {
             "id": str(row.id),
             "verified": verified,
+            "attributionLabel": label,
             "anchorKind": kind,
             "metadata": metadata,
         }
-        if verified:
+        if anchored:
             # parse_position is safe here: evidence_is_grounded already confirmed it parses.
             parsed = parse_position(position)
             if parsed is None:
-                # Defensive guard: logic regression — treat as unanchored.
+                # Defensive guard: evidence_is_grounded returned True but
+                # parse_position returned None — should not happen in practice,
+                # but guards against a logic regression.  Only anchor/anchorKind
+                # are nulled here; verified is intentionally left unchanged.
+                # verified means the source ENTAILS the value
+                # (attribution_label == "entailed"), which is independent of
+                # whether a render anchor can be constructed — an entailed row
+                # stays verified=True even when the highlight anchor cannot be
+                # built.
                 item["anchor"] = None
-                item["verified"] = False
                 item["anchorKind"] = None
             else:
                 item["anchor"] = parsed.anchor.model_dump(by_alias=True, exclude_none=True)

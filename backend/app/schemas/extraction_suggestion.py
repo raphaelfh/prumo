@@ -20,6 +20,8 @@ class EvidenceResponse(BaseModel):
         alias="blockIds",
         description="block_index values for deterministic reader highlight",
     )
+    rank: int = 0
+    attribution_label: str | None = Field(default=None, alias="attributionLabel")
 
 
 class AISuggestionItem(BaseModel):
@@ -36,7 +38,7 @@ class AISuggestionItem(BaseModel):
     confidence_score: float | None
     rationale: str | None
     created_at: datetime
-    evidence: EvidenceResponse | None
+    evidence: list[EvidenceResponse]
     # Caller-scoped: 'accepted' | 'rejected' | 'pending'
     status: str
 
@@ -64,4 +66,4 @@ class AISuggestionHistoryItem(BaseModel):
     confidence_score: float | None
     rationale: str | None
     created_at: datetime
-    evidence: EvidenceResponse | None
+    evidence: list[EvidenceResponse]

@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-06-20
+last_reviewed: 2026-06-27
 owner: '@raphaelfh'
 ---
 
@@ -8,9 +8,11 @@ owner: '@raphaelfh'
 
 ## Current focus
 
-- See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the active cycle. As of
-  2026-06-20: structured PDF parsing / grounded extraction (ADR-0011, ADR-0013).
-  The extraction data-path consolidation **shipped** (#228, #324) — not active.
+- See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the live cycle — the
+  source of truth; don't re-pin a date here. Now: grounded extraction on
+  stored markdown (ADR-0013 **shipped**, #400; ADR-0011 still
+  **proposed**). The *extraction* read-path consolidation shipped (#228,
+  #324); other app-schema reads still use PostgREST.
 - Project history lives in `git log` and `docs/adr/` — do not append
   changelogs to this file. Keep this section to ≤ 5 lines.
 
@@ -126,3 +128,23 @@ Design rationale (the *why*):
 
 Path-scoped conventions live in `.claude/rules/` (`backend.md`,
 `frontend.md`) and load automatically when matching files are touched.
+
+## Branch & merge (agentic concurrency)
+
+Concurrent agents and worktrees make `dev` behave like a multi-dev
+branch. Fix throughput without weakening the gate:
+
+- **`dev` stays strict (up-to-date required).** It re-tests each PR
+  against the latest base, catching logical conflicts between two
+  individually-green PRs. Don't drop strict to go faster.
+- **One armed auto-merge at a time (merge-train).** Only one PR carries
+  `gh pr merge --auto --squash` into `dev` at once; arm the next only
+  after the current one lands. N concurrent armed PRs just go `BEHIND`
+  and invalidate each other.
+- **Unstick a `BEHIND` PR with Update-branch, never a hand rebase:**
+  `gh api -X PUT .../pulls/<n>/update-branch`. Never `@dependabot
+  rebase` a grouped PR — it closes and recreates it under a new number.
+- **Scope agents to non-overlapping paths/worktrees** so concurrent PRs
+  rarely conflict.
+- A GitHub merge queue is the real fix but needs an org (public repo →
+  a free org); revisit if concurrency outgrows the merge-train.

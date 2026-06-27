@@ -846,6 +846,11 @@ export const extraction = {
     aiRationaleLabel: 'Rationale',
     // AISuggestionEvidence – markdown-first citation locate
     evidenceLocate: 'Locate in document',
+    // AISuggestionEvidence – multi-citation list + attribution badges
+    evidenceAlsoCited: 'Also cited ({{n}})',
+    attributionEntailed: 'Verified',
+    attributionWeak: 'Weak match',
+    attributionUnsupported: 'Not supported',
 } as const;
 
 export type ExtractionCopy = typeof extraction;

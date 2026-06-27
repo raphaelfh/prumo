@@ -18,7 +18,7 @@ import {
 import {Sparkles} from 'lucide-react';
 import {AISuggestionEvidence} from '../AISuggestionEvidence';
 import {t} from '@/lib/copy';
-import type {AISuggestion} from '@/hooks/extraction/ai/useAISuggestions';
+import type {AISuggestion, EvidenceCitation} from '@/types/ai-extraction';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 
 // -----------------------------------------------------------------------------
@@ -27,7 +27,7 @@ import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 
 function hasSuggestionDetails(suggestion: AISuggestion): boolean {
   const hasReasoning = !!suggestion.reasoning?.trim();
-  const hasEvidence = !!suggestion.evidence?.text?.trim();
+  const hasEvidence = (suggestion.evidence?.length ?? 0) > 0 && !!suggestion.evidence?.[0]?.text?.trim();
   return hasReasoning || hasEvidence;
 }
 
@@ -45,18 +45,19 @@ interface AISuggestionDetailsPopoverProps {
 // -----------------------------------------------------------------------------
 
 interface EvidenceSectionProps {
-  evidence: {text: string; pageNumber?: number | null; blockIds?: number[]};
+  evidence: EvidenceCitation[];
   onClose: () => void;
 }
 
 function EvidenceSection({evidence, onClose}: EvidenceSectionProps) {
   const {locate, isAvailable} = useReaderLocate();
 
-  // Locate in the document reader, then close the popover so the (still
-  // visible) viewer shows the flash unobstructed.
+  // Per-citation locate: finds the matching citation by rank, then locates it
+  // in the reader. Closes the popover so the flash is unobstructed.
   const onLocate = isAvailable
-    ? () => {
-        locate(evidence.text, evidence.pageNumber ?? null, evidence.blockIds ?? []);
+    ? (rank: number) => {
+        const citation = evidence.find((e) => e.rank === rank) ?? evidence[0];
+        locate(citation.text, citation.pageNumber ?? null, citation.blockIds ?? []);
         onClose();
       }
     : undefined;
@@ -64,7 +65,7 @@ function EvidenceSection({evidence, onClose}: EvidenceSectionProps) {
   return (
     <section className="space-y-2" aria-label={t('extraction', 'evidenceCitedAria')}>
       <AISuggestionEvidence
-        evidence={{text: evidence.text, pageNumber: evidence.pageNumber ?? null}}
+        evidence={evidence}
         onLocate={onLocate}
       />
     </section>
@@ -115,9 +116,9 @@ export function AISuggestionDetailsPopover({
             </section>
           )}
 
-          {evidence?.text?.trim() && (
+          {evidence && evidence.length > 0 && evidence[0]?.text?.trim() && (
             <EvidenceSection
-              evidence={{text: evidence.text, pageNumber: evidence.pageNumber ?? null, blockIds: evidence.blockIds ?? []}}
+              evidence={evidence}
               onClose={() => setOpen(false)}
             />
           )}

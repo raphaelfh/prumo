@@ -211,6 +211,7 @@ def test_build_workbook_ai_metadata_path_is_deterministic():
             evidence_text="excerpt",
             evidence_pages="4",
             proposed_at=datetime(2026, 5, 23, 10, 0, 0, tzinfo=UTC),
+            model_used="gpt-4o-mini",
             reviewer_outcome="accepted",
             final_value_used="Existing registry",
         ),
@@ -290,9 +291,9 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
     # ALL_USERS value_map: consensus column uses (run_id, inst_id, field_id, None).
     value_map = {(run_id, inst_id, field_id, None): "Existing registry"}
 
-    # Mock the five DB execute calls in _load_ai_proposal_rows order:
+    # Mock the six DB execute calls in _load_ai_proposal_rows order:
     #   1. instance query, 2. proposal query, 3. evidence query,
-    #   4. decision query, 5. entity-type label query.
+    #   4. decision query, 5. entity-type label query, 6. run params query.
     def _result(rows):
         r = MagicMock()
         r.all.return_value = rows
@@ -321,6 +322,7 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
                 [(run_id, inst_id, field_id, uuid4(), "accept_proposal", pid)]
             ),  # decisions (reviewer-tagged)
             _result([(entity_type_id, "1. Source of data")]),  # entity labels
+            _result([(run_id, {})]),  # run params
         ]
     )
 

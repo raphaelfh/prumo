@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
+from app.llm.entailment import GateSpec, run_entailment_gate
 from app.llm.extractor import LlmUsage, extract_structured
 from app.llm.prompts import quality_assessment, section_extraction
 from app.llm.provider import MissingLLMKeyError, build_model
@@ -51,6 +52,9 @@ from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.run_lifecycle_service import RunLifecycleService
+
+# Maximum number of evidence rows written per extracted field.
+EVIDENCE_CAP = 3
 
 
 @dataclass
@@ -254,6 +258,7 @@ class SectionExtractionService(LoggerMixin):
                 parent_instance_id=parent_instance_id,
                 extracted_data=extracted_data,
                 run=run,
+                model=model,
             )
             phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -557,6 +562,7 @@ class SectionExtractionService(LoggerMixin):
                 parent_instance_id=None,
                 extracted_data=extracted_data,
                 run=run,
+                model=model,
             )
             return {
                 "suggestions_created": suggestions_created,
@@ -961,6 +967,7 @@ class SectionExtractionService(LoggerMixin):
                 parent_instance_id=parent_instance_id,
                 extracted_data=extracted_data,
                 run=run,
+                model=model,
             )
             section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -1212,6 +1219,7 @@ class SectionExtractionService(LoggerMixin):
         parent_instance_id: UUID | None,
         extracted_data: dict[str, Any],
         run: ExtractionRun,
+        model: str = settings.LLM_DEFAULT_MODEL,
     ) -> int:
         """
         Create extraction suggestions in database via repository.
@@ -1226,6 +1234,7 @@ class SectionExtractionService(LoggerMixin):
             parent_instance_id: Parent instance ID.
             extracted_data: Extracted data.
             run: ExtractionRun used to link suggestions.
+            model: LLM model name (used to build the entailment judge model).
 
         Returns:
             Number of created suggestions.
@@ -1252,8 +1261,12 @@ class SectionExtractionService(LoggerMixin):
 
         # Build field_name -> field_id map
         field_map: dict[str, UUID] = {}
+        field_label_map: dict[str, str] = {}
         for field in entity_type.fields or []:
             field_map[field.name] = field.id
+            field_label_map[field.name] = (
+                field.label if hasattr(field, "label") and field.label else field.name
+            )
 
         # Fetch existing instance
         instances = await self._instances.get_by_article(article_id, entity_type_id)
@@ -1309,11 +1322,19 @@ class SectionExtractionService(LoggerMixin):
         _anchor_blocks = self._run_anchor_blocks
         _anchor_file_id = self._run_anchor_file_id
 
+        # Per-field gate queues: specs for the helper, rows to assign labels back.
+        _gate_specs: list[GateSpec] = []
+        _gate_rows: list[ExtractionEvidence] = []
+
         # Record one ProposalRecord per extracted field. Evidence cited by
         # the LLM is stored as a real extraction_evidence row linked to
         # the proposal via proposal_record_id.
         for field_name, value in extracted_data.items():
             if value is None:
+                continue
+
+            # Abstention: skip fields the LLM could not resolve.
+            if isinstance(value, dict) and value.get("status") in ("not_found", "ambiguous"):
                 continue
 
             field_id = field_map.get(field_name)
@@ -1328,20 +1349,38 @@ class SectionExtractionService(LoggerMixin):
 
             confidence_score: float | None = None
             reasoning: str | None = None
-            evidence_meta: dict[str, Any] | None = None
 
             if isinstance(value, dict):
                 confidence_score = value.get("confidence")
                 reasoning = value.get("reasoning")
                 raw_evidence = value.get("evidence")
-                if isinstance(raw_evidence, dict) and raw_evidence.get("text"):
-                    evidence_meta = {
+                inner_value = value.get("value", value)
+            else:
+                raw_evidence = None
+                inner_value = value
+
+            # Build evidence_items list (cap at EVIDENCE_CAP).
+            # Supports both the new list shape (P1) and the legacy single-dict
+            # shape (P0) so old LLM responses continue to work.
+            evidence_items: list[dict[str, Any]] = []
+            if isinstance(raw_evidence, list):
+                for e in raw_evidence:
+                    if isinstance(e, dict) and (e.get("text") or "").strip():
+                        evidence_items.append(
+                            {
+                                "text": str(e["text"]).strip(),
+                                "page_number": e.get("page_number"),
+                            }
+                        )
+            elif isinstance(raw_evidence, dict) and (raw_evidence.get("text") or "").strip():
+                # LEGACY tolerance: old P0 shape was a single evidence dict → one row, rank 0.
+                evidence_items.append(
+                    {
                         "text": str(raw_evidence["text"]).strip(),
                         "page_number": raw_evidence.get("page_number"),
                     }
-                inner_value = value.get("value", value)
-            else:
-                inner_value = value
+                )
+            evidence_items = evidence_items[:EVIDENCE_CAP]
 
             # JSONB column on proposed_value is dict-typed; always wrap so
             # scalars/lists round-trip predictably and the frontend can read
@@ -1358,30 +1397,51 @@ class SectionExtractionService(LoggerMixin):
                 rationale=reasoning,
             )
 
-            if evidence_meta:
-                _quote = evidence_meta.get("text") or ""
-                _pos = build_anchor(_quote, _anchor_blocks) if _anchor_blocks and _quote else None
-                if _pos is not None:
-                    _position: dict = _pos.model_dump(by_alias=True, mode="json")
-                    _page_num = _pos.anchor.range.page
+            for rank, item in enumerate(evidence_items):
+                quote = item["text"]
+                pos = build_anchor(quote, _anchor_blocks) if _anchor_blocks and quote else None
+                if pos is not None:
+                    position: dict = pos.model_dump(by_alias=True, mode="json")
+                    page_num = pos.anchor.range.page
                 else:
-                    _position = {}
-                    _page_num = evidence_meta.get("page_number")
-                self.db.add(
-                    ExtractionEvidence(
-                        project_id=project_id,
-                        article_id=article_id,
-                        article_file_id=_anchor_file_id if _pos is not None else None,
-                        run_id=run.id,
-                        proposal_record_id=proposal.id,
-                        page_number=_page_num,
-                        text_content=evidence_meta.get("text"),
-                        position=_position,
-                        created_by=UUID(self.user_id),
-                    )
+                    position = {}
+                    page_num = item.get("page_number")
+                ev_row = ExtractionEvidence(
+                    project_id=project_id,
+                    article_id=article_id,
+                    article_file_id=_anchor_file_id if pos is not None else None,
+                    run_id=run.id,
+                    proposal_record_id=proposal.id,
+                    page_number=page_num,
+                    text_content=quote,
+                    position=position,
+                    rank=rank,
+                    created_by=UUID(self.user_id),
                 )
+                self.db.add(ev_row)
+
+                # Queue for entailment gate: found fields with evidence only.
+                if isinstance(value, dict) and value.get("status") == "found" and quote:
+                    _gate_specs.append(
+                        GateSpec(
+                            field_label=field_label_map.get(field_name, field_name),
+                            value_str=str(inner_value),
+                            quote=quote,
+                            pos=pos,
+                            anchor_blocks=_anchor_blocks,
+                        )
+                    )
+                    _gate_rows.append(ev_row)
 
             count += 1
+
+        # Run the entailment gate; premise-building + fan-out live in the helper.
+        if _gate_specs:
+            _judge_model = build_model(settings.LLM_PROVIDER, model, api_key=self._llm_api_key)
+            labels = await run_entailment_gate(_gate_specs, _judge_model, self.logger)
+            for row, label in zip(_gate_rows, labels, strict=True):
+                if label is not None:
+                    row.attribution_label = label
 
         await self.db.flush()
 

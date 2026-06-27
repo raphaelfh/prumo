@@ -448,6 +448,7 @@ def test_ai_metadata_sheet_writes_proposal_rows_in_canonical_order():
         evidence_text="Patients were enrolled from the registry.",
         evidence_pages="4",
         proposed_at=datetime(2026, 5, 23, 10, 0, 0, tzinfo=UTC),
+        model_used="gpt-4o-mini",
         reviewer_outcome="accepted",
         final_value_used="Existing registry",
     )
@@ -478,10 +479,11 @@ def test_ai_metadata_sheet_writes_proposal_rows_in_canonical_order():
     assert ws.cell(row=2, column=7).value == "LLM reasoning here"
     assert ws.cell(row=2, column=8).value == "Patients were enrolled from the registry."
     assert ws.cell(row=2, column=9).value == "4"
-    # column 10 is the timestamp — openpyxl stores it as a datetime
+    # column 10: timestamp; column 11: model_used (NEW); column 12: reviewer outcome (shifted)
     assert ws.cell(row=2, column=10).value is not None
-    assert ws.cell(row=2, column=11).value == "accepted"
-    assert ws.cell(row=2, column=12).value == "Existing registry"
+    assert ws.cell(row=2, column=11).value == "gpt-4o-mini"
+    assert ws.cell(row=2, column=12).value == "accepted"
+    assert ws.cell(row=2, column=13).value == "Existing registry"
 
 
 def test_ai_metadata_value_columns_render_via_shared_helper():
@@ -501,6 +503,7 @@ def test_ai_metadata_value_columns_render_via_shared_helper():
         evidence_text="evidence",
         evidence_pages="2",
         proposed_at=datetime(2026, 6, 14, 10, 0, 0, tzinfo=UTC),
+        model_used="gpt-4o",
         reviewer_outcome="accepted",
         final_value_used="Yes",
     )
@@ -520,9 +523,9 @@ def test_ai_metadata_value_columns_render_via_shared_helper():
         ai_proposal_rows=(proposal,),
     )
     ws = _open(build_workbook(layout))["AI metadata"]
-    # E2 = "AI proposed value", L2 = "Final value used".
+    # E2 = "AI proposed value" (col 5), M2 = "Final value used" (col 13, shifted +1).
     assert ws.cell(row=2, column=5).value == "5 mg"
-    assert ws.cell(row=2, column=12).value == "Yes"
+    assert ws.cell(row=2, column=13).value == "Yes"
 
 
 def test_xlsx_safe_raises_on_dict() -> None:

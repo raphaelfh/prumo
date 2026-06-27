@@ -20,6 +20,12 @@ import {useViewerStoreApiOptional} from '../core/context';
 import {subscribeReaderLocate} from '../core/subscribeReaderLocate';
 import {MarkdownContent} from '../markdown/MarkdownContent';
 import {findBlockByIndex, findBlockForQuote} from './readerLocate';
+import './reader.css';
+import {
+  clearCitationHighlight,
+  locateQuoteRange,
+  setCitationHighlight,
+} from './spanHighlight';
 
 export interface ReaderTextBlock {
   id: string;
@@ -131,7 +137,19 @@ function Reader({blocks, emptyState, loading, loadingState, className}: ReaderPr
         if (matchedId) {
           setFlashId(matchedId);
           if (flashTimer.current) clearTimeout(flashTimer.current);
-          flashTimer.current = setTimeout(() => setFlashId(null), FLASH_MS);
+          flashTimer.current = setTimeout(() => {
+            setFlashId(null);
+            clearCitationHighlight();
+          }, FLASH_MS);
+        }
+
+        // P2: precise span highlight over the cited quote within the block —
+        // a progressive enhancement over the block-flash. Unsupported browser
+        // or quote-not-in-DOM → no-op (block-flash already happened).
+        clearCitationHighlight();
+        if (matchedId && target && req.quote) {
+          const range = locateQuoteRange(target, req.quote);
+          if (range) setCitationHighlight(range);
         }
       },
       {immediate: true},
@@ -140,6 +158,7 @@ function Reader({blocks, emptyState, loading, loadingState, className}: ReaderPr
     return () => {
       unsubscribe();
       if (flashTimer.current) clearTimeout(flashTimer.current);
+      clearCitationHighlight();
     };
   }, [storeApi]);
 
