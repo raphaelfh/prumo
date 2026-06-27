@@ -83,6 +83,9 @@ describe('<Reader> precise span highlight (CSS Custom Highlight API)', () => {
   });
 
   it('does not register a highlight when the quote is not found in the DOM', async () => {
+    // Fake timers so the flash setTimeout this locate schedules cannot leak a
+    // live real timer into later tests; vi.useRealTimers() discards it.
+    vi.useFakeTimers();
     const store = new Map<string, unknown>();
     vi.stubGlobal('Highlight', FakeHighlight);
     vi.stubGlobal('CSS', {...(globalThis.CSS ?? {}), highlights: store});
@@ -99,8 +102,8 @@ describe('<Reader> precise span highlight (CSS Custom Highlight API)', () => {
       viewer.getState().actions.locateInReader('a passage absent from the block', 1);
     });
 
-    await Promise.resolve();
     expect(store.has(CITATION_HIGHLIGHT_NAME)).toBe(false);
+    vi.useRealTimers();
   });
 
   it('clears the highlight when the flash timer elapses', async () => {
