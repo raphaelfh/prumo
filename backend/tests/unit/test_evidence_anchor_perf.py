@@ -22,7 +22,11 @@ import time
 
 import pytest
 
-from app.infrastructure.parsing.base import ParsedBlock
+from app.infrastructure.parsing.base import (
+    ParsedBlock,
+    assign_char_offsets_to_blocks,
+    concat_page_text,
+)
 from app.services.evidence_anchor_service import build_anchor, match
 
 # A hard wall-clock ceiling for a single anchor call against the whole document.
@@ -33,106 +37,94 @@ _BUDGET_SECONDS = 0.5
 _PAGE_COUNT = 12
 # Per page, roughly 4000-8000 chars of prose spread over a handful of blocks.
 _BLOCKS_PER_PAGE = 6
-_SENTENCES_PER_BLOCK = 4
+_SENTENCES_PER_BLOCK = 5
+# Words per sentence — enough that a single substitution barely dents the
+# self-similarity but two independently-keyed sentences share few words.
+_WORDS_PER_SENTENCE = 24
 
-
-# Disjoint word pools.  Composing each sentence from a DETERMINISTIC pseudo-random
-# pick across these pools makes sentences genuinely different in CONTENT (not just
-# a stray number), so the cross-sentence similarity is low (~0.2-0.4).  That
-# matters because the cross-page tie-break in ``match`` is pre-existing and
-# ratio-blind (earliest QUALIFYING page wins): only when every non-target page
-# falls BELOW the fuzz threshold does a noisy quote anchor to its true page.
-_SUBJECTS = [
-    "hepatic perfusion",
-    "renal clearance",
-    "cardiac output",
-    "pulmonary diffusion",
-    "neural conduction",
-    "vascular resistance",
-    "endocrine secretion",
-    "skeletal density",
-    "immune response",
-    "metabolic turnover",
-    "lymphatic drainage",
-    "cortical thickness",
-    "synaptic plasticity",
-    "platelet aggregation",
-    "mitochondrial respiration",
-    "glomerular filtration",
-]
-_VERBS = [
-    "declined sharply",
-    "increased modestly",
-    "stabilized completely",
-    "fluctuated irregularly",
-    "recovered gradually",
-    "deteriorated rapidly",
-    "plateaued early",
-    "rebounded strongly",
-]
-_AGENTS = [
-    "warfarin loading",
-    "gabapentin titration",
-    "metformin washout",
-    "lisinopril induction",
-    "atorvastatin tapering",
-    "furosemide challenge",
-    "prednisone pulsing",
-    "clopidogrel bridging",
-    "azithromycin cycling",
-    "sertraline ramping",
-    "amlodipine dosing",
-    "omeprazole holding",
-]
-_COHORTS = [
-    "elderly subgroup",
-    "adolescent volunteers",
-    "postpartum patients",
-    "diabetic veterans",
-    "transplant recipients",
-    "dialysis candidates",
-    "trauma survivors",
-    "oncology referrals",
-]
-_PERIODS = [
-    "during winter audits",
-    "across spring trials",
-    "throughout autumn rounds",
-    "amid summer screenings",
-    "between quarterly reviews",
-    "after midyear checkpoints",
+# A pool of short, unrelated words.  Each sentence is a sequence of words picked
+# INDEPENDENTLY per position from this pool (no shared connective scaffold), so two
+# differently-keyed sentences overlap only by coincidence — cross-sentence
+# similarity is ~0.5, far below the fuzz threshold, while a 1-2 char OCR
+# substitution leaves self-similarity ~0.98.  This matters because the cross-page
+# tie-break in ``match`` is pre-existing and ratio-blind (earliest QUALIFYING page
+# wins): a noisy quote only anchors to its true page when every OTHER page falls
+# BELOW the threshold.  Sharing connective scaffold (the earlier fixture design)
+# kept other pages above the threshold and made the page assertion flaky.
+_WORD_POOL = [
+    "alpha",
+    "bravo",
+    "charlie",
+    "delta",
+    "echo",
+    "foxtrot",
+    "golf",
+    "hotel",
+    "india",
+    "juliet",
+    "kilo",
+    "lima",
+    "mike",
+    "november",
+    "oscar",
+    "papa",
+    "quebec",
+    "romeo",
+    "sierra",
+    "tango",
+    "uniform",
+    "victor",
+    "whiskey",
+    "xray",
+    "yankee",
+    "zulu",
+    "amber",
+    "basalt",
+    "cobalt",
+    "dune",
+    "ember",
+    "flint",
+    "granite",
+    "harbor",
+    "ivory",
+    "jasper",
+    "krypton",
+    "lumen",
+    "marble",
+    "nimbus",
+    "onyx",
+    "pewter",
+    "quartz",
+    "rosewood",
+    "slate",
+    "topaz",
+    "umber",
+    "verdant",
 ]
 
 
-def _pick(pool: list[str], salt: int) -> str:
-    """Deterministic, well-spread pick from *pool* keyed by *salt*."""
-    # A small multiplicative hash spreads consecutive salts across the pool so
-    # adjacent sentences don't collide on the same word.
-    return pool[(salt * 2654435761) % len(pool)]
+def _word_index(page: int, block: int, seq: int, position: int) -> int:
+    """Pick a :data:`_WORD_POOL` index for one word, mixing all four coordinates.
 
-
-def _signature(page: int, block: int, seq: int) -> str:
-    """A globally-unique, fold-stable nonce token embedded in one sentence."""
-    return f"sig{page:02d}q{block:02d}q{seq:03d}"
+    Distinct large multipliers per coordinate (and per word position) ensure two
+    different (page, block, seq) sentences produce different word sequences, so
+    every sentence in the document is unique AND any two sentences share few words
+    (cross-similarity well below the fuzz threshold).
+    """
+    h = (page * 1000003) ^ (block * 19349663) ^ (seq * 83492791) ^ (position * 2654435761)
+    return (h & 0x7FFFFFFF) % len(_WORD_POOL)
 
 
 def _sentence(page: int, block: int, seq: int) -> str:
-    """A deterministic sentence composed from disjoint pools — unique in content.
+    """A deterministic sentence unique in content per (page, block, seq).
 
-    Keyed off a single coordinate salt so each (page, block, seq) yields prose
-    with little vocabulary overlap with any other sentence in the document.
+    Each word position is picked independently from :data:`_WORD_POOL` via a hash
+    that mixes all four coordinates, so the sentence shares little vocabulary with
+    any other sentence in the document (cross-similarity ~0.5) and is globally
+    unique.
     """
-    salt = (page * 9973 + block * 97 + seq) & 0x7FFFFFFF
-    subject = _pick(_SUBJECTS, salt)
-    verb = _pick(_VERBS, salt + 1)
-    agent = _pick(_AGENTS, salt + 2)
-    cohort = _pick(_COHORTS, salt + 3)
-    period = _pick(_PERIODS, salt + 4)
-    return (
-        f"The {subject} measured in the {cohort} {verb} following {agent} "
-        f"{period}, and the documented {_signature(page, block, seq)} record "
-        f"confirmed the observation under blinded independent adjudication."
-    )
+    words = [_word_index(page, block, seq, i) for i in range(_WORDS_PER_SENTENCE)]
+    return " ".join(_WORD_POOL[i] for i in words).capitalize() + "."
 
 
 def _block_sentence(page: int, block_idx: int, i: int) -> str:
@@ -174,6 +166,24 @@ def _page_char_counts(blocks: list[ParsedBlock]) -> dict[int, int]:
     return counts
 
 
+def _original_page_text(blocks: list[ParsedBlock]) -> dict[int, str]:
+    """The ORIGINAL per-page text the matcher's offsets index (uses local copies)."""
+    copies = [
+        ParsedBlock(
+            page_number=b.page_number,
+            block_index=b.block_index,
+            text=b.text,
+            char_start=0,
+            char_end=0,
+            bbox=b.bbox,
+            block_type=b.block_type,
+        )
+        for b in blocks
+    ]
+    assign_char_offsets_to_blocks(copies)
+    return concat_page_text(copies)
+
+
 @pytest.mark.performance
 class TestEvidenceAnchorPerformance:
     def test_fixture_is_realistically_sized(self) -> None:
@@ -189,8 +199,10 @@ class TestEvidenceAnchorPerformance:
         blocks = _build_multipage_blocks()
         # An exact substring from a block deep in the document (page 9).
         quote = _block_sentence(9, 3, 1)  # block 3, second sentence of that block
-        # Guard: the per-sentence signature proves we really are deep in the doc.
-        assert _signature(9, 3, 3 * _SENTENCES_PER_BLOCK + 1) in quote
+        # Guard: the quote occurs exactly once in the whole document, so a page-9
+        # anchor is unambiguous (rules out an accidental earlier-page collision).
+        page_texts = _original_page_text(blocks)
+        assert sum(text.count(quote) for text in page_texts.values()) == 1
 
         start = time.perf_counter()
         result = match(quote, blocks)
@@ -218,13 +230,25 @@ class TestEvidenceAnchorPerformance:
         )
 
     def test_ocr_noisy_quote_anchors_via_fuzzy_fast(self) -> None:
-        """A quote with 2-3 char substitutions still anchors (fuzzy) and is fast."""
+        """A quote with a few char substitutions still anchors (fuzzy) and is fast."""
         blocks = _build_multipage_blocks()
         clean = _block_sentence(7, 2, 1)
-        # Introduce a few OCR-style substitutions: m -> rn, i -> l.
-        noisy = clean.replace("measured", "rneasured").replace("following", "followlng")
+        # Introduce a few OCR-style character substitutions on non-space letters
+        # at deterministic positions (skip spaces so each substitution is real).
+        chars = list(clean)
+        letter_positions = [i for i, c in enumerate(clean) if c.isalpha()]
+        subs = 0
+        for k, repl in ((3, "x"), (9, "z"), (15, "q")):
+            pos = letter_positions[k]
+            if chars[pos] != repl:
+                chars[pos] = repl
+                subs += 1
+        noisy = "".join(chars)
+        assert subs >= 2  # at least two real substitutions landed
         assert noisy != clean
-        assert noisy.count("rneasured") + noisy.count("followlng") >= 2  # subs landed
+        # The quote is NOT a verbatim substring (forces the fuzzy path, not exact).
+        page7 = _original_page_text(blocks)[7]
+        assert noisy not in page7
 
         start = time.perf_counter()
         result = match(noisy, blocks)
@@ -252,4 +276,38 @@ class TestEvidenceAnchorPerformance:
         assert result is None
         assert elapsed < _BUDGET_SECONDS, (
             f"absent-quote search took {elapsed:.3f}s (budget {_BUDGET_SECONDS}s)"
+        )
+
+    def test_adversarial_repetitive_page_stays_fast(self) -> None:
+        """A highly repetitive page must not blow up the anchor-candidate search.
+
+        ``get_matching_blocks`` (used to seed fuzzy anchors) returns many common
+        runs when the page repeats the quote's words.  This pins that the bounded
+        candidate set keeps the fuzzy path fast even in the adversarial case where
+        a noisy quote's tokens recur dozens of times across many pages.
+        """
+        # Each of 12 pages is the SAME short phrase repeated ~120 times → every
+        # page is dense with common runs against the noisy quote (worst case for
+        # anchor seeding).  A noisy quote forces the fuzzy path on every page.
+        phrase = "the renal results then the cardiac results then "
+        blocks = [
+            ParsedBlock(
+                page_number=page,
+                block_index=0,
+                text=phrase * 120,
+                char_start=0,
+                char_end=0,
+                bbox={"x": 0.0, "y": 0.0, "width": 400.0, "height": 24.0},
+                block_type="paragraph",
+            )
+            for page in range(1, _PAGE_COUNT + 1)
+        ]
+        noisy = "the renai resultz then the cardlac"  # OCR-noisy, recurs everywhere
+
+        start = time.perf_counter()
+        match(noisy, blocks)
+        elapsed = time.perf_counter() - start
+
+        assert elapsed < _BUDGET_SECONDS, (
+            f"repetitive-page fuzzy search took {elapsed:.3f}s (budget {_BUDGET_SECONDS}s)"
         )
