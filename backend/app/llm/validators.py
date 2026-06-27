@@ -29,18 +29,18 @@ def evidence_is_plausible(output: Any) -> Any:
     for field_name, field_info in type(output).model_fields.items():
         label = field_info.alias or field_name
         field_result = getattr(output, field_name)
-        evidence = getattr(field_result, "evidence", None)
-        if evidence is None:
-            continue
-        if not evidence.text.strip():
-            raise ModelRetry(
-                f"Field '{label}': evidence.text must be a non-empty quote from the "
-                "article; return null evidence when there is no quote."
-            )
-        if evidence.page_number is not None and evidence.page_number < 1:
-            raise ModelRetry(
-                f"Field '{label}': evidence.page_number must be a 1-based page number or null."
-            )
+        evidence_list = getattr(field_result, "evidence", None) or []
+        for idx, evidence in enumerate(evidence_list):
+            if not evidence.text.strip():
+                raise ModelRetry(
+                    f"Field '{label}' evidence[{idx}]: evidence.text must be a "
+                    "non-empty quote; omit the entry when there is no quote."
+                )
+            if evidence.page_number is not None and evidence.page_number < 1:
+                raise ModelRetry(
+                    f"Field '{label}' evidence[{idx}]: page_number must be a "
+                    "1-based page number or null."
+                )
     return output
 
 
