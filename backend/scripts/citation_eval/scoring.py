@@ -3,16 +3,16 @@
 
 from __future__ import annotations
 
-import re
-import unicodedata
-
-
-def normalize_text(s: str) -> str:
-    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", s).casefold()).strip()
+from parsing_bakeoff.scoring import normalize_text  # noqa: F401  (re-exported)
 
 
 def _token_overlap(a: str, b: str) -> bool:
-    """True when the token sets of ``a`` and ``b`` share at least one word."""
+    """True when the token sets of ``a`` and ``b`` share at least one word.
+
+    # NOTE: any shared token counts as support, which can inflate precision on
+    # stopword overlap; revisit with a minimum-overlap threshold or token-F1
+    # once a real labelled corpus exists.
+    """
     return bool(set(a.split()) & set(b.split()))
 
 
