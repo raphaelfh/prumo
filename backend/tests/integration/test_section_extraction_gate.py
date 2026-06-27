@@ -126,27 +126,7 @@ async def test_evidence_gets_attribution_label_and_not_found_skipped(
             },
             "status": "found",
         },
-        # This field is NOT in the seed entity type's field list, but we use a
-        # second entry with a known-bad name so the not_found skip fires before
-        # the field_map lookup fails. We need a recognizable name to verify no
-        # proposal was written.  We'll check by run_id + field_id via SQL.
-        # Actually: to prove abstention we add a SECOND field under a name that
-        # IS in the field map with not_found status — but the seed only has one
-        # field ("sample_size"). So: we add "sample_size" again under a
-        # different key name that isn't in the field map to avoid collision.
-        # Better: add a second "sample_size" dict variant with not_found under a
-        # synthetic key not in field_map — it will be skipped before any DB write
-        # AND will never match field_map. But that conflates "no proposal because
-        # not_found" with "no proposal because field_not_found".
-        #
-        # The CLEAN way: we only have one seed field. We verify abstention by
-        # checking proposal count: if not_found abstention works, the count stays
-        # at exactly 1 (only the found field) even though two entries are in
-        # extracted_data.  We add a same-named key under "status": "not_found"
-        # but Python dicts can't have duplicate keys. So use a fresh dict with
-        # only "not_found" fields and check proposal count is 0 for that case.
-        #
-        # Instead: run a SECOND call with only the not_found field and assert 0.
+        # The not_found case is verified below in a second _create_suggestions call.
     }
 
     count = await service._create_suggestions(
@@ -226,6 +206,97 @@ async def test_evidence_gets_attribution_label_and_not_found_skipped(
     # Cascade order: evidence → proposal_records → runs (FK CASCADE handles
     # child tables under runs; explicit DELETE for evidence which references
     # proposal_records via proposal_record_id).
+    await db_session_real.execute(
+        text("DELETE FROM public.extraction_evidence WHERE run_id = ANY(:ids)"),
+        {"ids": run_ids},
+    )
+    await db_session_real.execute(
+        text("DELETE FROM public.extraction_proposal_records WHERE run_id = ANY(:ids)"),
+        {"ids": run_ids},
+    )
+    await db_session_real.execute(
+        text("DELETE FROM public.extraction_runs WHERE id = ANY(:ids)"),
+        {"ids": run_ids},
+    )
+    await db_session_real.commit()
+
+
+@pytest.mark.asyncio
+async def test_gate_exception_degrades_not_aborts(
+    db_session_real: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Judge failure must degrade (attribution_label NULL) not abort extraction.
+
+    Assertions:
+      (a) _create_suggestions returns successfully (no exception raised).
+      (b) The ExtractionEvidence row for the found field persists with
+          attribution_label IS None (degrade path).
+      (c) Proposal count is unchanged — the proposal was still written.
+    """
+
+    async def _raising_gate(*, field_label: str, value: str, premise: str, model: Any) -> str:
+        raise RuntimeError("judge down")
+
+    monkeypatch.setattr(ses, "gate_evidence", _raising_gate)
+
+    fake_model = MagicMock()
+    monkeypatch.setattr(ses, "build_model", lambda *a, **kw: fake_model)
+
+    run = await _build_run_in_extract(db_session_real)
+
+    service = _make_service(db_session_real)
+    service._run_anchor_blocks = [_make_anchor_block()]
+    service._run_anchor_file_id = None
+
+    extracted_data: dict[str, Any] = {
+        "sample_size": {
+            "value": 142,
+            "confidence": 0.95,
+            "reasoning": "Stated in the abstract.",
+            "evidence": {
+                "text": _EVIDENCE_QUOTE,
+                "page_number": 1,
+            },
+            "status": "found",
+        },
+    }
+
+    # (a) no exception — extraction succeeds despite judge failure
+    count = await service._create_suggestions(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        entity_type_id=SEED.primary_entity_type,
+        parent_instance_id=None,
+        extracted_data=extracted_data,
+        run=run,
+        model="gpt-4o-mini",
+    )
+    await db_session_real.flush()
+
+    # (c) proposal was still written
+    assert count == 1, f"Expected 1 proposal, got {count}"
+
+    # (b) evidence row persists with attribution_label IS NULL
+    evidence_rows = (
+        (
+            await db_session_real.execute(
+                select(ExtractionEvidence).where(ExtractionEvidence.run_id == run.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    assert len(evidence_rows) == 1, f"Expected 1 evidence row, got {len(evidence_rows)}"
+    assert evidence_rows[0].attribution_label is None, (
+        f"Expected attribution_label=None (degrade), got {evidence_rows[0].attribution_label!r}"
+    )
+
+    # --- cleanup ---
+    await db_session_real.commit()
+
+    run_ids = [str(run.id)]
     await db_session_real.execute(
         text("DELETE FROM public.extraction_evidence WHERE run_id = ANY(:ids)"),
         {"ids": run_ids},

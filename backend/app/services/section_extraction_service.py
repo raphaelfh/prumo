@@ -1460,9 +1460,20 @@ class SectionExtractionService(LoggerMixin):
                         field_label=fl, value=v, premise=p, model=_judge_model
                     )
 
-            labels = await asyncio.gather(*[_judge_one(fl, v, p) for (_row, fl, v, p) in _gated])
-            for (row, *_), label in zip(_gated, labels, strict=True):
-                row.attribution_label = label
+            labels = await asyncio.gather(
+                *[_judge_one(fl, v, p) for (_row, fl, v, p) in _gated],
+                return_exceptions=True,
+            )
+            for (row, *_ctx), label in zip(_gated, labels, strict=True):
+                if isinstance(label, BaseException):
+                    self.logger.warning(
+                        "entailment_gate_failed",
+                        field=_ctx[0] if _ctx else None,
+                        error=str(label),
+                    )
+                    # Leave attribution_label as NULL — degrade, do not abort.
+                else:
+                    row.attribution_label = label
 
         await self.db.flush()
 
