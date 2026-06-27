@@ -111,45 +111,6 @@ def service(mock_db, mock_storage):
         return svc
 
 
-class TestSectionExtractionPDF:
-    """Testes de processamento de PDFs."""
-
-    @pytest.mark.asyncio
-    async def test_get_pdf_success(self, service, mock_storage):
-        """Testa busca de PDF com sucesso."""
-        article_id = uuid4()
-        pdf_content = b"%PDF-1.4 test content"
-
-        # Mock article_files repository
-        mock_file = MagicMock()
-        mock_file.storage_key = "project-1/article-1/paper.pdf"
-        service._article_files.get_latest_pdf = AsyncMock(return_value=mock_file)
-
-        # Mock storage adapter - note: takes (bucket, key)
-        mock_storage.download = AsyncMock(return_value=pdf_content)
-
-        result = await service._get_pdf(article_id)
-
-        assert result == pdf_content
-        service._article_files.get_latest_pdf.assert_called_once_with(article_id)
-        mock_storage.download.assert_called_once_with("articles", "project-1/article-1/paper.pdf")
-
-    @pytest.mark.asyncio
-    async def test_get_pdf_not_found(
-        self,
-        service,
-        mock_storage,  # noqa: ARG002
-    ):
-        """Testa erro quando PDF não encontrado."""
-        article_id = uuid4()
-
-        # Mock article_files repository returns None
-        service._article_files.get_latest_pdf = AsyncMock(return_value=None)
-
-        with pytest.raises(FileNotFoundError, match="PDF not found"):
-            await service._get_pdf(article_id)
-
-
 class TestSectionExtractionEntityTypes:
     """Testes de busca de entity types."""
 
@@ -231,7 +192,7 @@ class TestSectionExtractionFullFlow:
         entity_type_id = uuid4()
         run_id = uuid4()
 
-        # Mock _get_pdf
+        # Mock PDF storage + article-file lookup
         pdf_content = b"%PDF-1.4 test"
         mock_storage.download = AsyncMock(return_value=pdf_content)
 

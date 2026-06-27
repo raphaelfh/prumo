@@ -349,7 +349,7 @@ class SectionExtractionService(LoggerMixin):
         that opens a Run via the HITL session service before asking the
         LLM to fill it in). Reuses the same building blocks as
         ``extract_section`` / ``_extract_section_with_memory``:
-        ``_get_pdf``, ``_extract_with_llm``,
+        ``_extract_with_llm``,
         ``_create_suggestions``.
 
         Stage rules:
@@ -1065,15 +1065,6 @@ class SectionExtractionService(LoggerMixin):
             return summary[: MAX_SUMMARY_LENGTH - 3] + "..."
 
         return summary
-
-    async def _get_pdf(self, article_id: UUID) -> bytes:
-        """Fetch and download PDF via storage adapter."""
-        pdf_file = await self._article_files.get_latest_pdf(article_id)
-
-        if not pdf_file:
-            raise FileNotFoundError(f"PDF not found for article {article_id}")
-
-        return await self.storage.download("articles", pdf_file.storage_key)
 
     async def _get_entity_type(self, entity_type_id: UUID) -> Any:
         """Fetch entity type with fields."""

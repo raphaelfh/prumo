@@ -134,18 +134,7 @@ For larger backfills, prefer a one-off script outside Alembic (run it manually a
 
 ## Squashing
 
-Squash when:
-- The version chain is hard to read (we squashed 18 → `0001_baseline_v1` in April 2026).
-- Local `alembic upgrade head` from scratch takes > 30 seconds.
-- Several migrations contradict each other (added, modified, then dropped a column).
-
-Squash by:
-1. Generating a fresh schema dump from a clean DB.
-2. Reset the chain to a single baseline file.
-3. Move the old chain to `alembic/versions/archive/`.
-4. Document the squash in `CLAUDE.md` recent changes and in `docs/reference/migrations.md`.
-
-Never squash if production has any of the squashed migrations applied but doesn't have the new baseline yet — production must be ahead of the squash point.
+Authoritative in `docs/reference/migrations.md` (§When to squash) — the rule of thumb, the don't-squash conditions, and the squash recipe. Don't re-derive it here.
 
 ## Running
 
@@ -163,6 +152,27 @@ Local: `make reset-db` wipes the DB cleanly so you can re-run from baseline. CI 
 ## Startup safety net
 
 `app/main.py::check_pending_migrations()` blocks app start if `alembic heads ≠ DB current`. This catches "forgot to run upgrade" in dev and "deployment skipped migrations" in prod.
+
+## CI gotchas (the versioned home for these)
+
+- **Revision id ≤ 32 chars** (see `docs/reference/migrations.md` §Naming
+  + ordering) — `alembic_version.version_num` overflows at *apply* time,
+  so an over-long id breaks the CI Backend Tests "apply migrations" step
+  and the Railway `alembic upgrade head` deploy, and `--sql` offline
+  doesn't catch it. Renaming one means updating the `revision`/docstring,
+  any child `down_revision`, the filename, and `test_migration_roundtrip.py`
+  (it pins the head id).
+- **`op.create_check_constraint` is mangled by the naming convention.**
+  `MetaData` in `app/models/base.py` sets `"ck": "ck_%(table_name)s_%(constraint_name)s"`,
+  so `op.create_check_constraint("user_api_keys_provider_check", ...)`
+  emits `ck_user_api_keys_user_api_keys_provider_check` — a silent rename
+  that breaks the downgrade. Baseline constraints use literal, un-prefixed
+  names, so to DROP+recreate one use raw `op.execute("ALTER TABLE ... ADD
+  CONSTRAINT <literal_name> CHECK (...)")` and verify with offline `--sql`
+  in both directions before trusting it.
+- **Adding a migration trips `test_migration_roundtrip`.** It pins the
+  head id and runs `downgrade -1`; bump the pin to the new head and set
+  the new file's `down_revision` to the explicit parent.
 
 ## AI-assistant pitfalls (read `docs/reference/migrations.md` for full list)
 

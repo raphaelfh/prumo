@@ -18,10 +18,18 @@ frontend `https://prumoai.vercel.app`.
    required checks.
 2. Pre-deploy gate: run `/preflight` (read-only; probes Vercel,
    Supabase advisors, Railway health).
-3. Promote: `git push origin dev:main` (fast-forward). `main` branch
-   protection requires the 8 check contexts on the SHA — the dev push
-   run already attached them, so a green dev HEAD promotes cleanly;
-   an unverified SHA is rejected.
+3. Promote via a **merge-commit PR** — `dev → main` cannot fast-forward
+   (`main` carries the `Merge pull request #NNN from raphaelfh/dev`
+   commits dev lacks, so `git push origin dev:main` is rejected as
+   non-fast-forward):
+
+   ```bash
+   gh pr create --base main --head dev --title "Promote dev to main"
+   gh pr merge <n> --auto --merge   # merge commit — NOT squash, NOT fast-forward
+   ```
+
+   `main` branch protection requires the 8 check contexts green on the
+   head before the merge completes; the dev HEAD already carries them.
 4. Railway (GitHub App) waits for the full Actions suite — **CI and
    docs-ci** — on the main push, then builds web + worker. The web
    container runs `alembic upgrade head` before gunicorn, so app-schema

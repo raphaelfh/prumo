@@ -9,6 +9,11 @@ updates:
       python-minor-patch:
         update-types: [minor, patch]
     open-pull-requests-limit: 5
+    # Don't auto-rebase on every base-branch commit (avoids CI re-run
+    # storms under concurrent merges). Unstick a stale PR via the native
+    # Update-branch button — never `@dependabot rebase` a grouped PR
+    # (it closes and recreates the PR under a new number + branch).
+    rebase-strategy: disabled
 
   - package-ecosystem: npm
     directory: /
@@ -19,6 +24,7 @@ updates:
       npm-minor-patch:
         update-types: [minor, patch]
     open-pull-requests-limit: 5
+    rebase-strategy: disabled
     ignore:
       # TypeScript 6.0.x is blocked: openapi-typescript (critical for
       # generate:api-types) peers on "^5.x" as of its latest 7.13.0.
@@ -34,4 +40,8 @@ updates:
       day: monday
     groups:
       actions:
-        update-types: [minor, patch, major]
+        # Minor/patch group (auto-merge-eligible). Majors open as
+        # individual PRs for human review — grouped majors were
+        # un-auto-mergeable and drove the rebase-recreation churn.
+        update-types: [minor, patch]
+    rebase-strategy: disabled

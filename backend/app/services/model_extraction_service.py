@@ -262,15 +262,6 @@ class ModelExtractionService(LoggerMixin):
             )
             raise
 
-    async def _get_pdf(self, article_id: UUID) -> bytes:
-        """Fetch and download article PDF via Storage Adapter."""
-        pdf_file = await self._article_files.get_latest_pdf(article_id)
-
-        if not pdf_file:
-            raise FileNotFoundError(f"PDF not found for article {article_id}")
-
-        return await self.storage.download("articles", pdf_file.storage_key)
-
     async def _get_template(self, template_id: UUID) -> Any:
         """
         Fetch template with entity types.
