@@ -319,6 +319,7 @@ async def test_verified_follows_attribution_label(
         assert len(citations) == 3
 
         by_label: dict[str | None, dict] = {c["attributionLabel"]: c for c in citations}
+        assert len(by_label) == 3  # entailed / weak / None — collision would silently drop a row
 
         # --- entailed row ---
         entailed = by_label["entailed"]

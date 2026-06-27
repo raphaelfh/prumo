@@ -116,7 +116,15 @@ async def list_article_citations(db: AsyncSession, article_id: UUID) -> list[dic
             # parse_position is safe here: evidence_is_grounded already confirmed it parses.
             parsed = parse_position(position)
             if parsed is None:
-                # Defensive guard: logic regression — treat as unanchored.
+                # Defensive guard: evidence_is_grounded returned True but
+                # parse_position returned None — should not happen in practice,
+                # but guards against a logic regression.  Only anchor/anchorKind
+                # are nulled here; verified is intentionally left unchanged.
+                # verified means the source ENTAILS the value
+                # (attribution_label == "entailed"), which is independent of
+                # whether a render anchor can be constructed — an entailed row
+                # stays verified=True even when the highlight anchor cannot be
+                # built.
                 item["anchor"] = None
                 item["anchorKind"] = None
             else:
