@@ -844,6 +844,8 @@ class TestLoadAiProposalRows:
                 _rows_result([]),
                 # 5. ent_label_rows
                 _rows_result([ent_label_row]),
+                # 6. run_param_rows
+                _rows_result([(run_id, {})]),
                 # (no field fallback — field_id is in field_label_by_id from sections)
             ]
         )
@@ -912,6 +914,9 @@ class TestLoadAiProposalRows:
                 _rows_result(evidence_rows),
                 _rows_result([]),  # decisions
                 _rows_result([(entity_type_id, "Sec")]),
+                # 6. run_param_rows
+                _rows_result([(run_id, {})]),
+                # 7. field fallback (sections=())
                 _rows_result([(field_id, "Fld")]),
             ]
         )
@@ -972,7 +977,9 @@ class TestLoadAiProposalRows:
                 _rows_result([]),  # no evidence
                 _rows_result([decision_row]),
                 _rows_result([(entity_type_id, "Section Label")]),
-                # 6th query: field label fallback (field_id not in sections=())
+                # 6. run_param_rows
+                _rows_result([(run_id, {})]),
+                # 7. field label fallback (field_id not in sections=())
                 _rows_result([(field_id, "Field Label")]),
             ]
         )
@@ -1027,7 +1034,9 @@ class TestLoadAiProposalRows:
                 _rows_result([]),
                 _rows_result([]),
                 _rows_result([(entity_type_id, "Section")]),
-                # 6th: field fallback (field_id not in sections=())
+                # 6. run_param_rows
+                _rows_result([(run_id, {})]),
+                # 7. field fallback (field_id not in sections=())
                 _rows_result([(field_id, "Field Label")]),
             ]
         )
@@ -1079,7 +1088,9 @@ class TestLoadAiProposalRows:
                 _rows_result([]),
                 _rows_result([]),
                 _rows_result([(entity_type_id, "Section")]),
-                # 6th: field fallback (field_id not in sections=())
+                # 6. run_param_rows
+                _rows_result([(run_id, {})]),
+                # 7. field fallback (field_id not in sections=())
                 _rows_result([(field_id, "Field Label")]),
             ]
         )
@@ -1139,6 +1150,9 @@ class TestLoadAiProposalRows:
                 _rows_result([]),
                 _rows_result([target_reject]),  # query filtered to target reviewer
                 _rows_result([(entity_type_id, "Sec")]),
+                # 6. run_param_rows
+                _rows_result([(run_id, {})]),
+                # 7. field fallback (sections=())
                 _rows_result([(field_id, "Fld")]),
             ]
         )
@@ -1182,7 +1196,9 @@ class TestLoadAiProposalRows:
                 _rows_result([]),
                 # ent_label_rows provides fallback label
                 _rows_result([(entity_type_id, "Fallback Section Label")]),
-                # 6th: field fallback (field_id not in sections=())
+                # 6. run_param_rows
+                _rows_result([(run_id, {})]),
+                # 7. field fallback (field_id not in sections=())
                 _rows_result([(field_id, "Field Label")]),
             ]
         )
@@ -1225,7 +1241,9 @@ class TestLoadAiProposalRows:
                 _rows_result([]),
                 _rows_result([]),
                 _rows_result([(entity_type_id, "Section Label")]),
-                # 6th query: field label fallback
+                # 6. run_param_rows
+                _rows_result([(run_id, {})]),
+                # 7. field label fallback
                 _rows_result([(field_id, "Fallback Field Label")]),
             ]
         )
@@ -1287,6 +1305,9 @@ class TestLoadAiProposalRows:
                 _rows_result([]),  # evidence
                 _rows_result([decision_a, decision_b]),  # decisions (reviewer-tagged)
                 _rows_result([(entity_type_id, "Sec")]),
+                # 6. run_param_rows
+                _rows_result([(run_id, {})]),
+                # 7. field fallback (sections=())
                 _rows_result([(field_id, "Fld")]),
             ]
         )
@@ -2436,7 +2457,10 @@ class TestAiProposalRowsModelInstances:
                 _rows_result([]),
                 _rows_result([]),
                 _rows_result([(entity_type_id, "Model Section")]),
-                _rows_result([(field_id, "Field")]),  # field fallback
+                # 6. run_param_rows
+                _rows_result([(run_id, {})]),
+                # 7. field fallback
+                _rows_result([(field_id, "Field")]),
             ]
         )
 
