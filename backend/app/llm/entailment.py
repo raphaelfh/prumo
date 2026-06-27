@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.models import Model
 
 from app.llm.extractor import extract_structured
+from app.llm.value_support import is_numeric_like, numeric_value_supported
 
 NAME = "entailment_judge"
 VERSION = "1"
@@ -50,3 +51,16 @@ async def judge_entailment(
         output_retries=1,
     )
     return verdict
+
+
+async def gate_evidence(
+    *, field_label: str, value: str, premise: str, model: Model
+) -> AttributionLabel:
+    """Numeric-like values must appear deterministically in the premise; then the
+    judge decides entailed vs weak. Non-numeric values are judged directly."""
+    if is_numeric_like(value) and not numeric_value_supported(value, premise):
+        return "unsupported"
+    verdict = await judge_entailment(
+        field_label=field_label, value=value, premise=premise, model=model
+    )
+    return verdict.label
