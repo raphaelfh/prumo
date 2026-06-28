@@ -236,4 +236,31 @@ describe('useSectionExtraction (async job)', () => {
     );
     expect(result.current.loading).toBe(false);
   });
+
+  it('maps a MISSING_API_KEY failure code to the specific auth toast copy', async () => {
+    apiClientMock.mockResolvedValueOnce({job_id: 'job-sec-1'});
+    statusMock.mockResolvedValue({
+      ok: true,
+      data: makeStatus('failed', {
+        error: 'No OpenAI API key available.',
+        errorCode: 'MISSING_API_KEY',
+      }),
+    });
+
+    const {wrapper} = createWrapper();
+    const {result} = renderHook(() => useSectionExtraction(), {wrapper});
+
+    await act(async () => {
+      await result.current.extractSection(PARAMS);
+    });
+
+    await waitFor(() => expect(result.current.error).toBeTruthy());
+    expect(toast.error).toHaveBeenCalledWith(
+      'sectionExtractionErrorAuth',
+      expect.objectContaining({
+        description: 'No OpenAI API key available.',
+        duration: 8000,
+      }),
+    );
+  });
 });

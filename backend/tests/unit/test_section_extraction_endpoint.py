@@ -28,7 +28,8 @@ from app.api.v1.endpoints import section_extraction as se
 from app.core.deps import get_db, get_supabase
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
-from app.schemas.extraction import SectionExtractionRequest
+from app.schemas.extraction import ExtractionErrorCode, SectionExtractionRequest
+from app.services.extraction_errors import ExtractionTaskError
 
 CALLER_USER_ID = str(uuid4())
 OTHER_USER_ID = str(uuid4())
@@ -379,6 +380,7 @@ class TestGetSectionExtractionStatus:
 
     @pytest.mark.asyncio
     async def test_failure_state_returns_failed_with_error(self, client: AsyncClient) -> None:
+        """An untyped exception (no error_code attr) → generic EXTRACTION_FAILED."""
         mock_result = MagicMock()
         mock_result.state = "FAILURE"
         mock_result.result = RuntimeError("llm timed out")
@@ -396,6 +398,60 @@ class TestGetSectionExtractionStatus:
         assert body["ok"] is True
         assert body["data"]["status"] == "failed"
         assert "llm timed out" in body["data"]["error"]
+        assert body["data"]["errorCode"] == ExtractionErrorCode.EXTRACTION_FAILED.value
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("code", "message"),
+        [
+            (ExtractionErrorCode.PDF_NOT_FOUND, "PDF not found. Upload a PDF first."),
+            (ExtractionErrorCode.MISSING_API_KEY, "No OpenAI API key available."),
+        ],
+    )
+    async def test_failure_state_surfaces_typed_error_code(
+        self, client: AsyncClient, code: ExtractionErrorCode, message: str
+    ) -> None:
+        """A coded ExtractionTaskError → its error_code + human message reach
+        the API envelope (the worker→web JSON round-trip is exercised by
+        ExtractionTaskError directly in test_extraction_errors)."""
+        mock_result = MagicMock()
+        mock_result.state = "FAILURE"
+        mock_result.result = ExtractionTaskError(code, message)
+
+        with (
+            patch("celery.result.AsyncResult", return_value=mock_result),
+            patch(
+                "app.api.v1.endpoints.section_extraction._lookup_job_owner",
+                return_value=CALLER_USER_ID,
+            ),
+        ):
+            res = await client.get(_status_url(str(uuid4())))
+
+        body = res.json()
+        assert body["data"]["status"] == "failed"
+        assert body["data"]["errorCode"] == code.value
+        assert body["data"]["error"] == message
+
+    @pytest.mark.asyncio
+    async def test_failure_state_coerces_unknown_code_to_generic(self, client: AsyncClient) -> None:
+        """A failure whose error_code isn't a known enum value must not crash
+        serialization — it falls back to EXTRACTION_FAILED."""
+        mock_result = MagicMock()
+        mock_result.state = "FAILURE"
+        mock_result.result = ExtractionTaskError("SOME_FUTURE_CODE", "boom")
+
+        with (
+            patch("celery.result.AsyncResult", return_value=mock_result),
+            patch(
+                "app.api.v1.endpoints.section_extraction._lookup_job_owner",
+                return_value=CALLER_USER_ID,
+            ),
+        ):
+            res = await client.get(_status_url(str(uuid4())))
+
+        body = res.json()
+        assert body["data"]["status"] == "failed"
+        assert body["data"]["errorCode"] == ExtractionErrorCode.EXTRACTION_FAILED.value
 
     @pytest.mark.asyncio
     async def test_success_single_result_parsed(self, client: AsyncClient) -> None:

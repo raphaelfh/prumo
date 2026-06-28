@@ -5,6 +5,7 @@ Schemas Pydantic for extraction de data de articles cientificos.
 """
 
 from datetime import datetime
+from enum import Enum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -453,6 +454,24 @@ class ReviewSuggestionRequest(BaseModel):
 # =================== ASYNC SECTION EXTRACTION JOB SCHEMAS ===================
 
 
+class ExtractionErrorCode(str, Enum):
+    """Stable, machine-readable code for a terminal extraction failure.
+
+    Carried on ``ExtractionJobStatusResponse.error_code`` so the frontend can
+    pick specific, actionable toast copy without parsing the human ``error``
+    string. Only modes the backend genuinely raises are represented — each
+    value has a real emitter in ``classify_extraction_error``:
+
+    - ``PDF_NOT_FOUND``    — the article has no stored PDF (``FileNotFoundError``).
+    - ``MISSING_API_KEY``  — no usable LLM key, BYOK or global (``MissingLLMKeyError``).
+    - ``EXTRACTION_FAILED``— generic catch-all for everything else.
+    """
+
+    PDF_NOT_FOUND = "PDF_NOT_FOUND"
+    MISSING_API_KEY = "MISSING_API_KEY"
+    EXTRACTION_FAILED = "EXTRACTION_FAILED"
+
+
 class ExtractionJobStartedResponse(BaseModel):
     """202 payload returned when an extraction job is queued."""
 
@@ -491,6 +510,10 @@ class ExtractionJobStatusResponse(BaseModel):
     status: str = Field(..., description="pending | running | completed | failed | cancelled")
     result: ExtractionJobResult | None = None
     error: str | None = None
+    # Machine-readable failure classification, set only when ``status`` is
+    # ``failed``. Lets the frontend map to specific copy without parsing
+    # ``error``. See ``ExtractionErrorCode`` / ``classify_extraction_error``.
+    error_code: ExtractionErrorCode | None = Field(default=None, alias="errorCode")
 
 
 # =================== CITATION ANCHOR (extraction_evidence.position v1) ===================

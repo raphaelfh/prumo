@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { APIRequestContext, expect, test } from "@playwright/test";
 
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
@@ -7,6 +7,40 @@ import {
   resolveActiveExtractionTemplateId,
   resolveStudySectionEntityTypeId,
 } from "../_fixtures/supabase-admin";
+
+// Section extraction is async: POST returns 202 + { job_id }; the result is
+// fetched by polling GET /extraction/sections/status/{job_id}. Mirrors the
+// extraction-export poll helper (flows/extraction-export.e2e.ts).
+type SectionJobStatus = {
+  status: string;
+  result?: { extractionRunId?: string } | null;
+  error?: string | null;
+};
+
+async function pollSectionJob(input: {
+  request: APIRequestContext;
+  apiUrl: string;
+  jobId: string;
+  token: string;
+  traceId: string;
+}): Promise<SectionJobStatus> {
+  const inflight = new Set(["pending", "running"]);
+  const maxIters = 90; // ~180s at 2s intervals — matches the old sync timeout budget
+  for (let idx = 0; idx < maxIters; idx += 1) {
+    const res = await input.request.get(
+      `${input.apiUrl}/api/v1/extraction/sections/status/${input.jobId}`,
+      { headers: authHeaders(input.token, input.traceId) },
+    );
+    expect(res.ok()).toBeTruthy();
+    const body = await parseEnvelope<SectionJobStatus>(res);
+    expect(body.ok).toBeTruthy();
+    if (!inflight.has(body.data.status)) {
+      return body.data;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  return { status: "timeout" };
+}
 
 test.describe("Extraction flow (UI + API)", () => {
   test("opens extraction fullscreen route", async ({ page }) => {
@@ -60,12 +94,24 @@ test.describe("Extraction flow (UI + API)", () => {
         extractAllSections: false,
         model: process.env.E2E_MODEL_NAME || "gpt-4o-mini",
       },
-      timeout: 180000,
     });
-    expect(sectionResponse.ok()).toBeTruthy();
-    const sectionBody = await parseEnvelope<{ extractionRunId: string }>(sectionResponse);
-    expect(sectionBody.ok).toBeTruthy();
-    expect(sectionBody.data.extractionRunId).toBeTruthy();
+    expect(sectionResponse.status()).toBe(202);
+    const sectionDispatch = await parseEnvelope<{ job_id: string }>(sectionResponse);
+    expect(sectionDispatch.ok).toBeTruthy();
+    expect(sectionDispatch.data.job_id).toBeTruthy();
+
+    const sectionJob = await pollSectionJob({
+      request,
+      apiUrl: env.apiUrl,
+      jobId: sectionDispatch.data.job_id,
+      token,
+      traceId,
+    });
+    expect(
+      sectionJob.status,
+      `section job did not complete: ${sectionJob.error ?? "n/a"}`,
+    ).toBe("completed");
+    expect(sectionJob.result?.extractionRunId).toBeTruthy();
   });
 
   test("section extraction enqueues an async job (202) or 503 when the queue is down", async ({
