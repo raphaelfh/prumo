@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { APIRequestContext, expect, test } from "@playwright/test";
 
 type RequiredEnvKey =
   | "E2E_USER_EMAIL"
@@ -52,6 +52,47 @@ async function fetchRunFromSupabase(runId: string) {
     error_message: string | null;
   }>;
   return rows[0] ?? null;
+}
+
+type SectionJobStatus = {
+  status: string;
+  result?: { extractionRunId?: string } | null;
+  error?: string | null;
+};
+
+// Section extraction is async: POST returns 202 + { job_id }; poll
+// GET /extraction/sections/status/{job_id} until the job reaches a terminal
+// state. Mirrors the extraction-export poll helper.
+async function pollSectionJob(
+  request: APIRequestContext,
+  apiBase: string,
+  jobId: string,
+  authToken: string,
+  traceId: string
+): Promise<SectionJobStatus> {
+  const inflight = new Set(["pending", "running"]);
+  const maxIters = 90; // ~180s at 2s intervals — matches the old sync timeout budget
+  for (let idx = 0; idx < maxIters; idx += 1) {
+    const res = await request.get(
+      `${apiBase}/api/v1/extraction/sections/status/${jobId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "X-Trace-Id": traceId,
+        },
+      }
+    );
+    const body = (await res.json()) as {
+      ok?: boolean;
+      data?: SectionJobStatus;
+    };
+    const data = body.data;
+    if (data?.status && !inflight.has(data.status)) {
+      return data;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  return { status: "timeout" };
 }
 
 test.describe("Extraction E2E Observability", () => {
@@ -142,6 +183,8 @@ test.describe("Extraction E2E Observability", () => {
       model: process.env.E2E_MODEL_NAME || "gpt-4o-mini",
     };
 
+    // Section extraction is async: POST dispatches a Celery job (202 + job_id);
+    // the run id is read from the completed job status, not the POST response.
     const sectionStart = Date.now();
     const sectionResponse = await request.post(
       `${apiBase}/api/v1/extraction/sections`,
@@ -152,18 +195,37 @@ test.describe("Extraction E2E Observability", () => {
           "X-Trace-Id": traceId,
           "Content-Type": "application/json",
         },
-        timeout: 180000,
       }
     );
-    const sectionDurationMs = Date.now() - sectionStart;
+    const sectionDispatchMs = Date.now() - sectionStart;
 
-    const sectionBody = (await sectionResponse.json()) as {
+    const sectionDispatchBody = (await sectionResponse.json()) as {
       ok?: boolean;
-      data?: { extractionRunId?: string; durationMs?: number };
+      data?: { job_id?: string };
       detail?: string;
       error?: { message?: string };
     };
-    const sectionRunId = sectionBody.data?.extractionRunId;
+    const sectionJobId = sectionDispatchBody.data?.job_id;
+
+    expect(
+      sectionResponse.status(),
+      `section dispatch failed: status=${sectionResponse.status()} detail=${sectionDispatchBody.detail || sectionDispatchBody.error?.message || "n/a"}`
+    ).toBe(202);
+    expect(sectionDispatchBody.ok).toBeTruthy();
+    expect(sectionJobId).toBeTruthy();
+
+    const pollStart = Date.now();
+    const sectionJob: SectionJobStatus = sectionJobId
+      ? await pollSectionJob(request, apiBase, sectionJobId, authToken!, traceId)
+      : { status: "no-job" };
+    const sectionPollMs = Date.now() - pollStart;
+
+    expect(
+      sectionJob.status,
+      `section job did not complete: ${sectionJob.error ?? "n/a"}`
+    ).toBe("completed");
+    const sectionRunId = sectionJob.result?.extractionRunId;
+    expect(sectionRunId).toBeTruthy();
 
     const modelRun = modelRunId ? await fetchRunFromSupabase(modelRunId) : null;
     const sectionRun = sectionRunId ? await fetchRunFromSupabase(sectionRunId) : null;
@@ -184,20 +246,13 @@ test.describe("Extraction E2E Observability", () => {
     expect(modelBody.ok).toBeTruthy();
     expect(modelRunId).toBeTruthy();
 
-    expect(
-      sectionResponse.ok(),
-      `section extraction failed: status=${sectionResponse.status()} detail=${sectionBody.detail || sectionBody.error?.message || "n/a"}`
-    ).toBeTruthy();
-    expect(sectionBody.ok).toBeTruthy();
-    expect(sectionRunId).toBeTruthy();
-
     test.info().annotations.push({
       type: "timing",
-      description: `model_api_ms=${modelDurationMs}, model_status=${modelResponse.status()}, section_api_ms=${sectionDurationMs}, section_status=${sectionResponse.status()}, trace_id=${traceId}`,
+      description: `model_api_ms=${modelDurationMs}, model_status=${modelResponse.status()}, section_dispatch_ms=${sectionDispatchMs}, section_poll_ms=${sectionPollMs}, section_status=${sectionResponse.status()}, trace_id=${traceId}`,
     });
 
     console.warn(
-      `[E2E extraction baseline] trace_id=${traceId} model_status=${modelResponse.status()} model_api_ms=${modelDurationMs} section_status=${sectionResponse.status()} section_api_ms=${sectionDurationMs}`
+      `[E2E extraction baseline] trace_id=${traceId} model_status=${modelResponse.status()} model_api_ms=${modelDurationMs} section_status=${sectionResponse.status()} section_dispatch_ms=${sectionDispatchMs} section_poll_ms=${sectionPollMs}`
     );
   });
 });
