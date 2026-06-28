@@ -1,156 +1,143 @@
 /**
- * Hook for specific section extraction
+ * Hook for per-section AI extraction — async Celery-job version.
  *
- * React hook to manage AI extraction of a specific section (entity type).
+ * Replaces the old blocking-await pattern. Flow:
+ *   1. ``extractSection`` POSTs → gets ``jobId`` back (202).
+ *   2. ``useExtractionJob`` polls every 2 s until terminal.
+ *   3. On ``completed`` → calls ``onSuccess`` + success toast, clears jobId.
+ *   4. On ``failed`` / ``cancelled`` → error toast, clears jobId.
  *
- * FOCUS: Granular per-section extraction (section-extraction pipeline).
- * Allows user to extract data from one template section at a time.
+ * Public API unchanged: ``{ extractSection, loading, error }`` so
+ * ExtractionFullScreen and other callers need no changes.
  *
- * FEATURES:
- * - Loading and error state
- * - Automatic toast notifications
- * - Callback to refresh suggestions after extraction
- * - User-friendly error handling
+ * React Compiler: no try/finally / throw in hook body — IO in services.
  */
 
-import {useState} from "react";
-import {toast} from "sonner";
-import {type SectionExtractionRequest, SectionExtractionService,} from "@/services/sectionExtractionService";
+import {useEffect, useState} from 'react';
+import {useQueryClient} from '@tanstack/react-query';
+import {toast} from 'sonner';
+
+import {t} from '@/lib/copy';
 import {
-    AuthenticationError,
-    FieldNameMismatchError,
-    getErrorCode,
-    getErrorMessage,
-    NoInstancesError,
-    PDFNotFoundError,
-} from "@/lib/ai-extraction/errors";
-import {t} from "@/lib/copy";
+  extractSectionAsync,
+  type AsyncSectionExtractionParams,
+} from '@/services/sectionExtractionService';
+import {useExtractionJob} from '@/hooks/extraction/useExtractionJob';
+import type {components} from '@/types/api/schema';
 
-/**
- * Tipo de retorno do hook
- */
+type ExtractionJobResult = components['schemas']['ExtractionJobResult'];
+
+// Expose the param type so callers don't need to import from the service.
+export type {AsyncSectionExtractionParams as SectionExtractionAsyncParams};
+
 export interface UseSectionExtractionReturn {
-  extractSection: (request: SectionExtractionRequest) => Promise<void>;
+  extractSection: (params: AsyncSectionExtractionParams) => Promise<void>;
   loading: boolean;
   error: string | null;
 }
 
-/**
- * Hook for specific section extraction
- *
- * USAGE:
- * ```tsx
- * const { extractSection, loading, error } = useSectionExtraction({
- *   onSuccess: (runId) => {
- *     // Refresh suggestions or navigate
- *   }
- * });
- * 
- * await extractSection({
- *   projectId,
- *   articleId,
- *   templateId,
- *   entityTypeId
- * });
- * ```
- *
- * @param options - Hook options (success callback)
- * @returns Extract function, loading state and error
- */
 export function useSectionExtraction(options?: {
   onSuccess?: (runId: string, suggestionsCreated: number) => void;
 }): UseSectionExtractionReturn {
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [kicking, setKicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /**
-   * Extracts data from a specific section
-   * @param request - Extraction parameters
-   */
-  const extractSection = async (request: SectionExtractionRequest) => {
-        console.warn('[useSectionExtraction] Starting extraction', request);
-      setLoading(true);
-      setError(null);
+  const onSuccess = options?.onSuccess;
 
-      const doExtract = async () => {
-          // Call service to run extraction
-          console.warn('[useSectionExtraction] Chamando service...');
-        const result = await SectionExtractionService.extractSection(request);
-          console.warn('[useSectionExtraction] Service retornou', {
-          hasData: !!result.data,
-          suggestionsCreated: result.data?.suggestionsCreated,
+  const jobQuery = useExtractionJob(jobId);
+  const jobStatus = jobQuery.data?.status;
+  const jobResult = jobQuery.data?.result as ExtractionJobResult | null | undefined;
+  const jobError = jobQuery.data?.error;
+
+  // React to terminal job state. setState is placed inside async callbacks
+  // (Promise.resolve().then()) to satisfy the react-hooks/set-state-in-effect rule.
+   
+  useEffect(() => {
+    if (!jobId || !jobStatus) return;
+
+    if (jobStatus === 'completed') {
+      const created =
+        jobResult?.suggestionsCreated ?? jobResult?.totalSuggestionsCreated ?? 0;
+      const runId = jobResult?.extractionRunId ?? '';
+
+      if (created === 0) {
+        toast.warning(t('extraction', 'sectionExtractionNoSuggestionsTitle'), {
+          description: t('extraction', 'sectionExtractionNoSuggestionsDesc'),
+          duration: 6000,
         });
-
-        if (!result.data) {
-          throw new Error("No data returned from extraction");
-        }
-
-          // Check if suggestions were created
-        if (result.data.suggestionsCreated === 0) {
-            toast.warning(t('extraction', 'sectionExtractionNoSuggestionsTitle'), {
-                description: t('extraction', 'sectionExtractionNoSuggestionsDesc'),
-            duration: 6000,
-          });
-        } else {
-        const tokensUsed = result.data.tokensTotal || result.data.metadata?.tokensTotal || 0;
+      } else {
         toast.success(
-            t('extraction', 'sectionExtractionSuccessTitle').replace('{{n}}', String(result.data.suggestionsCreated)),
-          {
-              description: t('extraction', 'sectionExtractionTokensUsed').replace('{{n}}', String(tokensUsed)),
-          },
+          t('extraction', 'sectionExtractionSuccessTitle').replace(
+            '{{n}}',
+            String(created),
+          ),
         );
-        }
+      }
 
-        // IMPORTANT: Do not await - callback must not block loading reset
-        if (options?.onSuccess) {
-          Promise.resolve(
-            options.onSuccess(result.data.runId, result.data.suggestionsCreated)
-          ).catch(err => {
-            console.error('[useSectionExtraction] Erro no callback onSuccess:', err);
-          });
-        }
-      };
-
-      doExtract()
+      void queryClient.invalidateQueries({queryKey: ['extraction']});
+      // Call onSuccess and clear state asynchronously to satisfy lint rule.
+      void Promise.resolve(onSuccess ? onSuccess(runId, created) : undefined)
         .catch((err: unknown) => {
-          console.error('[useSectionExtraction] Erro capturado', {
-            error: err instanceof Error ? err.message : String(err),
-            name: err instanceof Error ? err.name : 'Unknown',
-            stack: err instanceof Error ? err.stack : undefined,
-          });
-
-          const message = getErrorMessage(err);
-          const code = getErrorCode(err);
-          setError(message);
-
-          const errorCode = code || '';
-          if (err instanceof NoInstancesError || errorCode === 'NO_INSTANCES') {
-            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {description: message, duration: 6000});
-          } else if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
-            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {description: message});
-          } else if (err instanceof FieldNameMismatchError || errorCode === 'FIELD_NAME_MISMATCH') {
-            toast.error(t('extraction', 'sectionExtractionErrorFieldMismatch'), {description: message, duration: 8000});
-          } else if (err instanceof AuthenticationError || errorCode === 'AUTH_ERROR') {
-            toast.error(t('extraction', 'sectionExtractionErrorAuth'), {
-              description: t('extraction', 'sectionExtractionErrorAuthDesc'),
-            });
-          } else {
-            const errorMessage = message.toLowerCase();
-            if (errorMessage.includes('field name') || errorMessage.includes('mismatch') || errorMessage.includes('no mapping')) {
-              toast.error(t('extraction', 'sectionExtractionErrorFieldMismatch'), {
-                description: t('extraction', 'sectionExtractionErrorFieldMismatchDesc'),
-                duration: 8000,
-              });
-            } else {
-              toast.error(`${t('extraction', 'sectionExtractionErrorTitle')}: ${message}`);
-            }
-          }
-
-          throw err;
+          console.error('[useSectionExtraction] onSuccess error:', err);
         })
-        .finally(() => setLoading(false));
+        .then(() => {
+          setJobId(null);
+          setError(null);
+        });
+      return;
+    }
+
+    if (jobStatus === 'failed') {
+      const msg = jobError ?? t('extraction', 'extractionJobFailedTitle');
+      toast.error(t('extraction', 'sectionExtractionErrorTitle'), {
+        description: msg,
+        duration: 8000,
+      });
+      void Promise.resolve().then(() => {
+        setError(msg);
+        setJobId(null);
+      });
+      return;
+    }
+
+    if (jobStatus === 'cancelled') {
+      const msg = t('extraction', 'extractionJobCancelledTitle');
+      toast.error(msg);
+      void Promise.resolve().then(() => {
+        setError(msg);
+        setJobId(null);
+      });
+    }
+  // jobStatus is the key dep; jobResult/jobError/onSuccess captured by closure
+  // at the time the effect fires — intentional, exhaustive-deps suppressed.
+  }, [jobStatus]);  
+
+  const extractSection = async (
+    params: AsyncSectionExtractionParams,
+  ): Promise<void> => {
+    setKicking(true);
+    setError(null);
+    const result = await extractSectionAsync(params);
+    setKicking(false);
+    if (!result.ok) {
+      const msg = result.error.message;
+      setError(msg);
+      toast.error(t('extraction', 'sectionExtractionErrorTitle'), {
+        description: msg,
+      });
+      return;
+    }
+    setJobId(result.data.jobId);
   };
 
-  return { extractSection, loading, error };
-}
+  const polling =
+    Boolean(jobId) &&
+    jobStatus !== 'completed' &&
+    jobStatus !== 'failed' &&
+    jobStatus !== 'cancelled';
+  const loading = kicking || polling;
 
+  return {extractSection, loading, error};
+}

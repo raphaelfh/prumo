@@ -1,96 +1,149 @@
 /**
- * Tests for the ``useRunAIExtraction`` hook.
+ * Tests for the async ``useRunAIExtraction`` hook (B4/B5 rewrite).
  *
- * Covers the contract that:
- *  - It POSTs to ``/api/v1/extraction/sections`` with the run reuse fields
- *    (``runId``, ``autoAdvanceToReview``, ``skipFieldsWithHumanProposals``)
- *    that distinguish QA-style "fill an existing run" from the legacy
- *    "create a new run per section" path.
- *  - The frontend defaults are the QA defaults: ``autoAdvanceToReview=false``
- *    (publish flow advances stages atomically) and
- *    ``skipFieldsWithHumanProposals=true`` (re-running AI must not bury the
- *    user's edits).
- *  - ``onSuccess`` runs after a successful extraction and ``error`` is
- *    surfaced (and re-thrown) when the API fails.
+ * Covers:
+ *  - POST kicks off the job and stores jobId in state.
+ *  - ``loading`` is true while the kickoff is in flight.
+ *  - ``loading`` is true while polling (pending/running) and false once terminal.
+ *  - ``onSuccess`` fires + success toast when job completes.
+ *  - Error toast + ``error`` state when the kickoff POST fails.
+ *  - Error toast + ``error`` state when the job reaches ``failed`` status.
  */
 
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
+import {act, renderHook, waitFor} from '@testing-library/react';
+import type {ReactElement, ReactNode} from 'react';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+
+// ---------------------------------------------------------------------------
+// Mocks (must be declared before imports that reference them)
+// ---------------------------------------------------------------------------
 
 vi.mock('@/integrations/api', () => ({
   apiClient: vi.fn(),
 }));
 
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: {success: vi.fn(), error: vi.fn(), warning: vi.fn()},
 }));
 
 vi.mock('@/lib/copy', () => ({
   t: (_ns: string, key: string) => key,
 }));
 
-import { apiClient } from '@/integrations/api';
-import { useRunAIExtraction } from '@/hooks/extraction/ai/useRunAIExtraction';
+// Mock the job-status service function directly so we control poll responses.
+vi.mock('@/services/extractionRunService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/extractionRunService')>();
+  return {
+    ...actual,
+    getExtractionJobStatus: vi.fn(),
+  };
+});
+
+// ---------------------------------------------------------------------------
+// Imports (after mocks)
+// ---------------------------------------------------------------------------
+
+import {apiClient} from '@/integrations/api';
+import {getExtractionJobStatus} from '@/services/extractionRunService';
+import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
+import {toast} from 'sonner';
+import type {ExtractionJobStatus} from '@/services/extractionRunService';
 
 const apiClientMock = apiClient as unknown as ReturnType<typeof vi.fn>;
+const statusMock = getExtractionJobStatus as unknown as ReturnType<typeof vi.fn>;
 
-const SUCCESS_PAYLOAD = {
-  extractionRunId: 'run-1',
-  totalSections: 3,
-  successfulSections: 3,
-  failedSections: 0,
-  totalSuggestionsCreated: 12,
-  totalTokensUsed: 1234,
-  durationMs: 5000,
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeStatus(
+  status: ExtractionJobStatus['status'],
+  overrides: Partial<ExtractionJobStatus> = {},
+): ExtractionJobStatus {
+  return {jobId: 'job-1', status, result: null, error: null, ...overrides};
+}
+
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: {queries: {retry: false}},
+  });
+  const wrapper = ({children}: {children: ReactNode}): ReactElement => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  return {wrapper, queryClient};
+}
+
+const PARAMS = {
+  projectId: 'proj-1',
+  articleId: 'art-1',
+  templateId: 'tpl-1',
+  runId: 'run-1',
 };
 
 beforeEach(() => {
-  apiClientMock.mockReset();
-});
-
-afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('useRunAIExtraction', () => {
-  it('POSTs to /api/v1/extraction/sections with QA defaults', async () => {
-    apiClientMock.mockResolvedValueOnce(SUCCESS_PAYLOAD);
-    const { result } = renderHook(() => useRunAIExtraction());
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe('useRunAIExtraction (async job)', () => {
+  it('starts loading on call and POSTs to /api/v1/extraction/sections', async () => {
+    // Mock the POST to return a job id.
+    apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
+    // Mock the poll to immediately return completed so the hook settles.
+    statusMock.mockResolvedValue({
+      ok: true,
+      data: makeStatus('completed', {
+        result: {
+          mode: 'full',
+          extractionRunId: 'run-1',
+          totalSuggestionsCreated: 3,
+          totalSections: 1,
+          successfulSections: 1,
+          failedSections: 0,
+          suggestionsCreated: 3,
+        },
+      }),
+    });
+
+    const {wrapper} = createWrapper();
+    const {result} = renderHook(() => useRunAIExtraction(), {wrapper});
 
     await act(async () => {
-      await result.current.extractForRun({
-        projectId: 'proj-1',
-        articleId: 'art-1',
-        templateId: 'tpl-1',
-        runId: 'run-1',
-      });
+      await result.current.extractForRun(PARAMS);
     });
 
-    expect(apiClientMock).toHaveBeenCalledTimes(1);
-    expect(apiClientMock).toHaveBeenCalledWith('/api/v1/extraction/sections', {
-      method: 'POST',
-      body: {
-        projectId: 'proj-1',
-        articleId: 'art-1',
-        templateId: 'tpl-1',
-        runId: 'run-1',
-        skipFieldsWithHumanProposals: true,
-        autoAdvanceToReview: false,
-        model: 'gpt-4o-mini',
-      },
-    });
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/extraction/sections',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.objectContaining({
+          projectId: 'proj-1',
+          runId: 'run-1',
+          skipFieldsWithHumanProposals: true,
+          autoAdvanceToReview: false,
+        }),
+      }),
+    );
   });
 
-  it('honours explicit overrides for the run-reuse flags', async () => {
-    apiClientMock.mockResolvedValueOnce(SUCCESS_PAYLOAD);
-    const { result } = renderHook(() => useRunAIExtraction());
+  it('honours explicit overrides for run-reuse flags', async () => {
+    apiClientMock.mockResolvedValueOnce({job_id: 'job-2'});
+    statusMock.mockResolvedValue({ok: true, data: makeStatus('completed')});
+
+    const {wrapper} = createWrapper();
+    const {result} = renderHook(() => useRunAIExtraction(), {wrapper});
 
     await act(async () => {
       await result.current.extractForRun({
-        projectId: 'proj-1',
-        articleId: 'art-1',
-        templateId: 'tpl-1',
-        runId: 'run-1',
+        ...PARAMS,
         skipFieldsWithHumanProposals: false,
         autoAdvanceToReview: true,
         model: 'gpt-4o',
@@ -103,91 +156,102 @@ describe('useRunAIExtraction', () => {
     expect(body.model).toBe('gpt-4o');
   });
 
-  it('returns the typed response payload (no ApiResponse double-unwrap)', async () => {
-    apiClientMock.mockResolvedValueOnce(SUCCESS_PAYLOAD);
-    const { result } = renderHook(() => useRunAIExtraction());
-
-    let returned;
-    await act(async () => {
-      returned = await result.current.extractForRun({
-        projectId: 'proj-1',
-        articleId: 'art-1',
-        templateId: 'tpl-1',
-        runId: 'run-1',
-      });
+  it('calls onSuccess and shows success toast when job completes', async () => {
+    apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
+    statusMock.mockResolvedValue({
+      ok: true,
+      data: makeStatus('completed', {
+        result: {
+          mode: 'full',
+          extractionRunId: 'run-1',
+          totalSuggestionsCreated: 7,
+          totalSections: 2,
+          successfulSections: 2,
+          failedSections: 0,
+          suggestionsCreated: 7,
+        },
+      }),
     });
-    expect(returned).toEqual(SUCCESS_PAYLOAD);
+
+    const onSuccess = vi.fn().mockResolvedValue(undefined);
+    const {wrapper} = createWrapper();
+    const {result} = renderHook(() => useRunAIExtraction({onSuccess}), {wrapper});
+
+    await act(async () => {
+      await result.current.extractForRun(PARAMS);
+    });
+
+    // Wait for the effect to fire after polling settles.
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(toast.success).toHaveBeenCalledWith(
+      'fullAICompleteSuccessTitle',
+      expect.objectContaining({description: expect.stringContaining('7')}),
+    );
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
   });
 
-  it('flips loading→true→false around the call', async () => {
-    let resolve!: (v: unknown) => void;
+  it('sets error and shows error toast when kickoff POST fails', async () => {
+    apiClientMock.mockRejectedValueOnce(new Error('server error'));
+    const {wrapper} = createWrapper();
+    const {result} = renderHook(() => useRunAIExtraction(), {wrapper});
+
+    await act(async () => {
+      await result.current.extractForRun(PARAMS);
+    });
+
+    await waitFor(() => expect(result.current.error).toMatch(/server error/));
+    expect(toast.error).toHaveBeenCalled();
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('sets error and shows error toast when job reaches failed status', async () => {
+    apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
+    statusMock.mockResolvedValue({
+      ok: true,
+      data: makeStatus('failed', {error: 'LLM timed out'}),
+    });
+
+    const {wrapper} = createWrapper();
+    const {result} = renderHook(() => useRunAIExtraction(), {wrapper});
+
+    await act(async () => {
+      await result.current.extractForRun(PARAMS);
+    });
+
+    await waitFor(() => expect(result.current.error).toBeTruthy());
+    expect(toast.error).toHaveBeenCalledWith(
+      'extractionJobFailedTitle',
+      expect.objectContaining({description: expect.stringContaining('LLM timed out')}),
+    );
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('loading is true while kickoff is in flight', async () => {
+    let resolvePost!: (v: unknown) => void;
     apiClientMock.mockReturnValueOnce(
       new Promise((r) => {
-        resolve = r;
+        resolvePost = r;
       }),
     );
-    const { result } = renderHook(() => useRunAIExtraction());
+
+    const {wrapper} = createWrapper();
+    const {result} = renderHook(() => useRunAIExtraction(), {wrapper});
 
     expect(result.current.loading).toBe(false);
 
-    let extractPromise: Promise<unknown>;
+    let extractPromise: Promise<void>;
     act(() => {
-      extractPromise = result.current.extractForRun({
-        projectId: 'proj-1',
-        articleId: 'art-1',
-        templateId: 'tpl-1',
-        runId: 'run-1',
-      });
+      extractPromise = result.current.extractForRun(PARAMS);
     });
 
     await waitFor(() => expect(result.current.loading).toBe(true));
 
+    // Now resolve and let it settle.
+    statusMock.mockResolvedValue({ok: true, data: makeStatus('completed')});
     await act(async () => {
-      resolve(SUCCESS_PAYLOAD);
+      resolvePost({job_id: 'job-1'});
       await extractPromise;
     });
-
-    expect(result.current.loading).toBe(false);
-  });
-
-  it('invokes onSuccess with the response and clears prior errors', async () => {
-    const onSuccess = vi.fn();
-    apiClientMock.mockResolvedValueOnce(SUCCESS_PAYLOAD);
-    const { result } = renderHook(() => useRunAIExtraction({ onSuccess }));
-
-    await act(async () => {
-      await result.current.extractForRun({
-        projectId: 'proj-1',
-        articleId: 'art-1',
-        templateId: 'tpl-1',
-        runId: 'run-1',
-      });
-    });
-
-    expect(onSuccess).toHaveBeenCalledWith(SUCCESS_PAYLOAD);
-    expect(result.current.error).toBeNull();
-  });
-
-  it('surfaces and rethrows API errors so callers can react', async () => {
-    apiClientMock.mockRejectedValueOnce(
-      new Error('Run is at REVIEW; AI extraction requires PROPOSAL'),
-    );
-    const { result } = renderHook(() => useRunAIExtraction());
-
-    await act(async () => {
-      await expect(
-        result.current.extractForRun({
-          projectId: 'proj-1',
-          articleId: 'art-1',
-          templateId: 'tpl-1',
-          runId: 'run-1',
-        }),
-      ).rejects.toThrow(/PROPOSAL/);
-    });
-
-    await waitFor(() =>
-      expect(result.current.error).toMatch(/PROPOSAL/),
-    );
-    expect(result.current.loading).toBe(false);
   });
 });

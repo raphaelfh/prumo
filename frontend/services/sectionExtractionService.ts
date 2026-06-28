@@ -22,7 +22,7 @@
  * ```
  */
 
-import {ApiError, modelExtractionClient, sectionExtractionClient} from '@/integrations/api/client';
+import {ApiError, apiClient, modelExtractionClient, sectionExtractionClient} from '@/integrations/api/client';
 import type {
     BatchSectionExtractionRequest,
     BatchSectionExtractionResponse,
@@ -32,6 +32,7 @@ import type {
     SectionExtractionResponse,
 } from "@/types/ai-extraction";
 import {APIError} from "@/lib/ai-extraction/errors";
+import {toResult, type ErrorResult} from '@/lib/error-utils';
 
 // Re-export types for compatibility
 export type {
@@ -234,4 +235,63 @@ export class SectionExtractionService {
       );
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Async-job section extraction (B4/B5 — POST returns 202 + job_id)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parameters for the async section extraction POST.
+ * Mirrors the SectionExtractionRequest schema fields consumed by the
+ * backend endpoint.
+ */
+export interface AsyncSectionExtractionParams {
+  projectId: string;
+  articleId: string;
+  templateId: string;
+  runId?: string;
+  entityTypeId?: string;
+  parentInstanceId?: string;
+  skipFieldsWithHumanProposals?: boolean;
+  autoAdvanceToReview?: boolean;
+  model?: string;
+}
+
+/**
+ * POST /api/v1/extraction/sections — enqueues a section extraction job.
+ *
+ * The backend returns 202 with ``ApiResponse.success({ job_id })``
+ * (snake_case). This function normalises to camelCase ``{ jobId }``
+ * for the hook layer.
+ *
+ * Returns ErrorResult — never throws across the boundary.
+ */
+export function extractSectionAsync(
+  params: AsyncSectionExtractionParams,
+): Promise<ErrorResult<{ jobId: string }>> {
+  return toResult(
+    async () => {
+      const raw = await apiClient<{ job_id: string }>(
+        '/api/v1/extraction/sections',
+        {
+          method: 'POST',
+          body: {
+            projectId: params.projectId,
+            articleId: params.articleId,
+            templateId: params.templateId,
+            runId: params.runId,
+            entityTypeId: params.entityTypeId,
+            parentInstanceId: params.parentInstanceId,
+            skipFieldsWithHumanProposals:
+              params.skipFieldsWithHumanProposals ?? true,
+            autoAdvanceToReview: params.autoAdvanceToReview ?? false,
+            model: params.model ?? 'gpt-4o-mini',
+          },
+        },
+      );
+      return { jobId: raw.job_id };
+    },
+    'sectionExtractionService.extractSectionAsync',
+  );
 }
