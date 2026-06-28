@@ -374,69 +374,6 @@
         "title": "ApiResponse[AISuggestionsResponse]",
         "type": "object"
       },
-      "ApiResponse_Annotated_Union_SingleSectionResult__BatchSectionResult___FieldInfo_annotation_NoneType__required_True__discriminator__mode____": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "discriminator": {
-                  "mapping": {
-                    "batch": "#/components/schemas/BatchSectionResult",
-                    "single": "#/components/schemas/SingleSectionResult"
-                  },
-                  "propertyName": "mode"
-                },
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/SingleSectionResult"
-                  },
-                  {
-                    "$ref": "#/components/schemas/BatchSectionResult"
-                  }
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta",
-            "title": "Data"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[Annotated[Union[SingleSectionResult, BatchSectionResult], FieldInfo(annotation=NoneType, required=True, discriminator='mode')]]",
-        "type": "object"
-      },
       "ApiResponse_ApproveFinalizeResponse_": {
         "properties": {
           "data": {
@@ -963,6 +900,54 @@
           "ok"
         ],
         "title": "ApiResponse[ExtractionExportStatusResponse]",
+        "type": "object"
+      },
+      "ApiResponse_ExtractionJobStatusResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtractionJobStatusResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ExtractionJobStatusResponse]",
         "type": "object"
       },
       "ApiResponse_HitlConfigRead_": {
@@ -2396,64 +2381,6 @@
         "title": "ArticleRunRef",
         "type": "object"
       },
-      "BatchSectionResult": {
-        "description": "Resultado de extraction em batch.",
-        "properties": {
-          "durationMs": {
-            "title": "Durationms",
-            "type": "number"
-          },
-          "extractionRunId": {
-            "title": "Extractionrunid",
-            "type": "string"
-          },
-          "failedSections": {
-            "title": "Failedsections",
-            "type": "integer"
-          },
-          "mode": {
-            "const": "batch",
-            "default": "batch",
-            "title": "Mode",
-            "type": "string"
-          },
-          "sections": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/SectionOutcome"
-            },
-            "title": "Sections",
-            "type": "array"
-          },
-          "successfulSections": {
-            "title": "Successfulsections",
-            "type": "integer"
-          },
-          "totalSections": {
-            "title": "Totalsections",
-            "type": "integer"
-          },
-          "totalSuggestionsCreated": {
-            "title": "Totalsuggestionscreated",
-            "type": "integer"
-          },
-          "totalTokensUsed": {
-            "title": "Totaltokensused",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "extractionRunId",
-          "totalSections",
-          "successfulSections",
-          "failedSections",
-          "totalSuggestionsCreated",
-          "totalTokensUsed",
-          "durationMs"
-        ],
-        "title": "BatchSectionResult",
-        "type": "object"
-      },
       "CloneTemplateRequest": {
         "properties": {
           "global_template_id": {
@@ -3561,6 +3488,146 @@
           "status"
         ],
         "title": "ExtractionExportStatusResponse",
+        "type": "object"
+      },
+      "ExtractionJobResult": {
+        "description": "Normalised result from a completed extraction job.\n\nBoth single-section and batch result shapes are represented; fields\nabsent for the other mode are ``None``.",
+        "properties": {
+          "entityTypeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitytypeid"
+          },
+          "extractionRunId": {
+            "title": "Extractionrunid",
+            "type": "string"
+          },
+          "failedSections": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failedsections"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "sections": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SectionOutcome"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections"
+          },
+          "successfulSections": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Successfulsections"
+          },
+          "suggestionsCreated": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestionscreated"
+          },
+          "totalSections": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totalsections"
+          },
+          "totalSuggestionsCreated": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totalsuggestionscreated"
+          }
+        },
+        "required": [
+          "mode",
+          "extractionRunId"
+        ],
+        "title": "ExtractionJobResult",
+        "type": "object"
+      },
+      "ExtractionJobStatusResponse": {
+        "description": "GET /extraction/sections/status/{job_id} payload.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "jobId": {
+            "title": "Jobid",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtractionJobResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "description": "pending | running | completed | failed | cancelled",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId",
+          "status"
+        ],
+        "title": "ExtractionJobStatusResponse",
         "type": "object"
       },
       "ExtractionOptions": {
@@ -5494,56 +5561,6 @@
         "title": "SectionOutcome",
         "type": "object"
       },
-      "SingleSectionResult": {
-        "description": "Resultado de extraction de section unica.",
-        "properties": {
-          "durationMs": {
-            "title": "Durationms",
-            "type": "number"
-          },
-          "entityTypeId": {
-            "title": "Entitytypeid",
-            "type": "string"
-          },
-          "extractionRunId": {
-            "title": "Extractionrunid",
-            "type": "string"
-          },
-          "mode": {
-            "const": "single",
-            "default": "single",
-            "title": "Mode",
-            "type": "string"
-          },
-          "suggestionsCreated": {
-            "title": "Suggestionscreated",
-            "type": "integer"
-          },
-          "tokensCompletion": {
-            "title": "Tokenscompletion",
-            "type": "integer"
-          },
-          "tokensPrompt": {
-            "title": "Tokensprompt",
-            "type": "integer"
-          },
-          "tokensTotal": {
-            "title": "Tokenstotal",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "extractionRunId",
-          "suggestionsCreated",
-          "entityTypeId",
-          "tokensPrompt",
-          "tokensCompletion",
-          "tokensTotal",
-          "durationMs"
-        ],
-        "title": "SingleSectionResult",
-        "type": "object"
-      },
       "SkippedFileEntry": {
         "description": "Input for file that cannot be included in the export.",
         "properties": {
@@ -6931,7 +6948,7 @@
     },
     "/api/v1/extraction/sections": {
       "post": {
-        "description": "Extrai data de uma section especifica or todas as sections de um modelo.",
+        "description": "Validate, authorise, then enqueue ``run_section_extraction_task``.\n\nReturns 202 with ``{job_id}``; poll\n``GET /extraction/sections/status/{job_id}`` for the result.",
         "operationId": "extract_section_api_v1_extraction_sections_post",
         "requestBody": {
           "content": {
@@ -6944,11 +6961,57 @@
           "required": true
         },
         "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Queue section extraction (async)",
+        "tags": [
+          "Section Extraction"
+        ]
+      }
+    },
+    "/api/v1/extraction/sections/status/{job_id}": {
+      "get": {
+        "description": "Map the Celery AsyncResult state into the API envelope shape.\n\nOwnership gate fires before any state-dependent branch: every branch\nleaks task state (and FAILURE leaks the exception repr), so a caller\nwho guesses a valid ``job_id`` must not read another user's progress.",
+        "operationId": "get_section_extraction_status_api_v1_extraction_sections_status__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Annotated_Union_SingleSectionResult__BatchSectionResult___FieldInfo_annotation_NoneType__required_True__discriminator__mode____"
+                  "$ref": "#/components/schemas/ApiResponse_ExtractionJobStatusResponse_"
                 }
               }
             },
@@ -6970,7 +7033,7 @@
             "Supabase JWT": []
           }
         ],
-        "summary": "Extrair section(oes) de template",
+        "summary": "Poll async section extraction status",
         "tags": [
           "Section Extraction"
         ]
