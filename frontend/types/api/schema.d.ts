@@ -354,10 +354,37 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Extrair section(oes) de template
-         * @description Extrai data de uma section especifica or todas as sections de um modelo.
+         * Queue section extraction (async)
+         * @description Validate, authorise, then enqueue ``run_section_extraction_task``.
+         *
+         *     Returns 202 with ``{job_id}``; poll
+         *     ``GET /extraction/sections/status/{job_id}`` for the result.
          */
         post: operations["extract_section_api_v1_extraction_sections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/extraction/sections/status/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Poll async section extraction status
+         * @description Map the Celery AsyncResult state into the API envelope shape.
+         *
+         *     Ownership gate fires before any state-dependent branch: every branch
+         *     leaks task state (and FAILURE leaks the exception repr), so a caller
+         *     who guesses a valid ``job_id`` must not read another user's progress.
+         */
+        get: operations["get_section_extraction_status_api_v1_extraction_sections_status__job_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1169,26 +1196,6 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[Annotated[Union[SingleSectionResult, BatchSectionResult], FieldInfo(annotation=NoneType, required=True, discriminator='mode')]] */
-        ApiResponse_Annotated_Union_SingleSectionResult__BatchSectionResult___FieldInfo_annotation_NoneType__required_True__discriminator__mode____: {
-            /**
-             * Data
-             * @description Dados da resposta
-             */
-            data?: (components["schemas"]["SingleSectionResult"] | components["schemas"]["BatchSectionResult"]) | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
         /** ApiResponse[ApproveFinalizeResponse] */
         ApiResponse_ApproveFinalizeResponse_: {
             /** @description Dados da resposta */
@@ -1363,6 +1370,23 @@ export interface components {
         ApiResponse_ExtractionExportStatusResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ExtractionExportStatusResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ExtractionJobStatusResponse] */
+        ApiResponse_ExtractionJobStatusResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ExtractionJobStatusResponse"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -1917,36 +1941,6 @@ export interface components {
             /** Run Id */
             run_id: string | null;
         };
-        /**
-         * BatchSectionResult
-         * @description Resultado de extraction em batch.
-         */
-        BatchSectionResult: {
-            /** Durationms */
-            durationMs: number;
-            /** Extractionrunid */
-            extractionRunId: string;
-            /** Failedsections */
-            failedSections: number;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            mode: "batch";
-            /**
-             * Sections
-             * @default []
-             */
-            sections: components["schemas"]["SectionOutcome"][];
-            /** Successfulsections */
-            successfulSections: number;
-            /** Totalsections */
-            totalSections: number;
-            /** Totalsuggestionscreated */
-            totalSuggestionsCreated: number;
-            /** Totaltokensused */
-            totalTokensUsed: number;
-        };
         /** CloneTemplateRequest */
         CloneTemplateRequest: {
             /**
@@ -2481,6 +2475,45 @@ export interface components {
             expires_at?: string | null;
             /** Job Id */
             job_id: string;
+            /**
+             * Status
+             * @description pending | running | completed | failed | cancelled
+             */
+            status: string;
+        };
+        /**
+         * ExtractionJobResult
+         * @description Normalised result from a completed extraction job.
+         *
+         *     Both single-section and batch result shapes are represented; fields
+         *     absent for the other mode are ``None``.
+         */
+        ExtractionJobResult: {
+            /** Extractionrunid */
+            extractionRunId: string;
+            /** Failedsections */
+            failedSections?: number | null;
+            /** Mode */
+            mode: string;
+            /** Successfulsections */
+            successfulSections?: number | null;
+            /** Suggestionscreated */
+            suggestionsCreated?: number | null;
+            /** Totalsections */
+            totalSections?: number | null;
+            /** Totalsuggestionscreated */
+            totalSuggestionsCreated?: number | null;
+        };
+        /**
+         * ExtractionJobStatusResponse
+         * @description GET /extraction/sections/status/{job_id} payload.
+         */
+        ExtractionJobStatusResponse: {
+            /** Error */
+            error?: string | null;
+            /** Jobid */
+            jobId: string;
+            result?: components["schemas"]["ExtractionJobResult"] | null;
             /**
              * Status
              * @description pending | running | completed | failed | cancelled
@@ -3393,64 +3426,6 @@ export interface components {
             templateId: string;
         };
         /**
-         * SectionOutcome
-         * @description Per-section outcome inside a batch extraction result.
-         *
-         *     Wire format is snake_case on purpose — these items were emitted as
-         *     raw service dicts before being typed, and the keys are preserved
-         *     verbatim. Failure items carry ``error`` and omit the counters.
-         */
-        SectionOutcome: {
-            /** Entity Type Id */
-            entity_type_id: string;
-            /** Entity Type Name */
-            entity_type_name?: string | null;
-            /** Error */
-            error?: string | null;
-            /**
-             * Skipped
-             * @default false
-             */
-            skipped: boolean;
-            /** Success */
-            success: boolean;
-            /**
-             * Suggestions Created
-             * @default 0
-             */
-            suggestions_created: number;
-            /**
-             * Tokens Used
-             * @default 0
-             */
-            tokens_used: number;
-        };
-        /**
-         * SingleSectionResult
-         * @description Resultado de extraction de section unica.
-         */
-        SingleSectionResult: {
-            /** Durationms */
-            durationMs: number;
-            /** Entitytypeid */
-            entityTypeId: string;
-            /** Extractionrunid */
-            extractionRunId: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            mode: "single";
-            /** Suggestionscreated */
-            suggestionsCreated: number;
-            /** Tokenscompletion */
-            tokensCompletion: number;
-            /** Tokensprompt */
-            tokensPrompt: number;
-            /** Tokenstotal */
-            tokensTotal: number;
-        };
-        /**
          * SkippedFileEntry
          * @description Input for file that cannot be included in the export.
          */
@@ -4198,12 +4173,43 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_section_extraction_status_api_v1_extraction_sections_status__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponse_Annotated_Union_SingleSectionResult__BatchSectionResult___FieldInfo_annotation_NoneType__required_True__discriminator__mode____"];
+                    "application/json": components["schemas"]["ApiResponse_ExtractionJobStatusResponse_"];
                 };
             };
             /** @description Validation Error */
