@@ -158,7 +158,9 @@ describe('useSectionExtraction (async job)', () => {
       await result.current.extractSection(PARAMS);
     });
 
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('run-abc', 4));
+    // Exactly one call guards against a future double-fire regression.
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(onSuccess).toHaveBeenCalledWith('run-abc', 4);
     expect(toast.success).toHaveBeenCalled();
     expect(result.current.error).toBeNull();
   });

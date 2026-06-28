@@ -181,8 +181,9 @@ describe('useRunAIExtraction (async job)', () => {
       await result.current.extractForRun(PARAMS);
     });
 
-    // Wait for the effect to fire after polling settles.
-    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    // Wait for the effect to fire after polling settles. Asserting exactly
+    // one call guards against a future double-fire regression.
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
     expect(toast.success).toHaveBeenCalledWith(
       'fullAICompleteSuccessTitle',
       expect.objectContaining({description: expect.stringContaining('7')}),

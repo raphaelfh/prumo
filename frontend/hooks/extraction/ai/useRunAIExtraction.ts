@@ -17,7 +17,7 @@
  * All IO is in the service layer (extractForRun / getExtractionJobStatus).
  */
 
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {useQueryClient} from '@tanstack/react-query';
 import {toast} from 'sonner';
 
@@ -45,7 +45,14 @@ export function useRunAIExtraction(options?: {
   const [kicking, setKicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Stabilize onSuccess in a ref so the completion effect never fires a
+  // stale closure when the caller passes an inline callback. The ref is
+  // synced in an effect (not during render) to satisfy react-hooks/refs.
   const onSuccess = options?.onSuccess;
+  const onSuccessRef = useRef(onSuccess);
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
 
   const jobQuery = useExtractionJob(jobId);
   const jobStatus = jobQuery.data?.status;
@@ -54,7 +61,7 @@ export function useRunAIExtraction(options?: {
 
   // React to terminal job state. setState is placed inside async callbacks
   // (Promise.resolve().then()) to satisfy the react-hooks/set-state-in-effect rule.
-   
+
   useEffect(() => {
     if (!jobId || !jobStatus) return;
 
@@ -68,7 +75,7 @@ export function useRunAIExtraction(options?: {
       });
       void queryClient.invalidateQueries({queryKey: ['extraction']});
       // Run onSuccess then clear state asynchronously to satisfy lint rule.
-      void Promise.resolve(onSuccess ? onSuccess() : undefined)
+      void Promise.resolve(onSuccessRef.current?.())
         .catch((err: unknown) => {
           console.error('[useRunAIExtraction] onSuccess error:', err);
         })
@@ -108,16 +115,19 @@ export function useRunAIExtraction(options?: {
     setKicking(true);
     setError(null);
     const result = await extractForRunService(params);
-    setKicking(false);
     if (!result.ok) {
       const msg = result.error.message;
+      setKicking(false);
       setError(msg);
       toast.error(`${t('extraction', 'fullAIErrorPrefix')}: ${msg}`, {
         duration: 8000,
       });
       return;
     }
+    // Set jobId BEFORE clearing kicking so `loading` never momentarily
+    // reads false in the one-frame window between the two updates.
     setJobId(result.data.jobId);
+    setKicking(false);
   };
 
   // loading = kickoff in flight OR job is actively polling (pending|running)
