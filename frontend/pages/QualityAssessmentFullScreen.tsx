@@ -22,14 +22,14 @@ import { toast } from "sonner";
 
 import { Loader2 } from "lucide-react";
 
-import { AssessmentShell } from "@/components/assessment/AssessmentShell";
+import { RunSplitShell } from "@/components/runs/RunSplitShell";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
 import type {
   ComparisonEntityType,
   ComparisonInstance,
 } from "@/components/runs/RunReviewerComparison";
-import { PrumoPdfViewer } from "@prumo/pdf-viewer";
+import { PrumoPdfViewer, createViewerStore, subscribeReaderLocate } from "@prumo/pdf-viewer";
 import { useArticleDocuments } from "@/hooks/extraction/useArticleDocuments";
 import {
   DocumentSwitcher,
@@ -308,6 +308,26 @@ export default function QualityAssessmentFullScreen() {
 
   // PDF panel state — lifted so RunHeader.PanelToggle can share the same toggle.
   const pdfPanelState = usePdfPanel({ initialOpen: false });
+
+  // ONE stable viewer store shared by the form panel (evidence popover) and the
+  // PDF reader — the prerequisite for citation locate + highlight (mirrors the
+  // Extraction screen). RunSplitShell wraps both panels in a single
+  // ViewerProvider via the `viewerStore` prop, and the PrumoPdfViewer below
+  // receives `store={viewerStore}`, so both resolve the SAME store.
+  const [viewerStore] = useState(createViewerStore);
+
+  // A citation-locate reveals the (default-collapsed) PDF panel so the reader
+  // can scroll + flash the cited passage. `usePdfPanel.open` is a fresh closure
+  // each render, so hold it in a ref and subscribe ONCE per store (mirrors the
+  // togglePdfRef pattern below). Cleanup via return (not try/finally).
+  const openPdfRef = useRef(pdfPanelState.open);
+  useEffect(() => {
+    openPdfRef.current = pdfPanelState.open;
+  }, [pdfPanelState.open]);
+  useEffect(
+    () => subscribeReaderLocate(viewerStore, () => openPdfRef.current()),
+    [viewerStore],
+  );
 
   // App navigation sidebar (provided by RunWorkspaceShell). SidebarToggle + ⌘B
   // collapse the desktop sidebar (lg+); toggleMobile opens the drawer below lg.
@@ -658,6 +678,7 @@ export default function QualityAssessmentFullScreen() {
       <div className="min-h-0 flex-1">
         <PrumoPdfViewer
           source={documents.source}
+          store={viewerStore}
           readerBlocks={documents.readerBlocks}
           readerLoading={documents.readerLoading}
           className="h-full"
@@ -787,11 +808,12 @@ export default function QualityAssessmentFullScreen() {
   );
 
   return (
-    <AssessmentShell
+    <RunSplitShell
       pdfPanel={pdfPanel}
       formPanel={formPanel}
       header={header}
       pdfState={pdfPanelState}
+      viewerStore={viewerStore}
     />
   );
 }
