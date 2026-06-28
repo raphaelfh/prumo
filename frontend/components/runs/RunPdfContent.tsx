@@ -1,10 +1,10 @@
 /**
- * PDF content for the extraction screen.
+ * Shared PDF/markdown content for the run session screens (Extraction + QA).
  *
- * Thin wrapper around the modular `@prumo/pdf-viewer` PrumoPdfViewer that
- * adapts an `articleId` (domain concept) into a `PDFLazySource` (viewer
- * concept). Renders CONTENT only — the surrounding ResizablePanel + handle are
- * owned by `RunSplitShell`, which mounts this node only when the panel is open.
+ * Thin wrapper around the modular `@prumo/pdf-viewer` PrumoPdfViewer that adapts
+ * an `articleId` (domain concept) into a `PDFLazySource` (viewer concept).
+ * Renders CONTENT only — the surrounding ResizablePanel + handle are owned by
+ * `RunSplitShell`, which mounts this node only when the panel is open.
  */
 
 import {memo} from 'react';
@@ -12,9 +12,9 @@ import type {StoreApi} from 'zustand';
 import {PrumoPdfViewer} from '@prumo/pdf-viewer';
 import type {ViewerState} from '@prumo/pdf-viewer';
 import {useArticleDocuments} from '@/hooks/extraction/useArticleDocuments';
-import {DocumentSwitcher, ParseStatusControl} from './DocumentSwitcher';
+import {DocumentSwitcher, ParseStatusControl} from '@/components/extraction/DocumentSwitcher';
 
-export interface ExtractionPdfContentProps {
+export interface RunPdfContentProps {
   articleId: string;
   projectId: string;
   /** Shared viewer store. When provided, the PDF viewer joins the caller's
@@ -24,10 +24,7 @@ export interface ExtractionPdfContentProps {
   store?: StoreApi<ViewerState>;
 }
 
-function ExtractionPdfContentComponent({
-  articleId,
-  store,
-}: ExtractionPdfContentProps) {
+function RunPdfContentComponent({articleId, store}: RunPdfContentProps) {
   const {
     files,
     selectedFileId,
@@ -79,12 +76,12 @@ function ExtractionPdfContentComponent({
 }
 
 // kept: custom comparator — compiler does not replicate arePropsEqual
-export const ExtractionPdfContent = memo(
-  ExtractionPdfContentComponent,
+export const RunPdfContent = memo(
+  RunPdfContentComponent,
   (prev, next) =>
     prev.articleId === next.articleId &&
     prev.projectId === next.projectId &&
     prev.store === next.store,
 );
 
-ExtractionPdfContent.displayName = 'ExtractionPdfContent';
+RunPdfContent.displayName = 'RunPdfContent';

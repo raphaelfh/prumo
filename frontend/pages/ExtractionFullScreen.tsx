@@ -63,7 +63,7 @@ import {useConsensusReconciliation} from '@/hooks/extraction/useConsensusReconci
 
 // Components
 import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
-import {ExtractionPdfContent} from '@/components/extraction/ExtractionPDFPanel';
+import {RunPdfContent} from '@/components/runs/RunPdfContent';
 import {ExtractionFormPanel} from '@/components/extraction/ExtractionFormPanel';
 import {AddModelDialog, RemoveModelDialog} from '@/components/extraction/hierarchy';
 import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtractionProgress';
@@ -93,7 +93,7 @@ export default function ExtractionFullScreen() {
   // ONE stable viewer store shared between the PDF panel and the form panel.
   // useState lazy initializer creates the store exactly once per mount —
   // the React-Compiler-approved pattern. RunSplitShell wraps both panels in a
-  // single <ViewerProvider store={viewerStore}>, and ExtractionPdfContent
+  // single <ViewerProvider store={viewerStore}>, and RunPdfContent
   // receives store={viewerStore}, so the form-panel evidence popover and the
   // PDF reader resolve the SAME store — the prerequisite for the
   // click-evidence → highlight feature.
@@ -1175,7 +1175,7 @@ export default function ExtractionFullScreen() {
         subHeader={extractionSubHeader}
         formPanel={extractionFormPanel}
         pdfPanel={
-          <ExtractionPdfContent
+          <RunPdfContent
             articleId={articleId || ''}
             projectId={projectId || ''}
             store={viewerStore}

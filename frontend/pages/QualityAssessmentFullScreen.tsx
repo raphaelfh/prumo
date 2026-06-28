@@ -29,12 +29,8 @@ import type {
   ComparisonEntityType,
   ComparisonInstance,
 } from "@/components/runs/RunReviewerComparison";
-import { PrumoPdfViewer, createViewerStore, subscribeReaderLocate } from "@prumo/pdf-viewer";
-import { useArticleDocuments } from "@/hooks/extraction/useArticleDocuments";
-import {
-  DocumentSwitcher,
-  ParseStatusControl,
-} from "@/components/extraction/DocumentSwitcher";
+import { createViewerStore, subscribeReaderLocate } from "@prumo/pdf-viewer";
+import { RunPdfContent } from "@/components/runs/RunPdfContent";
 import { Badge } from "@/components/ui/badge";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
 import { resolveQATemplateKind } from "@/services/projectSettingsService";
@@ -80,7 +76,6 @@ export default function QualityAssessmentFullScreen() {
     templateId: string;
   }>();
   const navigate = useNavigate();
-  const documents = useArticleDocuments(articleId);
 
   // The ``:templateId`` URL segment may point at either a project-level
   // ``project_extraction_templates`` row (when the user landed here from
@@ -310,16 +305,12 @@ export default function QualityAssessmentFullScreen() {
   const pdfPanelState = usePdfPanel({ initialOpen: false });
 
   // ONE stable viewer store shared by the form panel (evidence popover) and the
-  // PDF reader — the prerequisite for citation locate + highlight (mirrors the
-  // Extraction screen). RunSplitShell wraps both panels in a single
-  // ViewerProvider via the `viewerStore` prop, and the PrumoPdfViewer below
+  // PDF reader — the prerequisite for citation locate + highlight. RunSplitShell
+  // wraps both panels in one ViewerProvider via `viewerStore`, and RunPdfContent
   // receives `store={viewerStore}`, so both resolve the SAME store.
   const [viewerStore] = useState(createViewerStore);
 
-  // A citation-locate reveals the (default-collapsed) PDF panel so the reader
-  // can scroll + flash the cited passage. `usePdfPanel.open` is a fresh closure
-  // each render, so hold it in a ref and subscribe ONCE per store (mirrors the
-  // togglePdfRef pattern below). Cleanup via return (not try/finally).
+  // Citation-locate reveals the (collapsed) PDF panel; ref so we subscribe once.
   const openPdfRef = useRef(pdfPanelState.open);
   useEffect(() => {
     openPdfRef.current = pdfPanelState.open;
@@ -556,9 +547,8 @@ export default function QualityAssessmentFullScreen() {
     });
   };
 
-  // Per-domain AI extract completion — mirrors the Extraction section-complete
-  // path: refetch the session (the run may have re-resolved), then the run
-  // detail, then the AI suggestions, so accepted proposals + evidence surface.
+  // Per-domain AI extract completion: refetch session + run + suggestions so
+  // accepted proposals and their evidence surface (run may have re-resolved).
   const handleSectionExtractionComplete = async () => {
     await refetchSession();
     await refetchRun();
@@ -671,29 +661,7 @@ export default function QualityAssessmentFullScreen() {
   );
 
   const pdfPanel = (
-    <div className="flex h-full min-h-0 flex-col">
-      {documents.files.length > 0 && (
-        <div className="flex items-center gap-2 border-b px-2 py-1.5">
-          <DocumentSwitcher
-            files={documents.files}
-            selectedFileId={documents.selectedFileId}
-            onSelect={documents.setSelectedFileId}
-          />
-          {documents.selectedFile && (
-            <ParseStatusControl articleId={articleId} file={documents.selectedFile} />
-          )}
-        </div>
-      )}
-      <div className="min-h-0 flex-1">
-        <PrumoPdfViewer
-          source={documents.source}
-          store={viewerStore}
-          readerBlocks={documents.readerBlocks}
-          readerLoading={documents.readerLoading}
-          className="h-full"
-        />
-      </div>
-    </div>
+    <RunPdfContent articleId={articleId} projectId={projectId} store={viewerStore} />
   );
 
   // Single source for the form-panel stage gates (avoids repeating the same
