@@ -48,6 +48,14 @@ celery_app.conf.update(
     # Concurrency
     worker_concurrency=4,
     worker_prefetch_multiplier=2,
+    # Redis visibility timeout. With task_acks_late=True, an in-flight message
+    # stays "invisible" only this long before Redis redelivers it. The
+    # invariant: it MUST exceed every task's hard time_limit, or a still-running
+    # task gets redelivered and runs twice (the classic Celery+Redis duplicate-
+    # execution footgun). 3600s is the library default, made explicit here so it
+    # can't silently fall below a task limit; the bounded parse task (hard 360s)
+    # sits well under it.
+    broker_transport_options={"visibility_timeout": 3600},
     # Task routes (queues separated by type). Every module in
     # ``include=`` MUST appear here explicitly — the registry test in
     # ``tests/unit/test_celery_app_task_registry.py`` enforces this so
