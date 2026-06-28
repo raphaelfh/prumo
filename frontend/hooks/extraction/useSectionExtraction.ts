@@ -18,6 +18,7 @@ import {useQueryClient} from '@tanstack/react-query';
 import {toast} from 'sonner';
 
 import {t} from '@/lib/copy';
+import {extractionKeys} from '@/lib/query-keys';
 import {
   extractSectionAsync,
   type AsyncSectionExtractionParams,
@@ -83,7 +84,7 @@ export function useSectionExtraction(options?: {
         );
       }
 
-      void queryClient.invalidateQueries({queryKey: ['extraction']});
+      void queryClient.invalidateQueries({queryKey: extractionKeys.all});
       // Call onSuccess and clear state asynchronously to satisfy lint rule.
       void Promise.resolve(onSuccessRef.current?.(runId, created))
         .catch((err: unknown) => {

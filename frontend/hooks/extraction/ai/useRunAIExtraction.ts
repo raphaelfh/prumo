@@ -22,6 +22,7 @@ import {useQueryClient} from '@tanstack/react-query';
 import {toast} from 'sonner';
 
 import {t} from '@/lib/copy';
+import {extractionKeys} from '@/lib/query-keys';
 import {
   extractForRun as extractForRunService,
   type ExtractForRunRequest,
@@ -73,7 +74,7 @@ export function useRunAIExtraction(options?: {
       toast.success(t('extraction', 'fullAICompleteSuccessTitle'), {
         description: `${created} suggestion(s) created across ${successful}/${total} sections.`,
       });
-      void queryClient.invalidateQueries({queryKey: ['extraction']});
+      void queryClient.invalidateQueries({queryKey: extractionKeys.all});
       // Run onSuccess then clear state asynchronously to satisfy lint rule.
       void Promise.resolve(onSuccessRef.current?.())
         .catch((err: unknown) => {

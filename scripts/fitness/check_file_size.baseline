@@ -6,5 +6,5 @@ backend/app/services/section_extraction_service.py:1509
 frontend/components/articles/ArticleForm.tsx:1272
 frontend/components/articles/ArticlesList.tsx:1360
 frontend/components/extraction/ArticleExtractionTable.tsx:1130
-frontend/lib/copy/extraction.ts:856
+frontend/lib/copy/extraction.ts:859
 frontend/pages/ExtractionFullScreen.tsx:1279
