@@ -22,6 +22,7 @@ import {useQueryClient} from '@tanstack/react-query';
 import {toast} from 'sonner';
 
 import {t} from '@/lib/copy';
+import {jobErrorToast} from '@/lib/ai-extraction/jobErrorToast';
 import {extractionKeys} from '@/lib/query-keys';
 import {
   extractForRun as extractForRunService,
@@ -59,6 +60,7 @@ export function useRunAIExtraction(options?: {
   const jobStatus = jobQuery.data?.status;
   const jobResult = jobQuery.data?.result as ExtractionJobResult | null | undefined;
   const jobError = jobQuery.data?.error;
+  const jobErrorCode = jobQuery.data?.errorCode;
 
   // React to terminal job state. setState is placed inside async callbacks
   // (Promise.resolve().then()) to satisfy the react-hooks/set-state-in-effect rule.
@@ -89,10 +91,20 @@ export function useRunAIExtraction(options?: {
 
     if (jobStatus === 'failed') {
       const msg = jobError ?? t('extraction', 'extractionJobFailedTitle');
-      toast.error(t('extraction', 'extractionJobFailedTitle'), {
-        description: msg,
-        duration: 8000,
-      });
+      // A classified backend code gets specific copy; otherwise fall back to
+      // the generic "AI extraction failed" toast.
+      const specific = jobErrorToast(jobErrorCode, msg);
+      if (specific) {
+        toast.error(specific.title, {
+          description: specific.description,
+          duration: specific.duration ?? 8000,
+        });
+      } else {
+        toast.error(t('extraction', 'extractionJobFailedTitle'), {
+          description: msg,
+          duration: 8000,
+        });
+      }
       void Promise.resolve().then(() => {
         setError(msg);
         setJobId(null);

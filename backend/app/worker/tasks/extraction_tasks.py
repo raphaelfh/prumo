@@ -17,6 +17,7 @@ from celery import Task
 
 from app.core.config import settings
 from app.llm.errors import is_transient_llm_error
+from app.services.extraction_errors import ExtractionTaskError, classify_extraction_error
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
 
@@ -323,9 +324,14 @@ def run_section_extraction_task(
     try:
         return run_task(run)
     except Exception as exc:
-        if not is_transient_llm_error(exc):
-            raise  # permanent: fail fast, no retry
-        raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
+        if is_transient_llm_error(exc) and self.request.retries < self.max_retries:
+            # Transient and retries remain — back off and retry.
+            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
+        # Terminal failure (permanent, or transient with retries exhausted):
+        # attach a stable, machine-readable code so the status endpoint can
+        # surface specific frontend copy instead of parsing the exception repr.
+        code, message = classify_extraction_error(exc)
+        raise ExtractionTaskError(code, message) from exc
 
 
 @celery_app.task(
