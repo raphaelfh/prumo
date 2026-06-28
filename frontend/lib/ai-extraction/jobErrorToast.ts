@@ -26,14 +26,18 @@ export function jobErrorToast(
   code: ExtractionErrorCode | null | undefined,
   message: string,
 ): JobErrorToast | null {
+  // Actionable failures hold the toast as long as the generic failure (8 s)
+  // so the user can read the remediation. Owning the duration here keeps both
+  // hooks consistent (no per-hook fallback drift).
+  const duration = 8000;
   switch (code) {
     case 'MISSING_API_KEY':
       // No usable LLM key. "Authentication error" title; the backend message
       // is already actionable (BYOK key / env var), so surface it verbatim.
-      return {title: t('extraction', 'sectionExtractionErrorAuth'), description: message};
+      return {title: t('extraction', 'sectionExtractionErrorAuth'), description: message, duration};
     case 'PDF_NOT_FOUND':
       // Missing PDF. Generic title + the actionable "Upload a PDF first" message.
-      return {title: t('extraction', 'sectionExtractionErrorTitle'), description: message};
+      return {title: t('extraction', 'sectionExtractionErrorTitle'), description: message, duration};
     default:
       return null;
   }
