@@ -82,8 +82,11 @@ def _candidates(value: str) -> set[str]:
                 f = float(n)
             except ValueError:
                 continue
-            out.add(_canon(str(f / 100)))  # 12.5 -> 0.125
-            out.add(_canon(str(f * 100)))  # 0.125 -> 12.5
+            # `.12g` keeps 12 significant digits without leaking binary float
+            # noise (`str(11.8 / 100)` -> "0.11800000000000001"), so the clean
+            # decimal in the source text still matches.
+            out.add(_canon(format(f / 100, ".12g")))  # 12.5 -> 0.125
+            out.add(_canon(format(f * 100, ".12g")))  # 0.125 -> 12.5
     return {c for c in out if c}
 
 

@@ -22,19 +22,15 @@ import { toast } from "sonner";
 
 import { Loader2 } from "lucide-react";
 
-import { AssessmentShell } from "@/components/assessment/AssessmentShell";
+import { RunSplitShell } from "@/components/runs/RunSplitShell";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
 import type {
   ComparisonEntityType,
   ComparisonInstance,
 } from "@/components/runs/RunReviewerComparison";
-import { PrumoPdfViewer } from "@prumo/pdf-viewer";
-import { useArticleDocuments } from "@/hooks/extraction/useArticleDocuments";
-import {
-  DocumentSwitcher,
-  ParseStatusControl,
-} from "@/components/extraction/DocumentSwitcher";
+import { createViewerStore, subscribeReaderLocate } from "@prumo/pdf-viewer";
+import { RunPdfContent } from "@/components/runs/RunPdfContent";
 import { Badge } from "@/components/ui/badge";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
 import { resolveQATemplateKind } from "@/services/projectSettingsService";
@@ -80,7 +76,6 @@ export default function QualityAssessmentFullScreen() {
     templateId: string;
   }>();
   const navigate = useNavigate();
-  const documents = useArticleDocuments(articleId);
 
   // The ``:templateId`` URL segment may point at either a project-level
   // ``project_extraction_templates`` row (when the user landed here from
@@ -309,6 +304,22 @@ export default function QualityAssessmentFullScreen() {
   // PDF panel state — lifted so RunHeader.PanelToggle can share the same toggle.
   const pdfPanelState = usePdfPanel({ initialOpen: false });
 
+  // ONE stable viewer store shared by the form panel (evidence popover) and the
+  // PDF reader — the prerequisite for citation locate + highlight. RunSplitShell
+  // wraps both panels in one ViewerProvider via `viewerStore`, and RunPdfContent
+  // receives `store={viewerStore}`, so both resolve the SAME store.
+  const [viewerStore] = useState(createViewerStore);
+
+  // Citation-locate reveals the (collapsed) PDF panel; ref so we subscribe once.
+  const openPdfRef = useRef(pdfPanelState.open);
+  useEffect(() => {
+    openPdfRef.current = pdfPanelState.open;
+  }, [pdfPanelState.open]);
+  useEffect(
+    () => subscribeReaderLocate(viewerStore, () => openPdfRef.current()),
+    [viewerStore],
+  );
+
   // App navigation sidebar (provided by RunWorkspaceShell). SidebarToggle + ⌘B
   // collapse the desktop sidebar (lg+); toggleMobile opens the drawer below lg.
   const { sidebarCollapsed, toggleSidebar, toggleMobile } = useSidebar();
@@ -536,6 +547,14 @@ export default function QualityAssessmentFullScreen() {
     });
   };
 
+  // Per-domain AI extract completion: refetch session + run + suggestions so
+  // accepted proposals and their evidence surface (run may have re-resolved).
+  const handleSectionExtractionComplete = async () => {
+    await refetchSession();
+    await refetchRun();
+    await refreshAISuggestions();
+  };
+
   const versionLabel = template ? `v${template.version}` : "";
 
   const header = (
@@ -642,28 +661,7 @@ export default function QualityAssessmentFullScreen() {
   );
 
   const pdfPanel = (
-    <div className="flex h-full min-h-0 flex-col">
-      {documents.files.length > 0 && (
-        <div className="flex items-center gap-2 border-b px-2 py-1.5">
-          <DocumentSwitcher
-            files={documents.files}
-            selectedFileId={documents.selectedFileId}
-            onSelect={documents.setSelectedFileId}
-          />
-          {documents.selectedFile && (
-            <ParseStatusControl articleId={articleId} file={documents.selectedFile} />
-          )}
-        </div>
-      )}
-      <div className="min-h-0 flex-1">
-        <PrumoPdfViewer
-          source={documents.source}
-          readerBlocks={documents.readerBlocks}
-          readerLoading={documents.readerLoading}
-          className="h-full"
-        />
-      </div>
-    </div>
+    <RunPdfContent articleId={articleId} projectId={projectId} store={viewerStore} />
   );
 
   // Single source for the form-panel stage gates (avoids repeating the same
@@ -763,6 +761,10 @@ export default function QualityAssessmentFullScreen() {
                       handleValueChange(instanceId, fieldId, value)
                     }
                     projectId={projectId}
+                    articleId={articleId}
+                    templateId={session.projectTemplateId}
+                    runId={session.runId}
+                    onExtractionComplete={handleSectionExtractionComplete}
                     defaultOpen={idx === 0}
                     reviewerActivity={{
                       decisionsByCoord: reviewerSummary.decisionsByCoord,
@@ -787,11 +789,12 @@ export default function QualityAssessmentFullScreen() {
   );
 
   return (
-    <AssessmentShell
+    <RunSplitShell
       pdfPanel={pdfPanel}
       formPanel={formPanel}
       header={header}
       pdfState={pdfPanelState}
+      viewerStore={viewerStore}
     />
   );
 }
