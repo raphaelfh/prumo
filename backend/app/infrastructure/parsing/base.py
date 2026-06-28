@@ -87,6 +87,11 @@ class ParsedBlock:
             with keys ``x``, ``y``, ``width``, ``height``.
         block_type: One of the seven values in ``BLOCK_TYPES``.  Must be
             normalised before construction (use ``normalize_block_type``).
+        row_index: 0-indexed row position within the table (None for non-table blocks).
+        col_index: 0-indexed column position within the table (None for non-table blocks).
+        row_span: Number of rows spanned by this cell (None for non-table blocks).
+        col_span: Number of columns spanned by this cell (None for non-table blocks).
+        is_header: Whether this cell is a header cell (None for non-table blocks).
     """
 
     page_number: int
@@ -96,6 +101,12 @@ class ParsedBlock:
     char_end: int
     bbox: dict[str, float]
     block_type: str
+    # Native table-cell grid (None for non-table blocks / legacy parsers).
+    row_index: int | None = None
+    col_index: int | None = None
+    row_span: int | None = None
+    col_span: int | None = None
+    is_header: bool | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +245,12 @@ class BlockLike(Protocol):
     block_index: int
     text: str
     block_type: str
+    # Optional native cell-grid metadata; absent/None on legacy blocks.
+    row_index: int | None
+    col_index: int | None
+    row_span: int | None
+    col_span: int | None
+    is_header: bool | None
 
 
 _MD_TABLE_CELL_SEP = " | "
