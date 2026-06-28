@@ -1,14 +1,36 @@
 /* Precise citation-span highlight (CSS Custom Highlight API), layered over the
    block-flash. Semantic + dark-mode aware; degrades to nothing where the API is
-   unsupported (the block-flash remains). */
+   unsupported (the block-flash remains). Dark variants are scoped to the app's
+   class-based theme (`.dark` on <html>, see tailwind.config darkMode:'class'),
+   NOT prefers-color-scheme, so they track the in-app theme toggle. */
 ::highlight(citation-quote) {
   background-color: hsl(var(--primary) / 0.25);
   color: inherit;
   border-radius: 2px;
 }
 
-@media (prefers-color-scheme: dark) {
-  ::highlight(citation-quote) {
-    background-color: hsl(var(--primary) / 0.35);
-  }
+.dark ::highlight(citation-quote) {
+  background-color: hsl(var(--primary) / 0.35);
+}
+
+/* Find-in-document highlights for the reader (CSS Custom Highlight API).
+   `reader-search` paints every match; `reader-search-active` paints the current
+   one more strongly (registered with a higher priority so it wins on overlap).
+   Yellow/orange mirrors the canvas TextLayer search styling for consistency. */
+::highlight(reader-search) {
+  background-color: rgba(255, 222, 0, 0.4);
+  border-radius: 2px;
+}
+
+::highlight(reader-search-active) {
+  background-color: rgba(255, 153, 0, 0.6);
+  border-radius: 2px;
+}
+
+.dark ::highlight(reader-search) {
+  background-color: rgba(255, 213, 0, 0.5);
+}
+
+.dark ::highlight(reader-search-active) {
+  background-color: rgba(255, 145, 0, 0.78);
 }
