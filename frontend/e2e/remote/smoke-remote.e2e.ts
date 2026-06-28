@@ -1,8 +1,42 @@
-import { expect, test } from "@playwright/test";
+import { APIRequestContext, expect, test } from "@playwright/test";
 
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+
+// Section extraction is async: POST returns 202 + { job_id }; the result is
+// fetched by polling GET /extraction/sections/status/{job_id}. Mirrors the
+// extraction-export poll helper (flows/extraction-export.e2e.ts).
+type SectionJobStatus = {
+  status: string;
+  result?: { extractionRunId?: string } | null;
+  error?: string | null;
+};
+
+async function pollSectionJob(input: {
+  request: APIRequestContext;
+  apiUrl: string;
+  jobId: string;
+  token: string;
+  traceId: string;
+}): Promise<SectionJobStatus> {
+  const inflight = new Set(["pending", "running"]);
+  const maxIters = 90; // ~180s at 2s intervals — matches the old sync timeout budget
+  for (let idx = 0; idx < maxIters; idx += 1) {
+    const res = await input.request.get(
+      `${input.apiUrl}/api/v1/extraction/sections/status/${input.jobId}`,
+      { headers: authHeaders(input.token, input.traceId) },
+    );
+    expect(res.ok()).toBeTruthy();
+    const body = await parseEnvelope<SectionJobStatus>(res);
+    expect(body.ok).toBeTruthy();
+    if (!inflight.has(body.data.status)) {
+      return body.data;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  return { status: "timeout" };
+}
 
 test.describe("Remote smoke", () => {
   test("auth + extraction + unified queue smoke", async ({ page, request }) => {
@@ -32,11 +66,24 @@ test.describe("Remote smoke", () => {
         entityTypeId: env.entityTypeId,
         extractAllSections: false,
       },
-      timeout: 180000,
     });
-    expect(extractionResponse.ok()).toBeTruthy();
-    const extractionBody = await parseEnvelope<{ extractionRunId: string }>(extractionResponse);
-    expect(extractionBody.ok).toBeTruthy();
+    expect(extractionResponse.status()).toBe(202);
+    const extractionDispatch = await parseEnvelope<{ job_id: string }>(extractionResponse);
+    expect(extractionDispatch.ok).toBeTruthy();
+    expect(extractionDispatch.data.job_id).toBeTruthy();
+
+    const extractionJob = await pollSectionJob({
+      request,
+      apiUrl: env.apiUrl,
+      jobId: extractionDispatch.data.job_id,
+      token,
+      traceId,
+    });
+    expect(
+      extractionJob.status,
+      `section job did not complete: ${extractionJob.error ?? "n/a"}`,
+    ).toBe("completed");
+    expect(extractionJob.result?.extractionRunId).toBeTruthy();
 
     // /api/v1/review-queue was 008-only and was deleted along with the
     // evaluation_* endpoints. The new HITL flow exposes per-Run state via
