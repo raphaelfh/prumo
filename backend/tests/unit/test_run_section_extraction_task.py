@@ -74,7 +74,26 @@ def _batch_result(run_id: str) -> BatchExtractionResult:
         total_suggestions_created=7,
         total_tokens_used=500,
         duration_ms=600.0,
-        sections=[],
+        sections=[
+            {
+                "entity_type_id": "etype-aaa",
+                "entity_type_name": "Outcome",
+                "success": True,
+                "suggestions_created": 4,
+                "tokens_used": 200,
+                "skipped": False,
+                "error": None,
+            },
+            {
+                "entity_type_id": "etype-bbb",
+                "entity_type_name": "Population",
+                "success": False,
+                "suggestions_created": 0,
+                "tokens_used": 0,
+                "skipped": False,
+                "error": "timeout",
+            },
+        ],
     )
 
 
@@ -127,8 +146,10 @@ class TestRunSectionExtractionTaskSingle:
         assert result["mode"] == "single"
         assert result["extraction_run_id"] == run_id
         assert result["suggestions_created"] == 5
+        assert result["entity_type_id"] == entity_type_id
         assert "total_sections" not in result
         assert "successful_sections" not in result
+        assert "sections" not in result
 
     def test_commits_session_on_success(self):
         run_id = str(uuid4())
@@ -206,6 +227,15 @@ class TestRunSectionExtractionTaskBatch:
         assert result["failed_sections"] == 1
         assert result["total_suggestions_created"] == 7
         assert "suggestions_created" not in result
+        # Per-section outcomes must be present for legacy frontend reconstruction
+        assert isinstance(result["sections"], list)
+        assert len(result["sections"]) == 2
+        assert result["sections"][0]["entity_type_id"] == "etype-aaa"
+        assert result["sections"][0]["success"] is True
+        assert result["sections"][0]["suggestions_created"] == 4
+        assert result["sections"][1]["entity_type_id"] == "etype-bbb"
+        assert result["sections"][1]["success"] is False
+        assert result["sections"][1]["error"] == "timeout"
 
 
 # ---------------------------------------------------------------------------

@@ -2489,12 +2489,16 @@ export interface components {
          *     absent for the other mode are ``None``.
          */
         ExtractionJobResult: {
+            /** Entitytypeid */
+            entityTypeId?: string | null;
             /** Extractionrunid */
             extractionRunId: string;
             /** Failedsections */
             failedSections?: number | null;
             /** Mode */
             mode: string;
+            /** Sections */
+            sections?: components["schemas"]["SectionOutcome"][] | null;
             /** Successfulsections */
             successfulSections?: number | null;
             /** Suggestionscreated */
@@ -3424,6 +3428,39 @@ export interface components {
              * Format: uuid
              */
             templateId: string;
+        };
+        /**
+         * SectionOutcome
+         * @description Per-section outcome inside a batch extraction result.
+         *
+         *     Wire format is snake_case on purpose — these items were emitted as
+         *     raw service dicts before being typed, and the keys are preserved
+         *     verbatim. Failure items carry ``error`` and omit the counters.
+         */
+        SectionOutcome: {
+            /** Entity Type Id */
+            entity_type_id: string;
+            /** Entity Type Name */
+            entity_type_name?: string | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Skipped
+             * @default false
+             */
+            skipped: boolean;
+            /** Success */
+            success: boolean;
+            /**
+             * Suggestions Created
+             * @default 0
+             */
+            suggestions_created: number;
+            /**
+             * Tokens Used
+             * @default 0
+             */
+            tokens_used: number;
         };
         /**
          * SkippedFileEntry

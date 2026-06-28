@@ -259,10 +259,12 @@ async def get_section_extraction_status(
             mode=raw.get("mode", "single"),
             extractionRunId=raw.get("extraction_run_id", ""),
             suggestionsCreated=raw.get("suggestions_created"),
+            entityTypeId=raw.get("entity_type_id"),
             totalSections=raw.get("total_sections"),
             successfulSections=raw.get("successful_sections"),
             failedSections=raw.get("failed_sections"),
             totalSuggestionsCreated=raw.get("total_suggestions_created"),
+            sections=raw.get("sections"),
         )
         return ApiResponse.success(
             data=ExtractionJobStatusResponse(job_id=job_id, status="completed", result=job_result),

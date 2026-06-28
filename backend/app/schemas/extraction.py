@@ -473,11 +473,13 @@ class ExtractionJobResult(BaseModel):
     extraction_run_id: str = Field(..., alias="extractionRunId")
     # Single-section fields
     suggestions_created: int | None = Field(default=None, alias="suggestionsCreated")
+    entity_type_id: str | None = Field(default=None, alias="entityTypeId")
     # Batch fields
     total_sections: int | None = Field(default=None, alias="totalSections")
     successful_sections: int | None = Field(default=None, alias="successfulSections")
     failed_sections: int | None = Field(default=None, alias="failedSections")
     total_suggestions_created: int | None = Field(default=None, alias="totalSuggestionsCreated")
+    sections: list[SectionOutcome] | None = Field(default=None, alias="sections")
 
 
 class ExtractionJobStatusResponse(BaseModel):

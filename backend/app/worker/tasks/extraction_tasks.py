@@ -293,6 +293,9 @@ def run_section_extraction_task(
                         "successful_sections": res.successful_sections,
                         "failed_sections": res.failed_sections,
                         "total_suggestions_created": res.total_suggestions_created,
+                        # Per-section outcomes — enables legacy frontend flows to
+                        # reconstruct BatchSectionResult.sections from the job result.
+                        "sections": res.sections,
                     }
 
                 # SectionExtractionResult (single)
@@ -300,6 +303,9 @@ def run_section_extraction_task(
                     "mode": "single",
                     "extraction_run_id": res.extraction_run_id,
                     "suggestions_created": res.suggestions_created,
+                    # entity_type_id — enables legacy frontend flows to reconstruct
+                    # SingleSectionResult.entityTypeId from the job result.
+                    "entity_type_id": res.entity_type_id,
                 }
 
             except Exception:

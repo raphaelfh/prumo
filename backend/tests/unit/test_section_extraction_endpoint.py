@@ -397,12 +397,14 @@ class TestGetSectionExtractionStatus:
     async def test_success_single_result_parsed(self, client: AsyncClient) -> None:
         """SUCCESS branch: single-mode dict → ExtractionJobResult with suggestionsCreated."""
         run_id = str(uuid4())
+        entity_type_id = str(uuid4())
         mock_result = MagicMock()
         mock_result.state = "SUCCESS"
         mock_result.result = {
             "mode": "single",
             "extraction_run_id": run_id,
             "suggestions_created": 7,
+            "entity_type_id": entity_type_id,
         }
 
         with (
@@ -422,7 +424,9 @@ class TestGetSectionExtractionStatus:
         assert result["mode"] == "single"
         assert result["extractionRunId"] == run_id
         assert result["suggestionsCreated"] == 7
+        assert result["entityTypeId"] == entity_type_id
         assert result["totalSections"] is None
+        assert result["sections"] is None
 
     @pytest.mark.asyncio
     async def test_success_batch_result_parsed(self, client: AsyncClient) -> None:
@@ -460,6 +464,67 @@ class TestGetSectionExtractionStatus:
         assert result["failedSections"] == 1
         assert result["totalSuggestionsCreated"] == 12
         assert result["suggestionsCreated"] is None
+        assert result["entityTypeId"] is None
+
+    @pytest.mark.asyncio
+    async def test_success_batch_with_sections_round_trips(self, client: AsyncClient) -> None:
+        """SUCCESS batch: per-section outcomes in the task dict → sections in result."""
+        run_id = str(uuid4())
+        entity_type_id_a = str(uuid4())
+        entity_type_id_b = str(uuid4())
+        mock_result = MagicMock()
+        mock_result.state = "SUCCESS"
+        mock_result.result = {
+            "mode": "batch",
+            "extraction_run_id": run_id,
+            "total_sections": 2,
+            "successful_sections": 1,
+            "failed_sections": 1,
+            "total_suggestions_created": 3,
+            "sections": [
+                {
+                    "entity_type_id": entity_type_id_a,
+                    "entity_type_name": "Outcome",
+                    "success": True,
+                    "suggestions_created": 3,
+                    "tokens_used": 150,
+                    "skipped": False,
+                    "error": None,
+                },
+                {
+                    "entity_type_id": entity_type_id_b,
+                    "entity_type_name": "Population",
+                    "success": False,
+                    "suggestions_created": 0,
+                    "tokens_used": 0,
+                    "skipped": False,
+                    "error": "llm_timeout",
+                },
+            ],
+        }
+
+        with (
+            patch("celery.result.AsyncResult", return_value=mock_result),
+            patch(
+                "app.api.v1.endpoints.section_extraction._lookup_job_owner",
+                return_value=CALLER_USER_ID,
+            ),
+        ):
+            res = await client.get(_status_url(str(uuid4())))
+
+        body = res.json()
+        assert body["ok"] is True
+        result = body["data"]["result"]
+        assert result["mode"] == "batch"
+        sections = result["sections"]
+        assert sections is not None
+        assert len(sections) == 2
+        assert sections[0]["entity_type_id"] == entity_type_id_a
+        assert sections[0]["success"] is True
+        assert sections[0]["suggestions_created"] == 3
+        assert sections[1]["entity_type_id"] == entity_type_id_b
+        assert sections[1]["success"] is False
+        assert sections[1]["error"] == "llm_timeout"
 
     @pytest.mark.asyncio
     async def test_success_ttl_expired_fallback_via_user_id_in_result(

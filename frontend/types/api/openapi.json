@@ -3493,6 +3493,17 @@
       "ExtractionJobResult": {
         "description": "Normalised result from a completed extraction job.\n\nBoth single-section and batch result shapes are represented; fields\nabsent for the other mode are ``None``.",
         "properties": {
+          "entityTypeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitytypeid"
+          },
           "extractionRunId": {
             "title": "Extractionrunid",
             "type": "string"
@@ -3511,6 +3522,20 @@
           "mode": {
             "title": "Mode",
             "type": "string"
+          },
+          "sections": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SectionOutcome"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections"
           },
           "successfulSections": {
             "anyOf": [
@@ -5478,6 +5503,62 @@
           "templateId"
         ],
         "title": "SectionExtractionRequest",
+        "type": "object"
+      },
+      "SectionOutcome": {
+        "description": "Per-section outcome inside a batch extraction result.\n\nWire format is snake_case on purpose \u2014 these items were emitted as\nraw service dicts before being typed, and the keys are preserved\nverbatim. Failure items carry ``error`` and omit the counters.",
+        "properties": {
+          "entity_type_id": {
+            "title": "Entity Type Id",
+            "type": "string"
+          },
+          "entity_type_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Type Name"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "skipped": {
+            "default": false,
+            "title": "Skipped",
+            "type": "boolean"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "suggestions_created": {
+            "default": 0,
+            "title": "Suggestions Created",
+            "type": "integer"
+          },
+          "tokens_used": {
+            "default": 0,
+            "title": "Tokens Used",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entity_type_id",
+          "success"
+        ],
+        "title": "SectionOutcome",
         "type": "object"
       },
       "SkippedFileEntry": {
