@@ -48,6 +48,7 @@ from app.repositories import (
     ExtractionInstanceRepository,
     ExtractionRunRepository,
 )
+from app.schemas.extraction import SectionExtractionRequest
 from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
@@ -1454,3 +1455,55 @@ class SectionExtractionService(LoggerMixin):
         )
 
         return count
+
+    async def run_from_request(
+        self,
+        payload: SectionExtractionRequest,
+    ) -> SectionExtractionResult | BatchExtractionResult:
+        """Dispatch a SectionExtractionRequest to the correct extraction method.
+
+        Mirrors the 3-branch dispatch in the section_extraction endpoint so
+        the same logic can be reused from a Celery task without touching the
+        HTTP layer.  The caller is responsible for committing (or rolling back)
+        the session — this method does not commit.
+
+        Branch priority (first match wins):
+        1. ``entity_type_id`` present → single-section path via
+           ``extract_section``. Handles both standalone and existing-run
+           (``run_id`` set) callers; the service routes internally.
+        2. ``run_id`` set (no ``entity_type_id``) → ``extract_for_run`` iterates
+           every top-level entity_type of that run's template (QA surface).
+        3. ``extract_all_sections`` → batch sweep of child sections under
+           ``parent_instance_id`` (per-model CHARMS batch).
+        """
+        model = payload.model or settings.LLM_DEFAULT_MODEL
+
+        if payload.entity_type_id is not None:
+            return await self.extract_section(
+                project_id=payload.project_id,
+                article_id=payload.article_id,
+                template_id=payload.template_id,
+                entity_type_id=payload.entity_type_id,
+                parent_instance_id=payload.parent_instance_id,
+                model=model,
+                run_id=payload.run_id,
+            )
+
+        if payload.run_id is not None:
+            return await self.extract_for_run(
+                run_id=payload.run_id,
+                skip_fields_with_human_proposals=payload.skip_fields_with_human_proposals,
+                auto_advance_to_review=payload.auto_advance_to_review,
+                model=model,
+            )
+
+        # Branch 3: extract_all_sections (validator guarantees parent_instance_id).
+        return await self.extract_all_sections(
+            project_id=payload.project_id,
+            article_id=payload.article_id,
+            template_id=payload.template_id,
+            parent_instance_id=payload.parent_instance_id,  # type: ignore[arg-type]
+            section_ids=payload.section_ids,
+            pdf_text=payload.pdf_text,
+            model=model,
+        )

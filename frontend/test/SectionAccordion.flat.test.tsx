@@ -1,10 +1,21 @@
 // frontend/test/SectionAccordion.flat.test.tsx
 import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { SectionAccordion } from '@/components/extraction/SectionAccordion';
 
 vi.mock('@/integrations/supabase/client', () => ({ supabase: {} }));
 vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
+
+// SectionAccordion → useSectionExtraction now consumes a QueryClient (async
+// extraction-job polling), so the render needs a provider.
+function Wrapper({ children }: { children: ReactNode }) {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+}
 
 const entityType = {
   id: 'et1', template_id: 't', name: 'participants', label: 'Participants', description: null,
@@ -19,6 +30,7 @@ describe('SectionAccordion flat header', () => {
         entityType={entityType} instances={[]} fields={[]} values={{}}
         onValueChange={() => {}} projectId="p" articleId="a" templateId="t"
       />,
+      { wrapper: Wrapper },
     );
     expect(container.querySelector('.border-l-4')).toBeNull();
     expect(container.querySelector('.bg-card')).toBeNull();

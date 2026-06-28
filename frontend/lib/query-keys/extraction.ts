@@ -29,4 +29,7 @@ export const extractionKeys = {
     [...extractionKeys.all, 'export-reviewers', projectId, templateId] as const,
   exportJobStatus: (projectId: string, jobId: string) =>
     [...extractionKeys.all, 'export-status', projectId, jobId] as const,
+  // Async section extraction job polling (B4/B5)
+  job: (jobId: string) =>
+    [...extractionKeys.all, 'section-job', jobId] as const,
 } as const;
