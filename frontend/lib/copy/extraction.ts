@@ -851,6 +851,9 @@ export const extraction = {
     attributionEntailed: 'Verified',
     attributionWeak: 'Weak match',
     attributionUnsupported: 'Not supported',
+    // useExtractionJob async polling toasts
+    extractionJobFailedTitle: 'AI extraction failed',
+    extractionJobCancelledTitle: 'AI extraction cancelled',
 } as const;
 
 export type ExtractionCopy = typeof extraction;

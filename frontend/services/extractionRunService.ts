@@ -12,6 +12,7 @@
 import {apiClient} from '@/integrations/api';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {ReviewKind} from '@/lib/comparison/permissions';
+import type {components} from '@/types/api/schema';
 
 // ---------------------------------------------------------------------------
 // useRunAIExtraction
@@ -27,26 +28,31 @@ export interface ExtractForRunRequest {
   model?: string;
 }
 
+/** Shape returned by POST /api/v1/extraction/sections (202 body). */
 export interface ExtractForRunResult {
-  extractionRunId: string;
-  totalSections: number;
-  successfulSections: number;
-  failedSections: number;
-  totalSuggestionsCreated: number;
-  totalTokensUsed: number;
-  durationMs: number;
+  /** Celery job id; poll via GET /api/v1/extraction/sections/status/{jobId}. */
+  jobId: string;
 }
 
 /**
- * POST /api/v1/extraction/sections for an already-open run.
- * Returns ErrorResult — never throws.
+ * Typed alias for the status-poll response.
+ * Imported from generated schema so the shape never drifts from the backend.
+ */
+export type ExtractionJobStatus =
+  components['schemas']['ExtractionJobStatusResponse'];
+
+/**
+ * POST /api/v1/extraction/sections — enqueues the extraction job.
+ * Returns ErrorResult<{ jobId }> — never throws.
+ * The backend returns 202 with ApiResponse.success({ job_id }) (snake_case).
  */
 export function extractForRun(
   params: ExtractForRunRequest,
 ): Promise<ErrorResult<ExtractForRunResult>> {
   return toResult(
-    () =>
-      apiClient<ExtractForRunResult>('/api/v1/extraction/sections', {
+    async () => {
+      // apiClient unwraps ApiResponse.data; backend sends { job_id } (snake_case).
+      const raw = await apiClient<{ job_id: string }>('/api/v1/extraction/sections', {
         method: 'POST',
         body: {
           projectId: params.projectId,
@@ -57,8 +63,27 @@ export function extractForRun(
           autoAdvanceToReview: params.autoAdvanceToReview ?? false,
           model: params.model ?? 'gpt-4o-mini',
         },
-      }),
+      });
+      return { jobId: raw.job_id };
+    },
     'extractionRunService.extractForRun',
+  );
+}
+
+/**
+ * GET /api/v1/extraction/sections/status/{jobId} — polls job state.
+ * Returns ErrorResult<ExtractionJobStatus> — never throws.
+ * The status response is already camelCase (jobId, result, status, error).
+ */
+export function getExtractionJobStatus(
+  jobId: string,
+): Promise<ErrorResult<ExtractionJobStatus>> {
+  return toResult(
+    () =>
+      apiClient<ExtractionJobStatus>(
+        `/api/v1/extraction/sections/status/${encodeURIComponent(jobId)}`,
+      ),
+    'extractionRunService.getExtractionJobStatus',
   );
 }
 
