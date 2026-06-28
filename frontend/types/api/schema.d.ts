@@ -2405,6 +2405,21 @@ export interface components {
          */
         ExtractionArticleScope: "current_list" | "selected_only";
         /**
+         * ExtractionErrorCode
+         * @description Stable, machine-readable code for a terminal extraction failure.
+         *
+         *     Carried on ``ExtractionJobStatusResponse.error_code`` so the frontend can
+         *     pick specific, actionable toast copy without parsing the human ``error``
+         *     string. Only modes the backend genuinely raises are represented — each
+         *     value has a real emitter in ``classify_extraction_error``:
+         *
+         *     - ``PDF_NOT_FOUND``    — the article has no stored PDF (``FileNotFoundError``).
+         *     - ``MISSING_API_KEY``  — no usable LLM key, BYOK or global (``MissingLLMKeyError``).
+         *     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
+         * @enum {string}
+         */
+        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "EXTRACTION_FAILED";
+        /**
          * ExtractionExportCancelResponse
          * @description Cancel endpoint payload.
          */
@@ -2515,6 +2530,7 @@ export interface components {
         ExtractionJobStatusResponse: {
             /** Error */
             error?: string | null;
+            errorCode?: components["schemas"]["ExtractionErrorCode"] | null;
             /** Jobid */
             jobId: string;
             result?: components["schemas"]["ExtractionJobResult"] | null;

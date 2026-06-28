@@ -19,6 +19,9 @@ from uuid import uuid4
 
 import pytest
 
+from app.llm.provider import MissingLLMKeyError
+from app.schemas.extraction import ExtractionErrorCode
+from app.services.extraction_errors import ExtractionTaskError
 from app.services.section_extraction_service import (
     BatchAllSectionsFailed,
     BatchExtractionResult,
@@ -245,7 +248,10 @@ class TestRunSectionExtractionTaskBatch:
 
 
 class TestRunSectionExtractionTaskRollback:
-    def test_rolls_back_and_reraises_on_exception(self):
+    def test_rolls_back_and_raises_coded_error_on_exception(self):
+        """An unknown failure rolls back and surfaces as a coded
+        ``ExtractionTaskError`` (generic code) instead of leaking the raw
+        exception type — so the status endpoint always has a code to read."""
         user_id = str(uuid4())
         payload_dict = {
             "projectId": str(uuid4()),
@@ -269,10 +275,12 @@ class TestRunSectionExtractionTaskRollback:
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
-            pytest.raises(RuntimeError, match="llm exploded"),
+            pytest.raises(ExtractionTaskError) as exc_info,
         ):
             _apply(payload_dict, user_id)
 
+        assert exc_info.value.error_code == ExtractionErrorCode.EXTRACTION_FAILED.value
+        assert str(exc_info.value) == "llm exploded"
         session.rollback.assert_awaited_once()
         session.commit.assert_not_awaited()
 
@@ -281,8 +289,8 @@ class TestRunSectionExtractionTaskAllFailed:
     def test_commits_failed_status_on_batch_all_sections_failed(self):
         """When the service raises BatchAllSectionsFailed it has already marked the
         run FAILED (rollback_and_fail); the task must COMMIT that terminal status
-        (not roll it back) and re-raise, so the failed run is visible to status
-        polls — mirrors the pre-async endpoint's handling."""
+        (not roll it back) and surface a coded error, so the failed run is visible
+        to status polls — mirrors the pre-async endpoint's handling."""
         user_id = str(uuid4())
         payload_dict = {
             "projectId": str(uuid4()),
@@ -308,9 +316,58 @@ class TestRunSectionExtractionTaskAllFailed:
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
-            pytest.raises(BatchAllSectionsFailed, match="all 3 sections failed"),
+            pytest.raises(ExtractionTaskError) as exc_info,
         ):
             _apply(payload_dict, user_id)
 
+        assert exc_info.value.error_code == ExtractionErrorCode.EXTRACTION_FAILED.value
+        assert str(exc_info.value) == "all 3 sections failed"
         session.commit.assert_awaited_once()
         session.rollback.assert_not_awaited()
+
+
+class TestRunSectionExtractionTaskErrorCode:
+    """The task attaches a stable ``ExtractionErrorCode`` for the failure modes
+    the pipeline raises by type, so the status endpoint can surface specific
+    frontend copy without parsing the exception repr."""
+
+    def _run_with_side_effect(self, exc: Exception) -> ExtractionTaskError:
+        user_id = str(uuid4())
+        payload_dict = {
+            "projectId": str(uuid4()),
+            "articleId": str(uuid4()),
+            "templateId": str(uuid4()),
+            "entityTypeId": str(uuid4()),
+        }
+
+        session = _FakeSession()
+        fake_service = MagicMock()
+        fake_service.run_from_request = AsyncMock(side_effect=exc)
+        fake_api_key = MagicMock()
+        fake_api_key.get_key_for_provider = AsyncMock(return_value=None)
+
+        with (
+            patch(
+                "app.services.section_extraction_service.SectionExtractionService",
+                return_value=fake_service,
+            ),
+            patch("app.services.api_key_service.APIKeyService", return_value=fake_api_key),
+            patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
+            patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+            patch("app.worker._session.worker_session", new=_session_factory(session)),
+            pytest.raises(ExtractionTaskError) as exc_info,
+        ):
+            _apply(payload_dict, user_id)
+        return exc_info.value
+
+    def test_missing_pdf_carries_pdf_not_found_code(self):
+        err = self._run_with_side_effect(FileNotFoundError("No PDF for article abc"))
+        assert err.error_code == ExtractionErrorCode.PDF_NOT_FOUND.value
+        assert str(err) == "PDF not found. Upload a PDF first."
+
+    def test_missing_llm_key_carries_missing_api_key_code(self):
+        err = self._run_with_side_effect(
+            MissingLLMKeyError("No OpenAI API key available: pass a BYOK key.")
+        )
+        assert err.error_code == ExtractionErrorCode.MISSING_API_KEY.value
+        assert str(err) == "No OpenAI API key available: pass a BYOK key."

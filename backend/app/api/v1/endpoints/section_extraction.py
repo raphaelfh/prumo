@@ -24,6 +24,7 @@ from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
 from app.schemas.extraction import (
+    ExtractionErrorCode,
     ExtractionJobResult,
     ExtractionJobStartedResponse,
     ExtractionJobStatusResponse,
@@ -85,6 +86,24 @@ def _lookup_job_owner(job_id: str) -> str | None:
     if isinstance(raw, bytes):
         return raw.decode("utf-8", errors="replace")
     return str(raw)
+
+
+def _failure_error_code(exc: object) -> ExtractionErrorCode:
+    """Recover the failure's machine-readable code from the AsyncResult.
+
+    ``run_section_extraction_task`` raises ``ExtractionTaskError`` carrying a
+    string ``error_code`` (it survives the Celery JSON round-trip via the
+    exception args). Read it duck-typed and coerce to the enum, defaulting any
+    missing / unknown code to ``EXTRACTION_FAILED`` so serialization never
+    fails on a future or untyped error.
+    """
+    raw = getattr(exc, "error_code", None)
+    if isinstance(raw, str):
+        try:
+            return ExtractionErrorCode(raw)
+        except ValueError:
+            return ExtractionErrorCode.EXTRACTION_FAILED
+    return ExtractionErrorCode.EXTRACTION_FAILED
 
 
 # ----------------------------------------------------------------------
@@ -249,11 +268,13 @@ async def get_section_extraction_status(
             trace_id=trace_id,
         )
     if state == "FAILURE":
+        exc = result.result
         return ApiResponse.success(
             data=ExtractionJobStatusResponse(
                 job_id=job_id,
                 status="failed",
-                error=str(result.result) if result.result else "Task failed.",
+                error=str(exc) if exc else "Task failed.",
+                error_code=_failure_error_code(exc),
             ),
             trace_id=trace_id,
         )
