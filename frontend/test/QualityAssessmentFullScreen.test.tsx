@@ -134,15 +134,25 @@ vi.mock("@/integrations/supabase/client", () => {
   };
 });
 
-// The PDF viewer pulls in worker / canvas globals that aren't worth wiring
-// up for a unit test — stub it out.
-vi.mock("@prumo/pdf-viewer", () => ({
-  PrumoPdfViewer: () => <div data-testid="qa-pdf-viewer-stub">PDF</div>,
-  articleFileSourceFromStorageKey: (storageKey: string) => ({
-    kind: "lazy" as const,
-    load: async () => ({kind: "url" as const, url: `stub://${storageKey}`}),
-  }),
-}));
+// The PDF viewer pulls in worker / canvas globals (pdfjs/DOMMatrix) that aren't
+// worth wiring up for a unit test — stub PrumoPdfViewer. But the page now also
+// imports createViewerStore + subscribeReaderLocate from this module; use the
+// REAL (engine-free) implementations from the `core` subpath so the shared
+// viewer-store wiring behaves correctly (a partial stub would make
+// `subscribeReaderLocate` undefined → TypeError at render).
+vi.mock("@prumo/pdf-viewer", async () => {
+  const core =
+    await vi.importActual<typeof import("@/pdf-viewer/core")>("@/pdf-viewer/core");
+  return {
+    PrumoPdfViewer: () => <div data-testid="qa-pdf-viewer-stub">PDF</div>,
+    articleFileSourceFromStorageKey: (storageKey: string) => ({
+      kind: "lazy" as const,
+      load: async () => ({kind: "url" as const, url: `stub://${storageKey}`}),
+    }),
+    createViewerStore: core.createViewerStore,
+    subscribeReaderLocate: core.subscribeReaderLocate,
+  };
+});
 
 // apiClient gets called from the QA hooks; map by URL so the test isn't
 // coupled to the order of fetches.
