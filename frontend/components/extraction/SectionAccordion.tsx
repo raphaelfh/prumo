@@ -11,14 +11,13 @@ import {Accordion, AccordionContent, AccordionItem,} from '@/components/ui/accor
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
-import {ChevronDown, Loader2, Plus, Sparkles} from 'lucide-react';
+import {ChevronDown, Plus} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import {useRef} from 'react';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import {InstanceCard} from './InstanceCard';
-import {useSectionExtraction} from '@/hooks/extraction/useSectionExtraction';
+import {SectionAIExtractButton} from '@/components/extraction/ai/shared/SectionAIExtractButton';
 import type {ExtractionEntityType, ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 
@@ -65,48 +64,6 @@ export function SectionAccordion(props: SectionAccordionProps) {
   } = props;
 
   const isMultiple = entityType.cardinality === 'many';
-
-    // Hook for specific section extraction
-    // onSuccess callback notifies parent for suggestion refresh
-    // IMPORTANT: onSuccess must not block - call without await so loading is not stuck
-  const { extractSection, loading: extractionLoading } = useSectionExtraction({
-      onSuccess: (runId, _suggestionsCreated) => {
-        // Notify parent that extraction completed
-        // CRITICAL: Do not await here - let it run in background
-        // O loading deve ser resetado pelo hook independentemente deste callback
-        if (!props.onExtractionComplete) return;
-        Promise.resolve(props.onExtractionComplete(runId)).catch((err: unknown) => {
-          console.error('Erro no callback onExtractionComplete:', err);
-            // Do not block the hook from resetting loading
-        });
-    },
-  });
-
-  /**
-   * Handler for section extraction
-   * IMPORTANT: For cardinality="many", the backend now creates instances automatically,
-   * so we allow extraction even without pre-existing instances.
-   */
-  const handleExtractSection = async () => {
-      // Check for existing instances
-      // EXCEPTION: For cardinality="many", allow extraction (backend creates instances automatically)
-    if (instances.length === 0 && !isMultiple) {
-        // Toast will be shown by the hook; we can add here too if needed
-      return;
-    }
-
-    await extractSection({
-      projectId,
-      articleId,
-      templateId,
-      entityTypeId: entityType.id,
-      parentInstanceId: props.parentInstanceId,
-      runId: props.runId ?? undefined,
-    }).catch((error: unknown) => {
-        // Error already handled by hook with toast
-      console.error('Section extraction failed:', error);
-    });
-  };
 
     // Calculate progress for this section
   const requiredFields = fields.filter(f => f.is_required);
@@ -175,43 +132,19 @@ export function SectionAccordion(props: SectionAccordionProps) {
                 </div>
               </AccordionPrimitive.Trigger>
             </AccordionPrimitive.Header>
-              {/* Minimal AI extraction button - outside AccordionTrigger to avoid nested buttons */}
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 shrink-0"
-                    onClick={(e) => {
-                      e.stopPropagation(); // Prevenir toggle do accordion
-                      handleExtractSection();
-                    }}
-                    disabled={extractionLoading || (instances.length === 0 && !isMultiple)}
-                    title={
-                      instances.length === 0 && !isMultiple
-                          ? t('extraction', 'createInstanceBeforeExtract')
-                          : t('extraction', 'extractSectionWithAI').replace('{{label}}', entityType.label)
-                    }
-                  >
-                    {extractionLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                    ) : (
-                      <Sparkles className="h-4 w-4 text-primary" />
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>
-                    {instances.length === 0 && !isMultiple
-                        ? t('extraction', 'createInstanceBeforeExtract')
-                      : extractionLoading
-                            ? t('extraction', 'extractingWithAI')
-                            : t('extraction', 'extractSectionWithAI').replace('{{label}}', entityType.label)}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+              {/* Per-section AI extract — shared component, sibling of the
+                  trigger to avoid nested buttons. */}
+            <SectionAIExtractButton
+              projectId={projectId}
+              articleId={articleId}
+              templateId={templateId}
+              entityTypeId={entityType.id}
+              entityLabel={entityType.label}
+              runId={props.runId}
+              parentInstanceId={props.parentInstanceId}
+              disabled={instances.length === 0 && !isMultiple}
+              onExtractionComplete={props.onExtractionComplete}
+            />
               {/* Chevron manually positioned at the end, after AI button - clickable to open/close accordion */}
             <button
               type="button"
