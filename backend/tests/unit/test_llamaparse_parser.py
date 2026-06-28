@@ -105,3 +105,53 @@ def test_raises_only_when_truly_empty() -> None:
     result = _response(items=Items(pages=[]), markdown=Markdown(pages=[]))
     with pytest.raises(ValueError, match="no text blocks"):
         LlamaParseParser._map_result(result)
+
+
+def test_parse_passes_timeout_to_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """parse() MUST cap the blocking SDK call (default is 7200s = 2h)."""
+    from types import SimpleNamespace
+
+    parse_captured: dict[str, object] = {}
+    upload_captured: dict[str, object] = {}
+
+    class _FakeParsing:
+        def parse(self, **kwargs: object) -> ParsingGetResponse:
+            parse_captured.update(kwargs)
+            return _response(
+                markdown=Markdown(
+                    pages=[
+                        MarkdownPageMarkdownResultPage(
+                            markdown="Body.", page_number=1, success=True
+                        )
+                    ]
+                )
+            )
+
+    class _FakeFiles:
+        def create(self, **kwargs: object) -> SimpleNamespace:
+            upload_captured.update(kwargs)
+            return SimpleNamespace(id="file-123")
+
+    class _FakeLlamaCloud:
+        def __init__(self, *, api_key: str) -> None:  # noqa: ARG002
+            self.parsing = _FakeParsing()
+            self.files = _FakeFiles()
+
+    # parse() does `from llama_cloud import LlamaCloud` lazily, so patch the
+    # module attribute it re-reads on each call.
+    monkeypatch.setattr("llama_cloud.LlamaCloud", _FakeLlamaCloud)
+
+    parser = LlamaParseParser(api_key="k", timeout=99.0)
+    blocks = parser.parse(b"%PDF-1.4 fake")
+
+    # BOTH the upload and the parse poll must be bounded (each can block).
+    assert upload_captured["timeout"] == 99.0
+    assert upload_captured["purpose"] == "parse"
+    assert parse_captured["timeout"] == 99.0
+    assert parse_captured["file_id"] == "file-123"
+    assert [b.text for b in blocks] == ["Body."]
+
+
+def test_timeout_defaults_to_capped_value() -> None:
+    # A bare construction must still be bounded — never inherit the SDK's 2h.
+    assert LlamaParseParser(api_key="k").timeout == 240.0

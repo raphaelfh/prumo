@@ -112,12 +112,26 @@ def _blocks_from_markdown(result: Any) -> list[ParsedBlock]:
     return blocks
 
 
+# Bounded fallback default — never inherit the SDK's 7200s (2h) parse timeout.
+# Keep in sync with Settings.LLAMA_PARSE_TIMEOUT_SECONDS (the runtime value the
+# factory injects); this constant only applies to a bare construction.
+_DEFAULT_TIMEOUT_SECONDS = 240.0
+
+
 class LlamaParseParser(DocumentParser):
     """High-quality cloud parser. Implements the DocumentParser port."""
 
-    def __init__(self, api_key: str, tier: str = "agentic") -> None:
+    def __init__(
+        self, api_key: str, tier: str = "agentic", timeout: float = _DEFAULT_TIMEOUT_SECONDS
+    ) -> None:
         self._api_key = api_key
         self._tier = tier
+        self._timeout = timeout
+
+    @property
+    def timeout(self) -> float:
+        """The cap (seconds) applied to the blocking parse()/upload calls."""
+        return self._timeout
 
     def parse(self, pdf_bytes: bytes) -> list[ParsedBlock]:
         from llama_cloud import LlamaCloud  # lazy: cloud SDK, not a unit dep
@@ -126,13 +140,17 @@ class LlamaParseParser(DocumentParser):
         with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
             tmp.write(pdf_bytes)
             tmp.flush()
-            uploaded = client.files.create(file=tmp.name, purpose="parse")
+            # Bound BOTH the upload and the (otherwise 2h-default) parse poll so
+            # a slow/stuck cloud job fails fast — the caller falls back to the
+            # local parser instead of pinning a worker slot forever.
+            uploaded = client.files.create(file=tmp.name, purpose="parse", timeout=self._timeout)
             result = client.parsing.parse(
                 file_id=uploaded.id,
                 tier=self._tier,
                 version="latest",
                 output_options={"granular_bboxes": ["word", "line", "cell"]},
                 expand=["markdown", "items"],
+                timeout=self._timeout,
             )
 
         return self._map_result(result)
