@@ -15,7 +15,7 @@
  * @page
  */
 
-import {useEffect, useMemo, useState} from 'react';
+import {useEffect, useMemo, useRef, useState} from 'react';
 import {useNavigate, useParams} from 'react-router-dom';
 import {toast} from 'sonner';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
@@ -24,7 +24,8 @@ import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
 import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
-import {ResizablePanel, ResizablePanelGroup} from '@/components/ui/resizable';
+import {RunSplitShell} from '@/components/runs/RunSplitShell';
+import {usePdfPanel} from '@/hooks/usePdfPanel';
 import {Button} from '@/components/ui/button';
 import {Loader2} from 'lucide-react';
 import {
@@ -62,7 +63,7 @@ import {useConsensusReconciliation} from '@/hooks/extraction/useConsensusReconci
 
 // Components
 import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
-import {ExtractionPDFPanel} from '@/components/extraction/ExtractionPDFPanel';
+import {ExtractionPdfContent} from '@/components/extraction/ExtractionPDFPanel';
 import {ExtractionFormPanel} from '@/components/extraction/ExtractionFormPanel';
 import {AddModelDialog, RemoveModelDialog} from '@/components/extraction/hierarchy';
 import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtractionProgress';
@@ -71,7 +72,7 @@ import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtraction
 import {useModelManagement} from '@/hooks/extraction/useModelManagement';
 import {usePreserveScroll} from '@/hooks/usePreserveScroll';
 import {t} from '@/lib/copy';
-import {ViewerProvider, createViewerStore, subscribeReaderLocate} from '@prumo/pdf-viewer';
+import {createViewerStore, subscribeReaderLocate} from '@prumo/pdf-viewer';
 
 const SCROLL_CONTAINERS_TO_PRESERVE = [
   // Form panel — actual scroll happens on radix' inner viewport node.
@@ -91,11 +92,11 @@ export default function ExtractionFullScreen() {
 
   // ONE stable viewer store shared between the PDF panel and the form panel.
   // useState lazy initializer creates the store exactly once per mount —
-  // the React-Compiler-approved pattern (mirrors ViewerProvider's own
-  // internal creation). Both <ExtractionPDFPanel store={viewerStore}> and
-  // <ViewerProvider store={viewerStore}> below point at this instance —
-  // that is the prerequisite for the click-evidence → highlight feature
-  // (Task 4B follow-up).
+  // the React-Compiler-approved pattern. RunSplitShell wraps both panels in a
+  // single <ViewerProvider store={viewerStore}>, and ExtractionPdfContent
+  // receives store={viewerStore}, so the form-panel evidence popover and the
+  // PDF reader resolve the SAME store — the prerequisite for the
+  // click-evidence → highlight feature.
   const [viewerStore] = useState(createViewerStore);
 
   // Load page-bootstrap data using dedicated hook (SRP). Entity types +
@@ -121,12 +122,19 @@ export default function ExtractionFullScreen() {
   const currentUserId = userId ?? '';
 
   // UI state
-  const [showPDF, setShowPDF] = useState(false);
+  const pdf = usePdfPanel({ initialOpen: false });
   const [viewMode, setViewMode] = useState<'extract' | 'compare'>('extract');
 
   // A citation-locate (from an AI-suggestion popover) reveals the document panel
   // if collapsed, so the reader can scroll + flash the cited passage.
-  useEffect(() => subscribeReaderLocate(viewerStore, () => setShowPDF(true)), [viewerStore]);
+  // `usePdfPanel.open` is a fresh closure each render; hold it in a ref and
+  // subscribe ONCE per store so a citation-locate reveals the PDF panel without
+  // re-subscribing every render. Cleanup via return (React Compiler).
+  const openPdfRef = useRef(pdf.open);
+  useEffect(() => {
+    openPdfRef.current = pdf.open;
+  }, [pdf.open]);
+  useEffect(() => subscribeReaderLocate(viewerStore, () => openPdfRef.current()), [viewerStore]);
 
     // AI extraction progress state
   const [aiExtractionState, setAiExtractionState] = useState<{
@@ -1062,10 +1070,119 @@ export default function ExtractionFullScreen() {
   // Reopen is surfaced via the header Menu instead of the orphaned banner.
   const canReopen = isFinalized || (!activeRunId && !!finalizedRun);
 
+  // AI extraction progress overlay (fixed-position; DOM placement irrelevant).
+  const aiProgressOverlay =
+    (extractingFullAI && extractionProgress) ||
+    (aiExtractionState?.loading && aiExtractionState?.progress) ||
+    isProgressMinimized ? (
+      <div className="fixed bottom-6 right-6 z-[9999] w-96 max-w-[calc(100vw-3rem)]">
+        <FullAIExtractionProgress
+          progress={extractionProgress ?? aiExtractionState?.progress ?? { stage: 'extracting_models' }}
+          onClose={() => {
+            setAiExtractionState(null);
+            setIsProgressMinimized(false);
+          }}
+          onMinimize={() => {
+            setIsProgressMinimized(true);
+          }}
+        />
+      </div>
+    ) : null;
+
+  // HITL revision/finalized status badges, rendered between header and panels.
+  const extractionSubHeader =
+    parentRunId || isFinalized || (!activeRunId && finalizedRun) ? (
+      <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2 text-xs">
+        <HITLStatusBadges
+          kind="extraction"
+          finalized={isFinalized || (!activeRunId && !!finalizedRun)}
+          parentRunId={parentRunId}
+        />
+      </div>
+    ) : null;
+
+  // Left panel: ConsensusPanel in consensus stage; ExtractionFormPanel otherwise.
+  const extractionFormPanel =
+    inConsensusStage && runDetail ? (
+      <div className="h-full min-h-0 overflow-y-auto" data-testid="extraction-consensus-area">
+        <ConsensusPanel
+          runDetail={runDetail}
+          summary={reviewerSummary}
+          requiredCoords={requiredCoords}
+          peersRevealed={!!runDetail.peers_revealed}
+          fieldLabelByCoord={fieldLabelByCoord}
+          reviewerLabelById={reviewerProfiles.labelById}
+          avatarById={reviewerProfiles.avatarById}
+          onSelectExisting={handleSelectExisting}
+          onManualOverride={handleManualOverride}
+          onFinalize={handleApproveFinalize}
+          isComplete={isComplete}
+          isResolving={consensusMutation.isPending}
+          isFinalizing={advanceMutation.isPending || approveFinalize.isPending}
+          showFinalize={false}
+        />
+      </div>
+    ) : (
+      <ExtractionFormPanel
+        viewMode={viewMode}
+        showPDF={pdf.isOpen}
+        formViewProps={{
+          studyLevelSections,
+          modelParentEntityType,
+          modelChildSections,
+          instances,
+          values,
+          updateValue,
+          aiSuggestions,
+          acceptSuggestion,
+          rejectSuggestion,
+          getSuggestionsHistory,
+          isActionLoading,
+          models,
+          activeModelId,
+          setActiveModelId,
+          onAddModel: handleAddModel,
+          onRemoveModel: handleRemoveModel,
+          onRefreshModels: refreshModels,
+          onRefreshInstances: handleRefreshInstances,
+          getInstancesForModel,
+          handleAddInstance,
+          handleRemoveInstance,
+          projectId: projectId || '',
+          articleId: articleId || '',
+          templateId: template?.id || '',
+          runId: activeRunId,
+          modelsLoading,
+          onExtractionComplete: handleExtractionComplete,
+        }}
+        compareViewProps={{
+          decisionsByCoord: reviewerSummary.decisionsByCoord,
+          entityTypes,
+          instances,
+          ownValues: values,
+          reviewerLabelById: reviewerProfiles.labelById,
+          reviewerAvatarById: reviewerProfiles.avatarById,
+        }}
+      />
+    );
+
   return (
-    <div className="h-full flex flex-col bg-background">
-      {/* Header — RunHeader compound via ExtractionHeader */}
-      <ExtractionHeader
+    <div className="h-full bg-background">
+      {aiProgressOverlay}
+      <RunSplitShell
+        pdfState={pdf}
+        viewerStore={viewerStore}
+        subHeader={extractionSubHeader}
+        formPanel={extractionFormPanel}
+        pdfPanel={
+          <ExtractionPdfContent
+            articleId={articleId || ''}
+            projectId={projectId || ''}
+            store={viewerStore}
+          />
+        }
+        header={
+          <ExtractionHeader
         projectId={projectId || ''}
         projectName={project?.name || t('pages', 'extractionScreenProjectFallback')}
         articleTitle={article.title}
@@ -1079,8 +1196,8 @@ export default function ExtractionFullScreen() {
         completedFields={completedFields}
         totalFields={totalFields}
         completionPercentage={completionPercentage}
-        showPDF={showPDF}
-        onTogglePDF={() => setShowPDF(!showPDF)}
+        showPDF={pdf.isOpen}
+        onTogglePDF={pdf.toggle}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         hasComparison={canCompare}
@@ -1131,131 +1248,8 @@ export default function ExtractionFullScreen() {
         onReopen={() => void handleReopen()}
         reopening={reopening}
       />
-
-        {/* AI extraction progress - Rendered at page level to avoid conflicts.
-            Shown when either: the page-level extractFullAI hook is running with
-            progress (header button path), or a child component reported state
-            via onExtractionStateChange (form-panel section path), or minimized. */}
-      {(extractingFullAI && extractionProgress) || (aiExtractionState?.loading && aiExtractionState?.progress) || isProgressMinimized ? (
-        <div className="fixed bottom-6 right-6 z-[9999] w-96 max-w-[calc(100vw-3rem)]">
-          <FullAIExtractionProgress
-            progress={extractionProgress ?? aiExtractionState?.progress ?? { stage: 'extracting_models' }}
-            onClose={() => {
-              setAiExtractionState(null);
-              setIsProgressMinimized(false);
-            }}
-            onMinimize={() => {
-              setIsProgressMinimized(true);
-            }}
-          />
-        </div>
-      ) : null}
-
-      {/* HITL revision/finalized status badges. Only rendered when there is a
-          badge to show (revision or published) — otherwise this bordered strip
-          was an empty bar. The "N/M reviewers" counter that used to live here
-          was redundant with the header's Reviewers slot and always read "1/1"
-          in the single-reviewer default, so it has been removed. */}
-      {(parentRunId || isFinalized || (!activeRunId && finalizedRun)) ? (
-        <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2 text-xs">
-          <HITLStatusBadges
-            kind="extraction"
-            finalized={isFinalized || (!activeRunId && !!finalizedRun)}
-            parentRunId={parentRunId}
-          />
-        </div>
-      ) : null}
-
-      {/* Main content — wrapped in ViewerProvider so both the PDF viewer and
-          the form panel resolve useViewerStore/useViewerStoreApi to the same
-          store instance. The viewer also receives store={viewerStore} so
-          Viewer.Root forwards it rather than creating a second store.
-          QA-screen shared-store lift is deferred (AssessmentShell passes the
-          viewer as a ReactNode prop; out of scope here). */}
-      <div className="flex-1 overflow-hidden">
-        <ViewerProvider store={viewerStore}>
-        <ResizablePanelGroup direction="horizontal">
-            {/* Left panel: ConsensusPanel in consensus stage; ExtractionFormPanel otherwise */}
-          <ResizablePanel
-            id="extraction-form"
-            order={1}
-            defaultSize={showPDF ? 50 : 100}
-            minSize={30}
-          >
-            {inConsensusStage && runDetail ? (
-              <div className="h-full min-h-0 overflow-y-auto" data-testid="extraction-consensus-area">
-                <ConsensusPanel
-                  runDetail={runDetail}
-                  summary={reviewerSummary}
-                  requiredCoords={requiredCoords}
-                  peersRevealed={!!runDetail.peers_revealed}
-                  fieldLabelByCoord={fieldLabelByCoord}
-                  reviewerLabelById={reviewerProfiles.labelById}
-                  avatarById={reviewerProfiles.avatarById}
-                  onSelectExisting={handleSelectExisting}
-                  onManualOverride={handleManualOverride}
-                  onFinalize={handleApproveFinalize}
-                  isComplete={isComplete}
-                  isResolving={consensusMutation.isPending}
-                  isFinalizing={advanceMutation.isPending || approveFinalize.isPending}
-                  showFinalize={false}
-                />
-              </div>
-            ) : (
-              <ExtractionFormPanel
-                viewMode={viewMode}
-                showPDF={showPDF}
-                formViewProps={{
-                  studyLevelSections,
-                  modelParentEntityType,
-                  modelChildSections,
-                  instances,
-                  values,
-                  updateValue,
-                  aiSuggestions,
-                  acceptSuggestion,
-                  rejectSuggestion,
-                  getSuggestionsHistory,
-                  isActionLoading,
-                  models,
-                  activeModelId,
-                  setActiveModelId,
-                  onAddModel: handleAddModel,
-                  onRemoveModel: handleRemoveModel,
-                  onRefreshModels: refreshModels,
-                  onRefreshInstances: handleRefreshInstances,
-                  getInstancesForModel,
-                  handleAddInstance,
-                  handleRemoveInstance,
-                  projectId: projectId || '',
-                  articleId: articleId || '',
-                  templateId: template?.id || '',
-                  runId: activeRunId,
-                  modelsLoading,
-                  onExtractionComplete: handleExtractionComplete,
-                }}
-                compareViewProps={{
-                  decisionsByCoord: reviewerSummary.decisionsByCoord,
-                  entityTypes,
-                  instances,
-                  ownValues: values,
-                  reviewerLabelById: reviewerProfiles.labelById,
-                  reviewerAvatarById: reviewerProfiles.avatarById,
-                }}
-              />
-            )}
-          </ResizablePanel>
-
-            {/* PDF Viewer (right, optional) - renders the handle + panel */}
-          <ExtractionPDFPanel
-            articleId={articleId || ''}
-            projectId={projectId || ''}
-            showPDF={showPDF}
-            store={viewerStore}
-          />
-        </ResizablePanelGroup>
-        </ViewerProvider>
-      </div>
+        }
+      />
 
       {/* Dialogs */}
       <AddModelDialog
