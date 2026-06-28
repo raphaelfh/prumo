@@ -68,7 +68,16 @@ test.describe("Extraction flow (UI + API)", () => {
     expect(sectionBody.data.extractionRunId).toBeTruthy();
   });
 
-  test("rejects section extraction when article id is invalid", async ({ request, page }) => {
+  test("section extraction enqueues an async job (202) or 503 when the queue is down", async ({
+    request,
+    page,
+  }) => {
+    // Section extraction is async now: the endpoint validates + authorises, then
+    // enqueues a Celery job and returns 202 + { job_id }. Article-existence is
+    // resolved inside the job (surfaced via the status poll), not synchronously
+    // at the endpoint — so a non-existent article id is accepted here and fails
+    // later in the worker. A well-formed, authorised request therefore yields
+    // 202 (queue up) or 503 (queue down) — mirrors the extraction-export e2e.
     const env = loadE2EEnv();
     const required = missingEnvKeys(["E2E_PROJECT_ID"]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
@@ -77,7 +86,7 @@ test.describe("Extraction flow (UI + API)", () => {
     const templateId = await resolveActiveExtractionTemplateId(env.projectId!);
     const entityTypeId = await resolveStudySectionEntityTypeId(templateId);
     const response = await request.post(`${env.apiUrl}/api/v1/extraction/sections`, {
-      headers: authHeaders(token, createTraceId("e2e-extraction-invalid")),
+      headers: authHeaders(token, createTraceId("e2e-extraction-dispatch")),
       data: {
         projectId: env.projectId,
         articleId: "00000000-0000-0000-0000-000000000000",
@@ -87,6 +96,11 @@ test.describe("Extraction flow (UI + API)", () => {
       },
     });
 
-    expect([400, 404, 422]).toContain(response.status());
+    expect([202, 503]).toContain(response.status());
+    if (response.status() === 202) {
+      const body = await parseEnvelope<{ job_id: string }>(response);
+      expect(body.ok).toBeTruthy();
+      expect(body.data.job_id).toBeTruthy();
+    }
   });
 });
