@@ -12,6 +12,7 @@ describe('jobErrorToast', () => {
     expect(jobErrorToast('MISSING_API_KEY', 'No OpenAI API key available.')).toEqual({
       title: 'sectionExtractionErrorAuth',
       description: 'No OpenAI API key available.',
+      duration: 8000,
     });
   });
 
@@ -19,6 +20,7 @@ describe('jobErrorToast', () => {
     expect(jobErrorToast('PDF_NOT_FOUND', 'PDF not found. Upload a PDF first.')).toEqual({
       title: 'sectionExtractionErrorTitle',
       description: 'PDF not found. Upload a PDF first.',
+      duration: 8000,
     });
   });
 
