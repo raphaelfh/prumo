@@ -248,7 +248,10 @@ describe('useRunAIExtraction (async job)', () => {
     await waitFor(() => expect(result.current.error).toBeTruthy());
     expect(toast.error).toHaveBeenCalledWith(
       'sectionExtractionErrorAuth',
-      expect.objectContaining({description: 'No OpenAI API key available.'}),
+      expect.objectContaining({
+        description: 'No OpenAI API key available.',
+        duration: 8000,
+      }),
     );
     expect(result.current.loading).toBe(false);
   });

@@ -97,7 +97,7 @@ export function useRunAIExtraction(options?: {
       if (specific) {
         toast.error(specific.title, {
           description: specific.description,
-          duration: specific.duration ?? 8000,
+          duration: specific.duration,
         });
       } else {
         toast.error(t('extraction', 'extractionJobFailedTitle'), {
