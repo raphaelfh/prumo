@@ -3351,6 +3351,16 @@
         "title": "ExtractionArticleScope",
         "type": "string"
       },
+      "ExtractionErrorCode": {
+        "description": "Stable, machine-readable code for a terminal extraction failure.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
+        "enum": [
+          "PDF_NOT_FOUND",
+          "MISSING_API_KEY",
+          "EXTRACTION_FAILED"
+        ],
+        "title": "ExtractionErrorCode",
+        "type": "string"
+      },
       "ExtractionExportCancelResponse": {
         "description": "Cancel endpoint payload.",
         "properties": {
@@ -3602,6 +3612,16 @@
               }
             ],
             "title": "Error"
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtractionErrorCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "jobId": {
             "title": "Jobid",
