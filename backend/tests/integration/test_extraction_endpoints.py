@@ -57,32 +57,28 @@ class TestSectionExtractionEndpoints:
         self,
         client: AsyncClient,
     ) -> None:
-        """Test extraction with valid request."""
-        from app.services.section_extraction_service import SectionExtractionResult
+        """A valid single-section request enqueues the Celery job and returns
+        202 + job_id (the extraction now runs async in the worker)."""
+        job_id = str(uuid4())
+        mock_task = MagicMock()
+        mock_task.id = job_id
 
+        trace_id = "test-section-trace-id"
         with (
             patch(
-                "app.api.v1.endpoints.section_extraction.SectionExtractionService"
-            ) as mock_service_class,
+                "app.api.v1.endpoints.section_extraction._is_queue_available",
+                return_value=True,
+            ),
             patch(
-                "app.api.v1.endpoints.section_extraction.ensure_project_member",
-                new_callable=AsyncMock,
-            ) as guard,
+                "app.api.v1.endpoints.section_extraction._check_request_scope",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.api.v1.endpoints.section_extraction.run_section_extraction_task.delay",
+                return_value=mock_task,
+            ) as mock_delay,
+            patch("app.api.v1.endpoints.section_extraction._remember_job_owner"),
         ):
-            mock_service = mock_service_class.return_value
-            mock_service.extract_section = AsyncMock(
-                return_value=SectionExtractionResult(
-                    extraction_run_id=str(uuid4()),
-                    entity_type_id=str(uuid4()),
-                    suggestions_created=5,
-                    tokens_prompt=100,
-                    tokens_completion=50,
-                    tokens_total=150,
-                    duration_ms=1500.0,
-                )
-            )
-
-            trace_id = "test-section-trace-id"
             response = await client.post(
                 "/api/v1/extraction/sections",
                 json={
@@ -94,46 +90,39 @@ class TestSectionExtractionEndpoints:
                 headers={"X-Trace-Id": trace_id},
             )
 
-            assert response.status_code == 200
-            data = response.json()
-            assert data.get("ok") is True
-            assert data.get("trace_id") == trace_id
-            assert response.headers.get("X-Trace-Id") == trace_id
-            assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
-            guard.assert_awaited_once()
+        assert response.status_code == 202, response.text
+        data = response.json()
+        assert data.get("ok") is True
+        assert data["data"]["job_id"] == job_id
+        mock_delay.assert_called_once()
+        # Snake-case payload reaches the task (SectionExtractionRequest accepts it).
+        assert mock_delay.call_args[0][0]["entity_type_id"] is not None
 
     @pytest.mark.asyncio
     async def test_section_extraction_batch_valid_request(
         self,
         client: AsyncClient,
     ) -> None:
-        """Test batch extraction with valid request."""
-        from app.services.section_extraction_service import BatchExtractionResult
+        """A valid extract-all-sections request enqueues the job and returns 202."""
+        job_id = str(uuid4())
+        mock_task = MagicMock()
+        mock_task.id = job_id
 
         with (
             patch(
-                "app.api.v1.endpoints.section_extraction.SectionExtractionService"
-            ) as mock_service_class,
+                "app.api.v1.endpoints.section_extraction._is_queue_available",
+                return_value=True,
+            ),
             patch(
-                "app.api.v1.endpoints.section_extraction.ensure_project_member",
-                new_callable=AsyncMock,
-            ) as guard,
+                "app.api.v1.endpoints.section_extraction._check_request_scope",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.api.v1.endpoints.section_extraction.run_section_extraction_task.delay",
+                return_value=mock_task,
+            ) as mock_delay,
+            patch("app.api.v1.endpoints.section_extraction._remember_job_owner"),
         ):
-            mock_service = mock_service_class.return_value
-            mock_service.extract_all_sections = AsyncMock(
-                return_value=BatchExtractionResult(
-                    extraction_run_id=str(uuid4()),
-                    total_sections=10,
-                    successful_sections=8,
-                    failed_sections=2,
-                    total_suggestions_created=40,
-                    total_tokens_used=1500,
-                    duration_ms=5000.0,
-                    sections=[],
-                )
-            )
-
-            trace_id = "test-batch-trace-id"
             response = await client.post(
                 "/api/v1/extraction/sections",
                 json={
@@ -143,76 +132,55 @@ class TestSectionExtractionEndpoints:
                     "extractAllSections": True,
                     "parentInstanceId": str(uuid4()),
                 },
-                headers={"X-Trace-Id": trace_id},
             )
 
-            assert response.status_code == 200
-            data = response.json()
-            assert data.get("ok") is True
-            assert data.get("trace_id") == trace_id
-            assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
-            guard.assert_awaited_once()
+        assert response.status_code == 202, response.text
+        data = response.json()
+        assert data.get("ok") is True
+        assert data["data"]["job_id"] == job_id
+        mock_delay.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_all_sections_failed_commits_failed_status(self) -> None:
-        """An all-failed batch (BatchAllSectionsFailed) returns 500 AND commits
-        the FAILED status — it must NOT be discarded by the generic rollback
-        handler, so the failed run stays visible to status polls."""
-        from httpx import ASGITransport
-        from sqlalchemy.ext.asyncio import AsyncSession
+    async def test_run_path_enqueues_job(
+        self,
+        client: AsyncClient,
+    ) -> None:
+        """The run_id path also enqueues the async job (202). The all-sections-
+        failed FAILED-status-commit behaviour now lives in the Celery task — see
+        tests/unit/test_run_section_extraction_task.py
+        ::TestRunSectionExtractionTaskAllFailed."""
+        job_id = str(uuid4())
+        mock_task = MagicMock()
+        mock_task.id = job_id
 
-        from app.core.deps import get_current_user, get_db, get_supabase
-        from app.core.security import TokenPayload
-        from app.main import app
-        from app.services.section_extraction_service import BatchAllSectionsFailed
+        with (
+            patch(
+                "app.api.v1.endpoints.section_extraction._is_queue_available",
+                return_value=True,
+            ),
+            patch(
+                "app.api.v1.endpoints.section_extraction._check_request_scope",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.api.v1.endpoints.section_extraction.run_section_extraction_task.delay",
+                return_value=mock_task,
+            ) as mock_delay,
+            patch("app.api.v1.endpoints.section_extraction._remember_job_owner"),
+        ):
+            response = await client.post(
+                "/api/v1/extraction/sections",
+                json={
+                    "projectId": str(uuid4()),
+                    "articleId": str(uuid4()),
+                    "templateId": str(uuid4()),
+                    "runId": str(uuid4()),
+                },
+            )
 
-        spy_db = AsyncMock(spec=AsyncSession)
-
-        async def _override_db():
-            yield spy_db
-
-        async def _override_user():
-            return TokenPayload(sub=str(uuid4()), email="t@e.com", role="authenticated", aal="aal1")
-
-        app.dependency_overrides[get_db] = _override_db
-        app.dependency_overrides[get_current_user] = _override_user
-        app.dependency_overrides[get_supabase] = lambda: MagicMock()
-        try:
-            with (
-                patch(
-                    "app.api.v1.endpoints.section_extraction.SectionExtractionService"
-                ) as mock_svc_cls,
-                patch(
-                    "app.api.v1.endpoints.section_extraction._check_request_scope",
-                    new_callable=AsyncMock,
-                ),
-                patch("app.api.v1.endpoints.section_extraction.create_storage_adapter"),
-                patch("app.api.v1.endpoints.section_extraction.APIKeyService") as mock_keys_cls,
-            ):
-                mock_keys_cls.return_value.get_key_for_provider = AsyncMock(return_value="sk-test")
-                mock_svc_cls.return_value.extract_for_run = AsyncMock(
-                    side_effect=BatchAllSectionsFailed("all 3 sections failed")
-                )
-
-                async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="http://test"
-                ) as ac:
-                    resp = await ac.post(
-                        "/api/v1/extraction/sections",
-                        json={
-                            "projectId": str(uuid4()),
-                            "articleId": str(uuid4()),
-                            "templateId": str(uuid4()),
-                            "runId": str(uuid4()),
-                        },
-                    )
-
-            assert resp.status_code == 500
-            # FAILED status committed (persisted), never rolled back.
-            spy_db.commit.assert_awaited()
-            spy_db.rollback.assert_not_awaited()
-        finally:
-            app.dependency_overrides.clear()
+        assert response.status_code == 202, response.text
+        assert response.json()["data"]["job_id"] == job_id
+        mock_delay.assert_called_once()
 
 
 class TestModelExtractionEndpoints:

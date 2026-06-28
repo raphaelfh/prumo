@@ -14,17 +14,21 @@ Uses httpx ASGITransport — same pattern as test_extraction_export_endpoint.py.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.endpoints import section_extraction as se
 from app.core.deps import get_db, get_supabase
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+from app.schemas.extraction import SectionExtractionRequest
 
 CALLER_USER_ID = str(uuid4())
 OTHER_USER_ID = str(uuid4())
@@ -554,3 +558,129 @@ class TestGetSectionExtractionStatus:
         body = res.json()
         assert body["ok"] is True
         assert body["data"]["status"] == "completed"
+
+
+# ======================================================================
+# Module helpers — direct unit coverage (Redis helpers + BOLA scope).
+# All endpoint tests patch these out, so cover their bodies directly.
+# ======================================================================
+
+
+class TestQueueAndOwnerHelpers:
+    def test_is_queue_available_true_when_ping_ok(self) -> None:
+        with patch("app.api.v1.endpoints.section_extraction.Redis") as redis_cls:
+            redis_cls.from_url.return_value.ping.return_value = True
+            assert se._is_queue_available() is True
+
+    def test_is_queue_available_false_when_ping_raises(self) -> None:
+        with patch("app.api.v1.endpoints.section_extraction.Redis") as redis_cls:
+            redis_cls.from_url.return_value.ping.side_effect = Exception("down")
+            assert se._is_queue_available() is False
+
+    def test_remember_job_owner_sets_key_with_ttl(self) -> None:
+        with patch("app.api.v1.endpoints.section_extraction.Redis") as redis_cls:
+            client = redis_cls.from_url.return_value
+            se._remember_job_owner("job-1", "user-1")
+            client.set.assert_called_once()
+            args, kwargs = client.set.call_args
+            assert "job-1" in args[0] and args[1] == "user-1"
+            assert kwargs["ex"] == se._SECTION_JOB_OWNER_TTL_SECONDS
+
+    def test_remember_job_owner_swallows_redis_error(self) -> None:
+        with patch("app.api.v1.endpoints.section_extraction.Redis") as redis_cls:
+            redis_cls.from_url.side_effect = Exception("down")
+            se._remember_job_owner("job-1", "user-1")  # must not raise
+
+    def test_lookup_job_owner_decodes_bytes(self) -> None:
+        with patch("app.api.v1.endpoints.section_extraction.Redis") as redis_cls:
+            redis_cls.from_url.return_value.get.return_value = b"user-1"
+            assert se._lookup_job_owner("job-1") == "user-1"
+
+    def test_lookup_job_owner_returns_none_when_absent(self) -> None:
+        with patch("app.api.v1.endpoints.section_extraction.Redis") as redis_cls:
+            redis_cls.from_url.return_value.get.return_value = None
+            assert se._lookup_job_owner("job-1") is None
+
+    def test_lookup_job_owner_returns_none_on_redis_error(self) -> None:
+        with patch("app.api.v1.endpoints.section_extraction.Redis") as redis_cls:
+            redis_cls.from_url.side_effect = Exception("down")
+            assert se._lookup_job_owner("job-1") is None
+
+
+class TestCheckRequestScope:
+    def _payload(self, **over: object) -> SectionExtractionRequest:
+        base = {
+            "projectId": str(uuid4()),
+            "articleId": str(uuid4()),
+            "templateId": str(uuid4()),
+            "entityTypeId": str(uuid4()),
+        }
+        base.update(over)  # type: ignore[arg-type]
+        return SectionExtractionRequest(**base)  # type: ignore[arg-type]
+
+    @pytest.mark.asyncio
+    async def test_no_run_id_checks_project_membership(self) -> None:
+        payload = self._payload()
+        with patch(
+            "app.api.v1.endpoints.section_extraction.ensure_project_member",
+            new=AsyncMock(),
+        ) as guard:
+            await se._check_request_scope(MagicMock(), payload, uuid4())
+        guard.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_run_not_found_raises_404(self) -> None:
+        from app.services.extraction_run_read_service import RunNotFoundError
+
+        payload = self._payload(runId=str(uuid4()), entityTypeId=None)
+        with (
+            patch(
+                "app.api.v1.endpoints.section_extraction.get_run_or_raise",
+                new=AsyncMock(side_effect=RunNotFoundError("nope")),
+            ),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await se._check_request_scope(MagicMock(), payload, uuid4())
+        assert exc.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_run_mismatch_raises_400(self) -> None:
+        payload = self._payload(runId=str(uuid4()), entityTypeId=None)
+        run = SimpleNamespace(project_id=uuid4(), article_id=uuid4(), template_id=uuid4())
+        with (
+            patch(
+                "app.api.v1.endpoints.section_extraction.get_run_or_raise",
+                new=AsyncMock(return_value=run),
+            ),
+            patch(
+                "app.api.v1.endpoints.section_extraction.ensure_project_member",
+                new=AsyncMock(),
+            ),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await se._check_request_scope(MagicMock(), payload, uuid4())
+        assert exc.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_run_match_passes(self) -> None:
+        pid, aid, tid = uuid4(), uuid4(), uuid4()
+        payload = self._payload(
+            projectId=str(pid),
+            articleId=str(aid),
+            templateId=str(tid),
+            runId=str(uuid4()),
+            entityTypeId=None,
+        )
+        run = SimpleNamespace(project_id=pid, article_id=aid, template_id=tid)
+        with (
+            patch(
+                "app.api.v1.endpoints.section_extraction.get_run_or_raise",
+                new=AsyncMock(return_value=run),
+            ),
+            patch(
+                "app.api.v1.endpoints.section_extraction.ensure_project_member",
+                new=AsyncMock(),
+            ) as guard,
+        ):
+            await se._check_request_scope(MagicMock(), payload, uuid4())
+        guard.assert_awaited_once()

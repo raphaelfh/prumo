@@ -259,6 +259,7 @@ def run_section_extraction_task(
         from app.schemas.extraction import SectionExtractionRequest
         from app.services.api_key_service import APIKeyService
         from app.services.section_extraction_service import (
+            BatchAllSectionsFailed,
             BatchExtractionResult,
             SectionExtractionService,
         )
@@ -308,6 +309,13 @@ def run_section_extraction_task(
                     "entity_type_id": res.entity_type_id,
                 }
 
+            except BatchAllSectionsFailed:
+                # The service already rolled back data writes and marked the run
+                # FAILED (rollback_and_fail). Commit that terminal status so the
+                # failed run is visible to status polls — a blanket rollback would
+                # discard it (matches the pre-async endpoint's handling).
+                await session.commit()
+                raise
             except Exception:
                 await session.rollback()
                 raise

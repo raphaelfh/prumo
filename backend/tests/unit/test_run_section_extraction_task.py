@@ -20,6 +20,7 @@ from uuid import uuid4
 import pytest
 
 from app.services.section_extraction_service import (
+    BatchAllSectionsFailed,
     BatchExtractionResult,
     SectionExtractionResult,
 )
@@ -274,3 +275,42 @@ class TestRunSectionExtractionTaskRollback:
 
         session.rollback.assert_awaited_once()
         session.commit.assert_not_awaited()
+
+
+class TestRunSectionExtractionTaskAllFailed:
+    def test_commits_failed_status_on_batch_all_sections_failed(self):
+        """When the service raises BatchAllSectionsFailed it has already marked the
+        run FAILED (rollback_and_fail); the task must COMMIT that terminal status
+        (not roll it back) and re-raise, so the failed run is visible to status
+        polls — mirrors the pre-async endpoint's handling."""
+        user_id = str(uuid4())
+        payload_dict = {
+            "projectId": str(uuid4()),
+            "articleId": str(uuid4()),
+            "templateId": str(uuid4()),
+            "runId": str(uuid4()),
+        }
+
+        session = _FakeSession()
+        fake_service = MagicMock()
+        fake_service.run_from_request = AsyncMock(
+            side_effect=BatchAllSectionsFailed("all 3 sections failed")
+        )
+        fake_api_key = MagicMock()
+        fake_api_key.get_key_for_provider = AsyncMock(return_value=None)
+
+        with (
+            patch(
+                "app.services.section_extraction_service.SectionExtractionService",
+                return_value=fake_service,
+            ),
+            patch("app.services.api_key_service.APIKeyService", return_value=fake_api_key),
+            patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
+            patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+            patch("app.worker._session.worker_session", new=_session_factory(session)),
+            pytest.raises(BatchAllSectionsFailed, match="all 3 sections failed"),
+        ):
+            _apply(payload_dict, user_id)
+
+        session.commit.assert_awaited_once()
+        session.rollback.assert_not_awaited()
