@@ -450,6 +450,47 @@ class ReviewSuggestionRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+# =================== ASYNC SECTION EXTRACTION JOB SCHEMAS ===================
+
+
+class ExtractionJobStartedResponse(BaseModel):
+    """202 payload returned when an extraction job is queued."""
+
+    job_id: str
+    message: str | None = "Extraction queued. Poll /status/{job_id} for result."
+
+
+class ExtractionJobResult(BaseModel):
+    """Normalised result from a completed extraction job.
+
+    Both single-section and batch result shapes are represented; fields
+    absent for the other mode are ``None``.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    mode: str
+    extraction_run_id: str = Field(..., alias="extractionRunId")
+    # Single-section fields
+    suggestions_created: int | None = Field(default=None, alias="suggestionsCreated")
+    # Batch fields
+    total_sections: int | None = Field(default=None, alias="totalSections")
+    successful_sections: int | None = Field(default=None, alias="successfulSections")
+    failed_sections: int | None = Field(default=None, alias="failedSections")
+    total_suggestions_created: int | None = Field(default=None, alias="totalSuggestionsCreated")
+
+
+class ExtractionJobStatusResponse(BaseModel):
+    """GET /extraction/sections/status/{job_id} payload."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    job_id: str = Field(..., alias="jobId")
+    status: str = Field(..., description="pending | running | completed | failed | cancelled")
+    result: ExtractionJobResult | None = None
+    error: str | None = None
+
+
 # =================== CITATION ANCHOR (extraction_evidence.position v1) ===================
 #
 # Wire format for ``extraction_evidence.position`` JSONB. Mirrors

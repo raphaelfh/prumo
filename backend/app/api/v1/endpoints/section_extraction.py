@@ -1,43 +1,94 @@
-"""
-Section Extraction Endpoint.
+"""Section Extraction Endpoint.
 
-Endpoint for extraction de sections especificas de templates.
-Suporta extraction individual or em batch de todas as sections.
+Async endpoint for AI-assisted section extraction. Dispatches work to
+the ``run_section_extraction_task`` Celery task and returns 202+job_id.
+A companion GET endpoint lets callers poll for the result.
+
+Pattern mirrors ``extraction_export.py`` (queue guard, Redis owner record,
+AsyncResult state mapping).
 """
 
-from time import perf_counter
+from __future__ import annotations
+
+import contextlib
+import uuid
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.exc import IntegrityError
+from fastapi.responses import JSONResponse
+from redis import Redis
 
 from app.api.deps.security import ensure_project_member, get_current_user_sub
-from app.core.config import settings
-from app.core.deps import CurrentUser, DbSession, SupabaseClient
-from app.core.factories import create_storage_adapter
+from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
 from app.schemas.extraction import (
-    BatchSectionResult,
+    ExtractionJobResult,
+    ExtractionJobStartedResponse,
+    ExtractionJobStatusResponse,
     SectionExtractionRequest,
-    SectionExtractionResponseData,
-    SingleSectionResult,
 )
-from app.services.api_key_service import APIKeyService
 from app.services.extraction_run_read_service import RunNotFoundError, get_run_or_raise
-from app.services.run_lifecycle_service import (
-    CreateRunInputError,
-    TemplateNotFoundError,
-    TemplateVersionNotFoundError,
-)
-from app.services.section_extraction_service import (
-    BatchAllSectionsFailed,
-    SectionExtractionService,
-)
 from app.utils.rate_limiter import limiter
+from app.worker.celery_app import REDIS_URL
+from app.worker.tasks.extraction_tasks import run_section_extraction_task
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+#: Redis owner-record TTL (matches Celery result_expires).
+_SECTION_JOB_OWNER_KEY_PREFIX = "section_extraction_owner:"
+_SECTION_JOB_OWNER_TTL_SECONDS = 3600
+
+
+# ----------------------------------------------------------------------
+# Redis helpers
+# ----------------------------------------------------------------------
+
+
+def _is_queue_available() -> bool:
+    try:
+        Redis.from_url(
+            REDIS_URL,
+            socket_connect_timeout=0.25,
+            socket_timeout=0.25,
+        ).ping()
+        return True
+    except Exception:
+        return False
+
+
+def _remember_job_owner(job_id: str, user_id: str) -> None:
+    with contextlib.suppress(Exception):
+        Redis.from_url(
+            REDIS_URL,
+            socket_connect_timeout=0.5,
+            socket_timeout=0.5,
+        ).set(
+            f"{_SECTION_JOB_OWNER_KEY_PREFIX}{job_id}",
+            user_id,
+            ex=_SECTION_JOB_OWNER_TTL_SECONDS,
+        )
+
+
+def _lookup_job_owner(job_id: str) -> str | None:
+    raw: object = None
+    with contextlib.suppress(Exception):
+        raw = Redis.from_url(
+            REDIS_URL,
+            socket_connect_timeout=0.5,
+            socket_timeout=0.5,
+        ).get(f"{_SECTION_JOB_OWNER_KEY_PREFIX}{job_id}")
+    if raw is None:
+        return None
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", errors="replace")
+    return str(raw)
+
+
+# ----------------------------------------------------------------------
+# BOLA scope helper (unchanged from sync version)
+# ----------------------------------------------------------------------
 
 
 async def _check_request_scope(
@@ -66,42 +117,46 @@ async def _check_request_scope(
         )
 
 
+# ======================================================================
+# POST /api/v1/extraction/sections  — dispatch to Celery
+# ======================================================================
+
+
 @router.post(
     "",
-    response_model=ApiResponse[SectionExtractionResponseData],
-    summary="Extrair section(oes) de template",
-    description="Extrai data de uma section especifica or todas as sections de um modelo.",
+    response_model=None,
+    summary="Queue section extraction (async)",
+    status_code=status.HTTP_202_ACCEPTED,
 )
 @limiter.limit("10/minute")
 async def extract_section(
-    request: Request,  # noqa: ARG001
+    request: Request,
     payload: SectionExtractionRequest,
     db: DbSession,
     user: CurrentUser,
-    supabase: SupabaseClient,
     current_user_sub: UUID = Depends(get_current_user_sub),
-) -> ApiResponse[SectionExtractionResponseData]:
+) -> JSONResponse | ApiResponse[ExtractionJobStartedResponse]:
+    """Validate, authorise, then enqueue ``run_section_extraction_task``.
+
+    Returns 202 with ``{job_id}``; poll
+    ``GET /extraction/sections/status/{job_id}`` for the result.
     """
-    Executa extraction de section(oes) de um template.
+    trace_id = getattr(request.state, "trace_id", None) or str(uuid.uuid4())
 
-    Rate limit: 10 requisicoes por minuto por user.
+    await _check_request_scope(db, payload, current_user_sub)
 
-    Modos de operacao:
-    1. Secao unica: entity_type_id obrigatorio
-    2. Todas as sections: extract_all_sections=true, parent_instance_id obrigatorio
-
-    Args:
-        request: Request HTTP (usado pelo rate limiter).
-        payload: Parametros de extraction.
-
-    Returns:
-        ApiResponse with resultado da extraction.
-    """
-    trace_id = getattr(request.state, "trace_id", None) or "missing-trace-id"
-    endpoint_start = perf_counter()
+    if not _is_queue_available():
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content=ApiResponse.failure(
+                code="SERVICE_UNAVAILABLE",
+                message="Background extraction queue is unavailable. Please try again later.",
+                trace_id=trace_id,
+            ).model_dump(),
+        )
 
     logger.info(
-        "section_extraction_request",
+        "section_extraction_queued",
         trace_id=trace_id,
         user_id=user.sub,
         project_id=str(payload.project_id),
@@ -112,239 +167,115 @@ async def extract_section(
         model=payload.model,
     )
 
-    await _check_request_scope(db, payload, current_user_sub)
+    task = run_section_extraction_task.delay(
+        payload.model_dump(mode="json"),
+        user.sub,
+        trace_id,
+    )
 
-    try:
-        # Create storage adapter via factory
-        storage = create_storage_adapter(supabase)
+    _remember_job_owner(task.id, user.sub)
 
-        # Buscar API key do user (BYOK) with fallback for global
-        api_key_service = APIKeyService(db=db, user_id=user.sub)
-        user_llm_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
-
-        service = SectionExtractionService(
-            db=db,
-            user_id=user.sub,
-            storage=storage,
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content=ApiResponse.success(
+            data=ExtractionJobStartedResponse(job_id=task.id),
             trace_id=trace_id,
-            openai_api_key=user_llm_key,
+        ).model_dump(),
+    )
+
+
+# ======================================================================
+# GET /api/v1/extraction/sections/status/{job_id}  — poll result
+# ======================================================================
+
+
+@router.get(
+    "/status/{job_id}",
+    response_model=ApiResponse[ExtractionJobStatusResponse],
+    summary="Poll async section extraction status",
+)
+@limiter.limit("30/minute")
+async def get_section_extraction_status(
+    request: Request,
+    job_id: str,
+    user: CurrentUser,
+) -> ApiResponse[ExtractionJobStatusResponse]:
+    """Map the Celery AsyncResult state into the API envelope shape.
+
+    Ownership gate fires before any state-dependent branch: every branch
+    leaks task state (and FAILURE leaks the exception repr), so a caller
+    who guesses a valid ``job_id`` must not read another user's progress.
+    """
+    from celery.result import AsyncResult
+
+    from app.worker.celery_app import celery_app
+
+    trace_id = getattr(request.state, "trace_id", None) or str(uuid.uuid4())
+
+    result = AsyncResult(job_id, app=celery_app)
+    state = result.state
+
+    # Ownership gate — Redis record is authoritative; fall back to
+    # user_id embedded in the SUCCESS payload when the TTL has expired.
+    owner = _lookup_job_owner(job_id)
+    if owner is None and state == "SUCCESS" and isinstance(result.result, dict):
+        owner = result.result.get("user_id")
+
+    if owner is None:
+        return ApiResponse.failure(
+            code="NOT_FOUND",
+            message="Job not found or expired.",
+            trace_id=trace_id,
+        )
+    if owner != user.sub:
+        return ApiResponse.failure(
+            code="FORBIDDEN",
+            message="Job does not belong to current user.",
+            trace_id=trace_id,
         )
 
-        # Dispatch table (ordered — earlier branches win on overlapping
-        # payloads, matching the pre-refactor priority):
-        # 1. ``entity_type_id`` present → single-section path. Covers both
-        #    the existing-run append (extraction surface; ``run_id`` set)
-        #    and the legacy standalone caller (``run_id`` None). The
-        #    service routes internally based on ``run_id``.
-        # 2. ``run_id`` alone → ``extract_for_run`` iterates every top-level
-        #    entity_type of the run's template. Used by Quality Assessment.
-        # 3. ``extract_all_sections`` → batch sweep of child sections under
-        #    ``parent_instance_id`` (per-model CHARMS batch).
-        if payload.entity_type_id is not None:
-            single_result = await service.extract_section(
-                project_id=payload.project_id,
-                article_id=payload.article_id,
-                template_id=payload.template_id,
-                entity_type_id=payload.entity_type_id,
-                parent_instance_id=payload.parent_instance_id,
-                model=payload.model or settings.LLM_DEFAULT_MODEL,
-                run_id=payload.run_id,
-            )
-
-            db_commit_start = perf_counter()
-            await db.commit()
-            db_commit_duration_ms = (perf_counter() - db_commit_start) * 1000
-
-            logger.info(
-                "section_extraction_success",
-                trace_id=trace_id,
-                run_id=single_result.extraction_run_id,
-                entity_type_id=str(payload.entity_type_id),
-                suggestions_created=single_result.suggestions_created,
-                tokens_total=single_result.tokens_total,
-                existing_run=payload.run_id is not None,
-                db_commit_duration_ms=db_commit_duration_ms,
-                endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
-            )
-
-            response_data: SectionExtractionResponseData = SingleSectionResult(
-                extraction_run_id=single_result.extraction_run_id,
-                entity_type_id=single_result.entity_type_id,
-                suggestions_created=single_result.suggestions_created,
-                tokens_prompt=single_result.tokens_prompt,
-                tokens_completion=single_result.tokens_completion,
-                tokens_total=single_result.tokens_total,
-                duration_ms=single_result.duration_ms,
-            )
-        elif payload.run_id is not None:
-            qa_result = await service.extract_for_run(
-                run_id=payload.run_id,
-                skip_fields_with_human_proposals=payload.skip_fields_with_human_proposals,
-                auto_advance_to_review=payload.auto_advance_to_review,
-                model=payload.model or settings.LLM_DEFAULT_MODEL,
-            )
-
-            db_commit_start = perf_counter()
-            await db.commit()
-            db_commit_duration_ms = (perf_counter() - db_commit_start) * 1000
-
-            logger.info(
-                "extract_for_run_success",
-                trace_id=trace_id,
-                run_id=qa_result.extraction_run_id,
-                total_sections=qa_result.total_sections,
-                successful=qa_result.successful_sections,
-                failed=qa_result.failed_sections,
-                tokens_total=qa_result.total_tokens_used,
-                db_commit_duration_ms=db_commit_duration_ms,
-                endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
-            )
-
-            response_data = BatchSectionResult(
-                extraction_run_id=qa_result.extraction_run_id,
-                total_sections=qa_result.total_sections,
-                successful_sections=qa_result.successful_sections,
-                failed_sections=qa_result.failed_sections,
-                total_suggestions_created=qa_result.total_suggestions_created,
-                total_tokens_used=qa_result.total_tokens_used,
-                duration_ms=qa_result.duration_ms,
-                sections=qa_result.sections,
-            )
-        else:
-            # ``extract_all_sections`` (validator forces parent_instance_id).
-            batch_result = await service.extract_all_sections(
-                project_id=payload.project_id,
-                article_id=payload.article_id,
-                template_id=payload.template_id,
-                parent_instance_id=payload.parent_instance_id,  # type: ignore
-                section_ids=payload.section_ids,
-                pdf_text=payload.pdf_text,
-                model=payload.model or settings.LLM_DEFAULT_MODEL,
-            )
-
-            db_commit_start = perf_counter()
-            await db.commit()
-            db_commit_duration_ms = (perf_counter() - db_commit_start) * 1000
-
-            logger.info(
-                "batch_section_extraction_success",
-                trace_id=trace_id,
-                run_id=batch_result.extraction_run_id,
-                total_sections=batch_result.total_sections,
-                successful=batch_result.successful_sections,
-                failed=batch_result.failed_sections,
-                tokens_total=batch_result.total_tokens_used,
-                db_commit_duration_ms=db_commit_duration_ms,
-                endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
-            )
-
-            response_data = BatchSectionResult(
-                extraction_run_id=batch_result.extraction_run_id,
-                total_sections=batch_result.total_sections,
-                successful_sections=batch_result.successful_sections,
-                failed_sections=batch_result.failed_sections,
-                total_suggestions_created=batch_result.total_suggestions_created,
-                total_tokens_used=batch_result.total_tokens_used,
-                duration_ms=batch_result.duration_ms,
-                sections=batch_result.sections,
-            )
-
-        return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
-
-    except CreateRunInputError as e:
-        rollback_start = perf_counter()
-        await db.rollback()
-        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
-        logger.warning(
-            "section_extraction_bola_rejected",
+    if state == "PENDING":
+        return ApiResponse.success(
+            data=ExtractionJobStatusResponse(job_id=job_id, status="pending"),
             trace_id=trace_id,
-            project_id=str(payload.project_id),
-            article_id=str(payload.article_id),
-            error=str(e),
-            rollback_duration_ms=rollback_duration_ms,
         )
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
-    except (TemplateNotFoundError, TemplateVersionNotFoundError) as e:
-        rollback_start = perf_counter()
-        await db.rollback()
-        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
-        logger.warning(
-            "section_extraction_template_missing",
+    if state in ("STARTED", "RETRY"):
+        return ApiResponse.success(
+            data=ExtractionJobStatusResponse(job_id=job_id, status="running"),
             trace_id=trace_id,
-            template_id=str(payload.template_id),
-            error=str(e),
-            rollback_duration_ms=rollback_duration_ms,
         )
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
-    except ValueError as e:
-        rollback_start = perf_counter()
-        await db.rollback()
-        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
-        logger.warning(
-            "section_extraction_validation_error",
+    if state == "FAILURE":
+        return ApiResponse.success(
+            data=ExtractionJobStatusResponse(
+                job_id=job_id,
+                status="failed",
+                error=str(result.result) if result.result else "Task failed.",
+            ),
             trace_id=trace_id,
-            error=str(e),
-            rollback_duration_ms=rollback_duration_ms,
         )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
-    except IntegrityError as e:
-        rollback_start = perf_counter()
-        await db.rollback()
-        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
-        logger.warning(
-            "section_extraction_integrity_error",
+    if state == "SUCCESS" and isinstance(result.result, dict):
+        raw = result.result
+        job_result = ExtractionJobResult(
+            mode=raw.get("mode", "single"),
+            extractionRunId=raw.get("extraction_run_id", ""),
+            suggestionsCreated=raw.get("suggestions_created"),
+            totalSections=raw.get("total_sections"),
+            successfulSections=raw.get("successful_sections"),
+            failedSections=raw.get("failed_sections"),
+            totalSuggestionsCreated=raw.get("total_suggestions_created"),
+        )
+        return ApiResponse.success(
+            data=ExtractionJobStatusResponse(job_id=job_id, status="completed", result=job_result),
             trace_id=trace_id,
-            error=str(e),
-            rollback_duration_ms=rollback_duration_ms,
         )
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Referenced project, article, template or entity_type does not exist.",
-        ) from e
-    except FileNotFoundError as e:
-        rollback_start = perf_counter()
-        await db.rollback()
-        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
-        logger.warning(
-            "section_extraction_pdf_not_found",
+    if state == "REVOKED":
+        return ApiResponse.success(
+            data=ExtractionJobStatusResponse(job_id=job_id, status="cancelled"),
             trace_id=trace_id,
-            error=str(e),
-            rollback_duration_ms=rollback_duration_ms,
         )
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="PDF not found. Upload a PDF first.",
-        ) from e
-    except BatchAllSectionsFailed as e:
-        # The service already rolled back data writes and marked the run FAILED
-        # (rollback_and_fail). Commit that terminal status so the failed run is
-        # visible to status polls — the generic handler below would roll it back.
-        await db.commit()
-        logger.warning(
-            "section_extraction_all_failed",
-            trace_id=trace_id,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Section extraction failed: {e}",
-        ) from e
-    except Exception as e:
-        rollback_start = perf_counter()
-        await db.rollback()
-        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
-        logger.error(
-            "section_extraction_error",
-            trace_id=trace_id,
-            error=str(e),
-            rollback_duration_ms=rollback_duration_ms,
-            endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Section extraction failed: {str(e)}",
-        ) from e
+    return ApiResponse.success(
+        data=ExtractionJobStatusResponse(
+            job_id=job_id, status=state.lower() if state else "pending"
+        ),
+        trace_id=trace_id,
+    )

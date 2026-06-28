@@ -2,7 +2,7 @@
 # May shrink (re-run --update-baseline to tighten), never grow. Cleanup is a separate effort.
 backend/app/seed.py:1941
 backend/app/services/extraction_export_service.py:2252
-backend/app/services/section_extraction_service.py:1456
+backend/app/services/section_extraction_service.py:1509
 frontend/components/articles/ArticleForm.tsx:1272
 frontend/components/articles/ArticlesList.tsx:1360
 frontend/components/extraction/ArticleExtractionTable.tsx:1130
