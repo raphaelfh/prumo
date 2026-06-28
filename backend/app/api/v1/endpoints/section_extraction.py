@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import uuid
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -212,7 +213,10 @@ async def get_section_extraction_status(
 
     trace_id = getattr(request.state, "trace_id", None) or str(uuid.uuid4())
 
-    result = AsyncResult(job_id, app=celery_app)
+    # Typed Any: celery's AsyncResult.state is a narrow Literal union, which
+    # makes mypy flag the later `state == "REVOKED"` branch as a non-overlapping
+    # comparison; treat the untyped celery result loosely here.
+    result: Any = AsyncResult(job_id, app=celery_app)
     state = result.state
 
     # Ownership gate — Redis record is authoritative; fall back to
