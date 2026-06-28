@@ -556,6 +556,15 @@ export default function QualityAssessmentFullScreen() {
     });
   };
 
+  // Per-domain AI extract completion — mirrors the Extraction section-complete
+  // path: refetch the session (the run may have re-resolved), then the run
+  // detail, then the AI suggestions, so accepted proposals + evidence surface.
+  const handleSectionExtractionComplete = async () => {
+    await refetchSession();
+    await refetchRun();
+    await refreshAISuggestions();
+  };
+
   const versionLabel = template ? `v${template.version}` : "";
 
   const header = (
@@ -784,6 +793,10 @@ export default function QualityAssessmentFullScreen() {
                       handleValueChange(instanceId, fieldId, value)
                     }
                     projectId={projectId}
+                    articleId={articleId}
+                    templateId={session.projectTemplateId}
+                    runId={session.runId}
+                    onExtractionComplete={handleSectionExtractionComplete}
                     defaultOpen={idx === 0}
                     reviewerActivity={{
                       decisionsByCoord: reviewerSummary.decisionsByCoord,
