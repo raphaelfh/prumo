@@ -25,8 +25,18 @@ export interface SearchOptions {
 export interface SearchState {
   query: string;
   options: SearchOptions;
+  /**
+   * Canvas-mode matches with PDF coordinates. Empty in reader mode — the
+   * reader's matches are DOM Ranges owned by the reader, not the store.
+   */
   matches: ReadonlyArray<SearchMatch>;
-  /** Index in `matches` of the currently-active match, or -1 if none. */
+  /**
+   * Total match count for the ACTIVE mode (canvas = `matches.length`,
+   * reader = the reader's DOM-match count). The mode-agnostic field the
+   * search bar reads for its "n / N" label and prev/next enabling.
+   */
+  matchCount: number;
+  /** Index of the currently-active match (into `matchCount`), or -1 if none. */
   activeIndex: number;
   /** True while a search is in progress. */
   searching: boolean;
@@ -120,6 +130,11 @@ export interface ViewerActions {
   setSearchQuery(query: string): void;
   setSearchOptions(opts: Partial<SearchOptions>): void;
   setSearchMatches(matches: ReadonlyArray<SearchMatch>): void;
+  /**
+   * Reader-mode search result: record the DOM-match count (the Ranges live in
+   * the reader). Clears any canvas matches and activates the first match.
+   */
+  setReaderMatchCount(count: number): void;
   setSearchSearching(searching: boolean): void;
   goToNextMatch(): void;
   goToPrevMatch(): void;
