@@ -9,9 +9,23 @@ const initialSearch: SearchState = {
   query: '',
   options: {caseSensitive: false, wholeWords: false},
   matches: [],
+  matchCount: 0,
   activeIndex: -1,
   searching: false,
 };
+
+/**
+ * Drop computed results (matches/count/active) but keep the query + options.
+ * Used on a mode switch: canvas matches (PDF coords + TextLayer) and reader
+ * matches (DOM Ranges) are disjoint, so carrying a count across modes leaves a
+ * stale "n / N" with live prev/next firing against the now-hidden surface.
+ */
+const clearedResults = (s: SearchState): SearchState => ({
+  ...s,
+  matches: [],
+  matchCount: 0,
+  activeIndex: -1,
+});
 
 const initialData: ViewerData = {
   source: null,
@@ -82,14 +96,17 @@ export function createViewerStore(
       },
 
       setMode(mode: ViewerMode) {
-        set({mode});
+        if (mode === get().mode) return;
+        set({mode, search: clearedResults(get().search)});
       },
 
       locateInReader(quote: string, page?: number | null, blockIds: number[] = []) {
         const prevNonce = get().readerLocate?.nonce ?? 0;
+        const switchingFromCanvas = get().mode !== 'reader';
         set({
           mode: 'reader',
           readerLocate: {quote, page: page ?? null, blockIds, nonce: prevNonce + 1},
+          ...(switchingFromCanvas ? {search: clearedResults(get().search)} : {}),
         });
       },
 
@@ -106,7 +123,25 @@ export function createViewerStore(
       },
 
       setSearchMatches(matches) {
-        set({search: {...get().search, matches, activeIndex: matches.length > 0 ? 0 : -1}});
+        set({
+          search: {
+            ...get().search,
+            matches,
+            matchCount: matches.length,
+            activeIndex: matches.length > 0 ? 0 : -1,
+          },
+        });
+      },
+
+      setReaderMatchCount(count: number) {
+        set({
+          search: {
+            ...get().search,
+            matches: [],
+            matchCount: count,
+            activeIndex: count > 0 ? 0 : -1,
+          },
+        });
       },
 
       setSearchSearching(searching: boolean) {
@@ -115,25 +150,30 @@ export function createViewerStore(
 
       goToNextMatch() {
         const s = get().search;
-        if (s.matches.length === 0) return;
-        const next = (s.activeIndex + 1) % s.matches.length;
+        if (s.matchCount === 0) return;
+        const next = (s.activeIndex + 1) % s.matchCount;
         set({search: {...s, activeIndex: next}});
-        get().actions.goToPage(s.matches[next].pageNumber);
+        // Canvas matches carry a page; bring it into view. Reader matches live
+        // in the DOM (no `matches` entry) and are scrolled by the reader itself.
+        const match = s.matches[next];
+        if (match) get().actions.goToPage(match.pageNumber);
       },
 
       goToPrevMatch() {
         const s = get().search;
-        if (s.matches.length === 0) return;
-        const next = (s.activeIndex - 1 + s.matches.length) % s.matches.length;
+        if (s.matchCount === 0) return;
+        const next = (s.activeIndex - 1 + s.matchCount) % s.matchCount;
         set({search: {...s, activeIndex: next}});
-        get().actions.goToPage(s.matches[next].pageNumber);
+        const match = s.matches[next];
+        if (match) get().actions.goToPage(match.pageNumber);
       },
 
       setActiveMatchIndex(index: number) {
         const s = get().search;
-        if (index < -1 || index >= s.matches.length) return;
+        if (index < -1 || index >= s.matchCount) return;
         set({search: {...s, activeIndex: index}});
-        if (index >= 0) get().actions.goToPage(s.matches[index].pageNumber);
+        const match = index >= 0 ? s.matches[index] : undefined;
+        if (match) get().actions.goToPage(match.pageNumber);
       },
 
       clearSearch() {
