@@ -228,6 +228,31 @@ describe('useRunAIExtraction (async job)', () => {
     expect(result.current.loading).toBe(false);
   });
 
+  it('maps a MISSING_API_KEY failure code to the specific auth toast copy', async () => {
+    apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
+    statusMock.mockResolvedValue({
+      ok: true,
+      data: makeStatus('failed', {
+        error: 'No OpenAI API key available.',
+        errorCode: 'MISSING_API_KEY',
+      }),
+    });
+
+    const {wrapper} = createWrapper();
+    const {result} = renderHook(() => useRunAIExtraction(), {wrapper});
+
+    await act(async () => {
+      await result.current.extractForRun(PARAMS);
+    });
+
+    await waitFor(() => expect(result.current.error).toBeTruthy());
+    expect(toast.error).toHaveBeenCalledWith(
+      'sectionExtractionErrorAuth',
+      expect.objectContaining({description: 'No OpenAI API key available.'}),
+    );
+    expect(result.current.loading).toBe(false);
+  });
+
   it('loading is true while kickoff is in flight', async () => {
     let resolvePost!: (v: unknown) => void;
     apiClientMock.mockReturnValueOnce(
