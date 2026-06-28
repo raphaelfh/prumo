@@ -220,6 +220,116 @@ def extract_models_task(
 
 @celery_app.task(
     bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    rate_limit="5/m",
+)
+def run_section_extraction_task(
+    self: Task[Any, Any],
+    payload_json: dict[str, Any],
+    user_id: str,
+    trace_id: str | None = None,
+) -> dict[str, Any]:
+    """Run AI section extraction from a serialised SectionExtractionRequest.
+
+    Covers all three dispatch branches (single-section, extract-for-run,
+    extract-all-sections) via ``SectionExtractionService.run_from_request``.
+    Intended as the async-safe replacement for firing extraction on the
+    synchronous web request (which causes gunicorn worker timeouts on real PDFs).
+
+    Args:
+        payload_json: ``SectionExtractionRequest`` fields as a plain dict
+            (camelCase aliases accepted — Pydantic parses them).
+        user_id: User UUID owning the run.
+        trace_id: Optional trace ID forwarded from the originating request.
+
+    Returns:
+        Normalised result dict.  Shape depends on the branch:
+        - Single-section: ``{"mode": "single", "extraction_run_id": str,
+          "suggestions_created": int}``
+        - Batch (extract_for_run / extract_all_sections): ``{"mode": "batch",
+          "extraction_run_id": str, "total_sections": int,
+          "successful_sections": int, "failed_sections": int,
+          "total_suggestions_created": int}``
+    """
+
+    async def run() -> dict[str, Any]:
+        from app.core.deps import get_supabase_client
+        from app.core.factories import create_storage_adapter
+        from app.schemas.extraction import SectionExtractionRequest
+        from app.services.api_key_service import APIKeyService
+        from app.services.section_extraction_service import (
+            BatchAllSectionsFailed,
+            BatchExtractionResult,
+            SectionExtractionService,
+        )
+        from app.worker._session import worker_session
+
+        async with worker_session() as session:
+            try:
+                supabase = get_supabase_client()
+                storage = create_storage_adapter(supabase)
+
+                api_key_service = APIKeyService(db=session, user_id=user_id)
+                api_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+
+                service = SectionExtractionService(
+                    db=session,
+                    user_id=user_id,
+                    storage=storage,
+                    trace_id=trace_id or self.request.id or "worker-missing-trace",
+                    openai_api_key=api_key,
+                )
+
+                request = SectionExtractionRequest(**payload_json)
+                res = await service.run_from_request(request)
+
+                await session.commit()
+
+                if isinstance(res, BatchExtractionResult):
+                    return {
+                        "mode": "batch",
+                        "extraction_run_id": res.extraction_run_id,
+                        "total_sections": res.total_sections,
+                        "successful_sections": res.successful_sections,
+                        "failed_sections": res.failed_sections,
+                        "total_suggestions_created": res.total_suggestions_created,
+                        # Per-section outcomes — enables legacy frontend flows to
+                        # reconstruct BatchSectionResult.sections from the job result.
+                        "sections": res.sections,
+                    }
+
+                # SectionExtractionResult (single)
+                return {
+                    "mode": "single",
+                    "extraction_run_id": res.extraction_run_id,
+                    "suggestions_created": res.suggestions_created,
+                    # entity_type_id — enables legacy frontend flows to reconstruct
+                    # SingleSectionResult.entityTypeId from the job result.
+                    "entity_type_id": res.entity_type_id,
+                }
+
+            except BatchAllSectionsFailed:
+                # The service already rolled back data writes and marked the run
+                # FAILED (rollback_and_fail). Commit that terminal status so the
+                # failed run is visible to status polls — a blanket rollback would
+                # discard it (matches the pre-async endpoint's handling).
+                await session.commit()
+                raise
+            except Exception:
+                await session.rollback()
+                raise
+
+    try:
+        return run_task(run)
+    except Exception as exc:
+        if not is_transient_llm_error(exc):
+            raise  # permanent: fail fast, no retry
+        raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
+
+
+@celery_app.task(
+    bind=True,
     max_retries=2,
     default_retry_delay=120,
     rate_limit="1/m",
