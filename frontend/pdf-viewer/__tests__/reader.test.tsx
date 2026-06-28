@@ -1,7 +1,8 @@
-import {render, screen} from '@testing-library/react';
+import {act, render, screen, waitFor} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
 
 import {Reader, type ReaderTextBlock} from '../primitives/Reader';
+import {ViewerProvider} from '../core/context';
 import {createViewerStore} from '../core/store';
 
 describe('<Reader>', () => {
@@ -50,6 +51,53 @@ describe('<Reader>', () => {
     // Pages still appear in sorted order even when input is shuffled.
     expect(sections[0]).toHaveAttribute('data-reader-page', '1');
     expect(sections[1]).toHaveAttribute('data-reader-page', '2');
+  });
+});
+
+describe('reader find-in-document', () => {
+  const blocks: ReaderTextBlock[] = [
+    {id: 'b1', pageNumber: 1, blockIndex: 0, text: 'The tumor was large.', blockType: 'paragraph'},
+    {id: 'b2', pageNumber: 1, blockIndex: 1, text: 'Another **tumor** appeared.', blockType: 'paragraph'},
+  ];
+
+  function renderReader(store = createViewerStore({mode: 'reader'})) {
+    render(
+      <ViewerProvider store={store}>
+        <div data-reader-scroll>
+          <Reader blocks={blocks} />
+        </div>
+      </ViewerProvider>,
+    );
+    return store;
+  }
+
+  it('reports the count of matches in the rendered markdown to the store', async () => {
+    const store = renderReader();
+    act(() => store.getState().actions.setSearchQuery('tumor'));
+    await waitFor(() => expect(store.getState().search.matchCount).toBe(2));
+    expect(store.getState().search.activeIndex).toBe(0);
+  });
+
+  it('matches a phrase that spans inline markdown emphasis', async () => {
+    const store = renderReader();
+    act(() => store.getState().actions.setSearchQuery('Another tumor appeared'));
+    await waitFor(() => expect(store.getState().search.matchCount).toBe(1));
+  });
+
+  it('clears the count when the query is emptied', async () => {
+    const store = renderReader();
+    act(() => store.getState().actions.setSearchQuery('tumor'));
+    await waitFor(() => expect(store.getState().search.matchCount).toBe(2));
+    act(() => store.getState().actions.setSearchQuery(''));
+    await waitFor(() => expect(store.getState().search.matchCount).toBe(0));
+  });
+
+  it('does not search when the viewer is in canvas mode', async () => {
+    const store = renderReader(createViewerStore({mode: 'canvas'}));
+    act(() => store.getState().actions.setSearchQuery('tumor'));
+    // Give any effect a tick; reader must stay inert in canvas mode.
+    await Promise.resolve();
+    expect(store.getState().search.matchCount).toBe(0);
   });
 });
 

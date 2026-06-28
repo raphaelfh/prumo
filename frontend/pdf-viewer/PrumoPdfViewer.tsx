@@ -101,7 +101,7 @@ function ViewerContent({
   // loading yet (or fails).
   if (mode === 'reader') {
     return (
-      <div className="flex-1 overflow-auto bg-muted/30">
+      <div className="flex-1 overflow-auto bg-muted/30" data-reader-scroll="">
         <Reader blocks={readerBlocks ?? []} loading={readerLoading} />
       </div>
     );

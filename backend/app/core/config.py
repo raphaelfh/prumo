@@ -116,6 +116,14 @@ class Settings(BaseSettings):
     # Optional global LlamaCloud key; per-user BYOK (APIKeyService) takes
     # precedence over this global fallback.
     LLAMA_CLOUD_API_KEY: str | None = None
+    # Cap the blocking LlamaParse parse() call. The SDK's own default is
+    # 7200s (2h); left uncapped, a slow/stuck cloud job pins a worker slot
+    # and leaves the ArticleFile at "pending" forever. On timeout the parser
+    # degrades to the local PyMuPDF backend (see FallbackDocumentParser).
+    # 240s gives the (slow) agentic tier a realistic window without disabling
+    # it via constant fallback; tune against measured agentic latency. The
+    # per-task Celery time limits (parsing_tasks) must stay above 2x this.
+    LLAMA_PARSE_TIMEOUT_SECONDS: float = 240.0
 
     # =================== EVALUATION ===================
     EVALUATION_EVIDENCE_BUCKET: str = "articles"

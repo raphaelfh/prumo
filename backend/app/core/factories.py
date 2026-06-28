@@ -57,6 +57,7 @@ def create_document_parser(
     # import time. PymupdfParser is light (base fitz) so it can import eagerly,
     # but keep it lazy for symmetry.
     from app.infrastructure.parsing.docling_parser import DoclingParser
+    from app.infrastructure.parsing.fallback_parser import FallbackDocumentParser
     from app.infrastructure.parsing.llamaparse_parser import LlamaParseParser
     from app.infrastructure.parsing.pymupdf_parser import PymupdfParser
 
@@ -67,7 +68,13 @@ def create_document_parser(
         if not key:
             _logger.warning("parser_gate_llamaparse_no_key_fallback_pymupdf")
             return PymupdfParser()
-        return LlamaParseParser(api_key=key)
+        # Wrap the cloud parser so a timeout/error degrades to local PyMuPDF
+        # instead of leaving the file stuck at "pending" (see FallbackDocumentParser).
+        timeout = float(getattr(settings, "LLAMA_PARSE_TIMEOUT_SECONDS", 120.0))
+        return FallbackDocumentParser(
+            primary=LlamaParseParser(api_key=key, timeout=timeout),
+            fallback=PymupdfParser(),
+        )
 
     if backend == "docling":
         return DoclingParser()

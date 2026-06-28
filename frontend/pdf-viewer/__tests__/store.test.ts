@@ -161,6 +161,18 @@ describe('search actions', () => {
     expect(store.getState().search.activeIndex).toBe(-1);
   });
 
+  it('setSearchMatches mirrors the count into matchCount', () => {
+    const store = createViewerStore();
+    const {actions} = store.getState();
+    actions.setSearchMatches([
+      {pageNumber: 1, charStart: 0, charEnd: 4, context: 'a'},
+      {pageNumber: 2, charStart: 5, charEnd: 9, context: 'b'},
+    ]);
+    expect(store.getState().search.matchCount).toBe(2);
+    actions.setSearchMatches([]);
+    expect(store.getState().search.matchCount).toBe(0);
+  });
+
   it('goToNextMatch wraps around and calls goToPage', () => {
     const store = createViewerStore();
     const {actions} = store.getState();
@@ -231,5 +243,86 @@ describe('search actions', () => {
     expect(search.query).toBe('');
     expect(search.matches).toHaveLength(0);
     expect(search.activeIndex).toBe(-1);
+    expect(search.matchCount).toBe(0);
+  });
+});
+
+describe('mode switch clears stale search results', () => {
+  it('switching modes drops matches/count/activeIndex but keeps the query', () => {
+    const store = createViewerStore({mode: 'canvas'});
+    const {actions} = store.getState();
+    actions.setSearchQuery('tumor');
+    actions.setSearchMatches([
+      {pageNumber: 1, charStart: 0, charEnd: 5, context: 'a'},
+      {pageNumber: 2, charStart: 5, charEnd: 10, context: 'b'},
+    ]);
+    expect(store.getState().search.matchCount).toBe(2);
+
+    actions.setMode('reader');
+    const s = store.getState().search;
+    expect(s.matchCount).toBe(0);
+    expect(s.matches).toHaveLength(0);
+    expect(s.activeIndex).toBe(-1);
+    expect(s.query).toBe('tumor'); // preserved so the new mode re-searches
+  });
+
+  it('setMode to the same mode does not touch search', () => {
+    const store = createViewerStore({mode: 'reader'});
+    const {actions} = store.getState();
+    actions.setReaderMatchCount(3);
+    actions.setMode('reader');
+    expect(store.getState().search.matchCount).toBe(3);
+  });
+
+  it('locateInReader from canvas clears stale canvas matches', () => {
+    const store = createViewerStore({mode: 'canvas'});
+    const {actions} = store.getState();
+    actions.setSearchMatches([{pageNumber: 1, charStart: 0, charEnd: 5, context: 'a'}]);
+    actions.locateInReader('some quote', 1, [0]);
+    expect(store.getState().search.matchCount).toBe(0);
+    expect(store.getState().search.matches).toHaveLength(0);
+  });
+});
+
+describe('reader search navigation', () => {
+  it('setReaderMatchCount records the count, clears PDF matches, activates the first', () => {
+    const store = createViewerStore();
+    const {actions} = store.getState();
+    actions.setReaderMatchCount(3);
+    const {search} = store.getState();
+    expect(search.matchCount).toBe(3);
+    expect(search.matches).toHaveLength(0); // reader matches live in the DOM, not the store
+    expect(search.activeIndex).toBe(0);
+  });
+
+  it('setReaderMatchCount(0) deactivates', () => {
+    const store = createViewerStore();
+    const {actions} = store.getState();
+    actions.setReaderMatchCount(2);
+    actions.setReaderMatchCount(0);
+    expect(store.getState().search.activeIndex).toBe(-1);
+    expect(store.getState().search.matchCount).toBe(0);
+  });
+
+  it('goToNextMatch wraps on matchCount without moving the page (reader has no PDF pages)', () => {
+    const store = createViewerStore({mode: 'reader'});
+    const {actions} = store.getState();
+    actions.setReaderMatchCount(3);
+    expect(store.getState().currentPage).toBe(1);
+    actions.goToNextMatch();
+    expect(store.getState().search.activeIndex).toBe(1);
+    actions.goToNextMatch();
+    expect(store.getState().search.activeIndex).toBe(2);
+    actions.goToNextMatch();
+    expect(store.getState().search.activeIndex).toBe(0); // wraps
+    expect(store.getState().currentPage).toBe(1); // unchanged — no goToPage in reader mode
+  });
+
+  it('goToPrevMatch wraps on matchCount in reader mode', () => {
+    const store = createViewerStore({mode: 'reader'});
+    const {actions} = store.getState();
+    actions.setReaderMatchCount(3);
+    actions.goToPrevMatch();
+    expect(store.getState().search.activeIndex).toBe(2);
   });
 });
