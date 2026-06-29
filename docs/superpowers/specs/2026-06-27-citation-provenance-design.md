@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-06-27
+last_reviewed: 2026-06-28
 owner: '@raphaelfh'
 ---
 
@@ -59,7 +59,7 @@ and an **eval harness** that makes "better citation" measurable.
 | D4 | `verified` = entailed; add an entailment gate; "quote exists" is only a pre-filter | New |
 | D5 | Tables: carry the parser's native cell grid (row/col + per-cell bbox); cite by `(block_id, row, col)` | Revised |
 | D6 | Figures: caption citation + a `figure` region block type + an un-groundable-value flag; vision deferred | Revised |
-| D7 | Parser: **pymupdf4llm default** (consume its `page_chunks` -> blocks); **Docling** (self-hosted) and **LlamaParse** (cloud, opt-in API key) as optional high-fidelity tiers; keep ADR-0013 | Revised |
+| D7 | Parser: **extend the in-place `PymupdfParser` default** (`find_tables` cell grid + fitz image-block figure regions); **Docling** / **LlamaParse** opt-in tiers; **pymupdf4llm swap deferred** behind the §4.11 gate (2026-06-28, see §4.7/§9); keep ADR-0013 | Revised |
 | D8 | Config: Pydantic-validated reads; snapshot resolved config onto the run; cloud tier (LlamaParse) is opt-in per project via an API key | Revised |
 | D9 | Highlight: CSS Custom Highlight API; locate the quote in the **rendered DOM**; block-flash floor | Revised |
 | D10 | Selectable model with per-run model recorded + surfaced in the Excel export (extraction + QA) | New |
@@ -164,36 +164,46 @@ text citation. Figure **content** extraction (vision) stays deferred.
 
 ### 4.7 Parser
 
-**Default = pymupdf4llm.** Maintained by Artifex (same team as the PyMuPDF we
-already ship, released in lockstep — actively maintained, lightweight, no
-ML/torch). We consume its **structure, not its markdown**: map `page_chunks`
-(text + headings in reading order, image regions with bbox, word bbox) into
-`ParsedBlock`, and use the underlying `fitz` `find_tables()` grid for per-cell
-`table_cell` blocks (row/col + per-cell bbox). The single serializer
-`render_blocks_to_markdown` still renders both the prompt and the reader, so the
-ADR-0013 byte-identical invariant holds (a parser's own `to_markdown()` is never
-used). This gives richer blocks than raw fitz with minimal glue code and no new
-ML surface.
+**Amendment (2026-06-28): the default stays the in-house fitz parser; the
+pymupdf4llm swap is deferred.** P3/P4 need only two things from the parser — a
+per-cell table grid and figure regions — and both already come from base `fitz`,
+which the current default (`PymupdfParser`) runs on: `fitz.find_tables()` yields
+the per-cell grid (row/col + per-cell bbox; we already use it in the bakeoff),
+and `get_text("dict")` already returns the image blocks the parser is currently
+discarding. pymupdf4llm's one structural value-add (`page_boxes`: multi-column
+reading order, list/header/footer classification) is a *general*
+markdown-projection upgrade, not a tables/figures requirement, and its headline
+markdown output is unusable here anyway (ADR-0013). Adopting it would swap the
+parser for **every** ingestion with no real-corpus measurement — exactly what the
+(still-unbuilt) eval gate in [§4.11](#411-eval-harness) exists to prevent. So:
 
+- **Default = the existing `PymupdfParser`, extended in place** (no new
+  dependency, no default-flip): add `fitz.find_tables()` → per-cell `table_cell`
+  blocks (native row/col + per-cell bbox; `row_span`/`col_span` = 1 from fitz),
+  filtering text blocks that overlap a detected table bbox so table text is not
+  double-emitted as paragraphs; stop dropping image blocks → `figure` region
+  blocks. The single serializer `render_blocks_to_markdown` still renders both
+  the prompt and the reader, so the ADR-0013 byte-identical invariant holds.
 - **Optional high-fidelity tiers (per-project, opt-in):**
   - **Docling** (self-hosted) — TableFormer cell grid for complex/merged tables;
-    lift its `TableCell` row/col + spans + per-cell bbox (the adapter discards
-    them today). Heavier (torch + model weights, pinned `docling==2.104.0`, OCR
+    lift its `TableCell` row/col + **spans** + per-cell bbox (the adapter discards
+    them today). This is the source of merged-cell fidelity that fitz's flat grid
+    cannot give. Heavier (torch + model weights, pinned `docling==2.104.0`, OCR
     off, CPU-only) — select it when `find_tables` is insufficient.
   - **LlamaParse** (cloud, via the maintained `llama-cloud` SDK) — among the most
     robust for granular cell/word bbox and hard layouts; **opt-in per project via
     an API key**. Trade-offs: cloud egress + per-page cost (validate on a real
     bill before promoting). Keep the adapter pinned to the current `llama-cloud`
     SDK (the older `llama-parse`/`llama-cloud-services` client is deprecated).
-- **Selection:** default backend = pymupdf4llm; Docling and LlamaParse are
-  explicit per-project opt-ins (LlamaParse requires an API key). No PHI
-  fail-closed gate (out of scope — no PHI; revisit if PHI projects are added).
+- **pymupdf4llm = a deferred, gated follow-up**, not part of P3/P4. Revisit it as
+  its own parser-quality cycle once the [§4.11](#411-eval-harness) table metric
+  (TEDS + LLM-judge + bbox IoU) exists to measure the reading-order/list gains
+  against the current default. Same maintainer as fitz (low dependency risk); the
+  open question is purely whether the quality delta justifies a whole-ingestion
+  swap.
 - **Keep ADR-0013** (blocks -> our serializer). Relaxing it decouples
   `char_start/char_end` from the rendered string and breaks every char-range
   anchor — rejected.
-- **Validate before locking a table-heavy default:** fix the bakeoff table metric
-  ([§4.11](#411-eval-harness)) and confirm pymupdf4llm's `find_tables` tables
-  suffice on real clinical papers vs Docling/LlamaParse.
 
 ### 4.8 Selectable model + transparency
 
@@ -250,8 +260,9 @@ Each phase ships value independently and is gated on the harness.
 - **P2 — block_id + precise highlight (prose):** `block_id` advisory behind the
   flag, validated on the harness, + CSS span highlight ([§4.10](#410-highlight)).
 - **P3 — tables:** native cell grid + per-cell bbox + `(block_id, row, col)`
-  citation ([§4.5](#45-tables)); pymupdf4llm default table cells (via
-  `find_tables`) + the Docling tier adapter ([§4.7](#47-parser)).
+  citation ([§4.5](#45-tables)); extend the default `PymupdfParser` in place with
+  the `fitz.find_tables()` cell grid (no parser swap) + lift the Docling tier
+  adapter's row/col/spans ([§4.7](#47-parser)).
 - **P4 — figures:** `figure` region block type + caption citation +
   un-groundable flag ([§4.6](#46-figures)); LlamaParse (cloud, opt-in) for
   figure/table-heavy docs.
@@ -261,9 +272,11 @@ Each phase ships value independently and is gated on the harness.
 - Backend (pytest, per layer): entailment-gate flag mapping (mock judge);
   deterministic numeric value check; evidence-list persistence + migration
   backfill; abstention path; parser selection resolves the right tier (default
-  pymupdf4llm; LlamaParse only when an API key is present); corroboration
-  conflict detection; table cell grid + per-cell bbox from the pymupdf4llm/Docling
-  adapters; QA run records the resolved model.
+  in-place `PymupdfParser`; Docling/LlamaParse only on explicit opt-in, LlamaParse
+  only when an API key is present); corroboration conflict detection; table cell
+  grid + per-cell bbox from the `PymupdfParser` (`find_tables`) and Docling
+  adapters; figure-region + un-groundable-flag path; QA run records the resolved
+  model.
 - Frontend (Vitest/MSW): multi-citation render (primary + "also cited (n)");
   `readerLocate` per block type; CSS-highlight invariant (shown == stored quote,
   else block-flash); legacy single-evidence rows render as a length-1 list.
@@ -284,9 +297,11 @@ Each phase ships value independently and is gated on the harness.
 - **Recall blind spot:** the assembler drops sections under budget and chunking
   has no cross-chunk coverage check — surface `AssemblyInfo.dropped` per field;
   assert every required field lands in exactly one chunk.
-- **Table quality across parsers is unmeasured** until the bakeoff metric fix
-  lands — validate that pymupdf4llm's `find_tables` tables suffice (vs the Docling
-  tier) before relying on the default for table-heavy templates.
+- **Table quality on the default tier is unmeasured** until the bakeoff metric
+  fix lands — the in-place `PymupdfParser` (`find_tables`, flat grid, `span` = 1)
+  cannot represent merged/multi-row-header cells; route table-heavy templates to
+  the Docling tier (real spans) until the [§4.11](#411-eval-harness) metric
+  exists to quantify the gap.
 
 ## 8. What held up (kept with confidence)
 
@@ -307,6 +322,13 @@ its structure into blocks).
   + no-PHI weighting: same maintainer as fitz (lockstep releases), light, and we
   consume its `page_chunks` **structure** (not its markdown) so the ADR-0013
   invariant still holds. Docling/LlamaParse become opt-in tiers, not a PHI split.
+- pymupdf4llm "reinstated as default" -> **deferred again (2026-06-28,
+  [§4.7](#47-parser))**: P3/P4 need only `find_tables` (cell grid) + fitz image
+  blocks (figure regions), both already in base fitz, so we **extend the in-place
+  `PymupdfParser`** rather than swap the default parser. pymupdf4llm's real gain
+  (reading order / lists) is a general projection-quality change that belongs
+  behind the unbuilt [§4.11](#411-eval-harness) gate, not an un-measured
+  whole-ingestion swap straight to prod.
 - GFM heuristic columns -> **native cell grid + per-cell bbox**.
 - "figure provenance" -> caption citation + `figure` region block type +
   un-groundable flag.

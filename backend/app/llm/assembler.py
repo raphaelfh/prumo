@@ -92,6 +92,14 @@ class _Block(Protocol):
     char_start: int
     char_end: int
     block_type: str
+    # Optional native cell-grid metadata (None on non-table / legacy blocks);
+    # declared so the type stays assignable to base.BlockLike for the shared
+    # render_blocks_to_markdown serializer.
+    row_index: int | None
+    col_index: int | None
+    row_span: int | None
+    col_span: int | None
+    is_header: bool | None
 
 
 # ---------------------------------------------------------------------------
