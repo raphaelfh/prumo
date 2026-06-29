@@ -1331,13 +1331,6 @@ class SectionExtractionService(LoggerMixin):
         # the LLM is stored as a real extraction_evidence row linked to
         # the proposal via proposal_record_id.
         for field_name, value in extracted_data.items():
-            if value is None:
-                continue
-
-            # Abstention: skip fields the LLM could not resolve.
-            if isinstance(value, dict) and value.get("status") in ("not_found", "ambiguous"):
-                continue
-
             field_id = field_map.get(field_name)
             if not field_id:
                 self.logger.warning(
@@ -1347,6 +1340,14 @@ class SectionExtractionService(LoggerMixin):
                     available_fields=list(field_map.keys()),
                 )
                 continue
+
+            # "No information found": a bare None or a structured abstention
+            # (status not_found / ambiguous). Record it as a first-class proposal
+            # (value=None) so the run's outcome is traceable to the reviewer,
+            # instead of silently dropping the field.
+            is_no_info = value is None or (
+                isinstance(value, dict) and value.get("status") in ("not_found", "ambiguous")
+            )
 
             confidence_score: float | None = None
             reasoning: str | None = None
@@ -1359,6 +1360,15 @@ class SectionExtractionService(LoggerMixin):
             else:
                 raw_evidence = None
                 inner_value = value
+
+            if is_no_info:
+                # The no-info value is null — never wrap the status dict. Drop
+                # the abstention confidence (a not_found 0.0 reads as a
+                # misleading 0% on the card) and there is no evidence; keep the
+                # "why not found" reasoning.
+                inner_value = None
+                raw_evidence = None
+                confidence_score = None
 
             # Build evidence_items list (cap at EVIDENCE_CAP).
             # Supports both the new list shape (P1) and the legacy single-dict
