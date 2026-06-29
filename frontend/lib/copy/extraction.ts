@@ -843,6 +843,18 @@ export const extraction = {
     // AISuggestionDetailsPopover – header + sections
     aiSuggestionDetailsTitle: 'Suggestion details',
     aiRationaleLabel: 'Rationale',
+    // AISuggestionReviewPopover – unified version review + selection
+    reviewTitle: 'Review suggestion',
+    reviewVersionsCount: '{{n}} version(s)',
+    reviewNoVersions: 'No AI versions yet',
+    reviewSelected: 'Selected',
+    reviewUseThisVersion: 'Use this version',
+    reviewNoInformation: 'No information found',
+    reviewNoInformationDesc: 'The model reported no information for this field in the document.',
+    reviewLowConfidence: 'low',
+    reviewClear: 'Clear',
+    reviewClearHint: 'Each selection is recorded with who chose it and when.',
+    reviewDetails: 'Details',
     // RunProvenanceDisclosure – "how this was generated" (transparency)
     provenanceToggle: 'How this was generated',
     provenanceRanBy: 'Ran by',
