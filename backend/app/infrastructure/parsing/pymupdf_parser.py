@@ -163,9 +163,13 @@ class PymupdfParser(DocumentParser):
                         converted.append((tuple(table.bbox), rows, header_rows))
                 table_rects = [rect for rect, _r, _h in converted]
 
+                raw_blocks = page.get_text("dict").get("blocks", [])
                 text_blocks: list[dict[str, Any]] = []
-                for block in page.get_text("dict").get("blocks", []):
-                    if block.get("type", 0) != 0:  # 0 = text block (images = P4)
+                image_blocks: list[dict[str, Any]] = [
+                    b for b in raw_blocks if b.get("type") == 1 and b.get("bbox")
+                ]
+                for block in raw_blocks:
+                    if block.get("type", 0) != 0:  # 0 = text block
                         continue
                     if not _block_text(block):
                         continue
@@ -176,9 +180,17 @@ class PymupdfParser(DocumentParser):
                     if s > 0:
                         all_sizes.append(s)
 
-                per_page[page_number] = {"text": text_blocks, "tables": converted}
+                per_page[page_number] = {
+                    "text": text_blocks,
+                    "tables": converted,
+                    "images": image_blocks,
+                }
 
-            if not all_sizes and not any(p["tables"] for p in per_page.values()):
+            if (
+                not all_sizes
+                and not any(p["tables"] for p in per_page.values())
+                and not any(p["images"] for p in per_page.values())
+            ):
                 raise ValueError("PymupdfParser produced no text blocks")
 
             median = sorted(all_sizes)[len(all_sizes) // 2] if all_sizes else 0.0
@@ -188,7 +200,7 @@ class PymupdfParser(DocumentParser):
             blocks: list[ParsedBlock] = []
             for page_index in range(doc.page_count):
                 page_number = page_index + 1
-                data = per_page.get(page_number, {"text": [], "tables": []})
+                data = per_page.get(page_number, {"text": [], "tables": [], "images": []})
 
                 entries: list[tuple[float, float, str, Any]] = []
                 for block in data["text"]:
@@ -197,6 +209,9 @@ class PymupdfParser(DocumentParser):
                 for rect, rows, header_rows in data["tables"]:
                     tx0, ty0, tx1, ty1 = rect
                     entries.append((float(ty0), float(tx0), "table", (rows, header_rows)))
+                for img in data.get("images", []):
+                    ix0, iy0, ix1, iy1 = img["bbox"]
+                    entries.append((float(iy0), float(ix0), "figure", img))
                 entries.sort(key=lambda e: (e[0], e[1]))
 
                 idx = 0
@@ -229,7 +244,7 @@ class PymupdfParser(DocumentParser):
                             )
                         )
                         idx += 1
-                    else:  # table
+                    elif kind == "table":
                         rows, header_rows = payload
                         cell_blocks = build_table_cell_blocks(
                             rows=rows,
@@ -239,6 +254,25 @@ class PymupdfParser(DocumentParser):
                         )
                         blocks.extend(cell_blocks)
                         idx += len(cell_blocks)
+                    elif kind == "figure":
+                        x0, y0, x1, y1 = payload["bbox"]
+                        blocks.append(
+                            ParsedBlock(
+                                page_number=page_number,
+                                block_index=idx,
+                                text="",
+                                char_start=0,
+                                char_end=0,
+                                bbox={
+                                    "x": float(x0),
+                                    "y": float(y0),
+                                    "width": float(x1 - x0),
+                                    "height": float(y1 - y0),
+                                },
+                                block_type=normalize_block_type("figure"),
+                            )
+                        )
+                        idx += 1
 
             if not blocks:
                 raise ValueError("PymupdfParser produced no text blocks")
