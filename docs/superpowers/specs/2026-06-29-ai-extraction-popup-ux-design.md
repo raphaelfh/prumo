@@ -102,10 +102,11 @@ root and trigger.
   solid `bg-muted`. The per-citation page chip currently `bg-background` stays;
   re-check contrast on the now-solid surface during design-review.
 - **Locate = click the passage (D3, option A).**
-  - The cited passage (`blockquote`) becomes the jump target: a `button`-role
-    element, full-width, with a hover affordance (`cursor-pointer`, subtle
-    `hover:bg`, and an inline "Show in document →" hint). The standalone
-    map-pin icon button is removed; Copy stays.
+  - The cited passage (`blockquote`) becomes the jump target: a full-width
+    `button` (keeping the existing `evidenceLocate` aria-label so existing tests
+    + queries still resolve), with a hover affordance (subtle `hover:bg` and an
+    inline "Locate in document" hint). The standalone map-pin icon button in the
+    row header is removed; Copy stays.
   - On click it calls the existing per-citation `onLocate(rank)` →
     `useReaderLocate().locate(...)`.
   - **The popup no longer closes on locate.** Remove the `onClose()` call from
@@ -123,11 +124,12 @@ root and trigger.
 - **Remove** the three `console.warn` calls; keep the `console.error` on the
   `getHistory` rejection path.
 - **Translate** the Portuguese comments to English.
-- **Run identity, not array order.** Drop `Extraction Run #N`. Each group header
-  shows the run's **relative time** ("Today 14:30", "9 days ago") with the
-  absolute timestamp on hover (`title`); the group containing
-  `currentSuggestionId` gets a `Current` pill. (Uses `runId` + `timestamp`,
-  which is all we have.)
+- **Run identity, not array order.** Drop `Extraction Run #N` (the reported
+  defect). Each group header shows the run's timestamp via the **existing**
+  `formatTimestamp` helper (already invalid-date-guarded, already used here — no
+  new relative-time helper); the group containing `currentSuggestionId` gets a
+  `Current` pill. (Relative time — "9 days ago" — deferred to a future shared
+  helper rather than a third bespoke one.)
 - **No hard truncation.** Values wrap with `line-clamp-2` and expose the full
   value on hover (`title`). Remove the 50-char substring cut.
 - **Type** `formatValue(value: unknown)` (object → JSON, null/undefined → empty
@@ -136,11 +138,11 @@ root and trigger.
 
 ### 4.4 Copy
 
-New keys in [`frontend/lib/copy/extraction.ts`](../../../frontend/lib/copy/extraction.ts),
-English only: `evidenceShowInDocument` ("Show in document"),
-`evidenceLocatedInReader` ("Highlighted in the reader"),
-`historyCurrentRun` ("Current"), plus any relative-time labels not already
-present. Reuse existing keys where they exist (e.g. `evidenceLocate`).
+In [`frontend/lib/copy/extraction.ts`](../../../frontend/lib/copy/extraction.ts),
+English only. New: `evidenceLocatedInReader` ("Highlighted in the reader"),
+`historyCurrentRun` ("Current"). Reuse `evidenceLocate` ("Locate in document")
+for the passage hint + aria-label (no new `evidenceShowInDocument`). Remove the
+now-dead `historyExtractionRun` key.
 
 ## 5. Components touched
 
@@ -151,18 +153,21 @@ present. Reuse existing keys where they exist (e.g. `evidenceLocate`).
 | `frontend/index.css` | remove `.frosted-overlay` if unused after the above. |
 | `frontend/components/extraction/ai/shared/AIPopoverShell.tsx` | **new** shared shell. |
 | `frontend/components/extraction/ai/shared/AISuggestionDetailsPopover.tsx` | use shell; keep-open on locate; active-ring state. |
-| `frontend/components/extraction/ai/AISuggestionEvidence.tsx` | solid evidence bg; clickable passage + "Show in document →"; drop map-pin icon; active-ring prop. |
-| `frontend/components/extraction/ai/AISuggestionHistoryPopover.tsx` | use shell; remove debug logs; English comments; run-relative-time + `Current`; no truncation; typed `formatValue`; content-aware height. |
-| `frontend/lib/copy/extraction.ts` | new copy keys. |
+| `frontend/components/extraction/ai/AISuggestionEvidence.tsx` | solid evidence bg; clickable passage (reuses `evidenceLocate` aria-label); drop map-pin icon; `activeRank` prop. |
+| `frontend/components/extraction/ai/AISuggestionHistoryPopover.tsx` | use shell; remove debug logs; English comments; run timestamp + `Current`; no truncation (`line-clamp-2` + title); typed `formatValue`; content-aware height. |
+| `frontend/lib/copy/extraction.ts` | add `evidenceLocatedInReader`, `historyCurrentRun`; remove dead `historyExtractionRun`. |
 
 ## 6. Testing & verification
 
-- **Vitest unit** (import `useReaderLocate` from `@/pdf-viewer/core` — engine-free,
-  jsdom-safe; the `@prumo/pdf-viewer` barrel crashes jsdom):
-  - Details: renders solid surface; clicking the passage calls `onLocate` and
-    does **not** close the popover; active ring appears on the clicked citation.
-  - History: groups by run; `Current` pill on the live run; relative-time
-    header; long value wraps with full value in `title` (no `...`).
+- **Vitest unit** (mock `@/hooks/extraction/useReaderLocate` as existing tests
+  do; mock `@/lib/copy` → returns the key, so assert on keys not English):
+  - Details: clicking the passage calls `locate(text, page, blockIds)`, does
+    **not** close the popover, and marks the citation active
+    (`data-active-citation="true"`).
+  - Evidence: existing scenarios stay green (passage reuses `evidenceLocate`);
+    new scenario asserts the active ring on `activeRank` match.
+  - History: full (untruncated) value present; `Current` (`historyCurrentRun`)
+    pill on the live run; no positional `#N`; `console.warn` not called.
 - **design-review loop** after implementation: solid surface over the real
   reader, narrow (~390) and dark mode; confirm no text bleed-through and no
   overflow/clipping.
