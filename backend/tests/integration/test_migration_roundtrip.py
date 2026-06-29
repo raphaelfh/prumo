@@ -298,7 +298,9 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0035_evidence_rank" in out, f"Expected head revision '0035_evidence_rank', got:\n{out}"
+    assert "0036_text_block_cell_grid" in out, (
+        f"Expected head revision '0036_text_block_cell_grid', got:\n{out}"
+    )
 
 
 @pytest.mark.asyncio

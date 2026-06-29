@@ -18,7 +18,7 @@ layer) since scientific tables are load-bearing for extraction.
 from __future__ import annotations
 
 import tempfile
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 from app.infrastructure.parsing.base import (
     DocumentParser,
@@ -70,7 +70,17 @@ def _pdf_pipeline_options() -> PdfPipelineOptions:
     return options
 
 
-def docling_cell_fields(cell: object) -> dict[str, int | None]:
+class _DoclingCellFields(TypedDict):
+    """Native cell-grid fields lifted from a docling TableCell."""
+
+    row_index: int | None
+    col_index: int | None
+    row_span: int | None
+    col_span: int | None
+    is_header: bool | None
+
+
+def docling_cell_fields(cell: object) -> _DoclingCellFields:
     """Map a docling TableCell to native cell-grid fields.
 
     docling exposes start/end row+col offset indices (half-open) plus

@@ -92,7 +92,7 @@ def test_parse_emits_table_cells_with_grid():
 def test_parse_tolerates_find_tables_failure(monkeypatch):
     """A find_tables crash never aborts the parse (text blocks still returned)."""
 
-    def _boom(self, *a, **k):
+    def _boom(*_args, **_kwargs):
         raise RuntimeError("find_tables blew up")
 
     monkeypatch.setattr(fitz.Page, "find_tables", _boom, raising=True)
@@ -105,7 +105,7 @@ def test_parse_skips_table_when_conversion_fails(monkeypatch):
     """A table that fails row conversion is skipped; the parse still succeeds."""
     import app.infrastructure.parsing.pymupdf_parser as mod
 
-    def _boom(table):
+    def _boom(_table):
         raise ValueError("bad table")
 
     monkeypatch.setattr(mod, "_table_to_rows", _boom, raising=True)
@@ -113,6 +113,8 @@ def test_parse_skips_table_when_conversion_fails(monkeypatch):
     # conversion failed -> no cells, table text NOT dropped (degrades to prose)
     assert all(b.block_type != "table_cell" for b in blocks)
     assert blocks  # parse still produced blocks
+    # no-data-loss: the table's text survives as prose (not silently discarded)
+    assert any("11.8" in (b.text or "") for b in blocks)
 
 
 def test_table_to_rows_uses_table_bbox_when_cell_rect_missing():

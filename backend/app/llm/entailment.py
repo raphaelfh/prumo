@@ -91,10 +91,13 @@ class GateSpec:
 
 
 def _build_premise(spec: GateSpec) -> str:
-    """Return the premise string: cited block + one neighbour on each side.
+    """Return the premise string for the entailment gate.
 
-    Falls back to the raw evidence quote when the cited block cannot be
-    located by page/char range in ``anchor_blocks``.
+    For a table-cell citation, returns just the cited cell's text (so the value
+    check is cell-scoped — an adjacent cell's number must not satisfy it). For
+    prose, returns the cited block + one neighbour on each side. Falls back to
+    the raw evidence quote when the cited block cannot be located by page/char
+    range in ``anchor_blocks``.
     """
     if spec.pos is not None and spec.anchor_blocks:
         blocks_by_idx: dict[int, Any] = dict(enumerate(spec.anchor_blocks))
@@ -115,7 +118,8 @@ def _build_premise(spec: GateSpec) -> str:
             # contains the value." Including neighbour cells would let an
             # adjacent cell's number satisfy the deterministic check.
             if getattr(cited, "block_type", None) == "table_cell":
-                return cited.text
+                cell_text: str = cited.text
+                return cell_text
             parts = [
                 blocks_by_idx[j].text
                 for j in (cited_idx - 1, cited_idx, cited_idx + 1)
