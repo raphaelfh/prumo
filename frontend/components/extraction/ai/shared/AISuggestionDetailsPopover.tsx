@@ -3,9 +3,10 @@
  *
  * Rendered as a non-modal, anchored Popover (not a full-screen modal): it
  * floats beside its trigger in the form panel and never covers the document
- * viewer. That is what makes "Locate in document" usable — clicking it closes
- * the popover and the reader, still visible on the right, scrolls to and
- * flashes the cited passage (markdown-first locate, via the shared viewer
+ * viewer. That is what makes locating usable — clicking a cited passage scrolls
+ * the reader (still visible on the right) to the quote and flashes it, while the
+ * popover stays open so the user can step through other citations; the located
+ * citation keeps an active ring (markdown-first locate, via the shared viewer
  * store). Outside a ViewerProvider the locate affordance is simply absent.
  */
 

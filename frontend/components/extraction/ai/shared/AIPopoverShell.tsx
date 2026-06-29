@@ -6,6 +6,7 @@
  * wraps it in <Popover> + <PopoverTrigger> and supplies the body.
  */
 import {PopoverContent} from '@/components/ui/popover';
+import {cn} from '@/lib/utils';
 
 interface AIPopoverShellProps {
   icon: React.ReactNode;
@@ -28,7 +29,7 @@ export function AIPopoverShell({
     <PopoverContent
       align={align}
       side="bottom"
-      className={`w-[min(380px,calc(100vw-1.5rem))] overflow-hidden p-0 ${className ?? ''}`}
+      className={cn('w-[min(380px,calc(100vw-1.5rem))] overflow-hidden p-0', className)}
     >
       <div className="flex items-center gap-2 border-b px-4 py-3">
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-ai">

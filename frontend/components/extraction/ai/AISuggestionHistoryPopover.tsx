@@ -121,7 +121,7 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
       <AIPopoverShell
         icon={<Clock className="h-4 w-4" />}
         title={t('extraction', 'historySuggestionsTitle')}
-        count={countLabel}
+        count={loading ? undefined : countLabel}
       >
         {loading ? (
           <div className="flex items-center justify-center py-8">
