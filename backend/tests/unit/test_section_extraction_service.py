@@ -1119,6 +1119,27 @@ class TestCreateSuggestions:
         assert by_field[f2]["confidence_score"] is None  # no misleading 0% on a no-info card
         assert by_field[f2]["rationale"] == "not stated in the article"
 
+    def test_build_run_provenance_shape(self, service):
+        # Run provenance is a flat snapshot of how the suggestions were
+        # generated; params come from the single-source extractor constants so
+        # they can't drift from what was actually sent.
+        service.user_id = "user-123"
+        prov = service._build_run_provenance(
+            model="gpt-4o-mini",
+            prompt_name="section_extraction",
+            prompt_version="v3",
+            prompt_text="SYSTEM PROMPT TEXT",
+        )
+        assert prov["ran_by_user_id"] == "user-123"
+        assert prov["model"] == "gpt-4o-mini"
+        assert prov["strategy"] == "section_extraction"
+        assert prov["prompt_version"] == "v3"
+        assert prov["prompt_text"] == "SYSTEM PROMPT TEXT"
+        assert prov["params"]["temperature"] == 0.1
+        assert prov["params"]["output_retries"] == 2
+        assert "timeout_seconds" in prov["params"]
+        assert "provider" in prov
+
     @pytest.mark.asyncio
     async def test_skips_unknown_field_names(self, service):
         field = MagicMock()
