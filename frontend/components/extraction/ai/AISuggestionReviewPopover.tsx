@@ -9,6 +9,10 @@
  * cited evidence (with reader-locate). A "no information" version renders as a
  * clean card rather than an empty value. A pinned footer keeps Clear reachable
  * no matter how long the list grows (AIPopoverShell footer slot).
+ *
+ * "Selected" is seeded from `selectedProposalId` (the coord's active version id,
+ * which the hook updates on each selection) and tracked optimistically while
+ * open; it falls back to the newest version when no selection is known.
  */
 
 import {useEffect, useState} from 'react';
@@ -20,6 +24,7 @@ import {Separator} from '@/components/ui/separator';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem, EvidenceCitation} from '@/types/ai-extraction';
+import {isNoInfoValue} from '@/lib/ai-extraction/suggestionUtils';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 import {AIPopoverShell} from './shared/AIPopoverShell';
 import {RunProvenanceDisclosure} from './shared/RunProvenanceDisclosure';
@@ -37,10 +42,6 @@ function formatTimestamp(date: Date | string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(d);
-}
-
-function isNoInfoValue(value: unknown): boolean {
-  return value === null || value === undefined || value === '';
 }
 
 function formatValue(value: unknown): string {

@@ -46,6 +46,7 @@ import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
 import {useAutoSaveProposals} from '@/hooks/runs';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
+import {isNoInfoValue} from '@/lib/ai-extraction/suggestionUtils';
 import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
 import {
@@ -1236,7 +1237,7 @@ export default function ExtractionFullScreen() {
         canRunAI={stage === 'extract' || stage == null}
         onExtractionComplete={handleExtractionComplete}
         aiSuggestions={aiSuggestions}
-        aiPendingCount={Object.keys(aiSuggestions).length}
+        aiPendingCount={Object.values(aiSuggestions).filter((s) => !isNoInfoValue(s.value)).length}
         onAISuggestionsClick={() => {
           // P1: scroll to first suggestion or open panel
           console.warn('Clicked AI badge - scrolling to first suggestion');

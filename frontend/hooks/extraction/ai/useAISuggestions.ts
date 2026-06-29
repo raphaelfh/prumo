@@ -177,6 +177,11 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         const next = { ...prev };
         next[key] = {
           ...next[key],
+          // Reflect the CHOSEN version on the coord so the review popover
+          // highlights it (and the field shows its value) across close+reopen —
+          // accept-latest passes the same id/value, so this is a no-op there.
+          id: proposalRecordId,
+          value,
           status: 'accepted' as const,
         };
           console.warn(`✅ Suggestion ${key} accepted - state updated to 'accepted'`);

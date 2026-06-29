@@ -496,9 +496,13 @@ describe('useAISuggestions — selectSuggestion (accept-by-proposal-id)', () => 
     await waitFor(() =>
       expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-1', 5),
     );
-    expect(
-      result.current.suggestions[getSuggestionKey('inst-1', 'f-1')].status,
-    ).toBe('accepted');
+    const updated = result.current.suggestions[getSuggestionKey('inst-1', 'f-1')];
+    expect(updated.status).toBe('accepted');
+    // The coord's entry now reflects the CHOSEN version (id + value), so the
+    // review popover highlights the right version across close+reopen — not the
+    // newest one. (Was 'proposal-inst-1-f-1' / 'Y' before selecting.)
+    expect(updated.id).toBe('p-older');
+    expect(updated.value).toBe(5);
   });
 
   it('human-proposal strategy bubbles a (possibly null) value without a ReviewerDecision write', async () => {

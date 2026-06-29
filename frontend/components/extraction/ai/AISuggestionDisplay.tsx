@@ -13,7 +13,8 @@ import type {AISuggestion} from '@/hooks/extraction/ai/useAISuggestions';
 import {AISuggestionActions} from '@/components/shared/ai-suggestions';
 import {AISuggestionConfidence} from './shared/AISuggestionConfidence';
 import {AISuggestionValue} from './shared/AISuggestionValue';
-import {isSuggestionAccepted} from '@/lib/ai-extraction/suggestionUtils';
+import {isNoInfoValue, isSuggestionAccepted} from '@/lib/ai-extraction/suggestionUtils';
+import {t} from '@/lib/copy';
 
 interface AISuggestionDisplayProps {
   suggestion: AISuggestion;
@@ -30,6 +31,19 @@ export function AISuggestionDisplay({
 }: AISuggestionDisplayProps) {
   const isAccepted = isSuggestionAccepted(suggestion);
   const isRejected = suggestion.status === 'rejected';
+
+  // A "no information found" outcome is now a first-class proposal. Render it as
+  // a quiet, de-emphasized indicator — never a loud "(empty) · 0%" strip with
+  // Accept/Reject (the full record + acknowledge live behind the review trigger).
+  if (isNoInfoValue(suggestion.value)) {
+    return (
+      <div className="mt-2 animate-in fade-in duration-200">
+        <span className="text-xs italic text-muted-foreground">
+          {t('extraction', 'reviewNoInformation')}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-2 animate-in fade-in slide-in-from-top-2 duration-200 w-full">

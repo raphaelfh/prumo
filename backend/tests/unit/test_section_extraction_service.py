@@ -1140,6 +1140,35 @@ class TestCreateSuggestions:
         assert "timeout_seconds" in prov["params"]
         assert "provider" in prov
 
+    def test_provenance_with_tokens_merges_usage(self, service):
+        # The WRITE path that actually ships to extraction_runs.results: the
+        # snapshot merged with this run's token usage. The flow tests mock
+        # _extract_with_llm (so _run_provenance stays None and only the
+        # None-branch runs), so cover the merge branch directly here.
+        service.user_id = "user-123"
+        service._run_provenance = service._build_run_provenance(
+            model="gpt-4o-mini",
+            prompt_name="section_extraction",
+            prompt_version="v3",
+            prompt_text="SYSTEM PROMPT TEXT",
+        )
+        merged = service._provenance_with_tokens(LlmUsage(prompt_tokens=100, completion_tokens=50))
+        assert merged is not None
+        assert merged["model"] == "gpt-4o-mini"
+        assert merged["strategy"] == "section_extraction"
+        assert merged["params"]["temperature"] == 0.1
+        assert merged["ran_by_user_id"] == "user-123"
+        # tokens: prompt/completion/total (total derived by LlmUsage)
+        assert merged["tokens"] == {"prompt": 100, "completion": 50, "total": 150}
+
+    def test_provenance_with_tokens_is_none_when_no_llm_ran(self, service):
+        # No LLM extraction ran → no snapshot → no provenance stored (the
+        # branch every mocked-flow test currently exercises).
+        service._run_provenance = None
+        assert (
+            service._provenance_with_tokens(LlmUsage(prompt_tokens=1, completion_tokens=1)) is None
+        )
+
     @pytest.mark.asyncio
     async def test_skips_unknown_field_names(self, service):
         field = MagicMock()
