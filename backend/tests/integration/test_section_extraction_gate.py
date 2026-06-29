@@ -86,16 +86,17 @@ def _make_anchor_block() -> ParsedBlock:
 
 
 @pytest.mark.asyncio
-async def test_evidence_gets_attribution_label_and_not_found_skipped(
+async def test_evidence_gets_attribution_label_and_not_found_recorded(
     db_session_real: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Gate labels found-field evidence; not_found field produces no proposal.
+    """Gate labels found-field evidence; not_found field records a no-info proposal.
 
     Assertions:
       (a) The "found" field's ExtractionEvidence row has
           ``attribution_label == "entailed"``.
-      (b) The "not_found" field produced NO ExtractionProposalRecord row.
+      (b) The "not_found" field records ONE no-info ExtractionProposalRecord
+          (value=None) with no evidence — the abstention is traceable, not dropped.
     """
 
     # --- stub gate_evidence to return "entailed" without any LLM call ---
@@ -187,7 +188,7 @@ async def test_evidence_gets_attribution_label_and_not_found_skipped(
     )
     await db_session_real.flush()
 
-    # assertion (b): no proposals written for not_found
+    # assertion (b): exactly one no-info proposal written for not_found, no evidence
     proposal_count = (
         await db_session_real.execute(
             text("SELECT COUNT(*) FROM public.extraction_proposal_records WHERE run_id = :rid"),
@@ -195,8 +196,18 @@ async def test_evidence_gets_attribution_label_and_not_found_skipped(
         )
     ).scalar()
 
-    assert proposal_count == 0, f"Expected 0 proposals for not_found field, got {proposal_count}"
-    assert count2 == 0
+    assert proposal_count == 1, (
+        f"Expected 1 no-info proposal for not_found field, got {proposal_count}"
+    )
+    assert count2 == 1
+
+    evidence_count2 = (
+        await db_session_real.execute(
+            text("SELECT COUNT(*) FROM public.extraction_evidence WHERE run_id = :rid"),
+            {"rid": str(run2.id)},
+        )
+    ).scalar()
+    assert evidence_count2 == 0, f"Expected 0 evidence rows for no-info, got {evidence_count2}"
 
     # --- cleanup (db_session_real commits persist) ---
     # Commit test data first so the deferred article-coherence trigger fires

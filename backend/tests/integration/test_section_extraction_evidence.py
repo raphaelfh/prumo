@@ -241,11 +241,13 @@ async def test_legacy_single_dict(
 
 
 @pytest.mark.asyncio
-async def test_abstention_no_rows(
+async def test_abstention_records_no_info_proposal(
     db_session_real: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A not_found field writes 0 evidence rows and 0 proposals."""
+    """A not_found field records ONE no-info proposal (value=None, no
+    confidence) with 0 evidence rows — the abstention is now a first-class,
+    traceable outcome instead of a silent drop."""
 
     async def _stub_gate(**_kwargs: Any) -> str:
         return "entailed"
@@ -294,9 +296,25 @@ async def test_abstention_no_rows(
         )
     ).scalar()
 
-    assert count == 0, f"Expected 0 proposals for not_found, got {count}"
+    assert count == 1, f"Expected 1 no-info proposal for not_found, got {count}"
     assert evidence_count == 0, f"Expected 0 evidence rows, got {evidence_count}"
-    assert proposal_count == 0, f"Expected 0 proposal records, got {proposal_count}"
+    assert proposal_count == 1, f"Expected 1 no-info proposal record, got {proposal_count}"
+
+    proposed = (
+        await db_session_real.execute(
+            text(
+                "SELECT proposed_value, confidence_score, rationale "
+                "FROM public.extraction_proposal_records WHERE run_id = :rid"
+            ),
+            {"rid": str(run.id)},
+        )
+    ).first()
+    assert proposed is not None
+    # The inner value is null (never the status dict); confidence dropped (a
+    # not_found 0.0 reads as a misleading 0%); the "why not found" reasoning kept.
+    assert proposed.proposed_value == {"value": None}
+    assert proposed.confidence_score is None
+    assert proposed.rationale == "Not mentioned."
 
     await _cleanup_runs(db_session_real, [str(run.id)])
 
