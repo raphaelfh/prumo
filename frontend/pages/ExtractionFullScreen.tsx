@@ -473,13 +473,14 @@ export default function ExtractionFullScreen() {
     updateValue(instanceId, fieldId, null);
   };
 
-  const { 
-    suggestions: aiSuggestions, 
-    acceptSuggestion, 
-    rejectSuggestion, 
+  const {
+    suggestions: aiSuggestions,
+    acceptSuggestion,
+    selectSuggestion,
+    rejectSuggestion,
     getSuggestionsHistory,
     refresh: refreshAISuggestions,
-    isActionLoading 
+    isActionLoading
   } = useAISuggestions({
     articleId: articleId || '',
     projectId: projectId || '',
@@ -1135,6 +1136,7 @@ export default function ExtractionFullScreen() {
           updateValue,
           aiSuggestions,
           acceptSuggestion,
+          selectSuggestion,
           rejectSuggestion,
           getSuggestionsHistory,
           isActionLoading,

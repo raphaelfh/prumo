@@ -38,6 +38,7 @@ export interface ExtractionFormViewProps {
   updateValue: (instanceId: string, fieldId: string, value: ExtractionValue) => void;
   aiSuggestions: Record<string, AISuggestion>;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
+  selectSuggestion: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
@@ -121,6 +122,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
                 aiSuggestions={props.aiSuggestions}
                 onAcceptAI={props.acceptSuggestion}
                 onRejectAI={props.rejectSuggestion}
+                selectSuggestion={props.selectSuggestion}
                 getSuggestionsHistory={props.getSuggestionsHistory}
                 isActionLoading={props.isActionLoading}
                 onAddInstance={() => props.handleAddInstance(entityType.id)}
@@ -151,6 +153,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
               updateValue={props.updateValue}
               aiSuggestions={props.aiSuggestions}
               acceptSuggestion={props.acceptSuggestion}
+              selectSuggestion={props.selectSuggestion}
               rejectSuggestion={props.rejectSuggestion}
               getSuggestionsHistory={props.getSuggestionsHistory}
               isActionLoading={props.isActionLoading}

@@ -843,6 +843,8 @@ export const extraction = {
     // AISuggestionDetailsPopover – header + sections
     aiSuggestionDetailsTitle: 'Suggestion details',
     aiRationaleLabel: 'Rationale',
+    // AISuggestionConfidence
+    aiConfidenceTooltip: 'AI suggestion confidence level',
     // AISuggestionReviewPopover – unified version review + selection
     reviewTitle: 'Review suggestion',
     reviewVersionsCount: '{{n}} version(s)',

@@ -62,9 +62,9 @@
     --info-foreground: 0 0% 100%;
 
     /* AI accent — used by AI suggestion surfaces (FieldInput pending state,
-       AISuggestionHistoryPopover, AISuggestionDetailsPopover). Replaces
-       hard-coded purple-*. Same hue in light/dark; opacity modifiers
-       (`bg-ai/10`) give the soft tinted surfaces. */
+       AISuggestionReviewPopover). Replaces hard-coded purple-*. Same hue in
+       light/dark; opacity modifiers (`bg-ai/10`) give the soft tinted
+       surfaces. */
     --ai: 262 83% 58%;
     --ai-foreground: 0 0% 100%;
 

@@ -218,8 +218,10 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
 
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
+    // setState lives in the microtask (not the effect body) to avoid the
+    // synchronous-setState-in-effect cascade lint; mirrors the old popover.
     queueMicrotask(() => {
+      setLoading(true);
       void getHistory(instanceId, fieldId)
         .then((data) => setHistory(data))
         .catch((err: unknown) => {
