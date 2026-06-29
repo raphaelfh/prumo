@@ -843,6 +843,22 @@ export const extraction = {
     // AISuggestionDetailsPopover – header + sections
     aiSuggestionDetailsTitle: 'Suggestion details',
     aiRationaleLabel: 'Rationale',
+    // RunProvenanceDisclosure – "how this was generated" (transparency)
+    provenanceToggle: 'How this was generated',
+    provenanceRanBy: 'Ran by',
+    provenanceProvider: 'Provider',
+    provenanceModel: 'Model',
+    provenanceReasoning: 'Reasoning',
+    provenanceTemperature: 'Temperature',
+    provenanceOutputRetries: 'Output retries',
+    provenanceTimeout: 'Timeout',
+    provenanceTokens: 'Tokens',
+    provenanceStrategy: 'Strategy',
+    provenancePromptVersion: 'Prompt version',
+    provenancePromptSent: 'Prompt sent',
+    provenanceTokensSummary: '{{n}} tokens',
+    provenanceCopyPrompt: 'Copy prompt',
+    provenanceCopied: 'Copied!',
     // AISuggestionEvidence – markdown-first citation locate
     evidenceLocate: 'Locate in document',
     evidenceLocatedInReader: 'Highlighted in the reader',
