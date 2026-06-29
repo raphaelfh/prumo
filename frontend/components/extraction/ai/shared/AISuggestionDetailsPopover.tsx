@@ -10,13 +10,10 @@
  */
 
 import {useState} from 'react';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import {Popover, PopoverTrigger} from '@/components/ui/popover';
 import {Sparkles} from 'lucide-react';
 import {AISuggestionEvidence} from '../AISuggestionEvidence';
+import {AIPopoverShell} from './AIPopoverShell';
 import {t} from '@/lib/copy';
 import type {AISuggestion, EvidenceCitation} from '@/types/ai-extraction';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
@@ -46,19 +43,21 @@ interface AISuggestionDetailsPopoverProps {
 
 interface EvidenceSectionProps {
   evidence: EvidenceCitation[];
-  onClose: () => void;
+  activeRank: number | null;
+  onActivate: (rank: number) => void;
 }
 
-function EvidenceSection({evidence, onClose}: EvidenceSectionProps) {
+function EvidenceSection({evidence, activeRank, onActivate}: EvidenceSectionProps) {
   const {locate, isAvailable} = useReaderLocate();
 
-  // Per-citation locate: finds the matching citation by rank, then locates it
-  // in the reader. Closes the popover so the flash is unobstructed.
+  // Per-citation locate: finds the matching citation by rank, marks it active,
+  // then locates it in the reader. The popover stays open so the user can step
+  // through other citations; the active citation keeps a ring.
   const onLocate = isAvailable
     ? (rank: number) => {
         const citation = evidence.find((e) => e.rank === rank) ?? evidence[0];
+        onActivate(rank);
         locate(citation.text, citation.pageNumber ?? null, citation.blockIds ?? []);
-        onClose();
       }
     : undefined;
 
@@ -67,6 +66,7 @@ function EvidenceSection({evidence, onClose}: EvidenceSectionProps) {
       <AISuggestionEvidence
         evidence={evidence}
         onLocate={onLocate}
+        activeRank={activeRank}
       />
     </section>
   );
@@ -81,6 +81,7 @@ export function AISuggestionDetailsPopover({
   trigger,
 }: AISuggestionDetailsPopoverProps) {
   const [open, setOpen] = useState(false);
+  const [activeRank, setActiveRank] = useState<number | null>(null);
 
   if (!hasSuggestionDetails(suggestion)) {
     return <>{trigger}</>;
@@ -90,21 +91,19 @@ export function AISuggestionDetailsPopover({
   const evidence = suggestion.evidence;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setActiveRank(null);
+      }}
+    >
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent
-        align="start"
-        side="bottom"
-        className="w-[380px] max-w-[calc(100vw-1.5rem)] overflow-hidden p-0"
+      <AIPopoverShell
+        icon={<Sparkles className="h-4 w-4" />}
+        title={t('extraction', 'aiSuggestionDetailsTitle')}
       >
-        <div className="flex items-center gap-2 border-b px-4 py-3">
-          <Sparkles className="h-4 w-4 shrink-0 text-ai" />
-          <span className="text-sm font-semibold">
-            {t('extraction', 'aiSuggestionDetailsTitle')}
-          </span>
-        </div>
-
-        <div className="max-h-[min(60vh,28rem)] space-y-4 overflow-y-auto p-4">
+        <div className="space-y-4 p-4">
           {hasReasoning && (
             <section className="space-y-1.5" aria-label={t('extraction', 'aiRationaleLabel')}>
               <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -119,11 +118,12 @@ export function AISuggestionDetailsPopover({
           {evidence && evidence.length > 0 && evidence[0]?.text?.trim() && (
             <EvidenceSection
               evidence={evidence}
-              onClose={() => setOpen(false)}
+              activeRank={activeRank}
+              onActivate={setActiveRank}
             />
           )}
         </div>
-      </PopoverContent>
+      </AIPopoverShell>
     </Popover>
   );
 }

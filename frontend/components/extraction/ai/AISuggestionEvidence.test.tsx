@@ -194,4 +194,22 @@ describe('AISuggestionEvidence', () => {
       expect(container.firstChild).toBeNull();
     });
   });
+
+  describe('(h) active citation ring', () => {
+    it('marks the cited passage active when activeRank matches its rank', () => {
+      const {container} = render(
+        <AISuggestionEvidence evidence={singleCitation} onLocate={vi.fn()} activeRank={0} />,
+        {wrapper: Wrapper},
+      );
+      expect(container.querySelector('[data-active-citation="true"]')).not.toBeNull();
+    });
+
+    it('does not mark active when activeRank differs', () => {
+      const {container} = render(
+        <AISuggestionEvidence evidence={singleCitation} onLocate={vi.fn()} activeRank={5} />,
+        {wrapper: Wrapper},
+      );
+      expect(container.querySelector('[data-active-citation="true"]')).toBeNull();
+    });
+  });
 });
