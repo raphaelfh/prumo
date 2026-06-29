@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-06-20
+last_reviewed: 2026-06-29
 owner: '@raphaelfh'
 ---
 
@@ -145,6 +145,17 @@ All API responses MUST use a uniform envelope format.
 - Middleware stack order: `RequestIdMiddleware` → `LoggingMiddleware` → `TimingMiddleware`.
 
 **Rationale**: A uniform response envelope simplifies frontend error handling, enables centralized logging, and makes API behavior predictable for consumers.
+
+### IX. Transparency & Traceability of AI-Assisted Decisions
+
+Every AI-assisted value MUST be explainable and every human choice MUST be auditable.
+
+- Each AI suggestion records **how it was generated** — a run-level provenance snapshot (ran-by user, provider/model, extraction strategy + the prompt actually sent, sampling params, token usage) stored in `extraction_runs.results['provenance']` and surfaced to the reviewer.
+- A "no information" / abstention outcome is a **first-class recorded proposal** (`proposed_value={"value": null}` with its rationale), not a silent drop — the absence of a finding is itself traceable evidence the run examined the field.
+- Every human selection of an AI version is **append-only**: the `ExtractionReviewerDecision` trail records who chose which `proposal_record_id` and when; switching versions never rewrites history.
+- Surfacing provenance is **data-driven and forward-compatible**: new provenance fields render without a UI change, so adding traceability never requires a schema or component migration first.
+
+**Rationale**: AI-assisted extraction is only trustworthy when a reviewer can see what produced a value and an auditor can reconstruct every human decision. Provenance-by-default and append-only selection make the system's reasoning legible and its review trail tamper-evident.
 
 ## Technology & Tooling Constraints
 
