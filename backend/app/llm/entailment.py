@@ -110,6 +110,12 @@ def _build_premise(spec: GateSpec) -> str:
             None,
         )
         if cited_idx is not None:
+            cited = blocks_by_idx[cited_idx]
+            # Table cells verify against the cell itself: "the cited cell
+            # contains the value." Including neighbour cells would let an
+            # adjacent cell's number satisfy the deterministic check.
+            if getattr(cited, "block_type", None) == "table_cell":
+                return cited.text
             parts = [
                 blocks_by_idx[j].text
                 for j in (cited_idx - 1, cited_idx, cited_idx + 1)
