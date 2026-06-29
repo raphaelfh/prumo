@@ -217,26 +217,17 @@
         backdrop-filter: blur(var(--header-blur));
         -webkit-backdrop-filter: blur(var(--header-blur));
     }
-    /* Frosted floating overlay — same surface for menus/popovers. */
-    .frosted-overlay {
-        background-color: hsl(var(--popover) / var(--header-surface-alpha));
-        backdrop-filter: blur(var(--header-blur));
-        -webkit-backdrop-filter: blur(var(--header-blur));
-    }
-    /* Legibility fallbacks: no backdrop-filter support, or user opts out of
-       transparency. Solid surface in both cases. */
+    /* Legibility fallback: no backdrop-filter support → solid header surface.
+       (Floating menus/popovers are solid `bg-popover` and need no fallback.) */
     @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
         .frosted-header { background-color: hsl(var(--background)); }
-        .frosted-overlay { background-color: hsl(var(--popover)); }
     }
     @media (prefers-reduced-transparency: reduce) {
-        .frosted-header,
-        .frosted-overlay {
+        .frosted-header {
             backdrop-filter: none;
             -webkit-backdrop-filter: none;
             background-color: hsl(var(--background));
         }
-        .frosted-overlay { background-color: hsl(var(--popover)); }
     }
 
     /* Subtle button style */

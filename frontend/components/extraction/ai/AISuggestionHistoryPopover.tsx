@@ -1,15 +1,16 @@
 /**
  * AI suggestion history popover
  *
- * Shows full history of suggestions grouped by run_id
- * Allows accepting/rejecting past suggestions
- * 
+ * Shows the full history of suggestions grouped by run id, inside the shared
+ * AIPopoverShell (solid surface, content-aware height). Allows accepting /
+ * rejecting past suggestions.
+ *
  * @component
  */
 
 import {useEffect, useState} from 'react';
-import {Popover, PopoverContent, PopoverTrigger,} from '@/components/ui/popover';
-import {ScrollArea} from '@/components/ui/scroll-area';
+import {Popover, PopoverTrigger} from '@/components/ui/popover';
+import {AIPopoverShell} from './shared/AIPopoverShell';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Separator} from '@/components/ui/separator';
@@ -21,8 +22,8 @@ import type {AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestio
 const formatTimestamp = (date: Date | string, invalidLabel: string = 'Invalid date'): string => {
   try {
     const dateObj = date instanceof Date ? date : new Date(date);
-      if (isNaN(dateObj.getTime())) return invalidLabel;
-      return new Intl.DateTimeFormat('en-US', {
+    if (isNaN(dateObj.getTime())) return invalidLabel;
+    return new Intl.DateTimeFormat('en-US', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -30,7 +31,7 @@ const formatTimestamp = (date: Date | string, invalidLabel: string = 'Invalid da
       minute: '2-digit',
     }).format(dateObj);
   } catch {
-      return invalidLabel;
+    return invalidLabel;
   }
 };
 
@@ -65,19 +66,15 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
 
   const loadHistory = async () => {
     if (!instanceId || !fieldId) {
-        console.warn('[AISuggestionHistoryPopover] instanceId or fieldId not provided');
       return;
     }
 
     setLoading(true);
-    console.warn('[AISuggestionHistoryPopover] Loading history...', {instanceId, fieldId});
-
     const data = await getHistory(instanceId, fieldId).catch((err: unknown) => {
-        console.error('[AISuggestionHistoryPopover] Error loading history:', err);
+      console.error('[AISuggestionHistoryPopover] Error loading history:', err);
       return [] as typeof history;
     });
 
-    console.warn('[AISuggestionHistoryPopover] History loaded:', {count: data.length, data});
     setHistory(data);
     setLoading(false);
   };
@@ -99,7 +96,7 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
     }
   }, [open, loadHistory]);
 
-  // Agrupar por runId (tratar casos onde runId pode ser undefined/null)
+  // Group by run id (handle cases where runId may be undefined/null).
   const groupedByRun = history.reduce((acc, suggestion) => {
     const runId = suggestion.runId || 'unknown';
     if (!acc[runId]) {
@@ -109,60 +106,58 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
     return acc;
   }, {} as Record<string, AISuggestionHistoryItem[]>);
 
-    const invalidDateLabel = t('extraction', 'historyInvalidDate');
-  const formatValue = (value: any): string => {
-      if (value === null || value === undefined) return t('extraction', 'emptyValue');
+  const invalidDateLabel = t('extraction', 'historyInvalidDate');
+  const formatValue = (value: unknown): string => {
+    if (value === null || value === undefined) return t('extraction', 'emptyValue');
     if (typeof value === 'object') return JSON.stringify(value);
-    if (typeof value === 'string' && value.length > 50) {
-      return `${value.substring(0, 50)}...`;
-    }
     return String(value);
   };
 
+  const countLabel = `${history.length} ${t('extraction', 'historySuggestionsCount')}`;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        {trigger}
-      </PopoverTrigger>
-      <PopoverContent className="w-96 max-w-[90vw] sm:max-w-md p-0 z-50" align="start" side="bottom">
-        <div className="p-4 border-b">
-            <h4 className="font-semibold text-sm">{t('extraction', 'historySuggestionsTitle')}</h4>
-          <p className="text-xs text-muted-foreground mt-1">
-              {history.length} {t('extraction', 'historySuggestionsCount')}
-          </p>
-        </div>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <AIPopoverShell
+        icon={<Clock className="h-4 w-4" />}
+        title={t('extraction', 'historySuggestionsTitle')}
+        count={loading ? undefined : countLabel}
+      >
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : history.length === 0 ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            {t('extraction', 'historyNoSuggestions')}
+          </div>
+        ) : (
+          <div className="p-2 sm:p-3">
+            {Object.entries(groupedByRun).map(([runId, suggestions], runIndex) => {
+              const isCurrentRun = suggestions.some((s) => s.id === currentSuggestionId);
 
-        <ScrollArea className="h-[400px] max-h-[70vh]">
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : history.length === 0 ? (
-            <div className="p-8 text-center text-sm text-muted-foreground">
-                {t('extraction', 'historyNoSuggestions')}
-            </div>
-          ) : (
-            <div className="p-2 sm:p-3">
-              {Object.entries(groupedByRun).map(([runId, suggestions], runIndex) => (
+              return (
                 <div key={runId} className="mb-4">
-                  {/* Header do Run */}
+                  {/* Run header */}
                   <div className="px-2 py-1.5 mb-2 bg-muted/50 rounded">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium truncate">
-                        {t('extraction', 'historyExtractionRun')} #{runIndex + 1}
-                      </span>
-                      <span className="text-xs text-muted-foreground shrink-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-muted-foreground truncate">
                         {formatTimestamp(suggestions[0].timestamp, invalidDateLabel)}
                       </span>
+                      {isCurrentRun && (
+                        <span className="shrink-0 rounded border border-ai/30 bg-ai/10 px-1.5 py-0.5 text-[11px] font-medium text-ai">
+                          {t('extraction', 'historyCurrentRun')}
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                    {/* Run suggestions */}
+                  {/* Run suggestions */}
                   <div className="space-y-2">
                     {suggestions.map((suggestion) => {
                       const isCurrent = suggestion.id === currentSuggestionId;
                       const confidencePercent = Math.round(suggestion.confidence * 100);
+                      const fullValue = formatValue(suggestion.value);
 
                       return (
                         <div
@@ -174,11 +169,11 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
                               : "bg-background border-border/60 hover:bg-muted/40"
                           )}
                         >
-                          {/* Valor e Status */}
+                          {/* Value and status */}
                           <div className="flex items-start justify-between gap-2 mb-2">
                             <div className="flex-1 min-w-0 overflow-hidden">
-                              <p className="text-sm font-medium break-words">
-                                {formatValue(suggestion.value)}
+                              <p className="text-sm font-medium line-clamp-2 break-words" title={fullValue}>
+                                {fullValue}
                               </p>
                               {suggestion.reasoning && (
                                 <p className="text-xs text-muted-foreground mt-1 line-clamp-3 break-words">
@@ -199,20 +194,21 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
                                 )}
                               >
                                 {suggestion.status === 'accepted'
-                                    ? t('extraction', 'suggestionAccepted')
+                                  ? t('extraction', 'suggestionAccepted')
                                   : suggestion.status === 'rejected'
-                                        ? t('extraction', 'suggestionRejected')
-                                  : `${confidencePercent}%`}
+                                    ? t('extraction', 'suggestionRejected')
+                                    : `${confidencePercent}%`}
                               </Badge>
                             </div>
                           </div>
 
-                            {/* Metadata and actions */}
+                          {/* Metadata and actions */}
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
                               <Clock className="h-3 w-3" />
-                                <span
-                                    className="truncate">{formatTimestamp(suggestion.timestamp, invalidDateLabel)}</span>
+                              <span className="truncate">
+                                {formatTimestamp(suggestion.timestamp, invalidDateLabel)}
+                              </span>
                             </div>
 
                             {suggestion.status === 'pending' && (
@@ -251,12 +247,11 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
                     <Separator className="my-4" />
                   )}
                 </div>
-              ))}
-            </div>
-          )}
-        </ScrollArea>
-      </PopoverContent>
+              );
+            })}
+          </div>
+        )}
+      </AIPopoverShell>
     </Popover>
   );
 }
-

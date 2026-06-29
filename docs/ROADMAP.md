@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-06-20
+last_reviewed: 2026-06-29
 owner: '@raphaelfh'
 ---
 
 # Roadmap
 
-> **Status:** Stable · Last reviewed: 2026-06-20 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-06-29 · Owner: @raphaelfh
 
 The day-to-day roadmap with status, priority, owner, and target dates lives
 on the GitHub Project:
@@ -25,6 +25,7 @@ This file records only the **top-level milestones** (one bullet each) — the
 
 ## Recently shipped (2026-Q2)
 
+- ✅ Table-cell + figure citations — native fitz table-cell grid with cell-scoped entailment (migration `0036`); `figure` region blocks + a "Verify manually" badge for ungroundable values (migration `0037`); P3/P4 of the grounded-extraction citation work (2026-06-29).
 - ✅ Stored-markdown ingestion + deterministic citation highlight — `content_markdown` written atomically with blocks (migration `0033`); PyMuPDF free default; highlight anchored by `(page, block_index)`; `pypdf` path removed (2026-06-24).
 - ✅ Extraction data-path consolidation — single API read path (ADR 0007); shipped via #228/#324 (2026-06).
 - ✅ Extraction-centric HITL unification (2026-04-27).
