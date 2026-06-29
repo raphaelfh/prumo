@@ -20,7 +20,7 @@ const render = (ui: React.ReactElement) => rtlRender(<TooltipProvider>{ui}</Tool
 vi.mock('@/components/extraction/ai/AISuggestionReviewPopover', () => ({
   AISuggestionReviewPopover: (props: any) => (
     <div data-testid="review-popover" data-selected={props.selectedProposalId}>
-      <button data-testid="do-select" onClick={() => props.onSelect('p2', 'v2')} />
+      <button data-testid="do-select" onClick={() => props.onSelect('p2', 'v2', 0.8)} />
       <button data-testid="do-clear" onClick={() => props.onClear?.()} />
     </div>
   ),
@@ -80,7 +80,7 @@ describe('FieldInput — unified review popover wiring', () => {
     const selectSuggestion = vi.fn();
     render(<FieldInput {...props({ selectSuggestion })} />);
     fireEvent.click(screen.getByTestId('do-select'));
-    expect(selectSuggestion).toHaveBeenCalledWith('inst-1', 'field-1', 'p2', 'v2');
+    expect(selectSuggestion).toHaveBeenCalledWith('inst-1', 'field-1', 'p2', 'v2', 0.8);
   });
 
   it('routes onClear to onRejectAI', () => {

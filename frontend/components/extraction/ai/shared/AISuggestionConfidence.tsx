@@ -13,8 +13,6 @@ import type {AISuggestion} from '@/hooks/extraction/ai/useAISuggestions';
 
 interface AISuggestionConfidenceProps {
   suggestion: AISuggestion;
-  /** If true, renders only the % (parent owns the surrounding trigger). */
-  asTriggerChild?: boolean;
   className?: string;
 }
 
@@ -23,18 +21,9 @@ const confidenceSpanClass =
 
 export function AISuggestionConfidence({
   suggestion,
-  asTriggerChild = false,
   className = '',
 }: AISuggestionConfidenceProps) {
   const confidencePercent = calculateConfidencePercent(suggestion.confidence);
-
-  if (asTriggerChild) {
-    return (
-      <span className={`${confidenceSpanClass} shrink-0 ${className}`}>
-        {confidencePercent}%
-      </span>
-    );
-  }
 
   return (
     <Tooltip>

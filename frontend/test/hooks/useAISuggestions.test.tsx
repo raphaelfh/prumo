@@ -484,25 +484,28 @@ describe('useAISuggestions — selectSuggestion (accept-by-proposal-id)', () => 
     );
 
     await act(async () => {
-      await result.current.selectSuggestion('inst-1', 'f-1', 'p-older', 5);
+      await result.current.selectSuggestion('inst-1', 'f-1', 'p-older', 5, 0.7);
     });
 
     expect(AISuggestionService.acceptSuggestion).toHaveBeenCalledTimes(1);
     const call = (AISuggestionService.acceptSuggestion as any).mock.calls[0][0];
-    // The chosen id, NOT the latest 'proposal-inst-1-f-1'.
+    // The chosen id + the chosen version's own confidence, NOT the latest
+    // 'proposal-inst-1-f-1' / its 0.5 confidence.
     expect(call.suggestionId).toBe('p-older');
     expect(call.runId).toBe('run-active');
     expect(call.value).toBe(5);
+    expect(call.confidence).toBe(0.7);
     await waitFor(() =>
       expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-1', 5),
     );
     const updated = result.current.suggestions[getSuggestionKey('inst-1', 'f-1')];
     expect(updated.status).toBe('accepted');
-    // The coord's entry now reflects the CHOSEN version (id + value), so the
-    // review popover highlights the right version across close+reopen — not the
-    // newest one. (Was 'proposal-inst-1-f-1' / 'Y' before selecting.)
+    // The coord's entry now reflects the CHOSEN version (id + value + its own
+    // confidence), so the review popover highlights the right version across
+    // close+reopen — not the newest one. (Was 'proposal-inst-1-f-1' / 'Y' / 0.5.)
     expect(updated.id).toBe('p-older');
     expect(updated.value).toBe(5);
+    expect(updated.confidence).toBe(0.7);
   });
 
   it('human-proposal strategy bubbles a (possibly null) value without a ReviewerDecision write', async () => {
@@ -522,8 +525,8 @@ describe('useAISuggestions — selectSuggestion (accept-by-proposal-id)', () => 
     );
 
     await act(async () => {
-      // Selecting a "no information" version → null value.
-      await result.current.selectSuggestion('inst-1', 'f-1', 'p-noinfo', null);
+      // Selecting a "no information" version → null value, no confidence.
+      await result.current.selectSuggestion('inst-1', 'f-1', 'p-noinfo', null, 0);
     });
 
     expect(AISuggestionService.acceptSuggestion).not.toHaveBeenCalled();

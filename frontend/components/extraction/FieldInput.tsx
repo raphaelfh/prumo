@@ -60,6 +60,7 @@ interface FieldInputProps {
     fieldId: string,
     proposalRecordId: string,
     value: unknown,
+    confidence: number,
   ) => void | Promise<void>;
   isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   disabled?: boolean;
@@ -442,8 +443,8 @@ export function FieldInput(props: FieldInputProps) {
                       fieldId={field.id}
                       getHistory={getSuggestionsHistory}
                       selectedProposalId={aiSuggestion.id}
-                      onSelect={(proposalRecordId, selectedValue) =>
-                        selectSuggestion?.(instanceId, field.id, proposalRecordId, selectedValue)
+                      onSelect={(proposalRecordId, selectedValue, selectedConfidence) =>
+                        selectSuggestion?.(instanceId, field.id, proposalRecordId, selectedValue, selectedConfidence)
                       }
                       onClear={onRejectAI}
                       trigger={

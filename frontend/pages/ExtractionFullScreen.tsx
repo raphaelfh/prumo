@@ -499,6 +499,14 @@ export default function ExtractionFullScreen() {
     onSuggestionRejected: handleAISuggestionRejected
   });
 
+  // Actionable pending suggestions only — a "no information found" proposal is
+  // recorded provenance, not something to act on, so it must not inflate the
+  // header count. Memoized: this screen re-renders on every field keystroke.
+  const aiPendingCount = useMemo(
+    () => Object.values(aiSuggestions).filter((s) => !isNoInfoValue(s.value)).length,
+    [aiSuggestions],
+  );
+
   // Full AI extraction — mirrors HeaderMoreMenu wiring exactly.
   // When an active run is available (in `extract` stage), ``extractForRun``
   // reuses it (preserving human proposals). Otherwise ``extractFullAI``
@@ -1237,7 +1245,7 @@ export default function ExtractionFullScreen() {
         canRunAI={stage === 'extract' || stage == null}
         onExtractionComplete={handleExtractionComplete}
         aiSuggestions={aiSuggestions}
-        aiPendingCount={Object.values(aiSuggestions).filter((s) => !isNoInfoValue(s.value)).length}
+        aiPendingCount={aiPendingCount}
         onAISuggestionsClick={() => {
           // P1: scroll to first suggestion or open panel
           console.warn('Clicked AI badge - scrolling to first suggestion');

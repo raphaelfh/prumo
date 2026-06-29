@@ -46,8 +46,10 @@ const PROVENANCE_REGISTRY: ProvenanceFieldDef[] = [
 ];
 
 const REGISTRY_KEYS = new Set<string>(PROVENANCE_REGISTRY.map((f) => f.key as string));
-// Internal ids that must never leak into the generic fallback. The display name
-// (`ranByName`) is resolved by the caller; the raw user id is suppressed.
+// The raw `ranByUserId` is captured as audit provenance but suppressed from the
+// generic fallback (a bare uuid is not reviewer-facing). The "Ran by" row renders
+// only when a human-readable `ranByName` is present — backend/caller name
+// resolution is a follow-up; until then the row is simply absent.
 const SUPPRESSED_KEYS = new Set<string>(['ranByUserId']);
 
 function isPresent(value: unknown): boolean {

@@ -42,7 +42,7 @@ interface SectionAccordionProps {
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void>;
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
-  selectSuggestion?: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown) => Promise<void>;
+  selectSuggestion?: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown, confidence: number) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   onAddInstance?: () => void;

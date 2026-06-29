@@ -51,7 +51,7 @@ export interface ModelSectionProps {
   /** AI suggestion metadata, also shared with study-level. */
   aiSuggestions: Record<string, AISuggestion>;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
-  selectSuggestion: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown) => Promise<void>;
+  selectSuggestion: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown, confidence: number) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   getSuggestionsHistory?: (
     instanceId: string,

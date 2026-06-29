@@ -38,7 +38,7 @@ export interface ExtractionFormViewProps {
   updateValue: (instanceId: string, fieldId: string, value: ExtractionValue) => void;
   aiSuggestions: Record<string, AISuggestion>;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
-  selectSuggestion: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown) => Promise<void>;
+  selectSuggestion: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown, confidence: number) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;

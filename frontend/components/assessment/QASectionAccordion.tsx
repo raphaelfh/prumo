@@ -67,6 +67,7 @@ interface QASectionAccordionProps {
     fieldId: string,
     proposalRecordId: string,
     value: unknown,
+    confidence: number,
   ) => Promise<void> | void;
   getSuggestionsHistory?: (
     instanceId: string,

@@ -304,13 +304,15 @@ export interface UseAISuggestionsReturn {
   /**
    * Accept a SPECIFIC historical version by its proposal id (not just the
    * latest pending). Powers the review popover's version switching. `value`
-   * may be null (an explicit "no information" selection).
+   * may be null (an explicit "no information" selection); `confidence` is that
+   * chosen version's own confidence.
    */
   selectSuggestion: (
     instanceId: string,
     fieldId: string,
     proposalRecordId: string,
     value: unknown,
+    confidence: number,
   ) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   batchAccept: (threshold?: number) => Promise<void>;

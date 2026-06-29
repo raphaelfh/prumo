@@ -54,7 +54,8 @@ describe('AISuggestionReviewPopover', () => {
     // The only non-selected version (p2) exposes Use this version.
     const useBtn = screen.getByRole('button', { name: /reviewUseThisVersion/ });
     await user.click(useBtn);
-    expect(onSelect).toHaveBeenCalledWith('p2', null);
+    // Carries the chosen version's id, value, and its own confidence (0.9).
+    expect(onSelect).toHaveBeenCalledWith('p2', null, 0.9);
   });
 
   it('Clear in the pinned footer calls onClear', async () => {

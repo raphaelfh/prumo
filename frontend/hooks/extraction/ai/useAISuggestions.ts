@@ -178,10 +178,12 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         next[key] = {
           ...next[key],
           // Reflect the CHOSEN version on the coord so the review popover
-          // highlights it (and the field shows its value) across close+reopen —
-          // accept-latest passes the same id/value, so this is a no-op there.
+          // highlights it (and the field shows its value/confidence) across
+          // close+reopen — accept-latest passes the same id/value/confidence,
+          // so this is a no-op there.
           id: proposalRecordId,
           value,
+          confidence,
           status: 'accepted' as const,
         };
           console.warn(`✅ Suggestion ${key} accepted - state updated to 'accepted'`);
@@ -232,9 +234,10 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     fieldId: string,
     proposalRecordId: string,
     value: unknown,
+    confidence: number,
   ): Promise<void> => {
-    const key = getSuggestionKey(instanceId, fieldId);
-    const confidence = suggestions[key]?.confidence ?? 0;
+    // The chosen version's own confidence is carried by the caller (the review
+    // popover has it per row) — don't reconstruct it from the latest coord.
     await selectProposalCore(instanceId, fieldId, proposalRecordId, value, confidence, /* silent */ false);
   };
 

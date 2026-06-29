@@ -24,7 +24,7 @@ import {Separator} from '@/components/ui/separator';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem, EvidenceCitation} from '@/types/ai-extraction';
-import {isNoInfoValue} from '@/lib/ai-extraction/suggestionUtils';
+import {formatFullSuggestionValue, isNoInfoValue} from '@/lib/ai-extraction/suggestionUtils';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 import {AIPopoverShell} from './shared/AIPopoverShell';
 import {RunProvenanceDisclosure} from './shared/RunProvenanceDisclosure';
@@ -42,11 +42,6 @@ function formatTimestamp(date: Date | string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(d);
-}
-
-function formatValue(value: unknown): string {
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
 }
 
 // -----------------------------------------------------------------------------
@@ -119,9 +114,9 @@ function VersionRow({version, isSelected, onUse}: VersionRowProps) {
           ) : (
             <p
               className="line-clamp-3 break-words text-sm font-medium"
-              title={formatValue(version.value)}
+              title={formatFullSuggestionValue(version.value)}
             >
-              {formatValue(version.value)}
+              {formatFullSuggestionValue(version.value)}
             </p>
           )}
         </div>
@@ -191,7 +186,7 @@ interface AISuggestionReviewPopoverProps {
   getHistory: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   /** The currently-selected version id; falls back to the newest when absent. */
   selectedProposalId?: string;
-  onSelect: (proposalRecordId: string, value: unknown) => void;
+  onSelect: (proposalRecordId: string, value: unknown, confidence: number) => void;
   onClear?: () => void;
   trigger: React.ReactNode;
   align?: 'start' | 'center' | 'end';
@@ -249,7 +244,7 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
 
   const handleUse = (version: AISuggestionHistoryItem) => {
     setLocalSelected(version.id);
-    onSelect(version.id, version.value);
+    onSelect(version.id, version.value, version.confidence);
   };
 
   const handleClear = () => {
