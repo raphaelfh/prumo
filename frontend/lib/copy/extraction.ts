@@ -446,8 +446,7 @@ export const extraction = {
     tableInDevelopment: 'In development',
     tableClearSelection: 'Clear selection',
     // AI suggestion history popover
-    historyExtractionRun: 'Extraction',
-    historyProcessing: 'Processing…',
+    historyCurrentRun: 'Current',
     // AISuggestionHistoryPopover
     historyInvalidDate: 'Invalid date',
     historySuggestionsTitle: 'Suggestion history',
