@@ -301,6 +301,17 @@ export interface UseAISuggestionsReturn {
   suggestions: Record<string, AISuggestion>; // key: `${instanceId}_${fieldId}`
   loading: boolean;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
+  /**
+   * Accept a SPECIFIC historical version by its proposal id (not just the
+   * latest pending). Powers the review popover's version switching. `value`
+   * may be null (an explicit "no information" selection).
+   */
+  selectSuggestion: (
+    instanceId: string,
+    fieldId: string,
+    proposalRecordId: string,
+    value: unknown,
+  ) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   batchAccept: (threshold?: number) => Promise<void>;
   getSuggestionsHistory: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
