@@ -196,9 +196,28 @@ Evidence, not assertion:
 - `curl -fsS -o /dev/null -w "%{http_code}" https://web-production-48b398.up.railway.app/health` → expect 200.
 - Confirm `post-deploy-smoke` is green (health + frontend + CORS
   preflight from the prod origin).
-- Run the Playwright E2E smoke against the deployed flow for the feature
-  you shipped (`web-testing`), and a `/design-review` pass on the
-  user-facing surface if one changed.
+- Run the Playwright E2E smoke for the shipped feature (`web-testing`),
+  but serve the frontend on a **local server** instead of loading the
+  Vercel deployment in a browser. Keep the prod-targeting `remote-smoke`
+  project (it exercises the prod backend with the designated test account
+  and is non-destructive); only override its frontend origin to local:
+  1. `npm run dev` — serve the frontend on `http://127.0.0.1:8080` (built
+     from the promoted `main` commit, with the `VITE_*` env aimed at the
+     prod backend + Supabase).
+  2. `E2E_FRONTEND_URL=http://127.0.0.1:8080
+     E2E_API_URL=https://web-production-48b398.up.railway.app
+     npm run test:e2e:remote` — the browser loads the **local** frontend
+     while the auth/extraction assertions run against the prod backend, so
+     the deployed backend, DB, and data path are still verified end-to-end.
+
+  Do **not** point `E2E_FRONTEND_URL` at `https://prumoai.vercel.app`:
+  driving a browser against `*.vercel.app` is blocked by the org browser
+  policy, and the deployed frontend bundle's reachability is already
+  covered by `post-deploy-smoke` (step 2). Do **not** substitute
+  `npm run test:e2e:local` — those projects self-provision and hard-reset
+  fixtures, so against the prod backend they would mutate prod data.
+- Finish with a `/design-review` pass on the user-facing surface if one
+  changed.
 
 ## Phase 8 — Verdict
 

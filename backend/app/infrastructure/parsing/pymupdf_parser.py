@@ -275,7 +275,9 @@ class PymupdfParser(DocumentParser):
                         idx += 1
 
             if not blocks:
-                raise ValueError("PymupdfParser produced no text blocks")
+                # ``blocks`` here can hold figures / table cells with no text,
+                # so this is "no blocks at all", not "no text blocks".
+                raise ValueError("PymupdfParser produced no blocks")
             return assign_char_offsets_to_blocks(blocks)
         finally:
             doc.close()
