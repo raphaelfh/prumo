@@ -16,6 +16,7 @@ import type {
   AISuggestionHistoryItem,
   EvidenceCitation,
   LoadSuggestionsResult,
+  RunProvenance,
 } from '@/types/ai-extraction';
 import { getSuggestionKey } from '@/types/ai-extraction';
 import { APIError } from '@/lib/ai-extraction/errors';
@@ -47,6 +48,43 @@ function unwrapValue(raw: { [key: string]: unknown } | null | undefined): unknow
   return raw;
 }
 
+/**
+ * Flatten the run-level provenance snapshot (snake_case, with nested
+ * `params`/`tokens`) into the camelCase `RunProvenance` the disclosure renders.
+ * Unknown top-level keys pass through verbatim so a future backend field shows
+ * up as a generic row without a frontend change; the nested `params`/`tokens`
+ * containers are dropped (their scalars are promoted to top level).
+ */
+function mapProvenance(
+  raw: { [key: string]: unknown } | null | undefined,
+): RunProvenance | undefined {
+  if (raw === null || raw === undefined || typeof raw !== 'object') return undefined;
+  const {
+    params,
+    tokens,
+    ran_by_user_id,
+    prompt_version,
+    prompt_text,
+    ...rest
+  } = raw as Record<string, unknown>;
+  const p = (params ?? {}) as Record<string, unknown>;
+  const tk = (tokens ?? {}) as Record<string, unknown>;
+  const out: RunProvenance = { ...rest };
+  const assign = (key: keyof RunProvenance, value: unknown) => {
+    if (value !== undefined) out[key] = value;
+  };
+  assign('ranByUserId', ran_by_user_id);
+  assign('promptVersion', prompt_version);
+  assign('promptText', prompt_text);
+  assign('temperature', p['temperature']);
+  assign('outputRetries', p['output_retries']);
+  assign('timeoutSeconds', p['timeout_seconds']);
+  assign('tokensPrompt', tk['prompt']);
+  assign('tokensCompletion', tk['completion']);
+  assign('tokensTotal', tk['total']);
+  return out;
+}
+
 function mapItemToSuggestion(item: AISuggestionItem): AISuggestion {
   return {
     id: item.id,
@@ -57,6 +95,7 @@ function mapItemToSuggestion(item: AISuggestionItem): AISuggestion {
     status: (item.status ?? 'pending') as AISuggestion['status'],
     timestamp: new Date(item.created_at),
     evidence: mapEvidenceList(item.evidence),
+    provenance: mapProvenance(item.provenance as { [key: string]: unknown } | null),
   };
 }
 
@@ -73,6 +112,7 @@ function mapHistoryItemToSuggestion(
     status: 'pending',
     timestamp: new Date(item.created_at),
     evidence: mapEvidenceList(item.evidence),
+    provenance: mapProvenance(item.provenance as { [key: string]: unknown } | null),
   };
 }
 

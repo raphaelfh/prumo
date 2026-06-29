@@ -16,13 +16,18 @@ A test in test_suggestion_read.py pins this invariant explicitly.
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionEvidence, ExtractionInstance
+from app.models.extraction import (
+    ExtractionEvidence,
+    ExtractionInstance,
+    ExtractionRun,
+)
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,
@@ -73,6 +78,22 @@ def _resolve_status(decision: str | None) -> str:
     if decision == ExtractionReviewerDecisionType.REJECT.value:
         return "rejected"
     return "accepted"
+
+
+async def _load_run_provenance(
+    db: AsyncSession, run_ids: set[UUID]
+) -> dict[UUID, dict[str, Any] | None]:
+    """Fetch each run's provenance snapshot (extraction_runs.results['provenance'])
+    in one query, so suggestions can show how they were generated without an
+    N+1. Legacy runs without provenance map to None."""
+    if not run_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(ExtractionRun.id, ExtractionRun.results).where(ExtractionRun.id.in_(run_ids))
+        )
+    ).all()
+    return {run_id: (results or {}).get("provenance") for run_id, results in rows}
 
 
 async def load_suggestions(
@@ -189,6 +210,7 @@ async def load_suggestions(
 
     # --- Step 5: build response items ---
     items: list[AISuggestionItem] = []
+    prov_by_run = await _load_run_provenance(db, {p.run_id for p in deduped})
     for p in deduped:
         evidence_list = [
             EvidenceResponse(
@@ -217,6 +239,7 @@ async def load_suggestions(
                 created_at=p.created_at,
                 evidence=evidence_list,
                 status=status,
+                provenance=prov_by_run.get(p.run_id),
             )
         )
 
@@ -286,6 +309,7 @@ async def get_suggestion_history(
         rows.sort(key=lambda e: (e.rank, str(e.id)))
 
     items: list[AISuggestionHistoryItem] = []
+    prov_by_run = await _load_run_provenance(db, {p.run_id for p in proposals})
     for p in proposals:
         evidence_list = [
             EvidenceResponse(
@@ -311,6 +335,7 @@ async def get_suggestion_history(
                 rationale=p.rationale,
                 created_at=p.created_at,
                 evidence=evidence_list,
+                provenance=prov_by_run.get(p.run_id),
             )
         )
 

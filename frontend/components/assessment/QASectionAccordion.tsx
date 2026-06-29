@@ -62,6 +62,13 @@ interface QASectionAccordionProps {
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void> | void;
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void> | void;
+  selectSuggestion?: (
+    instanceId: string,
+    fieldId: string,
+    proposalRecordId: string,
+    value: unknown,
+    confidence: number,
+  ) => Promise<void> | void;
   getSuggestionsHistory?: (
     instanceId: string,
     fieldId: string,
@@ -107,6 +114,7 @@ export function QASectionAccordion({
   aiSuggestions,
   onAcceptAI,
   onRejectAI,
+  selectSuggestion,
   getSuggestionsHistory,
   isAIActionLoading,
 }: QASectionAccordionProps) {
@@ -241,6 +249,7 @@ export function QASectionAccordion({
                           ? () => onRejectAI(instanceId, field.id)
                           : undefined
                       }
+                      selectSuggestion={selectSuggestion}
                       getSuggestionsHistory={getSuggestionsHistory}
                       isActionLoading={
                         isAIActionLoading
@@ -295,6 +304,7 @@ export function QASectionAccordion({
                             ? () => onRejectAI(instanceId, field.id)
                             : undefined
                         }
+                        selectSuggestion={selectSuggestion}
                         getSuggestionsHistory={getSuggestionsHistory}
                         isActionLoading={
                           isAIActionLoading

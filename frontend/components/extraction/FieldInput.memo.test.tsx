@@ -32,8 +32,8 @@ vi.mock('@/components/extraction/ai/AISuggestionDisplay', () => ({
 vi.mock('@/components/extraction/ai/AISuggestionBadge', () => ({
   AISuggestionBadge: () => null,
 }));
-vi.mock('@/components/extraction/ai/AISuggestionHistoryPopover', () => ({
-  AISuggestionHistoryPopover: () => null,
+vi.mock('@/components/extraction/ai/AISuggestionReviewPopover', () => ({
+  AISuggestionReviewPopover: () => null,
 }));
 vi.mock('@/hooks/extraction/useJustUpdatedValue', () => ({
   useJustUpdatedValue: () => false,
