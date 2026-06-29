@@ -446,8 +446,7 @@ export const extraction = {
     tableInDevelopment: 'In development',
     tableClearSelection: 'Clear selection',
     // AI suggestion history popover
-    historyExtractionRun: 'Extraction',
-    historyProcessing: 'Processing…',
+    historyCurrentRun: 'Current',
     // AISuggestionHistoryPopover
     historyInvalidDate: 'Invalid date',
     historySuggestionsTitle: 'Suggestion history',
@@ -846,6 +845,7 @@ export const extraction = {
     aiRationaleLabel: 'Rationale',
     // AISuggestionEvidence – markdown-first citation locate
     evidenceLocate: 'Locate in document',
+    evidenceLocatedInReader: 'Highlighted in the reader',
     // AISuggestionEvidence – multi-citation list + attribution badges
     evidenceAlsoCited: 'Also cited ({{n}})',
     attributionEntailed: 'Verified',

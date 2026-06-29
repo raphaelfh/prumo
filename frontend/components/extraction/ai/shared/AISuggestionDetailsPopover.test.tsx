@@ -12,7 +12,7 @@
  * Mocks: useReaderLocate (the markdown-first locate hook).
  */
 
-import {render, screen, waitFor} from '@testing-library/react';
+import {render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi, beforeEach} from 'vitest';
 import type {ReactNode} from 'react';
@@ -64,7 +64,7 @@ describe('AISuggestionDetailsPopover — reader-locate wiring', () => {
     expect(screen.getByText(/test evidence/)).toBeInTheDocument();
   });
 
-  it('locate button calls reader-locate with text + page, then closes the popover', async () => {
+  it('locate calls reader-locate with text + page and keeps the popover open + marks active', async () => {
     const user = userEvent.setup();
     render(
       <AISuggestionDetailsPopover suggestion={suggestion} trigger={<button>Open</button>} />,
@@ -72,16 +72,15 @@ describe('AISuggestionDetailsPopover — reader-locate wiring', () => {
     );
 
     await user.click(screen.getByRole('button', {name: 'Open'}));
-    const locateBtn = await screen.findByRole('button', {name: 'evidenceLocate'});
+    const passage = await screen.findByRole('button', {name: 'evidenceLocate'});
 
-    await user.click(locateBtn);
+    await user.click(passage);
     expect(locateSpy).toHaveBeenCalledOnce();
     expect(locateSpy).toHaveBeenCalledWith('test evidence', 2, [5]);
 
-    // Popover closed → content unmounts.
-    await waitFor(() => {
-      expect(screen.queryByText(/test evidence/)).not.toBeInTheDocument();
-    });
+    // Popover stays open; the located citation is marked active.
+    expect(screen.getByText(/test evidence/)).toBeInTheDocument();
+    expect(document.querySelector('[data-active-citation="true"]')).not.toBeNull();
   });
 
   it('no viewer (isAvailable=false) → no locate button, evidence still shown', async () => {
