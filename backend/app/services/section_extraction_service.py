@@ -1421,18 +1421,24 @@ class SectionExtractionService(LoggerMixin):
                 )
                 self.db.add(ev_row)
 
-                # Queue for entailment gate: found fields with evidence only.
+                # Queue for entailment gate: found fields with ANCHORED evidence only.
                 if isinstance(value, dict) and value.get("status") == "found" and quote:
-                    _gate_specs.append(
-                        GateSpec(
-                            field_label=field_label_map.get(field_name, field_name),
-                            value_str=str(inner_value),
-                            quote=quote,
-                            pos=pos,
-                            anchor_blocks=_anchor_blocks,
+                    if pos is not None:
+                        _gate_specs.append(
+                            GateSpec(
+                                field_label=field_label_map.get(field_name, field_name),
+                                value_str=str(inner_value),
+                                quote=quote,
+                                pos=pos,
+                                anchor_blocks=_anchor_blocks,
+                            )
                         )
-                    )
-                    _gate_rows.append(ev_row)
+                        _gate_rows.append(ev_row)
+                    else:
+                        # No text anchor → cannot ground the value in the document
+                        # (e.g. the value appears only in a figure). Flag for human
+                        # verification instead of judging an unanchored quote.
+                        ev_row.attribution_label = "ungroundable"
 
             count += 1
 

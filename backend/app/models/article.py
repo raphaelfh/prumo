@@ -296,6 +296,13 @@ class ArticleTextBlock(BaseModel):
     # | figure_caption | header | footer (CHECK constraint at the DB level).
     block_type: Mapped[str] = mapped_column(Text, nullable=False)
 
+    # Native table-cell grid (NULL for non-table blocks and legacy parsers).
+    row_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    col_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    row_span: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    col_span: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_header: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
     article_file: Mapped["ArticleFile"] = relationship(
         "ArticleFile",
         back_populates="text_blocks",

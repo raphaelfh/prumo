@@ -36,7 +36,7 @@ from typing import Protocol, runtime_checkable
 # Closed block-type vocabulary
 # ---------------------------------------------------------------------------
 
-#: The seven block types that the DB CHECK constraint accepts.
+#: The eight block types that the DB CHECK constraint accepts.
 #: Any value not in this set is normalised to ``"paragraph"`` before storage.
 BLOCK_TYPES: frozenset[str] = frozenset(
     {
@@ -45,6 +45,7 @@ BLOCK_TYPES: frozenset[str] = frozenset(
         "list_item",
         "table_cell",
         "figure_caption",
+        "figure",
         "header",
         "footer",
     }
@@ -87,6 +88,11 @@ class ParsedBlock:
             with keys ``x``, ``y``, ``width``, ``height``.
         block_type: One of the seven values in ``BLOCK_TYPES``.  Must be
             normalised before construction (use ``normalize_block_type``).
+        row_index: 0-indexed row position within the table (None for non-table blocks).
+        col_index: 0-indexed column position within the table (None for non-table blocks).
+        row_span: Number of rows spanned by this cell (None for non-table blocks).
+        col_span: Number of columns spanned by this cell (None for non-table blocks).
+        is_header: Whether this cell is a header cell (None for non-table blocks).
     """
 
     page_number: int
@@ -96,6 +102,12 @@ class ParsedBlock:
     char_end: int
     bbox: dict[str, float]
     block_type: str
+    # Native table-cell grid (None for non-table blocks / legacy parsers).
+    row_index: int | None = None
+    col_index: int | None = None
+    row_span: int | None = None
+    col_span: int | None = None
+    is_header: bool | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +246,12 @@ class BlockLike(Protocol):
     block_index: int
     text: str
     block_type: str
+    # Optional native cell-grid metadata; absent/None on legacy blocks.
+    row_index: int | None
+    col_index: int | None
+    row_span: int | None
+    col_span: int | None
+    is_header: bool | None
 
 
 _MD_TABLE_CELL_SEP = " | "
@@ -251,7 +269,7 @@ def _infer_column_count(cell_texts: list[str]) -> int:
     return min(8, max(2, math.ceil(math.sqrt(n))))
 
 
-def _render_table(cell_texts: list[str]) -> str:
+def _render_table_legacy(cell_texts: list[str]) -> str:
     """Render a flat list of table-cell texts as a deterministic GFM table."""
     if not cell_texts:
         return ""
@@ -272,6 +290,42 @@ def _render_table(cell_texts: list[str]) -> str:
     return "\n".join([_fmt(rows[0]), rule, *(_fmt(r) for r in rows[1:])])
 
 
+def _render_table_from_grid(cells: Sequence[BlockLike]) -> str:
+    """Render GFM from cells carrying native (row_index, col_index).
+
+    Cells are placed by (row_index, col_index); no column-width padding is
+    applied so the output is compact and diff-stable across edits.
+    """
+    cells = list(cells)
+    if not cells:
+        return ""
+    n_rows = max((c.row_index or 0) for c in cells) + 1
+    n_cols = max((c.col_index or 0) for c in cells) + 1
+    grid = [["" for _ in range(n_cols)] for _ in range(n_rows)]
+    for c in cells:
+        grid[c.row_index or 0][c.col_index or 0] = c.text
+
+    def _fmt(row: list[str]) -> str:
+        return "| " + _MD_TABLE_CELL_SEP.join(row) + " |"
+
+    rule = "|-" + "-|-".join(_MD_TABLE_RULE_CHAR for _ in range(n_cols)) + "-|"
+    return "\n".join([_fmt(grid[0]), rule, *(_fmt(grid[r]) for r in range(1, n_rows))])
+
+
+def _render_table(cells: Sequence[BlockLike]) -> str:
+    """Render a contiguous table_cell run as GFM.
+
+    Uses the native (row, col) grid when every cell carries it; otherwise falls
+    back to the legacy flat-text column heuristic (legacy / pre-P3 blocks).
+    """
+    cells = list(cells)
+    # BlockLike declares row_index/col_index (Task 1), so direct attribute
+    # access is mypy-clean (no getattr-returns-Any noise for the ratchet).
+    if cells and all(c.row_index is not None and c.col_index is not None for c in cells):
+        return _render_table_from_grid(cells)
+    return _render_table_legacy([c.text for c in cells])
+
+
 def render_blocks_to_markdown(blocks: Sequence[BlockLike]) -> str:
     """Project article text blocks to deterministic GFM markdown (ADR-0013 free tier).
 
@@ -287,18 +341,18 @@ def render_blocks_to_markdown(blocks: Sequence[BlockLike]) -> str:
     i = 0
     while i < len(ordered):
         block = ordered[i]
-        if block.block_type in ("header", "footer"):
+        if block.block_type in ("header", "footer", "figure"):
             i += 1
             continue
         if block.block_type == "table_cell":
             page = block.page_number
-            run: list[str] = []
+            run: list[BlockLike] = []
             while (
                 i < len(ordered)
                 and ordered[i].block_type == "table_cell"
                 and ordered[i].page_number == page
             ):
-                run.append(ordered[i].text)
+                run.append(ordered[i])
                 i += 1
             parts.append(_render_table(run))
             continue

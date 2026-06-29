@@ -18,7 +18,7 @@ layer) since scientific tables are load-bearing for extraction.
 from __future__ import annotations
 
 import tempfile
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 from app.infrastructure.parsing.base import (
     DocumentParser,
@@ -39,6 +39,8 @@ _LABEL_MAP = {
     "page_footer": "footer",
     "text": "paragraph",
     "paragraph": "paragraph",
+    "picture": "figure",
+    "image": "figure",
 }
 
 
@@ -68,6 +70,43 @@ def _pdf_pipeline_options() -> PdfPipelineOptions:
     )
     options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
     return options
+
+
+class _DoclingCellFields(TypedDict):
+    """Native cell-grid fields lifted from a docling TableCell."""
+
+    row_index: int | None
+    col_index: int | None
+    row_span: int | None
+    col_span: int | None
+    is_header: bool | None
+
+
+def docling_cell_fields(cell: object) -> _DoclingCellFields:
+    """Map a docling TableCell to native cell-grid fields.
+
+    docling exposes start/end row+col offset indices (half-open) plus
+    column_header / row_header booleans. Spans derive from the offset deltas.
+    Missing attributes degrade to None (older docling versions / odd cells).
+    """
+    sr = getattr(cell, "start_row_offset_idx", None)
+    er = getattr(cell, "end_row_offset_idx", None)
+    sc = getattr(cell, "start_col_offset_idx", None)
+    ec = getattr(cell, "end_col_offset_idx", None)
+    row_span = (er - sr) if (sr is not None and er is not None) else None
+    col_span = (ec - sc) if (sc is not None and ec is not None) else None
+    is_header = None
+    if hasattr(cell, "column_header") or hasattr(cell, "row_header"):
+        is_header = bool(
+            getattr(cell, "column_header", False) or getattr(cell, "row_header", False)
+        )
+    return {
+        "row_index": sr,
+        "col_index": sc,
+        "row_span": row_span,
+        "col_span": col_span,
+        "is_header": is_header,
+    }
 
 
 class DoclingParser(DocumentParser):
@@ -124,6 +163,7 @@ class DoclingParser(DocumentParser):
                         continue
                     idx = per_page_index.get(page_no, 0)
                     per_page_index[page_no] = idx + 1
+                    grid = docling_cell_fields(cell)
                     blocks.append(
                         ParsedBlock(
                             page_number=page_no,
@@ -133,6 +173,11 @@ class DoclingParser(DocumentParser):
                             char_end=0,
                             bbox=dict(bbox),
                             block_type="table_cell",
+                            row_index=grid["row_index"],
+                            col_index=grid["col_index"],
+                            row_span=grid["row_span"],
+                            col_span=grid["col_span"],
+                            is_header=grid["is_header"],
                         )
                     )
                 continue

@@ -72,6 +72,11 @@ class ArticleTextBlockRepository(BaseRepository[ArticleTextBlock]):
                 char_end=block.char_end,
                 bbox=block.bbox,
                 block_type=normalize_block_type(block.block_type),
+                row_index=block.row_index,
+                col_index=block.col_index,
+                row_span=block.row_span,
+                col_span=block.col_span,
+                is_header=block.is_header,
             )
             for block in blocks
         ]
