@@ -268,7 +268,7 @@ def _infer_column_count(cell_texts: list[str]) -> int:
     return min(8, max(2, math.ceil(math.sqrt(n))))
 
 
-def _render_table(cell_texts: list[str]) -> str:
+def _render_table_legacy(cell_texts: list[str]) -> str:
     """Render a flat list of table-cell texts as a deterministic GFM table."""
     if not cell_texts:
         return ""
@@ -287,6 +287,42 @@ def _render_table(cell_texts: list[str]) -> str:
 
     rule = "|-" + "-|-".join(_MD_TABLE_RULE_CHAR * w for w in widths) + "-|"
     return "\n".join([_fmt(rows[0]), rule, *(_fmt(r) for r in rows[1:])])
+
+
+def _render_table_from_grid(cells: Sequence[BlockLike]) -> str:
+    """Render GFM from cells carrying native (row_index, col_index).
+
+    Cells are placed by (row_index, col_index); no column-width padding is
+    applied so the output is compact and diff-stable across edits.
+    """
+    cells = list(cells)
+    if not cells:
+        return ""
+    n_rows = max((c.row_index or 0) for c in cells) + 1
+    n_cols = max((c.col_index or 0) for c in cells) + 1
+    grid = [["" for _ in range(n_cols)] for _ in range(n_rows)]
+    for c in cells:
+        grid[c.row_index or 0][c.col_index or 0] = c.text
+
+    def _fmt(row: list[str]) -> str:
+        return "| " + _MD_TABLE_CELL_SEP.join(row) + " |"
+
+    rule = "|-" + "-|-".join(_MD_TABLE_RULE_CHAR for _ in range(n_cols)) + "-|"
+    return "\n".join([_fmt(grid[0]), rule, *(_fmt(grid[r]) for r in range(1, n_rows))])
+
+
+def _render_table(cells: Sequence[BlockLike]) -> str:
+    """Render a contiguous table_cell run as GFM.
+
+    Uses the native (row, col) grid when every cell carries it; otherwise falls
+    back to the legacy flat-text column heuristic (legacy / pre-P3 blocks).
+    """
+    cells = list(cells)
+    # BlockLike declares row_index/col_index (Task 1), so direct attribute
+    # access is mypy-clean (no getattr-returns-Any noise for the ratchet).
+    if cells and all(c.row_index is not None and c.col_index is not None for c in cells):
+        return _render_table_from_grid(cells)
+    return _render_table_legacy([c.text for c in cells])
 
 
 def render_blocks_to_markdown(blocks: Sequence[BlockLike]) -> str:
@@ -309,13 +345,13 @@ def render_blocks_to_markdown(blocks: Sequence[BlockLike]) -> str:
             continue
         if block.block_type == "table_cell":
             page = block.page_number
-            run: list[str] = []
+            run: list[BlockLike] = []
             while (
                 i < len(ordered)
                 and ordered[i].block_type == "table_cell"
                 and ordered[i].page_number == page
             ):
-                run.append(ordered[i].text)
+                run.append(ordered[i])
                 i += 1
             parts.append(_render_table(run))
             continue
