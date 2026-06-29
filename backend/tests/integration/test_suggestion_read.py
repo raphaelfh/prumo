@@ -304,6 +304,50 @@ async def test_load_suggestions_returns_ai_proposals(
 
 
 @pytest.mark.asyncio
+async def test_load_suggestions_includes_run_provenance(
+    db_session: AsyncSession,
+) -> None:
+    """A suggestion carries its run's provenance snapshot (how it was generated)."""
+    import json
+
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, reviewer_a, _reviewer_b = built
+
+    prov = {
+        "model": "gpt-4o-mini",
+        "strategy": "section_extraction",
+        "ran_by_user_id": str(SEED.primary_profile),
+        "params": {"temperature": 0.1, "output_retries": 2},
+        "tokens": {"total": 1240},
+    }
+    await db_session.execute(
+        text(
+            "UPDATE extraction_runs "
+            "SET results = jsonb_set(coalesce(results, '{}'::jsonb), "
+            "'{provenance}', cast(:p as jsonb)) WHERE id = :id"
+        ),
+        {"p": json.dumps(prov), "id": str(run_id)},
+    )
+    await db_session.flush()
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=reviewer_a,
+        run_id=run_id,
+    )
+    assert result.suggestions[0].provenance == prov
+
+    history = await get_suggestion_history(
+        db_session, instance_id, field_id, article_id=SEED.primary_article
+    )
+    assert history[0].provenance == prov
+
+
+@pytest.mark.asyncio
 async def test_load_suggestions_reviewer_a_status_is_accepted(
     db_session: AsyncSession,
 ) -> None:
