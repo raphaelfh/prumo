@@ -109,6 +109,38 @@ def docling_cell_fields(cell: object) -> _DoclingCellFields:
     }
 
 
+def picture_figure_block(
+    item: object,
+    *,
+    bbox: dict[str, float],
+    page_number: int,
+    block_index: int,
+) -> ParsedBlock | None:
+    """Figure-region block for a docling picture/image item, else ``None``.
+
+    Mirrors ``docling_cell_fields``: duck-typed (no docling import) so it stays
+    unit-testable without the heavy dependency. ``_LABEL_MAP`` is the single
+    source of truth for which labels are figures, and a docling ``PictureItem``
+    always carries the ``picture`` label, so label-based detection covers both
+    ``PictureItem`` instances and any picture/image-labeled item. Figures have
+    no text layer, so ``text=""`` — the entailment judge is bypassed and the UI
+    shows the "Verify manually" badge (same contract as PymupdfParser figure
+    regions).
+    """
+    label = getattr(getattr(item, "label", None), "value", "")
+    if _LABEL_MAP.get(label) != "figure":
+        return None
+    return ParsedBlock(
+        page_number=page_number,
+        block_index=block_index,
+        text="",
+        char_start=0,
+        char_end=0,
+        bbox=bbox,
+        block_type=normalize_block_type("figure"),
+    )
+
+
 class DoclingParser(DocumentParser):
     """Self-hosted layout parser. Implements the DocumentParser port."""
 
@@ -180,6 +212,20 @@ class DoclingParser(DocumentParser):
                             is_header=grid["is_header"],
                         )
                     )
+                continue
+
+            # Figures carry no text, so they must be emitted before the text
+            # guard below — otherwise real (text-less) docling pictures are
+            # silently dropped and never become anchorable figure regions.
+            figure = picture_figure_block(
+                item,
+                bbox=bbox,
+                page_number=page_no,
+                block_index=per_page_index.get(page_no, 0),
+            )
+            if figure is not None:
+                per_page_index[page_no] = figure.block_index + 1
+                blocks.append(figure)
                 continue
 
             text = getattr(item, "text", "").strip()
