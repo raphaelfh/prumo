@@ -36,7 +36,7 @@ from typing import Protocol, runtime_checkable
 # Closed block-type vocabulary
 # ---------------------------------------------------------------------------
 
-#: The seven block types that the DB CHECK constraint accepts.
+#: The eight block types that the DB CHECK constraint accepts.
 #: Any value not in this set is normalised to ``"paragraph"`` before storage.
 BLOCK_TYPES: frozenset[str] = frozenset(
     {
@@ -45,6 +45,7 @@ BLOCK_TYPES: frozenset[str] = frozenset(
         "list_item",
         "table_cell",
         "figure_caption",
+        "figure",
         "header",
         "footer",
     }
@@ -340,7 +341,7 @@ def render_blocks_to_markdown(blocks: Sequence[BlockLike]) -> str:
     i = 0
     while i < len(ordered):
         block = ordered[i]
-        if block.block_type in ("header", "footer"):
+        if block.block_type in ("header", "footer", "figure"):
             i += 1
             continue
         if block.block_type == "table_cell":

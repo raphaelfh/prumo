@@ -33,7 +33,7 @@ export interface EvidenceCitation {
   text: string;
   pageNumber?: number | null;
   blockIds: number[];
-  attributionLabel?: 'entailed' | 'weak' | 'unsupported' | null;
+  attributionLabel?: 'entailed' | 'weak' | 'unsupported' | 'ungroundable' | null;
   rank: number;
 }
 

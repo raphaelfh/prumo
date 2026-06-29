@@ -851,6 +851,7 @@ export const extraction = {
     attributionEntailed: 'Verified',
     attributionWeak: 'Weak match',
     attributionUnsupported: 'Not supported',
+    attributionUngroundable: 'Verify manually',
     // useExtractionJob async polling toasts
     extractionJobFailedTitle: 'AI extraction failed',
     extractionJobCancelledTitle: 'AI extraction cancelled',

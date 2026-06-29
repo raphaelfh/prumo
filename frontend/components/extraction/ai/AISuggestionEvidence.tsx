@@ -65,7 +65,8 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary}: CitationRo
 
   const label = citation.attributionLabel;
   const isEntailed = label === 'entailed';
-  const isAmber = label === 'weak' || label === 'unsupported';
+  const isUngroundable = label === 'ungroundable';
+  const isAmber = label === 'weak' || label === 'unsupported' || isUngroundable;
 
   const badgeCopy =
     isEntailed
@@ -74,7 +75,9 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary}: CitationRo
         ? t('extraction', 'attributionWeak')
         : label === 'unsupported'
           ? t('extraction', 'attributionUnsupported')
-          : null;
+          : isUngroundable
+            ? t('extraction', 'attributionUngroundable')
+            : null;
 
   const borderClass = isEntailed
     ? 'border-l-green-500'

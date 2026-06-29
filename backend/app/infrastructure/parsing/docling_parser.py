@@ -39,6 +39,8 @@ _LABEL_MAP = {
     "page_footer": "footer",
     "text": "paragraph",
     "paragraph": "paragraph",
+    "picture": "figure",
+    "image": "figure",
 }
 
 
