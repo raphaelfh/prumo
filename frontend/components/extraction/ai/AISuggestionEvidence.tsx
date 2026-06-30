@@ -26,7 +26,21 @@ import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {useState} from 'react';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
+import type {ExtractionCopy} from '@/lib/copy/extraction';
 import type {EvidenceCitation} from '@/types/ai-extraction';
+
+// One source of truth mapping each attribution label to its badge copy + the
+// tooltip that explains it grades the QUOTE (not the value/confidence). A new
+// attribution state is added here once; copy and tooltip stay in lockstep.
+const ATTRIBUTION_COPY: Record<
+  'entailed' | 'weak' | 'unsupported' | 'ungroundable',
+  {copy: keyof ExtractionCopy; tooltip: keyof ExtractionCopy}
+> = {
+  entailed: {copy: 'attributionEntailed', tooltip: 'attributionTooltipEntailed'},
+  weak: {copy: 'attributionWeak', tooltip: 'attributionTooltipWeak'},
+  unsupported: {copy: 'attributionUnsupported', tooltip: 'attributionTooltipUnsupported'},
+  ungroundable: {copy: 'attributionUngroundable', tooltip: 'attributionTooltipUngroundable'},
+};
 
 // =================== INTERFACES ===================
 
@@ -74,16 +88,13 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: 
   const isUngroundable = label === 'ungroundable';
   const isAmber = label === 'weak' || label === 'unsupported' || isUngroundable;
 
-  const badgeCopy =
-    isEntailed
-      ? t('extraction', 'attributionEntailed')
-      : label === 'weak'
-        ? t('extraction', 'attributionWeak')
-        : label === 'unsupported'
-          ? t('extraction', 'attributionUnsupported')
-          : isUngroundable
-            ? t('extraction', 'attributionUngroundable')
-            : null;
+  // Badge text + its tooltip resolve from one table (see ATTRIBUTION_COPY). The
+  // tooltip spells out that the badge grades the cited QUOTE, not the AI's
+  // confidence/rationale — so "Not supported" next to a confident rationale
+  // doesn't read as a contradiction.
+  const attribution = label ? ATTRIBUTION_COPY[label] : undefined;
+  const badgeCopy = attribution ? t('extraction', attribution.copy) : null;
+  const badgeTooltip = attribution ? t('extraction', attribution.tooltip) : null;
 
   const borderClass = isEntailed
     ? 'border-l-green-500'
@@ -104,16 +115,29 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: 
             </span>
           )}
           {badgeCopy !== null && (
-            <span
-              className={cn(
-                'px-2 py-0.5 rounded text-xs font-medium shrink-0',
-                isEntailed
-                  ? 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300'
-                  : 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  tabIndex={0}
+                  role="note"
+                  aria-label={badgeTooltip ?? badgeCopy}
+                  className={cn(
+                    'px-2 py-0.5 rounded text-xs font-medium shrink-0 cursor-help',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    isEntailed
+                      ? 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300'
+                      : 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
+                  )}
+                >
+                  {badgeCopy}
+                </span>
+              </TooltipTrigger>
+              {badgeTooltip !== null && (
+                <TooltipContent side="top" className="max-w-xs">
+                  <p>{badgeTooltip}</p>
+                </TooltipContent>
               )}
-            >
-              {badgeCopy}
-            </span>
+            </Tooltip>
           )}
         </div>
 
