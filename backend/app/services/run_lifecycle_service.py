@@ -33,6 +33,7 @@ from app.services._extraction_run_lock import load_run_for_update
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_config_service import HitlConfigService
+from app.services.value_semantics import is_value_filled
 
 
 class InvalidStageTransitionError(Exception):
@@ -97,30 +98,6 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     ExtractionRunStage.FINALIZED.value: set(),  # terminal
     ExtractionRunStage.CANCELLED.value: set(),  # terminal
 }
-
-
-def _unwrap_value(raw: Any) -> Any:
-    """Peel a single ``{"value": X}`` envelope, matching the frontend's
-    one-level unwrap in ``progress.ts`` / ``useReviewerSummary``. A bare
-    scalar (or any dict without a ``value`` key) is returned untouched.
-    """
-    if isinstance(raw, dict) and "value" in raw:
-        return raw["value"]
-    return raw
-
-
-def _is_value_filled(raw: Any) -> bool:
-    """True when a stored value counts as "filled" for completeness.
-
-    Mirrors the frontend predicate (``value === null | undefined | ''``):
-    only ``None`` and the empty string are empty. Whitespace, ``0``,
-    ``False``, ``[]`` and non-``value`` dicts all count as filled so the
-    backend gate is never stricter than the form the user just saw.
-    """
-    value = _unwrap_value(raw)
-    if value is None:
-        return False
-    return not (isinstance(value, str) and value == "")
 
 
 class RunLifecycleService:
@@ -413,7 +390,7 @@ class RunLifecycleService:
             )
         ).all()
         for instance_id, field_id, value in published_rows:
-            if _is_value_filled(value):
+            if is_value_filled(value):
                 filled.add((instance_id, field_id))
 
         for instance_id, field_id, _resolved in await self._resolved_reviewer_values(run_id):
@@ -471,7 +448,7 @@ class RunLifecycleService:
             resolved = value
             if resolved is None and proposal_record_id is not None:
                 resolved = proposal_values.get(proposal_record_id)
-            if _is_value_filled(resolved):
+            if is_value_filled(resolved):
                 resolved_values.append((instance_id, field_id, resolved))
         return resolved_values
 

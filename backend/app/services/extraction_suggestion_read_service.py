@@ -43,6 +43,7 @@ from app.schemas.extraction_suggestion import (
     AISuggestionsResponse,
     EvidenceResponse,
 )
+from app.services.value_semantics import is_value_empty
 
 
 def _extract_block_ids(ev: ExtractionEvidence) -> list[int]:
@@ -79,19 +80,6 @@ def _resolve_status(decision: str | None) -> str:
     if decision == ExtractionReviewerDecisionType.REJECT.value:
         return "rejected"
     return "accepted"
-
-
-def _is_no_info(proposed_value: Any) -> bool:
-    """True when a proposal carries no actionable value (the model abstained).
-
-    Mirrors the frontend ``isNoInfoValue``: a bare ``None``, the JSONB envelope
-    ``{"value": None}`` (the shape recorded for a "no information" outcome since
-    #443), or an empty string all mean "no information".
-    """
-    if proposed_value is None:
-        return True
-    value = proposed_value.get("value") if isinstance(proposed_value, dict) else proposed_value
-    return value is None or value == ""
 
 
 async def _load_run_provenance(
@@ -222,7 +210,7 @@ async def load_suggestions(
         existing = chosen.get(key)
         if existing is None:
             chosen[key] = p
-        elif _is_no_info(existing.proposed_value) and not _is_no_info(p.proposed_value):
+        elif is_value_empty(existing.proposed_value) and not is_value_empty(p.proposed_value):
             # The more recent pick abstained; this older one found a value → use it.
             chosen[key] = p
     deduped = list(chosen.values())

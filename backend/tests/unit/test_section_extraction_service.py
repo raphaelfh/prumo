@@ -538,6 +538,37 @@ class TestExtractForRun:
         service._lifecycle.advance_stage.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_extract_for_run_provenance_has_full_token_shape(
+        self, service, qa_run, qa_template
+    ):
+        # Provenance tokens must be the consistent {prompt, completion, total}
+        # shape (via _provenance_with_tokens), aggregated across sections — not
+        # the {total}-only shape that rendered as raw-key generic rows.
+        ets = []
+        for i in range(2):
+            et = MagicMock()
+            et.id = uuid4()
+            et.name = f"Section{i}"
+            et.fields = []
+            et.parent_entity_type_id = None
+            ets.append(et)
+        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, ets)
+        # An LLM ran → provenance snapshot set (normally by _extract_with_llm).
+        service._run_provenance = service._build_run_provenance(
+            model="m", prompt_name="qa", prompt_version="1", prompt_text="P"
+        )
+
+        await service.extract_for_run(run_id=qa_run.id)
+
+        results = service._runs.complete_run.await_args.kwargs["results"]
+        # Two sections at LlmUsage(10, 5) each → aggregate (20, 10, 30).
+        assert results["provenance"]["tokens"] == {
+            "prompt": 20,
+            "completion": 10,
+            "total": 30,
+        }
+
+    @pytest.mark.asyncio
     async def test_extract_for_run_does_not_advance_even_when_enabled(
         self, service, qa_run, qa_template
     ):
@@ -1066,6 +1097,69 @@ class TestCreateSuggestions:
             run=run,
         )
         assert result == 0
+
+    def _wire_one_field(self, service):
+        field1 = MagicMock()
+        field1.id, field1.name = uuid4(), "f1"
+        field1.field_type = "text"
+        field1.allowed_values = None
+        et = MagicMock()
+        et.fields = [field1]
+        service._entity_types.get_with_fields = AsyncMock(return_value=et)
+        instance = MagicMock()
+        instance.id = uuid4()
+        instance.parent_instance_id = None
+        service._instances.get_by_article = AsyncMock(return_value=[instance])
+        service._proposals.record_proposal = AsyncMock(return_value=MagicMock(id=uuid4()))
+        service.db.flush = AsyncMock()
+        service._runs.merge_results = AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_persists_provenance_at_chokepoint_when_llm_ran(self, service):
+        # Provenance is written ONCE at the proposal choke-point so EVERY
+        # suggestion-owning run records how it was generated — even a future
+        # extraction path that forgets to write it at completion.
+        self._wire_one_field(service)
+        service._run_provenance = service._build_run_provenance(
+            model="gpt-x", prompt_name="extract", prompt_version="1", prompt_text="P"
+        )
+
+        run = self._make_run()
+        await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={"f1": "value"},
+            run=run,
+            usage=LlmUsage(prompt_tokens=10, completion_tokens=5),
+        )
+
+        service._runs.merge_results.assert_awaited_once()
+        merged_run_id, patch = service._runs.merge_results.await_args.args
+        assert merged_run_id == run.id
+        prov = patch["provenance"]
+        assert prov["model"] == "gpt-x"
+        assert prov["tokens"] == {"prompt": 10, "completion": 5, "total": 15}
+
+    @pytest.mark.asyncio
+    async def test_skips_provenance_when_no_llm_ran(self, service):
+        # No provenance snapshot → nothing to record; never write a null provenance.
+        self._wire_one_field(service)
+        service._run_provenance = None
+
+        run = self._make_run()
+        await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={"f1": "value"},
+            run=run,
+            usage=LlmUsage(prompt_tokens=1, completion_tokens=1),
+        )
+
+        service._runs.merge_results.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_creates_no_info_proposal_for_none_and_abstention(self, service):

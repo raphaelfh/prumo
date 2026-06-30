@@ -34,6 +34,10 @@ export interface AISuggestionReviewBinding {
   onClear?: () => void;
   /** Defaults to 'end' so the popover opens left, clear of the PDF panel. */
   align?: 'start' | 'center' | 'end';
+  /** Field type + allowed_values so the version-history popover resolves a
+   *  select/multiselect CODE to its human label, same as the inline card. */
+  fieldType?: string | null;
+  allowedValues?: unknown;
 }
 
 interface AISuggestionDisplayProps {
@@ -43,6 +47,10 @@ interface AISuggestionDisplayProps {
   loading?: boolean;
   /** When present, the value area becomes a trigger for the review popover. */
   review?: AISuggestionReviewBinding;
+  /** Field type + allowed_values so a select/multiselect CODE renders as its
+   *  human label on the inline card. Omit for non-select fields. */
+  fieldType?: string | null;
+  allowedValues?: unknown;
 }
 
 /**
@@ -91,6 +99,8 @@ export function AISuggestionDisplay({
   onReject,
   loading = false,
   review,
+  fieldType,
+  allowedValues,
 }: AISuggestionDisplayProps) {
   const isAccepted = isSuggestionAccepted(suggestion);
   const isRejected = suggestion.status === 'rejected';
@@ -119,7 +129,13 @@ export function AISuggestionDisplay({
           review={review}
           className="flex-1 min-w-0 w-full sm:w-auto flex items-center gap-2 px-1.5 py-1 -mx-1.5"
         >
-          <AISuggestionValue suggestion={suggestion} maxLength={150} className="flex-1 min-w-0" />
+          <AISuggestionValue
+            suggestion={suggestion}
+            maxLength={150}
+            className="flex-1 min-w-0"
+            fieldType={fieldType}
+            allowedValues={allowedValues}
+          />
           <AISuggestionConfidence suggestion={suggestion} />
         </ReviewTrigger>
 
