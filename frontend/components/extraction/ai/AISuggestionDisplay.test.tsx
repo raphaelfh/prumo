@@ -102,3 +102,27 @@ describe('AISuggestionDisplay — review popover entry point', () => {
     expect(screen.queryByRole('button', { name: 'reviewOpenFromValue' })).not.toBeInTheDocument();
   });
 });
+
+describe('AISuggestionDisplay — select option code → label', () => {
+  const YES_NO = [
+    { value: 'Y', label: 'Yes' },
+    { value: 'N', label: 'No' },
+  ];
+
+  it('renders the human label for a coded select value', () => {
+    render(
+      <AISuggestionDisplay
+        suggestion={makeSuggestion({ value: 'Y', confidence: 0.9 })}
+        fieldType="select"
+        allowedValues={YES_NO}
+      />,
+    );
+    expect(screen.getByText('Yes')).toBeInTheDocument();
+    expect(screen.queryByText('Y')).not.toBeInTheDocument();
+  });
+
+  it('falls back to the raw code when no field context is supplied', () => {
+    render(<AISuggestionDisplay suggestion={makeSuggestion({ value: 'Y', confidence: 0.9 })} />);
+    expect(screen.getByText('Y')).toBeInTheDocument();
+  });
+});
