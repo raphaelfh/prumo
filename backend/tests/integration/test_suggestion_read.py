@@ -583,6 +583,132 @@ async def test_load_suggestions_dedup_latest_per_coord(
 
 
 @pytest.mark.asyncio
+async def test_load_suggestions_latest_no_info_keeps_earlier_real_value(
+    db_session: AsyncSession,
+) -> None:
+    """A later 'no information' run must not bury an earlier run's real value.
+
+    Since #443 an AI run that abstains records a real proposal with
+    proposed_value={"value": None}. The inline strip dedups to latest-per-coord;
+    without the no-info guard, re-running extraction (which often abstains on a
+    field the first run found) would surface the null proposal and blank the
+    suggestion. The dedup must fall back to the most recent proposal that
+    actually carries a value — the abstention stays in get_suggestion_history.
+    Regression test for the "suggestion disappears after a 2nd AI extraction" bug.
+    """
+    project_id = SEED.primary_project
+    article_id = SEED.primary_article
+    template_id = SEED.primary_template
+    instance_id = SEED.primary_instance
+    field_id = SEED.primary_field
+    manager_id = SEED.primary_profile
+
+    lifecycle = RunLifecycleService(db_session)
+    run = await lifecycle.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+
+    proposal_svc = ExtractionProposalService(db_session)
+    # Older run found a value; the latest run abstained (no information).
+    older = await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": "REAL-VALUE"},
+    )
+    await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": None},  # no information
+    )
+    await db_session.flush()
+    # Back-date the OLDER (real-value) row so created_at ordering is unambiguous.
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_proposal_records "
+            "SET created_at = created_at - interval '1 second' "
+            "WHERE id = :id"
+        ),
+        {"id": str(older.id)},
+    )
+    await db_session.flush()
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=manager_id,
+        run_id=run.id,
+    )
+
+    assert result.count == 1
+    assert result.suggestions[0].proposed_value == {"value": "REAL-VALUE"}, (
+        "A later no-information proposal buried the earlier real value in the "
+        "inline strip — the dedup should prefer the latest proposal WITH a value."
+    )
+
+
+@pytest.mark.asyncio
+async def test_load_suggestions_all_no_info_returns_no_info(
+    db_session: AsyncSession,
+) -> None:
+    """When every run abstained, the coord still surfaces a (no-info) proposal.
+
+    The latest-with-value preference only kicks in when a real value exists;
+    if all proposals are no-info, the coord still appears (so the quiet
+    "no information" indicator and its provenance remain reachable).
+    """
+    project_id = SEED.primary_project
+    article_id = SEED.primary_article
+    template_id = SEED.primary_template
+    instance_id = SEED.primary_instance
+    field_id = SEED.primary_field
+    manager_id = SEED.primary_profile
+
+    lifecycle = RunLifecycleService(db_session)
+    run = await lifecycle.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+
+    proposal_svc = ExtractionProposalService(db_session)
+    for _ in range(2):
+        await proposal_svc.record_proposal(
+            run_id=run.id,
+            instance_id=instance_id,
+            field_id=field_id,
+            source=ExtractionProposalSource.AI,
+            proposed_value={"value": None},
+        )
+    await db_session.flush()
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=manager_id,
+        run_id=run.id,
+    )
+
+    assert result.count == 1
+    assert result.suggestions[0].proposed_value == {"value": None}
+
+
+@pytest.mark.asyncio
 async def test_load_suggestions_empty_instance_ids(
     db_session: AsyncSession,
 ) -> None:

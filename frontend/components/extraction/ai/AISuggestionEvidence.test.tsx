@@ -177,6 +177,29 @@ describe('AISuggestionEvidence', () => {
     });
   });
 
+  describe('(e2) attribution badge carries the clarifying explanation', () => {
+    it('annotates "Not supported" so it reads as grading the quote, not the value', () => {
+      const unsupportedCitation: EvidenceCitation[] = [
+        {text: 'x', pageNumber: 1, blockIds: [], attributionLabel: 'unsupported', rank: 0},
+      ];
+      render(<AISuggestionEvidence evidence={unsupportedCitation} />, {wrapper: Wrapper});
+      // The badge exposes the explanation (tooltip body) as its accessible name so
+      // reviewers don't read "Not supported" next to a confident rationale as a contradiction.
+      expect(screen.getByText('attributionUnsupported')).toHaveAttribute(
+        'aria-label',
+        'attributionTooltipUnsupported',
+      );
+    });
+
+    it('annotates the "Verified" badge with its own explanation', () => {
+      render(<AISuggestionEvidence evidence={twoCitations} />, {wrapper: Wrapper});
+      expect(screen.getByText('attributionEntailed')).toHaveAttribute(
+        'aria-label',
+        'attributionTooltipEntailed',
+      );
+    });
+  });
+
   describe('(f) legacy — length-1 list with null attributionLabel', () => {
     it('renders the single citation without any "also cited" toggle', () => {
       render(<AISuggestionEvidence evidence={singleCitation} />, {wrapper: Wrapper});

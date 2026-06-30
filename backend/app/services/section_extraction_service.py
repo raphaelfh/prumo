@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
+from app.llm.claim_value import value_str_for_claim
 from app.llm.entailment import GateSpec, run_entailment_gate
 from app.llm.extractor import (
     LLM_TEMPERATURE,
@@ -341,6 +342,16 @@ class SectionExtractionService(LoggerMixin):
                     },
                 )
                 phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
+            else:
+                # Session-run path: the HITL session owns the run lifecycle, so we
+                # must NOT complete it (that would close the run after one section
+                # and break further section-by-section AI clicks). Still persist
+                # the provenance snapshot so the review popover's "How this was
+                # generated" metadata renders for these suggestions — without this
+                # merge, session-run suggestions carried no provenance at all.
+                provenance = self._provenance_with_tokens(llm_usage)
+                if provenance is not None:
+                    await self._runs.merge_results(run.id, {"provenance": provenance})
 
             self.logger.info(
                 "section_extraction_complete",
@@ -505,6 +516,16 @@ class SectionExtractionService(LoggerMixin):
 
             duration_ms = (perf_counter() - start_time) * 1000
 
+            # Persist how the suggestions were generated so the review popover's
+            # "How this was generated" metadata renders. ``_run_provenance`` holds
+            # the run config (model/provider/params/prompt) set by the last
+            # ``_extract_with_llm`` call; pair it with the run-aggregate token total.
+            run_provenance = (
+                {**self._run_provenance, "tokens": {"total": total_tokens}}
+                if self._run_provenance is not None
+                else None
+            )
+
             await self._runs.complete_run(
                 run_id=run.id,
                 results={
@@ -517,6 +538,7 @@ class SectionExtractionService(LoggerMixin):
                     "kind": kind,
                     "skip_fields_with_human_proposals": skip_fields_with_human_proposals,
                     "auto_advance_to_review": auto_advance_to_review,
+                    "provenance": run_provenance,
                 },
             )
 
@@ -1316,14 +1338,18 @@ class SectionExtractionService(LoggerMixin):
             )
             return 0
 
-        # Build field_name -> field_id map
+        # Build field_name -> field_id / label / field maps. The field object is
+        # kept so the entailment gate can resolve a select/boolean CODE to its
+        # human label before building the judge claim (see value_str_for_claim).
         field_map: dict[str, UUID] = {}
         field_label_map: dict[str, str] = {}
+        field_by_name: dict[str, Any] = {}
         for field in entity_type.fields or []:
             field_map[field.name] = field.id
             field_label_map[field.name] = (
                 field.label if hasattr(field, "label") and field.label else field.name
             )
+            field_by_name[field.name] = field
 
         # Fetch existing instance
         instances = await self._instances.get_by_article(article_id, entity_type_id)
@@ -1490,10 +1516,18 @@ class SectionExtractionService(LoggerMixin):
                 # Queue for entailment gate: found fields with ANCHORED evidence only.
                 if isinstance(value, dict) and value.get("status") == "found" and quote:
                     if pos is not None:
+                        _gate_field = field_by_name.get(field_name)
                         _gate_specs.append(
                             GateSpec(
                                 field_label=field_label_map.get(field_name, field_name),
-                                value_str=str(inner_value),
+                                # Resolve a select/boolean CODE ("Y") to its human
+                                # label ("Yes") so the judge claim is interpretable;
+                                # numeric/date/text pass through unchanged.
+                                value_str=value_str_for_claim(
+                                    field_type=getattr(_gate_field, "field_type", None),
+                                    allowed_values=getattr(_gate_field, "allowed_values", None),
+                                    value=inner_value,
+                                ),
                                 quote=quote,
                                 pos=pos,
                                 anchor_blocks=_anchor_blocks,
