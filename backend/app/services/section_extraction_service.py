@@ -309,6 +309,7 @@ class SectionExtractionService(LoggerMixin):
                 extracted_data=extracted_data,
                 run=run,
                 model=model,
+                usage=llm_usage,
             )
             phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -338,20 +339,14 @@ class SectionExtractionService(LoggerMixin):
                         "duration_ms": duration,
                         "fields_extracted": len(extracted_data) if extracted_data else 0,
                         "phase_durations_ms": phase_durations_ms,
-                        "provenance": self._provenance_with_tokens(llm_usage),
                     },
                 )
                 phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
-            else:
-                # Session-run path: the HITL session owns the run lifecycle, so we
-                # must NOT complete it (that would close the run after one section
-                # and break further section-by-section AI clicks). Still persist
-                # the provenance snapshot so the review popover's "How this was
-                # generated" metadata renders for these suggestions — without this
-                # merge, session-run suggestions carried no provenance at all.
-                provenance = self._provenance_with_tokens(llm_usage)
-                if provenance is not None:
-                    await self._runs.merge_results(run.id, {"provenance": provenance})
+            # Session-run path: the HITL session owns the run lifecycle, so we
+            # must NOT complete it (that would close the run after one section
+            # and break further section-by-section AI clicks). The run's
+            # provenance was already persisted by ``_create_suggestions`` (the
+            # proposal choke-point), so nothing else to do here.
 
             self.logger.info(
                 "section_extraction_complete",
@@ -635,6 +630,7 @@ class SectionExtractionService(LoggerMixin):
                 extracted_data=extracted_data,
                 run=run,
                 model=model,
+                usage=llm_usage,
             )
             return {
                 "suggestions_created": suggestions_created,
@@ -1040,6 +1036,7 @@ class SectionExtractionService(LoggerMixin):
                 extracted_data=extracted_data,
                 run=run,
                 model=model,
+                usage=llm_usage,
             )
             section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -1062,7 +1059,6 @@ class SectionExtractionService(LoggerMixin):
                     "summary": summary,
                     "duration_ms": (perf_counter() - section_start) * 1000,
                     "phase_durations_ms": section_phase_durations_ms,
-                    "provenance": self._provenance_with_tokens(llm_usage),
                 },
             )
             section_phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
@@ -1299,12 +1295,15 @@ class SectionExtractionService(LoggerMixin):
         extracted_data: dict[str, Any],
         run: ExtractionRun,
         model: str = settings.LLM_DEFAULT_MODEL,
+        usage: LlmUsage | None = None,
     ) -> int:
         """
         Create extraction suggestions in database via repository.
 
         Automatically create an instance when missing.
-        Link suggestions to extraction_run_id for traceability.
+        Link suggestions to extraction_run_id for traceability. As the single
+        choke-point for AI proposals, this also persists the run ``provenance``
+        snapshot so every suggestion-owning run carries it (see below).
 
         Args:
             project_id: Project ID.
@@ -1314,6 +1313,8 @@ class SectionExtractionService(LoggerMixin):
             extracted_data: Extracted data.
             run: ExtractionRun used to link suggestions.
             model: LLM model name (used to build the entailment judge model).
+            usage: token usage for this extraction call, paired with the run
+                provenance snapshot. None (or no LLM run) skips provenance.
 
         Returns:
             Number of created suggestions.
@@ -1559,6 +1560,14 @@ class SectionExtractionService(LoggerMixin):
             instance_id=str(instance.id),
             run_id=str(run.id),
         )
+
+        # Single choke-point for run provenance: persist HOW the suggestions
+        # were generated wherever proposals are recorded, so no extraction path
+        # can silently omit it. ``complete_run`` later shallow-merges its summary
+        # on top (it MERGEs, so this key survives). Skipped when no LLM ran.
+        provenance = self._provenance_with_tokens(usage or LlmUsage())
+        if count and provenance is not None:
+            await self._runs.merge_results(run.id, {"provenance": provenance})
 
         return count
 
