@@ -37,6 +37,10 @@ These bias toward caution over speed. For trivial changes, use judgment.
   failing test, then make it pass). State a short plan with a verify step each.
   Evidence before "done" — run the command and read the output, never assert
   (`code-review` Iron Law; `verification-before-completion`).
+- **Transparency & traceability of AI-assisted decisions.** Every AI suggestion
+  records how it was generated (run provenance) and every human selection is
+  append-only (who chose which version, when); a "no information" outcome is a
+  recorded proposal, not a silent drop (constitution §IX).
 
 ## Which skill to load
 

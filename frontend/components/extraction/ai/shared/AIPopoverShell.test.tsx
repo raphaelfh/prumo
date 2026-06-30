@@ -20,4 +20,28 @@ describe('AIPopoverShell', () => {
     expect(popover.textContent).toContain('3 found');
     expect(popover.textContent).toContain('body content');
   });
+
+  it('renders a pinned footer OUTSIDE the scrollable body', () => {
+    render(
+      <Popover defaultOpen>
+        <PopoverTrigger>open</PopoverTrigger>
+        <AIPopoverShell
+          icon={<span>i</span>}
+          title="Review"
+          footer={<div data-testid="ftr">Clear</div>}
+        >
+          <div data-testid="body">body</div>
+        </AIPopoverShell>
+      </Popover>,
+    );
+    const ftr = document.querySelector('[data-testid="ftr"]') as HTMLElement;
+    const scroll = (
+      document.querySelector('[data-testid="body"]') as HTMLElement
+    ).closest('.overflow-y-auto');
+    expect(ftr).not.toBeNull();
+    expect(scroll).not.toBeNull();
+    // footer is pinned (not inside the scroll region) so it stays reachable
+    // no matter how long the body list grows.
+    expect(scroll?.contains(ftr)).toBe(false);
+  });
 });

@@ -47,6 +47,18 @@
             "title": "Proposed Value",
             "type": "object"
           },
+          "provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance"
+          },
           "rationale": {
             "anyOf": [
               {
@@ -123,6 +135,18 @@
             "additionalProperties": true,
             "title": "Proposed Value",
             "type": "object"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance"
           },
           "rationale": {
             "anyOf": [
