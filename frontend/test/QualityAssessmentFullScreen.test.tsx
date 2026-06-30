@@ -405,20 +405,20 @@ describe("QualityAssessmentFullScreen", () => {
     expect(sideEffects).toHaveLength(0);
   });
 
-  it("blind reviewer sees no comparison menu item and stays on the assess view", async () => {
+  it("blind reviewer sees no compare control and stays on the assess view", async () => {
     // Default permissions (BLIND_PERMISSIONS) → canSeeOthers=false →
-    // no compare MenuItem even when the menu is open.
+    // canCompare is false, so the CompareToggle never renders.
     renderPage();
     await waitFor(() =>
       expect(screen.getByTestId("qa-domains")).toBeInTheDocument(),
     );
     // Compare view must not appear passively.
     expect(screen.queryByTestId("qa-compare-view")).not.toBeInTheDocument();
-    // The compare text must not appear anywhere in the rendered output.
-    expect(screen.queryByText(/comparison/i)).not.toBeInTheDocument();
+    // No visible compare affordance for a blind reviewer.
+    expect(screen.queryByRole("button", { name: /^compare$/i })).not.toBeInTheDocument();
   });
 
-  it("manager who may see peers gets the compare menu item, clicking it renders the comparison", async () => {
+  it("manager who may see peers gets a visible Compare toggle, clicking it renders the comparison", async () => {
     mockedPermissions.mockReturnValue({
       ...BLIND_PERMISSIONS,
       userRole: "manager",
@@ -434,22 +434,14 @@ describe("QualityAssessmentFullScreen", () => {
       expect(screen.getByTestId("qa-domains")).toBeInTheDocument(),
     );
 
-    // Open the RunHeader.Menu (aria-label "More options").
-    const menuTrigger = await screen.findByRole("button", {
-      name: /more options/i,
-    });
-    await userEvent.click(menuTrigger);
-
-    // The "Comparison" menu item should appear in the open dropdown.
-    const compareItem = await screen.findByRole("menuitem", {
-      name: /comparison/i,
-    });
-    expect(compareItem).toBeInTheDocument();
+    // The Compare toggle is now a visible top-level control (not a kebab item).
+    const compareToggle = await screen.findByRole("button", { name: /^compare$/i });
+    expect(compareToggle).toBeInTheDocument();
 
     // Still on the assess view before clicking.
     expect(screen.queryByTestId("qa-compare-view")).not.toBeInTheDocument();
 
-    await userEvent.click(compareItem);
+    await userEvent.click(compareToggle);
 
     // Compare view replaces the domain accordions and renders the shared
     // server-blinded comparison table (peer column sourced from decisionsByCoord).

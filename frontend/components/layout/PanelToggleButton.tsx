@@ -1,5 +1,5 @@
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { HeaderIconButton } from '@/components/layout/HeaderIconButton';
 import { cn } from '@/lib/utils';
 
 interface PanelToggleButtonProps {
@@ -19,25 +19,25 @@ export function PanelToggleButton({ side, pressed, onToggle, ariaLabel, classNam
   const Close = side === 'left' ? PanelLeftClose : PanelRightClose;
   const Open = side === 'left' ? PanelLeftOpen : PanelRightOpen;
   return (
-    <Button
-      size="header-icon"
-      variant="ghost"
+    <HeaderIconButton
       onClick={onToggle}
       aria-pressed={pressed}
       aria-keyshortcuts={side === 'left' ? 'Meta+B' : '\\'}
       aria-label={ariaLabel}
-      className={cn('relative shrink-0 p-0 text-muted-foreground transition-colors duration-75 hover:bg-muted/50', className)}
+      className={cn('relative', className)}
     >
       <span className="relative block h-4 w-4">
         <Close
+          strokeWidth={1.5}
           className={cn('absolute inset-0 h-4 w-4 transition-opacity duration-150 ease-out motion-reduce:duration-0', pressed ? 'opacity-100' : 'opacity-0')}
           aria-hidden="true"
         />
         <Open
+          strokeWidth={1.5}
           className={cn('absolute inset-0 h-4 w-4 transition-opacity duration-150 ease-out motion-reduce:duration-0', pressed ? 'opacity-0' : 'opacity-100')}
           aria-hidden="true"
         />
       </span>
-    </Button>
+    </HeaderIconButton>
   );
 }

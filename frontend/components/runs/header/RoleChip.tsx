@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { t } from '@/lib/copy';
@@ -24,28 +24,36 @@ export function RoleChip() {
     <>
       {t('common', roleKeys[role])}
       {suffixKey && (
-        // Collapse the role qualifier on narrow headers (mirrors the StageRail
-        // label reveal at the same breakpoint) so the chip shrinks to just the
-        // role word before Center starts clipping.
-        <span className="hidden @[48rem]/headerbar:inline">
+        // Collapse the role qualifier on narrow headers so the chip shrinks to
+        // just the role word before it folds entirely.
+        <span className="hidden @[62rem]/headerbar:inline">
           <span className="text-muted-foreground" aria-hidden="true">{' · '}</span>
           <span className="text-muted-foreground">{t('runs', suffixKey)}</span>
         </span>
       )}
     </>
   );
-  // Compact tier (phone): the role qualifier is the lowest-priority Center
-  // affordance — hide the whole chip (still in the DOM, just `hidden`) so the
-  // row keeps the StageRail + PrimaryAction. Above 34rem it shows as before.
+  // The role qualifier is the lowest-priority Center affordance — fold the whole
+  // chip (still in the DOM, just `hidden`) below 40rem so the row keeps the
+  // StageRail + PrimaryAction. Above 40rem it shows as before.
   if (!canReveal) {
-    return <span className="hidden @[34rem]/headerbar:inline-flex whitespace-nowrap rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{text}</span>;
+    return <span className="hidden @[40rem]/headerbar:inline-flex whitespace-nowrap rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{text}</span>;
   }
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="hidden h-7 gap-1 whitespace-nowrap px-2 text-[11px] text-muted-foreground hover:text-foreground @[34rem]/headerbar:inline-flex">
-          {text}
-          <ChevronDown className="h-3 w-3" aria-hidden="true" />
+        {/* Always a visible, shrink-0 touch target so the blind-reveal action
+            stays reachable on touch when the chip text folds at narrow widths:
+            the Eye icon persists; the role text collapses below 40rem. The
+            aria-label carries the role + reveal intent as the announced name. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`${t('common', roleKeys[role])} — ${t('runs', 'reveal')}`}
+          className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap px-1.5 text-[11px] text-muted-foreground hover:text-foreground [@media(pointer:coarse)]:h-9"
+        >
+          <Eye className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+          <span className="hidden items-center @[40rem]/headerbar:inline-flex">{text}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 text-[13px]">

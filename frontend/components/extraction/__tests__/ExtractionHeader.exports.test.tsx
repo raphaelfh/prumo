@@ -14,6 +14,13 @@ vi.mock('@/hooks/extraction/ai/useRunAIExtraction', () => ({
 vi.mock('@/hooks/hitl/useHITLProjectTemplates', () => ({
   useHITLProjectTemplates: () => ({ globalTemplates: [], loading: false }),
 }));
+// The header now mounts NotificationCenter (via Utility), whose service import
+// graph reaches the supabase client — which throws at module load in the
+// env-less Frontend Tests CI job. Stub the client (the convention for tests
+// that pull it in); rendering makes no supabase calls here.
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: { auth: { getSession: () => Promise.resolve({ data: { session: null }, error: null }) } },
+}));
 
 const base = {
   projectId: 'p', projectName: 'P', articleTitle: 'A', onBack: vi.fn(),
@@ -25,18 +32,27 @@ const base = {
 };
 
 describe('ExtractionHeader (post legacy-cascade)', () => {
-  it('hides the More menu entirely when it would have no items', () => {
-    // base has hasComparison:false and no canReopen, so the only two menu
-    // items are both gated off. An empty kebab is a dead affordance — it must
-    // not render at all (regression: it used to open to an empty dropdown).
+  it('folds feedback + help into the kebab at narrow header widths', async () => {
+    // The full-screen run page has no global Topbar, so notifications/feedback/
+    // help moved into the run header. Feedback + help are inline when the header
+    // is wide and fold into the kebab when narrow (Utility/useHeaderCompact). In
+    // jsdom getBoundingClientRect is zero-width, so the header reads as narrow
+    // here and the menu always renders with the folded items.
     render(<MemoryRouter><ExtractionHeader {...base} /></MemoryRouter>);
-    expect(screen.queryByRole('button', { name: /more/i })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /more/i }));
+    expect(screen.getByRole('menuitem', { name: /send feedback/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /help and shortcuts/i })).toBeInTheDocument();
   });
 
   it('renders the More menu (without an Export Data item) when it has items', async () => {
     render(<MemoryRouter><ExtractionHeader {...base} hasComparison /></MemoryRouter>);
     await userEvent.click(screen.getByRole('button', { name: /more/i }));
     expect(screen.queryByText(/Export Data/i)).not.toBeInTheDocument();
+  });
+
+  it('surfaces notifications inline (no global Topbar on the run page)', () => {
+    render(<MemoryRouter><ExtractionHeader {...base} /></MemoryRouter>);
+    expect(screen.getByRole('button', { name: /notifications/i })).toBeInTheDocument();
   });
 
   // TDD: Task 9 — re-skin onto RunHeader compound

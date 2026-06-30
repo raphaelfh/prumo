@@ -48,6 +48,9 @@ import {
 } from "@/hooks/runs";
 import { ConsensusPanel } from "@/components/runs/ConsensusPanel";
 import { RunHeader } from "@/components/runs/header";
+// Imported directly (not via the RunHeader compound) so the shared compound
+// stays free of the supabase-reaching NotificationCenter/feedback deps.
+import { Utility } from "@/components/runs/header/Utility";
 import { buildQaTransition } from "@/lib/qa/qaTransition";
 import { usePdfPanel } from "@/hooks/usePdfPanel";
 import { setManagerReviewVisibility } from "@/services/hitlConfigService";
@@ -619,6 +622,13 @@ export default function QualityAssessmentFullScreen() {
         </RunHeader.Center>
 
         <RunHeader.Right>
+          {canCompare && (
+            <RunHeader.CompareToggle
+              active={effectiveViewMode === "compare"}
+              onToggle={() => setViewMode((m) => (m === "assess" ? "compare" : "assess"))}
+              label={t("runs", "compareToggleLabel")}
+            />
+          )}
           <RunHeader.AIActions
             pendingCount={Object.keys(aiSuggestions).length}
             canExtract={!!(session && !finalized)}
@@ -626,22 +636,7 @@ export default function QualityAssessmentFullScreen() {
             onExtract={onExtractWithAI}
           />
           <RunHeader.PrimaryAction />
-          <span className="mx-1 hidden h-5 w-px bg-border/60 @[40rem]/headerbar:block" aria-hidden="true" />
-          <span className="hidden @[40rem]/headerbar:inline-flex">
-            <RunHeader.Help />
-          </span>
-          <RunHeader.Menu>
-            {canCompare && (
-              <RunHeader.MenuItem
-                onSelect={() =>
-                  setViewMode((m) => (m === "assess" ? "compare" : "assess"))
-                }
-              >
-                {effectiveViewMode === "assess"
-                  ? t("qa", "compareToggle")
-                  : t("qa", "assessToggle")}
-              </RunHeader.MenuItem>
-            )}
+          <Utility>
             {finalized && (
               <RunHeader.MenuItem
                 onSelect={() => void handleReopen()}
@@ -651,7 +646,7 @@ export default function QualityAssessmentFullScreen() {
                   : t("qa", "reopenButton")}
               </RunHeader.MenuItem>
             )}
-          </RunHeader.Menu>
+          </Utility>
           <RunHeader.PanelToggle
             pressed={pdfPanelState.isOpen}
             onToggle={pdfPanelState.toggle}

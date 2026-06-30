@@ -10,6 +10,7 @@
 import {useEffect, useMemo, useState} from 'react';
 import {Bell, CheckCircle2, Clock, Loader2, X, XCircle} from 'lucide-react';
 import {Button} from '@/components/ui/button';
+import {HeaderIconButton} from '@/components/layout/HeaderIconButton';
 import {Badge} from '@/components/ui/badge';
 import {
     DropdownMenu,
@@ -20,7 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {ScrollArea} from '@/components/ui/scroll-area';
 import {Progress} from '@/components/ui/progress';
-import {selectRecentJobs, useBackgroundJobs} from '@/stores/useBackgroundJobs';
+import {countUnreadJobs, selectRecentJobs, useBackgroundJobs} from '@/stores/useBackgroundJobs';
 import {useBackgroundJobPolling} from '@/hooks/useBackgroundJobPolling';
 import {cn} from '@/lib/utils';
 import {toast} from 'sonner';
@@ -35,26 +36,10 @@ import {t} from '@/lib/copy';
 import {getExportStatus as getArticlesExportStatus, type ExportStatusResponse} from '@/services/articlesExportService';
 import {getExportStatus as getExtractionExportStatus} from '@/services/extractionExportService';
 
-// Jobs that finished within the last five minutes count as "unread".
-// Module-scope because the clock read is impure and must stay out of
-// render-scoped functions (same memoization semantics as before: the
-// count refreshes when the job list changes).
-function countRecentlyFinished(jobs: BackgroundJob[]): number {
-    const now = Date.now();
-    const FIVE_MINUTES = 5 * 60 * 1000;
-    return jobs.filter((job) => {
-        if (job.status !== 'completed' && job.status !== 'failed') {
-            return false;
-        }
-        const completedTime = job.completedAt || 0;
-        return now - completedTime < FIVE_MINUTES;
-    }).length;
-}
-
 export function NotificationCenter() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-    const {jobs, removeJob, clearCompletedJobs, updateJob} = useBackgroundJobs();
+    const {jobs, removeJob, clearCompletedJobs, updateJob, lastReadAt, markAllRead} = useBackgroundJobs();
 
   // Derive from the reactive `jobs` (not the store getter): the React
   // Compiler tracks deps from the callback body, so the callback MUST
@@ -181,12 +166,25 @@ export function NotificationCenter() {
     },
   });
 
-    // Count unread notifications (jobs that finished recently)
-  const unreadCount = countRecentlyFinished(recentJobs);
+    // Count unread notifications (finished after the bell was last opened)
+  const unreadCount = countUnreadJobs(recentJobs, lastReadAt);
 
   const hasActiveBackgroundJobs = jobs.some(
     (job) => job.status === 'pending' || job.status === 'running'
   );
+
+  // Opening the bell marks everything read (clears the badge). Not in render —
+  // fires from the Radix open-change event.
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (next) markAllRead();
+  };
+
+  const bellLabel = hasActiveBackgroundJobs
+    ? t('navigation', 'notificationsAriaBackgroundActive')
+    : unreadCount > 0
+      ? t('navigation', 'notificationsAriaUnread').replace('{{count}}', String(unreadCount))
+      : t('navigation', 'notifications');
 
   const handleRemoveJob = (jobId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -218,24 +216,17 @@ export function NotificationCenter() {
   };
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
+        <HeaderIconButton
           className={cn(
-              'relative h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors duration-75',
-              hasActiveBackgroundJobs &&
-              'text-foreground/90 [&_svg]:opacity-90'
+              'relative',
+              hasActiveBackgroundJobs && 'text-foreground/90 [&_svg]:opacity-90'
           )}
           aria-busy={hasActiveBackgroundJobs}
-          aria-label={
-              hasActiveBackgroundJobs
-                  ? t('navigation', 'notificationsAriaBackgroundActive')
-                  : t('navigation', 'notifications')
-          }
+          aria-label={bellLabel}
         >
-            <Bell className="h-4 w-4" strokeWidth={1.5}/>
+            <Bell strokeWidth={1.5}/>
             {hasActiveBackgroundJobs && (
                 <span
                     className="pointer-events-none absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-info shadow-[0_0_0_1px_hsl(var(--background))] motion-safe:animate-pulse"
@@ -243,14 +234,19 @@ export function NotificationCenter() {
                 />
             )}
           {unreadCount > 0 && (
-            <Badge 
-              variant="destructive" 
+            // Non-destructive: a finished background job is informational, not an
+            // error — a primary-accent count, not the alarming red destructive
+            // badge. The count is announced via the button's aria-label, so the
+            // badge itself is aria-hidden to avoid a double read.
+            <Badge
+              variant="default"
+              aria-hidden="true"
               className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-[10px]"
             >
               {unreadCount > 9 ? '9+' : unreadCount}
             </Badge>
           )}
-        </Button>
+        </HeaderIconButton>
       </DropdownMenuTrigger>
       
       <DropdownMenuContent align="end" className="w-[min(400px,calc(100vw-1rem))]">
