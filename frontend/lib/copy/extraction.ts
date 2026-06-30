@@ -845,6 +845,7 @@ export const extraction = {
     reviewClear: 'Clear',
     reviewClearHint: 'Each selection is recorded with who chose it and when.',
     reviewDetails: 'Details',
+    reviewOpenFromValue: 'Open review · see other versions, evidence and provenance',
     // RunProvenanceDisclosure – "how this was generated" (transparency)
     provenanceToggle: 'How this was generated',
     provenanceRanBy: 'Ran by',
@@ -870,6 +871,16 @@ export const extraction = {
     attributionWeak: 'Weak match',
     attributionUnsupported: 'Not supported',
     attributionUngroundable: 'Verify manually',
+    // Attribution badge tooltips — this grades whether the CITED QUOTE supports
+    // the value, independent of the AI's confidence or its rationale.
+    attributionTooltipEntailed:
+      'The cited quote supports this value. This grades the quote — not the AI confidence or rationale.',
+    attributionTooltipWeak:
+      'The cited quote is related but does not clearly establish this value. This grades the quote, not whether the value is right — verify in the document.',
+    attributionTooltipUnsupported:
+      'The cited quote does not establish this value. This grades the quote, not the AI confidence or rationale — the value may still be correct, but verify it against the document.',
+    attributionTooltipUngroundable:
+      'The value could not be located in the document text (e.g. it appears only in a figure). Verify manually.',
     // useExtractionJob async polling toasts
     extractionJobFailedTitle: 'AI extraction failed',
     extractionJobCancelledTitle: 'AI extraction cancelled',

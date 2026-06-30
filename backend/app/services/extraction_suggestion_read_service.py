@@ -81,6 +81,19 @@ def _resolve_status(decision: str | None) -> str:
     return "accepted"
 
 
+def _is_no_info(proposed_value: Any) -> bool:
+    """True when a proposal carries no actionable value (the model abstained).
+
+    Mirrors the frontend ``isNoInfoValue``: a bare ``None``, the JSONB envelope
+    ``{"value": None}`` (the shape recorded for a "no information" outcome since
+    #443), or an empty string all mean "no information".
+    """
+    if proposed_value is None:
+        return True
+    value = proposed_value.get("value") if isinstance(proposed_value, dict) else proposed_value
+    return value is None or value == ""
+
+
 async def _load_run_provenance(
     db: AsyncSession, run_ids: set[UUID], *, resolve_names: bool = False
 ) -> dict[UUID, dict[str, Any] | None]:
@@ -159,7 +172,10 @@ async def load_suggestions(
        optional run_id, ORDER BY created_at DESC.
        Scoped to article_id via JOIN on ExtractionInstance — instances that do not
        belong to the path article are silently dropped (cross-project IDOR guard).
-    2. Dedup: first-per-(instance_id, field_id) wins (desc order → latest wins).
+    2. Dedup per (instance_id, field_id): the latest proposal wins, EXCEPT a
+       later "no information" (null) proposal never buries an earlier real
+       value — the most recent value-bearing proposal is preferred, falling
+       back to the latest no-info only when no run found a value.
     3. Load evidence for the deduplicated proposal_ids.
     4. Load ExtractionReviewerState WHERE reviewer_id == caller_id (blind boundary)
        joined to ExtractionReviewerDecision via the composite FK for `.decision`.
@@ -193,14 +209,23 @@ async def load_suggestions(
     proposals = (await db.execute(proposal_stmt)).scalars().all()
 
     # --- Step 2: dedup to latest-per-(instance_id, field_id) ---
-    seen: set[tuple[UUID, UUID]] = set()
-    deduped: list[ExtractionProposalRecord] = []
+    # A later run that abstained ("no information" → proposed_value
+    # {"value": null}, recorded as a first-class proposal since #443) must NOT
+    # bury an earlier run's real value in the inline strip. Prefer the most
+    # recent proposal that carries a value; fall back to the most recent no-info
+    # proposal only when no run ever found one. The full trail (including the
+    # abstention) stays available via get_suggestion_history. ``proposals`` is
+    # ordered newest-first, so dict insertion order keeps the latest per coord.
+    chosen: dict[tuple[UUID, UUID], ExtractionProposalRecord] = {}
     for p in proposals:
         key = (p.instance_id, p.field_id)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(p)
+        existing = chosen.get(key)
+        if existing is None:
+            chosen[key] = p
+        elif _is_no_info(existing.proposed_value) and not _is_no_info(p.proposed_value):
+            # The more recent pick abstained; this older one found a value → use it.
+            chosen[key] = p
+    deduped = list(chosen.values())
 
     if not deduped:
         return AISuggestionsResponse(suggestions=[], count=0)

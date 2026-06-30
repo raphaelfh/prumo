@@ -29,7 +29,7 @@ import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
-import {AISuggestionDisplay} from './ai/AISuggestionDisplay';
+import {AISuggestionDisplay, type AISuggestionReviewBinding} from './ai/AISuggestionDisplay';
 import {AISuggestionBadge} from './ai/AISuggestionBadge';
 import {AISuggestionReviewPopover} from './ai/AISuggestionReviewPopover';
 import {getRelatedUnits} from '@/lib/unitConversions';
@@ -386,6 +386,24 @@ export function FieldInput(props: FieldInputProps) {
     aiSuggestion.status === 'rejected'
   );
 
+  // One binding for the AI review popover (its props minus `trigger`), shared by
+  // the History-icon trigger and the inline suggestion strip so the two entry
+  // points to the same coord can't drift. align='end' opens it left of the
+  // right-edge trigger, clear of the PDF/markdown viewer.
+  const reviewBinding: AISuggestionReviewBinding | undefined =
+    getSuggestionsHistory && aiSuggestion
+      ? {
+          instanceId,
+          fieldId: field.id,
+          getHistory: getSuggestionsHistory,
+          selectedProposalId: aiSuggestion.id,
+          onSelect: (proposalRecordId, selectedValue, selectedConfidence) =>
+            selectSuggestion?.(instanceId, field.id, proposalRecordId, selectedValue, selectedConfidence),
+          onClear: onRejectAI,
+          align: 'end',
+        }
+      : undefined;
+
   return (
       <div
           data-just-updated={justUpdated || undefined}
@@ -434,19 +452,12 @@ export function FieldInput(props: FieldInputProps) {
               {/* Single AI trigger: review + select past versions, see how each
                   was generated, locate evidence, or clear. Replaces the old
                   split history + details popovers. */}
-            {getSuggestionsHistory && aiSuggestion && (
+            {reviewBinding && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div>
                     <AISuggestionReviewPopover
-                      instanceId={instanceId}
-                      fieldId={field.id}
-                      getHistory={getSuggestionsHistory}
-                      selectedProposalId={aiSuggestion.id}
-                      onSelect={(proposalRecordId, selectedValue, selectedConfidence) =>
-                        selectSuggestion?.(instanceId, field.id, proposalRecordId, selectedValue, selectedConfidence)
-                      }
-                      onClear={onRejectAI}
+                      {...reviewBinding}
                       trigger={
                         <Button
                           size="icon"
@@ -478,6 +489,9 @@ export function FieldInput(props: FieldInputProps) {
             onAccept={onAcceptAI}
             onReject={onRejectAI}
             loading={isActionLoading ? isActionLoading(instanceId, field.id) === 'accept' || isActionLoading(instanceId, field.id) === 'reject' : false}
+            // Same review surface as the History icon (shared binding): clicking
+            // the inline value/confidence opens the version history + provenance.
+            review={reviewBinding}
           />
         )}
 

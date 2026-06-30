@@ -9,13 +9,14 @@
  */
 
 import { render as rtlRender, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
 
 import { AISuggestionDisplay } from './AISuggestionDisplay';
-import type { AISuggestion } from '@/types/ai-extraction';
+import type { AISuggestion, AISuggestionHistoryItem } from '@/types/ai-extraction';
 
 // AISuggestionConfidence renders a Tooltip; the real app has a root provider.
 const render = (ui: React.ReactElement) => rtlRender(<TooltipProvider>{ui}</TooltipProvider>);
@@ -53,5 +54,51 @@ describe('AISuggestionDisplay — no-information handling', () => {
     expect(screen.getByText('Retrospective cohort')).toBeInTheDocument();
     expect(screen.getByText('90%')).toBeInTheDocument();
     expect(screen.queryByText('reviewNoInformation')).not.toBeInTheDocument();
+  });
+});
+
+describe('AISuggestionDisplay — review popover entry point', () => {
+  const historyItem = (over: Partial<AISuggestionHistoryItem>): AISuggestionHistoryItem => ({
+    id: 'p1',
+    runId: 'run-A',
+    value: 'Retrospective cohort',
+    confidence: 0.9,
+    reasoning: '',
+    status: 'pending',
+    timestamp: new Date('2026-04-28T10:00:00Z'),
+    evidence: [],
+    ...over,
+  });
+
+  it('opens the review popover from the inline value when a review binding is supplied', async () => {
+    const getHistory = vi.fn(async () => [historyItem({})]);
+    const user = userEvent.setup();
+    render(
+      <AISuggestionDisplay
+        suggestion={makeSuggestion({ value: 'Retrospective cohort', confidence: 0.9 })}
+        review={{ instanceId: 'i', fieldId: 'f', getHistory, selectedProposalId: 'p1', onSelect: vi.fn() }}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'reviewOpenFromValue' }));
+    expect(getHistory).toHaveBeenCalledWith('i', 'f');
+  });
+
+  it('opens the review popover from the no-information indicator too', async () => {
+    const getHistory = vi.fn(async () => [] as AISuggestionHistoryItem[]);
+    const user = userEvent.setup();
+    render(
+      <AISuggestionDisplay
+        suggestion={makeSuggestion({ value: null, confidence: 0 })}
+        review={{ instanceId: 'i', fieldId: 'f', getHistory, onSelect: vi.fn() }}
+      />,
+    );
+    expect(screen.getByText('reviewNoInformation')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'reviewOpenFromValue' }));
+    expect(getHistory).toHaveBeenCalledWith('i', 'f');
+  });
+
+  it('renders no review trigger when no binding is supplied (backward compat)', () => {
+    render(<AISuggestionDisplay suggestion={makeSuggestion({ value: 'X', confidence: 0.5 })} />);
+    expect(screen.queryByRole('button', { name: 'reviewOpenFromValue' })).not.toBeInTheDocument();
   });
 });

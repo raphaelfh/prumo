@@ -3,24 +3,86 @@
  *
  * Shows the suggested value + confidence + quick accept/reject below the input.
  * The rich review surface (version history, provenance, cited evidence + locate)
- * now lives behind the single review trigger in `FieldInput`
- * (`AISuggestionReviewPopover`), so this strip stays a lightweight inline glance.
+ * lives behind `AISuggestionReviewPopover`. When a `review` binding is supplied,
+ * the value/confidence (and the "no information" indicator) become a trigger
+ * that opens that SAME popover — so the user can reach version history straight
+ * from the inline strip, not only from the History icon in `FieldInput`.
  *
  * @component
  */
 
-import type {AISuggestion} from '@/hooks/extraction/ai/useAISuggestions';
+import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 import {AISuggestionActions} from '@/components/shared/ai-suggestions';
 import {AISuggestionConfidence} from './shared/AISuggestionConfidence';
 import {AISuggestionValue} from './shared/AISuggestionValue';
+import {AISuggestionReviewPopover} from './AISuggestionReviewPopover';
 import {isNoInfoValue, isSuggestionAccepted} from '@/lib/ai-extraction/suggestionUtils';
+import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
+
+/**
+ * Wiring for the review popover the inline strip opens. Mirrors the props the
+ * History-icon popover in `FieldInput` already binds, so both entry points
+ * resolve to one surface for the same (instance, field) coord.
+ */
+export interface AISuggestionReviewBinding {
+  instanceId: string;
+  fieldId: string;
+  getHistory: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
+  selectedProposalId?: string;
+  onSelect: (proposalRecordId: string, value: unknown, confidence: number) => void;
+  onClear?: () => void;
+  /** Defaults to 'end' so the popover opens left, clear of the PDF panel. */
+  align?: 'start' | 'center' | 'end';
+}
 
 interface AISuggestionDisplayProps {
   suggestion: AISuggestion;
   onAccept?: () => void;
   onReject?: () => void;
   loading?: boolean;
+  /** When present, the value area becomes a trigger for the review popover. */
+  review?: AISuggestionReviewBinding;
+}
+
+/**
+ * Wraps `children` in the review popover's trigger button when a binding is
+ * supplied; otherwise renders a plain container with the same layout classes.
+ */
+function ReviewTrigger({
+  review,
+  className,
+  children,
+}: {
+  review?: AISuggestionReviewBinding;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  if (!review) {
+    return <div className={className}>{children}</div>;
+  }
+  return (
+    // The binding is exactly the popover's props minus `trigger`, so spread it;
+    // default align to 'end' so the popover opens left, clear of the PDF panel.
+    <AISuggestionReviewPopover
+      {...review}
+      align={review.align ?? 'end'}
+      trigger={
+        <button
+          type="button"
+          aria-label={t('extraction', 'reviewOpenFromValue')}
+          title={t('extraction', 'reviewOpenFromValue')}
+          className={cn(
+            'rounded-md text-left transition-colors cursor-pointer hover:bg-ai/5',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ai/40 focus-visible:ring-offset-1',
+            className,
+          )}
+        >
+          {children}
+        </button>
+      }
+    />
+  );
 }
 
 export function AISuggestionDisplay({
@@ -28,19 +90,23 @@ export function AISuggestionDisplay({
   onAccept,
   onReject,
   loading = false,
+  review,
 }: AISuggestionDisplayProps) {
   const isAccepted = isSuggestionAccepted(suggestion);
   const isRejected = suggestion.status === 'rejected';
 
   // A "no information found" outcome is now a first-class proposal. Render it as
   // a quiet, de-emphasized indicator — never a loud "(empty) · 0%" strip with
-  // Accept/Reject (the full record + acknowledge live behind the review trigger).
+  // Accept/Reject. It still opens the review popover (history + provenance) when
+  // a binding is supplied, so the abstention stays traceable.
   if (isNoInfoValue(suggestion.value)) {
     return (
       <div className="mt-2 animate-in fade-in duration-200">
-        <span className="text-xs italic text-muted-foreground">
-          {t('extraction', 'reviewNoInformation')}
-        </span>
+        <ReviewTrigger review={review} className="inline-flex px-1.5 py-0.5 -mx-1.5">
+          <span className="text-xs italic text-muted-foreground">
+            {t('extraction', 'reviewNoInformation')}
+          </span>
+        </ReviewTrigger>
       </div>
     );
   }
@@ -48,11 +114,14 @@ export function AISuggestionDisplay({
   return (
     <div className="mt-2 animate-in fade-in slide-in-from-top-2 duration-200 w-full">
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2 w-full">
-          {/* Suggested value + confidence */}
-        <div className="flex-1 min-w-0 w-full sm:w-auto flex items-center gap-2">
+          {/* Suggested value + confidence — opens the review popover on click */}
+        <ReviewTrigger
+          review={review}
+          className="flex-1 min-w-0 w-full sm:w-auto flex items-center gap-2 px-1.5 py-1 -mx-1.5"
+        >
           <AISuggestionValue suggestion={suggestion} maxLength={150} className="flex-1 min-w-0" />
           <AISuggestionConfidence suggestion={suggestion} />
-        </div>
+        </ReviewTrigger>
 
           {/* Action buttons - always show */}
         <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end sm:justify-start pr-1">

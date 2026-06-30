@@ -131,6 +131,35 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         )
         return await self.get_by_id(run_id)
 
+    async def merge_results(
+        self,
+        run_id: UUID,
+        patch: dict[str, Any],
+    ) -> ExtractionRun | None:
+        """Shallow-merge *patch* into the run's ``results`` JSONB; keep status.
+
+        The session-run extraction path (``extract_section`` / ``extract_for_run``
+        on a run the HITL session owns) must keep the run alive in EXTRACT, so it
+        cannot call ``complete_run`` (which marks the run COMPLETED). This lets it
+        still persist run-level data — notably ``provenance`` (how the suggestions
+        were generated) — so the review UI's "How this was generated" disclosure
+        has data to show.
+
+        Args:
+            run_id: the run to update.
+            patch: top-level keys to merge into ``results``.
+
+        Returns:
+            The updated ExtractionRun, or None if the run does not exist.
+        """
+        run = await self.get_by_id(run_id)
+        if run is None:
+            return None
+        # Reassign (not in-place mutate) so SQLAlchemy tracks the JSONB change.
+        run.results = {**(run.results or {}), **patch}
+        await self.db.flush()
+        return run
+
     async def fail_run(
         self,
         run_id: UUID,
