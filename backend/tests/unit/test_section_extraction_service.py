@@ -538,6 +538,37 @@ class TestExtractForRun:
         service._lifecycle.advance_stage.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_extract_for_run_provenance_has_full_token_shape(
+        self, service, qa_run, qa_template
+    ):
+        # Provenance tokens must be the consistent {prompt, completion, total}
+        # shape (via _provenance_with_tokens), aggregated across sections — not
+        # the {total}-only shape that rendered as raw-key generic rows.
+        ets = []
+        for i in range(2):
+            et = MagicMock()
+            et.id = uuid4()
+            et.name = f"Section{i}"
+            et.fields = []
+            et.parent_entity_type_id = None
+            ets.append(et)
+        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, ets)
+        # An LLM ran → provenance snapshot set (normally by _extract_with_llm).
+        service._run_provenance = service._build_run_provenance(
+            model="m", prompt_name="qa", prompt_version="1", prompt_text="P"
+        )
+
+        await service.extract_for_run(run_id=qa_run.id)
+
+        results = service._runs.complete_run.await_args.kwargs["results"]
+        # Two sections at LlmUsage(10, 5) each → aggregate (20, 10, 30).
+        assert results["provenance"]["tokens"] == {
+            "prompt": 20,
+            "completion": 10,
+            "total": 30,
+        }
+
+    @pytest.mark.asyncio
     async def test_extract_for_run_does_not_advance_even_when_enabled(
         self, service, qa_run, qa_template
     ):

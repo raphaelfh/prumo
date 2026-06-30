@@ -40,6 +40,8 @@ const PROVENANCE_REGISTRY: ProvenanceFieldDef[] = [
   {key: 'temperature', labelKey: 'provenanceTemperature', kind: 'scalar'},
   {key: 'outputRetries', labelKey: 'provenanceOutputRetries', kind: 'scalar'},
   {key: 'timeoutSeconds', labelKey: 'provenanceTimeout', kind: 'scalar', format: (v) => `${String(v)}s`},
+  {key: 'tokensPrompt', labelKey: 'provenanceTokensPrompt', kind: 'scalar', format: (v) => Number(v).toLocaleString()},
+  {key: 'tokensCompletion', labelKey: 'provenanceTokensCompletion', kind: 'scalar', format: (v) => Number(v).toLocaleString()},
   {key: 'tokensTotal', labelKey: 'provenanceTokens', kind: 'scalar', format: (v) => Number(v).toLocaleString()},
   {key: 'strategy', labelKey: 'provenanceStrategy', kind: 'scalar'},
   {key: 'promptVersion', labelKey: 'provenancePromptVersion', kind: 'scalar'},

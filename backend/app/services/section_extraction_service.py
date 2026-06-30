@@ -451,6 +451,9 @@ class SectionExtractionService(LoggerMixin):
         section_results: list[dict[str, Any]] = []
         total_suggestions = 0
         total_tokens = 0
+        # Aggregate prompt+completion so provenance uses the same {prompt,
+        # completion, total} shape as the single-section paths.
+        accumulated_usage = LlmUsage()
         successful = 0
         failed = 0
 
@@ -473,6 +476,8 @@ class SectionExtractionService(LoggerMixin):
                     successful += 1
                     total_suggestions += result["suggestions_created"]
                     total_tokens += result["tokens_total"]
+                    # Skipped sections omit "usage" (0 tokens) — default to empty.
+                    accumulated_usage = accumulated_usage + result.get("usage", LlmUsage())
                     section_results.append(
                         {
                             "entity_type_id": str(entity_type.id),
@@ -511,15 +516,9 @@ class SectionExtractionService(LoggerMixin):
 
             duration_ms = (perf_counter() - start_time) * 1000
 
-            # Persist how the suggestions were generated so the review popover's
-            # "How this was generated" metadata renders. ``_run_provenance`` holds
-            # the run config (model/provider/params/prompt) set by the last
-            # ``_extract_with_llm`` call; pair it with the run-aggregate token total.
-            run_provenance = (
-                {**self._run_provenance, "tokens": {"total": total_tokens}}
-                if self._run_provenance is not None
-                else None
-            )
+            # Persist run provenance with the run-aggregate token usage in the
+            # {prompt, completion, total} shape. None when no LLM ran.
+            run_provenance = self._provenance_with_tokens(accumulated_usage)
 
             await self._runs.complete_run(
                 run_id=run.id,
@@ -635,6 +634,7 @@ class SectionExtractionService(LoggerMixin):
             return {
                 "suggestions_created": suggestions_created,
                 "tokens_total": llm_usage.total_tokens,
+                "usage": llm_usage,
             }
         finally:
             # Restore the unfiltered field list so callers that rely on

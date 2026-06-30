@@ -855,6 +855,8 @@ export const extraction = {
     provenanceTemperature: 'Temperature',
     provenanceOutputRetries: 'Output retries',
     provenanceTimeout: 'Timeout',
+    provenanceTokensPrompt: 'Prompt tokens',
+    provenanceTokensCompletion: 'Completion tokens',
     provenanceTokens: 'Tokens',
     provenanceStrategy: 'Strategy',
     provenancePromptVersion: 'Prompt version',
