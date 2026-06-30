@@ -13,6 +13,13 @@ export const runs = {
   stageExtractTooltip: 'Fill the form and review AI suggestions for this article.',
   stageConsensusTooltip: 'Reconcile reviewer values into one agreed answer.',
   stageFinalizedTooltip: 'Locked and published — reopen to make changes.',
+  // StageRail per-node STATE, appended to each node's accessible name so the
+  // state a sighted user reads from the icon is also announced to assistive tech.
+  stageStateDone: 'completed',
+  stageStateCurrent: 'current step',
+  stageStateUpcoming: 'upcoming',
+  stageStateLocked: 'locked',
+  stageStateCancelled: 'cancelled',
   // PrimaryAction
   requiredOfTotal: '{{done}} of {{total}} required',
   // Transition label (QA's buildQaTransition uses this shared key)
@@ -44,6 +51,9 @@ export const runs = {
   // Worklist popover
   worklistSearch: 'Go to article…',
   worklistPosition: '{{n}} of {{m}}',
+  worklistPositionLabel: 'Article {{n}} of {{m}}, open list',
+  aiPendingSuggestions: '{{n}} AI suggestions pending',
+  compareToggleLabel: 'Compare',
   // CommandPalette
   commandPlaceholder: 'Type a command or search…',
   commandEmpty: 'No results',

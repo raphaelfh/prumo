@@ -13,6 +13,14 @@ import { MemoryRouter } from 'react-router-dom';
 // Mock copy so t() returns the key (avoids needing the full copy registry).
 vi.mock('@/lib/copy', () => ({ t: (_n: string, k: string) => k }));
 
+// The header now mounts NotificationCenter (via Utility), whose service import
+// graph reaches the supabase client — which throws at module load in the
+// env-less Frontend Tests CI job. Stub the client; rendering makes no supabase
+// calls here.
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: { auth: { getSession: () => Promise.resolve({ data: { session: null }, error: null }) } },
+}));
+
 // ---- Test 1: ExtractionHeader passes canReveal/onReveal through to RoleChip ----
 
 import { ExtractionHeader } from '@/components/extraction/ExtractionHeader';

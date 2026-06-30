@@ -14,18 +14,18 @@ export function AIActions({ pendingCount, canExtract, extracting, onExtract, onO
   if (canExtract) {
     const label = extracting ? t('runs', 'extractingWithAI') : t('runs', 'extractWithAI');
     return (
-      // Label collapses to the icon below 40rem; aria-label keeps the
+      // Label collapses to the icon below 48rem; aria-label keeps the
       // accessible name since the Sparkles icon is aria-hidden.
-      <Button size="sm" variant="secondary" onClick={onExtract} disabled={extracting} aria-label={label} className="shrink-0 gap-1.5 whitespace-nowrap">
-        <Sparkles className="h-4 w-4 text-ai" aria-hidden="true" />
-        <span className="hidden @[40rem]/headerbar:inline">{label}</span>
+      <Button size="sm" variant="ghost" onClick={onExtract} disabled={extracting} aria-label={label} className="shrink-0 gap-1.5 whitespace-nowrap">
+        <Sparkles className="h-4 w-4 text-ai" strokeWidth={1.5} aria-hidden="true" />
+        <span className="hidden @[48rem]/headerbar:inline">{label}</span>
       </Button>
     );
   }
   if (pendingCount <= 0) return null;
   return (
-    <button type="button" onClick={() => onOpenSuggestions?.()} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-ai/40 bg-ai/10 px-2.5 py-0.5 text-[11px] text-ai focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-      <Sparkles className="h-3.5 w-3.5" aria-hidden="true" /><span className="hidden @[48rem]/headerbar:inline">AI · </span>{pendingCount}
+    <button type="button" onClick={() => onOpenSuggestions?.()} aria-label={t('runs', 'aiPendingSuggestions').replace('{{n}}', String(pendingCount))} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-ai/10 px-1.5 py-0.5 text-[11px] text-ai focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+      <Sparkles className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" /><span className="hidden @[48rem]/headerbar:inline" aria-hidden="true">AI · </span><span aria-hidden="true">{pendingCount}</span>
     </button>
   );
 }

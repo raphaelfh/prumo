@@ -44,10 +44,6 @@ export const qa = {
   managerVisibilitySectionDesc:
     'Control whether managers see other reviewers’ assessments for this project.',
 
-  // Assess vs. compare view toggle (assessment screen header)
-  compareToggle: 'Comparison',
-  assessToggle: 'Assessment',
-
   // QualityAssessmentFullScreen — header, status, toasts
   badge: 'Quality Assessment',
   badgeShort: 'QA',

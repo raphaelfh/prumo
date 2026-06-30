@@ -69,13 +69,14 @@
     --ai-foreground: 0 0% 100%;
 
     /* Reviewer palette — used by ReviewerAvatarStack to colour avatar
-       bubbles deterministically by user_id hash. Same hue intent as the
-       legacy sky/emerald/amber/violet/rose 200/800 pair. */
-    --reviewer-1: 199 89% 48%;   /* sky    */
+       bubbles deterministically by user_id hash. Hues are kept OFF the semantic
+       colours (info 199 / warning 38 / ai 262) so an avatar never reads as a
+       status next to the amber divergence or violet AI chips. */
+    --reviewer-1: 230 72% 52%;   /* indigo  */
     --reviewer-2: 158 64% 40%;   /* emerald */
-    --reviewer-3: 38 92% 50%;    /* amber  */
-    --reviewer-4: 262 83% 58%;   /* violet */
-    --reviewer-5: 350 89% 60%;   /* rose   */
+    --reviewer-3: 305 68% 50%;   /* magenta */
+    --reviewer-4: 90 55% 38%;    /* olive   */
+    --reviewer-5: 350 89% 60%;   /* rose    */
 
     /* Shadows — soft elevation tokens. `card` for static surfaces,
        `popover` for floating menus / dropdowns. Defined as full
@@ -150,11 +151,11 @@
     --ai-foreground: 0 0% 100%;
 
     /* Reviewer palette — lifted for dark-mode legibility. */
-    --reviewer-1: 199 89% 60%;
-    --reviewer-2: 158 64% 52%;
-    --reviewer-3: 38 92% 60%;
-    --reviewer-4: 262 83% 68%;
-    --reviewer-5: 350 89% 70%;
+    --reviewer-1: 230 78% 70%;   /* indigo  */
+    --reviewer-2: 158 64% 52%;   /* emerald */
+    --reviewer-3: 305 72% 68%;   /* magenta */
+    --reviewer-4: 90 52% 58%;    /* olive   */
+    --reviewer-5: 350 89% 70%;   /* rose    */
 
     /* Shadows — higher alpha because dark backgrounds swallow low-alpha
        shadows. */

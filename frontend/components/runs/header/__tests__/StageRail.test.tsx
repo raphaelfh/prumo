@@ -28,6 +28,18 @@ describe('RunHeader.StageRail (3-node)', () => {
     expect(screen.getByText('revision')).toBeInTheDocument();
   });
 
+  it('announces each node\'s state to assistive tech (not just the stage word)', () => {
+    render(
+      <RunHeader value={value}>
+        <RunHeader.Left><RunHeader.StageRail /></RunHeader.Left>
+      </RunHeader>,
+    );
+    // stage='extract' → extract is current, consensus upcoming, finalized locked.
+    expect(screen.getByText(/stageStateCurrent/)).toBeInTheDocument();
+    expect(screen.getByText(/stageStateUpcoming/)).toBeInTheDocument();
+    expect(screen.getByText(/stageStateLocked/)).toBeInTheDocument();
+  });
+
   it('does not render a gate-remaining chip in the rail', () => {
     render(
       <RunHeader value={{ ...value, transition: { to: 'consensus', label: 'x', gate: { ok: false, reason: 'r', remaining: 27 }, onAdvance: () => {} } }}>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check } from 'lucide-react';
+import { AlertCircle, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/copy';
 import type { SaveState } from '@/hooks/runs';
@@ -51,6 +51,8 @@ export function SaveSlot({ state, lastSavedAt, hidden }: { state: SaveState; las
   const label = saving ? t('runs', 'saving') : failed ? t('runs', 'saveFailed') : t('runs', 'saved');
   return (
     <span
+      role="status"
+      aria-live={failed ? 'assertive' : 'polite'}
       className={cn(
         'flex items-center gap-1 whitespace-nowrap text-[11px] transition-opacity duration-300',
         failed ? 'text-destructive' : 'text-muted-foreground',
@@ -58,16 +60,21 @@ export function SaveSlot({ state, lastSavedAt, hidden }: { state: SaveState; las
       )}
       title={lastSavedAt ? lastSavedAt.toLocaleTimeString() : undefined}
     >
+      {/* Distinct glyph per state so the non-color cue survives the label fold:
+          alert (failed) vs. neutral pulsing dot (saving) vs. check (saved). */}
       {failed ? (
-        <span className="h-1.5 w-1.5 rounded-full bg-destructive" aria-hidden="true" />
+        <AlertCircle className="h-3 w-3 text-destructive" strokeWidth={1.5} aria-hidden="true" />
       ) : saving ? (
-        <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground motion-safe:animate-pulse" aria-hidden="true" />
       ) : (
-        <Check className="h-3 w-3 text-success" aria-hidden="true" />
+        <Check className="h-3 w-3 text-success" strokeWidth={1.5} aria-hidden="true" />
       )}
-      {/* Compact tier (phone): keep only the status dot/icon; the word collapses
-          to sr-only so it stays in the a11y tree without eating row width. */}
-      <span className="sr-only @[34rem]/headerbar:not-sr-only">{label}</span>
+      {/* Compact tier (phone): keep only the status glyph; the word collapses to
+          sr-only below 34rem. Kept at 34rem (not pushed wider) so the "Save
+          failed" WORD stays visible on tablet/mid widths — the aria-live region
+          is the only other failure signal and (being conditionally mounted) is an
+          unreliable SR announcement, so the visible word must not fold early. */}
+      <span className="whitespace-nowrap sr-only @[34rem]/headerbar:not-sr-only">{label}</span>
     </span>
   );
 }

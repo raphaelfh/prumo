@@ -21,6 +21,19 @@ describe('RunHeader.RoleChip', () => {
     await userEvent.click(screen.getByRole('button', { name: 'reveal' }));
     expect(onReveal).toHaveBeenCalledOnce();
   });
+  it('keeps a single always-present reveal trigger whose name carries role + reveal (touch-reachable)', async () => {
+    const onReveal = vi.fn();
+    render(<RunHeader value={{ ...base, role: 'reviewer', isBlind: true, canReveal: true, onReveal }}>
+      <RunHeader.Center><RunHeader.RoleChip /></RunHeader.Center>
+    </RunHeader>);
+    // The trigger's accessible name carries BOTH the role and the reveal intent,
+    // so it works when the visual role text folds away at narrow widths.
+    const trigger = screen.getByRole('button', { name: /reviewer.*reveal/i });
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole('button', { name: 'reveal' }));
+    expect(onReveal).toHaveBeenCalledOnce();
+  });
+
   it('renders a plain non-interactive chip for a reviewer', () => {
     render(<RunHeader value={{ ...base, role: 'reviewer', isBlind: true, canReveal: false }}>
       <RunHeader.Center><RunHeader.RoleChip /></RunHeader.Center>
