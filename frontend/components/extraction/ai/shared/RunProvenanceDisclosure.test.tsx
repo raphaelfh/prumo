@@ -20,6 +20,22 @@ describe("RunProvenanceDisclosure", () => {
     expect(screen.getByText(/You are appraising/)).toBeInTheDocument(); // code block
   });
 
+  it("renders prompt/completion token rows with labels, not raw-key generic rows", () => {
+    render(
+      <RunProvenanceDisclosure
+        provenance={{ ...prov, tokensPrompt: 3100, tokensCompletion: 810 }}
+        defaultOpen
+      />,
+    );
+    expect(screen.getByText("Prompt tokens")).toBeInTheDocument();
+    expect(screen.getByText("Completion tokens")).toBeInTheDocument();
+    expect(screen.getByText("3,100")).toBeInTheDocument(); // toLocaleString format
+    expect(screen.getByText("810")).toBeInTheDocument();
+    // Must NOT fall through to the raw-key generic-row fallback.
+    expect(screen.queryByText("tokensPrompt")).not.toBeInTheDocument();
+    expect(screen.queryByText("tokensCompletion")).not.toBeInTheDocument();
+  });
+
   it("collapses by default and toggles", () => {
     render(<RunProvenanceDisclosure provenance={prov} />);
     expect(screen.queryByText("Temperature")).not.toBeInTheDocument();
