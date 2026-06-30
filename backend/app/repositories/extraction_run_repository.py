@@ -102,26 +102,29 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         run_id: UUID,
         results: dict[str, Any],
     ) -> ExtractionRun | None:
-        """
-        Marca uma execucao como concluida.
+        """Mark a run COMPLETED, shallow-merging *results* into its ``results`` JSONB.
+
+        MERGE (not REPLACE) so run-level data already recorded — notably the
+        ``provenance`` snapshot the proposal choke-point (``_create_suggestions``
+        → ``merge_results``) writes — survives completion. A REPLACE would clobber
+        it. Callers whose run still has empty ``results`` (model extraction, the
+        batch primary run) are unaffected: merging into ``{}`` equals a replace.
 
         Args:
-            run_id: execucao.
-            results: Resultados da execucao.
+            run_id: the run to complete.
+            results: top-level keys to merge into ``results``.
 
         Returns:
-            ExtractionRun atualizado or None.
+            The updated ExtractionRun, or None if the run does not exist.
         """
         query_start = perf_counter()
-        await self.db.execute(
-            update(ExtractionRun)
-            .where(ExtractionRun.id == run_id)
-            .values(
-                status=ExtractionRunStatus.COMPLETED.value,
-                completed_at=datetime.now(UTC),
-                results=results,
-            )
-        )
+        run = await self.get_by_id(run_id)
+        if run is None:
+            return None
+        run.status = ExtractionRunStatus.COMPLETED.value
+        run.completed_at = datetime.now(UTC)
+        # Reassign (not in-place mutate) so SQLAlchemy tracks the JSONB change.
+        run.results = {**(run.results or {}), **results}
         await self.db.flush()
         query_duration_ms = (perf_counter() - query_start) * 1000
         logger.info(
@@ -129,7 +132,7 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
             run_id=str(run_id),
             db_duration_ms=query_duration_ms,
         )
-        return await self.get_by_id(run_id)
+        return run
 
     async def merge_results(
         self,
