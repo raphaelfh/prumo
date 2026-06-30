@@ -13,6 +13,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type UserRole } from '@/lib/comparison/permissions';
 import { RunHeader, type RunHeaderValue, type StageTransition } from '@/components/runs/header';
+// Utility is imported directly (not via the RunHeader compound): it pulls in the
+// app-wide NotificationCenter/feedback, which reach the supabase client, and the
+// shared compound must stay free of that so its pure part tests don't need it.
+import { Utility } from '@/components/runs/header/Utility';
 import type { ExtractionRunStage } from '@/types/ai-extraction';
 import type { SaveState } from '@/hooks/runs';
 import { t } from '@/lib/copy';
@@ -273,13 +277,6 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
             <RunHeader.MobileNav onOpen={onOpenMobileNav} />
             <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={onToggleSidebar} />
             <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName, onClick: () => navigate(`/projects/${props.projectId}`) }, { label: articleTitle }]} />
-            {articles.length > 1 && (
-              <RunHeader.Worklist
-                articles={articles}
-                currentId={currentArticleId}
-                onNavigate={onNavigateToArticle}
-              />
-            )}
             <RunHeader.Save
               state={saveState ?? 'idle'}
               lastSavedAt={lastSavedAt}
@@ -288,12 +285,31 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
             {stage != null && <RunHeader.StageRail />}
           </RunHeader.Left>
 
+          {/* The ‹N/M› pager is the highest-priority navigation, so it lives in
+              its OWN protected slot between the (overflow-hidden) identity and
+              context tracks — never clipped by either, shrink-0, always visible
+              whenever there is more than one article. */}
+          {articles.length > 1 && (
+            <RunHeader.Worklist
+              articles={articles}
+              currentId={currentArticleId}
+              onNavigate={onNavigateToArticle}
+            />
+          )}
+
           <RunHeader.Center>
             <RunHeader.Reviewers />
             <RunHeader.RoleChip />
           </RunHeader.Center>
 
           <RunHeader.Right>
+            {hasComparison && (
+              <RunHeader.CompareToggle
+                active={viewMode === 'compare'}
+                onToggle={() => onViewModeChange(viewMode === 'compare' ? 'extract' : 'compare')}
+                label={t('runs', 'compareToggleLabel')}
+              />
+            )}
             <RunHeader.AIActions
               pendingCount={aiPendingCount}
               canExtract={!!(canRunAI && onExtractWithAI)}
@@ -302,16 +318,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
               onOpenSuggestions={props.onAISuggestionsClick}
             />
             <RunHeader.PrimaryAction />
-            <span className="mx-1 hidden h-5 w-px bg-border/60 @[40rem]/headerbar:block" aria-hidden="true" />
-            <span className="hidden @[40rem]/headerbar:inline-flex">
-              <RunHeader.Help />
-            </span>
-            <RunHeader.Menu>
-              {hasComparison && (
-                <RunHeader.MenuItem onSelect={() => onViewModeChange(viewMode === 'compare' ? 'extract' : 'compare')}>
-                  {t('extraction', 'runHeaderCompareToggle')}
-                </RunHeader.MenuItem>
-              )}
+            <Utility>
               {canReopen && (
                 <RunHeader.MenuItem onSelect={() => onReopen?.()}>
                   {reopening
@@ -319,7 +326,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                     : t('extraction', 'runHeaderReopenForRevision')}
                 </RunHeader.MenuItem>
               )}
-            </RunHeader.Menu>
+            </Utility>
             <RunHeader.PanelToggle pressed={showPDF} onToggle={onTogglePDF} />
           </RunHeader.Right>
         </RunHeader>

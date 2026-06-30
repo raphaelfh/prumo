@@ -47,15 +47,19 @@ export function Worklist({ articles, currentId, onNavigate }: WorklistProps) {
 
   return (
     <div className="flex shrink-0 items-center gap-1">
+      {/* Leading divider groups the article pager apart from the breadcrumb/back
+          so the two never read as one crowded chevron cluster when the
+          breadcrumb text collapses at narrow widths. */}
+      <span className="mr-1 h-4 w-px shrink-0 bg-border/60" aria-hidden="true" />
       <Button
         variant="ghost"
         size="sm"
-        className="h-7 w-7 p-0"
+        className="h-7 w-7 p-0 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11"
         aria-label={t('runs', 'articlePrevious')}
         disabled={!hasPrev}
         onClick={() => hasPrev && onNavigate(articles[idx - 1].id)}
       >
-        <ChevronLeft className="h-4 w-4" />
+        <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
       </Button>
 
       <Popover open={open} onOpenChange={setOpen}>
@@ -63,8 +67,10 @@ export function Worklist({ articles, currentId, onNavigate }: WorklistProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-[11px] tabular-nums text-muted-foreground"
-            aria-label={`${idx + 1} / ${articles.length}`}
+            className="h-7 px-2 text-[11px] tabular-nums text-muted-foreground [@media(pointer:coarse)]:h-11"
+            aria-label={t('runs', 'worklistPositionLabel')
+              .replace('{{n}}', String(idx + 1))
+              .replace('{{m}}', String(articles.length))}
           >
             {idx + 1} / {articles.length}
           </Button>
@@ -102,12 +108,12 @@ export function Worklist({ articles, currentId, onNavigate }: WorklistProps) {
       <Button
         variant="ghost"
         size="sm"
-        className="h-7 w-7 p-0"
+        className="h-7 w-7 p-0 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11"
         aria-label={t('runs', 'articleNext')}
         disabled={!hasNext}
         onClick={() => hasNext && onNavigate(articles[idx + 1].id)}
       >
-        <ChevronRight className="h-4 w-4" />
+        <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
       </Button>
     </div>
   );

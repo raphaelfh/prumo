@@ -5,7 +5,7 @@
 
 import React, {useContext, useState} from 'react';
 import {Info, Menu} from 'lucide-react';
-import {Button} from '@/components/ui/button';
+import {HeaderIconButton} from '@/components/layout/HeaderIconButton';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {useUserProfile} from '@/hooks/useNavigation';
 import {SidebarContext} from '@/contexts/SidebarContext';
@@ -73,15 +73,13 @@ export const Topbar: React.FC<TopbarProps> = ({
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {/* Hamburger Menu — Mobile/Tablet only */}
         {sidebarContext && isProjectPage && (
-          <Button
-            variant="ghost"
-            size="icon"
+          <HeaderIconButton
             onClick={sidebarContext.toggleMobile}
             aria-label={t('navigation', 'ariaOpenMenu')}
-            className="flex h-8 w-8 shrink-0 transition-colors duration-75 hover:bg-muted/50 lg:hidden"
+            className="lg:hidden"
           >
-            <Menu className="h-4 w-4 text-muted-foreground" />
-          </Button>
+            <Menu strokeWidth={1.5} aria-hidden="true" />
+          </HeaderIconButton>
         )}
         {/* Sidebar Toggle — Desktop only. */}
         {sidebarContext && isProjectPage && (
@@ -117,10 +115,10 @@ export const Topbar: React.FC<TopbarProps> = ({
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      className="hidden text-muted-foreground/60 transition-colors hover:text-foreground @[34rem]/headerbar:inline-flex"
+                      className="hidden rounded text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 @[34rem]/headerbar:inline-flex"
                       aria-label={t('navigation', sectionDescriptionKey[projectContext?.activeTab ?? ''])}
                     >
-                      <Info className="h-3.5 w-3.5" />
+                      <Info className="h-3.5 w-3.5" strokeWidth={1.5} />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent>
