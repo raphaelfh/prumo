@@ -401,6 +401,10 @@ export function FieldInput(props: FieldInputProps) {
             selectSuggestion?.(instanceId, field.id, proposalRecordId, selectedValue, selectedConfidence),
           onClear: onRejectAI,
           align: 'end',
+          // So the version-history popover resolves a select/multiselect CODE
+          // to its human label, same as the inline card.
+          fieldType: field.field_type,
+          allowedValues: field.allowed_values,
         }
       : undefined;
 
@@ -492,6 +496,9 @@ export function FieldInput(props: FieldInputProps) {
             // Same review surface as the History icon (shared binding): clicking
             // the inline value/confidence opens the version history + provenance.
             review={reviewBinding}
+            // Render a select/multiselect CODE as its human label on the card.
+            fieldType={field.field_type}
+            allowedValues={field.allowed_values}
           />
         )}
 

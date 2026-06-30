@@ -79,9 +79,12 @@ interface VersionRowProps {
   version: AISuggestionHistoryItem;
   isSelected: boolean;
   onUse: () => void;
+  fieldType?: string | null;
+  allowedValues?: unknown;
 }
 
-function VersionRow({version, isSelected, onUse}: VersionRowProps) {
+function VersionRow({version, isSelected, onUse, fieldType, allowedValues}: VersionRowProps) {
+  const fieldContext = {fieldType, allowedValues};
   const [expanded, setExpanded] = useState(false);
   const showDetails = isSelected || expanded;
 
@@ -114,9 +117,9 @@ function VersionRow({version, isSelected, onUse}: VersionRowProps) {
           ) : (
             <p
               className="line-clamp-3 break-words text-sm font-medium"
-              title={formatFullSuggestionValue(version.value)}
+              title={formatFullSuggestionValue(version.value, fieldContext)}
             >
-              {formatFullSuggestionValue(version.value)}
+              {formatFullSuggestionValue(version.value, fieldContext)}
             </p>
           )}
         </div>
@@ -190,10 +193,14 @@ interface AISuggestionReviewPopoverProps {
   onClear?: () => void;
   trigger: React.ReactNode;
   align?: 'start' | 'center' | 'end';
+  /** Field type + allowed_values so each version resolves a select/multiselect
+   *  CODE to its human label, same as the inline card. */
+  fieldType?: string | null;
+  allowedValues?: unknown;
 }
 
 export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps) {
-  const {instanceId, fieldId, getHistory, selectedProposalId, onSelect, onClear, trigger, align} = props;
+  const {instanceId, fieldId, getHistory, selectedProposalId, onSelect, onClear, trigger, align, fieldType, allowedValues} = props;
 
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState<AISuggestionHistoryItem[]>([]);
@@ -296,6 +303,8 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
                     version={version}
                     isSelected={version.id === effectiveSelected}
                     onUse={() => handleUse(version)}
+                    fieldType={fieldType}
+                    allowedValues={allowedValues}
                   />
                 ))}
                 {runIndex < runOrder.length - 1 && <Separator />}
