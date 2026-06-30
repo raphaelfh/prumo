@@ -1,7 +1,7 @@
 """
 Extraction Run Repository.
 
-Manages persistence for execucoes de IA for extraction.
+Manages persistence for AI extraction runs.
 """
 
 from datetime import UTC, datetime
@@ -21,9 +21,9 @@ logger = get_logger(__name__)
 
 class ExtractionRunRepository(BaseRepository[ExtractionRun]):
     """
-    Repository for execucoes de extraction de IA.
+    Repository for AI extraction runs.
 
-    Manages o ciclo de vida of the extraction_runs.
+    Manages the lifecycle of the extraction_runs.
     """
 
     def __init__(self, db: AsyncSession):
@@ -39,20 +39,20 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         parameters: dict[str, Any] | None = None,
     ) -> ExtractionRun:
         """
-        Create uma nova execucao de extraction.
+        Create a new extraction run.
 
         Args:
             project_id: project.
             article_id: article.
             template_id: template.
-            stage: Estagio da execucao (pending, proposal, review, consensus, finalized, cancelled).
-            created_by: user que criou.
-            parameters: Parametros da execucao (modelo, etc.).
+            stage: run stage (pending, proposal, review, consensus, finalized, cancelled).
+            created_by: user who created it.
+            parameters: run parameters (model, etc.).
 
         Returns:
-            ExtractionRun criado.
+            The created ExtractionRun.
         """
-        # Converter Enum for string for garantir compatibilidade
+        # Convert Enum to string for compatibility
         stage_value = stage.value if isinstance(stage, ExtractionRunStage) else str(stage)
         status_value = ExtractionRunStatus.PENDING.value
 
@@ -71,13 +71,13 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
 
     async def start_run(self, run_id: UUID) -> ExtractionRun | None:
         """
-        Marca uma execucao como iniciada.
+        Mark a run as started.
 
         Args:
-            run_id: execucao.
+            run_id: run.
 
         Returns:
-            ExtractionRun atualizado or None.
+            The updated ExtractionRun, or None.
         """
         query_start = perf_counter()
         await self.db.execute(
@@ -169,14 +169,14 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         error_message: str,
     ) -> ExtractionRun | None:
         """
-        Marca uma execucao como falha.
+        Mark a run as failed.
 
         Args:
-            run_id: execucao.
+            run_id: run.
             error_message: Error message.
 
         Returns:
-            ExtractionRun atualizado or None.
+            The updated ExtractionRun, or None.
         """
         query_start = perf_counter()
         await self.db.execute(
@@ -244,15 +244,15 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         status: ExtractionRunStatus | None = None,
     ) -> list[ExtractionRun]:
         """
-        List execucoes de um article.
+        List runs of an article.
 
         Args:
             article_id: article.
-            stage: Filtro por estagio (optional).
-            status: Filtro por status (optional).
+            stage: filter by stage (optional).
+            status: filter by status (optional).
 
         Returns:
-            List de execucoes.
+            List of runs.
         """
         query = select(ExtractionRun).where(ExtractionRun.article_id == article_id)
 
@@ -273,14 +273,14 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         stage: ExtractionRunStage,
     ) -> ExtractionRun | None:
         """
-        Fetch a execucao mais recente de um article for um estagio.
+        Fetch the most recent run of an article for a stage.
 
         Args:
             article_id: article.
-            stage: Estagio da execucao.
+            stage: run stage.
 
         Returns:
-            ExtractionRun mais recente or None.
+            The most recent ExtractionRun, or None.
         """
         result = await self.db.execute(
             select(ExtractionRun)
@@ -298,15 +298,15 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         limit: int = 50,
     ) -> list[ExtractionRun]:
         """
-        List execucoes de um project.
+        List runs of a project.
 
         Args:
             project_id: project.
-            status: Filtro por status (optional).
-            limit: Limite de resultados.
+            status: filter by status (optional).
+            limit: result limit.
 
         Returns:
-            List de execucoes.
+            List of runs.
         """
         query = select(ExtractionRun).where(ExtractionRun.project_id == project_id)
 
