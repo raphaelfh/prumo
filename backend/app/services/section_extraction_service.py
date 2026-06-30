@@ -22,7 +22,12 @@ from app.core.config import settings
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.llm.entailment import GateSpec, run_entailment_gate
-from app.llm.extractor import LlmUsage, extract_structured
+from app.llm.extractor import (
+    LLM_TEMPERATURE,
+    OUTPUT_RETRIES_DEFAULT,
+    LlmUsage,
+    extract_structured,
+)
 from app.llm.prompts import quality_assessment, section_extraction
 from app.llm.provider import MissingLLMKeyError, build_model
 from app.llm.schema import build_output_models, dump_extraction
@@ -138,6 +143,49 @@ class SectionExtractionService(LoggerMixin):
         # reused by _create_suggestions for evidence anchoring (no second fetch).
         self._run_anchor_blocks: list = []
         self._run_anchor_file_id: UUID | None = None
+        # Run provenance snapshot, set by _extract_with_llm and merged into the
+        # run's results at completion (how the suggestions were generated).
+        self._run_provenance: dict[str, Any] | None = None
+
+    def _build_run_provenance(
+        self,
+        *,
+        model: str,
+        prompt_name: str,
+        prompt_version: str,
+        prompt_text: str,
+    ) -> dict[str, Any]:
+        """Flat snapshot of how a run's suggestions were generated, for
+        transparency/traceability. Params come from the single-source extractor
+        constants so they can't drift from what was actually sent."""
+        return {
+            "ran_by_user_id": self.user_id,
+            "provider": settings.LLM_PROVIDER,
+            "model": model,
+            "strategy": prompt_name,
+            "prompt_version": prompt_version,
+            "prompt_text": prompt_text,
+            "params": {
+                "temperature": LLM_TEMPERATURE,
+                "output_retries": OUTPUT_RETRIES_DEFAULT,
+                "timeout_seconds": settings.LLM_TIMEOUT_SECONDS,
+            },
+        }
+
+    def _provenance_with_tokens(self, usage: LlmUsage) -> dict[str, Any] | None:
+        """The run provenance snapshot plus this run's token usage, or None when
+        no LLM extraction ran. Stored on the suggestion-owning run so the review
+        UI can show how each suggestion was generated."""
+        if self._run_provenance is None:
+            return None
+        return {
+            **self._run_provenance,
+            "tokens": {
+                "prompt": usage.prompt_tokens,
+                "completion": usage.completion_tokens,
+                "total": usage.total_tokens,
+            },
+        }
 
     async def _assemble_prompt_text(self, article_id: UUID, model: str) -> str:
         """Budgeted block-markdown prompt input; stashes run anchor blocks on self."""
@@ -289,6 +337,7 @@ class SectionExtractionService(LoggerMixin):
                         "duration_ms": duration,
                         "fields_extracted": len(extracted_data) if extracted_data else 0,
                         "phase_durations_ms": phase_durations_ms,
+                        "provenance": self._provenance_with_tokens(llm_usage),
                     },
                 )
                 phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
@@ -991,6 +1040,7 @@ class SectionExtractionService(LoggerMixin):
                     "summary": summary,
                     "duration_ms": (perf_counter() - section_start) * 1000,
                     "phase_durations_ms": section_phase_durations_ms,
+                    "provenance": self._provenance_with_tokens(llm_usage),
                 },
             )
             section_phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
@@ -1210,6 +1260,12 @@ class SectionExtractionService(LoggerMixin):
             extracted_data.update(dump_extraction(output))
             usage = usage + call_usage
 
+        self._run_provenance = self._build_run_provenance(
+            model=model,
+            prompt_name=prompt_module.NAME,
+            prompt_version=prompt_module.VERSION,
+            prompt_text=system_prompt,
+        )
         return extracted_data, usage
 
     async def _create_suggestions(
@@ -1331,13 +1387,6 @@ class SectionExtractionService(LoggerMixin):
         # the LLM is stored as a real extraction_evidence row linked to
         # the proposal via proposal_record_id.
         for field_name, value in extracted_data.items():
-            if value is None:
-                continue
-
-            # Abstention: skip fields the LLM could not resolve.
-            if isinstance(value, dict) and value.get("status") in ("not_found", "ambiguous"):
-                continue
-
             field_id = field_map.get(field_name)
             if not field_id:
                 self.logger.warning(
@@ -1347,6 +1396,14 @@ class SectionExtractionService(LoggerMixin):
                     available_fields=list(field_map.keys()),
                 )
                 continue
+
+            # "No information found": a bare None or a structured abstention
+            # (status not_found / ambiguous). Record it as a first-class proposal
+            # (value=None) so the run's outcome is traceable to the reviewer,
+            # instead of silently dropping the field.
+            is_no_info = value is None or (
+                isinstance(value, dict) and value.get("status") in ("not_found", "ambiguous")
+            )
 
             confidence_score: float | None = None
             reasoning: str | None = None
@@ -1359,6 +1416,15 @@ class SectionExtractionService(LoggerMixin):
             else:
                 raw_evidence = None
                 inner_value = value
+
+            if is_no_info:
+                # The no-info value is null — never wrap the status dict. Drop
+                # the abstention confidence (a not_found 0.0 reads as a
+                # misleading 0% on the card) and there is no evidence; keep the
+                # "why not found" reasoning.
+                inner_value = None
+                raw_evidence = None
+                confidence_score = None
 
             # Build evidence_items list (cap at EVIDENCE_CAP).
             # Supports both the new list shape (P1) and the legacy single-dict
@@ -1421,18 +1487,24 @@ class SectionExtractionService(LoggerMixin):
                 )
                 self.db.add(ev_row)
 
-                # Queue for entailment gate: found fields with evidence only.
+                # Queue for entailment gate: found fields with ANCHORED evidence only.
                 if isinstance(value, dict) and value.get("status") == "found" and quote:
-                    _gate_specs.append(
-                        GateSpec(
-                            field_label=field_label_map.get(field_name, field_name),
-                            value_str=str(inner_value),
-                            quote=quote,
-                            pos=pos,
-                            anchor_blocks=_anchor_blocks,
+                    if pos is not None:
+                        _gate_specs.append(
+                            GateSpec(
+                                field_label=field_label_map.get(field_name, field_name),
+                                value_str=str(inner_value),
+                                quote=quote,
+                                pos=pos,
+                                anchor_blocks=_anchor_blocks,
+                            )
                         )
-                    )
-                    _gate_rows.append(ev_row)
+                        _gate_rows.append(ev_row)
+                    else:
+                        # No text anchor → cannot ground the value in the document
+                        # (e.g. the value appears only in a figure). Flag for human
+                        # verification instead of judging an unanchored quote.
+                        ev_row.attribution_label = "ungroundable"
 
             count += 1
 

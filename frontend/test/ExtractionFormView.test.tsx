@@ -164,6 +164,7 @@ function baseProps(overrides: Partial<any> = {}) {
     updateValue: vi.fn(),
     aiSuggestions: {},
     acceptSuggestion: vi.fn(),
+    selectSuggestion: vi.fn(),
     rejectSuggestion: vi.fn(),
     models: [],
     activeModelId: null,
@@ -481,6 +482,7 @@ describe('ExtractionFormView → showPDF collapses the section rail', () => {
     const stableHandlers = {
       updateValue: vi.fn(),
       acceptSuggestion: vi.fn(),
+      selectSuggestion: vi.fn(),
       rejectSuggestion: vi.fn(),
       setActiveModelId: vi.fn(),
       onAddModel: vi.fn(),

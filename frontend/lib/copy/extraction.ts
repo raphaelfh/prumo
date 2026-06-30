@@ -446,8 +446,7 @@ export const extraction = {
     tableInDevelopment: 'In development',
     tableClearSelection: 'Clear selection',
     // AI suggestion history popover
-    historyExtractionRun: 'Extraction',
-    historyProcessing: 'Processing…',
+    historyCurrentRun: 'Current',
     // AISuggestionHistoryPopover
     historyInvalidDate: 'Invalid date',
     historySuggestionsTitle: 'Suggestion history',
@@ -844,13 +843,45 @@ export const extraction = {
     // AISuggestionDetailsPopover – header + sections
     aiSuggestionDetailsTitle: 'Suggestion details',
     aiRationaleLabel: 'Rationale',
+    // AISuggestionConfidence
+    aiConfidenceTooltip: 'AI suggestion confidence level',
+    // AISuggestionReviewPopover – unified version review + selection
+    reviewTitle: 'Review suggestion',
+    reviewVersionsCount: '{{n}} version(s)',
+    reviewNoVersions: 'No AI versions yet',
+    reviewSelected: 'Selected',
+    reviewUseThisVersion: 'Use this version',
+    reviewNoInformation: 'No information found',
+    reviewNoInformationDesc: 'The model reported no information for this field in the document.',
+    reviewLowConfidence: 'low',
+    reviewClear: 'Clear',
+    reviewClearHint: 'Each selection is recorded with who chose it and when.',
+    reviewDetails: 'Details',
+    // RunProvenanceDisclosure – "how this was generated" (transparency)
+    provenanceToggle: 'How this was generated',
+    provenanceRanBy: 'Ran by',
+    provenanceProvider: 'Provider',
+    provenanceModel: 'Model',
+    provenanceReasoning: 'Reasoning',
+    provenanceTemperature: 'Temperature',
+    provenanceOutputRetries: 'Output retries',
+    provenanceTimeout: 'Timeout',
+    provenanceTokens: 'Tokens',
+    provenanceStrategy: 'Strategy',
+    provenancePromptVersion: 'Prompt version',
+    provenancePromptSent: 'Prompt sent',
+    provenanceTokensSummary: '{{n}} tokens',
+    provenanceCopyPrompt: 'Copy prompt',
+    provenanceCopied: 'Copied!',
     // AISuggestionEvidence – markdown-first citation locate
     evidenceLocate: 'Locate in document',
+    evidenceLocatedInReader: 'Highlighted in the reader',
     // AISuggestionEvidence – multi-citation list + attribution badges
     evidenceAlsoCited: 'Also cited ({{n}})',
     attributionEntailed: 'Verified',
     attributionWeak: 'Weak match',
     attributionUnsupported: 'Not supported',
+    attributionUngroundable: 'Verify manually',
     // useExtractionJob async polling toasts
     extractionJobFailedTitle: 'AI extraction failed',
     extractionJobCancelledTitle: 'AI extraction cancelled',

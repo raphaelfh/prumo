@@ -34,4 +34,23 @@ describe('selectDirtyEntries', () => {
     const baseline = { i1_f1: { value: 'v' } };
     expect(selectDirtyEntries(values, {}, baseline)).toEqual([]);
   });
+
+  // R7: a "no information" AI proposal hydrates the QA form to null for that
+  // coord AND seeds the autosave baseline from the same loaded values. On mount,
+  // current === baseline === null, so it must NOT echo back a spurious `human`
+  // proposal (which would pollute the audit trail + falsely mark the field
+  // human-handled). null-in-both is not dirty.
+  it('does not echo a hydrated no-info null on mount (R7)', () => {
+    const values = { i1_f1: null };
+    const baseline = { i1_f1: null };
+    expect(selectDirtyEntries(values, {}, baseline)).toEqual([]);
+  });
+
+  it('still marks a newer abstention dirty when it blanks a previously-found value', () => {
+    // baseline holds a found value; the user (or a newer no-info selection)
+    // clears it → null differs from baseline → a deliberate clear is persisted.
+    const values = { i1_f1: null };
+    const baseline = { i1_f1: 'Retrospective cohort' };
+    expect(selectDirtyEntries(values, {}, baseline)).toEqual([['i1_f1', null]]);
+  });
 });

@@ -241,11 +241,13 @@ async def test_legacy_single_dict(
 
 
 @pytest.mark.asyncio
-async def test_abstention_no_rows(
+async def test_abstention_records_no_info_proposal(
     db_session_real: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A not_found field writes 0 evidence rows and 0 proposals."""
+    """A not_found field records ONE no-info proposal (value=None, no
+    confidence) with 0 evidence rows — the abstention is now a first-class,
+    traceable outcome instead of a silent drop."""
 
     async def _stub_gate(**_kwargs: Any) -> str:
         return "entailed"
@@ -294,9 +296,25 @@ async def test_abstention_no_rows(
         )
     ).scalar()
 
-    assert count == 0, f"Expected 0 proposals for not_found, got {count}"
+    assert count == 1, f"Expected 1 no-info proposal for not_found, got {count}"
     assert evidence_count == 0, f"Expected 0 evidence rows, got {evidence_count}"
-    assert proposal_count == 0, f"Expected 0 proposal records, got {proposal_count}"
+    assert proposal_count == 1, f"Expected 1 no-info proposal record, got {proposal_count}"
+
+    proposed = (
+        await db_session_real.execute(
+            text(
+                "SELECT proposed_value, confidence_score, rationale "
+                "FROM public.extraction_proposal_records WHERE run_id = :rid"
+            ),
+            {"rid": str(run.id)},
+        )
+    ).first()
+    assert proposed is not None
+    # The inner value is null (never the status dict); confidence dropped (a
+    # not_found 0.0 reads as a misleading 0%); the "why not found" reasoning kept.
+    assert proposed.proposed_value == {"value": None}
+    assert proposed.confidence_score is None
+    assert proposed.rationale == "Not mentioned."
 
     await _cleanup_runs(db_session_real, [str(run.id)])
 
@@ -369,5 +387,69 @@ async def test_caps_at_three(
     assert rows[0].text_content == _QUOTE_A
     assert rows[1].text_content == _QUOTE_B
     assert rows[2].text_content == _QUOTE_C
+
+    await _cleanup_runs(db_session_real, [str(run.id)])
+
+
+@pytest.mark.asyncio
+async def test_unanchored_evidence_is_ungroundable(
+    db_session_real: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Evidence whose quote does not anchor to any block gets label 'ungroundable'.
+
+    The gate must NOT be called for an unanchored row — if it were, the label
+    would be 'entailed' (or None), not 'ungroundable'.
+    """
+
+    async def _gate_must_not_be_called(_specs: Any, *_a: Any, **_kw: Any) -> list[Any]:
+        raise AssertionError("run_entailment_gate must not be called for unanchored evidence")
+
+    monkeypatch.setattr(ses, "run_entailment_gate", _gate_must_not_be_called)
+    monkeypatch.setattr(ses, "build_model", lambda *_a, **_kw: MagicMock())
+
+    run = await _build_run_in_extract(db_session_real)
+
+    service = _make_service(db_session_real, trace_id="test-ungroundable")
+    # Parsed blocks contain text that does NOT include the evidence quote below.
+    service._run_anchor_blocks = _make_parsed_blocks(_QUOTE_A)
+    service._run_anchor_file_id = None
+
+    extracted_data: dict[str, Any] = {
+        "sample_size": {
+            "value": 999,
+            "confidence": 0.9,
+            "reasoning": "from a figure",
+            "evidence": [{"text": "a quote absent from the document text", "page_number": 1}],
+            "status": "found",
+        },
+    }
+
+    count = await service._create_suggestions(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        entity_type_id=SEED.primary_entity_type,
+        parent_instance_id=None,
+        extracted_data=extracted_data,
+        run=run,
+        model="gpt-4o-mini",
+    )
+    await db_session_real.flush()
+
+    rows = (
+        (
+            await db_session_real.execute(
+                select(ExtractionEvidence).where(ExtractionEvidence.run_id == run.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    assert count == 1, f"Expected 1 proposal, got {count}"
+    assert len(rows) == 1, f"Expected 1 evidence row, got {len(rows)}"
+    assert rows[0].attribution_label == "ungroundable", (
+        f"Expected 'ungroundable', got {rows[0].attribution_label!r}"
+    )
 
     await _cleanup_runs(db_session_real, [str(run.id)])

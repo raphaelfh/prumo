@@ -379,6 +379,104 @@ describe('AISuggestionService.getHistory', () => {
 });
 
 // ---------------------------------------------------------------------------
+// provenance flattening (snake_case server → camelCase RunProvenance)
+// ---------------------------------------------------------------------------
+
+describe('provenance mapping', () => {
+  const serverProvenance = {
+    ran_by_user_id: 'user-9',
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    strategy: 'section_extraction',
+    prompt_version: 'v4',
+    prompt_text: 'You are appraising…',
+    params: { temperature: 0.1, output_retries: 2, timeout_seconds: 120 },
+    tokens: { prompt: 1000, completion: 200, total: 1200 },
+  };
+
+  it('flattens nested params/tokens to camelCase on loadSuggestions items', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [makeItem({ provenance: serverProvenance })],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].provenance).toEqual({
+      ranByUserId: 'user-9',
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      strategy: 'section_extraction',
+      promptVersion: 'v4',
+      promptText: 'You are appraising…',
+      temperature: 0.1,
+      outputRetries: 2,
+      timeoutSeconds: 120,
+      tokensPrompt: 1000,
+      tokensCompletion: 200,
+      tokensTotal: 1200,
+    });
+  });
+
+  it('maps the minimal plan example (model + params.temperature + tokens.total)', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({ provenance: { model: 'x', params: { temperature: 0.1 }, tokens: { total: 10 } } }),
+      ],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].provenance).toEqual({
+      model: 'x',
+      temperature: 0.1,
+      tokensTotal: 10,
+    });
+  });
+
+  it('leaves provenance undefined when the server omits it (null)', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [makeItem({ provenance: null })],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].provenance).toBeUndefined();
+  });
+
+  it('preserves unknown top-level keys for forward-compat (rendered generically by the disclosure)', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [makeItem({ provenance: { model: 'x', futureKnob: 'xyz' } })],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].provenance).toMatchObject({
+      model: 'x',
+      futureKnob: 'xyz',
+    });
+  });
+
+  it('flattens provenance on getHistory items too', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      {
+        id: 'p-1',
+        run_id: 'run-A',
+        instance_id: 'inst-1',
+        field_id: 'f-1',
+        proposed_value: { value: 'V' },
+        confidence_score: 0.8,
+        rationale: null,
+        created_at: '2026-04-28T10:00:00Z',
+        evidence: [],
+        provenance: serverProvenance,
+      },
+    ]);
+    const result = await AISuggestionService.getHistory('art-1', 'inst-1', 'f-1');
+    expect(result[0].provenance).toMatchObject({
+      model: 'claude-sonnet-4-6',
+      temperature: 0.1,
+      tokensTotal: 1200,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // getArticleInstanceIds
 // ---------------------------------------------------------------------------
 

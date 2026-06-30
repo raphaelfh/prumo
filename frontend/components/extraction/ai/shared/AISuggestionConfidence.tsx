@@ -1,19 +1,18 @@
 /**
- * AI suggestion confidence percentage
- * Reusable shared component
+ * AI suggestion confidence percentage.
+ *
+ * A pure %-display: the rationale + cited evidence that used to open from a
+ * %-click now live in the unified review popover (opened from FieldInput's
+ * single AI trigger), so this component no longer owns a details popover.
  */
 
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
-import {AISuggestionDetailsPopover} from './AISuggestionDetailsPopover';
 import {calculateConfidencePercent} from '@/lib/ai-extraction/suggestionUtils';
+import {t} from '@/lib/copy';
 import type {AISuggestion} from '@/hooks/extraction/ai/useAISuggestions';
 
 interface AISuggestionConfidenceProps {
   suggestion: AISuggestion;
-    /** If true, opens details modal when clicking the % */
-  showDetailsOnClick?: boolean;
-    /** If true, renders only the % (for parent to use as part of modal trigger) */
-  asTriggerChild?: boolean;
   className?: string;
 }
 
@@ -22,40 +21,10 @@ const confidenceSpanClass =
 
 export function AISuggestionConfidence({
   suggestion,
-  showDetailsOnClick = true,
-  asTriggerChild = false,
-  className = "",
+  className = '',
 }: AISuggestionConfidenceProps) {
   const confidencePercent = calculateConfidencePercent(suggestion.confidence);
-  const hasReasoning = !!suggestion.reasoning?.trim();
-  const hasEvidence =
-    (suggestion.evidence?.length ?? 0) > 0 && !!suggestion.evidence?.[0]?.text?.trim();
-  const hasDetails = hasReasoning || hasEvidence;
 
-    // When used as part of trigger (value + % clickable), only render the %
-  if (asTriggerChild) {
-    return (
-      <span className={`${confidenceSpanClass} shrink-0 ${className}`}>
-        {confidencePercent}%
-      </span>
-    );
-  }
-
-    // If there are details and should show on click, use modal only on %
-  if (hasDetails && showDetailsOnClick) {
-    return (
-      <AISuggestionDetailsPopover
-        suggestion={suggestion}
-        trigger={
-          <span className={`${confidenceSpanClass} cursor-pointer hover:text-foreground ${className}`}>
-            {confidencePercent}%
-          </span>
-        }
-      />
-    );
-  }
-
-    // Otherwise, tooltip only
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -64,9 +33,8 @@ export function AISuggestionConfidence({
         </span>
       </TooltipTrigger>
       <TooltipContent>
-          <p className="text-xs">AI suggestion confidence level</p>
+        <p className="text-xs">{t('extraction', 'aiConfidenceTooltip')}</p>
       </TooltipContent>
     </Tooltip>
   );
 }
-

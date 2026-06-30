@@ -116,10 +116,18 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     queueMicrotask(() => void loadSuggestions());
   }, [articleId, enabled, loadSuggestions]);
 
-  const acceptSuggestionCore = async (instanceId: string, fieldId: string, silent: boolean): Promise<boolean> => {
+  // Shared accept body, keyed by an EXPLICIT proposal id + value. Both the
+  // quick-accept (latest pending) and the review-popover version selection
+  // funnel through here, so accept-by-id and accept-latest stay one code path.
+  const selectProposalCore = async (
+    instanceId: string,
+    fieldId: string,
+    proposalRecordId: string,
+    value: unknown,
+    confidence: number,
+    silent: boolean,
+  ): Promise<boolean> => {
     const key = getSuggestionKey(instanceId, fieldId);
-    const suggestion = suggestions[key];
-    if (!suggestion) return false;
 
     // Feedback visual imediato
     setActionLoading(prev => ({ ...prev, [key]: 'accept' }));
@@ -142,16 +150,18 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         const userResult = await getRequiredUserId();
         if (!userResult.ok) throw userResult.error;
 
-        // Accept suggestion using the service (writes ReviewerDecision
-        // with decision='accept_proposal' on a REVIEW-stage run).
+        // Accept the chosen proposal via the service (writes ReviewerDecision
+        // with decision='accept_proposal' on a REVIEW-stage run). The backend
+        // accepts any historical proposal_record_id (append-only audit trail),
+        // which is what lets the reviewer switch between versions.
         await AISuggestionService.acceptSuggestion({
-          suggestionId: suggestion.id,
+          suggestionId: proposalRecordId,
           projectId,
           articleId,
           instanceId,
           fieldId,
-          value: suggestion.value,
-          confidence: suggestion.confidence,
+          value,
+          confidence,
           reviewerId: userResult.data,
           runId,
         });
@@ -167,6 +177,13 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         const next = { ...prev };
         next[key] = {
           ...next[key],
+          // Reflect the CHOSEN version on the coord so the review popover
+          // highlights it (and the field shows its value/confidence) across
+          // close+reopen — accept-latest passes the same id/value/confidence,
+          // so this is a no-op there.
+          id: proposalRecordId,
+          value,
+          confidence,
           status: 'accepted' as const,
         };
           console.warn(`✅ Suggestion ${key} accepted - state updated to 'accepted'`);
@@ -176,7 +193,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         // Callback to fill input automatically (non-blocking)
       if (onSuggestionAccepted) {
           // Run in background so UI is not blocked
-        Promise.resolve(onSuggestionAccepted(instanceId, fieldId, suggestion.value)).catch(err => {
+        Promise.resolve(onSuggestionAccepted(instanceId, fieldId, value)).catch(err => {
           console.error('Erro no callback onSuggestionAccepted:', err);
         });
       }
@@ -195,10 +212,33 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       .finally(clearLoading);
   };
 
+  const acceptSuggestionCore = async (instanceId: string, fieldId: string, silent: boolean): Promise<boolean> => {
+    const key = getSuggestionKey(instanceId, fieldId);
+    const suggestion = suggestions[key];
+    if (!suggestion) return false;
+    // Quick-accept = select the latest pending proposal for this coord.
+    return selectProposalCore(instanceId, fieldId, suggestion.id, suggestion.value, suggestion.confidence, silent);
+  };
+
   // Public accept: surfaces its own toasts (silent=false) and keeps the
   // Promise<void> contract — only the batch path needs the success flag.
   const acceptSuggestion = async (instanceId: string, fieldId: string): Promise<void> => {
     await acceptSuggestionCore(instanceId, fieldId, false);
+  };
+
+  // Select a SPECIFIC historical version (by proposal id) and set the field to
+  // its value. Drives the review popover's "Use this version". A null value is
+  // valid — it records an explicit "no information" acknowledgement.
+  const selectSuggestion = async (
+    instanceId: string,
+    fieldId: string,
+    proposalRecordId: string,
+    value: unknown,
+    confidence: number,
+  ): Promise<void> => {
+    // The chosen version's own confidence is carried by the caller (the review
+    // popover has it per row) — don't reconstruct it from the latest coord.
+    await selectProposalCore(instanceId, fieldId, proposalRecordId, value, confidence, /* silent */ false);
   };
 
   const rejectSuggestion = async (instanceId: string, fieldId: string) => {
@@ -338,6 +378,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     suggestions,
     loading,
     acceptSuggestion,
+    selectSuggestion,
     rejectSuggestion,
     batchAccept,
     getSuggestionsHistory,

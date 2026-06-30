@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { FieldInput } from "@/components/extraction/FieldInput";
+import { SectionAIExtractButton } from "@/components/extraction/ai/shared/SectionAIExtractButton";
 import {
   ReviewerAvatarStack,
   type ReviewerAvatarEntry,
@@ -38,6 +39,11 @@ interface QASectionAccordionProps {
   values: Record<string, unknown>;
   onValueChange: (fieldId: string, value: unknown) => void;
   projectId: string;
+  /** Article + active project template + run id — for the per-domain AI extract. */
+  articleId: string;
+  templateId: string;
+  runId?: string | null;
+  onExtractionComplete?: (runId?: string) => void | Promise<void>;
   defaultOpen?: boolean;
   /**
    * Real instance id for this domain. Required for AI suggestions to
@@ -56,6 +62,13 @@ interface QASectionAccordionProps {
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void> | void;
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void> | void;
+  selectSuggestion?: (
+    instanceId: string,
+    fieldId: string,
+    proposalRecordId: string,
+    value: unknown,
+    confidence: number,
+  ) => Promise<void> | void;
   getSuggestionsHistory?: (
     instanceId: string,
     fieldId: string,
@@ -91,12 +104,17 @@ export function QASectionAccordion({
   values,
   onValueChange,
   projectId,
+  articleId,
+  templateId,
+  runId,
+  onExtractionComplete,
   defaultOpen = false,
   reviewerActivity,
   instanceId: instanceIdProp,
   aiSuggestions,
   onAcceptAI,
   onRejectAI,
+  selectSuggestion,
   getSuggestionsHistory,
   isAIActionLoading,
 }: QASectionAccordionProps) {
@@ -162,27 +180,39 @@ export function QASectionAccordion({
         value={itemValue}
         className="rounded-md border bg-card mb-3"
       >
-        <AccordionTrigger className="px-4 py-3 hover:no-underline">
-          <div className="flex flex-1 items-center justify-between gap-3 text-left">
-            <div className="flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-warning" />
-              <span className="text-sm font-semibold">{sectionLabel}</span>
-              {signaling.length > 0 ? (
-                <Badge variant="secondary" className="text-[10px]">
-                  {signaling.length} signaling{" "}
-                  {signaling.length === 1 ? "question" : "questions"}
-                </Badge>
+        <div className="flex items-center gap-1 pr-2">
+          <AccordionTrigger className="flex-1 px-4 py-3 hover:no-underline">
+            <div className="flex flex-1 items-center justify-between gap-3 text-left">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-warning" />
+                <span className="text-sm font-semibold">{sectionLabel}</span>
+                {signaling.length > 0 ? (
+                  <Badge variant="secondary" className="text-[10px]">
+                    {signaling.length} signaling{" "}
+                    {signaling.length === 1 ? "question" : "questions"}
+                  </Badge>
+                ) : null}
+              </div>
+              {domainStack.length > 0 ? (
+                <ReviewerAvatarStack
+                  reviewers={domainStack}
+                  sizeClass="size-5"
+                  testId={`qa-domain-avatars-${entityType.name}`}
+                />
               ) : null}
             </div>
-            {domainStack.length > 0 ? (
-              <ReviewerAvatarStack
-                reviewers={domainStack}
-                sizeClass="size-5"
-                testId={`qa-domain-avatars-${entityType.name}`}
-              />
-            ) : null}
-          </div>
-        </AccordionTrigger>
+          </AccordionTrigger>
+          {/* Per-domain AI extract — shared with the data-extraction screen. */}
+          <SectionAIExtractButton
+            projectId={projectId}
+            articleId={articleId}
+            templateId={templateId}
+            entityTypeId={entityType.id}
+            entityLabel={sectionLabel}
+            runId={runId}
+            onExtractionComplete={onExtractionComplete}
+          />
+        </div>
         <AccordionContent className="px-4 pb-4 pt-0">
           {entityType.description ? (
             <p className="mb-3 text-xs text-muted-foreground">
@@ -219,6 +249,7 @@ export function QASectionAccordion({
                           ? () => onRejectAI(instanceId, field.id)
                           : undefined
                       }
+                      selectSuggestion={selectSuggestion}
                       getSuggestionsHistory={getSuggestionsHistory}
                       isActionLoading={
                         isAIActionLoading
@@ -273,6 +304,7 @@ export function QASectionAccordion({
                             ? () => onRejectAI(instanceId, field.id)
                             : undefined
                         }
+                        selectSuggestion={selectSuggestion}
                         getSuggestionsHistory={getSuggestionsHistory}
                         isActionLoading={
                           isAIActionLoading

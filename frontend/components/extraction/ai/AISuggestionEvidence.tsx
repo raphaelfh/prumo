@@ -35,10 +35,15 @@ interface AISuggestionEvidenceProps {
   className?: string;
   showCopyButton?: boolean;
   /**
-   * Called with the rank of the citation the user clicked "Locate" on.
-   * When absent the locate button is not rendered (backward compatible).
+   * Called with the rank of the citation the user clicked to locate. When
+   * absent the cited passage is a plain blockquote (backward compatible).
    */
   onLocate?: (rank: number) => void;
+  /**
+   * Rank of the citation currently located in the reader, if any. The matching
+   * passage gets a persistent active ring. The popover keeps it across clicks.
+   */
+  activeRank?: number | null;
 }
 
 // =================== CITATION ROW ===================
@@ -48,9 +53,10 @@ interface CitationRowProps {
   showCopyButton: boolean;
   onLocate?: (rank: number) => void;
   isPrimary?: boolean;
+  isActive?: boolean;
 }
 
-function CitationRow({citation, showCopyButton, onLocate, isPrimary}: CitationRowProps) {
+function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: CitationRowProps) {
   const [copied, setCopied] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
 
@@ -65,7 +71,8 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary}: CitationRo
 
   const label = citation.attributionLabel;
   const isEntailed = label === 'entailed';
-  const isAmber = label === 'weak' || label === 'unsupported';
+  const isUngroundable = label === 'ungroundable';
+  const isAmber = label === 'weak' || label === 'unsupported' || isUngroundable;
 
   const badgeCopy =
     isEntailed
@@ -74,7 +81,9 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary}: CitationRo
         ? t('extraction', 'attributionWeak')
         : label === 'unsupported'
           ? t('extraction', 'attributionUnsupported')
-          : null;
+          : isUngroundable
+            ? t('extraction', 'attributionUngroundable')
+            : null;
 
   const borderClass = isEntailed
     ? 'border-l-green-500'
@@ -109,28 +118,6 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary}: CitationRo
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          {onLocate && (
-            <Tooltip delayDuration={300}>
-              <TooltipTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 w-8 p-0 hover:bg-muted"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onLocate(citation.rank);
-                  }}
-                  aria-label={t('extraction', 'evidenceLocate')}
-                >
-                  <MapPin className="h-4 w-4 text-primary" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                <p>{t('extraction', 'evidenceLocate')}</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
-
           {showCopyButton && (
             <Tooltip open={showTooltip && !copied} delayDuration={300}>
               <TooltipTrigger asChild>
@@ -162,15 +149,43 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary}: CitationRo
         </div>
       </div>
 
-      {/* Cited passage */}
-      <blockquote
-        className={cn(
-          'text-sm text-foreground/90 italic pl-3 sm:pl-5 border-l-2 whitespace-pre-wrap break-words leading-relaxed',
-          borderClass,
-        )}
-      >
-        "{citation.text}"
-      </blockquote>
+      {/* Cited passage — the jump target when locate is available. Clicking it
+          locates the passage in the reader; the popover stays open and the
+          located citation keeps an active ring. */}
+      {onLocate ? (
+        <button
+          type="button"
+          data-active-citation={isActive ? 'true' : undefined}
+          aria-label={isActive ? t('extraction', 'evidenceLocatedInReader') : t('extraction', 'evidenceLocate')}
+          onClick={(e) => {
+            e.stopPropagation();
+            onLocate(citation.rank);
+          }}
+          className={cn(
+            'group block w-full rounded-md border-l-2 py-1 pl-3 sm:pl-5 text-left transition-colors',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+            borderClass,
+            isActive ? 'bg-primary/5 ring-2 ring-primary/40' : 'hover:bg-foreground/5',
+          )}
+        >
+          <span className="block text-sm italic leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
+            "{citation.text}"
+          </span>
+          <span className="mt-1.5 inline-flex items-center gap-1 text-xs text-primary opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+            <MapPin className="h-3.5 w-3.5" aria-hidden />
+            {isActive ? t('extraction', 'evidenceLocatedInReader') : t('extraction', 'evidenceLocate')}
+          </span>
+        </button>
+      ) : (
+        <blockquote
+          className={cn(
+            'text-sm text-foreground/90 italic pl-3 sm:pl-5 border-l-2 whitespace-pre-wrap break-words leading-relaxed',
+            borderClass,
+          )}
+        >
+          "{citation.text}"
+        </blockquote>
+      )}
     </div>
   );
 }
@@ -178,7 +193,7 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary}: CitationRo
 // =================== COMPONENT ===================
 
 export function AISuggestionEvidence(props: AISuggestionEvidenceProps) {
-  const {evidence, className, showCopyButton = true, onLocate} = props;
+  const {evidence, className, showCopyButton = true, onLocate, activeRank} = props;
   const [expanded, setExpanded] = useState(false);
 
   if (evidence.length === 0) return null;
@@ -187,11 +202,12 @@ export function AISuggestionEvidence(props: AISuggestionEvidenceProps) {
   const hasExtra = rest.length > 0;
 
   return (
-    <div className={cn('flex flex-col gap-4 p-4 bg-muted/50 rounded-lg border', className)}>
+    <div className={cn('flex flex-col gap-4 p-4 bg-muted rounded-lg border', className)}>
       <CitationRow
         citation={primary}
         showCopyButton={showCopyButton}
         onLocate={onLocate}
+        isActive={activeRank != null && primary.rank === activeRank}
         isPrimary
       />
 
@@ -222,6 +238,7 @@ export function AISuggestionEvidence(props: AISuggestionEvidenceProps) {
                   citation={citation}
                   showCopyButton={showCopyButton}
                   onLocate={onLocate}
+                  isActive={activeRank != null && citation.rank === activeRank}
                 />
               ))}
             </div>

@@ -9,7 +9,7 @@ Tests cover:
 - ``block_type`` normalisation: known values pass through unchanged; unknown
   values are mapped to ``"paragraph"``.
 - ``assign_char_offsets_to_blocks``: helper sets consistent offsets.
-- ``BLOCK_TYPES`` constant: contains exactly the seven expected values.
+- ``BLOCK_TYPES`` constant: contains exactly the eight expected values.
 """
 
 import pytest
@@ -53,7 +53,7 @@ def make_block(
 
 
 class TestBlockTypes:
-    def test_contains_all_seven_values(self) -> None:
+    def test_contains_all_eight_values(self) -> None:
         expected = {
             "paragraph",
             "heading",
@@ -62,6 +62,7 @@ class TestBlockTypes:
             "figure_caption",
             "header",
             "footer",
+            "figure",
         }
         assert expected == BLOCK_TYPES
 
@@ -85,6 +86,7 @@ class TestNormalizeBlockType:
             "figure_caption",
             "header",
             "footer",
+            "figure",
         ],
     )
     def test_known_type_passes_through_unchanged(self, known_type: str) -> None:
@@ -101,7 +103,7 @@ class TestNormalizeBlockType:
         assert normalize_block_type("Paragraph") == "paragraph"
 
     def test_arbitrary_unknown_type_maps_to_paragraph(self) -> None:
-        assert normalize_block_type("figure") == "paragraph"
+        assert normalize_block_type("diagram") == "paragraph"
 
 
 # ---------------------------------------------------------------------------

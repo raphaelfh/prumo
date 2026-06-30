@@ -55,7 +55,9 @@ export function Toolbar({
         <NavigationControls />
       </div>
       <div className="flex min-w-0 items-center gap-3">
-        <ZoomControls />
+        {/* Zoom scales the PDF canvas; the reader is typography, not a page
+            surface, so there's nothing to zoom there — hide it in reader mode. */}
+        {!isReader && <ZoomControls />}
         {onSearchToggle && (
           <Button
             variant="ghost"

@@ -33,8 +33,34 @@ export interface EvidenceCitation {
   text: string;
   pageNumber?: number | null;
   blockIds: number[];
-  attributionLabel?: 'entailed' | 'weak' | 'unsupported' | null;
+  attributionLabel?: 'entailed' | 'weak' | 'unsupported' | 'ungroundable' | null;
   rank: number;
+}
+
+/**
+ * How a run's suggestions were generated — a run-level provenance snapshot
+ * (`extraction_runs.results['provenance']`) surfaced for transparency +
+ * traceability. The server payload is snake_case with nested `params`/`tokens`;
+ * `aiSuggestionService` flattens it to this camelCase shape. The open index
+ * signature keeps the disclosure forward-compatible: a new backend field shows
+ * up as a generic row without a frontend change.
+ */
+export interface RunProvenance {
+  ranByUserId?: string;
+  ranByName?: string;
+  provider?: string;
+  model?: string;
+  strategy?: string;
+  promptVersion?: string;
+  promptText?: string;
+  temperature?: number;
+  outputRetries?: number;
+  timeoutSeconds?: number;
+  tokensPrompt?: number;
+  tokensCompletion?: number;
+  tokensTotal?: number;
+  reasoning?: string;
+  [key: string]: unknown;
 }
 
 /**
@@ -53,6 +79,9 @@ export interface AISuggestion {
   timestamp: Date; // proposal created_at parsed
   /** Ordered by rank (0 = primary). Empty array when no evidence. */
   evidence?: EvidenceCitation[];
+  /** How this suggestion's run was generated. Undefined for legacy runs that
+   *  predate provenance capture. */
+  provenance?: RunProvenance;
 }
 
 /**
@@ -272,6 +301,19 @@ export interface UseAISuggestionsReturn {
   suggestions: Record<string, AISuggestion>; // key: `${instanceId}_${fieldId}`
   loading: boolean;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
+  /**
+   * Accept a SPECIFIC historical version by its proposal id (not just the
+   * latest pending). Powers the review popover's version switching. `value`
+   * may be null (an explicit "no information" selection); `confidence` is that
+   * chosen version's own confidence.
+   */
+  selectSuggestion: (
+    instanceId: string,
+    fieldId: string,
+    proposalRecordId: string,
+    value: unknown,
+    confidence: number,
+  ) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   batchAccept: (threshold?: number) => Promise<void>;
   getSuggestionsHistory: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;

@@ -11,10 +11,28 @@ from typing import Any
 from uuid import UUID
 
 from celery import Task
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
+
+# Per-task time limits (NOT global — extraction/LLM tasks legitimately run far
+# longer and must not be capped). They bound the LlamaParse SDK timeout
+# (LLAMA_PARSE_TIMEOUT_SECONDS, default 240s, applied to BOTH upload and parse,
+# so worst-case primary work is ~480s) plus the PyMuPDF fallback + DB writes,
+# with headroom — hence soft > 2x the SDK timeout.
+#   SOFT (catchable): raises SoftTimeLimitExceeded → the task marks the file
+#     parse_failed terminally (see parse_article_file_task), so a slow parse
+#     never lingers at "pending".
+#   HARD (SIGKILL): last-resort backstop for a child wedged in native code that
+#     ignored the soft signal. Celery acks + fails that task on a hard timeout
+#     (task_acks_on_failure_or_timeout defaults True) — it is NOT redelivered —
+#     so at worst that one file needs a manual re-parse.
+# Both stay well under the broker visibility_timeout (3600s) so a still-running
+# task is never redelivered (see celery_app.broker_transport_options).
+_PARSE_SOFT_TIME_LIMIT_SECONDS = 600
+_PARSE_HARD_TIME_LIMIT_SECONDS = 660
 
 
 async def _run_parse(
@@ -64,6 +82,7 @@ async def _run_parse(
         call_settings = SimpleNamespace(
             PARSER_BACKEND=backend,
             LLAMA_CLOUD_API_KEY=app_settings.LLAMA_CLOUD_API_KEY,
+            LLAMA_PARSE_TIMEOUT_SECONDS=app_settings.LLAMA_PARSE_TIMEOUT_SECONDS,
         )
         parser = create_document_parser(
             call_settings,
@@ -130,6 +149,8 @@ async def _mark_parse_failed(article_file_id: str, error_message: str) -> None:
     max_retries=3,
     default_retry_delay=60,
     rate_limit="10/m",
+    soft_time_limit=_PARSE_SOFT_TIME_LIMIT_SECONDS,
+    time_limit=_PARSE_HARD_TIME_LIMIT_SECONDS,
 )
 def parse_article_file_task(
     self: Task[Any, Any],
@@ -144,6 +165,14 @@ def parse_article_file_task(
         return run_task(
             lambda: _run_parse(article_file_id, project_id, user_id, trace_id or self.request.id)
         )
+    except SoftTimeLimitExceeded:
+        # The soft time limit fired (the parse + fallback could not finish in
+        # time). A retry would hit the same wall, so fail terminally now — mark
+        # the file parse_failed in its own committed session (the main session
+        # already rolled back) so it never lingers at "pending". Must precede
+        # the generic Exception branch (SoftTimeLimitExceeded subclasses it).
+        run_task(lambda: _mark_parse_failed(article_file_id, "parse exceeded time limit"))
+        raise
     except Exception as exc:
         if self.request.retries >= self.max_retries:
             # Terminal: the main session already rolled back, so persist the
