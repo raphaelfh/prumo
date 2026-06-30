@@ -339,12 +339,70 @@ async def test_load_suggestions_includes_run_provenance(
         caller_id=reviewer_a,
         run_id=run_id,
     )
+    # The hot load path returns the raw snapshot verbatim (no profiles join).
     assert result.suggestions[0].provenance == prov
 
     history = await get_suggestion_history(
         db_session, instance_id, field_id, article_id=SEED.primary_article
     )
-    assert history[0].provenance == prov
+    # The history (popover) path resolves the runner's display name on top of
+    # the raw snapshot — assert every raw key survives unchanged.
+    hist_prov = history[0].provenance
+    assert hist_prov is not None
+    for key, value in prov.items():
+        assert hist_prov[key] == value
+
+
+@pytest.mark.asyncio
+async def test_get_suggestion_history_resolves_ran_by_name(
+    db_session: AsyncSession,
+) -> None:
+    """The history path resolves ran_by_user_id → ran_by_name from the runner's
+    profile; the hot load path leaves the raw snapshot untouched."""
+    import json
+
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, reviewer_a, reviewer_b = built
+
+    # Pin the runner's profile name deterministically (the shared dev DB may
+    # carry a pre-existing reviewer_b row whose full_name the builder's
+    # ON CONFLICT DO UPDATE leaves untouched).
+    await db_session.execute(
+        text("UPDATE public.profiles SET full_name = :n WHERE id = :id"),
+        {"n": "Integration Reviewer B (Suggest)", "id": str(reviewer_b)},
+    )
+    prov = {
+        "model": "gpt-4o-mini",
+        "ran_by_user_id": str(reviewer_b),
+    }
+    await db_session.execute(
+        text(
+            "UPDATE extraction_runs "
+            "SET results = jsonb_set(coalesce(results, '{}'::jsonb), "
+            "'{provenance}', cast(:p as jsonb)) WHERE id = :id"
+        ),
+        {"p": json.dumps(prov), "id": str(run_id)},
+    )
+    await db_session.flush()
+
+    history = await get_suggestion_history(
+        db_session, instance_id, field_id, article_id=SEED.primary_article
+    )
+    assert history[0].provenance is not None
+    assert history[0].provenance["ran_by_name"] == "Integration Reviewer B (Suggest)"
+
+    # Hot load path must NOT inject the name (stays a single query).
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=reviewer_a,
+        run_id=run_id,
+    )
+    assert result.suggestions[0].provenance is not None
+    assert "ran_by_name" not in result.suggestions[0].provenance
 
 
 @pytest.mark.asyncio

@@ -16,6 +16,7 @@ import {Check, ChevronDown, ChevronRight, Copy} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
+import {useCopyToClipboard} from '@/hooks/useCopyToClipboard';
 import type {ExtractionCopy} from '@/lib/copy/extraction';
 import type {RunProvenance} from '@/types/ai-extraction';
 
@@ -46,10 +47,11 @@ const PROVENANCE_REGISTRY: ProvenanceFieldDef[] = [
 ];
 
 const REGISTRY_KEYS = new Set<string>(PROVENANCE_REGISTRY.map((f) => f.key as string));
-// The raw `ranByUserId` is captured as audit provenance but suppressed from the
-// generic fallback (a bare uuid is not reviewer-facing). The "Ran by" row renders
-// only when a human-readable `ranByName` is present — backend/caller name
-// resolution is a follow-up; until then the row is simply absent.
+// The raw `ranByUserId` is captured as audit provenance but never shown (a bare
+// uuid is not reviewer-facing). The human-readable "Ran by" row uses `ranByName`,
+// which the backend resolves from the runner's profile on the history path
+// (see extraction_suggestion_read_service._inject_ran_by_names) and the service
+// flattens to camelCase. Absent name → the row is simply omitted.
 const SUPPRESSED_KEYS = new Set<string>(['ranByUserId']);
 
 function isPresent(value: unknown): boolean {
@@ -73,18 +75,7 @@ function ScalarRow({label, value}: RowProps) {
 }
 
 function CodeRow({label, value}: RowProps) {
-  const [copied, setCopied] = useState(false);
-  const onCopy = () => {
-    navigator.clipboard
-      .writeText(value)
-      .then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      })
-      .catch((err: unknown) => {
-        console.error('Failed to copy prompt text:', err);
-      });
-  };
+  const {copied, copy} = useCopyToClipboard();
 
   return (
     <div className="space-y-1">
@@ -94,7 +85,7 @@ function CodeRow({label, value}: RowProps) {
           size="sm"
           variant="ghost"
           className="h-6 w-6 p-0"
-          onClick={onCopy}
+          onClick={() => copy(value)}
           aria-label={copied ? t('extraction', 'provenanceCopied') : t('extraction', 'provenanceCopyPrompt')}
         >
           {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
