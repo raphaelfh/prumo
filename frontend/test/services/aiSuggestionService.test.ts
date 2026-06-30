@@ -452,6 +452,30 @@ describe('provenance mapping', () => {
     });
   });
 
+  it('maps the backend-resolved ran_by_name to camelCase ranByName', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      {
+        id: 'p-1',
+        run_id: 'run-A',
+        instance_id: 'inst-1',
+        field_id: 'f-1',
+        proposed_value: { value: 'V' },
+        confidence_score: 0.8,
+        rationale: null,
+        created_at: '2026-04-28T10:00:00Z',
+        evidence: [],
+        provenance: { ...serverProvenance, ran_by_name: 'Raphael F.' },
+      },
+    ]);
+    const result = await AISuggestionService.getHistory('art-1', 'inst-1', 'f-1');
+    expect(result[0].provenance).toMatchObject({
+      ranByUserId: 'user-9',
+      ranByName: 'Raphael F.',
+    });
+    // never leaks the raw snake_case key into the flattened shape
+    expect(result[0].provenance).not.toHaveProperty('ran_by_name');
+  });
+
   it('flattens provenance on getHistory items too', async () => {
     (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
       {

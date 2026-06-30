@@ -27,6 +27,22 @@ describe("RunProvenanceDisclosure", () => {
     expect(screen.getByText("Temperature")).toBeInTheDocument();
   });
 
+  it("renders the resolved 'Ran by' name row", () => {
+    render(<RunProvenanceDisclosure provenance={prov} defaultOpen />);
+    expect(screen.getByText("Ran by")).toBeInTheDocument();
+    expect(screen.getByText("Raphael F.")).toBeInTheDocument();
+  });
+
+  it("omits the 'Ran by' row when no ranByName resolved (only a raw id)", () => {
+    render(
+      <RunProvenanceDisclosure
+        provenance={{ ranByUserId: "uuid-secret", model: "m" }}
+        defaultOpen
+      />,
+    );
+    expect(screen.queryByText("Ran by")).not.toBeInTheDocument();
+  });
+
   it("does not leak the raw ranByUserId as a generic row", () => {
     render(
       <RunProvenanceDisclosure
