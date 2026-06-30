@@ -11,13 +11,22 @@ import type {BackgroundJob} from '@/types/background-jobs';
 
 interface BackgroundJobsState {
   jobs: BackgroundJob[];
-  
+  /**
+   * Timestamp the user last opened the notification bell. A finished job is
+   * "unread" until then (see countUnreadJobs). Initialised to now so jobs that
+   * finished in a previous session (rehydrated from storage) don't show as
+   * unread on load. Persisted, so unread survives across reloads.
+   */
+  lastReadAt: number;
+
   // Actions
   addJob: (job: BackgroundJob) => void;
   updateJob: (jobId: string, updates: Partial<BackgroundJob>) => void;
   removeJob: (jobId: string) => void;
   clearCompletedJobs: () => void;
-  
+  /** Mark every finished job as read (clears the bell's unread badge). */
+  markAllRead: () => void;
+
   // Queries
   getJob: (jobId: string) => BackgroundJob | undefined;
   getActiveJobs: () => BackgroundJob[];
@@ -25,6 +34,19 @@ interface BackgroundJobsState {
 }
 
 const MAX_COMPLETED_JOBS = 10; // Keep only last 10 completed jobs
+
+/**
+ * Count finished (completed/failed/cancelled) jobs that finished AFTER the user
+ * last opened the bell — i.e. genuinely unread. Pure selector so the React
+ * Compiler tracks deps from the callback body (mirrors selectRecentJobs).
+ */
+export function countUnreadJobs(jobs: BackgroundJob[], lastReadAt: number): number {
+  return jobs.filter(
+    (job) =>
+      (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') &&
+      (job.completedAt ?? 0) > lastReadAt,
+  ).length;
+}
 
 /**
  * Pure selector for the notification list: active jobs first, then the most
@@ -58,6 +80,11 @@ export const useBackgroundJobs = create<BackgroundJobsState>()(
   persist(
     (set, get) => ({
       jobs: [],
+      // Date.now() at store creation: anything finished before "now" counts as
+      // already-read (so a fresh load with old persisted jobs shows no badge).
+      // On rehydrate, the persisted lastReadAt shallow-merges over this default;
+      // pre-update persisted state (no lastReadAt key) keeps this default.
+      lastReadAt: Date.now(),
 
       addJob: (job) => {
         set((state) => ({
@@ -93,6 +120,10 @@ export const useBackgroundJobs = create<BackgroundJobsState>()(
             (job) => job.status === 'running' || job.status === 'pending'
           ),
         }));
+      },
+
+      markAllRead: () => {
+        set({ lastReadAt: Date.now() });
       },
 
       getJob: (jobId) => {

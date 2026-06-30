@@ -17,6 +17,13 @@ const STAGE_TOOLTIP_KEY: Record<StageKey, 'stageExtractTooltip' | 'stageConsensu
   finalized: 'stageFinalizedTooltip',
 };
 
+const STATE_COPY: Record<StageNode['state'], 'stageStateDone' | 'stageStateCurrent' | 'stageStateUpcoming' | 'stageStateCancelled'> = {
+  done: 'stageStateDone',
+  current: 'stageStateCurrent',
+  future: 'stageStateUpcoming',
+  cancelled: 'stageStateCancelled',
+};
+
 const DOT: Record<StageNode['state'], string> = {
   done: 'text-success',
   current: 'text-info',
@@ -28,9 +35,14 @@ export function StageRail() {
   const { stage, isRevision } = useRunHeader();
   const nodes = stageNodeStates(stage);
   return (
-    <nav className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden" aria-label="Run stage">
+    // Folds as ONE unit below 40rem. Above it the rail competes proportionally
+    // with the article title for the Left track; the title (larger basis) shrinks
+    // first, and the rail clips at the track's overflow-hidden edge under heavy
+    // pressure. Stage labels collapse to dots at narrower widths (see the node
+    // label below) so any clip is of dots, not mid-word text.
+    <nav className="hidden min-w-0 shrink items-center gap-1.5 @[40rem]/headerbar:flex" aria-label="Run stage">
       {isRevision && (
-        <span className="mr-1 hidden @[48rem]/headerbar:inline-flex whitespace-nowrap rounded-md bg-ai/10 px-2 py-0.5 text-[11px] font-medium text-ai">
+        <span className="mr-1 hidden @[58rem]/headerbar:inline-flex whitespace-nowrap rounded-md bg-ai/10 px-1.5 py-0.5 text-[11px] font-medium text-ai">
           {t('runs', 'revision')}
         </span>
       )}
@@ -51,9 +63,10 @@ export function StageRail() {
             <TooltipTrigger asChild>
               <span
                 tabIndex={0}
+                aria-current={node.state === 'current' ? 'step' : undefined}
                 className={cn(
-                  'flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  node.state === 'current' && 'bg-info/10 font-medium text-foreground',
+                  'flex items-center gap-1.5 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  node.state === 'current' && 'font-medium text-foreground',
                   node.state !== 'current' && 'text-muted-foreground',
                 )}
               >
@@ -66,7 +79,14 @@ export function StageRail() {
                 ) : (
                   <Circle className={cn('h-3.5 w-3.5', DOT[node.state])} aria-hidden="true" />
                 )}
-                <span className="hidden @[48rem]/headerbar:inline">{t('runs', STAGE_COPY_KEY[node.key])}</span>
+                <span className="sr-only @[58rem]/headerbar:not-sr-only">{t('runs', STAGE_COPY_KEY[node.key])}</span>
+                {/* State (done/current/upcoming/locked/cancelled) is shown to
+                    sighted users by the icon; this sr-only suffix gives the same
+                    cue to assistive tech, completing each node's announced name. */}
+                <span className="sr-only">
+                  {', '}
+                  {t('runs', node.key === 'finalized' && node.state === 'future' ? 'stageStateLocked' : STATE_COPY[node.state])}
+                </span>
               </span>
             </TooltipTrigger>
             <TooltipContent>{t('runs', STAGE_TOOLTIP_KEY[node.key])}</TooltipContent>
