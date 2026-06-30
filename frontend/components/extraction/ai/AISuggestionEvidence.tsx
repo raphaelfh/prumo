@@ -27,6 +27,7 @@ import {useState} from 'react';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import type {ExtractionCopy} from '@/lib/copy/extraction';
+import {useCopyToClipboard} from '@/hooks/useCopyToClipboard';
 import type {EvidenceCitation} from '@/types/ai-extraction';
 
 // One source of truth mapping each attribution label to its badge copy + the
@@ -71,17 +72,8 @@ interface CitationRowProps {
 }
 
 function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: CitationRowProps) {
-  const [copied, setCopied] = useState(false);
+  const {copied, copy} = useCopyToClipboard();
   const [showTooltip, setShowTooltip] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(citation.text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }).catch((err: unknown) => {
-      console.error('Failed to copy evidence text:', err);
-    });
-  };
 
   const label = citation.attributionLabel;
   const isEntailed = label === 'entailed';
@@ -151,7 +143,7 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: 
                   className="h-8 w-8 p-0 shrink-0 hover:bg-muted"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleCopy();
+                    copy(citation.text);
                     setShowTooltip(false);
                   }}
                   onMouseEnter={() => setShowTooltip(true)}

@@ -396,7 +396,6 @@ export const extraction = {
     createValidationFramework: 'Select a framework',
     examplePlaceholder: 'e.g. Extract the total number of participants at baseline, before exclusions…',
     noDescription: 'No description',
-    historySuggestionsAria: 'Suggestion history',
     // ArticleExtractionTable (columns, filters, actions)
     tableFilterAllStatus: 'All statuses',
     tableColumnTitle: 'Title',
@@ -445,18 +444,11 @@ export const extraction = {
     tableExport: 'Export',
     tableInDevelopment: 'In development',
     tableClearSelection: 'Clear selection',
-    // AI suggestion history popover
-    historyCurrentRun: 'Current',
-    // AISuggestionHistoryPopover
+    // AISuggestionReviewPopover – invalid-timestamp fallback
     historyInvalidDate: 'Invalid date',
-    historySuggestionsTitle: 'Suggestion history',
-    historySuggestionsCount: 'suggestion(s) found',
-    historyNoSuggestions: 'No previous suggestions found',
     suggestionAccepted: 'Accepted',
     suggestionRejected: 'Rejected',
     aiAccepted: 'AI accepted',
-    acceptButton: 'Accept',
-    rejectButton: 'Reject',
     toastSuggestionAcceptedSuccess: 'Suggestion accepted successfully',
     toastSuggestionRejectedSuccess: 'Suggestion rejected',
     emptyValue: '(empty)',
@@ -836,12 +828,8 @@ export const extraction = {
     modelNameEmpty: 'Model name cannot be empty',
     modelNameMinLength: 'Model name must be at least 2 characters',
     modelNameDuplicate: 'A model with this name already exists',
-    // AISuggestionDisplay / AISuggestionDetailsPopover – evidence accessibility
-    aiEvidenceClickTitle: 'Click to view evidence',
-    aiEvidenceClickAria: 'View evidence for this suggestion',
     evidenceCitedAria: 'Cited evidence',
-    // AISuggestionDetailsPopover – header + sections
-    aiSuggestionDetailsTitle: 'Suggestion details',
+    // AISuggestionReviewPopover – rationale section label
     aiRationaleLabel: 'Rationale',
     // AISuggestionConfidence
     aiConfidenceTooltip: 'AI suggestion confidence level',

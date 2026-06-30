@@ -63,6 +63,7 @@ function mapProvenance(
     params,
     tokens,
     ran_by_user_id,
+    ran_by_name,
     prompt_version,
     prompt_text,
     ...rest
@@ -74,6 +75,10 @@ function mapProvenance(
     if (value !== undefined) out[key] = value;
   };
   assign('ranByUserId', ran_by_user_id);
+  // The backend resolves `ran_by_name` from the runner's profile on the history
+  // path; map it to camelCase so the disclosure's "Ran by" row picks it up
+  // (instead of falling through `...rest` as a raw `ran_by_name` generic row).
+  assign('ranByName', ran_by_name);
   assign('promptVersion', prompt_version);
   assign('promptText', prompt_text);
   assign('temperature', p['temperature']);
