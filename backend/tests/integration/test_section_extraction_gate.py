@@ -30,8 +30,10 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.llm.entailment as entailment_mod
+from app.core.config import settings
 from app.infrastructure.parsing.base import ParsedBlock
-from app.models.extraction import ExtractionEvidence, ExtractionRunStage
+from app.llm.extractor import LlmUsage
+from app.models.extraction import ExtractionEvidence, ExtractionRun, ExtractionRunStage
 from app.services import section_extraction_service as ses
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
@@ -86,16 +88,17 @@ def _make_anchor_block() -> ParsedBlock:
 
 
 @pytest.mark.asyncio
-async def test_evidence_gets_attribution_label_and_not_found_skipped(
+async def test_evidence_gets_attribution_label_and_not_found_recorded(
     db_session_real: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Gate labels found-field evidence; not_found field produces no proposal.
+    """Gate labels found-field evidence; not_found field records a no-info proposal.
 
     Assertions:
       (a) The "found" field's ExtractionEvidence row has
           ``attribution_label == "entailed"``.
-      (b) The "not_found" field produced NO ExtractionProposalRecord row.
+      (b) The "not_found" field records ONE no-info ExtractionProposalRecord
+          (value=None) with no evidence — the abstention is traceable, not dropped.
     """
 
     # --- stub gate_evidence to return "entailed" without any LLM call ---
@@ -187,7 +190,7 @@ async def test_evidence_gets_attribution_label_and_not_found_skipped(
     )
     await db_session_real.flush()
 
-    # assertion (b): no proposals written for not_found
+    # assertion (b): exactly one no-info proposal written for not_found, no evidence
     proposal_count = (
         await db_session_real.execute(
             text("SELECT COUNT(*) FROM public.extraction_proposal_records WHERE run_id = :rid"),
@@ -195,8 +198,18 @@ async def test_evidence_gets_attribution_label_and_not_found_skipped(
         )
     ).scalar()
 
-    assert proposal_count == 0, f"Expected 0 proposals for not_found field, got {proposal_count}"
-    assert count2 == 0
+    assert proposal_count == 1, (
+        f"Expected 1 no-info proposal for not_found field, got {proposal_count}"
+    )
+    assert count2 == 1
+
+    evidence_count2 = (
+        await db_session_real.execute(
+            text("SELECT COUNT(*) FROM public.extraction_evidence WHERE run_id = :rid"),
+            {"rid": str(run2.id)},
+        )
+    ).scalar()
+    assert evidence_count2 == 0, f"Expected 0 evidence rows for no-info, got {evidence_count2}"
 
     # --- cleanup (db_session_real commits persist) ---
     # Commit test data first so the deferred article-coherence trigger fires
@@ -207,6 +220,101 @@ async def test_evidence_gets_attribution_label_and_not_found_skipped(
     # Cascade order: evidence → proposal_records → runs (FK CASCADE handles
     # child tables under runs; explicit DELETE for evidence which references
     # proposal_records via proposal_record_id).
+    await db_session_real.execute(
+        text("DELETE FROM public.extraction_evidence WHERE run_id = ANY(:ids)"),
+        {"ids": run_ids},
+    )
+    await db_session_real.execute(
+        text("DELETE FROM public.extraction_proposal_records WHERE run_id = ANY(:ids)"),
+        {"ids": run_ids},
+    )
+    await db_session_real.execute(
+        text("DELETE FROM public.extraction_runs WHERE id = ANY(:ids)"),
+        {"ids": run_ids},
+    )
+    await db_session_real.commit()
+
+
+@pytest.mark.asyncio
+async def test_session_run_extraction_persists_provenance(
+    db_session_real: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A session-run extraction (run_id passed) persists results['provenance'].
+
+    Regression: ``extract_section`` only wrote provenance in the
+    ``manage_lifecycle`` (standalone) branch, so SESSION runs — the extraction
+    and QA screens always pass an existing ``run_id`` — had no provenance and the
+    review popover's "How this was generated" metadata never rendered. The run
+    must stay alive (EXTRACT) — the HITL session owns its lifecycle — so the
+    provenance is merged into ``results`` without completing the run.
+    """
+
+    async def _stub_gate(**_kwargs: Any) -> str:
+        return "entailed"
+
+    monkeypatch.setattr(entailment_mod, "gate_evidence", _stub_gate)
+    fake_model = MagicMock()
+    monkeypatch.setattr(ses, "build_model", lambda *_a, **_kw: fake_model)
+
+    run = await _build_run_in_extract(db_session_real)
+    service = _make_service(db_session_real)
+
+    # Stub the two IO methods extract_section calls before _create_suggestions:
+    # _assemble_prompt_text (needs a real PDF) and _extract_with_llm (real LLM).
+    async def _fake_assemble(_article_id: Any, _model: str) -> str:
+        service._run_anchor_blocks = [_make_anchor_block()]
+        service._run_anchor_file_id = None
+        return "fake prompt"
+
+    monkeypatch.setattr(service, "_assemble_prompt_text", _fake_assemble)
+
+    async def _fake_extract(**_kwargs: Any) -> tuple[dict[str, Any], LlmUsage]:
+        # Mirror the real _extract_with_llm, which builds the run provenance snapshot.
+        service._run_provenance = service._build_run_provenance(
+            model="gpt-4o-mini",
+            prompt_name="section_extraction",
+            prompt_version="1",
+            prompt_text="PROMPT TEXT",
+        )
+        data = {
+            "sample_size": {
+                "value": 142,
+                "confidence": 0.95,
+                "reasoning": "Stated in the abstract.",
+                "evidence": {"text": _EVIDENCE_QUOTE, "page_number": 1},
+                "status": "found",
+            }
+        }
+        return data, LlmUsage(prompt_tokens=100, completion_tokens=20)
+
+    monkeypatch.setattr(service, "_extract_with_llm", _fake_extract)
+
+    await service.extract_section(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        template_id=SEED.primary_template,
+        entity_type_id=SEED.primary_entity_type,
+        run_id=run.id,  # SESSION PATH — manage_lifecycle is False
+    )
+    await db_session_real.flush()
+
+    refreshed = await db_session_real.get(ExtractionRun, run.id)
+    assert refreshed is not None and refreshed.results is not None
+    assert "provenance" in refreshed.results, (
+        "session-run extraction did not persist results['provenance'] — the "
+        "review popover's 'How this was generated' metadata would be empty."
+    )
+    prov = refreshed.results["provenance"]
+    assert prov["model"] == "gpt-4o-mini"
+    assert prov["provider"] == settings.LLM_PROVIDER
+    assert prov["tokens"]["total"] == 120
+    # The session run must stay editable (NOT completed by this call).
+    assert refreshed.stage == ExtractionRunStage.EXTRACT.value
+
+    # --- cleanup ---
+    await db_session_real.commit()
+    run_ids = [str(run.id)]
     await db_session_real.execute(
         text("DELETE FROM public.extraction_evidence WHERE run_id = ANY(:ids)"),
         {"ids": run_ids},

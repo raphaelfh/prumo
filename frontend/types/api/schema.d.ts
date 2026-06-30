@@ -1061,6 +1061,10 @@ export interface components {
             proposed_value: {
                 [key: string]: unknown;
             };
+            /** Provenance */
+            provenance?: {
+                [key: string]: unknown;
+            } | null;
             /** Rationale */
             rationale: string | null;
             /**
@@ -1102,6 +1106,10 @@ export interface components {
             proposed_value: {
                 [key: string]: unknown;
             };
+            /** Provenance */
+            provenance?: {
+                [key: string]: unknown;
+            } | null;
             /** Rationale */
             rationale: string | null;
             /**

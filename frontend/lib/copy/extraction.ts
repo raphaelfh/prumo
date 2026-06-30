@@ -396,7 +396,6 @@ export const extraction = {
     createValidationFramework: 'Select a framework',
     examplePlaceholder: 'e.g. Extract the total number of participants at baseline, before exclusions…',
     noDescription: 'No description',
-    historySuggestionsAria: 'Suggestion history',
     // ArticleExtractionTable (columns, filters, actions)
     tableFilterAllStatus: 'All statuses',
     tableColumnTitle: 'Title',
@@ -445,18 +444,11 @@ export const extraction = {
     tableExport: 'Export',
     tableInDevelopment: 'In development',
     tableClearSelection: 'Clear selection',
-    // AI suggestion history popover
-    historyCurrentRun: 'Current',
-    // AISuggestionHistoryPopover
+    // AISuggestionReviewPopover – invalid-timestamp fallback
     historyInvalidDate: 'Invalid date',
-    historySuggestionsTitle: 'Suggestion history',
-    historySuggestionsCount: 'suggestion(s) found',
-    historyNoSuggestions: 'No previous suggestions found',
     suggestionAccepted: 'Accepted',
     suggestionRejected: 'Rejected',
     aiAccepted: 'AI accepted',
-    acceptButton: 'Accept',
-    rejectButton: 'Reject',
     toastSuggestionAcceptedSuccess: 'Suggestion accepted successfully',
     toastSuggestionRejectedSuccess: 'Suggestion rejected',
     emptyValue: '(empty)',
@@ -836,13 +828,40 @@ export const extraction = {
     modelNameEmpty: 'Model name cannot be empty',
     modelNameMinLength: 'Model name must be at least 2 characters',
     modelNameDuplicate: 'A model with this name already exists',
-    // AISuggestionDisplay / AISuggestionDetailsPopover – evidence accessibility
-    aiEvidenceClickTitle: 'Click to view evidence',
-    aiEvidenceClickAria: 'View evidence for this suggestion',
     evidenceCitedAria: 'Cited evidence',
-    // AISuggestionDetailsPopover – header + sections
-    aiSuggestionDetailsTitle: 'Suggestion details',
+    // AISuggestionReviewPopover – rationale section label
     aiRationaleLabel: 'Rationale',
+    // AISuggestionConfidence
+    aiConfidenceTooltip: 'AI suggestion confidence level',
+    // AISuggestionReviewPopover – unified version review + selection
+    reviewTitle: 'Review suggestion',
+    reviewVersionsCount: '{{n}} version(s)',
+    reviewNoVersions: 'No AI versions yet',
+    reviewSelected: 'Selected',
+    reviewUseThisVersion: 'Use this version',
+    reviewNoInformation: 'No information found',
+    reviewNoInformationDesc: 'The model reported no information for this field in the document.',
+    reviewLowConfidence: 'low',
+    reviewClear: 'Clear',
+    reviewClearHint: 'Each selection is recorded with who chose it and when.',
+    reviewDetails: 'Details',
+    reviewOpenFromValue: 'Open review · see other versions, evidence and provenance',
+    // RunProvenanceDisclosure – "how this was generated" (transparency)
+    provenanceToggle: 'How this was generated',
+    provenanceRanBy: 'Ran by',
+    provenanceProvider: 'Provider',
+    provenanceModel: 'Model',
+    provenanceReasoning: 'Reasoning',
+    provenanceTemperature: 'Temperature',
+    provenanceOutputRetries: 'Output retries',
+    provenanceTimeout: 'Timeout',
+    provenanceTokens: 'Tokens',
+    provenanceStrategy: 'Strategy',
+    provenancePromptVersion: 'Prompt version',
+    provenancePromptSent: 'Prompt sent',
+    provenanceTokensSummary: '{{n}} tokens',
+    provenanceCopyPrompt: 'Copy prompt',
+    provenanceCopied: 'Copied!',
     // AISuggestionEvidence – markdown-first citation locate
     evidenceLocate: 'Locate in document',
     evidenceLocatedInReader: 'Highlighted in the reader',
@@ -852,6 +871,16 @@ export const extraction = {
     attributionWeak: 'Weak match',
     attributionUnsupported: 'Not supported',
     attributionUngroundable: 'Verify manually',
+    // Attribution badge tooltips — this grades whether the CITED QUOTE supports
+    // the value, independent of the AI's confidence or its rationale.
+    attributionTooltipEntailed:
+      'The cited quote supports this value. This grades the quote — not the AI confidence or rationale.',
+    attributionTooltipWeak:
+      'The cited quote is related but does not clearly establish this value. This grades the quote, not whether the value is right — verify in the document.',
+    attributionTooltipUnsupported:
+      'The cited quote does not establish this value. This grades the quote, not the AI confidence or rationale — the value may still be correct, but verify it against the document.',
+    attributionTooltipUngroundable:
+      'The value could not be located in the document text (e.g. it appears only in a figure). Verify manually.',
     // useExtractionJob async polling toasts
     extractionJobFailedTitle: 'AI extraction failed',
     extractionJobCancelledTitle: 'AI extraction cancelled',

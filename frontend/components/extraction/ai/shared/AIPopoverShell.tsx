@@ -15,6 +15,9 @@ interface AIPopoverShellProps {
   align?: 'start' | 'center' | 'end';
   className?: string;
   children: React.ReactNode;
+  /** Optional strip pinned BELOW the scrollable body (e.g. Clear + a
+   *  traceability note). Stays reachable no matter how long the body grows. */
+  footer?: React.ReactNode;
 }
 
 export function AIPopoverShell({
@@ -24,6 +27,7 @@ export function AIPopoverShell({
   align = 'start',
   className,
   children,
+  footer,
 }: AIPopoverShellProps) {
   return (
     <PopoverContent
@@ -43,6 +47,7 @@ export function AIPopoverShell({
         </div>
       </div>
       <div className="max-h-[min(70vh,32rem)] overflow-y-auto">{children}</div>
+      {footer != null && <div className="border-t">{footer}</div>}
     </PopoverContent>
   );
 }

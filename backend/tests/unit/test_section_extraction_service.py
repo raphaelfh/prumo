@@ -1068,19 +1068,29 @@ class TestCreateSuggestions:
         assert result == 0
 
     @pytest.mark.asyncio
-    async def test_skips_none_values(self, service):
-        field_id = uuid4()
-        field = MagicMock()
-        field.id = field_id
-        field.name = "f1"
+    async def test_creates_no_info_proposal_for_none_and_abstention(self, service):
+        # "No information found" outcomes (bare None + structured abstention) must
+        # be recorded as first-class proposals (value=None) so the run is
+        # traceable — not silently dropped. Never wrap the status dict; drop the
+        # misleading not_found confidence; keep the "why not found" reasoning.
+        f1, f2 = uuid4(), uuid4()
+        field1, field2 = MagicMock(), MagicMock()
+        field1.id, field1.name = f1, "f1"
+        field2.id, field2.name = f2, "f2"
         et = MagicMock()
-        et.fields = [field]
+        et.fields = [field1, field2]
         service._entity_types.get_with_fields = AsyncMock(return_value=et)
         instance = MagicMock()
         instance.id = uuid4()
         instance.parent_instance_id = None
         service._instances.get_by_article = AsyncMock(return_value=[instance])
-        service._proposals.record_proposal = AsyncMock(return_value=MagicMock(id=uuid4()))
+        recorded: list[dict] = []
+
+        async def _rec(**kwargs):
+            recorded.append(kwargs)
+            return MagicMock(id=uuid4())
+
+        service._proposals.record_proposal = AsyncMock(side_effect=_rec)
         service.db.flush = AsyncMock()
 
         run = self._make_run()
@@ -1089,10 +1099,75 @@ class TestCreateSuggestions:
             article_id=run.article_id,
             entity_type_id=uuid4(),
             parent_instance_id=None,
-            extracted_data={"f1": None},
+            extracted_data={
+                "f1": None,
+                "f2": {
+                    "status": "not_found",
+                    "value": None,
+                    "reasoning": "not stated in the article",
+                    "confidence": 0.0,
+                    "evidence": [],
+                },
+            },
             run=run,
         )
-        assert result == 0
+        assert result == 2
+        by_field = {k["field_id"]: k for k in recorded}
+        assert by_field[f1]["proposed_value"] == {"value": None}
+        assert by_field[f1]["confidence_score"] is None
+        assert by_field[f2]["proposed_value"] == {"value": None}
+        assert by_field[f2]["confidence_score"] is None  # no misleading 0% on a no-info card
+        assert by_field[f2]["rationale"] == "not stated in the article"
+
+    def test_build_run_provenance_shape(self, service):
+        # Run provenance is a flat snapshot of how the suggestions were
+        # generated; params come from the single-source extractor constants so
+        # they can't drift from what was actually sent.
+        service.user_id = "user-123"
+        prov = service._build_run_provenance(
+            model="gpt-4o-mini",
+            prompt_name="section_extraction",
+            prompt_version="v3",
+            prompt_text="SYSTEM PROMPT TEXT",
+        )
+        assert prov["ran_by_user_id"] == "user-123"
+        assert prov["model"] == "gpt-4o-mini"
+        assert prov["strategy"] == "section_extraction"
+        assert prov["prompt_version"] == "v3"
+        assert prov["prompt_text"] == "SYSTEM PROMPT TEXT"
+        assert prov["params"]["temperature"] == 0.1
+        assert prov["params"]["output_retries"] == 2
+        assert "timeout_seconds" in prov["params"]
+        assert "provider" in prov
+
+    def test_provenance_with_tokens_merges_usage(self, service):
+        # The WRITE path that actually ships to extraction_runs.results: the
+        # snapshot merged with this run's token usage. The flow tests mock
+        # _extract_with_llm (so _run_provenance stays None and only the
+        # None-branch runs), so cover the merge branch directly here.
+        service.user_id = "user-123"
+        service._run_provenance = service._build_run_provenance(
+            model="gpt-4o-mini",
+            prompt_name="section_extraction",
+            prompt_version="v3",
+            prompt_text="SYSTEM PROMPT TEXT",
+        )
+        merged = service._provenance_with_tokens(LlmUsage(prompt_tokens=100, completion_tokens=50))
+        assert merged is not None
+        assert merged["model"] == "gpt-4o-mini"
+        assert merged["strategy"] == "section_extraction"
+        assert merged["params"]["temperature"] == 0.1
+        assert merged["ran_by_user_id"] == "user-123"
+        # tokens: prompt/completion/total (total derived by LlmUsage)
+        assert merged["tokens"] == {"prompt": 100, "completion": 50, "total": 150}
+
+    def test_provenance_with_tokens_is_none_when_no_llm_ran(self, service):
+        # No LLM extraction ran → no snapshot → no provenance stored (the
+        # branch every mocked-flow test currently exercises).
+        service._run_provenance = None
+        assert (
+            service._provenance_with_tokens(LlmUsage(prompt_tokens=1, completion_tokens=1)) is None
+        )
 
     @pytest.mark.asyncio
     async def test_skips_unknown_field_names(self, service):

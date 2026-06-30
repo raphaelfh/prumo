@@ -29,9 +29,9 @@ import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
-import {AISuggestionDisplay} from './ai/AISuggestionDisplay';
+import {AISuggestionDisplay, type AISuggestionReviewBinding} from './ai/AISuggestionDisplay';
 import {AISuggestionBadge} from './ai/AISuggestionBadge';
-import {AISuggestionHistoryPopover} from './ai/AISuggestionHistoryPopover';
+import {AISuggestionReviewPopover} from './ai/AISuggestionReviewPopover';
 import {getRelatedUnits} from '@/lib/unitConversions';
 import {extractUnit, extractValue, isEmptyValue, isValidNumber,} from '@/lib/ai-extraction/valueParser';
 import {isSuggestionPending} from '@/lib/ai-extraction/suggestionUtils';
@@ -50,6 +50,18 @@ interface FieldInputProps {
   onAcceptAI?: () => void;
   onRejectAI?: () => void;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
+  /**
+   * Select a specific AI version by proposal id (drilled verbatim from the
+   * hook; FieldInput binds the coord). Powers the review popover's version
+   * switching; a null value records an explicit "no information" selection.
+   */
+  selectSuggestion?: (
+    instanceId: string,
+    fieldId: string,
+    proposalRecordId: string,
+    value: unknown,
+    confidence: number,
+  ) => void | Promise<void>;
   isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   disabled?: boolean;
 }
@@ -57,7 +69,7 @@ interface FieldInputProps {
 // =================== COMPONENT ===================
 
 export function FieldInput(props: FieldInputProps) {
-  const { field, instanceId, value, onChange, disabled, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, isActionLoading } = props;
+  const { field, instanceId, value, onChange, disabled, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, selectSuggestion, isActionLoading } = props;
   const [validationError, setValidationError] = useState<string | null>(null);
   // Briefly highlights this field when its value was just updated (e.g. by an
   // AI extraction refresh) so the user sees what changed without having to
@@ -374,6 +386,24 @@ export function FieldInput(props: FieldInputProps) {
     aiSuggestion.status === 'rejected'
   );
 
+  // One binding for the AI review popover (its props minus `trigger`), shared by
+  // the History-icon trigger and the inline suggestion strip so the two entry
+  // points to the same coord can't drift. align='end' opens it left of the
+  // right-edge trigger, clear of the PDF/markdown viewer.
+  const reviewBinding: AISuggestionReviewBinding | undefined =
+    getSuggestionsHistory && aiSuggestion
+      ? {
+          instanceId,
+          fieldId: field.id,
+          getHistory: getSuggestionsHistory,
+          selectedProposalId: aiSuggestion.id,
+          onSelect: (proposalRecordId, selectedValue, selectedConfidence) =>
+            selectSuggestion?.(instanceId, field.id, proposalRecordId, selectedValue, selectedConfidence),
+          onClear: onRejectAI,
+          align: 'end',
+        }
+      : undefined;
+
   return (
       <div
           data-just-updated={justUpdated || undefined}
@@ -419,16 +449,15 @@ export function FieldInput(props: FieldInputProps) {
             />
           )}
 
-              {/* History button - always visible if getHistory is provided */}
-            {getSuggestionsHistory && aiSuggestion && (
+              {/* Single AI trigger: review + select past versions, see how each
+                  was generated, locate evidence, or clear. Replaces the old
+                  split history + details popovers. */}
+            {reviewBinding && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div>
-                    <AISuggestionHistoryPopover
-                      instanceId={instanceId}
-                      fieldId={field.id}
-                      currentSuggestionId={aiSuggestion.id}
-                      getHistory={getSuggestionsHistory}
+                    <AISuggestionReviewPopover
+                      {...reviewBinding}
                       trigger={
                         <Button
                           size="icon"
@@ -437,7 +466,7 @@ export function FieldInput(props: FieldInputProps) {
                             "h-7 w-7",
                             "text-muted-foreground hover:text-foreground hover:bg-muted"
                           )}
-                          title={t('extraction', 'historySuggestionsAria')}
+                          title={t('extraction', 'reviewTitle')}
                         >
                           <History className="h-4 w-4" />
                         </Button>
@@ -446,7 +475,7 @@ export function FieldInput(props: FieldInputProps) {
                   </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                    <p>Suggestion history</p>
+                    <p>{t('extraction', 'reviewTitle')}</p>
                 </TooltipContent>
               </Tooltip>
             )}
@@ -457,12 +486,12 @@ export function FieldInput(props: FieldInputProps) {
         {shouldShowSuggestion && (
           <AISuggestionDisplay
             suggestion={aiSuggestion}
-            instanceId={instanceId}
-            fieldId={field.id}
             onAccept={onAcceptAI}
             onReject={onRejectAI}
             loading={isActionLoading ? isActionLoading(instanceId, field.id) === 'accept' || isActionLoading(instanceId, field.id) === 'reject' : false}
-            getHistory={getSuggestionsHistory}
+            // Same review surface as the History icon (shared binding): clicking
+            // the inline value/confidence opens the version history + provenance.
+            review={reviewBinding}
           />
         )}
 

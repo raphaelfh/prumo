@@ -79,6 +79,16 @@ export function formatFullSuggestionValue(value: any): string {
 }
 
 /**
+ * A "no information found" outcome — the model abstained for this field. The
+ * backend records it as `{value: null}`, which the service unwraps to `''`, so
+ * null, undefined and empty-string all mean no-info. Used to render a quiet
+ * indicator instead of a misleading "(empty) · 0%" suggestion strip.
+ */
+export function isNoInfoValue(value: unknown): boolean {
+  return value === null || value === undefined || value === '';
+}
+
+/**
  * Checks if a suggestion was accepted
  *
  * @param suggestion - Suggestion to check

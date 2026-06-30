@@ -42,6 +42,7 @@ interface SectionAccordionProps {
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void>;
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
+  selectSuggestion?: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown, confidence: number) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   onAddInstance?: () => void;
@@ -191,6 +192,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       aiSuggestions={props.aiSuggestions}
                       onAcceptAI={props.onAcceptAI}
                       onRejectAI={props.onRejectAI}
+                      selectSuggestion={props.selectSuggestion}
                       getSuggestionsHistory={props.getSuggestionsHistory}
                       isActionLoading={props.isActionLoading}
                     />
@@ -229,6 +231,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       aiSuggestion={props.aiSuggestions?.[key]}
                       onAcceptAI={() => props.onAcceptAI?.(instances[0].id, field.id)}
                       onRejectAI={() => props.onRejectAI?.(instances[0].id, field.id)}
+                      selectSuggestion={props.selectSuggestion}
                       getSuggestionsHistory={props.getSuggestionsHistory}
                       isActionLoading={props.isActionLoading}
                     />

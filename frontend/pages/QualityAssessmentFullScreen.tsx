@@ -265,6 +265,7 @@ export default function QualityAssessmentFullScreen() {
   const {
     suggestions: aiSuggestions,
     acceptSuggestion: acceptAISuggestion,
+    selectSuggestion: selectAISuggestion,
     rejectSuggestion: rejectAISuggestion,
     getSuggestionsHistory: getAISuggestionsHistory,
     isActionLoading: isAIActionLoading,
@@ -771,6 +772,7 @@ export default function QualityAssessmentFullScreen() {
                     aiSuggestions={aiSuggestions}
                     onAcceptAI={acceptAISuggestion}
                     onRejectAI={rejectAISuggestion}
+                    selectSuggestion={selectAISuggestion}
                     getSuggestionsHistory={getAISuggestionsHistory}
                     isAIActionLoading={isAIActionLoading}
                   />

@@ -456,6 +456,86 @@ describe('useAISuggestions — human-proposal strategy (Quality Assessment)', ()
   });
 });
 
+describe('useAISuggestions — selectSuggestion (accept-by-proposal-id)', () => {
+  beforeEach(() => {
+    (AISuggestionService.loadSuggestions as any).mockResolvedValue({
+      suggestions: {
+        [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', {
+          confidence: 0.5,
+        }),
+      },
+      count: 1,
+    });
+  });
+
+  it('accepts the CHOSEN proposal id (not the in-state latest) and bubbles its value', async () => {
+    const onAccepted = vi.fn();
+    const { result } = renderHook(() =>
+      useAISuggestions({
+        articleId: 'art-1',
+        projectId: 'proj-1',
+        instanceIds: ['inst-1'],
+        runId: 'run-active',
+        onSuggestionAccepted: onAccepted,
+      }),
+    );
+    await waitFor(() =>
+      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
+    );
+
+    await act(async () => {
+      await result.current.selectSuggestion('inst-1', 'f-1', 'p-older', 5, 0.7);
+    });
+
+    expect(AISuggestionService.acceptSuggestion).toHaveBeenCalledTimes(1);
+    const call = (AISuggestionService.acceptSuggestion as any).mock.calls[0][0];
+    // The chosen id + the chosen version's own confidence, NOT the latest
+    // 'proposal-inst-1-f-1' / its 0.5 confidence.
+    expect(call.suggestionId).toBe('p-older');
+    expect(call.runId).toBe('run-active');
+    expect(call.value).toBe(5);
+    expect(call.confidence).toBe(0.7);
+    await waitFor(() =>
+      expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-1', 5),
+    );
+    const updated = result.current.suggestions[getSuggestionKey('inst-1', 'f-1')];
+    expect(updated.status).toBe('accepted');
+    // The coord's entry now reflects the CHOSEN version (id + value + its own
+    // confidence), so the review popover highlights the right version across
+    // close+reopen — not the newest one. (Was 'proposal-inst-1-f-1' / 'Y' / 0.5.)
+    expect(updated.id).toBe('p-older');
+    expect(updated.value).toBe(5);
+    expect(updated.confidence).toBe(0.7);
+  });
+
+  it('human-proposal strategy bubbles a (possibly null) value without a ReviewerDecision write', async () => {
+    const onAccepted = vi.fn();
+    const { result } = renderHook(() =>
+      useAISuggestions({
+        articleId: 'art-1',
+        projectId: 'proj-1',
+        instanceIds: ['inst-1'],
+        runId: 'qa-run',
+        acceptStrategy: 'human-proposal',
+        onSuggestionAccepted: onAccepted,
+      }),
+    );
+    await waitFor(() =>
+      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
+    );
+
+    await act(async () => {
+      // Selecting a "no information" version → null value, no confidence.
+      await result.current.selectSuggestion('inst-1', 'f-1', 'p-noinfo', null, 0);
+    });
+
+    expect(AISuggestionService.acceptSuggestion).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-1', null),
+    );
+  });
+});
+
 describe('useAISuggestions — getSuggestionsHistory', () => {
   it('delegates to AISuggestionService.getHistory with a sensible default limit', async () => {
     (AISuggestionService.getHistory as any).mockResolvedValueOnce([

@@ -93,40 +93,48 @@ class GateSpec:
 def _build_premise(spec: GateSpec) -> str:
     """Return the premise string for the entailment gate.
 
-    For a table-cell citation, returns just the cited cell's text (so the value
+    Locates the cited block(s) by the anchor's ``block_ids`` — the per-page
+    ``block_index`` values the quote matched (see
+    ``evidence_anchor_service.match``). This correctly handles a quote that
+    spans MORE THAN ONE block; a single-containment char-range scan finds no
+    block for such a quote and silently degrades to the bare quote, robbing the
+    judge of neighbouring context.
+
+    For a table-cell citation, returns just the cited cell(s) text (so the value
     check is cell-scoped — an adjacent cell's number must not satisfy it). For
-    prose, returns the cited block + one neighbour on each side. Falls back to
-    the raw evidence quote when the cited block cannot be located by page/char
-    range in ``anchor_blocks``.
+    prose, returns the cited block span plus one neighbour block on each side
+    (``anchor_blocks`` is in reading order). Falls back to the raw evidence
+    quote when ``block_ids`` is empty or none resolve to a block on the anchor's
+    page in ``anchor_blocks``.
     """
-    if spec.pos is not None and spec.anchor_blocks:
-        blocks_by_idx: dict[int, Any] = dict(enumerate(spec.anchor_blocks))
-        anchor_range = spec.pos.anchor.range  # PDFTextRange
-        cited_idx = next(
-            (
-                i
-                for i, b in enumerate(spec.anchor_blocks)
-                if b.page_number == anchor_range.page
-                and b.char_start <= anchor_range.char_start
-                and b.char_end >= anchor_range.char_end
-            ),
-            None,
-        )
-        if cited_idx is not None:
-            cited = blocks_by_idx[cited_idx]
-            # Table cells verify against the cell itself: "the cited cell
-            # contains the value." Including neighbour cells would let an
-            # adjacent cell's number satisfy the deterministic check.
-            if getattr(cited, "block_type", None) == "table_cell":
-                cell_text: str = cited.text
-                return cell_text
-            parts = [
-                blocks_by_idx[j].text
-                for j in (cited_idx - 1, cited_idx, cited_idx + 1)
-                if j in blocks_by_idx
-            ]
-            return "\n".join(parts)
-    return spec.quote
+    if spec.pos is None or not spec.anchor_blocks:
+        return spec.quote
+
+    anchor = spec.pos.anchor
+    block_ids = anchor.block_ids
+    if not block_ids:
+        return spec.quote
+
+    page = anchor.range.page
+    cited_positions = [
+        i
+        for i, b in enumerate(spec.anchor_blocks)
+        if b.page_number == page and b.block_index in block_ids
+    ]
+    if not cited_positions:
+        return spec.quote
+
+    # Table cells verify against the cited cell(s) only: including neighbour
+    # cells would let an adjacent cell's number satisfy the deterministic value
+    # check.
+    if all(spec.anchor_blocks[i].block_type == "table_cell" for i in cited_positions):
+        return "\n".join(spec.anchor_blocks[i].text for i in cited_positions)
+
+    # Prose: the cited block span + one neighbour block on each side
+    # (``anchor_blocks`` is in reading order).
+    lo = max(0, cited_positions[0] - 1)
+    hi = min(len(spec.anchor_blocks) - 1, cited_positions[-1] + 1)
+    return "\n".join(spec.anchor_blocks[j].text for j in range(lo, hi + 1))
 
 
 async def run_entailment_gate(

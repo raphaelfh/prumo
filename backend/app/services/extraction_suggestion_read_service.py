@@ -16,13 +16,18 @@ A test in test_suggestion_read.py pins this invariant explicitly.
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionEvidence, ExtractionInstance
+from app.models.extraction import (
+    ExtractionEvidence,
+    ExtractionInstance,
+    ExtractionRun,
+)
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,
@@ -30,6 +35,7 @@ from app.models.extraction_workflow import (
     ExtractionReviewerDecisionType,
     ExtractionReviewerState,
 )
+from app.models.user import Profile
 from app.schemas.extraction import parse_position
 from app.schemas.extraction_suggestion import (
     AISuggestionHistoryItem,
@@ -75,6 +81,82 @@ def _resolve_status(decision: str | None) -> str:
     return "accepted"
 
 
+def _is_no_info(proposed_value: Any) -> bool:
+    """True when a proposal carries no actionable value (the model abstained).
+
+    Mirrors the frontend ``isNoInfoValue``: a bare ``None``, the JSONB envelope
+    ``{"value": None}`` (the shape recorded for a "no information" outcome since
+    #443), or an empty string all mean "no information".
+    """
+    if proposed_value is None:
+        return True
+    value = proposed_value.get("value") if isinstance(proposed_value, dict) else proposed_value
+    return value is None or value == ""
+
+
+async def _load_run_provenance(
+    db: AsyncSession, run_ids: set[UUID], *, resolve_names: bool = False
+) -> dict[UUID, dict[str, Any] | None]:
+    """Fetch each run's provenance snapshot (extraction_runs.results['provenance'])
+    in one query, so suggestions can show how they were generated without an
+    N+1. Legacy runs without provenance map to None.
+
+    When ``resolve_names`` is set, each snapshot carrying a ``ran_by_user_id``
+    also gets a resolved ``ran_by_name`` (the runner's profile display name)
+    injected, so the review popover can show *who* ran the extraction without
+    the frontend joining on profiles. Off by default: only the on-demand history
+    path pays the extra profile lookup; the hot ``load_suggestions`` path stays a
+    single query.
+    """
+    if not run_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(ExtractionRun.id, ExtractionRun.results).where(ExtractionRun.id.in_(run_ids))
+        )
+    ).all()
+    prov_by_run: dict[UUID, dict[str, Any] | None] = {
+        run_id: (results or {}).get("provenance") for run_id, results in rows
+    }
+    if resolve_names:
+        await _inject_ran_by_names(db, prov_by_run)
+    return prov_by_run
+
+
+async def _inject_ran_by_names(
+    db: AsyncSession, prov_by_run: dict[UUID, dict[str, Any] | None]
+) -> None:
+    """Resolve each snapshot's ``ran_by_user_id`` to a ``ran_by_name`` in place.
+
+    One batched ``profiles`` lookup for the distinct runner ids. A snapshot
+    whose runner has no profile (or a malformed id) is left untouched — the
+    "Ran by" row stays absent rather than showing a bare uuid.
+    """
+    uuid_by_raw: dict[str, UUID] = {}
+    for prov in prov_by_run.values():
+        raw = prov.get("ran_by_user_id") if prov else None
+        if raw is None or str(raw) in uuid_by_raw:
+            continue
+        try:
+            uuid_by_raw[str(raw)] = UUID(str(raw))
+        except (ValueError, TypeError):
+            continue
+    if not uuid_by_raw:
+        return
+    rows = (
+        await db.execute(
+            select(Profile.id, Profile.full_name).where(Profile.id.in_(list(uuid_by_raw.values())))
+        )
+    ).all()
+    name_by_id = {str(pid): full_name for pid, full_name in rows if full_name}
+    for prov in prov_by_run.values():
+        if not prov:
+            continue
+        name = name_by_id.get(str(prov.get("ran_by_user_id")))
+        if name:
+            prov["ran_by_name"] = name
+
+
 async def load_suggestions(
     db: AsyncSession,
     instance_ids: list[UUID],
@@ -90,7 +172,10 @@ async def load_suggestions(
        optional run_id, ORDER BY created_at DESC.
        Scoped to article_id via JOIN on ExtractionInstance — instances that do not
        belong to the path article are silently dropped (cross-project IDOR guard).
-    2. Dedup: first-per-(instance_id, field_id) wins (desc order → latest wins).
+    2. Dedup per (instance_id, field_id): the latest proposal wins, EXCEPT a
+       later "no information" (null) proposal never buries an earlier real
+       value — the most recent value-bearing proposal is preferred, falling
+       back to the latest no-info only when no run found a value.
     3. Load evidence for the deduplicated proposal_ids.
     4. Load ExtractionReviewerState WHERE reviewer_id == caller_id (blind boundary)
        joined to ExtractionReviewerDecision via the composite FK for `.decision`.
@@ -124,14 +209,23 @@ async def load_suggestions(
     proposals = (await db.execute(proposal_stmt)).scalars().all()
 
     # --- Step 2: dedup to latest-per-(instance_id, field_id) ---
-    seen: set[tuple[UUID, UUID]] = set()
-    deduped: list[ExtractionProposalRecord] = []
+    # A later run that abstained ("no information" → proposed_value
+    # {"value": null}, recorded as a first-class proposal since #443) must NOT
+    # bury an earlier run's real value in the inline strip. Prefer the most
+    # recent proposal that carries a value; fall back to the most recent no-info
+    # proposal only when no run ever found one. The full trail (including the
+    # abstention) stays available via get_suggestion_history. ``proposals`` is
+    # ordered newest-first, so dict insertion order keeps the latest per coord.
+    chosen: dict[tuple[UUID, UUID], ExtractionProposalRecord] = {}
     for p in proposals:
         key = (p.instance_id, p.field_id)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(p)
+        existing = chosen.get(key)
+        if existing is None:
+            chosen[key] = p
+        elif _is_no_info(existing.proposed_value) and not _is_no_info(p.proposed_value):
+            # The more recent pick abstained; this older one found a value → use it.
+            chosen[key] = p
+    deduped = list(chosen.values())
 
     if not deduped:
         return AISuggestionsResponse(suggestions=[], count=0)
@@ -189,6 +283,7 @@ async def load_suggestions(
 
     # --- Step 5: build response items ---
     items: list[AISuggestionItem] = []
+    prov_by_run = await _load_run_provenance(db, {p.run_id for p in deduped})
     for p in deduped:
         evidence_list = [
             EvidenceResponse(
@@ -217,6 +312,7 @@ async def load_suggestions(
                 created_at=p.created_at,
                 evidence=evidence_list,
                 status=status,
+                provenance=prov_by_run.get(p.run_id),
             )
         )
 
@@ -286,6 +382,10 @@ async def get_suggestion_history(
         rows.sort(key=lambda e: (e.rank, str(e.id)))
 
     items: list[AISuggestionHistoryItem] = []
+    # History feeds the review popover (RunProvenanceDisclosure), the only
+    # surface that shows the "Ran by" row — resolve the runner's display name
+    # here so the frontend needs no profiles join.
+    prov_by_run = await _load_run_provenance(db, {p.run_id for p in proposals}, resolve_names=True)
     for p in proposals:
         evidence_list = [
             EvidenceResponse(
@@ -311,6 +411,7 @@ async def get_suggestion_history(
                 rationale=p.rationale,
                 created_at=p.created_at,
                 evidence=evidence_list,
+                provenance=prov_by_run.get(p.run_id),
             )
         )
 
