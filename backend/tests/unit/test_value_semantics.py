@@ -13,6 +13,7 @@ import pytest
 
 from app.services.value_semantics import (
     AbsentReason,
+    disposition_to_marker,
     is_value_empty,
     is_value_filled,
     unwrap_value_envelope,
@@ -146,3 +147,61 @@ def test_absent_reason_enum_is_the_closed_three_code_vocabulary():
         "not_applicable",
         "not_evaluated",
     }
+
+
+# --- disposition_to_marker: the single write-time normalizer (ADR-0016 P2) ---
+
+_YN_NI = ["Yes", "No", "No information"]
+_PROBAST = ["Y", "PY", "PN", "N", "NI", "NA"]
+_YN_UNCLEAR = ["Yes", "No", "Unclear"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "allowed", "expected"),
+    [
+        # full-word codes, in-domain → marker (unit sibling is dropped)
+        ({"value": "No information"}, _YN_NI, {"value": None, "absent_reason": "no_information"}),
+        (
+            {"value": "No information", "unit": None},
+            _YN_NI,
+            {"value": None, "absent_reason": "no_information"},
+        ),
+        (
+            {"value": "Not applicable"},
+            ["Yes", "No", "Not applicable"],
+            {"value": None, "absent_reason": "not_applicable"},
+        ),
+        (
+            {"value": "Not evaluated"},
+            ["Yes", "No", "Not evaluated"],
+            {"value": None, "absent_reason": "not_evaluated"},
+        ),
+        # PROBAST abbreviations, in-domain → marker
+        ({"value": "NI"}, _PROBAST, {"value": None, "absent_reason": "no_information"}),
+        ({"value": "NA"}, _PROBAST, {"value": None, "absent_reason": "not_applicable"}),
+        # bare (unenveloped) disposition string, in-domain → marker
+        ("No information", _YN_NI, {"value": None, "absent_reason": "no_information"}),
+    ],
+)
+def test_disposition_to_marker_converts_in_domain(raw, allowed, expected):
+    assert disposition_to_marker(raw, allowed) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "allowed"),
+    [
+        # substantive values are never rewritten
+        ({"value": "Unclear"}, _YN_UNCLEAR),
+        ({"value": "Retrospective cohort"}, None),
+        # already-resolved marker is left as-is
+        ({"value": None, "absent_reason": "no_information"}, _YN_NI),
+        # multiselect list carrying the code → left untouched (dispositions are scalar)
+        ({"value": ["No information"]}, _YN_NI),
+        # SECURITY: coincidental free-text "NA" (no domain) is NOT corrupted
+        ({"value": "NA"}, None),
+        # out-of-domain match (a field whose domain lacks the string) is untouched
+        ({"value": "NA"}, ["cohort", "rct"]),
+    ],
+)
+def test_disposition_to_marker_leaves_untouched(raw, allowed):
+    assert disposition_to_marker(raw, allowed) == raw
