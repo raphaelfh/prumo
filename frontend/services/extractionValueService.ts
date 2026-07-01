@@ -15,6 +15,7 @@
  * so by the time the form opens, decisions can be written immediately.
  */
 import { apiClient } from '@/integrations/api';
+import { unwrapValueEnvelope } from '@/lib/extraction/valueSemantics';
 import type { RunSummaryResponse, ArticleRunRef } from '@/hooks/runs/types';
 
 export interface RunRef {
@@ -25,11 +26,9 @@ export interface RunRef {
 }
 
 export function unwrapValue(raw: unknown): unknown {
+  // One shared peel; a null/absent envelope collapses to null as before.
   if (raw === null || raw === undefined) return null;
-  if (typeof raw === 'object' && raw !== null && 'value' in raw) {
-    return (raw as { value: unknown }).value ?? null;
-  }
-  return raw;
+  return unwrapValueEnvelope(raw) ?? null;
 }
 
 export const ExtractionValueService = {

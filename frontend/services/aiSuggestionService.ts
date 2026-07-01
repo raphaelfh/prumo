@@ -20,6 +20,7 @@ import type {
 } from '@/types/ai-extraction';
 import { getSuggestionKey } from '@/types/ai-extraction';
 import { APIError } from '@/lib/ai-extraction/errors';
+import { unwrapValueEnvelope } from '@/lib/extraction/valueSemantics';
 import type { components } from '@/types/api/schema';
 
 type AISuggestionItem = components['schemas']['AISuggestionItem'];
@@ -43,9 +44,10 @@ function mapEvidenceList(
 }
 
 function unwrapValue(raw: { [key: string]: unknown } | null | undefined): unknown {
+  // One shared peel; the null/absent envelope collapses to '' as before.
+  // (Phase 1 will carry the absent_reason sibling instead of discarding it here.)
   if (raw === null || raw === undefined) return '';
-  if ('value' in raw) return raw['value'] ?? '';
-  return raw;
+  return unwrapValueEnvelope(raw) ?? '';
 }
 
 /**

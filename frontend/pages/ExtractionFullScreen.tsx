@@ -46,7 +46,7 @@ import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
 import {useAutoSaveProposals} from '@/hooks/runs';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
-import {isNoInfoValue} from '@/lib/ai-extraction/suggestionUtils';
+import {countNonAbstentionSuggestions} from '@/lib/ai-extraction/suggestionUtils';
 import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
 import {
@@ -503,7 +503,7 @@ export default function ExtractionFullScreen() {
   // recorded provenance, not something to act on, so it must not inflate the
   // header count. Memoized: this screen re-renders on every field keystroke.
   const aiPendingCount = useMemo(
-    () => Object.values(aiSuggestions).filter((s) => !isNoInfoValue(s.value)).length,
+    () => countNonAbstentionSuggestions(aiSuggestions),
     [aiSuggestions],
   );
 
