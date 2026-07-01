@@ -7,6 +7,7 @@ allowed-tools:
   - Bash(curl:*)
   - Bash(vercel:*)
   - Bash(railway:*)
+  - Bash(git rev-parse:*)
   - mcp__supabase__get_advisors
   - mcp__supabase__get_logs
   - mcp__supabase__list_migrations
@@ -21,7 +22,10 @@ User-supplied arguments: `$ARGUMENTS`
 
 You are running the **preflight deploy-readiness gate** for prumo.
 This is a **read-only** discipline: never write, never edit, never
-deploy, never commit. You only verify and report.
+deploy, never commit. You only verify and report. The single exception
+is the `--update-advisors-baseline` maintenance mode (Phase 1), which
+dispatches one subagent to rewrite the advisor baseline file and does
+nothing else — the gate orchestrator itself never writes.
 
 The output decides whether the working tree is safe to ship. Treat the
 `verification-before-completion` skill's iron law as your operating
@@ -35,9 +39,46 @@ cite.
 
 ---
 
-## Phase 1 — Parse arguments
+## Phase 1 — Parse arguments & resolve the checkout
 
-Inspect `$ARGUMENTS`. Compute two booleans:
+First resolve the checkout under test. Run:
+
+    git rev-parse --show-toplevel
+
+and call the result `PROJECT_ROOT`. This is the repo root of whatever
+checkout invoked `/preflight` — the **main checkout or any git worktree
+under `.claude/worktrees/`**. Preflight validates the code you are about
+to ship, so every local command below runs from `PROJECT_ROOT`, not a
+hard-coded path. If `git rev-parse` fails (not a repo), fall back to the
+current working directory.
+
+Now inspect `$ARGUMENTS`.
+
+**Maintenance mode.** If `--update-advisors-baseline` appears, do NOT run
+any gates. Instead dispatch exactly one `Task` sub-agent
+(`subagent_type: general-purpose`) with this prompt (substitute the
+resolved `PROJECT_ROOT`), print the one-line summary it returns, and
+STOP:
+
+```text
+Regenerate the Supabase advisor baseline for prumo. Steps:
+1. ToolSearch "select:mcp__supabase__get_advisors" (max_results 3) to load the tool.
+2. Call get_advisors type="security" (fits inline) and type="performance".
+   The performance call may exceed the token cap and be auto-saved to a
+   file — if so, the error message gives the path; read and json.load
+   that file. Both payloads have shape {"result":{"lints":[...]}}.
+3. For EVERY advisor in both sets, build fingerprint
+   f"{categories[0].lower()}:{cache_key}" using the advisor's first
+   category and its cache_key verbatim (keep spaces/commas).
+4. Read <PROJECT_ROOT>/.claude/skills/preflight/supabase-advisors.baseline
+   and keep its leading comment block (every line starting with "#").
+5. Write that comment block, followed by the deduped ascending-sorted
+   fingerprints (one per line, trailing newline), back to the same path.
+6. Return ONE line: "advisor baseline written: N fingerprints (S security,
+   P performance) -> <path>".
+```
+
+**Gate mode** (no `--update-advisors-baseline`). Compute two booleans:
 
 - `RUN_LOCAL = true` unless `--remote-only` appears.
 - `RUN_REMOTE = true` unless `--local-only` appears.
@@ -60,10 +101,12 @@ makes them parallel. For each active gate use:
 
 - `subagent_type: general-purpose`
 - `description`: short label (e.g. `"local-code preflight gate"`)
-- `prompt`: the corresponding template below, verbatim
+- `prompt`: the corresponding template below, with every `<PROJECT_ROOT>`
+  placeholder replaced by the path you resolved in Phase 1
 - `run_in_background`: false
 
-Project root for all commands: `/Users/raphael/PycharmProjects/prumo`.
+Project root for all commands: the `PROJECT_ROOT` resolved in Phase 1
+(the checkout that invoked `/preflight`).
 
 ---
 
@@ -74,7 +117,7 @@ You are the `local-code` preflight gate for prumo. READ-ONLY: do NOT
 edit, write, commit, or modify any file. You may only run commands and
 read their output.
 
-From /Users/raphael/PycharmProjects/prumo, run each command and capture
+From <PROJECT_ROOT>, run each command and capture
 the exit code plus the last 20 lines of combined stdout+stderr:
 
   1. make lint-backend
@@ -109,11 +152,14 @@ edit, write, commit, or modify any file.
 STEP 0 — preflight check the local stack:
   curl -fsS --max-time 3 http://localhost:8000/health
 
-If that does not return HTTP 200, STOP and return UNKNOWN with summary
-"local stack not running — start with `make start` first" — the e2e
-suite needs both backend and frontend up.
+If that does not return HTTP 200, STOP and return SKIPPED with summary
+"local stack down — start with `make start`" and no evidence. The e2e
+leg needs both backend and frontend up; when the stack is down this gate
+has nothing to prove, so it is skipped (non-blocking), NOT a failure.
+Do not treat a down stack as UNKNOWN — that is reserved for gates that
+crash or return untrustworthy output.
 
-Then from /Users/raphael/PycharmProjects/prumo run each command and
+Then from <PROJECT_ROOT> run each command and
 capture exit code + last 20 lines of stdout+stderr:
 
   1. make test-backend
@@ -125,7 +171,7 @@ Any non-zero exit → FAIL. All zero → PASS.
 Return ONLY the following YAML block (no prose before or after):
 
 gate: local-tests
-status: PASS | WARN | FAIL | UNKNOWN
+status: PASS | WARN | FAIL | SKIPPED | UNKNOWN
 summary: <e.g. "pytest 412/412, vitest 184/184, playwright 47/47">
 evidence: |
   <last 20 lines from the worst command — failure if any, else the slowest passing one>
@@ -141,16 +187,38 @@ Use only the Supabase MCP tools (mcp__supabase__*).
 
 Run three checks:
 
-  A. Advisors. Call get_advisors with type="security" then with
-     type="performance". For each advisor, treat severity:
-       - "ERROR" or "WARN" / "WARNING" → contributes FAIL
-       - "INFO" → contributes WARN
-       - none returned → contributes PASS
+  A. Advisors vs the checked-in baseline. Call get_advisors with
+     type="security" then type="performance" (the performance payload may
+     exceed the token cap and be auto-saved to a file — if so, read and
+     json.load that file; its path is in the error message). For every
+     advisor compute a fingerprint:
+
+       fingerprint = "<category>:<cache_key>"
+
+     where <category> is the advisor's first `categories` entry lowercased
+     ("security"/"performance") and <cache_key> is its `cache_key` verbatim
+     (keep any spaces/commas).
+
+     Read the baseline set from
+     <PROJECT_ROOT>/.claude/skills/preflight/supabase-advisors.baseline
+     (every non-blank line NOT starting with "#" is one known fingerprint).
+     Partition the live advisors:
+       - KNOWN = fingerprint present in the baseline → the pre-existing
+         backlog. These never FAIL the gate, but the presence of ≥1 KNOWN
+         advisor makes check A contribute WARN (a non-blocking "N known
+         advisors (baselined)" note). Check A is PASS only when
+         get_advisors returns zero advisors of any kind.
+       - NEW = fingerprint absent from the baseline → a real regression.
+         A NEW advisor with level "ERROR"/"WARN"/"WARNING" → contributes
+         FAIL; a NEW advisor with level "INFO" → contributes WARN.
+     No advisors returned at all → PASS. If the baseline file is missing
+     or unreadable, do NOT fail — report WARN "advisor baseline missing,
+     run /preflight --update-advisors-baseline" (nothing can be ratcheted).
 
   B. Migration drift. Call list_migrations and compare its returned
      count to the number of *.sql files under
-     /Users/raphael/PycharmProjects/prumo/supabase/migrations/
-     (you may shell out: `ls /Users/raphael/PycharmProjects/prumo/supabase/migrations/*.sql | wc -l`).
+     <PROJECT_ROOT>/supabase/migrations/
+     (you may shell out: `ls <PROJECT_ROOT>/supabase/migrations/*.sql | wc -l`).
      Mismatch → FAIL ("auth/storage migration drift"). Match → PASS.
      NOTE: this checks auth/storage migrations only — Alembic state is
      checked indirectly via the Railway gate (Railway's Dockerfile CMD
@@ -161,14 +229,16 @@ Run three checks:
      (could be benign noise). None → PASS.
 
 Aggregate: the worst status across A, B, C wins (FAIL > WARN > PASS).
+A non-empty baseline backlog therefore lands this gate at WARN (not
+FAIL) until a NEW advisor appears.
 
 Return ONLY the following YAML block:
 
 gate: remote-supabase
 status: PASS | WARN | FAIL | UNKNOWN
-summary: <e.g. "0 advisors, migrations 12=12, 0 errors in 5min">
+summary: <e.g. "0 new advisors (199 baselined), migrations 12=12, 0 errors in 5min">
 evidence: |
-  Advisors: <compact list, severity + title>
+  Advisors: <N new — list each new fingerprint + level — and M baselined>
   Migrations: <local=N, remote=N>
   Logs: <count and worst line, or "clean">
 ```
@@ -247,6 +317,9 @@ For every YAML returned by a sub-agent:
    `"no evidence attached, cannot trust"`.
 2. If a sub-agent did not return at all (timeout / crash) → record
    that gate as UNKNOWN.
+3. A `status: SKIPPED` gate is expected to carry no evidence (its
+   precondition was absent) — do NOT downgrade it to UNKNOWN. This
+   applies only to PASS.
 
 This implements the `verification-before-completion` red flag
 "Trusting agent success reports". Do not skip this phase to save time.
@@ -264,20 +337,28 @@ Print exactly this format (Markdown table):
 | remote-deploys   | <STAT>  | <one-line summary>                           |
 ```
 
-Skipped gates (because of `--local-only` / `--remote-only`) are listed
-with `STATUS = SKIPPED` and `SUMMARY = "skipped by flag"`.
+A gate is listed with `STATUS = SKIPPED` when it was excluded by a flag
+(`--local-only` / `--remote-only`, summary `"skipped by flag"`) or when a
+precondition was absent (e.g. `local-tests` with the local stack down,
+summary `"local stack down — start with make start"`). SKIPPED is always
+**non-blocking**: it never causes RED. It counts as a WARN-tier note.
 
-Then, on a fresh line, the verdict:
+Then, on a fresh line, the verdict (treat `WARN` and `SKIPPED` together
+as "notes"):
 
-- All non-skipped gates `PASS` → `## RESULT: GREEN — safe to deploy`
-- Mix of `PASS` and `WARN` (no FAIL, no UNKNOWN) →
-  `## RESULT: GREEN with N warn(s) — review warnings before deploy`
+- Every gate `PASS` (no WARN, no SKIPPED, no FAIL, no UNKNOWN) →
+  `## RESULT: GREEN — safe to deploy`
+- No `FAIL` and no `UNKNOWN`, but at least one `WARN` or `SKIPPED` →
+  `## RESULT: GREEN with N note(s) — review before deploy`
+  (N = count of WARN + SKIPPED gates; name each in the line)
 - Any `FAIL` or `UNKNOWN` →
   `## RESULT: RED — N gate(s) blocked, DO NOT deploy`
 
-Below the verdict, for every non-PASS gate, paste the gate name as a
-`### <gate-name>` header followed by that gate's full `evidence:`
-block, so the user sees the failing output without re-running.
+Below the verdict, for every gate whose status is `FAIL`, `UNKNOWN`, or
+`WARN` and that carries an `evidence:` block, paste the gate name as a
+`### <gate-name>` header followed by that gate's full `evidence:` block,
+so the user sees the relevant output without re-running. (SKIPPED gates
+have no evidence — just show them in the table.)
 
 Do NOT add commentary beyond the table, the verdict, and the
 evidence blocks. Do NOT suggest fixes. Do NOT estimate severity. The
