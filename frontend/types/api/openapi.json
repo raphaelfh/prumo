@@ -5122,6 +5122,16 @@
             ],
             "title": "Allowed Values"
           },
+          "allows_not_applicable": {
+            "default": false,
+            "title": "Allows Not Applicable",
+            "type": "boolean"
+          },
+          "allows_not_evaluated": {
+            "default": false,
+            "title": "Allows Not Evaluated",
+            "type": "boolean"
+          },
           "description": {
             "anyOf": [
               {
