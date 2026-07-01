@@ -18,9 +18,21 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from app.models.extraction import ExtractionFieldType
+from app.services.value_semantics import AbsentReason, value_absent_reason
 
 # An openpyxl-writable scalar. NEVER a dict, NEVER a list.
 ResolvedScalar = str | int | float | bool | None
+
+
+# Stable per-code labels for a coded absent_reason disposition (ADR-0016). A
+# marker resolves to one of these instead of leaking a dict-stringify into a
+# cell. Sourced from the AbsentReason enum so the codes can't drift; the Phase-4
+# export legend reuses these exact strings so cell and legend can't diverge.
+_ABSENT_REASON_LABELS: dict[str, str] = {
+    AbsentReason.NO_INFORMATION.value: "No information",
+    AbsentReason.NOT_APPLICABLE.value: "Not applicable",
+    AbsentReason.NOT_EVALUATED.value: "Not evaluated",
+}
 
 
 @runtime_checkable
@@ -44,6 +56,18 @@ def resolve_value(raw: Any, *, field: _FieldLike | None = None) -> ResolvedScala
     """
     if raw is None:
         return None
+
+    # --- coded absent_reason marker (ADR-0016) ---------------------------
+    # A resolved disposition ({"value": null, "absent_reason": <code>}) is a
+    # first-class answer, not a value. Emit its stable label BEFORE the
+    # {"value"} / {"value", "unit"} key-set branches below, so a marker never
+    # reaches the catch-all dict-stringify (which would leak
+    # "value: None; absent_reason: no_information" into a cell). Only a
+    # closed-vocabulary code counts — value_absent_reason validates it, so a
+    # garbage reason falls through and never fabricates a disposition label.
+    reason = value_absent_reason(raw)
+    if reason is not None:
+        return _ABSENT_REASON_LABELS[reason]
 
     # --- Recursive single-wrap {"value": inner} ---------------------------
     # Handles {"value": x}, double-wrapped {"value": {"value": x}}, and

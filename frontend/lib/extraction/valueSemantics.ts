@@ -18,10 +18,12 @@
  */
 
 /**
- * The closed `absent_reason` vocabulary. Phase 1 will replace this local list
- * with the generated `AbsentReason` type once the marker rides a typed API
- * response field (`frontend/types/api/schema.d.ts`); until then it is defined
- * once here, matching the backend `AbsentReason` StrEnum.
+ * The closed `absent_reason` vocabulary, defined once here (matching the backend
+ * `AbsentReason` StrEnum) and kept in lock-step with it by the shared FE/BE test
+ * vector. This is NOT hand-mirroring a *generated* type: the marker rides the
+ * untyped `dict[str, Any]` value envelope, so no `AbsentReason` symbol appears
+ * in `frontend/types/api/schema.d.ts`. A later phase that types the envelope
+ * would let this import the generated enum instead.
  */
 const ABSENT_REASON_CODES = ['no_information', 'not_applicable', 'not_evaluated'] as const;
 const ABSENT_REASON_SET = new Set<string>(ABSENT_REASON_CODES);

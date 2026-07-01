@@ -98,8 +98,56 @@ def test_boolean_without_field_is_native_bool() -> None:
 
 
 def test_no_information_sentinel_preserved() -> None:
+    # Legacy pre-migration select string (no absent_reason sibling) still
+    # resolves to its literal — the marker guard must NOT intercept it.
     assert resolve_value("No information") == "No information"
     assert resolve_value({"value": "No information"}) == "No information"
+
+
+def test_absent_reason_marker_renders_stable_label() -> None:
+    # ADR-0016: a coded disposition marker ({value: null, absent_reason: X})
+    # resolves to its stable label — NOT to a dict-stringify. Guard is pulled
+    # forward from Phase 4 so Phase-1 marker writes never leak into a cell.
+    assert resolve_value({"value": None, "absent_reason": "no_information"}) == "No information"
+    assert resolve_value({"value": None, "absent_reason": "not_applicable"}) == "Not applicable"
+    assert resolve_value({"value": None, "absent_reason": "not_evaluated"}) == "Not evaluated"
+
+
+def test_absent_reason_marker_never_dict_stringifies() -> None:
+    # The exact leak this guard prevents: without it, the {value, absent_reason}
+    # key-set matches no branch and falls to the catch-all "; ".join dict
+    # rendering → "value: None; absent_reason: no_information" in a cell.
+    out = resolve_value({"value": None, "absent_reason": "no_information"})
+    assert out == "No information"
+    assert "absent_reason" not in str(out)
+    assert not isinstance(out, dict)
+
+
+def test_absent_reason_marker_wins_over_value_keyset() -> None:
+    # Defensive: even if a marker somehow carried a non-null value, the
+    # disposition label takes precedence over the {"value"} unwrap (the branch
+    # is placed at the top of resolve_value).
+    assert resolve_value({"value": "stray", "absent_reason": "no_information"}) == "No information"
+
+
+def test_every_absent_reason_code_has_a_label() -> None:
+    # Drift guard: a new AbsentReason member without an export label would
+    # otherwise KeyError into a cell. Fail loudly here instead.
+    from app.services.exports.value_envelope import _ABSENT_REASON_LABELS
+    from app.services.value_semantics import AbsentReason
+
+    for code in AbsentReason:
+        assert code.value in _ABSENT_REASON_LABELS
+        assert isinstance(_ABSENT_REASON_LABELS[code.value], str)
+
+
+def test_out_of_vocab_absent_reason_is_not_treated_as_marker() -> None:
+    # A garbage absent_reason is not a resolution: value_absent_reason returns
+    # None, so this falls through to the catch-all (still a clean string, never
+    # a dict) — it must NOT render a fabricated disposition label.
+    out = resolve_value({"value": None, "absent_reason": "lol"})
+    assert not isinstance(out, dict)
+    assert out not in {"No information", "Not applicable", "Not evaluated"}
 
 
 def test_never_returns_dict() -> None:

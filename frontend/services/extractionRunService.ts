@@ -138,6 +138,13 @@ export interface WriteProposalParams {
   normalizedValue: unknown;
   /** When true, writes a ReviewerDecision (extraction in 'extract'); otherwise writes a human proposal. */
   useDecisionEndpoint: boolean;
+  /**
+   * ADR-0016: the coded `absent_reason` disposition to carry in the value
+   * envelope (`{value, absent_reason}`). Present only for a resolved "no
+   * information" marker; omitted (null/undefined) for every ordinary value so a
+   * legacy write never gains a spurious `absent_reason` key.
+   */
+  absentReason?: string | null;
 }
 
 /**
@@ -153,22 +160,28 @@ export interface WriteProposalParams {
 export async function writeRunFieldValue(
   params: WriteProposalParams,
 ): Promise<void> {
-  const {runId, instanceId, fieldId, normalizedValue, useDecisionEndpoint} = params;
+  const {runId, instanceId, fieldId, normalizedValue, useDecisionEndpoint, absentReason} =
+    params;
   const endpoint = useDecisionEndpoint
     ? `/api/v1/runs/${runId}/decisions`
     : `/api/v1/runs/${runId}/proposals`;
+  // Merge the disposition sibling only when present, so an ordinary value never
+  // gains a spurious `absent_reason` key (ADR-0016 write contract).
+  const valueEnvelope = absentReason
+    ? {value: normalizedValue, absent_reason: absentReason}
+    : {value: normalizedValue};
   const body = useDecisionEndpoint
     ? {
         instance_id: instanceId,
         field_id: fieldId,
         decision: 'edit' as const,
-        value: {value: normalizedValue},
+        value: valueEnvelope,
       }
     : {
         instance_id: instanceId,
         field_id: fieldId,
         source: 'human' as const,
-        proposed_value: {value: normalizedValue},
+        proposed_value: valueEnvelope,
       };
   await apiClient(endpoint, {method: 'POST', body, keepalive: true});
 }

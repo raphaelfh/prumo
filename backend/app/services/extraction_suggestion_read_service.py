@@ -197,13 +197,16 @@ async def load_suggestions(
     proposals = (await db.execute(proposal_stmt)).scalars().all()
 
     # --- Step 2: dedup to latest-per-(instance_id, field_id) ---
-    # A later run that abstained ("no information" → proposed_value
-    # {"value": null}, recorded as a first-class proposal since #443) must NOT
-    # bury an earlier run's real value in the inline strip. Prefer the most
-    # recent proposal that carries a value; fall back to the most recent no-info
-    # proposal only when no run ever found one. The full trail (including the
-    # abstention) stays available via get_suggestion_history. ``proposals`` is
-    # ordered newest-first, so dict insertion order keeps the latest per coord.
+    # Value-vs-value recency: the newest proposal that CARRIES A VALUE wins.
+    # "Carries a value" is the shared emptiness oracle (``is_value_empty``), so a
+    # coded ``no_information`` marker (ADR-0016) counts as a genuine answer and
+    # may win by recency like any real value — only a *bare* ``{"value": null}``
+    # abstention (no marker) is buryable and must NOT overwrite an earlier
+    # resolved value. So: prefer the newest non-empty proposal (real value OR
+    # marker); fall back to the newest bare-null only when no run ever resolved
+    # the coord. The full trail stays available via get_suggestion_history.
+    # ``proposals`` is ordered newest-first, so dict insertion order keeps the
+    # latest per coord.
     chosen: dict[tuple[UUID, UUID], ExtractionProposalRecord] = {}
     for p in proposals:
         key = (p.instance_id, p.field_id)
@@ -211,7 +214,8 @@ async def load_suggestions(
         if existing is None:
             chosen[key] = p
         elif is_value_empty(existing.proposed_value) and not is_value_empty(p.proposed_value):
-            # The more recent pick abstained; this older one found a value → use it.
+            # The newer pick is a bare-null abstention; this older one resolved
+            # the coord (a real value OR a coded marker) → keep the resolved one.
             chosen[key] = p
     deduped = list(chosen.values())
 
