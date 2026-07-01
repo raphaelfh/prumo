@@ -108,7 +108,9 @@ async def test_0039_backfills_dispositions_scoped_by_frozen_snapshot(
         ]
     }
     await db_session.execute(
-        text("UPDATE public.extraction_template_versions SET schema = CAST(:s AS jsonb) WHERE id = :v"),
+        text(
+            "UPDATE public.extraction_template_versions SET schema = CAST(:s AS jsonb) WHERE id = :v"
+        ),
         {"s": json.dumps(snapshot), "v": str(run.version_id)},
     )
 
