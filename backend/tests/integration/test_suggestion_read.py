@@ -658,6 +658,132 @@ async def test_load_suggestions_latest_no_info_keeps_earlier_real_value(
 
 
 @pytest.mark.asyncio
+async def test_load_suggestions_newer_marker_wins_over_older_value(
+    db_session: AsyncSession,
+) -> None:
+    """ADR-0016: a coded ``no_information`` marker is a GENUINE answer, so unlike
+    a bare-null abstention it MAY win by recency over an older real value. The
+    dedup delegates emptiness to ``is_value_empty``, which treats a marker as
+    filled — so the newest non-empty proposal (here the marker) wins. Contrast
+    with the bare-null case above, where the older real value is preserved."""
+    marker = {"value": None, "absent_reason": "no_information"}
+    instance_id = SEED.primary_instance
+    field_id = SEED.primary_field
+    manager_id = SEED.primary_profile
+
+    lifecycle = RunLifecycleService(db_session)
+    run = await lifecycle.create_run(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        project_template_id=SEED.primary_template,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+
+    proposal_svc = ExtractionProposalService(db_session)
+    older = await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": "REAL-VALUE"},
+    )
+    await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value=marker,  # the AI re-ran and now says "no information"
+    )
+    await db_session.flush()
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_proposal_records "
+            "SET created_at = created_at - interval '1 second' WHERE id = :id"
+        ),
+        {"id": str(older.id)},
+    )
+    await db_session.flush()
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=manager_id,
+        run_id=run.id,
+    )
+    assert result.count == 1
+    assert result.suggestions[0].proposed_value == marker, (
+        "A newer coded marker is a genuine answer and should win by recency — "
+        "only a bare {'value': null} is buryable."
+    )
+
+
+@pytest.mark.asyncio
+async def test_load_suggestions_newer_bare_null_does_not_bury_marker(
+    db_session: AsyncSession,
+) -> None:
+    """The mirror of the above: an earlier resolved ``no_information`` marker is
+    a genuine value, so a later *bare-null* abstention (no marker) must NOT bury
+    it — the marker is preferred exactly like a real value would be."""
+    marker = {"value": None, "absent_reason": "no_information"}
+    instance_id = SEED.primary_instance
+    field_id = SEED.primary_field
+    manager_id = SEED.primary_profile
+
+    lifecycle = RunLifecycleService(db_session)
+    run = await lifecycle.create_run(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        project_template_id=SEED.primary_template,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+
+    proposal_svc = ExtractionProposalService(db_session)
+    older = await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value=marker,
+    )
+    await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": None},  # bare-null abstention, no marker
+    )
+    await db_session.flush()
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_proposal_records "
+            "SET created_at = created_at - interval '1 second' WHERE id = :id"
+        ),
+        {"id": str(older.id)},
+    )
+    await db_session.flush()
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=manager_id,
+        run_id=run.id,
+    )
+    assert result.count == 1
+    assert result.suggestions[0].proposed_value == marker, (
+        "A later bare-null abstention buried an earlier resolved marker — the "
+        "marker is a genuine value and must be preferred."
+    )
+
+
+@pytest.mark.asyncio
 async def test_load_suggestions_all_no_info_returns_no_info(
     db_session: AsyncSession,
 ) -> None:

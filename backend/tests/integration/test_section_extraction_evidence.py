@@ -245,9 +245,10 @@ async def test_abstention_records_no_info_proposal(
     db_session_real: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A not_found field records ONE no-info proposal (value=None, no
-    confidence) with 0 evidence rows — the abstention is now a first-class,
-    traceable outcome instead of a silent drop."""
+    """A not_found field records ONE no-info proposal carrying the coded
+    ``{value:null, absent_reason:"no_information"}`` marker (ADR-0016 Phase 1),
+    no confidence, 0 evidence rows — the abstention is a first-class, resolved,
+    traceable outcome instead of a silent drop or a bare null."""
 
     async def _stub_gate(**_kwargs: Any) -> str:
         return "entailed"
@@ -310,9 +311,10 @@ async def test_abstention_records_no_info_proposal(
         )
     ).first()
     assert proposed is not None
-    # The inner value is null (never the status dict); confidence dropped (a
-    # not_found 0.0 reads as a misleading 0%); the "why not found" reasoning kept.
-    assert proposed.proposed_value == {"value": None}
+    # The inner value is null with the coded no-information marker (never the
+    # status dict); confidence dropped (a not_found 0.0 reads as a misleading
+    # 0%); the "why not found" reasoning kept.
+    assert proposed.proposed_value == {"value": None, "absent_reason": "no_information"}
     assert proposed.confidence_score is None
     assert proposed.rationale == "Not mentioned."
 

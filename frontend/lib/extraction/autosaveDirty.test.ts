@@ -53,4 +53,23 @@ describe('selectDirtyEntries', () => {
     const baseline = { i1_f1: 'Retrospective cohort' };
     expect(selectDirtyEntries(values, {}, baseline)).toEqual([['i1_f1', null]]);
   });
+
+  // R7 (ADR-0016): a resolved disposition hydrates the form to the FULL marker
+  // envelope `{value:null, absent_reason:<code>}` and seeds the baseline from the
+  // same shape. current === baseline on mount → NOT dirty (no spurious re-POST
+  // that would restripe the marker coord).
+  it('does not echo a hydrated full-envelope marker on mount (R7)', () => {
+    const marker = { value: null, absent_reason: 'no_information' };
+    const values = { i1_f1: marker };
+    const baseline = { i1_f1: marker };
+    expect(selectDirtyEntries(values, {}, baseline)).toEqual([]);
+  });
+
+  it('does not restripe a marker coord when an adjacent field is edited', () => {
+    const marker = { value: null, absent_reason: 'no_information' };
+    const values = { i1_f1: marker, i2_f2: 'edited' };
+    const baseline = { i1_f1: marker, i2_f2: 'original' };
+    // Only the adjacent coord is dirty; the untouched marker coord is preserved.
+    expect(selectDirtyEntries(values, {}, baseline)).toEqual([['i2_f2', 'edited']]);
+  });
 });

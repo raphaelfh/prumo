@@ -206,6 +206,7 @@ export function useAutoSaveProposals(
             value: actualValue,
             unit,
             isOther,
+            absentReason,
           } = extractValueForSave(valueData);
           const writeValue = isOther
             ? actualValue
@@ -229,6 +230,7 @@ export function useAutoSaveProposals(
             fieldId,
             normalizedValue: normalized,
             useDecisionEndpoint,
+            absentReason,
           }).then(() => {
             lastSavedByKeyRef.current[key] = JSON.stringify(valueData ?? null);
           });
