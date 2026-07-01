@@ -971,6 +971,8 @@ export type Database = {
           allow_other: boolean
           allowed_units: Json | null
           allowed_values: Json | null
+          allows_not_applicable: boolean
+          allows_not_evaluated: boolean
           created_at: string
           description: string | null
           entity_type_id: string
@@ -991,6 +993,8 @@ export type Database = {
           allow_other?: boolean
           allowed_units?: Json | null
           allowed_values?: Json | null
+          allows_not_applicable?: boolean
+          allows_not_evaluated?: boolean
           created_at?: string
           description?: string | null
           entity_type_id: string
@@ -1011,6 +1015,8 @@ export type Database = {
           allow_other?: boolean
           allowed_units?: Json | null
           allowed_values?: Json | null
+          allows_not_applicable?: boolean
+          allows_not_evaluated?: boolean
           created_at?: string
           description?: string | null
           entity_type_id?: string
