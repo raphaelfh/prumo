@@ -370,6 +370,17 @@ class ExtractionField(BaseModel):
     other_label: Mapped[str | None] = mapped_column(String, nullable=True)
     other_placeholder: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # Opt-in "no value, on purpose" dispositions (ADR-0016). ``no_information`` is
+    # universal (any source can be silent) so it needs no flag; these two are
+    # per-field opt-ins for signaling-question style fields (PROBAST/CHARMS) and
+    # drive the runtime FieldInput affordance + the frozen version snapshot.
+    allows_not_applicable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    allows_not_evaluated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
     # Relationships
     entity_type: Mapped["ExtractionEntityType"] = relationship(
         "ExtractionEntityType",
