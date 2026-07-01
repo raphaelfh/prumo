@@ -50,12 +50,38 @@ def test_appraisal_dataclasses_importable_and_default_none() -> None:
         (("Low", None, "High"), "High"),  # blanks ignored, High wins
         (("Critical", "Low"), "Critical"),  # unknown non-empty => most severe
         (("low", "high"), "high"),  # case-insensitive rank, label preserved
+        # --- ADR-0016 Phase 4: a coded-disposition verdict (resolved to its
+        # stable label) is EXCLUDED from the worst-case rank, never most-severe.
+        # Discriminating cases: on the pre-fix code a "No information" verdict
+        # ranked most-severe (7) and would win the Overall.
+        (("No information", "Low"), "Low"),  # marker excluded, real Low wins
+        (("Low", "No information"), "Low"),  # order-independent
+        (("No information", "High"), "High"),  # real High wins over the marker
+        (("Unclear", "No information"), "Unclear"),  # Unclear is substantive, kept
+        (("No information", "No information"), None),  # all-marker => blank Overall
+        (("No information", "Not applicable", "Not evaluated"), None),  # all 3 codes
     ],
 )
 def test_appraisal_overall_worst_case(verdicts, expected) -> None:
     from app.services.exports.extraction.appraisal_summary import _appraisal_overall
 
     assert _appraisal_overall(verdicts) == expected
+
+
+def test_disposition_marker_verdict_excluded_from_rank() -> None:
+    # ADR-0016 Phase 4: every resolved disposition label ranks -1 (ignored), from
+    # the SAME single label source resolve_value emits — so a marker verdict can
+    # never silently force a Critical/most-severe Overall. Case-insensitive; must
+    # not over-reach onto substantive risk labels.
+    from app.services.exports.extraction.appraisal_summary import _verdict_rank
+    from app.services.value_semantics import ABSENT_REASON_LABELS
+
+    for label in ABSENT_REASON_LABELS.values():
+        assert _verdict_rank(label) == -1
+        assert _verdict_rank(label.upper()) == -1  # case-insensitive
+    # Substantive risk labels still rank normally (exclusion did not over-reach).
+    assert _verdict_rank("High") > _verdict_rank("Low") >= 0
+    assert _verdict_rank("Unclear") >= 0
 
 
 def _layout_with_appraisal(appraisal, *, mode_name="consensus", reviewers=()):

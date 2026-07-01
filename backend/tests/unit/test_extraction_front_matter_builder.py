@@ -76,6 +76,28 @@ def test_front_matter_lists_contents_and_legend():
     assert "best-effort" in flat.lower()
 
 
+def test_production_legend_carries_three_disposition_rows_matching_resolve_value():
+    # ADR-0016 Phase 4: the front-matter legend must explain all THREE coded
+    # dispositions with the EXACT label resolve_value emits into a cell, so a
+    # marker cell and its legend row can never drift. The label column is derived
+    # from the single ABSENT_REASON_LABELS source (see extraction_export_service);
+    # this pins both the frozen descriptions and the cell↔legend parity.
+    from app.services.exports.value_envelope import resolve_value
+    from app.services.extraction_export_service import _FRONT_MATTER_LEGEND
+    from app.services.value_semantics import AbsentReason
+
+    legend = dict(_FRONT_MATTER_LEGEND)
+    assert legend["No information"] == "The source does not state this item."
+    assert legend["Not applicable"] == "The item does not apply to this study."
+    assert legend["Not evaluated"] == "The item was not assessed."
+    # (blank) keeps its distinct "no value / rejected" meaning.
+    assert "(blank)" in legend
+    # Anti-drift: the label resolve_value emits for every code IS a legend row.
+    for code in AbsentReason:
+        label = resolve_value({"value": None, "absent_reason": code.value})
+        assert label in legend, f"{code.value} label {label!r} missing from legend"
+
+
 def test_front_matter_renders_obsolete_fields_block():
     aid = uuid4()
     fm = _front_matter()

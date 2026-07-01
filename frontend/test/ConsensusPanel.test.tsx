@@ -195,8 +195,90 @@ describe("ConsensusPanel", () => {
     expect(screen.getByText("Domain · Field")).toBeInTheDocument();
     expect(screen.getByText("Alice")).toBeInTheDocument();
     expect(screen.getByText("Bob")).toBeInTheDocument();
-    expect(screen.getByText('"Yes"')).toBeInTheDocument();
-    expect(screen.getByText('"No"')).toBeInTheDocument();
+    // Reviewer values render bare (unquoted), consistent with the resolved-value
+    // display — the shared displayDecisionValue peels the {value} envelope.
+    expect(screen.getByText("Yes")).toBeInTheDocument();
+    expect(screen.getByText("No")).toBeInTheDocument();
+  });
+
+  it("renders coded disposition markers as distinct labels in a conflict row", () => {
+    // ADR-0016 Phase 4: two reviewers on DIFFERENT absent_reason codes must read
+    // as two legible, distinct dispositions — not two identical "null" cells.
+    const base = makeFixtures();
+    const decisions = [
+      decision({
+        id: "dec-a",
+        reviewer_id: "user-a",
+        decision: "edit",
+        value: { value: null, absent_reason: "no_information" },
+      }),
+      decision({
+        id: "dec-b",
+        reviewer_id: "user-b",
+        decision: "edit",
+        value: { value: null, absent_reason: "not_applicable" },
+      }),
+    ];
+    const runDetail = { ...base.runDetail, decisions };
+    const summary = {
+      ...base.summary,
+      decisionsByCoord: new Map([["inst-1::field-1", decisions]]),
+      currentDecisions: new Map([["inst-1::field-1", decisions[1]]]),
+    };
+    render(
+      <ConsensusPanel
+        runDetail={runDetail}
+        summary={summary}
+        requiredCoords={[]}
+        peersRevealed={true}
+        onSelectExisting={vi.fn()}
+        onManualOverride={vi.fn()}
+        onFinalize={vi.fn()}
+        showFinalize={false}
+      />,
+    );
+    expect(screen.getByText("No information")).toBeInTheDocument();
+    expect(screen.getByText("Not applicable")).toBeInTheDocument();
+    // The marker no longer collapses to a bare "null".
+    expect(screen.queryByText("null")).not.toBeInTheDocument();
+  });
+
+  it("renders a marker-vs-value divergence legibly", () => {
+    const base = makeFixtures();
+    const decisions = [
+      decision({
+        id: "dec-a",
+        reviewer_id: "user-a",
+        decision: "edit",
+        value: { value: null, absent_reason: "no_information" },
+      }),
+      decision({
+        id: "dec-b",
+        reviewer_id: "user-b",
+        decision: "edit",
+        value: { value: "Yes" },
+      }),
+    ];
+    const runDetail = { ...base.runDetail, decisions };
+    const summary = {
+      ...base.summary,
+      decisionsByCoord: new Map([["inst-1::field-1", decisions]]),
+      currentDecisions: new Map([["inst-1::field-1", decisions[1]]]),
+    };
+    render(
+      <ConsensusPanel
+        runDetail={runDetail}
+        summary={summary}
+        requiredCoords={[]}
+        peersRevealed={true}
+        onSelectExisting={vi.fn()}
+        onManualOverride={vi.fn()}
+        onFinalize={vi.fn()}
+        showFinalize={false}
+      />,
+    );
+    expect(screen.getByText("No information")).toBeInTheDocument();
+    expect(screen.getByText("Yes")).toBeInTheDocument();
   });
 
   it("invokes onSelectExisting with the chosen decision id", async () => {

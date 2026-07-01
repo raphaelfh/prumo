@@ -37,6 +37,7 @@ import { resolveQATemplateKind } from "@/services/projectSettingsService";
 import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
 import { useAISuggestions } from "@/hooks/extraction/ai/useAISuggestions";
 import { useRunAIExtraction } from "@/hooks/extraction/ai/useRunAIExtraction";
+import { countActionableSuggestions } from "@/lib/ai-extraction/suggestionUtils";
 import {
   useAdvanceRun,
   useAutoSaveProposals,
@@ -631,7 +632,7 @@ export default function QualityAssessmentFullScreen() {
             />
           )}
           <RunHeader.AIActions
-            pendingCount={Object.keys(aiSuggestions).length}
+            pendingCount={countActionableSuggestions(aiSuggestions)}
             canExtract={!!(session && !finalized)}
             extracting={extractingAI}
             onExtract={onExtractWithAI}
