@@ -22,9 +22,13 @@ function v(over: Partial<AISuggestionHistoryItem>): AISuggestionHistoryItem {
 }
 
 describe('AISuggestionReviewPopover', () => {
-  it('lists versions; marks the selected; Use-this-version selects by id; null → No information found', async () => {
+  it('lists versions; marks the selected; Use-this-version selects by id; marker → No information found', async () => {
     const history = [
-      v({ id: 'p2', value: null, timestamp: new Date('2026-04-28T11:00:00Z') }),
+      v({
+        id: 'p2',
+        value: { value: null, absent_reason: 'no_information' },
+        timestamp: new Date('2026-04-28T11:00:00Z'),
+      }),
       v({ id: 'p1', value: 'Retrospective cohort' }),
     ];
     const getHistory = vi.fn(async () => history);
@@ -55,7 +59,13 @@ describe('AISuggestionReviewPopover', () => {
     const useBtn = screen.getByRole('button', { name: /reviewUseThisVersion/ });
     await user.click(useBtn);
     // Carries the chosen version's id, value, and its own confidence (0.9).
-    expect(onSelect).toHaveBeenCalledWith('p2', null, 0.9);
+    // Selecting a no-info version propagates the full marker envelope to the form
+    // (ADR-0016), not a bare null — the accepted form value round-trips as the marker.
+    expect(onSelect).toHaveBeenCalledWith(
+      'p2',
+      { value: null, absent_reason: 'no_information' },
+      0.9,
+    );
   });
 
   it('Clear in the pinned footer calls onClear', async () => {

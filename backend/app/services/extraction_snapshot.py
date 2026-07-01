@@ -58,7 +58,9 @@ SNAPSHOT_SQL = text(
                                     'llm_description', f.llm_description,
                                     'allow_other', f.allow_other,
                                     'other_label', f.other_label,
-                                    'other_placeholder', f.other_placeholder
+                                    'other_placeholder', f.other_placeholder,
+                                    'allows_not_applicable', f.allows_not_applicable,
+                                    'allows_not_evaluated', f.allows_not_evaluated
                                 ) ORDER BY f.sort_order)
                                 FROM public.extraction_fields f
                                 WHERE f.entity_type_id = et.id

@@ -3,9 +3,10 @@
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionRunStage
+from app.models.extraction import ExtractionField, ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,
@@ -15,6 +16,7 @@ from app.repositories.extraction_proposal_repository import (
 )
 from app.services._extraction_run_lock import load_run_for_update
 from app.services.coordinate_coherence import assert_coords_coherent
+from app.services.value_semantics import disposition_to_marker, is_disposition_candidate
 
 
 class InvalidProposalError(Exception):
@@ -88,6 +90,19 @@ class ExtractionProposalService:
 
         if source_value == "human" and source_user_id is None:
             raise InvalidProposalError("source='human' requires source_user_id")
+
+        # ADR-0016: normalize a legacy in-band disposition string — a picked
+        # dropdown option or an AI ``found``-disposition on an existing run whose
+        # frozen domain still carries it — into the coded ``absent_reason`` marker.
+        # Scoped by the field's live domain so a coincidental value is untouched;
+        # the candidacy pre-check skips the lookup for real values / markers.
+        if is_disposition_candidate(proposed_value):
+            allowed = (
+                await self.db.execute(
+                    select(ExtractionField.allowed_values).where(ExtractionField.id == field_id)
+                )
+            ).scalar_one_or_none()
+            proposed_value = disposition_to_marker(proposed_value, allowed)
 
         # Idempotent re-record: a client replaying an unchanged value (form
         # remount, debounce double-fire, retry) must not append a duplicate

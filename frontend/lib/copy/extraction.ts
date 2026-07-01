@@ -846,6 +846,20 @@ export const extraction = {
     reviewClearHint: 'Each selection is recorded with who chose it and when.',
     reviewDetails: 'Details',
     reviewOpenFromValue: 'Open review · see other versions, evidence and provenance',
+    // Runtime disposition control (ADR-0016) — set a "no value, on purpose" answer
+    // on any field type when the source is silent / the item does not apply.
+    dispositionNoInformation: 'No information',
+    dispositionNotApplicable: 'Not applicable',
+    dispositionNotEvaluated: 'Not evaluated',
+    dispositionSet: 'Mark as…',
+    dispositionClear: 'Clear',
+    dispositionActiveHint: 'Recorded as a resolved answer.',
+    // Template builder — opt-in disposition flags. "No information" is universal.
+    dispositionBuilderHint: '"No information" is available on every field automatically.',
+    dispositionAllowNotApplicableLabel: 'Allow "Not applicable"',
+    dispositionAllowNotApplicableHint: 'Let reviewers mark this field as not applicable to the study.',
+    dispositionAllowNotEvaluatedLabel: 'Allow "Not evaluated"',
+    dispositionAllowNotEvaluatedHint: 'Let reviewers mark this field as not evaluated.',
     // RunProvenanceDisclosure – "how this was generated" (transparency)
     provenanceToggle: 'How this was generated',
     provenanceRanBy: 'Ran by',

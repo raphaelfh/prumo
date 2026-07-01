@@ -145,14 +145,18 @@ _ET_MODEL_RESULTS = UUID("000c000c-0000-0000-0000-000000000000")
 _ET_MODEL_INTERP = UUID("000c000d-0000-0000-0000-000000000000")
 _ET_MODEL_OBS = UUID("000c000e-0000-0000-0000-000000000000")
 
-_YES_NO_UNCLEAR = ["Yes", "No", "Unclear", "No information"]
-_YES_NO_NI = ["Yes", "No", "No information"]
-_YES_NO_NOTEVAL_NI = ["Yes", "No", "Not evaluated", "No information"]
-_YES_NO_NOTAPP_NI = ["Yes", "No", "Not applicable", "No information"]
+# ADR-0016: in-band disposition strings ("No information" / "Not applicable" /
+# "Not evaluated") are retired as select values. "The source is silent" is the
+# universal no_information marker (runtime control on every field); not_applicable
+# / not_evaluated are per-field opt-in flags (allows_not_applicable /
+# allows_not_evaluated). "Unclear" stays a substantive select value.
+_YES_NO = ["Yes", "No"]
+_YES_NO_UNCLEAR = ["Yes", "No", "Unclear"]
 
-# PROBAST signaling-question answer set (Y / Probably Yes / Probably No / N / No
-# Information / Not Applicable)
-_PROBAST_SIGNALING = ["Y", "PY", "PN", "N", "NI", "NA"]
+# PROBAST signaling-question answer set (Y / Probably Yes / Probably No / N).
+# The historical "NI" / "NA" options are now coded dispositions: no_information is
+# universal, and not_applicable is the opt-in flag set on these signaling fields.
+_PROBAST_SIGNALING = ["Y", "PY", "PN", "N"]
 # PROBAST domain judgment set
 _PROBAST_JUDGMENT = ["Low", "High", "Unclear"]
 
@@ -366,6 +370,8 @@ async def seed_charms(session: AsyncSession) -> None:
         allowed: list[str] | None = None,
         unit: str | None = None,
         llm: str | None = None,
+        allows_not_applicable: bool = False,
+        allows_not_evaluated: bool = False,
     ) -> ExtractionField:
         return ExtractionField(
             entity_type_id=eid,
@@ -378,6 +384,8 @@ async def seed_charms(session: AsyncSession) -> None:
             allowed_values=allowed,
             unit=unit,
             llm_description=llm,
+            allows_not_applicable=allows_not_applicable,
+            allows_not_evaluated=allows_not_evaluated,
         )
 
     fields = [
@@ -406,7 +414,6 @@ async def seed_charms(session: AsyncSession) -> None:
                 "Random forest",
                 "Neural network",
                 "Support vector machine",
-                "No information",
             ],
             llm="Extract the statistical modelling method used to develop the prediction model (e.g., logistic regression, Cox regression).",
         ),
@@ -425,7 +432,6 @@ async def seed_charms(session: AsyncSession) -> None:
                 "Case series",
                 "RCT",
                 "Registry",
-                "No information",
             ],
             llm="Extract the source of data used in the study.",
         ),
@@ -442,7 +448,6 @@ async def seed_charms(session: AsyncSession) -> None:
                 "Random sampling",
                 "Convenience sampling",
                 "Stratified sampling",
-                "No information",
             ],
             llm="Extract the method used to recruit participants into the study.",
         ),
@@ -646,7 +651,6 @@ async def seed_charms(session: AsyncSession) -> None:
                 "Post-operative",
                 "At baseline",
                 "During follow-up",
-                "No information",
             ],
             llm="Extract when the candidate predictors were measured relative to the outcome.",
         ),
@@ -681,7 +685,6 @@ async def seed_charms(session: AsyncSession) -> None:
                 "Kept continuous",
                 "Categorized",
                 "Restricted cubic spline function",
-                "No information",
             ],
             llm="Extract how continuous predictors were handled in the model.",
         ),
@@ -737,7 +740,6 @@ async def seed_charms(session: AsyncSession) -> None:
                 "Complete case analysis",
                 "Multiple imputation",
                 "Single imputation",
-                "No information",
             ],
             llm="Extract how missing data were handled in the analysis.",
         ),
@@ -754,7 +756,6 @@ async def seed_charms(session: AsyncSession) -> None:
                 "Based on literature",
                 "All candidates",
                 "Clinical expertise",
-                "No information",
             ],
             llm="Extract the method used to select candidate predictors for the multivariable model.",
         ),
@@ -773,7 +774,6 @@ async def seed_charms(session: AsyncSession) -> None:
                 "Ridge regression",
                 "Elastic net",
                 "Best subset",
-                "No information",
             ],
             llm="Extract the method used to select predictors during multivariable model development.",
         ),
@@ -784,7 +784,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "Shrinkage applied to predictor weights or regression coefficients? (CHARMS 7.4)",
             "select",
             4,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if shrinkage was applied to predictor weights or regression coefficients.",
         ),
         # --- final_predictors (2) ---
@@ -814,7 +814,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "Calibration plot presented? (CHARMS 8.1.1)",
             "select",
             0,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if a calibration plot was presented to assess model calibration.",
         ),
         _f(
@@ -824,7 +824,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "Calibration slope reported? (CHARMS 8.1.2)",
             "select",
             1,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if calibration slope was reported. If yes, extract the value and CI.",
         ),
         _f(
@@ -852,7 +852,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "CITL reported? (CHARMS 8.1.3)",
             "select",
             4,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if calibration-in-the-large (CITL) was reported.",
         ),
         _f(
@@ -880,7 +880,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "Hosmer-Lemeshow test reported? (CHARMS 8.1.4)",
             "select",
             7,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if Hosmer-Lemeshow test was reported. If yes, extract the p-value.",
         ),
         _f(
@@ -899,7 +899,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "Other calibration measures reported? (CHARMS 8.1.5)",
             "select",
             9,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if other calibration measures were reported.",
         ),
         _f(
@@ -919,7 +919,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "C-statistic (AUC/ROC) reported? (CHARMS 8.2.1)",
             "select",
             11,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if C-statistic (AUC/ROC) was reported.",
         ),
         _f(
@@ -947,7 +947,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "D-statistic reported? (CHARMS 8.2.2)",
             "select",
             14,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if D-statistic was reported.",
         ),
         _f(
@@ -975,7 +975,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "AUC/ROC graph presented? (CHARMS 8.2.3)",
             "select",
             17,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if an AUC/ROC graph was presented.",
         ),
         _f(
@@ -985,7 +985,8 @@ async def seed_charms(session: AsyncSession) -> None:
             "Log-rank test reported? (CHARMS 8.2.4)",
             "select",
             18,
-            allowed=_YES_NO_NOTAPP_NI,
+            allowed=_YES_NO,
+            allows_not_applicable=True,
             llm="If survival analysis, determine if log-rank test was reported.",
         ),
         _f(
@@ -1004,7 +1005,8 @@ async def seed_charms(session: AsyncSession) -> None:
             "Risk group curves presented? (CHARMS 8.2.5)",
             "select",
             20,
-            allowed=_YES_NO_NOTAPP_NI,
+            allowed=_YES_NO,
+            allows_not_applicable=True,
             llm="If survival analysis, determine if risk group curves were presented.",
         ),
         _f(
@@ -1014,7 +1016,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "Other discrimination measures reported? (CHARMS 8.2.6)",
             "select",
             21,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if other discrimination measures were reported.",
         ),
         _f(
@@ -1034,7 +1036,8 @@ async def seed_charms(session: AsyncSession) -> None:
             "R-squared reported? (CHARMS 8.3.1)",
             "select",
             23,
-            allowed=_YES_NO_NOTEVAL_NI,
+            allowed=_YES_NO,
+            allows_not_evaluated=True,
             llm="Determine if R-squared was reported (e.g., Cox-Snell R2, Nagelkerke R2).",
         ),
         _f(
@@ -1071,7 +1074,8 @@ async def seed_charms(session: AsyncSession) -> None:
             "Brier score reported? (CHARMS 8.3.2)",
             "select",
             27,
-            allowed=_YES_NO_NOTEVAL_NI,
+            allowed=_YES_NO,
+            allows_not_evaluated=True,
             llm="Determine if Brier score was reported.",
         ),
         _f(
@@ -1099,7 +1103,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "Other overall performance measures? (CHARMS 8.3.3)",
             "select",
             30,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if other overall performance measures were reported.",
         ),
         _f(
@@ -1119,7 +1123,8 @@ async def seed_charms(session: AsyncSession) -> None:
             "DCA performed? (CHARMS 8.4.1)",
             "select",
             32,
-            allowed=_YES_NO_NOTEVAL_NI,
+            allowed=_YES_NO,
+            allows_not_evaluated=True,
             llm="Determine if Decision Curve Analysis (DCA) was performed.",
         ),
         _f(
@@ -1129,7 +1134,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "Net benefit reported?",
             "select",
             33,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if net benefit was reported as part of clinical utility assessment.",
         ),
         _f(
@@ -1139,7 +1144,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "Other clinical utility measures? (CHARMS 8.4)",
             "select",
             34,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if other clinical utility measures were reported.",
         ),
         # --- model_validation (2) ---
@@ -1155,7 +1160,6 @@ async def seed_charms(session: AsyncSession) -> None:
                 "External validation",
                 "Both",
                 "None",
-                "No information",
             ],
             llm="Extract the type of model validation performed.",
         ),
@@ -1173,7 +1177,6 @@ async def seed_charms(session: AsyncSession) -> None:
                 "Temporal validation",
                 "Geographical validation",
                 "Incremental value",
-                "No information",
             ],
             llm="Extract the method used for model validation.",
         ),
@@ -1185,7 +1188,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "Was the final model formula or score presented? (CHARMS 10.1)",
             "select",
             0,
-            allowed=_YES_NO_NI,
+            allowed=_YES_NO,
             llm="Determine if the final model formula or score was presented.",
         ),
         _f(
@@ -1195,7 +1198,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "Predictor weights or coefficients included in the final model? (CHARMS 10.2)",
             "select",
             1,
-            allowed=["Predictor weights", "Regression coefficients", "Both", "No information"],
+            allowed=["Predictor weights", "Regression coefficients", "Both"],
             llm="Determine if the final model included predictor weights, regression coefficients, or both.",
         ),
         _f(
@@ -1205,7 +1208,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "Intercept or baseline survival included? (CHARMS 10.3)",
             "select",
             2,
-            allowed=["Yes", "No", "No information"],
+            allowed=_YES_NO,
             llm="Determine if the final model included an intercept or baseline survival.",
         ),
         _f(
@@ -1221,7 +1224,6 @@ async def seed_charms(session: AsyncSession) -> None:
                 "Web calculator",
                 "Mobile app",
                 "None",
-                "No information",
             ],
             llm="Extract if the final model was presented in an alternative format.",
         ),
@@ -1283,6 +1285,8 @@ def _qa_field(
     required: bool = True,
     allowed: list[str] | None = None,
     llm: str | None = None,
+    allows_not_applicable: bool = False,
+    allows_not_evaluated: bool = False,
 ) -> ExtractionField:
     """Build an ExtractionField for a quality-assessment template."""
     return ExtractionField(
@@ -1295,6 +1299,8 @@ def _qa_field(
         is_required=required,
         allowed_values=allowed,
         llm_description=llm,
+        allows_not_applicable=allows_not_applicable,
+        allows_not_evaluated=allows_not_evaluated,
     )
 
 
@@ -1305,7 +1311,13 @@ def _signaling(
     sort: int,
     allowed: list[str],
 ) -> ExtractionField:
-    """Build a signaling-question ExtractionField (select with fixed answer set)."""
+    """Build a signaling-question ExtractionField (select with fixed answer set).
+
+    PROBAST signaling questions historically offered "NA" (not applicable); under
+    ADR-0016 that becomes the opt-in ``not_applicable`` disposition flag. Detected
+    by identity of the PROBAST answer set (QUADAS-2's Y/N/Unclear set never
+    offered NA, so it stays flag-free).
+    """
     return _qa_field(
         eid,
         name,
@@ -1314,6 +1326,7 @@ def _signaling(
         "select",
         sort,
         allowed=allowed,
+        allows_not_applicable=(allowed is _PROBAST_SIGNALING),
         llm=f"Answer the signaling question: {question}",
     )
 

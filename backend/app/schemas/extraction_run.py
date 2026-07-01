@@ -196,6 +196,9 @@ class RunViewField(BaseModel):
     allow_other: bool = False
     other_label: str | None = None
     other_placeholder: str | None = None
+    # ADR-0016 opt-in disposition flags; default False for pre-0038 snapshots.
+    allows_not_applicable: bool = False
+    allows_not_evaluated: bool = False
 
 
 class RunViewEntityType(BaseModel):

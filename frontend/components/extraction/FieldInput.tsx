@@ -35,6 +35,7 @@ import {AISuggestionReviewPopover} from './ai/AISuggestionReviewPopover';
 import {getRelatedUnits} from '@/lib/unitConversions';
 import {extractUnit, extractValue, isEmptyValue, isValidNumber,} from '@/lib/ai-extraction/valueParser';
 import {isSuggestionPending} from '@/lib/ai-extraction/suggestionUtils';
+import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
 import {useJustUpdatedValue} from '@/hooks/extraction/useJustUpdatedValue';
 import {t} from '@/lib/copy';
 
@@ -112,13 +113,20 @@ export function FieldInput(props: FieldInputProps) {
     // If no accepted suggestion, field value is considered manual
   const hasManualValue = !isEmptyValue(value) && (!hasAIAccepted || !isValueEqualToAccepted);
 
+    // A resolved disposition marker ({value:null, absent_reason}) means "no scalar
+    // value on purpose" (ADR-0016). The typed input renders empty — the marker is
+    // shown by the disposition control below; typing a real value clears it.
+  const activeReason = valueAbsentReason(value);
+
     // Value to display: prefer state value (already updated after accept)
     // If no state value but there is accepted suggestion, show suggestion value
-  const displayValue = !isEmptyValue(value)
-    ? value
-    : (hasAIAccepted && aiAcceptedValue !== null)
-      ? aiAcceptedValue
-      : '';
+  const displayValue = activeReason
+    ? ''
+    : !isEmptyValue(value)
+      ? value
+      : (hasAIAccepted && aiAcceptedValue !== null)
+        ? aiAcceptedValue
+        : '';
 
     // Basic validation
   const validateValue = (val: any): boolean => {
@@ -145,6 +153,28 @@ export function FieldInput(props: FieldInputProps) {
   const handleChange = (newValue: any) => {
     validateValue(newValue);
     onChange(newValue);
+  };
+
+    // ADR-0016 runtime disposition control — record a coded "no value, on purpose"
+    // answer on ANY field type. `no_information` is universal; the opt-in codes
+    // render only where the field enables them. Toggling the active one clears back
+    // to unresolved. Setting a marker clears any validation error (it is resolved).
+  const dispositions: { code: string; label: string }[] = [
+    { code: 'no_information', label: t('extraction', 'dispositionNoInformation') },
+    ...(field.allows_not_applicable
+      ? [{ code: 'not_applicable', label: t('extraction', 'dispositionNotApplicable') }]
+      : []),
+    ...(field.allows_not_evaluated
+      ? [{ code: 'not_evaluated', label: t('extraction', 'dispositionNotEvaluated') }]
+      : []),
+  ];
+  const setDisposition = (code: string) => {
+    if (activeReason === code) {
+      onChange('');
+    } else {
+      setValidationError(null);
+      onChange({ value: null, absent_reason: code });
+    }
   };
 
     // Render input by type
@@ -268,7 +298,7 @@ export function FieldInput(props: FieldInputProps) {
         return (
           <Input
             type="date"
-            value={value || ''}
+            value={displayValue || ''}
             onChange={(e) => handleChange(e.target.value)}
             disabled={disabled}
             className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
@@ -281,7 +311,7 @@ export function FieldInput(props: FieldInputProps) {
           return (
             <SelectWithOther
               options={options}
-              value={value || null}
+              value={displayValue || null}
               onChange={handleChange}
               allowOther={true}
               otherLabel={field.other_label || t('extraction', 'otherSpecifyDefault')}
@@ -293,9 +323,9 @@ export function FieldInput(props: FieldInputProps) {
           );
         }
         return (
-          <Select 
-            value={value || ''} 
-            onValueChange={handleChange} 
+          <Select
+            value={displayValue || ''}
+            onValueChange={handleChange}
             disabled={disabled}
           >
             <SelectTrigger className={cn(inputHeight, "text-sm", validationError && "border-destructive")}>
@@ -323,7 +353,7 @@ export function FieldInput(props: FieldInputProps) {
           return (
             <MultiSelectWithOther
               options={mOptions}
-              value={value || null}
+              value={displayValue || null}
               onChange={handleChange}
               allowOther={true}
               otherLabel={field.other_label || t('extraction', 'otherSpecifyDefault')}
@@ -336,7 +366,7 @@ export function FieldInput(props: FieldInputProps) {
         // fallback simples
         return (
           <Input
-            value={Array.isArray(value) ? value.join(', ') : value || ''}
+            value={Array.isArray(displayValue) ? displayValue.join(', ') : displayValue || ''}
             onChange={(e) => handleChange(e.target.value.split(',').map(v => v.trim()))}
             placeholder={t('extraction', 'valuesCommaSeparated')}
             disabled={disabled}
@@ -349,12 +379,12 @@ export function FieldInput(props: FieldInputProps) {
         return (
           <div className="flex items-center gap-2">
             <Switch
-              checked={value || false}
+              checked={displayValue || false}
               onCheckedChange={handleChange}
               disabled={disabled}
             />
             <span className="text-sm text-muted-foreground">
-              {value ? t('extraction', 'yes') : t('extraction', 'no')}
+              {displayValue ? t('extraction', 'yes') : t('extraction', 'no')}
             </span>
           </div>
         );
@@ -484,6 +514,33 @@ export function FieldInput(props: FieldInputProps) {
               </Tooltip>
             )}
           </div>
+        </div>
+
+                  {/* Disposition control (ADR-0016): a quiet row to mark the field
+                      "No information" (any type) or the opt-in Not applicable /
+                      Not evaluated. The active one is highlighted; clicking it
+                      clears back to unresolved. */}
+        <div className="flex flex-wrap items-center gap-1.5" data-disposition-control>
+          {dispositions.map((d) => {
+            const active = activeReason === d.code;
+            return (
+              <Button
+                key={d.code}
+                type="button"
+                size="sm"
+                variant={active ? 'secondary' : 'ghost'}
+                aria-pressed={active}
+                disabled={disabled}
+                onClick={() => setDisposition(d.code)}
+                className={cn(
+                  'h-6 px-2 text-xs',
+                  active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {d.label}
+              </Button>
+            );
+          })}
         </div>
 
                   {/* Suggested value + accept/reject buttons below input - only when no manual value */}

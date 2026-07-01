@@ -1,11 +1,13 @@
 /**
  * AISuggestionDisplay — the inline glance below a field.
  *
- * Since the backend now records "no information" outcomes as first-class
- * proposals ({value: null} → unwrapped to ''), the inline strip must render a
- * QUIET "No information found" indicator for them — never the loud
- * "(empty) · 0%" + Accept/Reject that a real low-confidence suggestion gets
- * (spec R8). A real value keeps its value + actions.
+ * The backend records a "no information" outcome as a first-class proposal
+ * carrying the coded marker ``{value:null, absent_reason:'no_information'}``
+ * (ADR-0016). The service preserves that envelope as ``suggestion.value``, so the
+ * inline strip renders a QUIET "No information found" indicator for it — never the
+ * loud "(empty) · 0%" + Accept/Reject a real low-confidence suggestion gets
+ * (spec R8). A real value keeps its value + actions. Post-Phase-3 a bare null/''
+ * is UNRESOLVED (not an abstention) — ``isAbstention`` is the pure marker shape.
  */
 
 import { render as rtlRender, screen } from '@testing-library/react';
@@ -34,19 +36,27 @@ function makeSuggestion(over: Partial<AISuggestion>): AISuggestion {
   };
 }
 
+const NO_INFO = { value: null, absent_reason: 'no_information' };
+
 describe('AISuggestionDisplay — no-information handling', () => {
-  it('renders a quiet "No information found" for an empty (no-info) value, not "(empty) · 0%"', () => {
-    render(<AISuggestionDisplay suggestion={makeSuggestion({ value: '', confidence: 0 })} />);
+  it('renders a quiet "No information found" for a marker value, not "(empty) · 0%"', () => {
+    render(<AISuggestionDisplay suggestion={makeSuggestion({ value: NO_INFO, confidence: 0 })} />);
     expect(screen.getByText('reviewNoInformation')).toBeInTheDocument();
     expect(screen.queryByText('(empty)')).not.toBeInTheDocument();
     // No misleading 0% confidence badge on a no-info card.
     expect(screen.queryByText('0%')).not.toBeInTheDocument();
   });
 
-  it('treats a null value as no-info too', () => {
-    render(<AISuggestionDisplay suggestion={makeSuggestion({ value: null, confidence: 0 })} />);
+  it('a not_applicable marker also renders the quiet no-info card', () => {
+    render(
+      <AISuggestionDisplay
+        suggestion={makeSuggestion({
+          value: { value: null, absent_reason: 'not_applicable' },
+          confidence: 0,
+        })}
+      />,
+    );
     expect(screen.getByText('reviewNoInformation')).toBeInTheDocument();
-    expect(screen.queryByText('(empty)')).not.toBeInTheDocument();
   });
 
   it('renders a real value with its confidence (regression)', () => {
@@ -88,7 +98,7 @@ describe('AISuggestionDisplay — review popover entry point', () => {
     const user = userEvent.setup();
     render(
       <AISuggestionDisplay
-        suggestion={makeSuggestion({ value: null, confidence: 0 })}
+        suggestion={makeSuggestion({ value: NO_INFO, confidence: 0 })}
         review={{ instanceId: 'i', fieldId: 'f', getHistory, onSelect: vi.fn() }}
       />,
     );
