@@ -5,7 +5,10 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-    {ignores: ["dist", "build", "coverage", "node_modules"]},
+    // Never descend into nested checkouts. `.claude/worktrees/<wt>` holds full
+    // repo copies; without this, `eslint .` from the parent lints them too and
+    // the typed parser reports "multiple candidate TSConfigRootDirs" per file.
+    {ignores: [".claude/**", "dist/**", "build/**", "coverage/**", "node_modules/**"]},
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
@@ -14,6 +17,13 @@ export default tseslint.config(
       globals: {
         ...globals.browser,
         ...globals.node,
+      },
+      // Pin the tsconfig root to this config file's directory so the parser
+      // never has to guess it. A sibling worktree under .claude/worktrees/
+      // otherwise makes the root ambiguous and floods every file with a
+      // "No tsconfigRootDir was set" parsing error.
+      parserOptions: {
+        tsconfigRootDir: import.meta.dirname,
       },
     },
     plugins: {
