@@ -94,41 +94,45 @@ describe('formatSuggestionValue — select/multiselect label resolution', () => 
   });
 });
 
-describe('isAbstention — transitional union predicate (Phase 0 behaviour-neutral)', () => {
-  // The call sites pass the already-unwrapped scalar suggestion.value, so this
-  // must collapse to the old isNoInfoValue truth table (no markers exist yet).
-  it('legacy-empty scalars are abstentions', () => {
-    expect(isAbstention(null)).toBe(true);
-    expect(isAbstention(undefined)).toBe(true);
-    expect(isAbstention('')).toBe(true);
+describe('isAbstention — pure marker predicate (Phase 3, narrowed)', () => {
+  const NO_INFO = { value: null, absent_reason: 'no_information' };
+
+  it('only a resolved marker envelope is an abstention', () => {
+    expect(isAbstention(NO_INFO)).toBe(true);
+    expect(isAbstention({ value: null, absent_reason: 'not_applicable' })).toBe(true);
   });
 
-  it('substantive scalars are NOT abstentions (incl. 0 and false)', () => {
+  it('bare null/undefined/"" are UNRESOLVED, not abstentions (narrowed truth table)', () => {
+    expect(isAbstention(null)).toBe(false);
+    expect(isAbstention(undefined)).toBe(false);
+    expect(isAbstention('')).toBe(false);
+  });
+
+  it('substantive scalars and a bare disposition string are NOT abstentions', () => {
     expect(isAbstention('x')).toBe(false);
     expect(isAbstention(0)).toBe(false);
     expect(isAbstention(false)).toBe(false);
-    expect(isAbstention('No information')).toBe(false); // legacy in-band select value
-  });
-
-  it('forward-looking: a resolved marker envelope is an abstention; a garbage code is not', () => {
-    expect(isAbstention({ value: null, absent_reason: 'no_information' })).toBe(true);
+    expect(isAbstention('No information')).toBe(false); // a scalar string is not a marker
     expect(isAbstention({ value: null, absent_reason: 'garbage' })).toBe(false);
   });
 });
 
 describe('countNonAbstentionSuggestions — the actionable-pending header metric', () => {
   const sug = (value: unknown) => ({ value }) as AISuggestion;
+  const NO_INFO = { value: null, absent_reason: 'no_information' };
 
-  it('excludes abstentions, counts substantive values (array form)', () => {
+  it('excludes marker abstentions, counts everything else (array form)', () => {
+    // A marker suggestion is excluded; bare null/"" are now unresolved pending
+    // (they count) — the Phase-3 narrowed semantics.
     expect(
-      countNonAbstentionSuggestions([sug('x'), sug(null), sug(''), sug('y'), sug(0)]),
-    ).toBe(3);
+      countNonAbstentionSuggestions([sug('x'), sug(NO_INFO), sug(''), sug('y'), sug(0)]),
+    ).toBe(4);
   });
 
   it('accepts the keyed record the screen holds', () => {
     expect(
-      countNonAbstentionSuggestions({ a: sug('x'), b: sug(null), c: sug('') }),
-    ).toBe(1);
+      countNonAbstentionSuggestions({ a: sug('x'), b: sug(NO_INFO), c: sug('z') }),
+    ).toBe(2);
   });
 
   it('empty input is zero', () => {
