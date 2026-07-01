@@ -149,6 +149,19 @@ def test_absent_reason_enum_is_the_closed_three_code_vocabulary():
     }
 
 
+def test_absent_reason_labels_are_the_single_source_covering_every_code():
+    # ADR-0016 Phase 4: the coded-disposition → human-label map is the single
+    # source of truth for the export cell (resolve_value), the export legend, and
+    # the FE consensus display. Colocated with the enum so a new code can't ship a
+    # label-less disposition. Every enum member has a label; no orphan labels.
+    from app.services.value_semantics import ABSENT_REASON_LABELS
+
+    assert set(ABSENT_REASON_LABELS) == {r.value for r in AbsentReason}
+    assert ABSENT_REASON_LABELS[AbsentReason.NO_INFORMATION.value] == "No information"
+    assert ABSENT_REASON_LABELS[AbsentReason.NOT_APPLICABLE.value] == "Not applicable"
+    assert ABSENT_REASON_LABELS[AbsentReason.NOT_EVALUATED.value] == "Not evaluated"
+
+
 # --- disposition_to_marker: the single write-time normalizer (ADR-0016 P2) ---
 
 _YN_NI = ["Yes", "No", "No information"]

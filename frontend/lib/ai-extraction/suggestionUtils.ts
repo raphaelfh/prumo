@@ -179,19 +179,20 @@ export function isAbstention(value: unknown): boolean {
 }
 
 /**
- * Count of suggestions carrying a substantive (non-abstention) value — the
- * "actionable pending" header metric. A "no information found" proposal is
- * recorded provenance, not something to act on, so it is excluded here.
- *
- * NOTE (Phase 4): the shared cross-surface `countActionableSuggestions` selector
- * will treat an unresolved abstention as actionable (it needs a human accept) and
- * REVERSE this exclusion; this Phase-0 helper preserves today's count exactly.
+ * Count of UNRESOLVED AI proposals awaiting a human decision — the ONE shared
+ * "actionable pending" header metric for BOTH the extraction and QA screens
+ * (ADR-0016 Phase 4). An unresolved abstention (`no_information`) proposal IS
+ * actionable — it needs a human accept — so it counts like any pending proposal;
+ * what differs for an abstention is its rendering (quiet, no confidence badge)
+ * and bulk-accept handling (excluded), NOT the count. Already-resolved proposals
+ * (accepted/rejected, retained in the map with a flipped status) are excluded, so
+ * the badge reflects remaining work rather than the total ever seen.
  */
-export function countNonAbstentionSuggestions(
+export function countActionableSuggestions(
   suggestions: Record<string, AISuggestion> | AISuggestion[],
 ): number {
   const list = Array.isArray(suggestions) ? suggestions : Object.values(suggestions);
-  return list.filter((s) => !isAbstention(s.value)).length;
+  return list.filter(isSuggestionPending).length;
 }
 
 /**

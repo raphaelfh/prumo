@@ -15,8 +15,9 @@
  */
 
 import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
-import { unwrap } from '@/hooks/runs/useReviewerSummary';
 import { t } from '@/lib/copy';
+import { absentReasonLabel } from '@/lib/extraction/absentReasonLabel';
+import { unwrapValueEnvelope } from '@/lib/extraction/valueSemantics';
 
 export interface ComparisonField {
   id: string;
@@ -53,7 +54,12 @@ const peerKey = (instanceId: string, fieldId: string) => `${instanceId}::${field
 const ownKey = (instanceId: string, fieldId: string) => `${instanceId}_${fieldId}`;
 
 function displayValue(raw: unknown): string {
-  const v = unwrap(raw);
+  // A coded disposition marker renders as its human label ("No information"), so a
+  // disposition divergence reads legibly instead of two identical-looking blanks
+  // (ADR-0016 Phase 4). The sibling `absent_reason` is otherwise dropped by the peel.
+  const label = absentReasonLabel(raw);
+  if (label !== null) return label;
+  const v = unwrapValueEnvelope(raw);
   if (v === null || v === undefined || v === '') return t('shared', 'compareNoValue');
   if (typeof v === 'object') return JSON.stringify(v);
   return String(v);

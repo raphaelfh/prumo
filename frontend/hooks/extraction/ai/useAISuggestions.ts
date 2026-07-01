@@ -22,7 +22,7 @@ import type {
 } from '@/types/ai-extraction';
 import {getSuggestionKey} from '@/types/ai-extraction';
 import {AISuggestionService} from '@/services/aiSuggestionService';
-import {filterSuggestionsByConfidence} from '@/lib/ai-extraction/suggestionUtils';
+import {filterSuggestionsByConfidence, isAbstention} from '@/lib/ai-extraction/suggestionUtils';
 import {getErrorMessage} from '@/lib/ai-extraction/errors';
 import {getRequiredUserId} from '@/services/authService';
 
@@ -323,11 +323,21 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       return;
     }
 
+    // ADR-0016 decision #3: an AI abstention ("no information") must never be
+    // silently bulk-accepted — a reviewer accepts it deliberately, one at a time.
+    // Exclude markers so no confidence threshold can sweep them into accept-all
+    // (an abstention normally has ~0 confidence, but this holds even if it didn't).
+    const actionable = filtered.filter(([, suggestion]) => !isAbstention(suggestion.value));
+    if (actionable.length === 0) {
+        toast.info(t('extraction', 'noSuggestionConfidenceToast').replace('{{pct}}', String(Math.round(threshold * 100))));
+      return;
+    }
+
     // Accept each in silent mode so we fire ONE batch toast instead of N+1,
     // and count real successes so the batch toast can't claim success when
     // every accept actually failed (#160).
     const results = await Promise.all(
-      filtered.map(([key]) => {
+      actionable.map(([key]) => {
         // key format: `${instanceId}_${fieldId}`
         const [instanceId, ...fieldIdParts] = key.split('_');
         const fieldId = fieldIdParts.join('_'); // Caso field_id tenha underscores

@@ -105,24 +105,6 @@ function decisionsAgree(
   return stableStringify(a.value) === stableStringify(b.value);
 }
 
-/**
- * Peel one `{value: X}` envelope for DISPLAY. Exported so RunReviewerComparison
- * renders values the same way this summary aggregates them. Agreement is no
- * longer decided by peeling — `decisionsAgree` compares the full envelope
- * (Phase B, decision G).
- */
-export function unwrap(raw: unknown): unknown {
-  if (
-    raw &&
-    typeof raw === "object" &&
-    !Array.isArray(raw) &&
-    "value" in (raw as Record<string, unknown>)
-  ) {
-    return (raw as { value: unknown }).value;
-  }
-  return raw;
-}
-
 export function useReviewerSummary(
   runDetail: RunDetailResponse | null | undefined,
 ): ReviewerSummary {

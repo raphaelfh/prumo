@@ -132,13 +132,14 @@ def test_absent_reason_marker_wins_over_value_keyset() -> None:
 
 def test_every_absent_reason_code_has_a_label() -> None:
     # Drift guard: a new AbsentReason member without an export label would
-    # otherwise KeyError into a cell. Fail loudly here instead.
-    from app.services.exports.value_envelope import _ABSENT_REASON_LABELS
-    from app.services.value_semantics import AbsentReason
+    # otherwise KeyError into a cell. Fail loudly here instead. The label map is
+    # the single source in value_semantics (ADR-0016 Phase 4); resolve_value reads
+    # it, so this guard protects the cell resolver too.
+    from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
     for code in AbsentReason:
-        assert code.value in _ABSENT_REASON_LABELS
-        assert isinstance(_ABSENT_REASON_LABELS[code.value], str)
+        assert code.value in ABSENT_REASON_LABELS
+        assert isinstance(ABSENT_REASON_LABELS[code.value], str)
 
 
 def test_out_of_vocab_absent_reason_is_not_treated_as_marker() -> None:

@@ -11,6 +11,7 @@ from typing import Any
 
 from app.services.exports.extraction.sheet_spec import Cell, CellStyle, SheetSpec
 from app.services.extraction_export_service import ExportLayout, ExportMode
+from app.services.value_semantics import ABSENT_REASON_LABELS
 
 _HEADER_STYLE = CellStyle(bold=True, fill="EEEEEE")
 _RECORD_COL = "Record"
@@ -37,6 +38,16 @@ _SEVERITY_RANK: tuple[str, ...] = (
 # extraction_export_service._build_appraisal_model (§7 verdict selection).
 _RISK_LABELS: frozenset[str] = frozenset(_SEVERITY_RANK)
 
+# ADR-0016 Phase 4: the resolved labels of a coded-disposition verdict, casefolded.
+# `no_information` is now available on EVERY field (incl. a risk-verdict field), and
+# a marker reaches this layer already resolved by `resolve_value` to its stable
+# label. Such a verdict is EXCLUDED from the worst-case rank — a "the source is
+# silent" answer must never silently force a Critical Overall. Derived from the
+# single ABSENT_REASON_LABELS source so the exclusion can't drift from the cell.
+_DISPOSITION_LABELS_CF: frozenset[str] = frozenset(
+    label.casefold() for label in ABSENT_REASON_LABELS.values()
+)
+
 
 def _verdict_rank(verdict: Any) -> int:
     """Severity rank for one verdict; higher == worse. Blank == -1 (ignored).
@@ -44,6 +55,10 @@ def _verdict_rank(verdict: Any) -> int:
     A non-empty verdict not in the known table outranks every known label
     (rank == len(table)) so a novel risk label never silently downgrades the
     Overall — the rollup fails toward caution, not toward a green light.
+
+    A resolved coded-disposition verdict ("No information" / "Not applicable" /
+    "Not evaluated") is also -1 (excluded, ADR-0016 Phase 4): it is not a risk
+    judgement, so it neither downgrades nor inflates the worst-case Overall.
     """
     if verdict is None:
         return -1
@@ -51,6 +66,8 @@ def _verdict_rank(verdict: Any) -> int:
     if not text:
         return -1
     lowered = text.casefold()
+    if lowered in _DISPOSITION_LABELS_CF:
+        return -1
     for rank, label in enumerate(reversed(_SEVERITY_RANK)):
         if lowered == label:
             return rank

@@ -31,6 +31,8 @@ import { ReviewerAvatarStack } from "@/components/runs/ReviewerAvatarStack";
 import { classifyReconciliation } from "@/lib/runs/reconciliation";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/copy";
+import { absentReasonLabel } from "@/lib/extraction/absentReasonLabel";
+import { unwrapValueEnvelope } from "@/lib/extraction/valueSemantics";
 
 import type {
   ConsensusDecisionResponse,
@@ -107,16 +109,17 @@ interface CoordRowProps {
   onManualOverride: (value: unknown, rationale: string) => Promise<void> | void;
 }
 
-function unwrap(raw: unknown): unknown {
-  if (
-    raw &&
-    typeof raw === "object" &&
-    !Array.isArray(raw) &&
-    "value" in (raw as Record<string, unknown>)
-  ) {
-    return (raw as { value: unknown }).value;
-  }
-  return raw;
+/**
+ * A decision/consensus value for display. A coded disposition marker renders as
+ * its human label ("No information") so a disposition divergence reads legibly
+ * instead of a bare `null`; every other shape peels one `{value}` envelope and
+ * pretty-prints (ADR-0016 Phase 4, via the shared valueSemantics helpers).
+ */
+function displayDecisionValue(raw: unknown): string {
+  const label = absentReasonLabel(raw);
+  if (label !== null) return label;
+  const v = unwrapValueEnvelope(raw);
+  return typeof v === "string" ? v : JSON.stringify(v, null, 2);
 }
 
 function reviewerLabel(
@@ -244,10 +247,7 @@ function CoordRow({
                   : t("consensus", "resolvedCustom")}
             </div>
             <pre className="whitespace-pre-wrap break-words text-xs">
-              {(() => {
-                const v = unwrap(resolved!.value);
-                return typeof v === "string" ? v : JSON.stringify(v, null, 2);
-              })()}
+              {displayDecisionValue(resolved!.value)}
             </pre>
             {resolved!.rationale ? (
               <p className="text-xs text-muted-foreground">
@@ -263,8 +263,18 @@ function CoordRow({
                 setEditing(true);
                 if (resolved!.mode === "manual_override") {
                   setOverrideOpen(true);
-                  const v = unwrap(resolved!.value);
-                  setOverrideValue(typeof v === "string" ? v : JSON.stringify(v));
+                  // A manual override is authored as free text. If the resolved
+                  // value is a coded marker (rare — the override box can't
+                  // produce one), seed empty so a re-save can't accidentally
+                  // materialize the label as an in-band string.
+                  const v = unwrapValueEnvelope(resolved!.value);
+                  setOverrideValue(
+                    absentReasonLabel(resolved!.value) !== null
+                      ? ""
+                      : typeof v === "string"
+                        ? v
+                        : JSON.stringify(v),
+                  );
                   setOverrideRationale(resolved!.rationale ?? "");
                 }
               }}
@@ -296,7 +306,6 @@ function CoordRow({
             {decisions.length > 0 ? (
               <div className="grid gap-2 md:grid-cols-2">
                 {decisions.map((d) => {
-                  const value = unwrap(d.value);
                   const isReject = d.decision === "reject";
                   return (
                     <div
@@ -317,7 +326,7 @@ function CoordRow({
                       <pre className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
                         {isReject
                           ? t("consensus", "panelRejected")
-                          : JSON.stringify(value, null, 2)}
+                          : displayDecisionValue(d.value)}
                       </pre>
                       {(!isResolved || editing) ? (
                         <Button

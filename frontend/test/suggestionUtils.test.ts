@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AISuggestion } from '@/types/ai-extraction';
 import {
-  countNonAbstentionSuggestions,
+  countActionableSuggestions,
   formatFullSuggestionValue,
   formatSuggestionValue,
   isAbstention,
@@ -117,27 +117,46 @@ describe('isAbstention — pure marker predicate (Phase 3, narrowed)', () => {
   });
 });
 
-describe('countNonAbstentionSuggestions — the actionable-pending header metric', () => {
-  const sug = (value: unknown) => ({ value }) as AISuggestion;
+describe('countActionableSuggestions — the actionable-pending header metric', () => {
+  const sug = (value: unknown, status: AISuggestion['status'] = 'pending') =>
+    ({ value, status }) as AISuggestion;
   const NO_INFO = { value: null, absent_reason: 'no_information' };
 
-  it('excludes marker abstentions, counts everything else (array form)', () => {
-    // A marker suggestion is excluded; bare null/"" are now unresolved pending
-    // (they count) — the Phase-3 narrowed semantics.
+  it('counts every UNRESOLVED (pending) proposal, abstention INCLUDED', () => {
+    // ADR-0016 Phase 4 reversal: a pending abstention needs a human accept, so it
+    // IS actionable and counts — the Phase-0 helper excluded it. Bare null/"" are
+    // also unresolved-pending and count.
     expect(
-      countNonAbstentionSuggestions([sug('x'), sug(NO_INFO), sug(''), sug('y'), sug(0)]),
-    ).toBe(4);
+      countActionableSuggestions([sug('x'), sug(NO_INFO), sug(''), sug('y'), sug(0)]),
+    ).toBe(5);
+  });
+
+  it('excludes already-resolved (accepted/rejected) proposals', () => {
+    // The map retains accepted/rejected with a flipped status; they are no longer
+    // "awaiting a human decision", so the pending badge drops them.
+    expect(
+      countActionableSuggestions([
+        sug('x', 'pending'),
+        sug('y', 'accepted'),
+        sug(NO_INFO, 'pending'),
+        sug('z', 'rejected'),
+      ]),
+    ).toBe(2);
   });
 
   it('accepts the keyed record the screen holds', () => {
     expect(
-      countNonAbstentionSuggestions({ a: sug('x'), b: sug(NO_INFO), c: sug('z') }),
+      countActionableSuggestions({
+        a: sug('x'),
+        b: sug(NO_INFO, 'accepted'),
+        c: sug('z'),
+      }),
     ).toBe(2);
   });
 
   it('empty input is zero', () => {
-    expect(countNonAbstentionSuggestions([])).toBe(0);
-    expect(countNonAbstentionSuggestions({})).toBe(0);
+    expect(countActionableSuggestions([])).toBe(0);
+    expect(countActionableSuggestions({})).toBe(0);
   });
 });
 
