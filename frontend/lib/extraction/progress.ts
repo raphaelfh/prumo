@@ -1,4 +1,5 @@
 import type { ExtractionField } from '@/types/extraction';
+import { isValueEmpty } from '@/lib/extraction/valueSemantics';
 
 /**
  * Minimal projection of an entity type needed for progress computation.
@@ -124,7 +125,10 @@ export function computeRequiredFieldProgress(
 
   let completedRequired = 0;
   for (const [key, value] of Object.entries(values)) {
-    if (value === null || value === undefined || value === '') continue;
+    // Emptiness via the shared oracle (peels the {value} envelope and honours a
+    // resolved absent_reason marker) — so a marker coordinate counts as filled
+    // and the metric can no longer drift from the finalize gate.
+    if (isValueEmpty(value)) continue;
     const sep = key.indexOf('_');
     if (sep < 0) continue;
     const fieldId = key.slice(sep + 1);
@@ -191,12 +195,10 @@ export function computeRowProgress(
 
   const valueMap: Record<string, unknown> = {};
   for (const v of values) {
-    const raw = v.value;
-    const unwrapped =
-      raw && typeof raw === 'object' && 'value' in (raw as Record<string, unknown>)
-        ? (raw as { value: unknown }).value
-        : raw;
-    valueMap[`${v.instance_id}_${v.field_id}`] = unwrapped;
+    // Store the RAW envelope; computeRequiredFieldProgress peels + tests emptiness
+    // in one place (the shared oracle), so an absent_reason marker is not stripped
+    // before the predicate sees it.
+    valueMap[`${v.instance_id}_${v.field_id}`] = v.value;
   }
   const instanceIdsByEntityType = new Map<string, Set<string>>();
   for (const inst of instances) {

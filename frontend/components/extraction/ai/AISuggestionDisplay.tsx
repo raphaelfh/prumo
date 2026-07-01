@@ -16,7 +16,7 @@ import {AISuggestionActions} from '@/components/shared/ai-suggestions';
 import {AISuggestionConfidence} from './shared/AISuggestionConfidence';
 import {AISuggestionValue} from './shared/AISuggestionValue';
 import {AISuggestionReviewPopover} from './AISuggestionReviewPopover';
-import {isNoInfoValue, isSuggestionAccepted} from '@/lib/ai-extraction/suggestionUtils';
+import {isAbstention, isSuggestionAccepted} from '@/lib/ai-extraction/suggestionUtils';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 
@@ -109,7 +109,7 @@ export function AISuggestionDisplay({
   // a quiet, de-emphasized indicator — never a loud "(empty) · 0%" strip with
   // Accept/Reject. It still opens the review popover (history + provenance) when
   // a binding is supplied, so the abstention stays traceable.
-  if (isNoInfoValue(suggestion.value)) {
+  if (isAbstention(suggestion.value)) {
     return (
       <div className="mt-2 animate-in fade-in duration-200">
         <ReviewTrigger review={review} className="inline-flex px-1.5 py-0.5 -mx-1.5">

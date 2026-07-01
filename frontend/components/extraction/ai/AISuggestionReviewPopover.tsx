@@ -24,7 +24,7 @@ import {Separator} from '@/components/ui/separator';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem, EvidenceCitation} from '@/types/ai-extraction';
-import {formatFullSuggestionValue, isNoInfoValue} from '@/lib/ai-extraction/suggestionUtils';
+import {formatFullSuggestionValue, isAbstention} from '@/lib/ai-extraction/suggestionUtils';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 import {AIPopoverShell} from './shared/AIPopoverShell';
 import {RunProvenanceDisclosure} from './shared/RunProvenanceDisclosure';
@@ -88,7 +88,7 @@ function VersionRow({version, isSelected, onUse, fieldType, allowedValues}: Vers
   const [expanded, setExpanded] = useState(false);
   const showDetails = isSelected || expanded;
 
-  const noInfo = isNoInfoValue(version.value);
+  const noInfo = isAbstention(version.value);
   const hasReasoning = !!version.reasoning?.trim();
   const evidence = version.evidence ?? [];
   const hasEvidence = evidence.length > 0 && !!evidence[0]?.text?.trim();

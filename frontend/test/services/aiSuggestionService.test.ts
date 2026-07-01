@@ -200,6 +200,17 @@ describe('AISuggestionService.loadSuggestions', () => {
     expect(sug.evidence).toBeUndefined(); // evidence=null → undefined
   });
 
+  it('unwraps a no-information proposal {value:null} to the empty abstention shape', async () => {
+    // Routing unwrapValue through the shared envelope oracle must keep the
+    // null→'' collapse the abstention rendering relies on (isAbstention('') → true).
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [makeItem({ proposed_value: { value: null } })],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].value).toBe('');
+  });
+
   it('maps evidence list when present (single item)', async () => {
     (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       suggestions: [

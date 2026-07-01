@@ -9,9 +9,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import type { AISuggestion } from '@/types/ai-extraction';
 import {
+  countNonAbstentionSuggestions,
   formatFullSuggestionValue,
   formatSuggestionValue,
+  isAbstention,
 } from '@/lib/ai-extraction/suggestionUtils';
 
 const YES_NO = [
@@ -88,6 +91,49 @@ describe('formatSuggestionValue — select/multiselect label resolution', () => 
     expect(
       formatSuggestionValue(['Y', 'N'], 40, { fieldType: 'multiselect', allowedValues: null }),
     ).toBe('Y, N');
+  });
+});
+
+describe('isAbstention — transitional union predicate (Phase 0 behaviour-neutral)', () => {
+  // The call sites pass the already-unwrapped scalar suggestion.value, so this
+  // must collapse to the old isNoInfoValue truth table (no markers exist yet).
+  it('legacy-empty scalars are abstentions', () => {
+    expect(isAbstention(null)).toBe(true);
+    expect(isAbstention(undefined)).toBe(true);
+    expect(isAbstention('')).toBe(true);
+  });
+
+  it('substantive scalars are NOT abstentions (incl. 0 and false)', () => {
+    expect(isAbstention('x')).toBe(false);
+    expect(isAbstention(0)).toBe(false);
+    expect(isAbstention(false)).toBe(false);
+    expect(isAbstention('No information')).toBe(false); // legacy in-band select value
+  });
+
+  it('forward-looking: a resolved marker envelope is an abstention; a garbage code is not', () => {
+    expect(isAbstention({ value: null, absent_reason: 'no_information' })).toBe(true);
+    expect(isAbstention({ value: null, absent_reason: 'garbage' })).toBe(false);
+  });
+});
+
+describe('countNonAbstentionSuggestions — the actionable-pending header metric', () => {
+  const sug = (value: unknown) => ({ value }) as AISuggestion;
+
+  it('excludes abstentions, counts substantive values (array form)', () => {
+    expect(
+      countNonAbstentionSuggestions([sug('x'), sug(null), sug(''), sug('y'), sug(0)]),
+    ).toBe(3);
+  });
+
+  it('accepts the keyed record the screen holds', () => {
+    expect(
+      countNonAbstentionSuggestions({ a: sug('x'), b: sug(null), c: sug('') }),
+    ).toBe(1);
+  });
+
+  it('empty input is zero', () => {
+    expect(countNonAbstentionSuggestions([])).toBe(0);
+    expect(countNonAbstentionSuggestions({})).toBe(0);
   });
 });
 
