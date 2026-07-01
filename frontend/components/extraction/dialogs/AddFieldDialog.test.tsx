@@ -15,7 +15,9 @@ vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
 import { AddFieldDialog } from './AddFieldDialog';
 import { ExtractionFieldSchema } from '@/types/extraction';
 
-function renderDialog(onSave = vi.fn(async () => null)) {
+// Typed param so mock.calls[0][0] is indexable (the AddFieldDialog onSave prop
+// accepts this: an `unknown` param is a supertype of ExtractionFieldInput).
+function renderDialog(onSave = vi.fn((_field: unknown) => Promise.resolve(null))) {
   render(
     <AddFieldDialog open onOpenChange={vi.fn()} onSave={onSave} sectionName="Participants" />,
   );
