@@ -5,6 +5,7 @@
  */
 
 import type {AISuggestion} from '@/types/ai-extraction';
+import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
 
 /**
  * Field context needed to resolve a select/multiselect option CODE to its human
@@ -163,13 +164,41 @@ export function formatFullSuggestionValue(value: any, field?: SuggestionFieldCon
 }
 
 /**
- * A "no information found" outcome — the model abstained for this field. The
- * backend records it as `{value: null}`, which the service unwraps to `''`, so
- * null, undefined and empty-string all mean no-info. Used to render a quiet
- * indicator instead of a misleading "(empty) · 0%" suggestion strip.
+ * True when a suggestion's value has the **abstention shape** — the model found
+ * no information for this field. Used to render a quiet indicator instead of a
+ * misleading "(empty) · 0%" suggestion strip.
+ *
+ * A transitional UNION predicate (spec Phase 0): a resolved `absent_reason`
+ * marker OR the legacy-empty forms (`null` / `undefined` / `''`). Today the
+ * backend records an abstention as bare `{value:null}` which the service unwraps
+ * to `''`, so the marker branch is dormant and this collapses to the previous
+ * `isNoInfoValue` truth table — behaviour-neutral. Once Phase 1 writes markers
+ * and Phase 3 removes the legacy tolerance, this narrows to the pure marker
+ * shape so a real value can never masquerade as an abstention.
  */
-export function isNoInfoValue(value: unknown): boolean {
-  return value === null || value === undefined || value === '';
+export function isAbstention(value: unknown): boolean {
+  return (
+    valueAbsentReason(value) !== null ||
+    value === null ||
+    value === undefined ||
+    value === ''
+  );
+}
+
+/**
+ * Count of suggestions carrying a substantive (non-abstention) value — the
+ * "actionable pending" header metric. A "no information found" proposal is
+ * recorded provenance, not something to act on, so it is excluded here.
+ *
+ * NOTE (Phase 4): the shared cross-surface `countActionableSuggestions` selector
+ * will treat an unresolved abstention as actionable (it needs a human accept) and
+ * REVERSE this exclusion; this Phase-0 helper preserves today's count exactly.
+ */
+export function countNonAbstentionSuggestions(
+  suggestions: Record<string, AISuggestion> | AISuggestion[],
+): number {
+  const list = Array.isArray(suggestions) ? suggestions : Object.values(suggestions);
+  return list.filter((s) => !isAbstention(s.value)).length;
 }
 
 /**

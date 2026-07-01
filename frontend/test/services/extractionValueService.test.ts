@@ -4,9 +4,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/integrations/api', () => ({ apiClient: vi.fn() }));
 
 import { apiClient } from '@/integrations/api';
-import { ExtractionValueService } from '@/services/extractionValueService';
+import { ExtractionValueService, unwrapValue } from '@/services/extractionValueService';
 
 const apiClientMock = apiClient as unknown as ReturnType<typeof vi.fn>;
+
+// ---------------------------------------------------------------------------
+// unwrapValue — routed through the shared envelope oracle; null-collapse kept
+// ---------------------------------------------------------------------------
+
+describe('unwrapValue', () => {
+  it('peels one {value} envelope and collapses a null/absent inner to null', () => {
+    expect(unwrapValue({ value: 'x' })).toBe('x');
+    expect(unwrapValue({ value: 0 })).toBe(0);
+    expect(unwrapValue({ value: null })).toBeNull();
+    expect(unwrapValue(null)).toBeNull();
+    expect(unwrapValue(undefined)).toBeNull();
+    expect(unwrapValue('x')).toBe('x');
+    expect(unwrapValue({ unit: 'mg' })).toEqual({ unit: 'mg' }); // non-envelope dict untouched
+  });
+});
 
 beforeEach(() => {
   apiClientMock.mockReset();
