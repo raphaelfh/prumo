@@ -59,6 +59,7 @@ from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.run_lifecycle_service import RunLifecycleService
+from app.services.value_semantics import AbsentReason
 
 # Maximum number of evidence rows written per extracted field.
 EVIDENCE_CAP = 3
@@ -1424,12 +1425,16 @@ class SectionExtractionService(LoggerMixin):
                 )
                 continue
 
-            # "No information found": a bare None or a structured abstention
-            # (status not_found / ambiguous). Record it as a first-class proposal
-            # (value=None) so the run's outcome is traceable to the reviewer,
-            # instead of silently dropping the field.
+            # "No information found": a bare None or a structured not_found
+            # abstention. Record it as a first-class proposal carrying the coded
+            # no-information marker (built below) so the run's outcome is
+            # traceable to the reviewer, instead of silently dropping the field.
+            # ``ambiguous`` ("present but conflicting") is deliberately excluded
+            # (ADR-0016 Phase 1): it is not "absent", so it stays a
+            # needs-attention proposal with a value and no marker — still
+            # blocking the finalize gate.
             is_no_info = value is None or (
-                isinstance(value, dict) and value.get("status") in ("not_found", "ambiguous")
+                isinstance(value, dict) and value.get("status") == "not_found"
             )
 
             confidence_score: float | None = None
@@ -1479,7 +1484,13 @@ class SectionExtractionService(LoggerMixin):
             # JSONB column on proposed_value is dict-typed; always wrap so
             # scalars/lists round-trip predictably and the frontend can read
             # `proposed_value.value` uniformly.
-            proposed_value = {"value": inner_value}
+            proposed_value: dict[str, Any] = {"value": inner_value}
+            if is_no_info:
+                # A resolved "no information" disposition: the typed value stays
+                # null and the coded ``absent_reason`` sibling marks it as an
+                # affirmative "the source is silent" answer (ADR-0016), so the
+                # coordinate counts as filled once a reviewer accepts it.
+                proposed_value["absent_reason"] = AbsentReason.NO_INFORMATION.value
 
             proposal = await self._proposals.record_proposal(
                 run_id=run.id,

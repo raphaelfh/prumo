@@ -45,7 +45,12 @@ function mapEvidenceList(
 
 function unwrapValue(raw: { [key: string]: unknown } | null | undefined): unknown {
   // One shared peel; the null/absent envelope collapses to '' as before.
-  // (Phase 1 will carry the absent_reason sibling instead of discarding it here.)
+  // Deliberately lossy in Phase 1: a marker's absent_reason sibling is dropped
+  // here, so AISuggestion.value is '' for an AI no_information proposal. That
+  // still renders as the quiet no-info strip via the transitional-union
+  // `isAbstention` (bare-'' branch), and acceptance rides the proposal_record_id
+  // (not this scalar). Carrying the code onto AISuggestion for distinct
+  // no_information / not_applicable rendering is Phase 4 (the UX phase).
   if (raw === null || raw === undefined) return '';
   return unwrapValueEnvelope(raw) ?? '';
 }

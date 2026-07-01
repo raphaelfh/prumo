@@ -1163,10 +1163,13 @@ class TestCreateSuggestions:
 
     @pytest.mark.asyncio
     async def test_creates_no_info_proposal_for_none_and_abstention(self, service):
-        # "No information found" outcomes (bare None + structured abstention) must
-        # be recorded as first-class proposals (value=None) so the run is
-        # traceable — not silently dropped. Never wrap the status dict; drop the
-        # misleading not_found confidence; keep the "why not found" reasoning.
+        # "No information found" outcomes (bare None + status=not_found) are
+        # recorded as first-class proposals carrying the coded no-information
+        # marker ``{value:null, absent_reason:"no_information"}`` (ADR-0016
+        # Phase 1) so the run is traceable and the coordinate counts as a
+        # *resolved* abstention — not silently dropped and not a bare null.
+        # Never wrap the status dict; drop the misleading not_found confidence;
+        # keep the "why not found" reasoning.
         f1, f2 = uuid4(), uuid4()
         field1, field2 = MagicMock(), MagicMock()
         field1.id, field1.name = f1, "f1"
@@ -1207,11 +1210,69 @@ class TestCreateSuggestions:
         )
         assert result == 2
         by_field = {k["field_id"]: k for k in recorded}
-        assert by_field[f1]["proposed_value"] == {"value": None}
+        assert by_field[f1]["proposed_value"] == {
+            "value": None,
+            "absent_reason": "no_information",
+        }
         assert by_field[f1]["confidence_score"] is None
-        assert by_field[f2]["proposed_value"] == {"value": None}
+        assert by_field[f2]["proposed_value"] == {
+            "value": None,
+            "absent_reason": "no_information",
+        }
         assert by_field[f2]["confidence_score"] is None  # no misleading 0% on a no-info card
         assert by_field[f2]["rationale"] == "not stated in the article"
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_status_records_no_marker(self, service):
+        # ADR-0016 Phase 1 splits the recording branch: ``status='ambiguous'``
+        # ("present but conflicting") is NOT "absent". It must stay a
+        # needs-attention proposal — a found-style value with its confidence
+        # preserved and NO ``absent_reason`` marker — so it still blocks the
+        # finalize gate (never silently collapsed to no_information).
+        f1 = uuid4()
+        field1 = MagicMock()
+        field1.id, field1.name = f1, "f1"
+        et = MagicMock()
+        et.fields = [field1]
+        service._entity_types.get_with_fields = AsyncMock(return_value=et)
+        instance = MagicMock()
+        instance.id = uuid4()
+        instance.parent_instance_id = None
+        service._instances.get_by_article = AsyncMock(return_value=[instance])
+        recorded: list[dict] = []
+
+        async def _rec(**kwargs):
+            recorded.append(kwargs)
+            return MagicMock(id=uuid4())
+
+        service._proposals.record_proposal = AsyncMock(side_effect=_rec)
+        service.db.flush = AsyncMock()
+
+        run = self._make_run()
+        result = await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={
+                "f1": {
+                    "status": "ambiguous",
+                    "value": "Maybe A or B",
+                    "reasoning": "two conflicting statements",
+                    "confidence": 0.3,
+                    "evidence": [],
+                },
+            },
+            run=run,
+        )
+        assert result == 1
+        prop = recorded[0]
+        # No marker — the value is preserved and the confidence survives so the
+        # card reads as a real low-confidence proposal, not a resolved abstention.
+        assert "absent_reason" not in prop["proposed_value"]
+        assert prop["proposed_value"] == {"value": "Maybe A or B"}
+        assert prop["confidence_score"] == 0.3
+        assert prop["rationale"] == "two conflicting statements"
 
     def test_build_run_provenance_shape(self, service):
         # Run provenance is a flat snapshot of how the suggestions were

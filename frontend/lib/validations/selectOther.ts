@@ -115,6 +115,11 @@ export interface ExtractedValueResult {
     value: any; // Value to save (can be "other" object or simple value)
   unit: string | null;
   isOther: boolean;
+  // ADR-0016: the coded `absent_reason` disposition sibling, carried out of the
+  // `{value}` envelope so a resolved "no information" marker round-trips through
+  // writeRunFieldValue instead of being stripped to a bare null. null when the
+  // value is a real value / "other" / bare scalar.
+  absentReason: string | null;
 }
 
 export function extractValueForSave(valueData: any): ExtractedValueResult {
@@ -122,20 +127,23 @@ export function extractValueForSave(valueData: any): ExtractedValueResult {
   const isOther = isOtherValue(valueData);
 
   if (isOther) {
-      // Preserve full structure
+      // Preserve full structure ("other" values never carry a disposition).
     return {
       value: valueData,
       unit: null,
-      isOther: true
+      isOther: true,
+      absentReason: null
     };
   }
 
-    // Check if object with unit (number field)
+    // Check if object with unit (number field) or a disposition marker. The
+    // `absent_reason` sibling rides alongside `value` in the same envelope.
   if (typeof valueData === 'object' && valueData !== null && 'value' in valueData) {
     return {
       value: valueData.value,
       unit: 'unit' in valueData ? valueData.unit : null,
-      isOther: false
+      isOther: false,
+      absentReason: valueData.absent_reason ?? null
     };
   }
 
@@ -143,7 +151,8 @@ export function extractValueForSave(valueData: any): ExtractedValueResult {
   return {
     value: valueData,
     unit: null,
-    isOther: false
+    isOther: false,
+    absentReason: null
   };
 }
 
