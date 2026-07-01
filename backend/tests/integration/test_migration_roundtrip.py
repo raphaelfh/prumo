@@ -290,6 +290,57 @@ async def test_migration_0035_round_trip(db_session: AsyncSession) -> None:
     )
 
 
+_FIELD_DISPOSITION_COLS = text(
+    "SELECT column_name FROM information_schema.columns "
+    "WHERE table_schema='public' AND table_name='extraction_fields' "
+    "AND column_name IN ('allows_not_applicable', 'allows_not_evaluated')"
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0038_round_trip(db_session: AsyncSession) -> None:
+    """``0038_field_disposition_flags`` adds ``allows_not_applicable`` +
+    ``allows_not_evaluated`` (NOT NULL, server_default false). Downgrading to the
+    explicit parent ``0037_block_type_figure`` drops both; upgrading to head
+    restores them. Downgrades to the explicit parent (not ``-1``) so the test
+    stays correct as later migrations stack on top."""
+    cols_at_head = set((await db_session.execute(_FIELD_DISPOSITION_COLS)).scalars().all())
+    assert cols_at_head == {"allows_not_applicable", "allows_not_evaluated"}, (
+        "both disposition flag columns must exist at HEAD"
+    )
+
+    _run_alembic("downgrade", "0037_block_type_figure")
+    try:
+        await db_session.commit()
+        cols_down = set((await db_session.execute(_FIELD_DISPOSITION_COLS)).scalars().all())
+        assert cols_down == set(), "downgrade must drop both disposition flag columns"
+    finally:
+        _run_alembic("upgrade", "head")
+
+    await db_session.commit()
+    cols_after = set((await db_session.execute(_FIELD_DISPOSITION_COLS)).scalars().all())
+    assert cols_after == {"allows_not_applicable", "allows_not_evaluated"}, (
+        "upgrade head must restore both disposition flag columns"
+    )
+
+
+@pytest.mark.asyncio
+async def test_migration_0039_round_trip(db_session: AsyncSession) -> None:
+    """``0039_absent_reason_backfill`` is a data-only migration (no schema change),
+    so the roundtrip guard is exercised with data in ``test_migration_0039_backfill``.
+    Here we assert the chain is reversible: downgrade to the explicit parent
+    ``0038_field_disposition_flags`` and back to head both succeed without error."""
+    _run_alembic("downgrade", "0038_field_disposition_flags")
+    try:
+        await db_session.commit()
+    finally:
+        _run_alembic("upgrade", "head")
+    await db_session.commit()
+    # Head columns from 0038 are still present after the up/down/up cycle.
+    cols = set((await db_session.execute(_FIELD_DISPOSITION_COLS)).scalars().all())
+    assert cols == {"allows_not_applicable", "allows_not_evaluated"}
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision() -> None:
     """Pin the head revision id. If a future migration is added without
@@ -298,8 +349,8 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0037_block_type_figure" in out, (
-        f"Expected head revision '0037_block_type_figure', got:\n{out}"
+    assert "0039_absent_reason_backfill" in out, (
+        f"Expected head revision '0039_absent_reason_backfill', got:\n{out}"
     )
 
 

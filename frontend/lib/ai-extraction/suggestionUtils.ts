@@ -164,25 +164,18 @@ export function formatFullSuggestionValue(value: any, field?: SuggestionFieldCon
 }
 
 /**
- * True when a suggestion's value has the **abstention shape** — the model found
- * no information for this field. Used to render a quiet indicator instead of a
- * misleading "(empty) · 0%" suggestion strip.
+ * True when a value carries a resolved `absent_reason` disposition marker — the
+ * affirmative "no information" / "not applicable" / "not evaluated" answer. Drives
+ * the quiet no-info strip / no-info card instead of a misleading "(empty) · 0%".
  *
- * A transitional UNION predicate (spec Phase 0): a resolved `absent_reason`
- * marker OR the legacy-empty forms (`null` / `undefined` / `''`). Today the
- * backend records an abstention as bare `{value:null}` which the service unwraps
- * to `''`, so the marker branch is dormant and this collapses to the previous
- * `isNoInfoValue` truth table — behaviour-neutral. Once Phase 1 writes markers
- * and Phase 3 removes the legacy tolerance, this narrows to the pure marker
- * shape so a real value can never masquerade as an abstention.
+ * Narrowed to the pure marker shape (ADR-0016 Phase 3, data migrated + shim
+ * removed): a bare `null` / `undefined` / `''` is **unresolved**, not an
+ * abstention, so a real value can never masquerade as one. The AI read path
+ * carries the marker as the full `{value:null, absent_reason}` envelope
+ * (`aiSuggestionService.unwrapValue`), so this recognizes it at the call sites.
  */
 export function isAbstention(value: unknown): boolean {
-  return (
-    valueAbsentReason(value) !== null ||
-    value === null ||
-    value === undefined ||
-    value === ''
-  );
+  return valueAbsentReason(value) !== null;
 }
 
 /**

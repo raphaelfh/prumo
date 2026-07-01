@@ -94,3 +94,61 @@ def is_value_filled(raw: Any) -> bool:
     marker).
     """
     return not is_value_empty(raw)
+
+
+# The in-band disposition strings retired by ADR-0016, mapped to their coded
+# marker. Both encodings are covered: the CHARMS/full-word set and the PROBAST
+# abbreviations ("NI" / "NA"). "Unclear" is intentionally absent — it is a
+# substantive value, not a disposition.
+_DISPOSITION_TO_REASON: dict[str, AbsentReason] = {
+    "No information": AbsentReason.NO_INFORMATION,
+    "Not applicable": AbsentReason.NOT_APPLICABLE,
+    "Not evaluated": AbsentReason.NOT_EVALUATED,
+    "NI": AbsentReason.NO_INFORMATION,
+    "NA": AbsentReason.NOT_APPLICABLE,
+}
+
+
+def is_disposition_candidate(raw: Any) -> bool:
+    """True when *raw*'s peeled value is one of the in-band disposition strings.
+
+    A cheap pre-check (no DB) so a write choke-point can skip the per-field
+    ``allowed_values`` lookup for the overwhelmingly common case — a real value
+    or an already-resolved marker is never a candidate.
+    """
+    value = unwrap_value_envelope(raw)
+    return isinstance(value, str) and value in _DISPOSITION_TO_REASON
+
+
+def _option_values(allowed_values: Any) -> set[str]:
+    """The set of option value-strings in a field's ``allowed_values`` (tolerant
+    of both the plain-string and ``{"value": ...}`` option shapes)."""
+    out: set[str] = set()
+    if isinstance(allowed_values, list):
+        for opt in allowed_values:
+            if isinstance(opt, str):
+                out.add(opt)
+            elif isinstance(opt, dict) and isinstance(opt.get("value"), str):
+                out.add(opt["value"])
+    return out
+
+
+def disposition_to_marker(raw: Any, allowed_values: Any) -> Any:
+    """The single write-time disposition normalizer (ADR-0016 Phase 2).
+
+    If *raw*'s peeled value is a recognized in-band disposition string **and**
+    that string is one of the field's ``allowed_values`` (i.e. the domain treats
+    it as a disposition), return the coded marker
+    ``{"value": None, "absent_reason": <code>}``. Otherwise *raw* is returned
+    unchanged — so a coincidental free-text ``"NA"`` (a text field has no
+    ``allowed_values``), a substantive value, an already-resolved marker, or a
+    multiselect list is never rewritten. Pure; no DB. Domain-scoped exactly like
+    the Phase-3 data migration so the two agree.
+    """
+    value = unwrap_value_envelope(raw)
+    if not isinstance(value, str):
+        return raw
+    reason = _DISPOSITION_TO_REASON.get(value)
+    if reason is None or value not in _option_values(allowed_values):
+        return raw
+    return {"value": None, "absent_reason": reason.value}

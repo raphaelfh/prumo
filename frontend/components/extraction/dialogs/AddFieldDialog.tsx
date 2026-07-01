@@ -70,6 +70,9 @@ export function AddFieldDialog({
   const [loading, setLoading] = useState(false);
   const [autoGenerateName, setAutoGenerateName] = useState(true);
   const [allowOther, setAllowOther] = useState(false);
+  // ADR-0016 opt-in dispositions (no_information is universal, needs no toggle).
+  const [allowsNotApplicable, setAllowsNotApplicable] = useState(false);
+  const [allowsNotEvaluated, setAllowsNotEvaluated] = useState(false);
 
   const form = useForm<ExtractionFieldInput>({
     resolver: zodResolver(ExtractionFieldSchema),
@@ -110,6 +113,8 @@ export function AddFieldDialog({
       allow_other: (fieldType === 'select' || fieldType === 'multiselect') ? allowOther : false,
         other_label: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_label || t('extraction', 'otherSpecifyDefault') : null,
       other_placeholder: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_placeholder || null : null,
+      allows_not_applicable: allowsNotApplicable,
+      allows_not_evaluated: allowsNotEvaluated,
     } as any;
 
     const result = await onSave(finalData).catch(() => null);
@@ -422,6 +427,44 @@ export function AddFieldDialog({
                 </FormItem>
               )}
             />
+
+              {/* Opt-in dispositions (ADR-0016). "No information" is universal and
+                  needs no toggle; these two are per-field for signaling questions. */}
+            <div className="space-y-3 rounded-lg border p-4">
+              <p className="text-xs text-muted-foreground">
+                {t('extraction', 'dispositionBuilderHint')}
+              </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="font-medium">
+                    {t('extraction', 'dispositionAllowNotApplicableLabel')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('extraction', 'dispositionAllowNotApplicableHint')}
+                  </p>
+                </div>
+                <Switch
+                  checked={allowsNotApplicable}
+                  onCheckedChange={setAllowsNotApplicable}
+                  disabled={loading}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="font-medium">
+                    {t('extraction', 'dispositionAllowNotEvaluatedLabel')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('extraction', 'dispositionAllowNotEvaluatedHint')}
+                  </p>
+                </div>
+                <Switch
+                  checked={allowsNotEvaluated}
+                  onCheckedChange={setAllowsNotEvaluated}
+                  disabled={loading}
+                />
+              </div>
+            </div>
 
             {/* Info adicional */}
             <div className="rounded-lg border border-info/30 bg-info/5 p-3 text-sm text-foreground">

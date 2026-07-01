@@ -20,7 +20,7 @@ import type {
 } from '@/types/ai-extraction';
 import { getSuggestionKey } from '@/types/ai-extraction';
 import { APIError } from '@/lib/ai-extraction/errors';
-import { unwrapValueEnvelope } from '@/lib/extraction/valueSemantics';
+import { unwrapValueEnvelope, valueAbsentReason } from '@/lib/extraction/valueSemantics';
 import type { components } from '@/types/api/schema';
 
 type AISuggestionItem = components['schemas']['AISuggestionItem'];
@@ -44,14 +44,14 @@ function mapEvidenceList(
 }
 
 function unwrapValue(raw: { [key: string]: unknown } | null | undefined): unknown {
-  // One shared peel; the null/absent envelope collapses to '' as before.
-  // Deliberately lossy in Phase 1: a marker's absent_reason sibling is dropped
-  // here, so AISuggestion.value is '' for an AI no_information proposal. That
-  // still renders as the quiet no-info strip via the transitional-union
-  // `isAbstention` (bare-'' branch), and acceptance rides the proposal_record_id
-  // (not this scalar). Carrying the code onto AISuggestion for distinct
-  // no_information / not_applicable rendering is Phase 4 (the UX phase).
   if (raw === null || raw === undefined) return '';
+  // ADR-0016 Phase 3: preserve a resolved disposition as the full marker
+  // envelope so the narrowed `isAbstention` still recognizes it (the quiet
+  // no-info strip / no-info card) AND the accept/select path propagates the
+  // marker to the form value — consistent with how FieldInput writes it. A real
+  // value collapses to its scalar as before.
+  const reason = valueAbsentReason(raw);
+  if (reason !== null) return { value: null, absent_reason: reason };
   return unwrapValueEnvelope(raw) ?? '';
 }
 

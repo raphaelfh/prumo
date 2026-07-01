@@ -3266,6 +3266,16 @@ export interface components {
             allowed_units?: unknown | null;
             /** Allowed Values */
             allowed_values?: unknown | null;
+            /**
+             * Allows Not Applicable
+             * @default false
+             */
+            allows_not_applicable: boolean;
+            /**
+             * Allows Not Evaluated
+             * @default false
+             */
+            allows_not_evaluated: boolean;
             /** Description */
             description?: string | null;
             /** Field Type */

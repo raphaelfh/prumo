@@ -74,6 +74,8 @@ export function EditFieldDialog({
       allowed_values: null,
       llm_description: null,
       validation_schema: {},
+      allows_not_applicable: false,
+      allows_not_evaluated: false,
     },
   });
 
@@ -109,6 +111,8 @@ export function EditFieldDialog({
         allow_other: field.allow_other || false,
         other_label: field.other_label || null,
         other_placeholder: field.other_placeholder || null,
+        allows_not_applicable: field.allows_not_applicable || false,
+        allows_not_evaluated: field.allows_not_evaluated || false,
       });
 
         // Fetch field validation (microtask so its setState calls run in an
@@ -325,6 +329,55 @@ export function EditFieldDialog({
                     </FormItem>
                   )}
                 />
+
+                  {/* Opt-in dispositions (ADR-0016). "No information" is universal. */}
+                <div className="space-y-3 rounded-lg border p-4">
+                  <p className="text-xs text-muted-foreground">
+                    {t('extraction', 'dispositionBuilderHint')}
+                  </p>
+                  <FormField
+                    control={form.control}
+                    name="allows_not_applicable"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between">
+                        <div className="space-y-0.5">
+                          <FormLabel>{t('extraction', 'dispositionAllowNotApplicableLabel')}</FormLabel>
+                          <FormDescription>
+                            {t('extraction', 'dispositionAllowNotApplicableHint')}
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value || false}
+                            onCheckedChange={field.onChange}
+                            disabled={loading}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="allows_not_evaluated"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between">
+                        <div className="space-y-0.5">
+                          <FormLabel>{t('extraction', 'dispositionAllowNotEvaluatedLabel')}</FormLabel>
+                          <FormDescription>
+                            {t('extraction', 'dispositionAllowNotEvaluatedHint')}
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value || false}
+                            onCheckedChange={field.onChange}
+                            disabled={loading}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
 
                 {/* Right column - Specific settings */}

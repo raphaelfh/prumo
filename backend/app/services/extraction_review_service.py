@@ -3,9 +3,10 @@
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionRunStage
+from app.models.extraction import ExtractionField, ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionReviewerDecision,
     ExtractionReviewerDecisionType,
@@ -22,6 +23,7 @@ from app.repositories.extraction_reviewer_state_repository import (
 )
 from app.services._extraction_run_lock import load_run_for_update
 from app.services.coordinate_coherence import assert_coords_coherent
+from app.services.value_semantics import disposition_to_marker, is_disposition_candidate
 
 
 class InvalidDecisionError(Exception):
@@ -84,6 +86,20 @@ class ExtractionReviewService:
                 )
         if decision_value == "edit" and value is None:
             raise InvalidDecisionError("decision='edit' requires value")
+
+        # ADR-0016: normalize a picked legacy disposition string into the coded
+        # marker before it is persisted (the consensus agreement key hashes this
+        # value verbatim, so two different codes must stay distinct). An
+        # ``accept_proposal`` carries value=None and is left as-is — its proposal
+        # was already normalized at record_proposal time. Scoped by the field's
+        # live domain so a coincidental value is untouched.
+        if is_disposition_candidate(value):
+            allowed = (
+                await self.db.execute(
+                    select(ExtractionField.allowed_values).where(ExtractionField.id == field_id)
+                )
+            ).scalar_one_or_none()
+            value = disposition_to_marker(value, allowed)
 
         # Idempotent re-record: an unchanged decision replay (form remount,
         # retry) must not append a duplicate row. Compare the decision kind,

@@ -211,6 +211,22 @@ describe('AISuggestionService.loadSuggestions', () => {
     expect(result.suggestions['inst-1_f-1'].value).toBe('');
   });
 
+  it('preserves a resolved no_information marker as the full envelope (ADR-0016 P3)', async () => {
+    // A coded abstention must round-trip so the NARROWED isAbstention still
+    // recognizes it at the call sites (GAP4). A bare {value:null} stays '' above.
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({ proposed_value: { value: null, absent_reason: 'no_information' } }),
+      ],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].value).toEqual({
+      value: null,
+      absent_reason: 'no_information',
+    });
+  });
+
   it('maps evidence list when present (single item)', async () => {
     (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       suggestions: [
