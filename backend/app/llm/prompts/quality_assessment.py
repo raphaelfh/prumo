@@ -12,9 +12,9 @@ _SYSTEM_TEMPLATE = (
     "choose strictly from the field's allowed values, justify your "
     "choice with a one or two-sentence reasoning, and include a short "
     "verbatim quote from the article as evidence whenever possible. "
-    "Be conservative: when the article does not provide enough "
-    "information to decide, prefer the value that captures uncertainty "
-    "(e.g., 'No information' or 'Probably no') over guessing. "
+    "Be conservative: when the article gives only a weak or indirect "
+    "signal, prefer the allowed value that captures uncertainty "
+    "(e.g., 'PN' or 'Unclear') over guessing. "
     'If the article does not contain the value, set status="not_found", value=null, and evidence=null'
     ' — do NOT invent a value or a quote. Use status="ambiguous" when the value is present but'
     ' unclear or conflicting. Only set status="found" when you can quote a passage that supports'
