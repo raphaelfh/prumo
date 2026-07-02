@@ -23,6 +23,8 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 import { RunSplitShell } from "@/components/runs/RunSplitShell";
+import { RunEditabilityProvider } from "@/components/runs/RunEditabilityContext";
+import { HITLReopenButton, HITLStatusBadges } from "@/components/runs/HITLStatusBadges";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
 import type {
@@ -641,8 +643,8 @@ export default function QualityAssessmentFullScreen() {
             />
           )}
           <RunHeader.AIActions
-            pendingCount={countActionableSuggestions(aiSuggestions)}
-            canExtract={!!(session && !finalized)}
+            pendingCount={finalized ? 0 : countActionableSuggestions(aiSuggestions)}
+            canExtract={!!(session && runDetail && isRunEditable(runDetail.run.stage))}
             extracting={extractingAI}
             onExtract={onExtractWithAI}
           />
@@ -687,6 +689,7 @@ export default function QualityAssessmentFullScreen() {
   );
 
   const formPanel = (
+    <RunEditabilityProvider stage={runDetail?.run.stage ?? null}>
     <div className="space-y-3 p-4" data-testid="qa-form-panel">
       {error ? (
         <div
@@ -793,13 +796,38 @@ export default function QualityAssessmentFullScreen() {
         </>
       ) : null}
     </div>
+    </RunEditabilityProvider>
   );
+
+  // Published/revision banner between header and panels — mirrors the
+  // extraction sub-header so both screens signal the read-only state the
+  // same way (spec 2026-07-02 D4).
+  const qaSubHeader =
+    parentRunId || finalized ? (
+      <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2 text-xs">
+        <HITLStatusBadges kind="qa" finalized={finalized} parentRunId={parentRunId} />
+        {finalized && (
+          <>
+            <span className="text-muted-foreground">
+              {t("runs", "publishedReadOnlyNotice")}
+            </span>
+            <HITLReopenButton
+              kind="qa"
+              visible
+              onClick={() => void handleReopen()}
+              reopening={reopening}
+            />
+          </>
+        )}
+      </div>
+    ) : null;
 
   return (
     <RunSplitShell
       pdfPanel={pdfPanel}
       formPanel={formPanel}
       header={header}
+      subHeader={qaSubHeader}
       pdfState={pdfPanelState}
       viewerStore={viewerStore}
     />

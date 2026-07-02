@@ -17,6 +17,7 @@ import { CheckCircle2, RotateCcw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { t } from "@/lib/copy";
 
 export type HITLBadgeKind = "extraction" | "qa";
 
@@ -50,7 +51,7 @@ export function HITLStatusBadges({
           data-testid={`${kind}-finalized-badge`}
         >
           <CheckCircle2 className="mr-1 h-3 w-3" />
-          Published
+          {t("runs", "published")}
         </Badge>
       ) : null}
       {parentRunId ? (
@@ -58,10 +59,10 @@ export function HITLStatusBadges({
           variant="outline"
           className="border-info/30 bg-info/10 text-info"
           data-testid={`${kind}-revision-badge`}
-          title={`Derived from run ${parentRunId}`}
+          title={t("runs", "revisionDerivedFrom")}
         >
           <RotateCcw className="mr-1 h-3 w-3" />
-          Revision
+          {t("runs", "revision")}
         </Badge>
       ) : null}
     </>
@@ -85,7 +86,7 @@ export function HITLReopenButton({
       data-testid={`${kind}-reopen-button`}
     >
       <RotateCcw className="mr-1 h-3 w-3" />
-      {reopening ? "Reopening…" : "Reopen for revision"}
+      {reopening ? t("runs", "reopening") : t("runs", "reopenForRevision")}
     </Button>
   );
 }

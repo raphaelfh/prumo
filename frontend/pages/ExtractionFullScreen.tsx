@@ -26,10 +26,12 @@ import {isRunEditable} from '@/lib/runs/editability';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
 import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
 import {RunSplitShell} from '@/components/runs/RunSplitShell';
+import {RunEditabilityProvider} from '@/components/runs/RunEditabilityContext';
 import {usePdfPanel} from '@/hooks/usePdfPanel';
 import {Button} from '@/components/ui/button';
 import {Loader2} from 'lucide-react';
 import {
+  HITLReopenButton,
   HITLStatusBadges,
 } from '@/components/runs/HITLStatusBadges';
 import {buildExtractionTransition} from '@/lib/extraction/stageTransition';
@@ -1102,19 +1104,37 @@ export default function ExtractionFullScreen() {
     ) : null;
 
   // HITL revision/finalized status badges, rendered between header and panels.
+  // On a published run the banner also carries the read-only notice and an
+  // inline Reopen button (spec 2026-07-02 D4) — the header-menu item stays.
+  const showsPublished = isFinalized || (!activeRunId && !!finalizedRun);
   const extractionSubHeader =
-    parentRunId || isFinalized || (!activeRunId && finalizedRun) ? (
+    parentRunId || showsPublished ? (
       <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2 text-xs">
         <HITLStatusBadges
           kind="extraction"
-          finalized={isFinalized || (!activeRunId && !!finalizedRun)}
+          finalized={showsPublished}
           parentRunId={parentRunId}
         />
+        {showsPublished && (
+          <>
+            <span className="text-muted-foreground">
+              {t('runs', 'publishedReadOnlyNotice')}
+            </span>
+            <HITLReopenButton
+              kind="extraction"
+              visible={canReopen}
+              onClick={() => void handleReopen()}
+              reopening={reopening}
+            />
+          </>
+        )}
       </div>
     ) : null;
 
   // Left panel: ConsensusPanel in consensus stage; ExtractionFormPanel otherwise.
-  const extractionFormPanel =
+  // RunEditability wraps both branches: the form tree consumes it (read-only
+  // on finalized/pending); ConsensusPanel renders only ui-primitives.
+  const extractionFormPanelInner =
     inConsensusStage && runDetail ? (
       <div className="h-full min-h-0 overflow-y-auto" data-testid="extraction-consensus-area">
         <ConsensusPanel
@@ -1178,6 +1198,12 @@ export default function ExtractionFullScreen() {
         }}
       />
     );
+
+  const extractionFormPanel = (
+    <RunEditabilityProvider stage={stage}>
+      {extractionFormPanelInner}
+    </RunEditabilityProvider>
+  );
 
   return (
     <div className="h-full bg-background">
@@ -1247,7 +1273,7 @@ export default function ExtractionFullScreen() {
         canRunAI={stage === 'extract' || stage == null}
         onExtractionComplete={handleExtractionComplete}
         aiSuggestions={aiSuggestions}
-        aiPendingCount={aiPendingCount}
+        aiPendingCount={isFinalized ? 0 : aiPendingCount}
         onAISuggestionsClick={() => {
           // P1: scroll to first suggestion or open panel
           console.warn('Clicked AI badge - scrolling to first suggestion');

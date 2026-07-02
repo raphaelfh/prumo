@@ -540,4 +540,23 @@ describe("QualityAssessmentFullScreen — finalized (published, read-only)", () 
     await waitFor(() => expect(within(domain).getByText("Y")).toBeInTheDocument());
     expect(within(domain).queryByText("PY")).not.toBeInTheDocument();
   });
+
+  it("finalized: shows the published banner with a reopen button, hides edit chrome", async () => {
+    renderPage();
+    expect(await screen.findByTestId("qa-finalized-badge")).toBeInTheDocument();
+    expect(screen.getByText(/read-only/i)).toBeInTheDocument();
+    expect(screen.getByTestId("qa-reopen-button")).toBeInTheDocument();
+    // Header AI-extract stays hidden (now via isRunEditable):
+    expect(
+      screen.queryByRole("button", { name: /extract with ai/i }),
+    ).not.toBeInTheDocument();
+    // Per-domain AI-extract hidden by the provider:
+    await screen.findByTestId("qa-domain-participants");
+    expect(screen.queryByTestId("section-ai-extract-et-1")).not.toBeInTheDocument();
+    // The select trigger is disabled (FieldInput consumes the provider):
+    const domain = screen.getByTestId("qa-domain-participants");
+    await waitFor(() => expect(within(domain).getByText("Y")).toBeInTheDocument());
+    const trigger = within(domain).getByText("Y").closest("button");
+    expect(trigger).toBeDisabled();
+  });
 });
