@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.extraction_reviewer_ready_service import ExtractionReviewerReadyService
 from app.services.extraction_run_read_service import build_run_view
 from tests.integration.conftest import SEED
 from tests.integration.test_blind_review_isolation import (
@@ -32,6 +33,34 @@ async def test_build_run_view_blinds_peer_in_review(db_session: AsyncSession) ->
     assert reviewer_a not in reviewer_ids, "build_run_view leaked a peer decision"
     assert view.entity_types, "entity_types tree must be populated"
     assert isinstance(view.current_values, list)
+
+
+@pytest.mark.asyncio
+async def test_build_run_view_blind_caller_ready_ids_self_scoped(
+    db_session: AsyncSession,
+) -> None:
+    """WHO marked ready is peer-attributable participation metadata: a blind
+    caller's reviewers_ready must carry only their own entry, while the
+    aggregate ready_count stays intact (the N/M hint leaks no identity)."""
+    built = await _build_two_reviewer_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, reviewer_a, reviewer_b = built
+
+    ready_service = ExtractionReviewerReadyService(db_session)
+    await ready_service.mark_ready(run_id=run_id, reviewer_id=reviewer_a, is_ready=True)
+    await ready_service.mark_ready(run_id=run_id, reviewer_id=reviewer_b, is_ready=True)
+
+    blind = await build_run_view(db_session, run_id, caller_id=reviewer_b, can_see_peers=False)
+    assert blind.ready_count == 2, "the aggregate count must survive the blind scrub"
+    assert blind.reviewers_ready == [reviewer_b], (
+        "blind leak: a plain reviewer received a peer's ready-participation id"
+    )
+
+    unblinded = await build_run_view(db_session, run_id, caller_id=reviewer_b, can_see_peers=True)
+    assert set(unblinded.reviewers_ready) == {reviewer_a, reviewer_b}, (
+        "an unblinded caller must still see the full ready list"
+    )
 
 
 @pytest.mark.asyncio

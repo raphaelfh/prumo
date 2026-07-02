@@ -127,7 +127,9 @@ class RunReadyStateResponse(BaseModel):
 
     ``reviewer_count`` is ``max(hitl_config reviewer_count, ready_count)`` so the
     hint never reads "N of M" with N > M (the configured count is often the inert
-    default of 1)."""
+    default of 1). ``reviewers_ready`` is blind-gated (ADR-0012): it carries only
+    the caller's own entry unless the caller is unblinded — the counts stay
+    aggregate."""
 
     ready_count: int
     reviewer_count: int
@@ -265,6 +267,9 @@ class RunViewResponse(RunDetailResponse):
     current_values: list[RunViewCurrentValue]
     instances: list[RunViewInstance]
     # Per-reviewer "ready" hint (advisory; see RunReadyStateResponse).
+    # reviewers_ready is blind-gated on peers_revealed: a blind caller gets
+    # only their own entry (enough for the Mark-ready self-check), never peer
+    # ids; the counts stay aggregate.
     ready_count: int = 0
     reviewer_count: int = 0
     reviewers_ready: list[UUID] = Field(default_factory=list)

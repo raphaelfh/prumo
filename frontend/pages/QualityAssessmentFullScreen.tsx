@@ -363,8 +363,15 @@ export default function QualityAssessmentFullScreen() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  // Reveal: manager can un-blind QA reviewer identities for this project.
-  const canReveal = permissions.userRole === "manager" && permissions.isBlindMode;
+  // Reveal (the persistent project-toggle): offered only to a blind manager
+  // DURING extract, mirroring the extraction screen. Once the run reaches
+  // consensus the run-scoped auto-reveal covers it (ADR-0015), so the
+  // persistent toggle is no longer surfaced.
+  const canReveal =
+    permissions.userRole === "manager" &&
+    permissions.isBlindMode &&
+    runDetail?.run.stage === "extract" &&
+    !runDetail.peers_revealed;
   const onReveal = () => {
     void setManagerReviewVisibility(projectId ?? "", "quality_assessment", true)
       .then(() => permissions.refresh())

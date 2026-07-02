@@ -320,14 +320,18 @@ async def mark_run_ready(
 
     Advisory only — it never advances the run (the manager opens consensus
     manually). Membership-gated AND reviewer-role-gated (a read-only viewer
-    cannot mark ready). Returns the "N/M reviewers ready" hint.
+    cannot mark ready). Returns the "N/M reviewers ready" hint with
+    ``reviewers_ready`` scoped to the caller's own entry (this response is the
+    caller's toggle echo; an unblinded caller reads the full list via /view).
     """
     run = await _load_run_and_check_member(db, run_id, current_user_sub)
     await ensure_project_reviewer(db, run.project_id, current_user_sub)
     service = ExtractionReviewerReadyService(db)
     await service.mark_ready(run_id=run_id, reviewer_id=current_user_sub, is_ready=body.ready)
     summary = await service.ready_summary_from(
-        run_id=run_id, hitl_config_snapshot=run.hitl_config_snapshot
+        run_id=run_id,
+        hitl_config_snapshot=run.hitl_config_snapshot,
+        caller_id=current_user_sub,
     )
     await db.commit()
     return ApiResponse.success(RunReadyStateResponse(**summary), trace_id=_trace(request))
