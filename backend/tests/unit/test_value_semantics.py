@@ -3,10 +3,12 @@
 ``is_value_filled`` powers the finalize completeness gate (run_lifecycle_service)
 and ``is_value_empty`` powers the AI-suggestion dedup "no information" rule
 (extraction_suggestion_read_service). They are exact inverses of ONE rule,
-mirroring the frontend ``isNoInfoValue`` (value === null | undefined | '').
+mirrored 1:1 by ``frontend/lib/extraction/valueSemantics.ts``
+(``isValueEmpty`` / ``isValueFilled``); the shared cross-checked test vector
+(this file ⇔ ``valueSemantics.test.ts``) keeps the two in lock-step.
 The gate must never become stricter than the form the user just saw, so only
 ``None`` and the empty string count as empty — whitespace, 0, False and []
-are filled.
+are filled. A resolved ``absent_reason`` marker also counts as filled.
 """
 
 import pytest
@@ -99,8 +101,10 @@ def test_dict_without_value_key_counts_as_filled():
         ({"value": None}, True),  # bare null, no marker
         # an out-of-vocabulary code is not a resolution → still empty (gate-safe)
         ({"value": None, "absent_reason": "garbage"}, True),
-        # a legacy disposition carried IN-BAND as a select value is a non-empty
-        # scalar → filled today and still filled (untouched until Phase 3)
+        # a disposition string carried in-band is just a non-empty scalar → filled
+        # (stored data was migrated by 0039; the emptiness rule never interprets
+        # strings — only the domain-scoped write normalizer converts a picked
+        # legacy option)
         ({"value": "No information"}, False),
         ("No information", False),
     ],

@@ -17,7 +17,8 @@ vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
 import { FieldInput } from './FieldInput';
 import type { ExtractionField } from '@/types/extraction';
 
-const render = (ui: React.ReactElement) => rtlRender(<TooltipProvider>{ui}</TooltipProvider>);
+const render = (ui: React.ReactElement) =>
+  rtlRender(<TooltipProvider delayDuration={0}>{ui}</TooltipProvider>);
 
 function makeField(over: Partial<ExtractionField>): ExtractionField {
   return {
@@ -100,5 +101,37 @@ describe('FieldInput disposition control', () => {
     renderField(makeField({ field_type: 'text' }), NO_INFO);
     const input = screen.getByRole('textbox') as HTMLInputElement;
     expect(input.value).toBe('');
+  });
+
+  it('the active disposition gets the accepted-style success ring, not just a shade', () => {
+    // Consistency with the accepted-suggestion affordance (ring-success +
+    // bg-success/10) so "selected" is unmistakable even though the input is blank.
+    renderField(makeField({}), NO_INFO);
+    const btn = screen.getByRole('button', { name: /dispositionNoInformation/ });
+    expect(btn.className).toContain('ring-success');
+    expect(btn.className).toContain('bg-success/10');
+  });
+
+  it('renders the "recorded as a resolved answer" hint only while a disposition is active', () => {
+    renderField(makeField({}), NO_INFO);
+    expect(screen.getByText('dispositionActiveHint')).toBeInTheDocument();
+  });
+
+  it('shows no active hint when the field is unresolved', () => {
+    renderField(makeField({}), '');
+    expect(screen.queryByText('dispositionActiveHint')).toBeNull();
+  });
+
+  // Radix mirrors tooltip content into an a11y node (assert with *AllBy*) and
+  // debounces consecutive open/close in one render — so one fresh render per button.
+  it.each([
+    ['dispositionNoInformation', 'dispositionNoInformationHint'],
+    ['dispositionNotApplicable', 'dispositionNotApplicableHint'],
+    ['dispositionNotEvaluated', 'dispositionNotEvaluatedHint'],
+  ] as const)('%s describes itself on hover (tooltip)', async (label, hint) => {
+    const user = userEvent.setup();
+    renderField(makeField({ allows_not_applicable: true, allows_not_evaluated: true }), '');
+    await user.hover(screen.getByRole('button', { name: label }));
+    expect((await screen.findAllByText(hint)).length).toBeGreaterThan(0);
   });
 });
