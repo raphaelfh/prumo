@@ -30,10 +30,7 @@ import {RunEditabilityProvider} from '@/components/runs/RunEditabilityContext';
 import {usePdfPanel} from '@/hooks/usePdfPanel';
 import {Button} from '@/components/ui/button';
 import {Loader2} from 'lucide-react';
-import {
-  HITLReopenButton,
-  HITLStatusBadges,
-} from '@/components/runs/HITLStatusBadges';
+import {HITLPublishedBanner} from '@/components/runs/HITLStatusBadges';
 import {buildExtractionTransition} from '@/lib/extraction/stageTransition';
 import {nextArticleTarget} from '@/lib/extraction/worklistNav';
 import {setManagerReviewVisibility} from '@/services/hitlConfigService';
@@ -1103,33 +1100,18 @@ export default function ExtractionFullScreen() {
       </div>
     ) : null;
 
-  // HITL revision/finalized status badges, rendered between header and panels.
-  // On a published run the banner also carries the read-only notice and an
-  // inline Reopen button (spec 2026-07-02 D4) — the header-menu item stays.
-  const showsPublished = isFinalized || (!activeRunId && !!finalizedRun);
-  const extractionSubHeader =
-    parentRunId || showsPublished ? (
-      <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2 text-xs">
-        <HITLStatusBadges
-          kind="extraction"
-          finalized={showsPublished}
-          parentRunId={parentRunId}
-        />
-        {showsPublished && (
-          <>
-            <span className="text-muted-foreground">
-              {t('runs', 'publishedReadOnlyNotice')}
-            </span>
-            <HITLReopenButton
-              kind="extraction"
-              visible={canReopen}
-              onClick={() => void handleReopen()}
-              reopening={reopening}
-            />
-          </>
-        )}
-      </div>
-    ) : null;
+  // Published/revision banner between header and panels (shared component,
+  // spec 2026-07-02 D4) — the header-menu Reopen item stays.
+  const extractionSubHeader = (
+    <HITLPublishedBanner
+      kind="extraction"
+      finalized={isFinalized || (!activeRunId && !!finalizedRun)}
+      parentRunId={parentRunId}
+      showReopen={canReopen}
+      onReopen={() => void handleReopen()}
+      reopening={reopening}
+    />
+  );
 
   // Left panel: ConsensusPanel in consensus stage; ExtractionFormPanel otherwise.
   // RunEditability wraps both branches: the form tree consumes it (read-only

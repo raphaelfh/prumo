@@ -24,7 +24,7 @@ import { Loader2 } from "lucide-react";
 
 import { RunSplitShell } from "@/components/runs/RunSplitShell";
 import { RunEditabilityProvider } from "@/components/runs/RunEditabilityContext";
-import { HITLReopenButton, HITLStatusBadges } from "@/components/runs/HITLStatusBadges";
+import { HITLPublishedBanner } from "@/components/runs/HITLStatusBadges";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
 import type {
@@ -799,28 +799,17 @@ export default function QualityAssessmentFullScreen() {
     </RunEditabilityProvider>
   );
 
-  // Published/revision banner between header and panels — mirrors the
-  // extraction sub-header so both screens signal the read-only state the
-  // same way (spec 2026-07-02 D4).
-  const qaSubHeader =
-    parentRunId || finalized ? (
-      <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2 text-xs">
-        <HITLStatusBadges kind="qa" finalized={finalized} parentRunId={parentRunId} />
-        {finalized && (
-          <>
-            <span className="text-muted-foreground">
-              {t("runs", "publishedReadOnlyNotice")}
-            </span>
-            <HITLReopenButton
-              kind="qa"
-              visible
-              onClick={() => void handleReopen()}
-              reopening={reopening}
-            />
-          </>
-        )}
-      </div>
-    ) : null;
+  // Published/revision banner between header and panels (shared component,
+  // spec 2026-07-02 D4).
+  const qaSubHeader = (
+    <HITLPublishedBanner
+      kind="qa"
+      finalized={finalized}
+      parentRunId={parentRunId}
+      onReopen={() => void handleReopen()}
+      reopening={reopening}
+    />
+  );
 
   return (
     <RunSplitShell

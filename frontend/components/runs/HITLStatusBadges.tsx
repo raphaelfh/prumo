@@ -90,3 +90,47 @@ export function HITLReopenButton({
     </Button>
   );
 }
+
+interface HITLPublishedBannerProps {
+  kind: HITLBadgeKind;
+  finalized: boolean;
+  parentRunId?: string | null;
+  /** Gate for the inline Reopen button (e.g. extraction's canReopen). */
+  showReopen?: boolean;
+  onReopen: () => void;
+  reopening: boolean;
+}
+
+/**
+ * Sub-header banner between RunHeader and the panels: status badges plus,
+ * on a published run, the read-only notice and an inline Reopen button
+ * (spec 2026-07-02 D4). Shared verbatim by both session screens.
+ */
+export function HITLPublishedBanner({
+  kind,
+  finalized,
+  parentRunId,
+  showReopen = true,
+  onReopen,
+  reopening,
+}: HITLPublishedBannerProps) {
+  if (!finalized && !parentRunId) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2 text-xs">
+      <HITLStatusBadges kind={kind} finalized={finalized} parentRunId={parentRunId} />
+      {finalized && (
+        <>
+          <span className="text-muted-foreground">
+            {t("runs", "publishedReadOnlyNotice")}
+          </span>
+          <HITLReopenButton
+            kind={kind}
+            visible={showReopen}
+            onClick={onReopen}
+            reopening={reopening}
+          />
+        </>
+      )}
+    </div>
+  );
+}
