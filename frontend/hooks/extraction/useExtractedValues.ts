@@ -1,11 +1,15 @@
 /**
  * Hook to load a reviewer's per-field values for an extraction run.
  *
- * Two-mode read path, switched by the run's current stage AND kind:
+ * Three-mode read path, switched by the run's current stage AND kind:
  *
- *  * reviewer-state path — ``stage in {'consensus','finalized'}``, or an
- *    extraction run (``kind='extraction'``) in the editable ``'extract'``
- *    stage. Extraction humans write per-user ReviewerDecisions, so the form
+ *  * published path — ``stage='finalized'``. The run is published and
+ *    read-only: the form hydrates ONLY from ``publishedStates`` (spec
+ *    2026-07-02 D3) and the values map is fully replaced, never merged.
+ *
+ *  * reviewer-state path — ``stage='consensus'``, or an extraction run
+ *    (``kind='extraction'``) in the editable ``'extract'`` stage.
+ *    Extraction humans write per-user ReviewerDecisions, so the form
  *    hydrates from ``extraction_reviewer_states`` (current decision pointer
  *    per coord, scoped to the active user). AI proposals surface as
  *    suggestions, not field pre-fills.
@@ -37,8 +41,13 @@ import { extractValueFromDb } from '@/lib/validations/selectOther';
 import { dispatchValueUpdates } from '@/lib/extraction/valueUpdates';
 import { pickLatestProposalPerCoord } from '@/lib/extraction/proposalValues';
 import { t } from '@/lib/copy';
+import { publishedStatesToValuesMap } from '@/lib/extraction/publishedValues';
 import { unwrapValue } from '@/services/extractionValueService';
-import type { ProposalRecordResponse, RunViewCurrentValue } from '@/hooks/runs/types';
+import type {
+  ProposalRecordResponse,
+  PublishedStateResponse,
+  RunViewCurrentValue,
+} from '@/hooks/runs/types';
 
 export interface ExtractedValueData {
   id?: string;
@@ -55,18 +64,24 @@ interface UseExtractedValuesProps {
   /**
    * Run kind. In the collapsed ``'extract'`` stage it selects the read path:
    * ``'extraction'`` hydrates from reviewer-states (per-user decisions); any
-   * other kind hydrates from raw proposals (QA). consensus/finalized always
-   * use reviewer-states regardless of kind.
+   * other kind hydrates from raw proposals (QA). consensus always uses
+   * reviewer-states regardless of kind; finalized uses ``publishedStates``.
    */
   kind?: string | null;
   proposals?: ProposalRecordResponse[];
   /**
-   * Pre-computed reviewer values embedded in the run view (review /
-   * consensus / finalized stages) — the current decision per coord,
-   * resolved and reviewer-scoped server-side. The review branch hydrates
+   * Pre-computed reviewer values embedded in the run view (extract /
+   * consensus stages) — the current decision per coord, resolved and
+   * reviewer-scoped server-side. The reviewer-state branch hydrates
    * directly from this array, with no separate client-side query.
    */
   currentValues?: RunViewCurrentValue[];
+  /**
+   * Published rows from the run view. At ``stage === 'finalized'`` the form
+   * hydrates ONLY from these (spec 2026-07-02 D3) — published truth, not the
+   * viewer's decision stream.
+   */
+  publishedStates?: PublishedStateResponse[];
   /**
    * Current reviewer id, supplied by the caller (from AuthContext via
    * ``useCurrentUser``) so this hook never fires its own ``auth.getUser``
@@ -94,14 +109,14 @@ interface UseExtractedValuesReturn {
 
 // Read-path selectors for the collapsed ``extract`` stage. Extraction writes
 // per-user decisions (reviewer-states); QA writes shared proposals. consensus
-// and finalized always resolve from reviewer-states.
+// resolves from reviewer-states; finalized resolves from published_states
+// (dedicated branch in ``doLoad``).
 function usesReviewerStatePath(
   stage: string | null | undefined,
   kind: string | null | undefined,
 ): boolean {
   return (
     stage === 'consensus' ||
-    stage === 'finalized' ||
     (stage === 'extract' && kind === 'extraction')
   );
 }
@@ -151,7 +166,16 @@ function mergeValuesById(
 export function useExtractedValues(
   props: UseExtractedValuesProps,
 ): UseExtractedValuesReturn {
-  const { runId, stage, kind, proposals, currentValues, currentUserId, enabled = true } = props;
+  const {
+    runId,
+    stage,
+    kind,
+    proposals,
+    currentValues,
+    publishedStates,
+    currentUserId,
+    enabled = true,
+  } = props;
 
   const [values, setValues] = useState<Record<string, any>>({});
   // Raw server map the hook hydrated from — the autosave baseline.
@@ -194,6 +218,26 @@ export function useExtractedValues(
         if (!runId || !stage) {
           hydratedRunIdRef.current = null;
           resetValuesIfNeeded(setValues);
+          setInitialized(true);
+          return;
+        }
+
+        if (stage === 'finalized') {
+          // Published truth only — no reviewer-state fallback. A coord
+          // without a published row renders empty (it was never published).
+          // Full REPLACE, bypassing applyLoadedValues: its same-run branch
+          // merges (local-edits-win), which would keep stale pre-finalize
+          // reviewer-state values after an in-session consensus → finalized
+          // flip. The JSON-equality guards keep identity stable across
+          // refetch churn (mirrors the setLoadedValues check below).
+          const publishedMap = publishedStatesToValuesMap(publishedStates);
+          setValues((prev) =>
+            JSON.stringify(prev) === JSON.stringify(publishedMap) ? prev : publishedMap,
+          );
+          setLoadedValues((prev) =>
+            JSON.stringify(prev) === JSON.stringify(publishedMap) ? prev : publishedMap,
+          );
+          hydratedRunIdRef.current = runId ?? null;
           setInitialized(true);
           return;
         }

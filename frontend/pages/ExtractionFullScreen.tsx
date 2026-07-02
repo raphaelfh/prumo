@@ -211,6 +211,7 @@ export default function ExtractionFullScreen() {
     kind: 'extraction',
     proposals,
     currentValues: runDetail?.current_values,
+    publishedStates: runDetail?.published_states,
     currentUserId,
     enabled: !!activeRunId,
   });

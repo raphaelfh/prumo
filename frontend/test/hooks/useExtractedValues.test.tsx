@@ -4,9 +4,11 @@
  * The hook branches by stage AND run kind:
  *  - QA (``kind != 'extraction'``) in ``extract``: hydrate from
  *    ``runDetail.proposals`` (newest-per-coord, blind-filtered). No DB call.
- *  - extraction in ``extract``, or any kind in ``consensus`` / ``finalized``:
- *    hydrate from the ``currentValues`` embedded in the run view (current
- *    decision per coord, resolved + reviewer-scoped server-side). No DB call.
+ *  - extraction in ``extract``, or any kind in ``consensus``: hydrate from
+ *    the ``currentValues`` embedded in the run view (current decision per
+ *    coord, resolved + reviewer-scoped server-side). No DB call.
+ *  - ``finalized``: hydrate ONLY from ``publishedStates`` (published truth,
+ *    spec 2026-07-02 D3) — the values map is fully REPLACED, never merged.
  *  - missing run / pending / unknown: empty.
  *
  * The legacy ``save()`` method is gone — the autosave is the sole writer.
@@ -691,5 +693,82 @@ describe('useExtractedValues — run boundary reset', () => {
     await waitFor(() =>
       expect(result.current.values['inst-1_field-1']).toBe('new-run-value'),
     );
+  });
+});
+
+describe('finalized stage — published values', () => {
+  const published = [
+    {
+      id: 'ps1', run_id: 'run-1', instance_id: 'i1', field_id: 'f1',
+      value: { value: 'published-A' },
+      published_at: '', published_by: 'u9', version: 1,
+    },
+    {
+      id: 'ps2', run_id: 'run-1', instance_id: 'i1', field_id: 'f2',
+      value: { value: null, absent_reason: 'no_information' },
+      published_at: '', published_by: 'u9', version: 1,
+    },
+  ];
+
+  it('hydrates from published_states and ignores currentValues', async () => {
+    const { result } = renderHook(() =>
+      useExtractedValues({
+        runId: 'run-1',
+        stage: 'finalized',
+        kind: 'extraction',
+        currentUserId: 'user-1',
+        currentValues: [
+          { instance_id: 'i1', field_id: 'f1', value: { value: 'MY-DRAFT' }, decision: 'edit' },
+          { instance_id: 'i1', field_id: 'f9', value: { value: 'DRAFT-ONLY' }, decision: 'edit' },
+        ],
+        publishedStates: published as never,
+      }),
+    );
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.values['i1_f1']).toBe('published-A');
+    // Draft-only coord does NOT leak into a published view:
+    expect(result.current.values['i1_f9']).toBeUndefined();
+  });
+
+  it('preserves the marker envelope for published abstentions', async () => {
+    const { result } = renderHook(() =>
+      useExtractedValues({
+        runId: 'run-1',
+        stage: 'finalized',
+        kind: 'extraction',
+        currentUserId: 'user-1',
+        publishedStates: published as never,
+      }),
+    );
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.values['i1_f2']).toEqual({ value: null, absent_reason: 'no_information' });
+  });
+
+  it('REPLACES pre-finalize values when the same run flips to finalized in-session', async () => {
+    // The manager finalizes from consensus WITHOUT leaving the page
+    // (handleApproveFinalize → refetchRun + refreshValues): the runId is
+    // unchanged, so the hydration must replace, not merge — otherwise the
+    // stale reviewer-state value survives under the Published banner.
+    const { result, rerender } = renderHook(
+      ({ stage, publishedStates }: { stage: string; publishedStates?: unknown }) =>
+        useExtractedValues({
+          runId: 'run-1',
+          stage,
+          kind: 'extraction',
+          currentUserId: 'user-1',
+          currentValues: [
+            { instance_id: 'i1', field_id: 'f1', value: { value: 'MY-DRAFT' }, decision: 'edit' },
+            { instance_id: 'i1', field_id: 'f9', value: { value: 'DRAFT-ONLY' }, decision: 'edit' },
+          ],
+          publishedStates: publishedStates as never,
+        }),
+      { initialProps: { stage: 'consensus' } as { stage: string; publishedStates?: unknown } },
+    );
+    await waitFor(() => expect(result.current.values['i1_f1']).toBe('MY-DRAFT'));
+
+    rerender({ stage: 'finalized', publishedStates: published });
+    await waitFor(() => expect(result.current.values['i1_f1']).toBe('published-A'));
+    // The draft-only coord from the consensus hydration is gone too:
+    expect(result.current.values['i1_f9']).toBeUndefined();
   });
 });
