@@ -61,6 +61,7 @@ import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermission
 import { useSidebar } from "@/contexts/SidebarContext";
 import { t } from "@/lib/copy";
 import { isRunEditable } from "@/lib/runs/editability";
+import { publishedStatesToValuesMap } from "@/lib/extraction/publishedValues";
 
 interface FieldKey {
   instanceId: string;
@@ -196,26 +197,33 @@ export default function QualityAssessmentFullScreen() {
   if (runDetail !== prevRunDetail) {
     setPrevRunDetail(runDetail);
     if (runDetail) {
-      const latestByCoord = new Map<string, unknown>();
-      // Proposals are returned newest-first by the API; iterate so the LAST
-      // write wins per coord regardless of order.
-      for (const p of runDetail.proposals) {
-        const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
-        const value =
-          p.proposed_value &&
-          typeof p.proposed_value === "object" &&
-          "value" in p.proposed_value
-            ? (p.proposed_value.value as unknown)
-            : (p.proposed_value as unknown);
-        latestByCoord.set(k, value);
-      }
-      setValues((prev) => {
-        const next: Record<string, unknown> = { ...prev };
-        for (const [k, v] of latestByCoord) {
-          if (!(k in next)) next[k] = v;
+      if (runDetail.run.stage === "finalized") {
+        // Published truth replaces any local/proposal state (spec
+        // 2026-07-02 D3): the read-only form shows what was published,
+        // never the latest proposal stream.
+        setValues(publishedStatesToValuesMap(runDetail.published_states));
+      } else {
+        const latestByCoord = new Map<string, unknown>();
+        // Proposals are returned newest-first by the API; iterate so the LAST
+        // write wins per coord regardless of order.
+        for (const p of runDetail.proposals) {
+          const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
+          const value =
+            p.proposed_value &&
+            typeof p.proposed_value === "object" &&
+            "value" in p.proposed_value
+              ? (p.proposed_value.value as unknown)
+              : (p.proposed_value as unknown);
+          latestByCoord.set(k, value);
         }
-        return next;
-      });
+        setValues((prev) => {
+          const next: Record<string, unknown> = { ...prev };
+          for (const [k, v] of latestByCoord) {
+            if (!(k in next)) next[k] = v;
+          }
+          return next;
+        });
+      }
     }
   }
 
