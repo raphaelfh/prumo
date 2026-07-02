@@ -13,9 +13,6 @@ export const runs = {
   stageFinalized: 'Finalized',
   stagePending: 'Pending',
   stageCancelled: 'Cancelled',
-  stageExtractTooltip: 'Fill the form and review AI suggestions for this article.',
-  stageConsensusTooltip: 'Reconcile reviewer values into one agreed answer.',
-  stageFinalizedTooltip: 'Locked and published — reopen to make changes.',
   // Timeline per-node STATE, appended to each node's accessible name so the
   // state a sighted user reads from the icon is also announced to assistive tech.
   stageStateDone: 'completed',

@@ -2,8 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RunHeader } from '@/components/runs/header';
-// Direct import until Task 7 attaches RunStatus to the compound.
-import { RunStatus } from '../RunStatus';
 import { makeRunHeaderValue } from './_headerTestUtils';
 import type { RunHeaderValue } from '../RunHeaderContext';
 
@@ -20,7 +18,7 @@ function renderStatus(value: Partial<RunHeaderValue>, props?: { open?: boolean; 
   return render(
     <RunHeader value={{ ...base, ...value }}>
       <RunHeader.Center>
-        <RunStatus {...props} />
+        <RunHeader.RunStatus {...props} />
       </RunHeader.Center>
     </RunHeader>,
   );

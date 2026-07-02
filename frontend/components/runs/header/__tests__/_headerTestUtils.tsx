@@ -16,8 +16,8 @@ import type { RunHeaderValue } from '../RunHeaderContext';
 /**
  * Canonical minimal `RunHeaderValue` baseline shared across header tests.
  *
- * Covers: Breadcrumb, Help, Toggles, RoleChip (all use this shape verbatim
- * or add overrides on top).  Other test files (StageRail, PrimaryAction,
+ * Covers: Breadcrumb, Help, Toggles, RunStatus (all use this shape verbatim
+ * or add overrides on top).  Other test files (PrimaryAction,
  * RunHeader.test, RunHeader.shell.test) use meaningfully different shapes and
  * are left with their own inline constants.
  */

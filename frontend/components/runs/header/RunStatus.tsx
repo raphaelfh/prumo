@@ -60,7 +60,8 @@ function NodeIcon({ node }: { node: StageNode }) {
  * avatars (drop <48rem), both opening a single status popover: kind-aware
  * 3-node timeline with role-voiced explainers, field progress, reviewer
  * counts, arbitrator-only divergences, the caller's role with the blind
- * reveal, and the revision note. Replaces StageRail + Reviewers + RoleChip.
+ * reveal, and the revision note. Replaces the former stage rail, reviewer
+ * cluster and role chip leaves.
  *
  * Divergence UI keys off the arbitrator capability derived from the context
  * `role` — never off divergence data merely arriving empty (blind reviewers'
