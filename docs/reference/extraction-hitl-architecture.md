@@ -106,7 +106,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0040_published_state_restrict` (post-squash numbering; run
+`0041_reviewer_ready_select_rls` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -470,10 +470,10 @@ publish, AI), keep it in the page-specific component.
   WHO marked ready is peer-attributable participation metadata (ADR-0012): the
   API scrubs `reviewers_ready` to the caller's own entry unless the caller is
   unblinded (`peers_revealed`); the counts stay aggregate. Single home of the
-  scrub: `ExtractionReviewerReadyService.ready_summary_from`. NOTE the RLS
-  SELECT on this table is still project-member-scoped (0029's "knowing someone
-  is done leaks no values" rationale predates the scrub), so the API is
-  deliberately stricter than RLS here pending a 0029 revisit.
+  scrub: `ExtractionReviewerReadyService.ready_summary_from`. The RLS SELECT
+  (`0041`, superseding 0029's member-wide read) self-scopes with the 0025
+  carve-outs (own row OR arbitrator OR finalized), so both read paths encode
+  the reviewer↔reviewer boundary in lockstep.
 - **managers_see_reviewers** — Per-kind manager blind-review policy on
   `projects.settings` (`{extraction, quality_assessment}`, both default
   `false` = managers blind). Read **live** by the API read path
