@@ -543,9 +543,11 @@ describe("QualityAssessmentFullScreen — blind-reveal stage guards", () => {
     vi.restoreAllMocks();
   });
 
-  it("blind manager during extract sees the Reveal affordance", async () => {
+  it("blind manager during extract sees Reveal inside the status popover", async () => {
     mockRunView({ stage: "extract" });
     renderPage();
+    // Reveal lives in the RunStatus popover now (run-header declutter).
+    await userEvent.click(await screen.findByTestId("run-stage-current"));
     expect(
       await screen.findByRole("button", { name: /reveal reviewers/i }),
     ).toBeInTheDocument();
@@ -556,9 +558,10 @@ describe("QualityAssessmentFullScreen — blind-reveal stage guards", () => {
     async (stage) => {
       mockRunView({ stage });
       renderPage();
-      // StageRail mounts only once the run view has loaded, so canReveal is
-      // settled by the time this resolves.
-      await screen.findByRole("navigation", { name: "Run stage" });
+      // The status chip mounts only once the run view has loaded, so
+      // canReveal is settled by the time this resolves.
+      await userEvent.click(await screen.findByTestId("run-stage-current"));
+      await screen.findByTestId("run-status-popover");
       expect(
         screen.queryByRole("button", { name: /reveal reviewers/i }),
       ).not.toBeInTheDocument();
@@ -568,7 +571,8 @@ describe("QualityAssessmentFullScreen — blind-reveal stage guards", () => {
   it("run-scoped auto-reveal (peers_revealed) hides the Reveal affordance even during extract", async () => {
     mockRunView({ stage: "extract", peersRevealed: true });
     renderPage();
-    await screen.findByRole("navigation", { name: "Run stage" });
+    await userEvent.click(await screen.findByTestId("run-stage-current"));
+    await screen.findByTestId("run-status-popover");
     expect(
       screen.queryByRole("button", { name: /reveal reviewers/i }),
     ).not.toBeInTheDocument();
