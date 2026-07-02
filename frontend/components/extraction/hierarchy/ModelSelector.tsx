@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/select';
 import { Plus, Trash2, Sparkles, Loader2, ChevronDown } from 'lucide-react';
 import {t} from '@/lib/copy';
+import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   DropdownMenu,
@@ -82,6 +83,9 @@ export function ModelSelector({
   onExtractAllSectionsForAllModels,
   extractingAllSectionsForAllModels = false,
 }: ModelSelectorProps) {
+  // Read-only run: add/remove/AI-extract affordances hide (published view).
+  // Hook stays above the conditional loading/empty returns (rules of hooks).
+  const { readOnly } = useRunEditability();
   const activeModel = models.find(m => m.instanceId === activeModelId);
 
   // Renderizar badge de progresso (semantic tokens; flips correctly in dark mode)
@@ -131,7 +135,7 @@ export function ModelSelector({
             {t('extraction', 'noModelsAddedDesc')}
           </p>
           <div className="flex flex-col sm:flex-row gap-2 justify-center">
-            {onExtractModels && (
+            {!readOnly && onExtractModels && (
               <Button 
                 onClick={onExtractModels} 
                 size="default" 
@@ -152,10 +156,12 @@ export function ModelSelector({
                 )}
               </Button>
             )}
-            <Button onClick={onAddModel} size="default" variant="outline" className="gap-2">
-              <Plus className="h-4 w-4" />
-                {t('extraction', 'addManually')}
-            </Button>
+            {!readOnly && (
+              <Button onClick={onAddModel} size="default" variant="outline" className="gap-2">
+                <Plus className="h-4 w-4" />
+                  {t('extraction', 'addManually')}
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -174,7 +180,7 @@ export function ModelSelector({
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
-          {onExtractModels && (
+          {!readOnly && onExtractModels && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button 
@@ -211,16 +217,18 @@ export function ModelSelector({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          <Button 
-            onClick={onAddModel} 
-            size="sm" 
-            variant="outline" 
-            className="gap-2"
-            title={t('extraction', 'modelAddManuallyTitle')}
-          >
-            <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">{t('extraction', 'modelNewShort')}</span>
-          </Button>
+          {!readOnly && (
+            <Button
+              onClick={onAddModel}
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              title={t('extraction', 'modelAddManuallyTitle')}
+            >
+              <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">{t('extraction', 'modelNewShort')}</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -242,7 +250,7 @@ export function ModelSelector({
           </SelectContent>
         </Select>
 
-        {activeModelId && (
+        {!readOnly && activeModelId && (
           <Button
             size="sm"
             variant="ghost"
@@ -272,7 +280,7 @@ export function ModelSelector({
                   {renderProgressBadge(activeModel.progress)}
                 </div>
               )}
-              {onExtractAllSections && (
+              {!readOnly && onExtractAllSections && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
