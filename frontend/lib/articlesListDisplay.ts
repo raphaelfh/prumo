@@ -2,7 +2,6 @@
  * Column labels and cell formatting for the articles data table (full metadata).
  */
 import type {Article} from '@/types/article';
-import {t} from '@/lib/copy';
 import {formatZoteroItemTypeForDisplay} from '@/lib/zoteroItemTypes';
 
 /** Columns after core UI columns (title, PDF, source, authors, journal, year, keywords, DOI, abstract). */
@@ -43,16 +42,7 @@ export const ARTICLES_DATA_COLUMN_DEFS: { id: string; label: string }[] = [
     {id: 'last_synced_at', label: 'Last sync'},
     {id: 'created_at', label: 'Created'},
     {id: 'updated_at', label: 'Updated'},
-    {id: 'pdf_extracted_text', label: 'PDF text'},
-    {id: 'semantic_abstract_text', label: 'Sem. abstract'},
-    {id: 'semantic_fulltext_text', label: 'Sem. fulltext'},
 ];
-
-const BLOB_COLUMN_IDS = new Set([
-    'pdf_extracted_text',
-    'semantic_abstract_text',
-    'semantic_fulltext_text',
-]);
 
 function truncate(s: string, max: number): string {
     if (s.length <= max) return s;
@@ -67,13 +57,6 @@ function jsonPreview(v: unknown): string {
 
 /** Plain-text cell value for table (tooltip / title can wrap). */
 export function formatArticleListCell(article: Article, columnId: string): string {
-    if (BLOB_COLUMN_IDS.has(columnId)) {
-        const raw = article[columnId as keyof Article];
-        if (raw == null || raw === '') return '\u2013';
-        if (typeof raw === 'string' && raw.length > 0) return truncate(raw, 64);
-        return '\u2026';
-    }
-
     switch (columnId) {
         case 'publication_month':
             return article.publication_month != null ? String(article.publication_month) : '\u2013';
@@ -146,13 +129,4 @@ export function formatArticleListCell(article: Article, columnId: string): strin
         default:
             return '\u2013';
     }
-}
-
-export function articleListCellTitle(article: Article, columnId: string): string | undefined {
-    if (BLOB_COLUMN_IDS.has(columnId)) {
-        const raw = article[columnId as keyof Article];
-        if (raw == null || raw === '')
-            return t('articles', 'listSemanticTextNotLoaded');
-    }
-    return undefined;
 }

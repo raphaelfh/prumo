@@ -343,6 +343,42 @@ async def test_migration_0039_round_trip(db_session: AsyncSession) -> None:
     assert cols == {"allows_not_applicable", "allows_not_evaluated"}
 
 
+_ARTICLE_BLOB_COLS = text(
+    "SELECT column_name FROM information_schema.columns "
+    "WHERE table_schema = 'public' AND table_name = 'articles' "
+    "AND column_name IN "
+    "('pdf_extracted_text', 'semantic_abstract_text', 'semantic_fulltext_text')"
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0042_round_trip(db_session: AsyncSession) -> None:
+    """``0042_drop_article_blob_columns`` drops the three dead BLOB columns
+    from ``articles`` (spec 2026-06-20, decision 2). Downgrading to the
+    explicit parent ``0041_reviewer_ready_select_rls`` restores the columns
+    (structure only, not the data); ``upgrade head`` re-drops them.
+    Downgrades to the explicit parent (not ``-1``) so the test stays correct
+    as later migrations stack on top."""
+    cols_at_head = set((await db_session.execute(_ARTICLE_BLOB_COLS)).scalars().all())
+    assert cols_at_head == set(), "the three blob columns must be absent at HEAD"
+
+    _run_alembic("downgrade", "0041_reviewer_ready_select_rls")
+    try:
+        await db_session.commit()
+        cols_down = set((await db_session.execute(_ARTICLE_BLOB_COLS)).scalars().all())
+        assert cols_down == {
+            "pdf_extracted_text",
+            "semantic_abstract_text",
+            "semantic_fulltext_text",
+        }, "downgrade must restore all three blob columns"
+    finally:
+        _run_alembic("upgrade", "head")
+
+    await db_session.commit()
+    cols_after = set((await db_session.execute(_ARTICLE_BLOB_COLS)).scalars().all())
+    assert cols_after == set(), "upgrade head must re-drop all three blob columns"
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision() -> None:
     """Pin the head revision id. If a future migration is added without
@@ -351,8 +387,8 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0041_reviewer_ready_select_rls" in out, (
-        f"Expected head revision '0041_reviewer_ready_select_rls', got:\n{out}"
+    assert "0042_drop_article_blob_columns" in out, (
+        f"Expected head revision '0042_drop_article_blob_columns', got:\n{out}"
     )
 
 
