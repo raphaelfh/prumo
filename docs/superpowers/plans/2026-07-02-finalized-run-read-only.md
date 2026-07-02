@@ -10,7 +10,7 @@ owner: '@raphaelfh'
 
 **Goal:** A finalized (Published) run renders read-only on both session screens, showing the published values, with a visible "published — read-only" banner and a Reopen button; UI editability and autosave persistence are driven by one shared predicate.
 
-**Architecture:** A tiny `editability` helper (`editable ⇔ stage === 'extract'`) shared by autosave and a new `RunEditability` React context; interactive leaf components (FieldInput, suggestion chrome, add/remove controls, section AI-extract, nav-rail footer) consume the context with an editable default. A new published-values resolution path hydrates the form from `runDetail.published_states` at `finalized` (extraction via `useExtractedValues`, QA via its inline hydration), preserving ADR-0016 marker envelopes so dispositions render as labels. Zero backend behavior changes; backend gets missing 400-on-finalized test coverage.
+**Architecture:** A tiny `editability` helper (`editable ⇔ stage === 'extract'`) shared by autosave and a new `RunEditability` React context; interactive leaf components (FieldInput, suggestion chrome, add/remove controls, section AI-extract, nav-rail footer) consume the context with an editable default. A new published-values resolution path hydrates the form from `runDetail.published_states` at `finalized` (extraction via `useExtractedValues`, QA via its inline hydration), preserving ADR-0016 marker envelopes so dispositions render as labels. Backend endpoints unchanged; one DB-integrity migration (published-state instance FK CASCADE → RESTRICT, panel security finding) plus missing 400-on-finalized test coverage.
 
 **Tech Stack:** React 19 + TS strict, React Compiler (`panicThreshold: all_errors`), vitest + RTL (jsdom), TanStack Query, in-house copy at `frontend/lib/copy/`, pytest (backend integration).
 
@@ -24,7 +24,7 @@ Spec: `docs/superpowers/specs/2026-07-02-finalized-run-read-only-design.md`.
 - `ExtractionFormView` and `FieldInput` have custom memo comparators. Context consumption bypasses memo (context updates always re-render consumers) — this is WHY we use context, not new props. Do NOT add new props to those components for editability.
 - Frontend tests: `npx vitest run <file>` for a single file; full suite `npm run test:run` (NEVER plain `npm test` — watch mode hangs).
 - Backend tests: `cd backend && uv run pytest <file> -x` (needs local Supabase Docker; never run two backend suites concurrently — advisory lock).
-- Conventional commits. No Alembic migration (no model changes). No API schema changes ⇒ no `npm run generate:api-types` needed.
+- Conventional commits. ONE Alembic migration (Task 9b: FK flip; revision id ≤ 32 chars, literal constraint names via raw SQL). No API/Pydantic schema changes ⇒ no `npm run generate:api-types` needed.
 - Most component tests mock copy as `vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }))` — queries then match copy KEYS. Screen-level tests use REAL copy.
 
 ---
@@ -38,7 +38,7 @@ Spec: `docs/superpowers/specs/2026-07-02-finalized-run-read-only-design.md`.
 - Modify: `frontend/pages/QualityAssessmentFullScreen.tsx:247-254` (autosave `enabled`)
 
 **Interfaces:**
-- Produces: `isRunEditable(stage: string | null | undefined): boolean`; `readOnlyReason(stage: string | null | undefined): ReadOnlyReason | null`; `type ReadOnlyReason = 'finalized' | 'consensus' | 'pending'`. Later tasks import from `@/lib/runs/editability`.
+- Produces: `isRunEditable(stage: string | null | undefined): boolean` — the single export (a `reason` vocabulary was dropped in panel review: no consumer branches on it; the banner keys off `finalized` directly). Later tasks import from `@/lib/runs/editability`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -47,10 +47,7 @@ Spec: `docs/superpowers/specs/2026-07-02-finalized-run-read-only-design.md`.
 ```ts
 import { describe, expect, it } from 'vitest';
 
-import {
-  isRunEditable,
-  readOnlyReason,
-} from '@/lib/runs/editability';
+import { isRunEditable } from '@/lib/runs/editability';
 
 describe('isRunEditable', () => {
   it('is true only for the extract stage', () => {
@@ -58,22 +55,6 @@ describe('isRunEditable', () => {
     for (const stage of ['finalized', 'consensus', 'pending', 'cancelled', null, undefined]) {
       expect(isRunEditable(stage)).toBe(false);
     }
-  });
-});
-
-describe('readOnlyReason', () => {
-  it('is null when editable', () => {
-    expect(readOnlyReason('extract')).toBeNull();
-  });
-  it('maps terminal/holding stages', () => {
-    expect(readOnlyReason('finalized')).toBe('finalized');
-    expect(readOnlyReason('consensus')).toBe('consensus');
-  });
-  it('treats unknown/absent stages as pending (not yet editable)', () => {
-    expect(readOnlyReason('pending')).toBe('pending');
-    expect(readOnlyReason('cancelled')).toBe('pending');
-    expect(readOnlyReason(null)).toBe('pending');
-    expect(readOnlyReason(undefined)).toBe('pending');
   });
 });
 ```
@@ -91,31 +72,18 @@ Expected: FAIL — cannot resolve `@/lib/runs/editability`.
 /**
  * Single editability invariant (spec 2026-07-02 D1): the form is editable
  * exactly when autosave persists — both derive from this predicate so the
- * UI can never accept input the backend will drop.
+ * UI can never accept input the backend will drop. Absent/unknown stages
+ * (still loading, cancelled) are read-only.
  */
-export type ReadOnlyReason = 'finalized' | 'consensus' | 'pending';
-
 export function isRunEditable(stage: string | null | undefined): boolean {
   return stage === 'extract';
-}
-
-/**
- * Why the run is read-only. `null` means editable. Anything that is not a
- * known lifecycle stage (loading, cancelled) maps to 'pending' — "not yet
- * editable", no published banner.
- */
-export function readOnlyReason(stage: string | null | undefined): ReadOnlyReason | null {
-  if (stage === 'extract') return null;
-  if (stage === 'finalized') return 'finalized';
-  if (stage === 'consensus') return 'consensus';
-  return 'pending';
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run frontend/test/lib/editability.test.ts`
-Expected: PASS (5 tests).
+Expected: PASS (1 test).
 
 - [ ] **Step 5: Switch both autosave `enabled` predicates to the helper**
 
@@ -126,7 +94,7 @@ Expected: PASS (5 tests).
       !!activeRunId && !loading && valuesInitialized && isRunEditable(stage),
 ```
 
-`frontend/pages/QualityAssessmentFullScreen.tsx` — add the same import and change (current lines 293-294):
+`frontend/pages/QualityAssessmentFullScreen.tsx` — add the same import and change (current lines ~252-253; anchor on the `enabled:` content, not the line number):
 
 ```tsx
       enabled:
@@ -156,8 +124,8 @@ git commit -m "refactor(runs): single editability predicate shared by both autos
 - Create: `frontend/components/runs/RunEditabilityContext.test.tsx`
 
 **Interfaces:**
-- Consumes: `isRunEditable`, `readOnlyReason` from Task 1.
-- Produces: `RunEditabilityProvider({ stage, children })`; `useRunEditability(): RunEditabilityValue` where `RunEditabilityValue = { readOnly: boolean; reason: ReadOnlyReason | null }`. **Default (no provider) is editable** — safe for every existing FieldInput consumer and test.
+- Consumes: `isRunEditable` from Task 1.
+- Produces: `RunEditabilityProvider({ stage, children })`; `useRunEditability(): RunEditabilityValue` where `RunEditabilityValue = { readOnly: boolean }`. **Default (no provider) is editable** — safe for every existing FieldInput consumer and test.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -173,15 +141,14 @@ import {
 } from './RunEditabilityContext';
 
 function Probe() {
-  const { readOnly, reason } = useRunEditability();
-  return <div data-testid="probe" data-readonly={String(readOnly)} data-reason={reason ?? ''} />;
+  const { readOnly } = useRunEditability();
+  return <div data-testid="probe" data-readonly={String(readOnly)} />;
 }
 
 describe('RunEditability context', () => {
   it('defaults to editable without a provider', () => {
     render(<Probe />);
     expect(screen.getByTestId('probe')).toHaveAttribute('data-readonly', 'false');
-    expect(screen.getByTestId('probe')).toHaveAttribute('data-reason', '');
   });
 
   it('is editable for the extract stage', () => {
@@ -193,20 +160,17 @@ describe('RunEditability context', () => {
     expect(screen.getByTestId('probe')).toHaveAttribute('data-readonly', 'false');
   });
 
-  it.each([
-    ['finalized', 'finalized'],
-    ['consensus', 'consensus'],
-    ['pending', 'pending'],
-    [null, 'pending'],
-  ])('is read-only with reason for stage=%s', (stage, reason) => {
-    render(
-      <RunEditabilityProvider stage={stage as string | null}>
-        <Probe />
-      </RunEditabilityProvider>,
-    );
-    expect(screen.getByTestId('probe')).toHaveAttribute('data-readonly', 'true');
-    expect(screen.getByTestId('probe')).toHaveAttribute('data-reason', reason);
-  });
+  it.each([['finalized'], ['consensus'], ['pending'], [null]])(
+    'is read-only for stage=%s',
+    (stage) => {
+      render(
+        <RunEditabilityProvider stage={stage as string | null}>
+          <Probe />
+        </RunEditabilityProvider>,
+      );
+      expect(screen.getByTestId('probe')).toHaveAttribute('data-readonly', 'true');
+    },
+  );
 });
 ```
 
@@ -222,20 +186,16 @@ Expected: FAIL — module not found.
 ```tsx
 import { createContext, useContext, type ReactNode } from 'react';
 
-import {
-  isRunEditable,
-  readOnlyReason,
-  type ReadOnlyReason,
-} from '@/lib/runs/editability';
+import { isRunEditable } from '@/lib/runs/editability';
 
 export interface RunEditabilityValue {
   readOnly: boolean;
-  reason: ReadOnlyReason | null;
 }
 
-// Editable default (module constant → stable identity): a FieldInput rendered
-// outside any provider (tests, dev harness) behaves exactly as before.
-const EDITABLE: RunEditabilityValue = { readOnly: false, reason: null };
+// Editable default: a FieldInput rendered outside any provider (tests,
+// dev harness) behaves exactly as before.
+const EDITABLE: RunEditabilityValue = { readOnly: false };
+const READ_ONLY: RunEditabilityValue = { readOnly: true };
 
 const RunEditabilityCtx = createContext<RunEditabilityValue>(EDITABLE);
 
@@ -246,9 +206,7 @@ export function RunEditabilityProvider({
   stage: string | null | undefined;
   children: ReactNode;
 }) {
-  const value: RunEditabilityValue = isRunEditable(stage)
-    ? EDITABLE
-    : { readOnly: true, reason: readOnlyReason(stage) };
+  const value = isRunEditable(stage) ? EDITABLE : READ_ONLY;
   return <RunEditabilityCtx.Provider value={value}>{children}</RunEditabilityCtx.Provider>;
 }
 
@@ -256,8 +214,6 @@ export function useRunEditability(): RunEditabilityValue {
   return useContext(RunEditabilityCtx);
 }
 ```
-
-(The React Compiler memoizes the read-only value object on its `stage` dep — no manual `useMemo`.)
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -280,7 +236,7 @@ git commit -m "feat(runs): RunEditability context with editable default"
 - Create: `frontend/test/lib/publishedValues.test.ts`
 
 **Interfaces:**
-- Consumes: `PublishedStateResponse` from `@/hooks/runs/types` (`{ id, run_id, instance_id, field_id, value: Record<string, unknown>, published_at, published_by, version }`); `valueAbsentReason` from `@/lib/extraction/valueSemantics`; `unwrapValue` from `@/services/extractionValueService`; `extractValueFromDb` from `@/lib/validations/selectOther`.
+- Consumes: `PublishedStateResponse` from `@/hooks/runs/types` (`{ id, run_id, instance_id, field_id, value: Record<string, unknown>, published_at, published_by, version }`); `valueAbsentReason` + `unwrapValueEnvelope` from `@/lib/extraction/valueSemantics`; `extractValueFromDb` from `@/lib/validations/selectOther`. (Do NOT import from `@/services/` — lib never depends on services in this repo, and the services module drags the supabase client into env-less unit tests.)
 - Produces: `publishedStatesToValuesMap(rows): Record<string, unknown>` keyed `${instance_id}_${field_id}` — the exact key shape both screens' values maps use.
 
 - [ ] **Step 1: Write the failing test**
@@ -324,16 +280,9 @@ describe('publishedStatesToValuesMap', () => {
     expect(map['i1_f1']).toEqual(marker);
   });
 
-  it('keeps units from a double-wrapped envelope', () => {
+  it('keeps units from a double-wrapped envelope (the only unit shape writers produce)', () => {
     const map = publishedStatesToValuesMap([
       row({ value: { value: { value: 12, unit: 'weeks' } } }),
-    ]);
-    expect(map['i1_f1']).toEqual({ value: 12, unit: 'weeks' });
-  });
-
-  it('keeps units from a single-wrapped envelope', () => {
-    const map = publishedStatesToValuesMap([
-      row({ value: { value: 12, unit: 'weeks' } }),
     ]);
     expect(map['i1_f1']).toEqual({ value: 12, unit: 'weeks' });
   });
@@ -359,8 +308,10 @@ Expected: FAIL — module not found.
 
 ```ts
 import { extractValueFromDb } from '@/lib/validations/selectOther';
-import { valueAbsentReason } from '@/lib/extraction/valueSemantics';
-import { unwrapValue } from '@/services/extractionValueService';
+import {
+  unwrapValueEnvelope,
+  valueAbsentReason,
+} from '@/lib/extraction/valueSemantics';
 import type { PublishedStateResponse } from '@/hooks/runs/types';
 
 /**
@@ -371,6 +322,10 @@ import type { PublishedStateResponse } from '@/hooks/runs/types';
  * Marker envelopes (`{value: null, absent_reason}`) are preserved verbatim —
  * FieldInput derives the disposition label from the raw envelope, and the
  * generic unwrap would collapse the marker to null.
+ *
+ * Unit handling mirrors the reviewer-state loop in useExtractedValues: every
+ * writer publishes units double-wrapped ({value:{value,unit}}), so one peel
+ * exposes the {value,unit} inner envelope for the unit sniff.
  */
 export function publishedStatesToValuesMap(
   rows: readonly PublishedStateResponse[] | undefined,
@@ -383,16 +338,11 @@ export function publishedStatesToValuesMap(
       map[key] = raw;
       continue;
     }
-    const unwrapped = unwrapValue(raw);
-    // Unit lives on the inner envelope when the form double-wrapped
-    // ({value:{value,unit}}), or on the published envelope itself when the
-    // consensus value was single-wrapped ({value,unit}).
+    const unwrapped = unwrapValueEnvelope(raw) ?? null;
     const unit =
       typeof unwrapped === 'object' && unwrapped !== null && 'unit' in unwrapped
         ? ((unwrapped as { unit: string | null }).unit ?? null)
-        : typeof raw === 'object' && raw !== null && 'unit' in raw
-          ? ((raw as { unit: string | null }).unit ?? null)
-          : null;
+        : null;
     map[key] = extractValueFromDb({ value: unwrapped, unit });
   }
   return map;
@@ -402,7 +352,7 @@ export function publishedStatesToValuesMap(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run frontend/test/lib/publishedValues.test.ts`
-Expected: PASS (6 tests).
+Expected: PASS (5 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -424,7 +374,7 @@ git commit -m "feat(extraction): published_states → form values map helper (ma
 - Consumes: `publishedStatesToValuesMap` (Task 3).
 - Produces: new optional hook prop `publishedStates?: PublishedStateResponse[]`. At `stage === 'finalized'` the hook hydrates ONLY from it; `currentValues` is no longer read at finalized.
 
-- [ ] **Step 1: Write the failing tests** (append a suite to `frontend/test/hooks/useExtractedValues.test.tsx`, reusing the file's existing mock preamble — note the file mocks `@/services/extractionValueService` with an inline `unwrapValue`; the new code path imports the helper which ALSO uses that mock, so marker rows must be asserted against the mock's behavior. The helper preserves markers before unwrap, so assertions hold):
+- [ ] **Step 1: Write the failing tests** (append a suite to `frontend/test/hooks/useExtractedValues.test.tsx`, reusing the file's existing mock preamble — the published helper lives in `lib/` and touches no mocked service module, so no new mocks are needed. Also update the test file's own header comment, which still documents the retired "finalized resolves from reviewer-states" semantics):
 
 ```tsx
 describe('finalized stage — published values', () => {
@@ -474,6 +424,33 @@ describe('finalized stage — published values', () => {
     await waitFor(() => expect(result.current.initialized).toBe(true));
     expect(result.current.values['i1_f2']).toEqual({ value: null, absent_reason: 'no_information' });
   });
+
+  it('REPLACES pre-finalize values when the same run flips to finalized in-session', async () => {
+    // The manager finalizes from consensus WITHOUT leaving the page
+    // (handleApproveFinalize → refetchRun + refreshValues): the runId is
+    // unchanged, so the hydration must replace, not merge — otherwise the
+    // stale reviewer-state value survives under the Published banner.
+    const { result, rerender } = renderHook(
+      ({ stage, publishedStates }: { stage: string; publishedStates?: unknown }) =>
+        useExtractedValues({
+          runId: 'run-1',
+          stage,
+          kind: 'extraction',
+          currentUserId: 'user-1',
+          currentValues: [
+            { instance_id: 'i1', field_id: 'f1', value: { value: 'MY-DRAFT' }, decision: 'edit' },
+          ],
+          publishedStates: publishedStates as never,
+        }),
+      { initialProps: { stage: 'consensus' } },
+    );
+    await waitFor(() => expect(result.current.values['i1_f1']).toBe('MY-DRAFT'));
+
+    rerender({ stage: 'finalized', publishedStates: published });
+    await waitFor(() => expect(result.current.values['i1_f1']).toBe('published-A'));
+    // The draft-only coord from the consensus hydration is gone too:
+    expect(result.current.values['i1_f9']).toBeUndefined();
+  });
 });
 ```
 
@@ -486,7 +463,7 @@ Expected: new suite FAILS (`i1_f1` is `'MY-DRAFT'` — reviewer-state path still
 
 In `frontend/hooks/extraction/useExtractedValues.ts`:
 
-1. Add imports:
+1. Add the helper import, and EXTEND the existing type import in place (the file already has `import type { ProposalRecordResponse, RunViewCurrentValue } from '@/hooks/runs/types';` at ~line 41 — add `PublishedStateResponse` to that line; a second import statement from the same module is a duplicate-identifier TS error):
 
 ```ts
 import { publishedStatesToValuesMap } from '@/lib/extraction/publishedValues';
@@ -506,17 +483,26 @@ import type { ProposalRecordResponse, PublishedStateResponse, RunViewCurrentValu
 
 3. Destructure it: `const { runId, stage, kind, proposals, currentValues, publishedStates, currentUserId, enabled = true } = props;`
 
-4. In `doLoad`, insert BEFORE the `usesProposalsPath` branch:
+4. In `doLoad`, insert BEFORE the `usesProposalsPath` branch. CRITICAL: the branch must REPLACE the values map, not merge. `applyLoadedValues` merges when `hydratedRunIdRef.current === runId` (`mergeValuesById` keeps every existing key), so an in-session finalize (same runId, stage consensus → finalized via `handleApproveFinalize`) would keep stale reviewer-state values under the Published banner. Reset the hydration marker first so `applyLoadedValues` takes its replace path, and keep an identity guard so refetch churn with unchanged content doesn't re-render the tree:
 
 ```ts
         if (stage === 'finalized') {
           // Published truth only — no reviewer-state fallback. A coord
           // without a published row renders empty (it was never published).
-          applyLoadedValues(publishedStatesToValuesMap(publishedStates));
+          const publishedMap = publishedStatesToValuesMap(publishedStates);
+          setValues((prev) =>
+            JSON.stringify(prev) === JSON.stringify(publishedMap) ? prev : publishedMap,
+          );
+          setLoadedValues((prev) =>
+            JSON.stringify(prev) === JSON.stringify(publishedMap) ? prev : publishedMap,
+          );
+          hydratedRunIdRef.current = runId;
           setInitialized(true);
           return;
         }
 ```
+
+(This bypasses `applyLoadedValues` deliberately: published hydration is a full replacement — local-edits-win merging is an editable-form concern and there are no local edits on a read-only run. The JSON-equality guards mirror the existing `setLoadedValues` identity check at lines 173-175.)
 
 5. Remove `stage === 'finalized'` from `usesReviewerStatePath` and update its comment:
 
@@ -537,6 +523,8 @@ function usesReviewerStatePath(
 ```
 
 (The `useEffect` deps are `[enabled, loadValues]` and the React Compiler tracks `loadValues`'s real captures — `publishedStates` joins the closure automatically; no manual dep edit.)
+
+Also update the now-stale doc comments in the SAME commit: the file-header docblock ("consensus/finalized always use reviewer-states"), the `kind` prop doc (lines ~56-60), and the `currentValues` prop doc — all three must say finalized resolves from `published_states`.
 
 6. Wire the call site, `frontend/pages/ExtractionFullScreen.tsx` (~line 209):
 
@@ -576,18 +564,23 @@ git commit -m "feat(extraction): finalized runs hydrate the form from published_
 **Interfaces:**
 - Consumes: `publishedStatesToValuesMap` (Task 3).
 
-- [ ] **Step 1: Write the failing screen test** (extend `frontend/test/QualityAssessmentFullScreen.test.tsx`; clone the existing run-view apiClient fixture into a finalized variant — `run: { ...run, stage: 'finalized' }`, `proposals` keeping one stale proposal `{ instance_id, field_id, proposed_value: { value: 'draft-proposal' }, ... }` for a field, and `published_states: [{ id, run_id, instance_id, field_id, value: { value: 'published-final' }, published_at, published_by, version: 1 }]` for the same coord — follow the file's existing fixture shapes verbatim):
+- [ ] **Step 1: Write the failing screen test** (extend `frontend/test/QualityAssessmentFullScreen.test.tsx`; clone the existing run-view apiClient fixture into a finalized variant. IMPORTANT — verified fixture facts this test must fit: the fixture's fields are Radix SELECTs (`'Appropriate data sources?'` with allowed values `['Y','PY','PN','N','NI','NA']`), FieldInput labels have no `htmlFor`, so `findByLabelText`/`toHaveValue` CANNOT work. Publish an ALLOWED code and assert the rendered select-trigger text within the domain):
 
 ```tsx
 it('finalized: form shows published values, not latest proposals', async () => {
-  // Arrange the URL-keyed apiClient mock to return the finalized run view.
+  // Fixture variant: run.stage = 'finalized'; proposals keep one stale row
+  // { instance_id: 'inst-1', field_id: 'f-1', proposed_value: { value: 'PY' } };
+  // published_states: [{ id: 'ps-1', run_id: 'run-1', instance_id: 'inst-1',
+  //   field_id: 'f-1', value: { value: 'Y' }, published_at: '', published_by: 'u9', version: 1 }].
   renderPage();
-  const input = await screen.findByLabelText(/randomization/i); // the field label used by the existing fixture
-  expect(input).toHaveValue('published-final');
+  const domain = await screen.findByTestId('qa-domains');
+  // Published code renders on the select trigger; the stale proposal does not.
+  expect(await within(domain).findByText('Y')).toBeInTheDocument();
+  expect(within(domain).queryByText('PY')).not.toBeInTheDocument();
 });
 ```
 
-(Adapt the query to the fixture's actual field label — the existing fixture in this file defines the domain/field labels; use the same one the current tests assert on.)
+(Match the fixture's real instance/field ids and testids — read the file's existing run-view mock first; if the domain container testid differs, anchor `within()` on the testid the fixture actually renders. If 'Y' collides with other trigger text, switch the published code to a fixture-unique allowed value like 'NA'.)
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -615,16 +608,7 @@ In `QualityAssessmentFullScreen.tsx` add `import { publishedStatesToValuesMap } 
   }
 ```
 
-And the autosave baseline block:
-
-```tsx
-  const loadedValues =
-    runDetail?.run.stage === "finalized"
-      ? publishedStatesToValuesMap(runDetail.published_states)
-      : loadedValuesMap;
-```
-
-(Keep the existing `loadedValuesMap` proposal loop for the non-finalized branch; autosave is disabled at finalized so the baseline value is inert — set it anyway for coherence.)
+Leave the autosave baseline (`loadedValuesMap`) untouched — autosave is disabled at finalized by the Task 1 gate, so a finalized-aware baseline would be dead code (panel YAGNI finding).
 
 - [ ] **Step 4: Run to verify pass**
 
@@ -717,13 +701,28 @@ describe('FieldInput under a read-only run', () => {
   });
 
   it('hides the pending-suggestion strip and badge', () => {
+    // Content-based assertion with a positive control: 'ai-suggestion-display'
+    // has NO testid in the repo (verified) — a testid query would pass
+    // vacuously both before and after the fix.
     renderReadOnly(
       <FieldInput
         field={makeField({})} instanceId="i1" value="" onChange={vi.fn()} projectId="p1"
         aiSuggestion={PENDING_SUGGESTION} onAcceptAI={vi.fn()} onRejectAI={vi.fn()}
       />,
     );
-    expect(screen.queryByTestId('ai-suggestion-display')).not.toBeInTheDocument();
+    expect(screen.queryByText('suggested')).not.toBeInTheDocument();
+  });
+
+  it('positive control: the strip DOES render without a provider', () => {
+    rtlRender(
+      <TooltipProvider>
+        <FieldInput
+          field={makeField({})} instanceId="i1" value="" onChange={vi.fn()} projectId="p1"
+          aiSuggestion={PENDING_SUGGESTION} onAcceptAI={vi.fn()} onRejectAI={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.getByText('suggested')).toBeInTheDocument();
   });
 
   it('stays editable without a provider (default)', () => {
@@ -737,7 +736,7 @@ describe('FieldInput under a read-only run', () => {
 });
 ```
 
-(If `AISuggestionDisplay` has no `data-testid`, assert on its visible content instead — e.g. `screen.queryByText('suggested')` — check the component's DOM in the failing run and pin the strongest selector.)
+(The positive control proves the read-only assertion is non-vacuous: same props, provider on/off, strip present/absent. If the raw string renders differently — e.g. via AISuggestionValue formatting — pin whatever text the positive control finds.)
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -771,12 +770,14 @@ Then replace every `disabled={disabled}` inside `renderInput()` and the disposit
 
 ```tsx
 import { useRunEditability } from '@/components/runs/RunEditabilityContext';
-// in the component:
-  const { readOnly } = useRunEditability();
 ```
 
-- "Use this version" button (~line 141): render only when `!readOnly` (an `isSelected` version keeps its chip).
-- Clear button (~line 275-282): change the gate `onClear ? (...)` to `onClear && !readOnly ? (...)`.
+NOTE: the "Use this version" button (~line 141) lives inside the file-local `VersionRow` subcomponent, not the exported popover body — consume the hook in BOTH places (context crosses Radix portals fine), or call it once in `VersionRow` and once in the popover body:
+
+- `VersionRow`: `const { readOnly } = useRunEditability();` → render the "Use this version" button only when `!readOnly` (an `isSelected` version keeps its chip).
+- Popover body: `const { readOnly } = useRunEditability();` → Clear button gate (~line 275-282) changes from `onClear ? (...)` to `onClear && !readOnly ? (...)`.
+
+Add a read-only popover test to the new `FieldInput.readonly.test.tsx` (do NOT mock the popover there): render FieldInput read-only with `getSuggestionsHistory` resolving one non-selected version, open the popover (click the History-icon trigger), then `expect(screen.queryByText('reviewUseThisVersion')).not.toBeInTheDocument()` (copy is key-mocked) with a positive control in the editable render.
 
 - [ ] **Step 5: Run the new + adjacent suites**
 
@@ -833,9 +834,35 @@ it('read-only: hides the section AI-extract button and the add-instance button',
   expect(screen.queryByTestId('section-ai-extract-et1')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /sectionAddInstance/ })).not.toBeInTheDocument();
 });
+
+it('read-only: InstanceCard hides remove and add-below-cards controls', () => {
+  // One instance so InstanceCard actually mounts (empty instances would make
+  // the InstanceCard gates unexercised — panel coverage finding).
+  render(
+    <Wrapper>
+      <RunEditabilityProvider stage="finalized">
+        <SectionAccordion
+          entityType={{ ...entityType, cardinality: 'many' }}
+          instances={[{ id: 'i1', entity_type_id: 'et1', article_id: 'a', template_id: 't', label: null, metadata: {}, created_at: '' } as never]}
+          fields={[]}
+          values={{}}
+          onValueChange={vi.fn()}
+          onAddInstance={vi.fn()}
+          onRemoveInstance={vi.fn()}
+          projectId="p" articleId="a" templateId="t"
+        />
+      </RunEditabilityProvider>
+    </Wrapper>,
+  );
+  expect(screen.queryByRole('button', { name: /addInstanceLabel/ })).not.toBeInTheDocument();
+  // InstanceCard's remove (Trash2) button is icon-only; assert no destructive button renders:
+  expect(document.querySelector('[class*="text-destructive"]')).toBeNull();
+});
 ```
 
-Extend `frontend/components/assessment/QASectionAccordion.test.tsx`:
+Also add a small read-only case to `ModelSelector` (new colocated `frontend/components/extraction/hierarchy/ModelSelector.readonly.test.tsx`, minimal render with one model): assert the add-model button (`modelAddManuallyTitle` key), remove-model button, and AI-extract dropdown are absent under `RunEditabilityProvider stage="finalized"`, present without the provider (positive control).
+
+Extend `frontend/components/assessment/QASectionAccordion.test.tsx` (NOTE: the file passes props INLINE — there is no `baseProps` object; extract the existing inline props into a local `const baseProps` first, keeping the existing editable test green):
 
 ```tsx
 it('read-only: hides the per-domain AI-extract button', () => {
@@ -848,7 +875,7 @@ it('read-only: hides the per-domain AI-extract button', () => {
 });
 ```
 
-(Reuse that file's existing props object; it already asserts the button EXISTS in the editable case.)
+(The existing test already asserts the button EXISTS in the editable case — that is the positive control.)
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -857,11 +884,13 @@ Expected: new tests FAIL (buttons render).
 
 - [ ] **Step 3: Implement**
 
-`SectionAIExtractButton.tsx` — first thing in the component body:
+`SectionAIExtractButton.tsx` — RULES OF HOOKS (panel blocking finding): the component calls `useSectionExtraction(...)` at ~line 46; an early return ABOVE it makes that hook conditional → eslint error, React Compiler panic (fails vitest), and a real "rendered fewer hooks" crash when `readOnly` flips on a mounted tree (stage starts null). The bail goes AFTER all hooks:
 
 ```tsx
   const { readOnly } = useRunEditability();
+  const { extractSection, loading } = useSectionExtraction({ onSuccess }); // existing hook, unchanged
   if (readOnly) return null;
+  // ...existing handleClick + JSX unchanged...
 ```
 
 `SectionAccordion.tsx` — `const { readOnly } = useRunEditability();`; gate both add-instance renders with `!readOnly &&` (`{isMultiple && !readOnly && props.onAddInstance && (...)}` and `{!readOnly && props.onAddInstance && (...)}`).
@@ -906,10 +935,12 @@ git commit -m "feat(extraction): form-tree affordances honor RunEditability"
   publishedReadOnlyNotice: 'Published values — read-only. Reopen to edit.',
   reopenForRevision: 'Reopen for revision',
   reopening: 'Reopening…',
-  revisionDerivedFrom: 'Derived from run {{id}}',
+  revisionDerivedFrom: 'Derived from a previous version',
 ```
 
-- [ ] **Step 2: Migrate `HITLStatusBadges.tsx` to copy** — add `import { t } from '@/lib/copy';`; replace `Published` → `{t('runs', 'published')}`, `Revision` → `{t('runs', 'revision')}` (key exists), `title={...}` → `title={t('runs', 'revisionDerivedFrom').replace('{{id}}', parentRunId)}`, and in `HITLReopenButton`: `{reopening ? t('runs', 'reopening') : t('runs', 'reopenForRevision')}`.
+(`revisionDerivedFrom` deliberately drops the "run {{id}}" wording — the run-vocabulary rule bans the entity noun in user-facing copy, and a raw UUID in a tooltip helps nobody; clean-in-touched-code.)
+
+- [ ] **Step 2: Migrate `HITLStatusBadges.tsx` to copy** — add `import { t } from '@/lib/copy';`; replace `Published` → `{t('runs', 'published')}`, `Revision` → `{t('runs', 'revision')}` (key exists), `title={...}` → `title={t('runs', 'revisionDerivedFrom')}`, and in `HITLReopenButton`: `{reopening ? t('runs', 'reopening') : t('runs', 'reopenForRevision')}`.
 
 - [ ] **Step 3: Write the failing QA screen test** (extend `frontend/test/QualityAssessmentFullScreen.test.tsx` — REAL copy in this file):
 
@@ -1098,6 +1129,122 @@ git commit -m "test(extraction): screen-level read-only proof for published runs
 
 ---
 
+### Task 9b: backend — protect published rows from CASCADE deletion (spec D5.1)
+
+**Files:**
+- Modify: `backend/app/models/extraction_workflow.py` (~line 385: `instance_id` FK `ondelete="CASCADE"` → `"RESTRICT"`)
+- Create: `backend/alembic/versions/0040_published_state_restrict.py`
+- Test: `backend/tests/integration/test_extraction_runs_endpoints.py` (or the lifecycle service test file — wherever `_force_finalize`-style helpers land in Task 10; one pin test)
+
+**Interfaces:**
+- Produces: DB-level guarantee that `extraction_instances` rows referenced by any `extraction_published_states` row cannot be deleted (the PostgREST-direct delete path can no longer destroy the canonical published record — panel security finding: RLS DELETE has no stage predicate and the CASCADE silently removed published rows, violating the `advance_stage` ≥1-published invariant and constitution §IX).
+
+Background (verified in panel review): `frontend/services/extractionInstanceService.ts` deletes instances via PostgREST (`deleteOne('extraction_instances', ...)`), bypassing every API stage guard; `baseline_v1.sql:2015` ships `extraction_published_states_instance_id_fkey ... ON DELETE CASCADE`. Deleting a never-published instance still works after this change; deleting a published one now fails at the DB.
+
+- [ ] **Step 1: Write the failing test** (integration; uses the same force-finalize + publish helpers as Task 10 — order Task 10's helper first if executing sequentially, or inline the publish via the consensus path):
+
+```python
+@pytest.mark.asyncio
+async def test_instance_delete_with_published_rows_is_blocked(db_session):
+    """D5.1: an instance referenced by extraction_published_states cannot be
+    deleted — the FK is RESTRICT so the PostgREST-direct delete path cannot
+    destroy the canonical published record."""
+    # Arrange: any run with one published row for SEED.primary_instance
+    # (reuse the run+consensus publish flow from
+    # test_run_lifecycle_service.py::test_pending_extract_consensus_finalized_path,
+    # or insert an extraction_published_states row with raw SQL).
+    with pytest.raises(IntegrityError):
+        await db_session.execute(
+            text("DELETE FROM public.extraction_instances WHERE id = :iid"),
+            {"iid": str(SEED.primary_instance)},
+        )
+    await db_session.rollback()
+```
+
+(Import `IntegrityError` from `sqlalchemy.exc` and `text` from `sqlalchemy` atomically with the test. Note: the SAVEPOINT-isolated `db_session` rolls back cleanly after the expected failure.)
+
+- [ ] **Step 2: Run to verify it FAILS on current schema** (delete succeeds via CASCADE):
+
+Run: `cd backend && uv run pytest tests/integration/ -x -k instance_delete_with_published`
+Expected: FAIL — no IntegrityError raised (CASCADE deletes the published rows silently). This proves the hole.
+
+- [ ] **Step 3: Flip the model FK**
+
+`backend/app/models/extraction_workflow.py` (~line 385):
+
+```python
+    instance_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.extraction_instances.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+```
+
+- [ ] **Step 4: Write the migration** (revision id 29 chars ≤ 32; the baseline FK name is a POSTGRES-DEFAULT literal name, so use raw SQL with the literal name — `op.create_foreign_key` would route through the naming convention and mangle it, breaking downgrade; see `reference_alembic_constraint_naming_convention`):
+
+`backend/alembic/versions/0040_published_state_restrict.py`:
+
+```python
+"""Protect published rows: instance FK CASCADE -> RESTRICT.
+
+An extraction_instances DELETE arrives PostgREST-direct (no API stage
+guard); with CASCADE it silently destroyed extraction_published_states
+rows — the canonical published record — and could leave a FINALIZED run
+with zero published rows (advance_stage invariant, constitution §IX).
+
+Revision ID: 0040_published_state_restrict
+Revises: 0039_absent_reason_backfill
+"""
+
+from alembic import op
+
+revision = "0040_published_state_restrict"
+down_revision = "0039_absent_reason_backfill"
+branch_labels = None
+depends_on = None
+
+_FK = "extraction_published_states_instance_id_fkey"
+_TABLE = "public.extraction_published_states"
+
+
+def upgrade() -> None:
+    op.execute(f'ALTER TABLE {_TABLE} DROP CONSTRAINT "{_FK}"')
+    op.execute(
+        f'ALTER TABLE {_TABLE} ADD CONSTRAINT "{_FK}" '
+        'FOREIGN KEY ("instance_id") REFERENCES "public"."extraction_instances"("id") '
+        "ON DELETE RESTRICT"
+    )
+
+
+def downgrade() -> None:
+    op.execute(f'ALTER TABLE {_TABLE} DROP CONSTRAINT "{_FK}"')
+    op.execute(
+        f'ALTER TABLE {_TABLE} ADD CONSTRAINT "{_FK}" '
+        'FOREIGN KEY ("instance_id") REFERENCES "public"."extraction_instances"("id") '
+        "ON DELETE CASCADE"
+    )
+```
+
+- [ ] **Step 5: Verify offline SQL both directions + apply locally**
+
+Run: `cd backend && uv run alembic upgrade 0039_absent_reason_backfill:0040_published_state_restrict --sql && uv run alembic downgrade 0040_published_state_restrict:0039_absent_reason_backfill --sql`
+Expected: both render the two ALTERs with the literal constraint name, no naming-convention mangling.
+Then: `cd backend && uv run alembic upgrade head` (local Supabase up).
+
+- [ ] **Step 6: Run the test to verify it passes + the roundtrip stays green**
+
+Run: `cd backend && uv run pytest tests/integration/ -x -k "instance_delete_with_published or migration_roundtrip"`
+Expected: PASS (the roundtrip's `downgrade -1 → upgrade head` now exercises 0040's downgrade/upgrade).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add backend/app/models/extraction_workflow.py backend/alembic/versions/0040_published_state_restrict.py backend/tests/integration/
+git commit -m "fix(extraction): RESTRICT published-state instance FK — PostgREST delete can no longer destroy published records"
+```
+
+---
+
 ### Task 10: backend — finalized-run write rejection coverage (400s)
 
 **Files:**
@@ -1111,7 +1258,12 @@ git commit -m "test(extraction): screen-level read-only proof for published runs
 ```python
 async def _force_finalize(db_session, run_id) -> None:
     """Force stage=finalized via SQL (bypasses the publish invariant — guard
-    tests only need the stage). refresh() clears the stale identity map."""
+    tests only need the stage). expire_all() deterministically invalidates
+    the identity-map instance loaded by earlier requests: db_client SHARES
+    this session (conftest dependency override) and load_run_for_update's
+    plain select().with_for_update() does NOT repopulate a cached instance,
+    so without the expire the guards can read the stale 'extract' stage
+    (GC-timing dependent — see test_run_lifecycle_service.py:419-424)."""
     await db_session.execute(
         text(
             "UPDATE public.extraction_runs "
@@ -1120,13 +1272,14 @@ async def _force_finalize(db_session, run_id) -> None:
         {"rid": str(run_id)},
     )
     await db_session.flush()
+    db_session.expire_all()
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_proposal_on_finalized_run_returns_400(
     db_client, db_session, auth_as_profile
 ):
-    run_id = await _create_run(db_client)          # file's existing helper
+    run_id = await _create_run_via_api(db_client)  # file's existing helper (adapt its kwargs from neighboring tests)
     await _advance(db_client, run_id, "extract")
     await _force_finalize(db_session, run_id)
     resp = await db_client.post(
@@ -1142,11 +1295,11 @@ async def test_proposal_on_finalized_run_returns_400(
     assert "stage" in resp.json()["error"]["message"].lower()
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_decision_on_finalized_run_returns_400(
     db_client, db_session, auth_as_profile
 ):
-    run_id = await _create_run(db_client)
+    run_id = await _create_run_via_api(db_client)
     await _advance(db_client, run_id, "extract")
     await _force_finalize(db_session, run_id)
     resp = await db_client.post(
@@ -1162,11 +1315,11 @@ async def test_decision_on_finalized_run_returns_400(
     assert "stage" in resp.json()["error"]["message"].lower()
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_consensus_on_finalized_run_returns_400(
     db_client, db_session, auth_as_profile
 ):
-    run_id = await _create_run(db_client)
+    run_id = await _create_run_via_api(db_client)
     await _advance(db_client, run_id, "extract")
     await _force_finalize(db_session, run_id)
     resp = await db_client.post(
@@ -1209,6 +1362,7 @@ git commit -m "test(backend): pin 400-on-finalized for proposals/decisions/conse
 
 ## Self-review notes (spec coverage)
 
-- Spec D1 → Task 1. D2 → Tasks 2, 6, 7, 8 (consumer audit realized as: FieldInput variants + disposition buttons, AI badge/strip/popover actions, section AI-extract, add/remove instance, add/remove model + model-extract, instance-label editing, nav-rail footer, header pending pill). D3 → Tasks 3, 4 (extraction), 5 (QA). D4 → Tasks 6, 7, 8. D5 → Task 10 (tests only).
+- Spec D1 → Task 1. D2 → Tasks 2, 6, 7, 8 (consumer audit realized as: FieldInput variants + disposition buttons, AI badge/strip/popover actions, section AI-extract, add/remove instance, add/remove model + model-extract, instance-label editing, nav-rail footer, header pending pill). D3 → Tasks 3, 4 (extraction), 5 (QA). D4 → Tasks 6, 7, 8. D5.1 → Task 9b (FK migration). D5.2 → Task 10 (tests only).
+- Panel review 2026-07-02: 6 unique blocking findings fixed in this revision (rules-of-hooks bail placement, finalized replace-not-merge, lib→services inversion, CASCADE integrity hole → Task 9b, force-finalize expire_all, QA/FieldInput test assertions made non-vacuous) + YAGNI trims (no reason vocabulary, no phantom unit shape, no dead QA baseline branch).
 - Edge cases: `pending`/null stage → read-only reason 'pending', no banner (banner keys off `finalized`); consensus → provider wraps ConsensusPanel defensively (no consumers inside, verified); reopen flips stage via session refetch → provider re-derives (no new wiring); no-provider default → editable (Task 2 + Task 6 tests).
 - Deliberate scope notes: `AIAcceptRejectButtons.tsx` is confirmed dead code — flag in the PR, do not delete here. `SaveSlot` hiding already exists on both screens (no change). `batchAccept` has no rendering surface on either screen — nothing to hide; its abstention safeguard is untouched.

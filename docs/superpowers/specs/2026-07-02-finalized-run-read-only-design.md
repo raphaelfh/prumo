@@ -29,13 +29,22 @@ badge still renders a fully interactive form on both session screens:
   `usesReviewerStatePath` covers `finalized`). A manager who never typed
   anything sees empty required fields on a run labeled Published.
 
-The backend is already correct: proposals require `extract`
-(`extraction_proposal_service.py:69`), decisions require `extract`
-(`extraction_review_service.py:56`), consensus requires `consensus`
-(`extraction_consensus_service.py:63`), and `advance_stage` enforces the
-"a FINALIZED run carries ≥1 PublishedState" invariant
-(`run_lifecycle_service.py:192`). Writes to a finalized run 400. The gap
-is entirely frontend presentation and data resolution.
+The backend API write paths are already correct: proposals require
+`extract` (`extraction_proposal_service.py:69`), decisions require
+`extract` (`extraction_review_service.py:56`), consensus requires
+`consensus` (`extraction_consensus_service.py:63`), and `advance_stage`
+enforces the "a FINALIZED run carries ≥1 PublishedState" invariant
+(`run_lifecycle_service.py:192`). Writes to a finalized run 400.
+
+One integrity hole exists OUTSIDE the API (found in adversarial plan
+review, 2026-07-02): instance CRUD goes PostgREST-direct
+(`extractionInstanceService.ts`), RLS on `extraction_instances` DELETE
+has no stage predicate, and `extraction_published_states.instance_id`
+is `ondelete=CASCADE` — deleting an instance silently destroys its
+published rows and can leave a finalized run with zero published state,
+violating the `advance_stage` invariant and constitution §IX
+(append-only). D5 closes this with a one-line FK flip to RESTRICT.
+Everything else is frontend presentation and data resolution.
 
 Both screens are affected: `ExtractionFullScreen.tsx` renders the
 interactive `ExtractionFormPanel` for every non-consensus stage
@@ -54,8 +63,9 @@ hides the save badge and the header AI-extract button.
 
 ## Non-goals
 
-- No backend changes (guards verified; only test coverage is confirmed
-  or added).
+- No backend endpoint/behavior changes (guards verified; test coverage
+  is confirmed or added). The one exception is the D5 database-integrity
+  migration protecting published rows from CASCADE deletion.
 - No change to reopen semantics (any project member may reopen; the
   reopen endpoint already seeds the child run from published values).
 - No dedicated "published summary" surface — the existing form layout is
@@ -68,8 +78,9 @@ hides the save badge and the header AI-extract button.
 
 New helper `frontend/lib/runs/editability.ts`:
 
-- `isRunEditable(stage)` → `stage === 'extract'`
-- `readOnlyReason(stage)` → `'finalized' | 'consensus' | 'pending' | null`
+- `isRunEditable(stage)` → `stage === 'extract'` (the single export; a
+  `reason` vocabulary was considered and dropped in plan review — no
+  consumer branches on it, the banner keys off `finalized` directly)
 
 `useAutoSaveProposals`'s `enabled` predicate on **both** screens switches
 to `isRunEditable(stage)` (today the predicate is duplicated inline).
@@ -81,7 +92,7 @@ Divergence between those two is the root cause of the silent-drop bug.
 New `frontend/components/runs/RunEditabilityContext.tsx` (sibling of
 `RunHeaderContext`):
 
-- Value: `{ readOnly: boolean; reason: ReadOnlyReason | null }`.
+- Value: `{ readOnly: boolean }`.
 - `useRunEditability()` returns **editable** when no provider is mounted
   — safe default for tests, the dev harness, and any other `FieldInput`
   consumer.
@@ -137,14 +148,28 @@ existing header-menu reopen item stays. Copy through `lib/copy`, English.
 
 ### D5 — Backend
 
-No behavior changes. Confirm (or add, if missing) integration tests
-asserting writes against a finalized run return 400 for proposals,
-decisions, and consensus.
+No endpoint behavior changes. Two pieces:
+
+1. **Integrity migration**: flip
+   `extraction_published_states.instance_id` from `ondelete=CASCADE` to
+   `ondelete=RESTRICT` (model + Alembic migration). A published
+   instance becomes undeletable — the PostgREST-direct delete path can
+   no longer destroy the canonical published record; deleting a
+   never-published instance still works. Pinned by an integration test.
+2. Confirm (or add, if missing) integration tests asserting writes
+   against a finalized run return 400 for proposals, decisions, and
+   consensus.
+
+**Accepted residual risk** (logged, deferred): instance INSERT and
+label UPDATE remain PostgREST-open to members with no stage predicate —
+presentation-only pollution of a finalized view (published values are
+untouched). A follow-up RLS ratchet on `extraction_instances` /
+`extraction_published_states` direct writes is out of scope here.
 
 ## Edge cases
 
-- `stage === 'pending'`: read-only with `reason: 'pending'`; no
-  published banner (transient stage, invariant coverage only).
+- `stage === 'pending'` (or not yet loaded): read-only; no published
+  banner (transient stage, invariant coverage only).
 - `stage === 'consensus'`: the form panel is not rendered today
   (ConsensusPanel branch); the context covers it defensively if that
   changes.
@@ -164,6 +189,8 @@ Interleaved per layer, not batched at the end:
   read-only; screen-level tests (both screens) — finalized run ⇒ fields
   disabled, banner present, zero accept/reject buttons.
 - **pytest**: verify or add "write to finalized run ⇒ 400" integration
-  coverage for proposals, decisions, consensus.
+  coverage for proposals, decisions, consensus; "instance delete with
+  published rows is blocked" for the D5 migration; migration roundtrip
+  (`downgrade -1 → upgrade head`) stays green.
 - **Visual**: `/design-review` on the extraction route with a finalized
   run before claiming done.
