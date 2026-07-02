@@ -136,3 +136,6 @@ whole-branch review missed — `approve-finalize` was gated, but the older
   builds on [ADR-0014](0014-collapse-extract-stage.md) and
   [ADR-0012](0012-manager-blind-review-and-reveal.md).
 - [Extraction + HITL architecture](../reference/extraction-hitl-architecture.md)
+- Header labels renamed 2026-07-02 — "Finish extraction" (was Mark ready) /
+  "Start consensus" (was Open consensus); presentation only, semantics
+  unchanged. See `docs/superpowers/specs/2026-07-02-run-header-declutter-design.md`.

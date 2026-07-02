@@ -23,6 +23,8 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 import { RunSplitShell } from "@/components/runs/RunSplitShell";
+import { RunEditabilityProvider } from "@/components/runs/RunEditabilityContext";
+import { HITLPublishedBanner } from "@/components/runs/HITLStatusBadges";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
 import type {
@@ -60,6 +62,9 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { t } from "@/lib/copy";
+import { isRunEditable } from "@/lib/runs/editability";
+import { firstPendingInstanceId, scrollToSectionById } from "@/lib/runs/suggestionLocate";
+import { publishedStatesToValuesMap } from "@/lib/extraction/publishedValues";
 
 interface FieldKey {
   instanceId: string;
@@ -195,26 +200,33 @@ export default function QualityAssessmentFullScreen() {
   if (runDetail !== prevRunDetail) {
     setPrevRunDetail(runDetail);
     if (runDetail) {
-      const latestByCoord = new Map<string, unknown>();
-      // Proposals are returned newest-first by the API; iterate so the LAST
-      // write wins per coord regardless of order.
-      for (const p of runDetail.proposals) {
-        const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
-        const value =
-          p.proposed_value &&
-          typeof p.proposed_value === "object" &&
-          "value" in p.proposed_value
-            ? (p.proposed_value.value as unknown)
-            : (p.proposed_value as unknown);
-        latestByCoord.set(k, value);
-      }
-      setValues((prev) => {
-        const next: Record<string, unknown> = { ...prev };
-        for (const [k, v] of latestByCoord) {
-          if (!(k in next)) next[k] = v;
+      if (runDetail.run.stage === "finalized") {
+        // Published truth replaces any local/proposal state (spec
+        // 2026-07-02 D3): the read-only form shows what was published,
+        // never the latest proposal stream.
+        setValues(publishedStatesToValuesMap(runDetail.published_states));
+      } else {
+        const latestByCoord = new Map<string, unknown>();
+        // Proposals are returned newest-first by the API; iterate so the LAST
+        // write wins per coord regardless of order.
+        for (const p of runDetail.proposals) {
+          const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
+          const value =
+            p.proposed_value &&
+            typeof p.proposed_value === "object" &&
+            "value" in p.proposed_value
+              ? (p.proposed_value.value as unknown)
+              : (p.proposed_value as unknown);
+          latestByCoord.set(k, value);
         }
-        return next;
-      });
+        setValues((prev) => {
+          const next: Record<string, unknown> = { ...prev };
+          for (const [k, v] of latestByCoord) {
+            if (!(k in next)) next[k] = v;
+          }
+          return next;
+        });
+      }
     }
   }
 
@@ -250,7 +262,7 @@ export default function QualityAssessmentFullScreen() {
       values,
       baselineValues: loadedValues,
       enabled:
-        !!session && !!runDetail && runDetail.run.stage === "extract",
+        !!session && !!runDetail && isRunEditable(runDetail.run.stage),
     });
 
   // AI suggestions wiring — kind-agnostic hooks reused from Data
@@ -351,8 +363,15 @@ export default function QualityAssessmentFullScreen() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  // Reveal: manager can un-blind QA reviewer identities for this project.
-  const canReveal = permissions.userRole === "manager" && permissions.isBlindMode;
+  // Reveal (the persistent project-toggle): offered only to a blind manager
+  // DURING extract, mirroring the extraction screen. Once the run reaches
+  // consensus the run-scoped auto-reveal covers it (ADR-0015), so the
+  // persistent toggle is no longer surfaced.
+  const canReveal =
+    permissions.userRole === "manager" &&
+    permissions.isBlindMode &&
+    runDetail?.run.stage === "extract" &&
+    !runDetail.peers_revealed;
   const onReveal = () => {
     void setManagerReviewVisibility(projectId ?? "", "quality_assessment", true)
       .then(() => permissions.refresh())
@@ -591,7 +610,7 @@ export default function QualityAssessmentFullScreen() {
           <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={toggleSidebar} />
           <RunHeader.Breadcrumb
             onBack={() => navigate(`/projects/${projectId}`)}
-            crumbs={[{ label: template?.name ?? "" }]}
+            title={template?.name ?? ""}
           />
           {/* QA kind badge — compact identifier next to breadcrumb */}
           <Badge
@@ -610,7 +629,6 @@ export default function QualityAssessmentFullScreen() {
               {versionLabel}
             </span>
           ) : null}
-          {runStage != null && <RunHeader.StageRail />}
           <RunHeader.Save
             state={saveState ?? "idle"}
             lastSavedAt={lastSavedAt ?? null}
@@ -619,8 +637,7 @@ export default function QualityAssessmentFullScreen() {
         </RunHeader.Left>
 
         <RunHeader.Center>
-          <RunHeader.Reviewers />
-          <RunHeader.RoleChip />
+          {runStage != null && <RunHeader.RunStatus />}
         </RunHeader.Center>
 
         <RunHeader.Right>
@@ -632,10 +649,21 @@ export default function QualityAssessmentFullScreen() {
             />
           )}
           <RunHeader.AIActions
-            pendingCount={countActionableSuggestions(aiSuggestions)}
-            canExtract={!!(session && !finalized)}
+            pendingCount={finalized ? 0 : countActionableSuggestions(aiSuggestions)}
+            canExtract={!!(session && runDetail && isRunEditable(runDetail.run.stage))}
             extracting={extractingAI}
             onExtract={onExtractWithAI}
+            onOpenSuggestions={() => {
+              // Header "Review N pending suggestions": scroll to the domain
+              // holding the first pending suggestion.
+              const instanceId = firstPendingInstanceId(aiSuggestions);
+              const domain = instanceId
+                ? sortedDomains.find(
+                    (d) => session?.instancesByEntityType[d.entityType.id] === instanceId,
+                  )
+                : undefined;
+              if (domain) scrollToSectionById(domain.entityType.id);
+            }}
           />
           <RunHeader.PrimaryAction />
           <Utility>
@@ -678,6 +706,7 @@ export default function QualityAssessmentFullScreen() {
   );
 
   const formPanel = (
+    <RunEditabilityProvider stage={runDetail?.run.stage ?? null}>
     <div className="space-y-3 p-4" data-testid="qa-form-panel">
       {error ? (
         <div
@@ -784,6 +813,19 @@ export default function QualityAssessmentFullScreen() {
         </>
       ) : null}
     </div>
+    </RunEditabilityProvider>
+  );
+
+  // Published/revision banner between header and panels (shared component,
+  // spec 2026-07-02 D4).
+  const qaSubHeader = (
+    <HITLPublishedBanner
+      kind="qa"
+      finalized={finalized}
+      parentRunId={parentRunId}
+      onReopen={() => void handleReopen()}
+      reopening={reopening}
+    />
   );
 
   return (
@@ -791,6 +833,7 @@ export default function QualityAssessmentFullScreen() {
       pdfPanel={pdfPanel}
       formPanel={formPanel}
       header={header}
+      subHeader={qaSubHeader}
       pdfState={pdfPanelState}
       viewerStore={viewerStore}
     />

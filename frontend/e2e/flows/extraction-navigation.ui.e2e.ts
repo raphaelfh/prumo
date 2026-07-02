@@ -37,7 +37,7 @@ test.describe("Extraction page navigation", () => {
     expect(page.url()).toContain("tab=extraction");
   });
 
-  test("breadcrumb project link returns to project root", async ({ page }) => {
+  test("breadcrumb shows only the article title — no project crumb", async ({ page }) => {
     const missing = missingEnvKeys(REQUIRED);
     test.skip(missing.length > 0, `Missing required env: ${missing.join(", ")}`);
 
@@ -54,14 +54,13 @@ test.describe("Extraction page navigation", () => {
     await expect(page.locator('[data-scroll-container="extraction-form"]')).toBeVisible({
       timeout: 15000,
     });
-    // The breadcrumb is rendered inside a navigation landmark with role="navigation" name "breadcrumb".
+    // Run-header declutter (spec 2026-07-02): the project crumb is GONE — the
+    // article title is the single identity text; project navigation lives
+    // behind the Back arrow (covered by the back-button test above) and the
+    // sidebar. Pin the removal so it cannot silently regress.
     const breadcrumb = page.getByRole("navigation", { name: /breadcrumb/i });
-    const projectLink = breadcrumb.getByText("E2E Test Project").first();
-    await expect(projectLink).toBeVisible({ timeout: 5000 });
-
-    await projectLink.click();
-    await page.waitForURL(new RegExp(`/projects/${env.projectId}(?!/extraction)`), { timeout: 10000 });
-    expect(page.url()).not.toContain("/extraction/");
+    await expect(breadcrumb).toBeVisible({ timeout: 5000 });
+    await expect(breadcrumb.getByText("E2E Test Project")).toHaveCount(0);
   });
 
   test("direct refresh on extraction URL preserves location and re-renders", async ({ page }) => {

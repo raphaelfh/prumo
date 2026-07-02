@@ -21,14 +21,20 @@ describe('RunHeader.PrimaryAction', () => {
     await userEvent.click(btn);
     expect(onAdvance).toHaveBeenCalledOnce();
   });
-  it('when gated, shows the remaining helper, is aria-disabled, and still runs onAdvance (guide-me) on click', async () => {
+  it('when gated, keeps an sr-only helper, surfaces reason+count in the tooltip, and still runs onAdvance (guide-me) on click', async () => {
     const onAdvance = vi.fn();
     render(<RunHeader value={{ ...base, transition: { to: 'consensus', label: 'Reconcile', gate: { ok: false, reason: 'r', remaining: 27 }, onAdvance } }}>
       <RunHeader.Right><RunHeader.PrimaryAction /></RunHeader.Right>
     </RunHeader>);
     const btn = screen.getByRole('button', { name: /Reconcile/ });
     expect(btn).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByText('requiredOfTotal')).toBeInTheDocument();
+    const helper = screen.getByText('requiredOfTotal');
+    expect(helper).toHaveClass('sr-only');
+    btn.focus();
+    // Tooltip carries "reason — count" (composed string is unique — the
+    // sr-only helper is the bare key and must not satisfy this query).
+    const matches = await screen.findAllByText('r — requiredOfTotal');
+    expect(matches.length).toBeGreaterThan(0);
     await userEvent.click(btn);
     expect(onAdvance).toHaveBeenCalledOnce();
   });
@@ -38,14 +44,14 @@ describe('RunHeader.PrimaryAction', () => {
   });
   it('shows the transition tooltip on focus when provided', async () => {
     render(
-      <RunHeader value={{ ...base, transition: { to: 'consensus', label: 'Mark ready →', tooltip: 'Mark ready and open next', gate: { ok: true }, onAdvance: () => {} } }}>
+      <RunHeader value={{ ...base, transition: { to: 'consensus', label: 'Finish extraction', tooltip: 'Finish extraction and open next', gate: { ok: true }, onAdvance: () => {} } }}>
         <RunHeader.Right><RunHeader.PrimaryAction /></RunHeader.Right>
       </RunHeader>,
     );
-    const btn = screen.getByRole('button', { name: 'Mark ready →' });
+    const btn = screen.getByRole('button', { name: 'Finish extraction' });
     btn.focus();
     // Radix renders tooltip text twice (visible + a11y mirror) — assert ≥1.
-    const matches = await screen.findAllByText('Mark ready and open next');
+    const matches = await screen.findAllByText('Finish extraction and open next');
     expect(matches.length).toBeGreaterThan(0);
   });
 });

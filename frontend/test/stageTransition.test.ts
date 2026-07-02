@@ -23,34 +23,34 @@ function makeArgs(overrides: Partial<Parameters<typeof buildExtractionTransition
 }
 
 describe('buildExtractionTransition', () => {
-  it('Extract + reviewer (complete) → Mark ready (no advance), onAdvance===onMarkReady', () => {
+  it('Extract + reviewer (complete) → Finish extraction (no advance), onAdvance===onMarkReady', () => {
     const onMarkReady = vi.fn();
     const r = buildExtractionTransition(
       makeArgs({ stage: 'extract', canResolveConflicts: false, isComplete: true, completed: 10, total: 10, onMarkReady }),
     );
     expect(r).not.toBeNull();
-    expect(r!.label).toBe('runHeaderMarkReady');
-    expect(r!.tooltip).toBe('runHeaderMarkReadyTooltip');
+    expect(r!.label).toBe('runHeaderFinishExtraction');
+    expect(r!.tooltip).toBe('runHeaderFinishExtractionTooltip');
     expect(r!.gate.ok).toBe(true);
     expect(r!.onAdvance).toBe(onMarkReady);
   });
 
-  it('Extract + reviewer + isReady → label flips to Marked ready', () => {
+  it('Extract + reviewer + isReady → label flips to Extraction finished', () => {
     const r = buildExtractionTransition(
       makeArgs({ stage: 'extract', canResolveConflicts: false, isComplete: true, isReady: true }),
     );
-    expect(r!.label).toBe('runHeaderMarkedReady');
+    expect(r!.label).toBe('runHeaderExtractionFinished');
   });
 
-  it('Extract + manager (canResolveConflicts) → Open consensus, gate ok, onAdvance===onOpenConsensus', () => {
+  it('Extract + manager (canResolveConflicts) → Start consensus, gate ok, onAdvance===onOpenConsensus', () => {
     const onOpenConsensus = vi.fn();
     const r = buildExtractionTransition(
       makeArgs({ stage: 'extract', canResolveConflicts: true, isComplete: false, onOpenConsensus }),
     );
     expect(r).not.toBeNull();
     expect(r!.to).toBe('consensus');
-    expect(r!.label).toBe('runHeaderOpenConsensus');
-    expect(r!.tooltip).toBe('runHeaderOpenConsensusTooltip');
+    expect(r!.label).toBe('runHeaderStartConsensus');
+    expect(r!.tooltip).toBe('runHeaderStartConsensusTooltip');
     expect(r!.gate.ok).toBe(true); // ungated — manager opens at will
     expect(r!.onAdvance).toBe(onOpenConsensus);
   });

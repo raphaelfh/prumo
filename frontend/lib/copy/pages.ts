@@ -43,7 +43,6 @@ export const pages = {
     extractionScreenRunErrorTitle: 'Could not open this extraction',
     extractionScreenRunErrorDesc: 'The extraction session could not be loaded. This is usually temporary — please try again.',
     extractionScreenRetry: 'Try again',
-    extractionScreenProjectFallback: 'Project',
     extractionScreenYou: 'You',
     extractionScreenSelectModelFirst: 'Select a model before adding this section',
     extractionScreenParentNotFound: 'Parent instance not found. Create the parent section first.',
@@ -53,6 +52,8 @@ export const pages = {
     extractionScreenConfirmRemoveInstance: 'This instance has extracted values. Are you sure you want to remove it?',
     extractionScreenInstanceRemoved: 'Instance removed successfully',
     extractionScreenErrorRemoveInstance: 'Error removing instance',
+  extractionScreenInstancePinned:
+    'This item carries published values from a previous revision and cannot be removed.',
     extractionScreenCompleteRequiredFields: 'Complete all required fields before finalizing',
     extractionScreenErrorArticleNotFound: 'Error: Article data not found',
     extractionScreenErrorNoInstances: 'Error: No extraction instances found',

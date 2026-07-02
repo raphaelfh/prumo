@@ -371,8 +371,13 @@ async def build_run_view(
     )
     instances = await _instances_for_run(db, detail.run)
     if detail.run.stage in _READY_HINT_STAGES:
+        # include_peers reuses detail.peers_revealed (the single blind source),
+        # so the reviewers_ready scrub cannot drift from the row filter.
         ready = await ExtractionReviewerReadyService(db).ready_summary_from(
-            run_id=run_id, hitl_config_snapshot=detail.run.hitl_config_snapshot
+            run_id=run_id,
+            hitl_config_snapshot=detail.run.hitl_config_snapshot,
+            caller_id=caller_id,
+            include_peers=detail.peers_revealed,
         )
     else:
         ready = {"ready_count": 0, "reviewer_count": 0, "reviewers_ready": []}

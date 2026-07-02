@@ -22,15 +22,16 @@ import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {getRequiredUserId} from '@/services/authService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
+import {isRunEditable} from '@/lib/runs/editability';
+import {firstPendingInstanceId, scrollToSectionById} from '@/lib/runs/suggestionLocate';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
 import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
 import {RunSplitShell} from '@/components/runs/RunSplitShell';
+import {RunEditabilityProvider} from '@/components/runs/RunEditabilityContext';
 import {usePdfPanel} from '@/hooks/usePdfPanel';
 import {Button} from '@/components/ui/button';
 import {Loader2} from 'lucide-react';
-import {
-  HITLStatusBadges,
-} from '@/components/runs/HITLStatusBadges';
+import {HITLPublishedBanner} from '@/components/runs/HITLStatusBadges';
 import {buildExtractionTransition} from '@/lib/extraction/stageTransition';
 import {nextArticleTarget} from '@/lib/extraction/worklistNav';
 import {setManagerReviewVisibility} from '@/services/hitlConfigService';
@@ -105,7 +106,6 @@ export default function ExtractionFullScreen() {
   // server RunView (runDetail) below via the adapters.
   const {
     article,
-    project,
     template,
     articles,
     loading,
@@ -210,6 +210,7 @@ export default function ExtractionFullScreen() {
     kind: 'extraction',
     proposals,
     currentValues: runDetail?.current_values,
+    publishedStates: runDetail?.published_states,
     currentUserId,
     enabled: !!activeRunId,
   });
@@ -315,11 +316,17 @@ export default function ExtractionFullScreen() {
 
   // Plain-identifier dep so the compiler can track this dep without
   // optional-chaining (optional-chained deps like `finalizedRun?.id` defeat it).
+  // Fallback to the active run: when the open run IS finalized, it is the
+  // reopen target — clicking the banner button during (or after a failure
+  // of) the separate finalized-run lookup must not silently no-op
+  // (2026-07-02 hardening finding).
   const finalizedRunId = finalizedRun?.id;
+  const stageIsFinalized = stage === 'finalized';
+  const reopenTargetId = finalizedRunId ?? (stageIsFinalized ? activeRunId : null);
   const handleReopen = async () => {
-    if (!finalizedRunId) return;
+    if (!reopenTargetId) return;
     setReopening(true);
-    await reopenMutation.mutateAsync(finalizedRunId).then(async () => {
+    await reopenMutation.mutateAsync(reopenTargetId).then(async () => {
       // The reopen endpoint creates a fresh EXTRACT-stage run linked via
       // parameters.parent_run_id. We refetch the HITL session first so
       // activeRunId points at the new child run; only then do the
@@ -377,10 +384,10 @@ export default function ExtractionFullScreen() {
     // opening a consolidated run. Mirrors the QA full-screen gate;
     // ``!isFinalized`` alone let ``consensus`` through.
     enabled:
-      !!activeRunId && !loading && valuesInitialized && stage === 'extract',
+      !!activeRunId && !loading && valuesInitialized && isRunEditable(stage),
   });
 
-    // "Mark ready" (reviewer) — flush pending autosave, set the per-reviewer
+    // "Finish extraction" (reviewer) — flush pending autosave, set the per-reviewer
     // ready flag (advisory; does NOT advance the run), then open the next article
     // in the worklist. The run stays in EXTRACT — the manager opens consensus
     // separately. Re-editing after marking ready stays possible (autosave is live
@@ -404,7 +411,7 @@ export default function ExtractionFullScreen() {
     );
   };
 
-    // "Open consensus" (manager/consensus) — flush autosave, then advance
+    // "Start consensus" (manager/consensus) — flush autosave, then advance
     // EXTRACT → CONSENSUS so the evaluate-all surface becomes reachable. A blind
     // manager is auto-revealed server-side on consensus entry (run-scoped), surfaced
     // via runDetail.peers_revealed after the refetch below.
@@ -844,7 +851,15 @@ export default function ExtractionFullScreen() {
     }
     const removed = await extractionInstanceService.removeInstance(instanceId).catch((error: unknown) => {
       console.error('Error removing instance:', error);
-      toast.error(t('pages', 'extractionScreenErrorRemoveInstance'));
+      // FK 23503: the instance is pinned by published rows from a prior
+      // finalized revision (deferred FK, migration 0040) — explain, don't
+      // show the generic failure (2026-07-02 hardening finding).
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(
+        message.includes('extraction_published_states')
+          ? t('pages', 'extractionScreenInstancePinned')
+          : t('pages', 'extractionScreenErrorRemoveInstance'),
+      );
       return false;
     });
     if (removed !== false) {
@@ -1048,8 +1063,8 @@ export default function ExtractionFullScreen() {
   };
 
   // Stage-driven transition for the RunHeader PrimaryAction slot.
-  // buildExtractionTransition() owns all label/gate logic (Mark ready / Open
-  // consensus / Approve & finalize). The legacy header finalize path is gone.
+  // buildExtractionTransition() owns all label/gate logic (Finish extraction /
+  // Start consensus / Approve & finalize). The legacy header finalize path is gone.
   //
   // divergencesResolved: every diverging coord carries a consensus decision (a
   // no-divergence run is trivially resolved). isReady: the caller already marked
@@ -1099,20 +1114,22 @@ export default function ExtractionFullScreen() {
       </div>
     ) : null;
 
-  // HITL revision/finalized status badges, rendered between header and panels.
-  const extractionSubHeader =
-    parentRunId || isFinalized || (!activeRunId && finalizedRun) ? (
-      <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2 text-xs">
-        <HITLStatusBadges
-          kind="extraction"
-          finalized={isFinalized || (!activeRunId && !!finalizedRun)}
-          parentRunId={parentRunId}
-        />
-      </div>
-    ) : null;
+  // Published/revision banner between header and panels (shared component,
+  // spec 2026-07-02 D4) — the header-menu Reopen item stays.
+  const extractionSubHeader = (
+    <HITLPublishedBanner
+      kind="extraction"
+      finalized={canReopen}
+      parentRunId={parentRunId}
+      onReopen={() => void handleReopen()}
+      reopening={reopening}
+    />
+  );
 
   // Left panel: ConsensusPanel in consensus stage; ExtractionFormPanel otherwise.
-  const extractionFormPanel =
+  // RunEditability wraps both branches: the form tree consumes it (read-only
+  // on finalized/pending); ConsensusPanel renders only ui-primitives.
+  const extractionFormPanelInner =
     inConsensusStage && runDetail ? (
       <div className="h-full min-h-0 overflow-y-auto" data-testid="extraction-consensus-area">
         <ConsensusPanel
@@ -1177,6 +1194,12 @@ export default function ExtractionFullScreen() {
       />
     );
 
+  const extractionFormPanel = (
+    <RunEditabilityProvider stage={stage}>
+      {extractionFormPanelInner}
+    </RunEditabilityProvider>
+  );
+
   return (
     <div className="h-full bg-background">
       {aiProgressOverlay}
@@ -1194,8 +1217,6 @@ export default function ExtractionFullScreen() {
         }
         header={
           <ExtractionHeader
-        projectId={projectId || ''}
-        projectName={project?.name || t('pages', 'extractionScreenProjectFallback')}
         articleTitle={article.title}
         onBack={handleBack}
         sidebarCollapsed={sidebarCollapsed}
@@ -1245,10 +1266,15 @@ export default function ExtractionFullScreen() {
         canRunAI={stage === 'extract' || stage == null}
         onExtractionComplete={handleExtractionComplete}
         aiSuggestions={aiSuggestions}
-        aiPendingCount={aiPendingCount}
+        aiPendingCount={isFinalized ? 0 : aiPendingCount}
         onAISuggestionsClick={() => {
-          // P1: scroll to first suggestion or open panel
-          console.warn('Clicked AI badge - scrolling to first suggestion');
+          // Header "Review N pending suggestions": scroll the form to the
+          // section holding the first pending suggestion.
+          const instanceId = firstPendingInstanceId(aiSuggestions);
+          const entityTypeId = instanceId
+            ? instances.find((i) => i.id === instanceId)?.entity_type_id
+            : undefined;
+          if (entityTypeId) scrollToSectionById(entityTypeId);
         }}
         onRefreshInstances={handleRefreshInstances}
         onExtractWithAI={onExtractWithAI}

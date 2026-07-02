@@ -89,13 +89,20 @@ are the **internal lifecycle**, NOT the model end users see. The UI presents
 their values **directly as per-user `ReviewerDecision`s** there (a `/proposals`
 human write on an extraction run is rejected — blind-review write defense); there
 is no `proposal → review` auto-advance and no boundary materialization. The
-shared RunHeader maps `extract` to a single **Extract** node, so the rail reads
-Extract → Consensus → Finalized.
-The primary action is one role/phase-aware control (ADR-0015):
-**"Mark ready"** for a reviewer in Extract (sets the advisory per-reviewer ready
-flag via `POST /runs/{id}/ready` — it does **not** advance the run),
-**"Open consensus"** for a manager/consensus in Extract (advances `extract →
-consensus`), and **"Approve & finalize"** for a manager/consensus in Consensus
+shared RunHeader maps `extract` to a single node labelled **Extraction**
+(extraction runs) or **Assessment** (QA runs), presented as one current-stage
+chip (`RunHeader.RunStatus`) whose popover holds the 3-node timeline —
+Extraction/Assessment → Consensus → Finalized — plus reviewer/divergence/role
+status (design:
+`docs/superpowers/specs/2026-07-02-run-header-declutter-design.md`).
+The primary action is one role/phase-aware control (ADR-0015; labels renamed
+2026-07-02, semantics unchanged):
+**"Finish extraction"** for a reviewer in Extract (sets the advisory
+per-reviewer ready flag via `POST /runs/{id}/ready` — it does **not**
+advance the run),
+**"Start consensus"** for a manager/consensus in Extract (advances
+`extract → consensus`), and **"Approve & finalize"** for a
+manager/consensus in Consensus
 (`POST /runs/{id}/approve-finalize` — publishes every agreed coord then advances,
 enabled only when complete and every divergence is resolved). The legacy header
 `instance.status` finalize path is gone — its `extraction_instances.status` column
@@ -106,7 +113,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0039_absent_reason_backfill` (post-squash numbering; run
+`0041_reviewer_ready_select_rls` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -467,6 +474,13 @@ publish, AI), keep it in the page-specific component.
   (`extraction_reviewer_ready`, ADR-0015). Toggled via `POST /runs/{id}/ready`
   (membership + reviewer-role gated); does **not** gate any transition. The run
   view exposes an `N/M reviewers ready` hint (`M = max(reviewer_count, N)`).
+  WHO marked ready is peer-attributable participation metadata (ADR-0012): the
+  API scrubs `reviewers_ready` to the caller's own entry unless the caller is
+  unblinded (`peers_revealed`); the counts stay aggregate. Single home of the
+  scrub: `ExtractionReviewerReadyService.ready_summary_from`. The RLS SELECT
+  (`0041`, superseding 0029's member-wide read) self-scopes with the 0025
+  carve-outs (own row OR arbitrator OR finalized), so both read paths encode
+  the reviewer↔reviewer boundary in lockstep.
 - **managers_see_reviewers** — Per-kind manager blind-review policy on
   `projects.settings` (`{extraction, quality_assessment}`, both default
   `false` = managers blind). Read **live** by the API read path
@@ -502,9 +516,10 @@ publish, AI), keep it in the page-specific component.
   in `EXTRACT`; there is **no** `proposal → review` auto-advance and **no**
   boundary materialization (both removed in ADR-0014, which superseded ADR-0010).
   AI proposals remain suggestions to accept. A manager/consensus advances
-  `EXTRACT → CONSENSUS` explicitly via **"Open consensus"** (ADR-0015); reviewers
-  signal completion with the advisory **"Mark ready"** flag (which does not
-  advance). `CONSENSUS → FINALIZED` is the one-action **"Approve & finalize"**
+  `EXTRACT → CONSENSUS` explicitly via **"Start consensus"** (ADR-0015; label
+  renamed 2026-07-02); reviewers signal completion with the advisory
+  **"Finish extraction"** flag (which does not advance).
+  `CONSENSUS → FINALIZED` is the one-action **"Approve & finalize"**
   (`approve_and_finalize`: publish every agreed coord, then advance). "Run AI" is
   disabled once a run leaves `EXTRACT`.
 

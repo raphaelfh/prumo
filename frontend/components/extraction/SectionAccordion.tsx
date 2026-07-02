@@ -17,6 +17,7 @@ import {t} from '@/lib/copy';
 import {useRef} from 'react';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import {InstanceCard} from './InstanceCard';
+import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {SectionAIExtractButton} from '@/components/extraction/ai/shared/SectionAIExtractButton';
 import type {ExtractionEntityType, ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
@@ -65,6 +66,8 @@ export function SectionAccordion(props: SectionAccordionProps) {
   } = props;
 
   const isMultiple = entityType.cardinality === 'many';
+  // Read-only run: instance add/remove affordances hide (published view).
+  const { readOnly } = useRunEditability();
 
     // Calculate progress for this section
   const requiredFields = fields.filter(f => f.is_required);
@@ -163,7 +166,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
             {instances.length === 0 ? (
               <div className="text-center py-8">
                   <p className="text-muted-foreground mb-4">{t('extraction', 'sectionNoInstances')}</p>
-                {isMultiple && props.onAddInstance && (
+                {isMultiple && !readOnly && props.onAddInstance && (
                   <Button
                     variant="outline"
                     onClick={props.onAddInstance}
@@ -199,7 +202,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
                   </div>
                 ))}
 
-                {props.onAddInstance && (
+                {!readOnly && props.onAddInstance && (
                   <div className="mt-2">
                     <Button
                       variant="outline"

@@ -4,6 +4,7 @@ import { KbdBadge } from '@/components/ui/kbd-badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { t } from '@/lib/copy';
+import { useRunHeader } from './RunHeaderContext';
 
 const SHORTCUTS: { combo: string; key: 'shortcutPalette' | 'shortcutNextPrev' | 'shortcutTogglePdf' | 'shortcutSidebar' | 'shortcutEsc' }[] = [
   { combo: '⌘K', key: 'shortcutPalette' },
@@ -13,7 +14,7 @@ const SHORTCUTS: { combo: string; key: 'shortcutPalette' | 'shortcutNextPrev' | 
   { combo: 'Esc', key: 'shortcutEsc' },
 ];
 
-const GLOSSARY: ('glossaryExtract' | 'glossaryConsensus' | 'glossaryFinalize' | 'glossaryBlind' | 'glossaryDiffer')[] = [
+const GLOSSARY: ('glossaryExtract' | 'glossaryAssessment' | 'glossaryConsensus' | 'glossaryFinalize' | 'glossaryBlind' | 'glossaryDiffer')[] = [
   'glossaryExtract',
   'glossaryConsensus',
   'glossaryFinalize',
@@ -27,6 +28,12 @@ const GLOSSARY: ('glossaryExtract' | 'glossaryConsensus' | 'glossaryFinalize' | 
  * Dialog (narrow header, where Help has folded into the "three dots").
  */
 export function HelpContent() {
+  // Kind-aware glossary: QA runs call the extract stage "Assessment" (the
+  // chip does the same), so the Help text never contradicts the header.
+  const { kind } = useRunHeader();
+  const glossaryKeys = GLOSSARY.map((k) =>
+    k === 'glossaryExtract' && kind === 'qa' ? ('glossaryAssessment' as const) : k,
+  );
   return (
     <>
       <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t('runs', 'shortcutsHeading')}</p>
@@ -40,7 +47,7 @@ export function HelpContent() {
       </ul>
       <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t('runs', 'glossaryHeading')}</p>
       <ul className="space-y-1 text-muted-foreground">
-        {GLOSSARY.map((g) => (
+        {glossaryKeys.map((g) => (
           <li key={g}>{t('runs', g)}</li>
         ))}
       </ul>

@@ -37,6 +37,7 @@ import {extractUnit, extractValue, isEmptyValue, isValidNumber,} from '@/lib/ai-
 import {isSuggestionPending} from '@/lib/ai-extraction/suggestionUtils';
 import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
 import {useJustUpdatedValue} from '@/hooks/extraction/useJustUpdatedValue';
+import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
@@ -71,6 +72,11 @@ interface FieldInputProps {
 
 export function FieldInput(props: FieldInputProps) {
   const { field, instanceId, value, onChange, disabled, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, selectSuggestion, isActionLoading } = props;
+  // Read-only run (published/consensus/pending): every input variant and the
+  // disposition buttons disable; the actionable AI chrome (badge + inline
+  // accept/reject strip) hides — the History popover stays as audit trail.
+  const { readOnly } = useRunEditability();
+  const inputDisabled = disabled || readOnly;
   const [validationError, setValidationError] = useState<string | null>(null);
   // Briefly highlights this field when its value was just updated (e.g. by an
   // AI extraction refresh) so the user sees what changed without having to
@@ -220,7 +226,7 @@ export function FieldInput(props: FieldInputProps) {
               value={displayValue || ''}
               onChange={(e) => handleChange(e.target.value)}
               placeholder={t('extraction', 'fieldPlaceholderEnter').replace('{{label}}', field.label.toLowerCase())}
-              disabled={disabled}
+              disabled={inputDisabled}
               className={cn(
                   "text-sm min-h-[80px]",
                 hasAIPending && "border-ai/60 bg-ai/5",
@@ -235,7 +241,7 @@ export function FieldInput(props: FieldInputProps) {
             value={displayValue || ''}
             onChange={(e) => handleChange(e.target.value)}
             placeholder={t('extraction', 'fieldPlaceholderEnter').replace('{{label}}', field.label.toLowerCase())}
-            disabled={disabled}
+            disabled={inputDisabled}
               className={cn(
                 inputHeight,
                   "text-sm",
@@ -272,7 +278,7 @@ export function FieldInput(props: FieldInputProps) {
                 }
               }}
               placeholder="0"
-              disabled={disabled}
+              disabled={inputDisabled}
               className={cn("flex-1", inputHeight, "text-sm", validationError && "border-destructive")}
             />
 
@@ -283,7 +289,7 @@ export function FieldInput(props: FieldInputProps) {
                 onValueChange={(newUnit) => {
                   handleChange({ value: numValue, unit: newUnit });
                 }}
-                disabled={disabled}
+                disabled={inputDisabled}
               >
                 <SelectTrigger className="w-32 shrink-0">
                   <SelectValue />
@@ -316,7 +322,7 @@ export function FieldInput(props: FieldInputProps) {
             type="date"
             value={displayValue || ''}
             onChange={(e) => handleChange(e.target.value)}
-            disabled={disabled}
+            disabled={inputDisabled}
             className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
           />
         );
@@ -332,7 +338,7 @@ export function FieldInput(props: FieldInputProps) {
               allowOther={true}
               otherLabel={field.other_label || t('extraction', 'otherSpecifyDefault')}
               otherPlaceholder={field.other_placeholder || undefined}
-              disabled={disabled}
+              disabled={inputDisabled}
               placeholder={t('extraction', 'selectFieldPlaceholder').replace('{{label}}', field.label.toLowerCase())}
               className={cn(validationError && 'border-destructive')}
             />
@@ -342,7 +348,7 @@ export function FieldInput(props: FieldInputProps) {
           <Select
             value={displayValue || ''}
             onValueChange={handleChange}
-            disabled={disabled}
+            disabled={inputDisabled}
           >
             <SelectTrigger className={cn(inputHeight, "text-sm", validationError && "border-destructive")}>
                 <SelectValue
@@ -374,7 +380,7 @@ export function FieldInput(props: FieldInputProps) {
               allowOther={true}
               otherLabel={field.other_label || t('extraction', 'otherSpecifyDefault')}
               otherPlaceholder={field.other_placeholder || undefined}
-              disabled={disabled}
+              disabled={inputDisabled}
               placeholder={t('extraction', 'selectFieldPlaceholder').replace('{{label}}', field.label.toLowerCase())}
             />
           );
@@ -385,7 +391,7 @@ export function FieldInput(props: FieldInputProps) {
             value={Array.isArray(displayValue) ? displayValue.join(', ') : displayValue || ''}
             onChange={(e) => handleChange(e.target.value.split(',').map(v => v.trim()))}
             placeholder={t('extraction', 'valuesCommaSeparated')}
-            disabled={disabled}
+            disabled={inputDisabled}
             className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
           />
         );
@@ -397,7 +403,7 @@ export function FieldInput(props: FieldInputProps) {
             <Switch
               checked={displayValue || false}
               onCheckedChange={handleChange}
-              disabled={disabled}
+              disabled={inputDisabled}
             />
             <span className="text-sm text-muted-foreground">
               {displayValue ? t('extraction', 'yes') : t('extraction', 'no')}
@@ -410,7 +416,7 @@ export function FieldInput(props: FieldInputProps) {
           <Input
             value={value || ''}
             onChange={(e) => handleChange(e.target.value)}
-            disabled={disabled}
+            disabled={inputDisabled}
             className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
           />
         );
@@ -491,8 +497,9 @@ export function FieldInput(props: FieldInputProps) {
           </div>
           
           <div className="flex items-center gap-1 shrink-0">
-              {/* Badge + Info always visible on the right of input (if pending or accepted suggestion) */}
-          {aiSuggestion && 
+              {/* Badge + Info on the right of input (pending or accepted
+                  suggestion) — hidden on read-only runs (published view). */}
+          {!readOnly && aiSuggestion &&
            (aiSuggestion.status === 'pending' || aiSuggestion.status === 'accepted') && (
             <AISuggestionBadge
               suggestion={aiSuggestion}
@@ -553,7 +560,7 @@ export function FieldInput(props: FieldInputProps) {
                     size="sm"
                     variant="ghost"
                     aria-pressed={active}
-                    disabled={disabled}
+                    disabled={inputDisabled}
                     onClick={() => setDisposition(d.code)}
                     className={cn(
                       'h-6 gap-1 px-2 text-xs',
@@ -580,8 +587,10 @@ export function FieldInput(props: FieldInputProps) {
         </div>
         </TooltipProvider>
 
-                  {/* Suggested value + accept/reject buttons below input - only when no manual value */}
-        {shouldShowSuggestion && (
+                  {/* Suggested value + accept/reject buttons below input — only
+                      when no manual value, and never on read-only runs (a
+                      published view offers no pending decisions to act on). */}
+        {!readOnly && shouldShowSuggestion && (
           <AISuggestionDisplay
             suggestion={aiSuggestion}
             onAccept={onAcceptAI}

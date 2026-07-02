@@ -10,7 +10,10 @@ export function PrimaryAction() {
   const helperId = useId();
   const { transition, submitting, progress } = useRunHeader();
   if (!transition) return null;
-  const gated = transition.gate.ok === false;
+  // `gate` as a const binding so the ok===false checks below narrow the
+  // discriminated union (the aliased `gated` boolean would not).
+  const gate = transition.gate;
+  const gated = gate.ok === false;
   const helper = gated
     ? t('runs', 'requiredOfTotal')
         .replace('{{done}}', String(progress.completed))
@@ -29,16 +32,19 @@ export function PrimaryAction() {
       {transition.label}
     </Button>
   );
+  // Gated: the visible inline helper is gone (declutter, spec 2026-07-02) —
+  // the count lives in the tooltip ("reason — N of M") and in the status
+  // popover; the sr-only node keeps aria-describedby resolving.
+  const tooltipText = gate.ok === false
+    ? `${gate.reason} — ${helper ?? ''}`
+    : (transition.tooltip ?? null);
   return (
     <div className="flex items-center gap-2">
-      {/* sr-only (not `hidden`) below 52rem so the node stays in the a11y tree
-          and the button's aria-describedby keeps resolving; revealed visually
-          where the row has room. */}
-      {helper && <span id={helperId} className="sr-only text-[11px] text-muted-foreground @[52rem]/headerbar:not-sr-only @[52rem]/headerbar:whitespace-nowrap">{helper}</span>}
-      {transition.tooltip ? (
+      {helper && <span id={helperId} className="sr-only">{helper}</span>}
+      {tooltipText ? (
         <Tooltip>
           <TooltipTrigger asChild>{button}</TooltipTrigger>
-          <TooltipContent>{transition.tooltip}</TooltipContent>
+          <TooltipContent>{tooltipText}</TooltipContent>
         </Tooltip>
       ) : (
         button

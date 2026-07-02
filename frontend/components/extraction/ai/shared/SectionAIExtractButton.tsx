@@ -17,6 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { t } from "@/lib/copy";
+import { useRunEditability } from "@/components/runs/RunEditabilityContext";
 import { useSectionExtraction } from "@/hooks/extraction/useSectionExtraction";
 
 export interface SectionAIExtractButtonProps {
@@ -43,6 +44,7 @@ export function SectionAIExtractButton({
   disabled = false,
   onExtractionComplete,
 }: SectionAIExtractButtonProps) {
+  const { readOnly } = useRunEditability();
   const { extractSection, loading } = useSectionExtraction({
     onSuccess: (completedRunId) => {
       // Background refresh; never block the hook's loading reset.
@@ -54,6 +56,11 @@ export function SectionAIExtractButton({
       );
     },
   });
+
+  // Read-only run: no AI extraction affordance at all. The bail sits AFTER
+  // every hook call — an early return above them breaks the rules of hooks
+  // when readOnly flips on a mounted tree (stage starts null).
+  if (readOnly) return null;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // never toggle a wrapping accordion
