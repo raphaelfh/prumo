@@ -19,7 +19,7 @@ import { CommandPalette } from './CommandPalette';
 
 /**
  * RESPONSIVE CASCADE (3 rules — the RunStatus popover absorbed the old
- * StageRail/Reviewers/RoleChip fold ladder):
+ * stage-rail / reviewers / role-chip fold ladder):
  *
  *   1. The article title truncates (pure flex-shrink) — never drops.
  *   2. Reviewer avatars drop <48rem (RunStatus.tsx).

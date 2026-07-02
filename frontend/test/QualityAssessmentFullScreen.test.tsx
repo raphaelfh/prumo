@@ -327,7 +327,7 @@ describe("QualityAssessmentFullScreen", () => {
   it("renders the shared RunHeader status chip once the run loads", async () => {
     renderPage();
     // The RunStatus chip (data-testid=run-stage-current) replaces the old
-    // StageRail — its presence is the canonical marker that the RunHeader is
+    // stage rail — its presence is the canonical marker that the RunHeader is
     // mounted.
     await waitFor(() =>
       expect(screen.getByTestId("run-stage-current")).toBeInTheDocument(),
