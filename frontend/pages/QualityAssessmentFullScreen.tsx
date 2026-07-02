@@ -60,6 +60,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { t } from "@/lib/copy";
+import { isRunEditable } from "@/lib/runs/editability";
 
 interface FieldKey {
   instanceId: string;
@@ -250,7 +251,7 @@ export default function QualityAssessmentFullScreen() {
       values,
       baselineValues: loadedValues,
       enabled:
-        !!session && !!runDetail && runDetail.run.stage === "extract",
+        !!session && !!runDetail && isRunEditable(runDetail.run.stage),
     });
 
   // AI suggestions wiring — kind-agnostic hooks reused from Data

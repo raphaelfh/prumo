@@ -22,6 +22,7 @@ import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {getRequiredUserId} from '@/services/authService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
+import {isRunEditable} from '@/lib/runs/editability';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
 import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
 import {RunSplitShell} from '@/components/runs/RunSplitShell';
@@ -377,7 +378,7 @@ export default function ExtractionFullScreen() {
     // opening a consolidated run. Mirrors the QA full-screen gate;
     // ``!isFinalized`` alone let ``consensus`` through.
     enabled:
-      !!activeRunId && !loading && valuesInitialized && stage === 'extract',
+      !!activeRunId && !loading && valuesInitialized && isRunEditable(stage),
   });
 
     // "Mark ready" (reviewer) — flush pending autosave, set the per-reviewer
