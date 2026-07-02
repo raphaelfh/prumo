@@ -46,6 +46,21 @@ const ROLE_COPY = {
   viewer: 'roleViewer',
 } as const;
 
+function AvatarStack({ count, shown, size }: { count: number; shown: number; size: 'bar' | 'popover' }) {
+  const dot = size === 'bar' ? 'h-[18px] w-[18px] border-2 border-background' : 'h-3.5 w-3.5 border border-popover';
+  const overlap = size === 'bar' ? '-space-x-2' : '-space-x-1.5';
+  return (
+    <span className={cn('flex shrink-0', overlap)} aria-hidden="true">
+      {Array.from({ length: shown }).map((_, i) => (
+        <span key={i} className={cn('rounded-full', dot, AVATAR[i % AVATAR.length])} />
+      ))}
+      {size === 'bar' && count > shown && (
+        <span className="flex h-[18px] items-center rounded-full border-2 border-background bg-muted px-1 text-[10px] text-muted-foreground">+{count - shown}</span>
+      )}
+    </span>
+  );
+}
+
 function NodeIcon({ node }: { node: StageNode }) {
   if (node.state === 'done') return <CircleCheck className="h-3.5 w-3.5 text-success" aria-hidden="true" />;
   if (node.state === 'current') return <span className="mx-[3.5px] h-[7px] w-[7px] rounded-full bg-info" aria-hidden="true" />;
@@ -124,14 +139,7 @@ export function RunStatus({ open, onOpenChange }: { open?: boolean; onOpenChange
                 data-testid="run-status-reviewers"
                 className="relative hidden shrink-0 items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring @[64rem]/headerbar:flex"
               >
-                <span className="flex -space-x-2">
-                  {Array.from({ length: shown }).map((_, i) => (
-                    <span key={i} className={cn('h-[18px] w-[18px] rounded-full border-2 border-background', AVATAR[i % AVATAR.length])} aria-hidden="true" />
-                  ))}
-                  {reviewers.count > shown && (
-                    <span className="flex h-[18px] items-center rounded-full border-2 border-background bg-muted px-1 text-[10px] text-muted-foreground">+{reviewers.count - shown}</span>
-                  )}
-                </span>
+                <AvatarStack count={reviewers.count} shown={shown} size="bar" />
                 {showDivergent && (
                   <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-warning" data-testid="run-status-divergent" aria-hidden="true" />
                 )}
@@ -170,11 +178,7 @@ export function RunStatus({ open, onOpenChange }: { open?: boolean; onOpenChange
           </div>
           {showAvatars && (
             <div className="flex items-center gap-2">
-              <span className="flex shrink-0 -space-x-1.5" aria-hidden="true">
-                {Array.from({ length: shown }).map((_, i) => (
-                  <span key={i} className={cn('h-3.5 w-3.5 rounded-full border border-popover', AVATAR[i % AVATAR.length])} />
-                ))}
-              </span>
+              <AvatarStack count={reviewers.count} shown={shown} size="popover" />
               <span>
                 {reviewersLabel}
                 {reviewers.ready != null && reviewers.readyTotal != null && (
