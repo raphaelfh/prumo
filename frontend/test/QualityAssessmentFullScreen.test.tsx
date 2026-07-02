@@ -456,6 +456,110 @@ describe("QualityAssessmentFullScreen", () => {
   });
 });
 
+describe("QualityAssessmentFullScreen — blind-reveal stage guards", () => {
+  // Security-review finding (2026-07-02 #6): the Reveal affordance must mirror
+  // the extraction screen's guards — offered only to a blind manager DURING
+  // extract, and never once the run-scoped auto-reveal (peers_revealed) or a
+  // consensus/finalized stage makes it redundant (ADR-0015).
+  const BLIND_MANAGER = {
+    ...BLIND_PERMISSIONS,
+    userRole: "manager" as const,
+    isBlindMode: true,
+    canManageBlindMode: true,
+  };
+
+  function mockRunView({
+    stage,
+    peersRevealed = false,
+  }: {
+    stage: string;
+    peersRevealed?: boolean;
+  }) {
+    vi.mocked(apiClient).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/hitl/sessions") {
+        return {
+          run_id: "run-1",
+          kind: "quality_assessment",
+          project_template_id: "tpl-1",
+          instances_by_entity_type: { "et-1": "inst-1" },
+        };
+      }
+      if (url === "/api/v1/runs/run-1/view") {
+        return {
+          run: {
+            id: "run-1",
+            project_id: "p1",
+            article_id: "a1",
+            template_id: "tpl-1",
+            kind: "quality_assessment",
+            version_id: "v-1",
+            stage,
+            status: stage === "finalized" ? "completed" : "running",
+            hitl_config_snapshot: {},
+            parameters: {},
+            results: {},
+            created_at: new Date().toISOString(),
+            created_by: "u-1",
+          },
+          proposals: [],
+          decisions: [],
+          consensus_decisions: [],
+          published_states: [],
+          entity_types: [],
+          current_values: [],
+          peers_revealed: peersRevealed,
+        };
+      }
+      if (url.includes("/suggestions")) {
+        return { suggestions: [], count: 0 };
+      }
+      if (url.includes("/files") || url.includes("/text-blocks")) {
+        return [];
+      }
+      return {};
+    });
+  }
+
+  beforeEach(() => {
+    mockedPermissions.mockReturnValue(BLIND_MANAGER);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("blind manager during extract sees the Reveal affordance", async () => {
+    mockRunView({ stage: "extract" });
+    renderPage();
+    expect(
+      await screen.findByRole("button", { name: /reveal reviewers/i }),
+    ).toBeInTheDocument();
+  });
+
+  it.each(["consensus", "finalized"])(
+    "blind manager on a %s run sees no Reveal affordance",
+    async (stage) => {
+      mockRunView({ stage });
+      renderPage();
+      // StageRail mounts only once the run view has loaded, so canReveal is
+      // settled by the time this resolves.
+      await screen.findByRole("navigation", { name: "Run stage" });
+      expect(
+        screen.queryByRole("button", { name: /reveal reviewers/i }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("run-scoped auto-reveal (peers_revealed) hides the Reveal affordance even during extract", async () => {
+    mockRunView({ stage: "extract", peersRevealed: true });
+    renderPage();
+    await screen.findByRole("navigation", { name: "Run stage" });
+    expect(
+      screen.queryByRole("button", { name: /reveal reviewers/i }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("QualityAssessmentFullScreen — finalized (published, read-only)", () => {
   beforeEach(() => {
     mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
