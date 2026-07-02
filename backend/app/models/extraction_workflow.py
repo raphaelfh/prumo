@@ -381,9 +381,13 @@ class ExtractionPublishedState(BaseModel):
         ForeignKey("public.extraction_runs.id", ondelete="CASCADE"),
         nullable=False,
     )
+    # RESTRICT (not CASCADE): instance deletes arrive PostgREST-direct with no
+    # API stage guard; a CASCADE here silently destroyed the canonical
+    # published record and could leave a FINALIZED run with zero published
+    # rows (advance_stage invariant, constitution §IX). Migration 0040.
     instance_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_instances.id", ondelete="CASCADE"),
+        ForeignKey("public.extraction_instances.id", ondelete="RESTRICT"),
         nullable=False,
     )
     field_id: Mapped[UUID] = mapped_column(

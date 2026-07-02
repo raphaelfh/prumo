@@ -326,7 +326,7 @@ async def test_migration_0038_round_trip(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_migration_0039_round_trip(db_session: AsyncSession) -> None:
-    """``0039_absent_reason_backfill`` is a data-only migration (no schema change),
+    """``0040_published_state_restrict`` is a data-only migration (no schema change),
     so the roundtrip guard is exercised with data in ``test_migration_0039_backfill``.
     Here we assert the chain is reversible: downgrade to the explicit parent
     ``0038_field_disposition_flags`` and back to head both succeed without error."""
@@ -349,8 +349,8 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0039_absent_reason_backfill" in out, (
-        f"Expected head revision '0039_absent_reason_backfill', got:\n{out}"
+    assert "0040_published_state_restrict" in out, (
+        f"Expected head revision '0040_published_state_restrict', got:\n{out}"
     )
 
 
