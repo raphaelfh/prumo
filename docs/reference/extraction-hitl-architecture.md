@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-07-01
+last_reviewed: 2026-07-02
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-06-28 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-07-02 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -110,6 +110,24 @@ All tables live in the `public` schema with RLS enabled. Migration head:
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
+### Value envelope & `absent_reason` marker (ADR-0016)
+
+Every workflow value column (`proposed_value`, decision `value`, published
+`value`) is a JSONB envelope
+`{"value": <typed | null>, "unit"?: <str>, "absent_reason"?: "no_information" | "not_applicable" | "not_evaluated"}`.
+The value stays **type-correct** — `null` when absent, never a string sentinel.
+A coded `absent_reason` sibling marks a **resolved** "no value, on purpose"
+answer (the source is silent / not applicable / not evaluated) and counts as
+**filled** for the finalize gate; a bare `{"value": null}` (no marker) stays
+**unresolved**. `backend/app/services/value_semantics.py` is the single
+emptiness oracle (enum, labels, write-time normalizer), mirrored 1:1 by
+`frontend/lib/extraction/valueSemantics.ts` via a shared cross-checked test
+vector. `no_information` is available on every field; `not_applicable` /
+`not_evaluated` are opt-in per field. Historical in-band disposition strings
+(`"No information"`, PROBAST `NI`/`NA`) were rewritten to the marker by
+migration `0039_absent_reason_backfill`. Decision record:
+[ADR-0016](../adr/0016-typed-absent-reason-marker.md).
+
 ### Core HITL tables (introduced pre-squash 0010 → 0012; evolving — see migration head above)
 
 | Table | Append-only? | Purpose |
@@ -131,6 +149,7 @@ in any PR that adds an `extraction_*` migration).
 | `project_extraction_templates` | + `kind`, unique `(id, kind)` | 0011 |
 | `extraction_runs` | + `kind`, `version_id` FK, `hitl_config_snapshot`; composite FK `(template_id, kind)` enforces template-run kind coherence; stage enum reconstructed | 0011 + 0014 |
 | `extraction_evidence` | + `run_id`, `proposal_record_id`, `reviewer_decision_id`, `consensus_decision_id`. Legacy `target_type`/`target_id` columns dropped in 0017; CHECK now requires the workflow path. | 0013 + 0017 |
+| `extraction_fields` | + `allows_not_applicable`, `allows_not_evaluated` opt-in disposition flags (ADR-0016; copied into `version.schema_` by the snapshot builder) | 0038 |
 
 ### Legacy tables — fully removed
 
@@ -339,7 +358,9 @@ QUADAS-2 are seeded as `extraction_templates_global` rows with
 - **Domain** = an `EntityType` (Participants, Predictors, Outcome,
   Analysis, Overall), all `cardinality='one'`.
 - **Signaling question** = a `Field` of type `select`, with
-  `allowed_values=['Y','PY','PN','N','NI','NA']` (PROBAST) or
+  `allowed_values=['Y','PY','PN','N']` (PROBAST; the historical `NI`/`NA`
+  options are now coded dispositions — `no_information` is universal and
+  `not_applicable` is the per-field opt-in flag, ADR-0016) or
   `['Y','N','Unclear']` (QUADAS-2).
 - **Risk of Bias / Applicability concerns** = two summary `select`
   fields per domain, `allowed_values=['Low','High','Unclear']`. Manual in

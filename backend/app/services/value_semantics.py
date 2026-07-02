@@ -41,8 +41,10 @@ class AbsentReason(StrEnum):
     Kept intentionally minimal (three codes, not FHIR ``dataAbsentReason``'s
     fifteen — YAGNI for evidence extraction). ``no_information`` is available on
     every field; ``not_applicable`` / ``not_evaluated`` are opt-in per field
-    (surfaced in later phases). Defined once here and mirrored to the frontend
-    via the generated API types once the marker rides a typed response field.
+    (``allows_not_applicable`` / ``allows_not_evaluated``, surfaced by
+    ``FieldInput``). Mirrored by hand in
+    ``frontend/lib/extraction/valueSemantics.ts``; the shared cross-checked test
+    vector keeps the two vocabularies in lock-step.
     """
 
     NO_INFORMATION = "no_information"

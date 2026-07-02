@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-06-29
+last_reviewed: 2026-07-02
 owner: '@raphaelfh'
 ---
 
@@ -151,7 +151,8 @@ All API responses MUST use a uniform envelope format.
 Every AI-assisted value MUST be explainable and every human choice MUST be auditable.
 
 - Each AI suggestion records **how it was generated** — a run-level provenance snapshot (ran-by user, provider/model, extraction strategy + the prompt actually sent, sampling params, token usage) stored in `extraction_runs.results['provenance']` and surfaced to the reviewer.
-- A "no information" / abstention outcome is a **first-class recorded proposal** (`proposed_value={"value": null}` with its rationale), not a silent drop — the absence of a finding is itself traceable evidence the run examined the field.
+- A **domain "no information" / disposition answer** — that the source does not state the item, or the item is not applicable / not evaluated — is a first-class recorded proposal carrying a coded `absent_reason` (`{"value": null, "absent_reason": <code>}`) with its rationale ([ADR-0016](../adr/0016-typed-absent-reason-marker.md)). A reviewer accepts it like any AI version; it counts as a **resolved** value.
+- A **genuine unresolved state** — no proposal, an unaccepted proposal, or a rejected decision — carries no disposition and is **not** a silent drop: the proposal trail records that the run examined the field.
 - Every human selection of an AI version is **append-only**: the `ExtractionReviewerDecision` trail records who chose which `proposal_record_id` and when; switching versions never rewrites history.
 - Surfacing provenance is **data-driven and forward-compatible**: new provenance fields render without a UI change, so adding traceability never requires a schema or component migration first.
 
@@ -238,8 +239,14 @@ This constitution is the authoritative reference for all architectural and proce
 - Added complexity beyond what a principle prescribes MUST be justified in the PR description.
 - Use `CLAUDE.md` as the runtime development guidance companion to this constitution.
 
-**Version**: 2.1.1 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-06-20
+**Version**: 2.2.0 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-07-02
 
+> 2.2.0: §IX abstention bullet split into the two concepts it conflated
+> (ADR-0016) — a coded-`absent_reason` disposition answer is a first-class
+> **resolved** proposal (`{"value": null, "absent_reason": <code>}`), distinct
+> from a genuine unresolved state (bare null / unaccepted / rejected), which
+> carries no disposition. Replaces the bare `{"value": null}` abstention pin.
+>
 > 2.1.1: the CI-Pipeline section was re-pointed to ci.yml — it had drifted to
 > a stale 5-job list with `--cov-fail-under=70` while the tooling table (and CI)
 > already enforced 62. ci.yml is the source of truth for the enforced gate set.
