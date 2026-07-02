@@ -4817,7 +4817,7 @@
         "type": "object"
       },
       "RunReadyStateResponse": {
-        "description": "The \"N/M reviewers ready\" hint. Advisory only \u2014 readiness gates nothing.\n\n``reviewer_count`` is ``max(hitl_config reviewer_count, ready_count)`` so the\nhint never reads \"N of M\" with N > M (the configured count is often the inert\ndefault of 1).",
+        "description": "The \"N/M reviewers ready\" hint. Advisory only \u2014 readiness gates nothing.\n\n``reviewer_count`` is ``max(hitl_config reviewer_count, ready_count)`` so the\nhint never reads \"N of M\" with N > M (the configured count is often the inert\ndefault of 1). ``reviewers_ready`` is blind-gated (ADR-0012): it carries only\nthe caller's own entry unless the caller is unblinded \u2014 the counts stay\naggregate.",
         "properties": {
           "ready_count": {
             "title": "Ready Count",
@@ -8427,7 +8427,7 @@
     },
     "/api/v1/runs/{run_id}/ready": {
       "post": {
-        "description": "Toggle the caller's per-reviewer \"ready\" signal for a run.\n\nAdvisory only \u2014 it never advances the run (the manager opens consensus\nmanually). Membership-gated AND reviewer-role-gated (a read-only viewer\ncannot mark ready). Returns the \"N/M reviewers ready\" hint.",
+        "description": "Toggle the caller's per-reviewer \"ready\" signal for a run.\n\nAdvisory only \u2014 it never advances the run (the manager opens consensus\nmanually). Membership-gated AND reviewer-role-gated (a read-only viewer\ncannot mark ready). Returns the \"N/M reviewers ready\" hint with\n``reviewers_ready`` scoped to the caller's own entry (this response is the\ncaller's toggle echo; an unblinded caller reads the full list via /view).",
         "operationId": "mark_run_ready_api_v1_runs__run_id__ready_post",
         "parameters": [
           {

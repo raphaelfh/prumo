@@ -810,7 +810,9 @@ export interface paths {
          *
          *     Advisory only — it never advances the run (the manager opens consensus
          *     manually). Membership-gated AND reviewer-role-gated (a read-only viewer
-         *     cannot mark ready). Returns the "N/M reviewers ready" hint.
+         *     cannot mark ready). Returns the "N/M reviewers ready" hint with
+         *     ``reviewers_ready`` scoped to the caller's own entry (this response is the
+         *     caller's toggle echo; an unblinded caller reads the full list via /view).
          */
         post: operations["mark_run_ready_api_v1_runs__run_id__ready_post"];
         delete?: never;
@@ -3099,7 +3101,9 @@ export interface components {
          *
          *     ``reviewer_count`` is ``max(hitl_config reviewer_count, ready_count)`` so the
          *     hint never reads "N of M" with N > M (the configured count is often the inert
-         *     default of 1).
+         *     default of 1). ``reviewers_ready`` is blind-gated (ADR-0012): it carries only
+         *     the caller's own entry unless the caller is unblinded — the counts stay
+         *     aggregate.
          */
         RunReadyStateResponse: {
             /** Ready Count */

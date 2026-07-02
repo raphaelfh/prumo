@@ -467,6 +467,13 @@ publish, AI), keep it in the page-specific component.
   (`extraction_reviewer_ready`, ADR-0015). Toggled via `POST /runs/{id}/ready`
   (membership + reviewer-role gated); does **not** gate any transition. The run
   view exposes an `N/M reviewers ready` hint (`M = max(reviewer_count, N)`).
+  WHO marked ready is peer-attributable participation metadata (ADR-0012): the
+  API scrubs `reviewers_ready` to the caller's own entry unless the caller is
+  unblinded (`peers_revealed`); the counts stay aggregate. Single home of the
+  scrub: `ExtractionReviewerReadyService.ready_summary_from`. NOTE the RLS
+  SELECT on this table is still project-member-scoped (0029's "knowing someone
+  is done leaks no values" rationale predates the scrub), so the API is
+  deliberately stricter than RLS here pending a 0029 revisit.
 - **managers_see_reviewers** — Per-kind manager blind-review policy on
   `projects.settings` (`{extraction, quality_assessment}`, both default
   `false` = managers blind). Read **live** by the API read path
