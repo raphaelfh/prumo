@@ -85,7 +85,7 @@ from the existing `RunHeaderContext` (`stage`, `isRevision`, `role`,
 ### Chip
 
 - Pill: status dot + current-stage label + chevron-down. `text-[13px]`,
-  hairline border, ghost hover. Never drops; below ~36rem it collapses to
+  hairline border, ghost hover. Never drops; below ~58rem it collapses to
   the dot only (full `aria-label` retained).
 - Dot color + label are **stage-truthful**: `extract`/`consensus` show the
   current node (info dot); `finalized` = success dot + "Finalized";
@@ -106,7 +106,7 @@ from the existing `RunHeaderContext` (`stage`, `isRevision`, `role`,
 - Up to 3 stacked anonymous 18px dots + `+N`, only when
   `reviewers.count > 0`. Rendered as a button opening the same popover.
 - Amber corner dot when `reviewers.divergent > 0` **and** the viewer is an
-  arbitrator (see role gating). Drops below 48rem.
+  arbitrator (see role gating). Drops below 64rem.
 
 ### Status popover (single, shared by chip + avatars)
 
@@ -189,9 +189,14 @@ read as two different states.
 ## 7. Responsive cascade (replaces the 7-threshold map)
 
 1. Article title truncates (flex cushion) — never drops.
-2. Reviewer avatars drop `< 48rem`.
+2. Reviewer avatars drop `< 64rem` (they can only hide, never shrink — same
+   rationale as the old Reviewers threshold; harness-verified 2026-07-02:
+   lower thresholds crushed the title to ~21px in the packed consensus
+   config at ~900px).
 3. Back arrow drops `< 42rem` (unchanged).
-4. Stage chip collapses to dot-only `< 36rem` — never drops.
+4. Stage chip collapses to dot-only `< 58rem` — never drops. The Center
+   track is `shrink-0` (its content folds internally; flex-squeezing it
+   only clips the chip mid-word).
 
 AI is already icon-only; Compare, Utility, PanelToggle keep today's
 behavior. The RunHeader.tsx cascade comment is rewritten to this list.

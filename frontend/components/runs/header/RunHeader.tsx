@@ -22,9 +22,10 @@ import { CommandPalette } from './CommandPalette';
  * stage-rail / reviewers / role-chip fold ladder):
  *
  *   1. The article title truncates (pure flex-shrink) — never drops.
- *   2. Reviewer avatars drop <48rem (RunStatus.tsx).
+ *   2. Reviewer avatars drop <64rem (RunStatus.tsx — they can only hide,
+ *      never shrink, so they fold first in the packed consensus config).
  *   3. Back arrow drops <42rem (Breadcrumb.tsx); the stage chip folds to its
- *      dot <36rem but NEVER drops — it is the status anchor.
+ *      dot <58rem but NEVER drops — it is the status anchor.
  *
  * The ‹N/M› pager keeps its own protected shrink-0 slot; Left/Center keep
  * overflow-hidden purely as an anti-overlap backstop for whitespace-nowrap
@@ -40,10 +41,11 @@ function Left({ children }: { children: ReactNode }) {
   return <div className={cn('flex min-w-0 shrink items-center gap-1.5 overflow-hidden @[48rem]/headerbar:gap-3')}>{children}</div>;
 }
 function Center({ children }: { children: ReactNode }) {
-  // Status track (RunStatus cluster). The avatar stack drops <48rem inside
-  // RunStatus; the stage chip never drops. overflow-hidden is the same
-  // anti-overlap backstop as Left.
-  return <div className={cn('flex min-w-0 shrink items-center gap-2 overflow-hidden')}>{children}</div>;
+  // Status track (RunStatus cluster). shrink-0 — NEVER flex-clipped: its
+  // content already folds internally (avatars drop <64rem, the chip label
+  // folds to the dot <58rem), so squeezing this track would only clip the
+  // chip mid-word while the title still has room to truncate.
+  return <div className={cn('flex shrink-0 items-center gap-2')}>{children}</div>;
 }
 function Right({ children }: { children: ReactNode }) {
   // `ml-auto` makes this cluster absorb all free space and pin right (the job

@@ -56,8 +56,8 @@ function NodeIcon({ node }: { node: StageNode }) {
 /**
  * RunHeader.RunStatus — the unified status cluster (spec 2026-07-02).
  *
- * One stage chip (never drops; folds to its dot <36rem) + anonymous reviewer
- * avatars (drop <48rem), both opening a single status popover: kind-aware
+ * One stage chip (never drops; folds to its dot <58rem) + anonymous reviewer
+ * avatars (drop <64rem), both opening a single status popover: kind-aware
  * 3-node timeline with role-voiced explainers, field progress, reviewer
  * counts, arbitrator-only divergences, the caller's role with the blind
  * reveal, and the revision note. Replaces the former stage rail, reviewer
@@ -108,8 +108,8 @@ export function RunStatus({ open, onOpenChange }: { open?: boolean; onOpenChange
             className="h-7 shrink-0 gap-1.5 rounded-full border border-border/60 px-2.5 text-[13px] font-medium"
           >
             <span className={cn('h-[7px] w-[7px] rounded-full', DOT_BG[cs])} aria-hidden="true" />
-            <span className="hidden @[36rem]/headerbar:inline">{chipLabel}</span>
-            <ChevronDown className="hidden h-3 w-3 text-muted-foreground @[36rem]/headerbar:block" aria-hidden="true" />
+            <span className="hidden @[58rem]/headerbar:inline">{chipLabel}</span>
+            <ChevronDown className="hidden h-3 w-3 text-muted-foreground @[58rem]/headerbar:block" aria-hidden="true" />
           </Button>
         </PopoverTrigger>
         {showAvatars && (
@@ -122,7 +122,7 @@ export function RunStatus({ open, onOpenChange }: { open?: boolean; onOpenChange
                 aria-haspopup="dialog"
                 aria-expanded={actualOpen}
                 data-testid="run-status-reviewers"
-                className="relative hidden shrink-0 items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring @[48rem]/headerbar:flex"
+                className="relative hidden shrink-0 items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring @[64rem]/headerbar:flex"
               >
                 <span className="flex -space-x-2">
                   {Array.from({ length: shown }).map((_, i) => (
