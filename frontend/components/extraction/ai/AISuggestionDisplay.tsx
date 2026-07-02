@@ -105,18 +105,34 @@ export function AISuggestionDisplay({
   const isAccepted = isSuggestionAccepted(suggestion);
   const isRejected = suggestion.status === 'rejected';
 
-  // A "no information found" outcome is now a first-class proposal. Render it as
-  // a quiet, de-emphasized indicator — never a loud "(empty) · 0%" strip with
-  // Accept/Reject. It still opens the review popover (history + provenance) when
-  // a binding is supplied, so the abstention stays traceable.
+  // A "no information found" outcome is a first-class ACCEPTABLE proposal
+  // (ADR-0016 decision #3): the strip stays quiet and de-emphasized — never a
+  // loud "(empty) · 0%" — but exposes the same one-click accept/reject as a
+  // real suggestion, so accepting writes the marker into the form and
+  // activates the field's "No information" disposition. It still opens the
+  // review popover (history + provenance) when a binding is supplied.
   if (isAbstention(suggestion.value)) {
     return (
-      <div className="mt-2 animate-in fade-in duration-200">
-        <ReviewTrigger review={review} className="inline-flex px-1.5 py-0.5 -mx-1.5">
-          <span className="text-xs italic text-muted-foreground">
-            {t('extraction', 'reviewNoInformation')}
-          </span>
-        </ReviewTrigger>
+      <div className="mt-2 animate-in fade-in duration-200 w-full">
+        <div className="flex items-center gap-2 w-full">
+          <ReviewTrigger
+            review={review}
+            className="flex-1 min-w-0 inline-flex px-1.5 py-0.5 -mx-1.5"
+          >
+            <span className="text-xs italic text-muted-foreground">
+              {t('extraction', 'reviewNoInformation')}
+            </span>
+          </ReviewTrigger>
+          <div className="flex items-center gap-2 shrink-0 pr-1">
+            <AISuggestionActions
+              onAccept={onAccept}
+              onReject={onReject}
+              loading={loading}
+              isAccepted={isAccepted}
+              isRejected={isRejected}
+            />
+          </div>
+        </div>
       </div>
     );
   }

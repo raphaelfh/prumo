@@ -1,13 +1,13 @@
 ---
-status: proposed
-last_reviewed: 2026-06-30
+status: accepted
+last_reviewed: 2026-07-02
 owner: '@raphaelfh'
 adr_number: '0016'
 ---
 
 # Typed `absent_reason` marker for missing values
 
-> **Status:** Proposed · Date: 2026-06-30 · Deciders: @raphaelfh
+> **Status:** Accepted · Date: 2026-06-30 · Deciders: @raphaelfh
 > **Supersedes:** N/A · **Superseded by:** N/A
 > **Amends:** constitution §IX (abstention encoding); refines the emptiness
 > semantics behind [ADR-0009](0009-extraction-finalize-completeness-gate.md) /
@@ -90,9 +90,12 @@ Precise semantics:
   legitimate value is touched and finalized history stays lossless. The
   transitional read-shim is then removed (no permanent legacy).
 
-Delivered in phases (marker-aware readers → write contract + AI marker →
-template/select unification → data migration → export/compare/UX → docs). Full
-design, per-layer detail, and test strategy:
+Delivered in phases, all shipped to production 2026-07-01/02: Phase 0
+marker-aware readers (#458), Phase 1 write contract + AI marker (#460), Phases
+2–3 template/select unification + data migration `0039_absent_reason_backfill`
+with read-shim removal (#462), Phase 4 export/reviewer-compare/UX (#466);
+Phase 5 docs closes with this amendment (constitution §IX amended, v2.2.0).
+Full design, per-layer detail, and test strategy:
 [`docs/superpowers/specs/2026-06-30-no-information-representation-design.md`](../superpowers/specs/2026-06-30-no-information-representation-design.md).
 
 ### Consequences

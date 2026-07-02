@@ -43,6 +43,11 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   i18n) — never hardcode strings in components.
 - shadcn/Radix primitives; `cn()` merge order matters; every
   interactive element keeps a visible focus state.
+- **Every icon-only or short-label button exposes its description on
+  hover** via the shadcn `Tooltip` (`TooltipTrigger asChild`), with the
+  description text routed through `lib/copy/`. Icon-only buttons also
+  carry an `aria-label`. A bare icon or terse label ("No information",
+  a history glyph) must never leave the user guessing what it does.
 - Visual language is authoritative in `frontend-ux` (it outranks the
   `frontend-design` plugin on core product UI — that plugin is for
   greenfield only). After a non-trivial UI change, verify with your
