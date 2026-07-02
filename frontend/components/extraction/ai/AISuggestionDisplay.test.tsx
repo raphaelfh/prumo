@@ -4,10 +4,12 @@
  * The backend records a "no information" outcome as a first-class proposal
  * carrying the coded marker ``{value:null, absent_reason:'no_information'}``
  * (ADR-0016). The service preserves that envelope as ``suggestion.value``, so the
- * inline strip renders a QUIET "No information found" indicator for it — never the
- * loud "(empty) · 0%" + Accept/Reject a real low-confidence suggestion gets
- * (spec R8). A real value keeps its value + actions. Post-Phase-3 a bare null/''
- * is UNRESOLVED (not an abstention) — ``isAbstention`` is the pure marker shape.
+ * inline strip renders a QUIET "No information found" indicator for it — never
+ * the loud "(empty) · 0%" a real low-confidence suggestion gets — while still
+ * exposing the one-click accept/reject actions (decision #3: an abstention is an
+ * acceptable proposal; accepting activates the field's disposition). A real value
+ * keeps its value + actions. Post-Phase-3 a bare null/'' is UNRESOLVED (not an
+ * abstention) — ``isAbstention`` is the pure marker shape.
  */
 
 import { render as rtlRender, screen } from '@testing-library/react';
@@ -64,6 +66,39 @@ describe('AISuggestionDisplay — no-information handling', () => {
     expect(screen.getByText('Retrospective cohort')).toBeInTheDocument();
     expect(screen.getByText('90%')).toBeInTheDocument();
     expect(screen.queryByText('reviewNoInformation')).not.toBeInTheDocument();
+  });
+
+  it('offers one-click accept/reject on the abstention strip (ADR-0016 decision #3)', async () => {
+    // The abstention is a first-class acceptable proposal: accepting it writes
+    // the marker into the form and activates the field's "No information"
+    // disposition. Rendering stays quiet (no confidence badge) — only the
+    // actions are exposed, exactly like a normal suggestion.
+    const onAccept = vi.fn();
+    const onReject = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AISuggestionDisplay
+        suggestion={makeSuggestion({ value: NO_INFO, confidence: 0 })}
+        onAccept={onAccept}
+        onReject={onReject}
+      />,
+    );
+    expect(screen.getByText('reviewNoInformation')).toBeInTheDocument();
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'acceptSuggestion' }));
+    expect(onAccept).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'rejectSuggestion' }));
+    expect(onReject).toHaveBeenCalledTimes(1);
+  });
+
+  it('an accepted abstention shows the accepted state on its accept action', () => {
+    render(
+      <AISuggestionDisplay
+        suggestion={makeSuggestion({ value: NO_INFO, confidence: 0, status: 'accepted' })}
+        onAccept={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'suggestionAccepted' })).toBeInTheDocument();
   });
 });
 
