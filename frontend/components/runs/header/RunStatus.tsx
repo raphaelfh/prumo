@@ -132,7 +132,7 @@ export function RunStatus({ open, onOpenChange }: { open?: boolean; onOpenChange
             <TooltipTrigger asChild>
               <button
                 type="button"
-                onClick={() => setOpen(true)}
+                onClick={() => setOpen(!actualOpen)}
                 aria-label={`${reviewersLabel} — ${t('runs', 'runStatusLabel')}`}
                 aria-haspopup="dialog"
                 aria-expanded={actualOpen}
@@ -149,7 +149,20 @@ export function RunStatus({ open, onOpenChange }: { open?: boolean; onOpenChange
           </Tooltip>
         )}
       </div>
-      <PopoverContent align="start" className="w-72 p-0 text-[13px]" aria-label={t('runs', 'runStatusLabel')} data-testid="run-status-popover">
+      <PopoverContent
+        align="start"
+        className="w-72 p-0 text-[13px]"
+        aria-label={t('runs', 'runStatusLabel')}
+        data-testid="run-status-popover"
+        // The avatar cluster is a second opener OUTSIDE the PopoverTrigger:
+        // without this guard Radix's outside-pointerdown closes the popover
+        // before the button's click toggles it back open (flicker).
+        onPointerDownOutside={(e) => {
+          if ((e.target as Element | null)?.closest?.('[data-testid="run-status-reviewers"]')) {
+            e.preventDefault();
+          }
+        }}
+      >
         <ol className="flex flex-col gap-2.5 border-b px-4 py-3">
           {nodes.map((node) => (
             <li key={node.key} className="flex items-start gap-2.5" data-state={node.state}>
@@ -170,12 +183,16 @@ export function RunStatus({ open, onOpenChange }: { open?: boolean; onOpenChange
           ))}
         </ol>
         <div className="flex flex-col gap-2 px-4 py-3 text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <ListChecks className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-            {t('runs', 'statusRequiredFields')
-              .replace('{{done}}', String(progress.completed))
-              .replace('{{total}}', String(progress.total))}
-          </div>
+          {/* QA passes an empty progress vector (its publish gate has no
+              per-field completeness) — "0 of 0" would be noise, hide it. */}
+          {progress.total > 0 && (
+            <div className="flex items-center gap-2">
+              <ListChecks className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+              {t('runs', 'statusRequiredFields')
+                .replace('{{done}}', String(progress.completed))
+                .replace('{{total}}', String(progress.total))}
+            </div>
+          )}
           {showAvatars && (
             <div className="flex items-center gap-2">
               <AvatarStack count={reviewers.count} shown={shown} size="popover" />

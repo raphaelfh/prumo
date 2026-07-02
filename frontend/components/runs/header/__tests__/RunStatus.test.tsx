@@ -83,6 +83,11 @@ describe('RunStatus popover', () => {
     renderStatus({ reviewers: { count: 0, required: 0, divergent: 0 } });
     expect(screen.queryByTestId('run-status-reviewers')).toBeNull();
   });
+  it('hides the progress row when there is no per-field completeness (QA)', async () => {
+    renderStatus({ kind: 'qa', progress: { completed: 0, total: 0, pct: 0 } });
+    await userEvent.click(screen.getByTestId('run-stage-current'));
+    expect(await screen.findByTestId('run-status-popover')).not.toHaveTextContent('statusRequiredFields');
+  });
   it('ready hint renders when provided', async () => {
     renderStatus({ reviewers: { count: 2, required: 2, divergent: 0, ready: 1, readyTotal: 2 } });
     await userEvent.click(screen.getByTestId('run-stage-current'));

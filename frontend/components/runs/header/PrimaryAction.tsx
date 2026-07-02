@@ -10,7 +10,10 @@ export function PrimaryAction() {
   const helperId = useId();
   const { transition, submitting, progress } = useRunHeader();
   if (!transition) return null;
-  const gated = transition.gate.ok === false;
+  // `gate` as a const binding so the ok===false checks below narrow the
+  // discriminated union (the aliased `gated` boolean would not).
+  const gate = transition.gate;
+  const gated = gate.ok === false;
   const helper = gated
     ? t('runs', 'requiredOfTotal')
         .replace('{{done}}', String(progress.completed))
@@ -32,8 +35,8 @@ export function PrimaryAction() {
   // Gated: the visible inline helper is gone (declutter, spec 2026-07-02) —
   // the count lives in the tooltip ("reason — N of M") and in the status
   // popover; the sr-only node keeps aria-describedby resolving.
-  const tooltipText = gated
-    ? `${transition.gate.reason} — ${helper}`
+  const tooltipText = gate.ok === false
+    ? `${gate.reason} — ${helper ?? ''}`
     : (transition.tooltip ?? null);
   return (
     <div className="flex items-center gap-2">
