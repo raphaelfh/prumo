@@ -1,9 +1,9 @@
 /**
- * TDD test: manager reveal on the RunHeader RoleChip (Task 3 – Plan 2).
+ * Manager reveal threading through the run header (RunStatus popover).
  *
  * Strategy: test at ExtractionHeader level, passing canReveal/onReveal explicitly,
- * asserting the click flow calls onReveal. Separately unit-tests the page's
- * onReveal handler logic by verifying the service + refresh are invoked.
+ * asserting the click flow (chip → popover → Reveal) calls onReveal. Separately
+ * unit-tests the page's onReveal handler logic (service + refresh wiring).
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -21,14 +21,13 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: { auth: { getSession: () => Promise.resolve({ data: { session: null }, error: null }) } },
 }));
 
-// ---- Test 1: ExtractionHeader passes canReveal/onReveal through to RoleChip ----
+// ---- Test 1: ExtractionHeader threads canReveal/onReveal to the popover ----
 
 import { ExtractionHeader } from '@/components/extraction/ExtractionHeader';
 
 const baseHeaderProps = {
-  projectId: 'proj-1',
-  projectName: 'Test Project',
   articleTitle: 'Test Article',
+  stage: 'extract' as const,
   onBack: vi.fn(),
   articles: [{ id: 'art-1', title: 'Test Article' }],
   currentArticleId: 'art-1',
@@ -45,8 +44,8 @@ const baseHeaderProps = {
   onFinalize: vi.fn(),
 };
 
-describe('ExtractionHeader RoleChip reveal', () => {
-  it('renders a plain non-interactive chip when canReveal is false', () => {
+describe('ExtractionHeader reveal threading (RunStatus popover)', () => {
+  it('shows no Reveal action in the status popover when canReveal is false', async () => {
     render(
       <MemoryRouter>
         <ExtractionHeader
@@ -57,11 +56,12 @@ describe('ExtractionHeader RoleChip reveal', () => {
         />
       </MemoryRouter>,
     );
-    // No button for manager when canReveal=false
-    expect(screen.queryByRole('button', { name: /manager/i })).toBeNull();
+    await userEvent.click(screen.getByTestId('run-stage-current'));
+    await screen.findByTestId('run-status-popover');
+    expect(screen.queryByRole('button', { name: 'reveal' })).toBeNull();
   });
 
-  it('opens popover and calls onReveal when manager clicks Reveal', async () => {
+  it('opens the status popover and calls onReveal when manager clicks Reveal', async () => {
     const onReveal = vi.fn();
     render(
       <MemoryRouter>
@@ -74,11 +74,8 @@ describe('ExtractionHeader RoleChip reveal', () => {
         />
       </MemoryRouter>,
     );
-    // The role chip renders as an interactive button when canReveal=true
-    const chipButton = screen.getByRole('button', { name: /manager/i });
-    await userEvent.click(chipButton);
-    // Popover opens, Reveal button appears
-    const revealButton = screen.getByRole('button', { name: 'reveal' });
+    await userEvent.click(screen.getByTestId('run-stage-current'));
+    const revealButton = await screen.findByRole('button', { name: 'reveal' });
     await userEvent.click(revealButton);
     expect(onReveal).toHaveBeenCalledOnce();
   });

@@ -23,6 +23,7 @@ import {getRequiredUserId} from '@/services/authService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
 import {isRunEditable} from '@/lib/runs/editability';
+import {firstPendingInstanceId, scrollToSectionById} from '@/lib/runs/suggestionLocate';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
 import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
 import {RunSplitShell} from '@/components/runs/RunSplitShell';
@@ -105,7 +106,6 @@ export default function ExtractionFullScreen() {
   // server RunView (runDetail) below via the adapters.
   const {
     article,
-    project,
     template,
     articles,
     loading,
@@ -387,7 +387,7 @@ export default function ExtractionFullScreen() {
       !!activeRunId && !loading && valuesInitialized && isRunEditable(stage),
   });
 
-    // "Mark ready" (reviewer) — flush pending autosave, set the per-reviewer
+    // "Finish extraction" (reviewer) — flush pending autosave, set the per-reviewer
     // ready flag (advisory; does NOT advance the run), then open the next article
     // in the worklist. The run stays in EXTRACT — the manager opens consensus
     // separately. Re-editing after marking ready stays possible (autosave is live
@@ -411,7 +411,7 @@ export default function ExtractionFullScreen() {
     );
   };
 
-    // "Open consensus" (manager/consensus) — flush autosave, then advance
+    // "Start consensus" (manager/consensus) — flush autosave, then advance
     // EXTRACT → CONSENSUS so the evaluate-all surface becomes reachable. A blind
     // manager is auto-revealed server-side on consensus entry (run-scoped), surfaced
     // via runDetail.peers_revealed after the refetch below.
@@ -1063,8 +1063,8 @@ export default function ExtractionFullScreen() {
   };
 
   // Stage-driven transition for the RunHeader PrimaryAction slot.
-  // buildExtractionTransition() owns all label/gate logic (Mark ready / Open
-  // consensus / Approve & finalize). The legacy header finalize path is gone.
+  // buildExtractionTransition() owns all label/gate logic (Finish extraction /
+  // Start consensus / Approve & finalize). The legacy header finalize path is gone.
   //
   // divergencesResolved: every diverging coord carries a consensus decision (a
   // no-divergence run is trivially resolved). isReady: the caller already marked
@@ -1217,8 +1217,6 @@ export default function ExtractionFullScreen() {
         }
         header={
           <ExtractionHeader
-        projectId={projectId || ''}
-        projectName={project?.name || t('pages', 'extractionScreenProjectFallback')}
         articleTitle={article.title}
         onBack={handleBack}
         sidebarCollapsed={sidebarCollapsed}
@@ -1270,8 +1268,13 @@ export default function ExtractionFullScreen() {
         aiSuggestions={aiSuggestions}
         aiPendingCount={isFinalized ? 0 : aiPendingCount}
         onAISuggestionsClick={() => {
-          // P1: scroll to first suggestion or open panel
-          console.warn('Clicked AI badge - scrolling to first suggestion');
+          // Header "Review N pending suggestions": scroll the form to the
+          // section holding the first pending suggestion.
+          const instanceId = firstPendingInstanceId(aiSuggestions);
+          const entityTypeId = instanceId
+            ? instances.find((i) => i.id === instanceId)?.entity_type_id
+            : undefined;
+          if (entityTypeId) scrollToSectionById(entityTypeId);
         }}
         onRefreshInstances={handleRefreshInstances}
         onExtractWithAI={onExtractWithAI}
