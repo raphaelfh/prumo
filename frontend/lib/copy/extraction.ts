@@ -851,6 +851,11 @@ export const extraction = {
     dispositionNoInformation: 'No information',
     dispositionNotApplicable: 'Not applicable',
     dispositionNotEvaluated: 'Not evaluated',
+    // Hover descriptions — same wording as the export legend (value_semantics
+    // labels ↔ extraction_export_service legend), so screen and export agree.
+    dispositionNoInformationHint: 'The source does not state this item.',
+    dispositionNotApplicableHint: 'The item does not apply to this study.',
+    dispositionNotEvaluatedHint: 'The item was not assessed.',
     dispositionSet: 'Mark as…',
     dispositionClear: 'Clear',
     dispositionActiveHint: 'Recorded as a resolved answer.',

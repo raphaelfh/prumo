@@ -35,6 +35,7 @@ export function AISuggestionActions({
               variant="ghost"
               onClick={onAccept}
               disabled={loading}
+              aria-label={isAccepted ? t('shared', 'suggestionAccepted') : t('shared', 'acceptSuggestion')}
               className={cn(
                 "h-7 w-7 rounded-full",
                 isAccepted && "ring-1 ring-success bg-success/10",
@@ -63,6 +64,7 @@ export function AISuggestionActions({
               variant="ghost"
               onClick={onReject}
               disabled={loading}
+              aria-label={isRejected ? t('shared', 'suggestionRejected') : t('shared', 'rejectSuggestion')}
               className={cn(
                 "h-7 w-7 rounded-full",
                 isRejected && "ring-1 ring-destructive bg-destructive/10",

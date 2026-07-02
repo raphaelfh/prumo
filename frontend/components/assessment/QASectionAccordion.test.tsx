@@ -9,6 +9,7 @@ vi.mock("@/hooks/extraction/useSectionExtraction", () => ({
 vi.mock("@/lib/copy", () => ({ t: (_ns: string, key: string) => key }));
 
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
+import { RunEditabilityProvider } from "@/components/runs/RunEditabilityContext";
 
 const QA_DOMAIN = {
   entityType: {
@@ -60,5 +61,27 @@ describe("QASectionAccordion", () => {
       />,
     );
     expect(screen.getByTestId("section-ai-extract-qa-dom")).toBeInTheDocument();
+  });
+
+  it("read-only: hides the per-domain AI-extract button", () => {
+    // The editable test above is the positive control for this selector.
+    render(
+      <RunEditabilityProvider stage="finalized">
+        <QASectionAccordion
+          domain={QA_DOMAIN}
+          values={{}}
+          onValueChange={() => {}}
+          projectId="p1"
+          articleId="a1"
+          templateId="t1"
+          runId="r1"
+          instanceId="i1"
+          defaultOpen
+        />
+      </RunEditabilityProvider>,
+    );
+    expect(
+      screen.queryByTestId("section-ai-extract-qa-dom"),
+    ).not.toBeInTheDocument();
   });
 });

@@ -23,6 +23,8 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 import { RunSplitShell } from "@/components/runs/RunSplitShell";
+import { RunEditabilityProvider } from "@/components/runs/RunEditabilityContext";
+import { HITLPublishedBanner } from "@/components/runs/HITLStatusBadges";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
 import type {
@@ -60,6 +62,8 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { t } from "@/lib/copy";
+import { isRunEditable } from "@/lib/runs/editability";
+import { publishedStatesToValuesMap } from "@/lib/extraction/publishedValues";
 
 interface FieldKey {
   instanceId: string;
@@ -195,26 +199,33 @@ export default function QualityAssessmentFullScreen() {
   if (runDetail !== prevRunDetail) {
     setPrevRunDetail(runDetail);
     if (runDetail) {
-      const latestByCoord = new Map<string, unknown>();
-      // Proposals are returned newest-first by the API; iterate so the LAST
-      // write wins per coord regardless of order.
-      for (const p of runDetail.proposals) {
-        const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
-        const value =
-          p.proposed_value &&
-          typeof p.proposed_value === "object" &&
-          "value" in p.proposed_value
-            ? (p.proposed_value.value as unknown)
-            : (p.proposed_value as unknown);
-        latestByCoord.set(k, value);
-      }
-      setValues((prev) => {
-        const next: Record<string, unknown> = { ...prev };
-        for (const [k, v] of latestByCoord) {
-          if (!(k in next)) next[k] = v;
+      if (runDetail.run.stage === "finalized") {
+        // Published truth replaces any local/proposal state (spec
+        // 2026-07-02 D3): the read-only form shows what was published,
+        // never the latest proposal stream.
+        setValues(publishedStatesToValuesMap(runDetail.published_states));
+      } else {
+        const latestByCoord = new Map<string, unknown>();
+        // Proposals are returned newest-first by the API; iterate so the LAST
+        // write wins per coord regardless of order.
+        for (const p of runDetail.proposals) {
+          const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
+          const value =
+            p.proposed_value &&
+            typeof p.proposed_value === "object" &&
+            "value" in p.proposed_value
+              ? (p.proposed_value.value as unknown)
+              : (p.proposed_value as unknown);
+          latestByCoord.set(k, value);
         }
-        return next;
-      });
+        setValues((prev) => {
+          const next: Record<string, unknown> = { ...prev };
+          for (const [k, v] of latestByCoord) {
+            if (!(k in next)) next[k] = v;
+          }
+          return next;
+        });
+      }
     }
   }
 
@@ -250,7 +261,7 @@ export default function QualityAssessmentFullScreen() {
       values,
       baselineValues: loadedValues,
       enabled:
-        !!session && !!runDetail && runDetail.run.stage === "extract",
+        !!session && !!runDetail && isRunEditable(runDetail.run.stage),
     });
 
   // AI suggestions wiring — kind-agnostic hooks reused from Data
@@ -632,8 +643,8 @@ export default function QualityAssessmentFullScreen() {
             />
           )}
           <RunHeader.AIActions
-            pendingCount={countActionableSuggestions(aiSuggestions)}
-            canExtract={!!(session && !finalized)}
+            pendingCount={finalized ? 0 : countActionableSuggestions(aiSuggestions)}
+            canExtract={!!(session && runDetail && isRunEditable(runDetail.run.stage))}
             extracting={extractingAI}
             onExtract={onExtractWithAI}
           />
@@ -678,6 +689,7 @@ export default function QualityAssessmentFullScreen() {
   );
 
   const formPanel = (
+    <RunEditabilityProvider stage={runDetail?.run.stage ?? null}>
     <div className="space-y-3 p-4" data-testid="qa-form-panel">
       {error ? (
         <div
@@ -784,6 +796,19 @@ export default function QualityAssessmentFullScreen() {
         </>
       ) : null}
     </div>
+    </RunEditabilityProvider>
+  );
+
+  // Published/revision banner between header and panels (shared component,
+  // spec 2026-07-02 D4).
+  const qaSubHeader = (
+    <HITLPublishedBanner
+      kind="qa"
+      finalized={finalized}
+      parentRunId={parentRunId}
+      onReopen={() => void handleReopen()}
+      reopening={reopening}
+    />
   );
 
   return (
@@ -791,6 +816,7 @@ export default function QualityAssessmentFullScreen() {
       pdfPanel={pdfPanel}
       formPanel={formPanel}
       header={header}
+      subHeader={qaSubHeader}
       pdfState={pdfPanelState}
       viewerStore={viewerStore}
     />

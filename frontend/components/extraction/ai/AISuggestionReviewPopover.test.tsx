@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
 
 import { AISuggestionReviewPopover } from './AISuggestionReviewPopover';
+import { RunEditabilityProvider } from '@/components/runs/RunEditabilityContext';
 import type { AISuggestionHistoryItem } from '@/types/ai-extraction';
 
 function v(over: Partial<AISuggestionHistoryItem>): AISuggestionHistoryItem {
@@ -88,5 +89,35 @@ describe('AISuggestionReviewPopover', () => {
     const clearBtn = await screen.findByRole('button', { name: /reviewClear/ });
     await user.click(clearBtn);
     expect(onClear).toHaveBeenCalled();
+  });
+});
+
+describe('AISuggestionReviewPopover — read-only run', () => {
+  it('hides Use-this-version and Clear (audit-only popover)', async () => {
+    const user = userEvent.setup();
+    render(
+      <RunEditabilityProvider stage="finalized">
+        <AISuggestionReviewPopover
+          instanceId="i"
+          fieldId="f"
+          getHistory={async () => [v({ id: 'p2' })]}
+          selectedProposalId="p1"
+          onSelect={vi.fn()}
+          onClear={vi.fn()}
+          trigger={<button>open</button>}
+        />
+      </RunEditabilityProvider>,
+    );
+
+    await user.click(screen.getByText('open'));
+    // Wait for the (non-selected) version card to load.
+    await screen.findByText('Retrospective cohort');
+
+    expect(
+      screen.queryByRole('button', { name: /reviewUseThisVersion/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^reviewClear$/ }),
+    ).not.toBeInTheDocument();
   });
 });

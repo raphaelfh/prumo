@@ -1,14 +1,18 @@
 ---
-status: draft
-last_reviewed: 2026-06-30
+status: shipped
+last_reviewed: 2026-07-02
 owner: '@raphaelfh'
 ---
 
-> **Status:** Draft — design direction approved in brainstorm 2026-06-30
-> (two adversarial analysis passes + a prior-art research pass:
-> FHIR `dataAbsentReason`, CDISC SDTM, OMOP, REDCap, Cochrane §5.4.3).
-> All five owner decisions + three follow-up clarifications recorded below.
-> Pending written-spec review before `writing-plans`.
+> **Status:** Shipped — Phases 0–4 delivered to production 2026-07-01/02
+> (#458 marker-aware readers, #460 write contract + AI marker, #462
+> template/select unification + migration `0039_absent_reason_backfill`,
+> #466 export/reviewer-compare/UX); Phase 5 docs closed with the
+> [ADR-0016](../../adr/0016-typed-absent-reason-marker.md) acceptance and the
+> constitution §IX amendment (v2.2.0). Retained as the design record —
+> design direction was approved in brainstorm 2026-06-30 (two adversarial
+> analysis passes + a prior-art research pass: FHIR `dataAbsentReason`,
+> CDISC SDTM, OMOP, REDCap, Cochrane §5.4.3).
 
 # Design: Type-independent "no information" representation (`absent_reason` marker)
 

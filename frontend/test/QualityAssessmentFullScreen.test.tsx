@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { toast } from "sonner";
@@ -35,6 +35,7 @@ vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 import { SidebarProvider } from "@/contexts/SidebarContext";
 import QualityAssessmentFullScreen from "@/pages/QualityAssessmentFullScreen";
+import { apiClient } from "@/integrations/api";
 
 const mockedPermissions = vi.mocked(useComparisonPermissions);
 
@@ -452,5 +453,110 @@ describe("QualityAssessmentFullScreen", () => {
       screen.getByTestId("run-reviewer-comparison"),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("qa-domains")).not.toBeInTheDocument();
+  });
+});
+
+describe("QualityAssessmentFullScreen — finalized (published, read-only)", () => {
+  beforeEach(() => {
+    mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
+    // Finalized run-view variant: stale proposal 'PY' for inst-1/f-1 must NOT
+    // hydrate; the published row 'Y' must (spec 2026-07-02 D3).
+    vi.mocked(apiClient).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/hitl/sessions") {
+        return {
+          run_id: "run-1",
+          kind: "quality_assessment",
+          project_template_id: "tpl-1",
+          instances_by_entity_type: { "et-1": "inst-1" },
+        };
+      }
+      if (url === "/api/v1/runs/run-1/view") {
+        return {
+          run: {
+            id: "run-1",
+            project_id: "p1",
+            article_id: "a1",
+            template_id: "tpl-1",
+            kind: "quality_assessment",
+            version_id: "v-1",
+            stage: "finalized",
+            status: "completed",
+            hitl_config_snapshot: {},
+            parameters: {},
+            results: {},
+            created_at: new Date().toISOString(),
+            created_by: "u-1",
+          },
+          proposals: [
+            {
+              id: "p-stale",
+              run_id: "run-1",
+              instance_id: "inst-1",
+              field_id: "f-1",
+              source: "human",
+              source_user_id: "qa-test-reviewer-id",
+              proposed_value: { value: "PY" },
+              confidence_score: null,
+              rationale: null,
+              created_at: new Date().toISOString(),
+            },
+          ],
+          decisions: [],
+          consensus_decisions: [],
+          published_states: [
+            {
+              id: "ps-1",
+              run_id: "run-1",
+              instance_id: "inst-1",
+              field_id: "f-1",
+              value: { value: "Y" },
+              published_at: new Date().toISOString(),
+              published_by: "u-1",
+              version: 1,
+            },
+          ],
+          entity_types: [],
+          current_values: [],
+        };
+      }
+      if (url.includes("/suggestions")) {
+        return { suggestions: [], count: 0 };
+      }
+      if (url.includes("/files") || url.includes("/text-blocks")) {
+        return [];
+      }
+      return {};
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("finalized: form shows published values, not latest proposals", async () => {
+    renderPage();
+    const domain = await screen.findByTestId("qa-domain-participants");
+    // Published code renders on the select trigger; the stale proposal does not.
+    await waitFor(() => expect(within(domain).getByText("Y")).toBeInTheDocument());
+    expect(within(domain).queryByText("PY")).not.toBeInTheDocument();
+  });
+
+  it("finalized: shows the published banner with a reopen button, hides edit chrome", async () => {
+    renderPage();
+    expect(await screen.findByTestId("qa-finalized-badge")).toBeInTheDocument();
+    expect(screen.getByText(/read-only/i)).toBeInTheDocument();
+    expect(screen.getByTestId("qa-reopen-button")).toBeInTheDocument();
+    // Header AI-extract stays hidden (now via isRunEditable):
+    expect(
+      screen.queryByRole("button", { name: /extract with ai/i }),
+    ).not.toBeInTheDocument();
+    // Per-domain AI-extract hidden by the provider:
+    await screen.findByTestId("qa-domain-participants");
+    expect(screen.queryByTestId("section-ai-extract-et-1")).not.toBeInTheDocument();
+    // The select trigger is disabled (FieldInput consumes the provider):
+    const domain = screen.getByTestId("qa-domain-participants");
+    await waitFor(() => expect(within(domain).getByText("Y")).toBeInTheDocument());
+    const trigger = within(domain).getByText("Y").closest("button");
+    expect(trigger).toBeDisabled();
   });
 });

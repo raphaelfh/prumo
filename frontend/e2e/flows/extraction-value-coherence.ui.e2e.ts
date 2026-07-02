@@ -50,8 +50,9 @@ interface RunDetailResponse {
 // actually display it. The CHARMS ``data_source`` field (the first
 // entity_type/field in the seeded template) accepts:
 //   ['Prospective cohort', 'Retrospective cohort', 'Case-control',
-//    'Case series', 'RCT', 'Registry', 'No information']
-// Mirrors the production bug repro on article 5573e7f3.
+//    'Case series', 'RCT', 'Registry']
+// ("No information" is no longer an option — it is the coded absent_reason
+// disposition, ADR-0016.) Mirrors the production bug repro on article 5573e7f3.
 const TYPED_VALUE = "Case series";
 
 test.describe("Extraction value coherence (H1 end-to-end)", () => {

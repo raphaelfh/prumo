@@ -23,9 +23,9 @@ import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/
 import {SelectWithOther} from '@/components/ui/SelectWithOther';
 import {MultiSelectWithOther} from '@/components/ui/MultiSelectWithOther';
 import {Switch} from '@/components/ui/switch';
-import {AlertCircle, History} from 'lucide-react';
+import {AlertCircle, Check, History} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
@@ -37,6 +37,7 @@ import {extractUnit, extractValue, isEmptyValue, isValidNumber,} from '@/lib/ai-
 import {isSuggestionPending} from '@/lib/ai-extraction/suggestionUtils';
 import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
 import {useJustUpdatedValue} from '@/hooks/extraction/useJustUpdatedValue';
+import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
@@ -71,6 +72,11 @@ interface FieldInputProps {
 
 export function FieldInput(props: FieldInputProps) {
   const { field, instanceId, value, onChange, disabled, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, selectSuggestion, isActionLoading } = props;
+  // Read-only run (published/consensus/pending): every input variant and the
+  // disposition buttons disable; the actionable AI chrome (badge + inline
+  // accept/reject strip) hides — the History popover stays as audit trail.
+  const { readOnly } = useRunEditability();
+  const inputDisabled = disabled || readOnly;
   const [validationError, setValidationError] = useState<string | null>(null);
   // Briefly highlights this field when its value was just updated (e.g. by an
   // AI extraction refresh) so the user sees what changed without having to
@@ -159,13 +165,29 @@ export function FieldInput(props: FieldInputProps) {
     // answer on ANY field type. `no_information` is universal; the opt-in codes
     // render only where the field enables them. Toggling the active one clears back
     // to unresolved. Setting a marker clears any validation error (it is resolved).
-  const dispositions: { code: string; label: string }[] = [
-    { code: 'no_information', label: t('extraction', 'dispositionNoInformation') },
+  const dispositions: { code: string; label: string; hint: string }[] = [
+    {
+      code: 'no_information',
+      label: t('extraction', 'dispositionNoInformation'),
+      hint: t('extraction', 'dispositionNoInformationHint'),
+    },
     ...(field.allows_not_applicable
-      ? [{ code: 'not_applicable', label: t('extraction', 'dispositionNotApplicable') }]
+      ? [
+          {
+            code: 'not_applicable',
+            label: t('extraction', 'dispositionNotApplicable'),
+            hint: t('extraction', 'dispositionNotApplicableHint'),
+          },
+        ]
       : []),
     ...(field.allows_not_evaluated
-      ? [{ code: 'not_evaluated', label: t('extraction', 'dispositionNotEvaluated') }]
+      ? [
+          {
+            code: 'not_evaluated',
+            label: t('extraction', 'dispositionNotEvaluated'),
+            hint: t('extraction', 'dispositionNotEvaluatedHint'),
+          },
+        ]
       : []),
   ];
   const setDisposition = (code: string) => {
@@ -204,7 +226,7 @@ export function FieldInput(props: FieldInputProps) {
               value={displayValue || ''}
               onChange={(e) => handleChange(e.target.value)}
               placeholder={t('extraction', 'fieldPlaceholderEnter').replace('{{label}}', field.label.toLowerCase())}
-              disabled={disabled}
+              disabled={inputDisabled}
               className={cn(
                   "text-sm min-h-[80px]",
                 hasAIPending && "border-ai/60 bg-ai/5",
@@ -219,7 +241,7 @@ export function FieldInput(props: FieldInputProps) {
             value={displayValue || ''}
             onChange={(e) => handleChange(e.target.value)}
             placeholder={t('extraction', 'fieldPlaceholderEnter').replace('{{label}}', field.label.toLowerCase())}
-            disabled={disabled}
+            disabled={inputDisabled}
               className={cn(
                 inputHeight,
                   "text-sm",
@@ -256,7 +278,7 @@ export function FieldInput(props: FieldInputProps) {
                 }
               }}
               placeholder="0"
-              disabled={disabled}
+              disabled={inputDisabled}
               className={cn("flex-1", inputHeight, "text-sm", validationError && "border-destructive")}
             />
 
@@ -267,7 +289,7 @@ export function FieldInput(props: FieldInputProps) {
                 onValueChange={(newUnit) => {
                   handleChange({ value: numValue, unit: newUnit });
                 }}
-                disabled={disabled}
+                disabled={inputDisabled}
               >
                 <SelectTrigger className="w-32 shrink-0">
                   <SelectValue />
@@ -300,7 +322,7 @@ export function FieldInput(props: FieldInputProps) {
             type="date"
             value={displayValue || ''}
             onChange={(e) => handleChange(e.target.value)}
-            disabled={disabled}
+            disabled={inputDisabled}
             className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
           />
         );
@@ -316,7 +338,7 @@ export function FieldInput(props: FieldInputProps) {
               allowOther={true}
               otherLabel={field.other_label || t('extraction', 'otherSpecifyDefault')}
               otherPlaceholder={field.other_placeholder || undefined}
-              disabled={disabled}
+              disabled={inputDisabled}
               placeholder={t('extraction', 'selectFieldPlaceholder').replace('{{label}}', field.label.toLowerCase())}
               className={cn(validationError && 'border-destructive')}
             />
@@ -326,7 +348,7 @@ export function FieldInput(props: FieldInputProps) {
           <Select
             value={displayValue || ''}
             onValueChange={handleChange}
-            disabled={disabled}
+            disabled={inputDisabled}
           >
             <SelectTrigger className={cn(inputHeight, "text-sm", validationError && "border-destructive")}>
                 <SelectValue
@@ -358,7 +380,7 @@ export function FieldInput(props: FieldInputProps) {
               allowOther={true}
               otherLabel={field.other_label || t('extraction', 'otherSpecifyDefault')}
               otherPlaceholder={field.other_placeholder || undefined}
-              disabled={disabled}
+              disabled={inputDisabled}
               placeholder={t('extraction', 'selectFieldPlaceholder').replace('{{label}}', field.label.toLowerCase())}
             />
           );
@@ -369,7 +391,7 @@ export function FieldInput(props: FieldInputProps) {
             value={Array.isArray(displayValue) ? displayValue.join(', ') : displayValue || ''}
             onChange={(e) => handleChange(e.target.value.split(',').map(v => v.trim()))}
             placeholder={t('extraction', 'valuesCommaSeparated')}
-            disabled={disabled}
+            disabled={inputDisabled}
             className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
           />
         );
@@ -381,7 +403,7 @@ export function FieldInput(props: FieldInputProps) {
             <Switch
               checked={displayValue || false}
               onCheckedChange={handleChange}
-              disabled={disabled}
+              disabled={inputDisabled}
             />
             <span className="text-sm text-muted-foreground">
               {displayValue ? t('extraction', 'yes') : t('extraction', 'no')}
@@ -394,7 +416,7 @@ export function FieldInput(props: FieldInputProps) {
           <Input
             value={value || ''}
             onChange={(e) => handleChange(e.target.value)}
-            disabled={disabled}
+            disabled={inputDisabled}
             className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
           />
         );
@@ -475,8 +497,9 @@ export function FieldInput(props: FieldInputProps) {
           </div>
           
           <div className="flex items-center gap-1 shrink-0">
-              {/* Badge + Info always visible on the right of input (if pending or accepted suggestion) */}
-          {aiSuggestion && 
+              {/* Badge + Info on the right of input (pending or accepted
+                  suggestion) — hidden on read-only runs (published view). */}
+          {!readOnly && aiSuggestion &&
            (aiSuggestion.status === 'pending' || aiSuggestion.status === 'accepted') && (
             <AISuggestionBadge
               suggestion={aiSuggestion}
@@ -518,33 +541,56 @@ export function FieldInput(props: FieldInputProps) {
 
                   {/* Disposition control (ADR-0016): a quiet row to mark the field
                       "No information" (any type) or the opt-in Not applicable /
-                      Not evaluated. The active one is highlighted; clicking it
-                      clears back to unresolved. */}
+                      Not evaluated. Each button describes itself on hover; the
+                      active one gets the accepted-style success ring (matching
+                      the accept-suggestion affordance) + an explicit "recorded"
+                      hint, so a blank input is never ambiguous. Clicking the
+                      active one clears back to unresolved. */}
+        {/* Local provider: the disposition row renders on EVERY field, so its
+            tooltips must not depend on a caller-supplied provider. */}
+        <TooltipProvider delayDuration={300}>
         <div className="flex flex-wrap items-center gap-1.5" data-disposition-control>
           {dispositions.map((d) => {
             const active = activeReason === d.code;
             return (
-              <Button
-                key={d.code}
-                type="button"
-                size="sm"
-                variant={active ? 'secondary' : 'ghost'}
-                aria-pressed={active}
-                disabled={disabled}
-                onClick={() => setDisposition(d.code)}
-                className={cn(
-                  'h-6 px-2 text-xs',
-                  active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {d.label}
-              </Button>
+              <Tooltip key={d.code}>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-pressed={active}
+                    disabled={inputDisabled}
+                    onClick={() => setDisposition(d.code)}
+                    className={cn(
+                      'h-6 gap-1 px-2 text-xs',
+                      active
+                        ? 'text-success ring-1 ring-inset ring-success bg-success/10 hover:bg-success/15 hover:text-success'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {active ? <Check className="h-3 w-3" /> : null}
+                    {d.label}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{active ? t('extraction', 'dispositionActiveHint') : d.hint}</p>
+                </TooltipContent>
+              </Tooltip>
             );
           })}
+          {activeReason ? (
+            <span className="text-[11px] text-muted-foreground">
+              {t('extraction', 'dispositionActiveHint')}
+            </span>
+          ) : null}
         </div>
+        </TooltipProvider>
 
-                  {/* Suggested value + accept/reject buttons below input - only when no manual value */}
-        {shouldShowSuggestion && (
+                  {/* Suggested value + accept/reject buttons below input — only
+                      when no manual value, and never on read-only runs (a
+                      published view offers no pending decisions to act on). */}
+        {!readOnly && shouldShowSuggestion && (
           <AISuggestionDisplay
             suggestion={aiSuggestion}
             onAccept={onAcceptAI}

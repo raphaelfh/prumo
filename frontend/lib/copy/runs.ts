@@ -80,6 +80,13 @@ export const runs = {
   glossaryFinalize: 'Finalize — lock and publish the agreed values.',
   glossaryBlind: 'Blind — you cannot see other reviewers’ values.',
   glossaryDiffer: '"N differ" — fields where reviewers disagree.',
+
+  // Published / read-only state (shared HITLStatusBadges + sub-header banner)
+  published: 'Published',
+  publishedReadOnlyNotice: 'Published values — read-only. Reopen to edit.',
+  reopenForRevision: 'Reopen for revision',
+  reopening: 'Reopening…',
+  revisionDerivedFrom: 'Derived from a previous version',
 } as const;
 
 export type RunsCopy = typeof runs;

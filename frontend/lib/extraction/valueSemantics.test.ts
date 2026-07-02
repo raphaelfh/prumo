@@ -41,7 +41,9 @@ describe('isValueEmpty / isValueFilled — the shared cross-checked vector', () 
     ['marker-with-real-value', { value: 'x', absent_reason: 'no_information' }, false],
     ['marker-empty-reason', { value: null, absent_reason: '' }, true],
     ['marker-unknown-code', { value: null, absent_reason: 'garbage' }, true],
-    // legacy in-band disposition string (untouched until Phase 3) → filled
+    // a disposition string carried in-band is just a non-empty scalar → filled
+    // (stored data was migrated by 0039; the emptiness rule never interprets
+    // strings — only the write-time normalizer converts a picked legacy option)
     ['legacy-string-envelope', { value: 'No information' }, false],
     ['legacy-string-scalar', 'No information', false],
   ];
