@@ -165,6 +165,12 @@ label UPDATE remain PostgREST-open to members with no stage predicate —
 presentation-only pollution of a finalized view (published values are
 untouched). A follow-up RLS ratchet on `extraction_instances` /
 `extraction_published_states` direct writes is out of scope here.
+Additionally (2026-07-02 hardening review): in a REOPENED revision, an
+instance that carries published rows from the finalized parent cannot be
+removed (the deferred FK blocks the delete at commit) — the UI surfaces
+a specific "pinned by a published revision" message instead of the
+generic failure; an append-only retire/supersede flow for published
+instances is a follow-up, not this change.
 
 ## Edge cases
 

@@ -6,6 +6,21 @@ import {
 import type { PublishedStateResponse } from '@/hooks/runs/types';
 
 /**
+ * One envelope → form-value conversion shared by every stage-hydration
+ * path that peels the outer envelope first (published + reviewer-state):
+ * peel, sniff the double-wrapped unit ({value:{value,unit}} — the only
+ * unit shape writers produce), normalize via extractValueFromDb.
+ */
+export function envelopeToFieldValue(raw: unknown): unknown {
+  const unwrapped = unwrapValueEnvelope(raw) ?? null;
+  const unit =
+    typeof unwrapped === 'object' && unwrapped !== null && 'unit' in unwrapped
+      ? ((unwrapped as { unit: string | null }).unit ?? null)
+      : null;
+  return extractValueFromDb({ value: unwrapped, unit });
+}
+
+/**
  * Resolve `runDetail.published_states` into the `${instanceId}_${fieldId}`
  * values map both session forms consume (spec 2026-07-02 D3). Published-only,
  * no reviewer-state fallback: a coord without a published row stays absent.
@@ -13,10 +28,6 @@ import type { PublishedStateResponse } from '@/hooks/runs/types';
  * Marker envelopes (`{value: null, absent_reason}`) are preserved verbatim —
  * FieldInput derives the disposition label from the raw envelope, and the
  * generic unwrap would collapse the marker to null.
- *
- * Unit handling mirrors the reviewer-state loop in useExtractedValues: every
- * writer publishes units double-wrapped ({value:{value,unit}}), so one peel
- * exposes the {value,unit} inner envelope for the unit sniff.
  */
 export function publishedStatesToValuesMap(
   rows: readonly PublishedStateResponse[] | undefined,
@@ -29,12 +40,7 @@ export function publishedStatesToValuesMap(
       map[key] = raw;
       continue;
     }
-    const unwrapped = unwrapValueEnvelope(raw) ?? null;
-    const unit =
-      typeof unwrapped === 'object' && unwrapped !== null && 'unit' in unwrapped
-        ? ((unwrapped as { unit: string | null }).unit ?? null)
-        : null;
-    map[key] = extractValueFromDb({ value: unwrapped, unit });
+    map[key] = envelopeToFieldValue(raw);
   }
   return map;
 }

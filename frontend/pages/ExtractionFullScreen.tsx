@@ -316,11 +316,17 @@ export default function ExtractionFullScreen() {
 
   // Plain-identifier dep so the compiler can track this dep without
   // optional-chaining (optional-chained deps like `finalizedRun?.id` defeat it).
+  // Fallback to the active run: when the open run IS finalized, it is the
+  // reopen target — clicking the banner button during (or after a failure
+  // of) the separate finalized-run lookup must not silently no-op
+  // (2026-07-02 hardening finding).
   const finalizedRunId = finalizedRun?.id;
+  const stageIsFinalized = stage === 'finalized';
+  const reopenTargetId = finalizedRunId ?? (stageIsFinalized ? activeRunId : null);
   const handleReopen = async () => {
-    if (!finalizedRunId) return;
+    if (!reopenTargetId) return;
     setReopening(true);
-    await reopenMutation.mutateAsync(finalizedRunId).then(async () => {
+    await reopenMutation.mutateAsync(reopenTargetId).then(async () => {
       // The reopen endpoint creates a fresh EXTRACT-stage run linked via
       // parameters.parent_run_id. We refetch the HITL session first so
       // activeRunId points at the new child run; only then do the
@@ -845,7 +851,15 @@ export default function ExtractionFullScreen() {
     }
     const removed = await extractionInstanceService.removeInstance(instanceId).catch((error: unknown) => {
       console.error('Error removing instance:', error);
-      toast.error(t('pages', 'extractionScreenErrorRemoveInstance'));
+      // FK 23503: the instance is pinned by published rows from a prior
+      // finalized revision (deferred FK, migration 0040) — explain, don't
+      // show the generic failure (2026-07-02 hardening finding).
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(
+        message.includes('extraction_published_states')
+          ? t('pages', 'extractionScreenInstancePinned')
+          : t('pages', 'extractionScreenErrorRemoveInstance'),
+      );
       return false;
     });
     if (removed !== false) {
@@ -1105,9 +1119,8 @@ export default function ExtractionFullScreen() {
   const extractionSubHeader = (
     <HITLPublishedBanner
       kind="extraction"
-      finalized={isFinalized || (!activeRunId && !!finalizedRun)}
+      finalized={canReopen}
       parentRunId={parentRunId}
-      showReopen={canReopen}
       onReopen={() => void handleReopen()}
       reopening={reopening}
     />

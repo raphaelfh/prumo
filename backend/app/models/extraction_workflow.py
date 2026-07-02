@@ -381,13 +381,20 @@ class ExtractionPublishedState(BaseModel):
         ForeignKey("public.extraction_runs.id", ondelete="CASCADE"),
         nullable=False,
     )
-    # RESTRICT (not CASCADE): instance deletes arrive PostgREST-direct with no
-    # API stage guard; a CASCADE here silently destroyed the canonical
-    # published record and could leave a FINALIZED run with zero published
-    # rows (advance_stage invariant, constitution §IX). Migration 0040.
+    # Deferred NO ACTION (not CASCADE): instance deletes arrive
+    # PostgREST-direct with no API stage guard; a CASCADE here silently
+    # destroyed the canonical published record (advance_stage invariant,
+    # constitution §IX). Deferred-to-commit (not RESTRICT) so the legitimate
+    # articles/projects cascade — whose runs branch removes these rows by
+    # commit time — still passes, while a bare client DELETE fails at its
+    # request-transaction commit. Migration 0040.
     instance_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_instances.id", ondelete="RESTRICT"),
+        ForeignKey(
+            "public.extraction_instances.id",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
         nullable=False,
     )
     field_id: Mapped[UUID] = mapped_column(

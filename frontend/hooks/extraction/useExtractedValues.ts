@@ -41,7 +41,7 @@ import { extractValueFromDb } from '@/lib/validations/selectOther';
 import { dispatchValueUpdates } from '@/lib/extraction/valueUpdates';
 import { pickLatestProposalPerCoord } from '@/lib/extraction/proposalValues';
 import { t } from '@/lib/copy';
-import { publishedStatesToValuesMap } from '@/lib/extraction/publishedValues';
+import { envelopeToFieldValue, publishedStatesToValuesMap } from '@/lib/extraction/publishedValues';
 import { unwrapValue } from '@/services/extractionValueService';
 import type {
   ProposalRecordResponse,
@@ -295,14 +295,7 @@ export function useExtractedValues(
           for (const cv of currentValues ?? []) {
             if (cv.decision === 'reject') continue;
             const key = `${cv.instance_id}_${cv.field_id}`;
-            const unwrapped = unwrapValue(cv.value);
-            const unit =
-              typeof unwrapped === 'object' &&
-              unwrapped !== null &&
-              'unit' in (unwrapped as Record<string, unknown>)
-                ? ((unwrapped as { unit: string | null }).unit ?? null)
-                : null;
-            valuesMap[key] = extractValueFromDb({ value: unwrapped, unit });
+            valuesMap[key] = envelopeToFieldValue(cv.value);
           }
           applyLoadedValues(valuesMap);
           setInitialized(true);

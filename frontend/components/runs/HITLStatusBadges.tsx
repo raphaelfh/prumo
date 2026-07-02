@@ -95,8 +95,6 @@ interface HITLPublishedBannerProps {
   kind: HITLBadgeKind;
   finalized: boolean;
   parentRunId?: string | null;
-  /** Gate for the inline Reopen button (e.g. extraction's canReopen). */
-  showReopen?: boolean;
   onReopen: () => void;
   reopening: boolean;
 }
@@ -110,7 +108,6 @@ export function HITLPublishedBanner({
   kind,
   finalized,
   parentRunId,
-  showReopen = true,
   onReopen,
   reopening,
 }: HITLPublishedBannerProps) {
@@ -125,7 +122,7 @@ export function HITLPublishedBanner({
           </span>
           <HITLReopenButton
             kind={kind}
-            visible={showReopen}
+            visible
             onClick={onReopen}
             reopening={reopening}
           />
