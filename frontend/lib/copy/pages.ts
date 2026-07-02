@@ -53,6 +53,8 @@ export const pages = {
     extractionScreenConfirmRemoveInstance: 'This instance has extracted values. Are you sure you want to remove it?',
     extractionScreenInstanceRemoved: 'Instance removed successfully',
     extractionScreenErrorRemoveInstance: 'Error removing instance',
+  extractionScreenInstancePinned:
+    'This item carries published values from a previous revision and cannot be removed.',
     extractionScreenCompleteRequiredFields: 'Complete all required fields before finalizing',
     extractionScreenErrorArticleNotFound: 'Error: Article data not found',
     extractionScreenErrorNoInstances: 'Error: No extraction instances found',

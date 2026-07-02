@@ -2,6 +2,7 @@
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/copy';
 import { Progress } from '@/components/ui/progress';
+import { useRunEditability } from '@/components/runs/RunEditabilityContext';
 import {
   globalProgressFromRegistry,
   type SectionNavItem,
@@ -22,6 +23,9 @@ const DOT_COLOR: Record<SectionNavState, string> = {
 };
 
 export default function SectionNavRail({ items, activeId, onSelect, collapsed }: SectionNavRailProps) {
+  // Read-only run: the "N required left" footer is a fill-completion CTA —
+  // noise on a published view. Navigation (dots + labels) stays.
+  const { readOnly } = useRunEditability();
   const global = globalProgressFromRegistry(items);
   return (
     <nav
@@ -62,7 +66,7 @@ export default function SectionNavRail({ items, activeId, onSelect, collapsed }:
           );
         })}
       </ul>
-      {!collapsed && (
+      {!collapsed && !readOnly && (
         <div className="mt-2 border-t border-border/40 px-2.5 pt-2">
           <Progress value={global.percentage} className="h-1" />
           <p className="mt-1 text-[11px] text-muted-foreground">

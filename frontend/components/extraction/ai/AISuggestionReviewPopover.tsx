@@ -26,6 +26,7 @@ import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem, EvidenceCitation} from '@/types/ai-extraction';
 import {formatFullSuggestionValue, isAbstention} from '@/lib/ai-extraction/suggestionUtils';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
+import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {AIPopoverShell} from './shared/AIPopoverShell';
 import {RunProvenanceDisclosure} from './shared/RunProvenanceDisclosure';
 import {AISuggestionEvidence} from './AISuggestionEvidence';
@@ -79,11 +80,13 @@ interface VersionRowProps {
   version: AISuggestionHistoryItem;
   isSelected: boolean;
   onUse: () => void;
+  /** Read-only run: the row is audit-only — no "Use this version" action. */
+  readOnly?: boolean;
   fieldType?: string | null;
   allowedValues?: unknown;
 }
 
-function VersionRow({version, isSelected, onUse, fieldType, allowedValues}: VersionRowProps) {
+function VersionRow({version, isSelected, onUse, readOnly, fieldType, allowedValues}: VersionRowProps) {
   const fieldContext = {fieldType, allowedValues};
   const [expanded, setExpanded] = useState(false);
   const showDetails = isSelected || expanded;
@@ -137,7 +140,7 @@ function VersionRow({version, isSelected, onUse, fieldType, allowedValues}: Vers
               <Check className="h-3 w-3" />
               {t('extraction', 'reviewSelected')}
             </span>
-          ) : (
+          ) : readOnly ? null : (
             <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={onUse}>
               {t('extraction', 'reviewUseThisVersion')}
             </Button>
@@ -202,6 +205,9 @@ interface AISuggestionReviewPopoverProps {
 export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps) {
   const {instanceId, fieldId, getHistory, selectedProposalId, onSelect, onClear, trigger, align, fieldType, allowedValues} = props;
 
+  // Read-only run: the popover stays available as audit trail, but the
+  // write actions (Use this version / Clear) hide.
+  const {readOnly} = useRunEditability();
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState<AISuggestionHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -272,7 +278,7 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
         count={countLabel}
         align={align}
         footer={
-          onClear ? (
+          onClear && !readOnly ? (
             <div className="flex items-center justify-between gap-2 px-3 py-2">
               <span className="min-w-0 truncate text-[11px] text-muted-foreground" title={t('extraction', 'reviewClearHint')}>
                 {t('extraction', 'reviewClearHint')}
@@ -303,6 +309,7 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
                     version={version}
                     isSelected={version.id === effectiveSelected}
                     onUse={() => handleUse(version)}
+                    readOnly={readOnly}
                     fieldType={fieldType}
                     allowedValues={allowedValues}
                   />

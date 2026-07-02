@@ -21,6 +21,7 @@ import {Edit2, Save, Trash2, X} from 'lucide-react';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {updateInstanceLabel} from '@/services/extractionInstanceService';
+import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import type {ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
@@ -49,6 +50,8 @@ interface InstanceCardProps {
 export function InstanceCard(props: InstanceCardProps) {
   const { instance, index, fields, values, onRemove, canRemove, projectId } = props;
 
+  // Read-only run: no remove button, no label editing (published view).
+  const { readOnly } = useRunEditability();
   const [isEditingLabel, setIsEditingLabel] = useState(false);
   const [editedLabel, setEditedLabel] = useState(instance.label);
   const [saving, setSaving] = useState(false);
@@ -133,6 +136,10 @@ export function InstanceCard(props: InstanceCardProps) {
                   <X className="h-4 w-4" />
                 </Button>
               </div>
+            ) : readOnly ? (
+              <span className="text-sm font-semibold" title={savedLabel}>
+                {savedLabel}
+              </span>
             ) : (
               <button
                 type="button"
@@ -146,8 +153,8 @@ export function InstanceCard(props: InstanceCardProps) {
             )}
           </div>
 
-            {/* Remove button */}
-          {canRemove && onRemove && (
+            {/* Remove button — hidden on read-only runs */}
+          {!readOnly && canRemove && onRemove && (
             <Button
               variant="ghost"
               size="icon"
