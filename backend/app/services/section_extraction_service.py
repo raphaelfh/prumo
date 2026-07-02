@@ -319,7 +319,7 @@ class SectionExtractionService(LoggerMixin):
             # open (most-recent non-terminal), so ``useExtractedValues``
             # hydrates from ``runDetail.proposals`` and the AI values
             # show in the form immediately. The user advances to CONSENSUS
-            # explicitly via "Open consensus" — auto-advancing here would
+            # explicitly via "Start consensus" — auto-advancing here would
             # skip the extract-stage hydration and leave the form empty
             # (#bug: AI extraction values not appearing).
 
@@ -906,7 +906,7 @@ class SectionExtractionService(LoggerMixin):
                     )
 
             # Run stays in EXTRACT — see ``extract_section`` for the
-            # rationale. The user advances to CONSENSUS via "Open consensus"
+            # rationale. The user advances to CONSENSUS via "Start consensus"
             # after inspecting the AI-proposed values.
 
             if total_sections and successful == 0:
@@ -1045,7 +1045,7 @@ class SectionExtractionService(LoggerMixin):
             summary = self._generate_extraction_summary(entity_type, extracted_data)
 
             # Run stays in EXTRACT — see ``extract_section`` for the
-            # rationale. The user advances to CONSENSUS via "Open consensus"
+            # rationale. The user advances to CONSENSUS via "Start consensus"
             # after inspecting the AI-proposed values.
 
             # Complete run
