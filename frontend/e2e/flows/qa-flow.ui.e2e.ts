@@ -162,8 +162,8 @@ test.describe("Quality Assessment HITL flow", () => {
     await expect(finalizeButton).toBeEnabled({ timeout: 5000 });
     await finalizeButton.click();
 
-    // Once finalized, RunHeader.StageRail marks the Finalized node as current.
-    // The current node carries data-testid="run-stage-current" and its text is "Finalized".
+    // Once finalized, the RunHeader RunStatus chip reads the current stage.
+    // The chip carries data-testid="run-stage-current" and its text is "Finalized".
     await expect(
       page.getByTestId("run-stage-current").filter({ hasText: /finalized/i }),
     ).toBeVisible({ timeout: 30000 });
