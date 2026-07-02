@@ -40,7 +40,6 @@ export const articles = {
     authorToggleModeAria: 'Switch between person and single-field name',
     authorSwitchToSingle: 'Switch to single field (e.g. organization)',
     authorSwitchToPerson: 'Switch to last name + first name',
-    listSemanticTextNotLoaded: 'Not loaded in list (open article)',
     formSaveFirstFiles: 'Save the article first to add files.',
     formPublicationStatus: 'Publication status',
     formOpenAccess: 'Open access',

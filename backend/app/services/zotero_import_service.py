@@ -363,10 +363,6 @@ class ZoteroImportService(LoggerMixin):
 
         payload = normalized.article_fields
         if existing:
-            # Preserve local enrichment authority.
-            payload["pdf_extracted_text"] = existing.pdf_extracted_text
-            payload["semantic_abstract_text"] = existing.semantic_abstract_text
-            payload["semantic_fulltext_text"] = existing.semantic_fulltext_text
             payload["sync_state"] = "active"
         saved_article, created = await self._articles.upsert_by_canonical_identity(
             project_id=project_id,

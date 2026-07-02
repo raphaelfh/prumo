@@ -62,7 +62,7 @@ import {ArticlesExportDialog} from "./ArticlesExportDialog";
 import {ZoteroImportDialog} from "./ZoteroImportDialog";
 import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
 import type {Article} from "@/types/article";
-import {ARTICLES_DATA_COLUMN_DEFS, articleListCellTitle, formatArticleListCell} from "@/lib/articlesListDisplay";
+import {ARTICLES_DATA_COLUMN_DEFS, formatArticleListCell} from "@/lib/articlesListDisplay";
 
 export type ArticlesListHandle = {
     openExportDialog: () => void;
@@ -1041,7 +1041,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                                           >
                                               <span
                                                   className="line-clamp-2 text-[12px] leading-tight text-muted-foreground"
-                                                  title={articleListCellTitle(article, id) ?? formatArticleListCell(article, id)}
+                                                  title={formatArticleListCell(article, id)}
                                               >
                                                   {formatArticleListCell(article, id)}
                                               </span>

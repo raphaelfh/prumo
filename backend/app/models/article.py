@@ -125,9 +125,6 @@ class Article(BaseModel):
     )
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sync_conflict_log: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    pdf_extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    semantic_abstract_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    semantic_fulltext_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_lineage: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Relationships
