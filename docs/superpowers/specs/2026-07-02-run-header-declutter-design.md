@@ -16,6 +16,14 @@ owner: '@raphaelfh'
 > §7); the frosted `HeaderShell` chrome and the h-12 command-header language
 > are unchanged. ADR-0015 transition *semantics* are untouched — this is
 > presentation only.
+>
+> **Reconciled 2026-07-02 with the sibling spec**
+> `2026-07-02-finalized-run-read-only-design.md` (shipped as #472,
+> `89e6eba2`): finalized runs now render read-only with published values, a
+> `HITLPublishedBanner` sub-header, and a `RunEditability` context. The
+> touchpoints are folded into §4–§6, §8, §10, §12, §13 below. Implementation
+> must branch from `origin/dev` at or after `89e6eba2` — #472 restructured
+> both session screens (`RunEditabilityProvider`, sub-header slot).
 
 ## 1. Problem
 
@@ -79,8 +87,14 @@ from the existing `RunHeaderContext` (`stage`, `isRevision`, `role`,
 - Pill: status dot + current-stage label + chevron-down. `text-[13px]`,
   hairline border, ghost hover. Never drops; below ~36rem it collapses to
   the dot only (full `aria-label` retained).
-- Dot color by state: extract/consensus current = info; finalized = success;
-  cancelled = destructive; pending = muted.
+- Dot color + label are **stage-truthful**: `extract`/`consensus` show the
+  current node (info dot); `finalized` = success dot + "Finalized";
+  `cancelled` = destructive dot + "Cancelled"; `pending` = muted dot +
+  "Pending" — **not** "Extraction". Today `stageNodeStates()` folds pending
+  into Extract-as-current; extend it (or bypass it for the chip label) so a
+  pending run — read-only per #472 — is never announced as an active
+  editing stage: on pending the timeline shows Extraction as *upcoming* and
+  no editing-voice explainer.
 - Stage label is **kind-aware**: extraction runs show *Extraction /
   Consensus / Finalized*; quality-assessment runs show *Assessment /
   Consensus / Finalized*.
@@ -98,7 +112,8 @@ from the existing `RunHeaderContext` (`stage`, `isRevision`, `role`,
 
 Content, top to bottom:
 
-1. **Timeline** — the 3 stages via the kept `stageNodeStates()` helper, each
+1. **Timeline** — the 3 stages via the kept (pending/cancelled-extended,
+   §4-Chip) `stageNodeStates()` helper, each
    with icon (done ✓ / current dot / future ○ / finalized-future lock /
    cancelled), name, state suffix, and a one-line explanation. Explanations
    come in **two voices** keyed by role: reviewer ("Extract your data
@@ -111,6 +126,10 @@ Content, top to bottom:
 5. **Role** — "You review as {role}" + blind qualifier; the blind-mode
    `Reveal` button (absorbing today's RoleChip popover) when `canReveal`.
 6. **Revision** — a line when `isRevision` (the inline Revision chip dies).
+   The `HITLPublishedBanner` sub-header (#472) is the primary
+   published/revision surface below the header and carries the Reopen CTA;
+   the popover line reinforces state but does **not** duplicate a Reopen
+   button (Reopen stays banner + header menu).
 
 ### Role gating (in the component, not just by data absence)
 
@@ -125,6 +144,13 @@ Divergence UI keys off the arbitrator capability derived from the context
 receives as `canResolveConflicts`) — not off divergence data merely arriving
 empty. No new context field.
 
+**Finalized vs Published.** The chip keeps the workflow-stage noun
+("Finalized"); the #472 banner directly below says "Published" (data
+state). The pair is intentionally distinct; the popover's finalized
+explainer bridges them using the banner's vocabulary ("Finalized —
+published values, read-only; reopen to edit") so the stacked surfaces never
+read as two different states.
+
 ## 5. AI actions (rebuilt `AIActions.tsx`)
 
 - One ghost icon button (Sparkles, `text-ai`) with a small numeric badge
@@ -137,6 +163,20 @@ empty. No new context field.
     `onOpenSuggestions`.
 - Menu opens even with a single item (one predictable behavior; the named
   item explains the click).
+- Each item renders only when the screen provides a **real** handler. On
+  finalized runs both screens already force no actions, so the button is
+  absent — the #472 read-only screen tests pin this and must stay green.
+  Mechanism per screen (the asymmetry is intentional — keep it): #472
+  forces `pendingCount` → 0 on both screens; QA gates `canExtract` on
+  `isRunEditable(stage)`, while extraction keeps
+  `canRunAI = stage === 'extract' || stage == null` — the `null` case is
+  the pre-run AI-extraction entry point, which `isRunEditable` would
+  wrongly remove.
+- The extraction screen's `onAISuggestionsClick` is today a `console.warn`
+  placeholder (and QA passes no `onOpenSuggestions` at all): wiring a real
+  open/scroll-to-first-suggestion handler on both screens is **in scope**
+  for this work — the menu item stays hidden wherever the handler is not
+  yet real.
 
 ## 6. Primary action (simplified `PrimaryAction.tsx`)
 
@@ -160,7 +200,7 @@ behavior. The RunHeader.tsx cascade comment is rewritten to this list.
 
 | Surface                      | Today               | New                  |
 |------------------------------|---------------------|----------------------|
-| Reviewer button (extract)    | Mark ready          | **Finish extraction** |
+| Reviewer button (extract)    | Mark ready →        | **Finish extraction** |
 | Reviewer button (done state) | Marked ready        | **Extraction finished** |
 | Manager button (extract)     | Open consensus      | **Start consensus**   |
 | Manager button (consensus)   | Approve & finalize  | Approve & finalize    |
@@ -171,6 +211,12 @@ Copy stays English (project hard rule). Long-form explanations live in
 tooltips and the popover ("Signals you're done extracting — the manager can
 then start consensus"), not in labels.
 
+The relabel sweep includes the "?" Help-panel glossary
+(`lib/copy/runs.ts`: `glossaryExtract` / `glossaryConsensus` /
+`glossaryFinalize` and the `stageExtract*` keys) so the Help text never
+contradicts the chip/buttons; the extraction-vs-assessment wording follows
+the same kind-aware rule as the chip.
+
 ## 9. Accessibility & keyboard
 
 - Chip and avatar cluster are `button`s with `aria-haspopup` +
@@ -178,7 +224,10 @@ then start consensus"), not in labels.
 - Timeline keeps StageRail's sr-only state suffixes (done/current/upcoming/
   locked/cancelled).
 - Dot-only chip and avatar cluster carry full `aria-label`s.
-- Cmd-K palette gains a "View run status" action (opens the popover).
+- Cmd-K palette gains a "View run status" action (opens the popover) —
+  extraction screen only (QA mounts no palette today; widening QA is out of
+  scope). The existing palette "Reopen" action and the header Menu item stay
+  wired to the screen's #472-hardened reopen handler (active-run fallback).
 
 ## 10. Component inventory
 
@@ -186,7 +235,7 @@ then start consensus"), not in labels.
 |------|--------|
 | `runs/header/RunStatus.tsx` | **New** — chip + avatars + status popover. |
 | `runs/header/StageRail.tsx`, `Reviewers.tsx`, `RoleChip.tsx` | **Deleted** (tests replaced by RunStatus tests). |
-| `runs/header/stage.ts` | Kept — `stageNodeStates()` feeds the timeline. |
+| `runs/header/stage.ts` | Kept — `stageNodeStates()` feeds the timeline; extended for stage-truthful pending/cancelled chip states (§4). |
 | `runs/header/AIActions.tsx` | Rewritten as popover menu. |
 | `runs/header/PrimaryAction.tsx` | Inline helper removed. |
 | `runs/header/Breadcrumb.tsx` | `crumbs[]` → single `title` prop + `onBack`. |
@@ -194,7 +243,7 @@ then start consensus"), not in labels.
 | `extraction/ExtractionHeader.tsx` | Swap slots; drop `projectName` prop (clean both callers, no grandfathering). |
 | `pages/QualityAssessmentFullScreen.tsx` | Same slot swap. |
 | `lib/extraction/stageTransition.ts`, `lib/qa/qaTransition.ts` | Label keys only (semantics untouched). |
-| `lib/copy/runs.ts`, `lib/copy/extraction.ts` | New keys (timeline explainers ×2 voices, AI menu, popover labels, relabels); dead keys pruned in the same PR. |
+| `lib/copy/runs.ts`, `lib/copy/extraction.ts` | New keys (timeline explainers ×2 voices, AI menu, popover labels, relabels incl. Help glossary); dead keys pruned in the same PR. #472's published/banner keys are additive — no collision. Both reopen key sets stay live (`runs.reopenForRevision` = banner, `extraction.runHeaderReopenForRevision` = menu/palette); do not unify — the banner is frozen (§13). |
 
 ## 11. Docs
 
@@ -214,8 +263,32 @@ then start consensus"), not in labels.
   popover row gating, Reveal, divergence View); AIActions (0/1/2 actions,
   extracting state); PrimaryAction (gated tooltip + sr-only + guide
   routing); Breadcrumb single-title.
-- **E2E**: update `run-stage-current` usage (now the chip), reviewers
-  testids, and the qa-flow / extraction-navigation / reopen flows.
+- **E2E**: `run-stage-current` moves to the chip — its only e2e consumers
+  are `qa-flow.ui.e2e.ts` (×2) and `extraction-reopen.ui.e2e.ts` (which
+  also asserts the Revision tag inside the StageRail; re-target to the
+  banner badge or popover line). `extraction-navigation.ui.e2e.ts` touches
+  no header testid — no update needed. The reviewer testids are unit-only
+  and die with `Reviewers.tsx`.
+- **#472 regression**: the read-only screen tests
+  (`ExtractionFullScreen.readonly`, the QA screen finalized block) pin zero
+  AI affordances and the published banner on finalized runs — they must
+  stay green through the header rework. They use single-match
+  `getByText(/read-only/i)` and assert `queryByText(/required left/i)` is
+  absent: always-mounted header DOM (chip, sr-only, aria) must not add text
+  matching either pattern on a finalized run (popover/tooltip content is
+  unmounted while closed — safe).
+- **Relabel collateral** (the rename sweep breaks these knowingly):
+  `copyRuns.test.ts` literal assertions ('Extract', 'Mark ready →');
+  `stageTransition.test.ts` key-id assertions if keys are renamed;
+  `PrimaryAction.test.tsx` + `ExtractionHeader.exports.test.tsx` fixtures;
+  `QualityAssessmentFullScreen.test.tsx` also anchors on the StageRail
+  `nav[aria-label="Run stage"]` landmark and a top-level "Extract with AI"
+  named button — re-target both to the RunStatus chip / AI menu. Comments
+  quoting old labels (`ExtractionFullScreen`, `ExtractionHeader`, backend
+  `section_extraction_service.py` + its test) get a text-only touch-up.
+- **Fitness**: #472 pinned file-size baselines for both screens (1307/824
+  lines); the slot swap + real suggestion handlers must stay under or
+  consciously ratchet the baseline.
 - **Visual**: `/design-review` on both run routes; verify at container
   widths (throwaway dev harness route pattern, deleted after).
 - Full frontend suite + lint before push.
@@ -225,5 +298,8 @@ then start consensus"), not in labels.
 - No backend or API changes; no changes to transition semantics, gates, or
   the reviewer-ready flag (ADR-0015 stands).
 - No changes to HeaderShell chrome, Topbar, or non-run headers.
+- No changes to `HITLPublishedBanner`, `RunEditabilityContext`, or the
+  published-values resolution shipped in #472 — the header consumes none of
+  them (`RunHeaderContext` is unchanged; "zero new props" still holds).
 - No JS measured priority-overflow (the deferred idea becomes unnecessary —
   the new cascade has 3 rules).
