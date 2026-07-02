@@ -23,9 +23,9 @@ import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/
 import {SelectWithOther} from '@/components/ui/SelectWithOther';
 import {MultiSelectWithOther} from '@/components/ui/MultiSelectWithOther';
 import {Switch} from '@/components/ui/switch';
-import {AlertCircle, History} from 'lucide-react';
+import {AlertCircle, Check, History} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
@@ -159,13 +159,29 @@ export function FieldInput(props: FieldInputProps) {
     // answer on ANY field type. `no_information` is universal; the opt-in codes
     // render only where the field enables them. Toggling the active one clears back
     // to unresolved. Setting a marker clears any validation error (it is resolved).
-  const dispositions: { code: string; label: string }[] = [
-    { code: 'no_information', label: t('extraction', 'dispositionNoInformation') },
+  const dispositions: { code: string; label: string; hint: string }[] = [
+    {
+      code: 'no_information',
+      label: t('extraction', 'dispositionNoInformation'),
+      hint: t('extraction', 'dispositionNoInformationHint'),
+    },
     ...(field.allows_not_applicable
-      ? [{ code: 'not_applicable', label: t('extraction', 'dispositionNotApplicable') }]
+      ? [
+          {
+            code: 'not_applicable',
+            label: t('extraction', 'dispositionNotApplicable'),
+            hint: t('extraction', 'dispositionNotApplicableHint'),
+          },
+        ]
       : []),
     ...(field.allows_not_evaluated
-      ? [{ code: 'not_evaluated', label: t('extraction', 'dispositionNotEvaluated') }]
+      ? [
+          {
+            code: 'not_evaluated',
+            label: t('extraction', 'dispositionNotEvaluated'),
+            hint: t('extraction', 'dispositionNotEvaluatedHint'),
+          },
+        ]
       : []),
   ];
   const setDisposition = (code: string) => {
@@ -518,30 +534,51 @@ export function FieldInput(props: FieldInputProps) {
 
                   {/* Disposition control (ADR-0016): a quiet row to mark the field
                       "No information" (any type) or the opt-in Not applicable /
-                      Not evaluated. The active one is highlighted; clicking it
-                      clears back to unresolved. */}
+                      Not evaluated. Each button describes itself on hover; the
+                      active one gets the accepted-style success ring (matching
+                      the accept-suggestion affordance) + an explicit "recorded"
+                      hint, so a blank input is never ambiguous. Clicking the
+                      active one clears back to unresolved. */}
+        {/* Local provider: the disposition row renders on EVERY field, so its
+            tooltips must not depend on a caller-supplied provider. */}
+        <TooltipProvider delayDuration={300}>
         <div className="flex flex-wrap items-center gap-1.5" data-disposition-control>
           {dispositions.map((d) => {
             const active = activeReason === d.code;
             return (
-              <Button
-                key={d.code}
-                type="button"
-                size="sm"
-                variant={active ? 'secondary' : 'ghost'}
-                aria-pressed={active}
-                disabled={disabled}
-                onClick={() => setDisposition(d.code)}
-                className={cn(
-                  'h-6 px-2 text-xs',
-                  active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {d.label}
-              </Button>
+              <Tooltip key={d.code}>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-pressed={active}
+                    disabled={disabled}
+                    onClick={() => setDisposition(d.code)}
+                    className={cn(
+                      'h-6 gap-1 px-2 text-xs',
+                      active
+                        ? 'text-success ring-1 ring-inset ring-success bg-success/10 hover:bg-success/15 hover:text-success'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {active ? <Check className="h-3 w-3" /> : null}
+                    {d.label}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{active ? t('extraction', 'dispositionActiveHint') : d.hint}</p>
+                </TooltipContent>
+              </Tooltip>
             );
           })}
+          {activeReason ? (
+            <span className="text-[11px] text-muted-foreground">
+              {t('extraction', 'dispositionActiveHint')}
+            </span>
+          ) : null}
         </div>
+        </TooltipProvider>
 
                   {/* Suggested value + accept/reject buttons below input - only when no manual value */}
         {shouldShowSuggestion && (

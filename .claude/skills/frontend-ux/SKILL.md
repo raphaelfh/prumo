@@ -74,6 +74,15 @@ Sidebars should feel integrated into the window, not like a separate drawer.
 2. **Skeleton Strategy:** Skeletons must match the exact line-height and width of the expected text to prevent layout
    shift.
 3. **Status Dots:** Small (6px), glowing for "Active", muted for "Draft".
+4. **Buttons explain themselves on hover.** Every icon-only or short-label
+   control carries a `Tooltip` with its description (copy through
+   `lib/copy/`); icon-only buttons also get an `aria-label`. A terse label
+   like "No information" or a bare glyph must never leave the user guessing.
+5. **Selected = the accepted-suggestion treatment.** A control representing a
+   recorded choice (accepted suggestion, active disposition, selected version)
+   shows the success ring (`ring-1 ring-success bg-success/10 text-success`,
+   usually with a small `Check`) — never just a shade — plus, where the input
+   itself looks blank, an explicit "recorded" hint so the state is unambiguous.
 
 ## 5. Responsive Behaviour
 
