@@ -101,6 +101,8 @@ async def _seed_finalized_qa_run(
     db: AsyncSession,
     *,
     with_second_reviewer: bool = False,
+    domain1_consensus: dict | None = None,
+    domain2_consensus: dict | None = None,
 ) -> _QAFixture | None:
     """Build a 2-domain QA template + drive a run to FINALIZED.
 
@@ -333,9 +335,14 @@ async def _seed_finalized_qa_run(
     )
 
     consensus_service = ExtractionConsensusService(db)
-    for instance_id, field_id, verdict in (
-        (domain1_instance, domain1_verdict, "Low"),
-        (domain2_instance, domain2_verdict, "High"),
+    # Published consensus value per domain. Defaults to Low/High; a caller may
+    # override with a coded-disposition marker envelope to exercise the ADR-0016
+    # appraisal exclusion end-to-end (published-state → resolve_value → sheet).
+    d1_consensus = domain1_consensus if domain1_consensus is not None else {"value": "Low"}
+    d2_consensus = domain2_consensus if domain2_consensus is not None else {"value": "High"}
+    for instance_id, field_id, cvalue in (
+        (domain1_instance, domain1_verdict, d1_consensus),
+        (domain2_instance, domain2_verdict, d2_consensus),
     ):
         _record, published = await consensus_service.record_consensus(
             run_id=run_id,
@@ -343,7 +350,7 @@ async def _seed_finalized_qa_run(
             field_id=field_id,
             consensus_user_id=profile_id,
             mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
-            value={"value": verdict},
+            value=cvalue,
             rationale="appraisal export fixture",
         )
         assert published.run_id == run_id
@@ -547,6 +554,45 @@ async def test_qa_appraisal_renders_through_to_workbook(db_session: AsyncSession
     rows = list(sheet.iter_rows(values_only=True))
     assert rows[0] == ("Record", fx.domain1_label, fx.domain2_label, "Overall")
     # One data row; its Overall (last cell) is the resolved scalar.
+    assert rows[1][-1] == "High"
+
+    await db_session.rollback()
+
+
+async def test_qa_appraisal_marker_verdict_excluded_from_overall(
+    db_session: AsyncSession,
+) -> None:
+    """ADR-0016 Phase 4, end-to-end: a coded-disposition verdict published into
+    ExtractionPublishedState survives the read + ``resolve_value`` and reaches the
+    Appraisal sheet as its stable LABEL (never a dict-stringify), while the
+    worst-case Overall EXCLUDES it — so a "the source is silent" verdict cannot
+    silently force a most-severe Overall. Pins the DB → resolve → sheet coupling
+    the pure unit tests can't (they start from already-resolved scalars).
+    """
+    fx = await _seed_finalized_qa_run(
+        db_session,
+        domain1_consensus={"value": None, "absent_reason": "no_information"},
+    )
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+
+    layout = await _service(db_session, fx).resolve_layout(
+        project_id=fx.project_id,
+        template_id=fx.qa_template_id,
+        mode=ExportMode.CONSENSUS,
+        article_ids=list(fx.article_ids),
+        include_ai_metadata=False,
+        anonymize_reviewer_names=False,
+    )
+
+    wb = load_workbook(__import__("io").BytesIO(build_workbook(layout)))
+    sheet = wb["Appraisal summary"]
+    rows = list(sheet.iter_rows(values_only=True))
+    assert rows[0] == ("Record", fx.domain1_label, fx.domain2_label, "Overall")
+    # domain1 cell renders the resolved disposition LABEL — not a dict, not blank.
+    assert rows[1][1] == "No information"
+    assert rows[1][2] == "High"
+    # Overall excludes the marker → the real "High" wins (NOT "No information").
     assert rows[1][-1] == "High"
 
     await db_session.rollback()

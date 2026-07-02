@@ -53,6 +53,20 @@ class AbsentReason(StrEnum):
 _ABSENT_REASON_CODES: frozenset[str] = frozenset(r.value for r in AbsentReason)
 
 
+# The single source of truth for a coded disposition's human-readable label
+# (ADR-0016 Phase 4). Colocated with the enum so a new code can't ship without a
+# label. Reused by the export cell resolver (``exports/value_envelope``), the
+# export front-matter legend, and the appraisal worst-case exclusion — all read
+# THIS map so a cell, its legend row, and the roll-up can never drift. The
+# frontend mirrors these exact strings via its own copy keys (FE/BE parity tests
+# lock the two sides).
+ABSENT_REASON_LABELS: dict[str, str] = {
+    AbsentReason.NO_INFORMATION.value: "No information",
+    AbsentReason.NOT_APPLICABLE.value: "Not applicable",
+    AbsentReason.NOT_EVALUATED.value: "Not evaluated",
+}
+
+
 def unwrap_value_envelope(raw: Any) -> Any:
     """Peel a single ``{"value": X}`` envelope, matching the frontend's one-level
     unwrap in ``progress.ts`` / ``useReviewerSummary``. A bare scalar (or any dict

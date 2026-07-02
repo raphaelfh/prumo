@@ -96,6 +96,59 @@ def test_build_appraisal_model_consensus_rollup() -> None:
     assert row.per_reviewer_overall == {}
 
 
+def test_build_appraisal_model_excludes_disposition_marker_verdict() -> None:
+    # ADR-0016 Phase 4: a coded-disposition verdict resolves (via resolve_value,
+    # upstream of this builder) to its stable label — "No information" here. The
+    # domain CELL keeps that label, but the worst-case Overall EXCLUDES it, so the
+    # real "High" wins instead of a fabricated Critical/most-severe. An all-marker
+    # record rolls up to a blank Overall while its cells still show the label.
+    d1 = _section("Participants", _field("RoB"), 0)
+    d2 = _section("Predictors", _field("RoB"), 1)
+    f1 = d1.fields[0].field_id
+    f2 = d2.fields[0].field_id
+
+    run_id = uuid.uuid4()
+    inst1, inst2, aid = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    article = ArticleDescriptor(
+        article_id=aid,
+        header_label="Gaca, 2011",
+        run_id=run_id,
+        run_stage=None,
+        version_id=None,
+        model_instances=(),
+        section_instances={d1.entity_type_id: (inst1,), d2.entity_type_id: (inst2,)},
+    )
+
+    # Mixed: one domain silent (marker → "No information"), one real "High".
+    mixed = ExtractionExportService._build_appraisal_model(
+        sections=(d1, d2),
+        articles=(article,),
+        reviewers=(),
+        value_map={(run_id, inst1, f1): "No information", (run_id, inst2, f2): "High"},
+        mode=ExportMode.CONSENSUS,
+    )
+    assert mixed is not None
+    row = mixed.rows[0]
+    assert row.domain_verdicts == ("No information", "High")  # cells stay populated
+    assert row.overall == "High"  # marker excluded — real verdict wins
+
+    # All-marker: every domain silent → blank Overall, cells still labelled.
+    all_marker = ExtractionExportService._build_appraisal_model(
+        sections=(d1, d2),
+        articles=(article,),
+        reviewers=(),
+        value_map={
+            (run_id, inst1, f1): "No information",
+            (run_id, inst2, f2): "Not applicable",
+        },
+        mode=ExportMode.CONSENSUS,
+    )
+    assert all_marker is not None
+    am_row = all_marker.rows[0]
+    assert am_row.domain_verdicts == ("No information", "Not applicable")
+    assert am_row.overall is None  # nothing assessable => blank, not most-severe
+
+
 def test_build_appraisal_model_all_users_per_reviewer() -> None:
     d1 = _section("Participants", _field("RoB"), 0)
     f1 = d1.fields[0].field_id

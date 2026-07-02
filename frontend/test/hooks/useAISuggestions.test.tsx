@@ -328,6 +328,46 @@ describe('useAISuggestions — reviewer-decision strategy (Data Extraction)', ()
     ).toBe('f-1');
   });
 
+  it('batchAccept never accepts an abstention, even above the confidence threshold', async () => {
+    // ADR-0016 decision #3: an AI abstention ("no information") must not be
+    // silently swept into a bulk accept-all — a reviewer accepts it deliberately.
+    // Even with an (artificially) high confidence, the marker is excluded from the
+    // batch; only the real proposal is accepted. On the pre-fix code BOTH would be.
+    (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
+      suggestions: {
+        [getSuggestionKey('inst-1', 'f-real')]: makeSuggestion('inst-1', 'f-real', {
+          confidence: 0.95,
+          value: 'Y',
+        }),
+        [getSuggestionKey('inst-1', 'f-abstain')]: makeSuggestion('inst-1', 'f-abstain', {
+          confidence: 0.95,
+          value: { value: null, absent_reason: 'no_information' },
+        }),
+      },
+      count: 2,
+    });
+    const { result } = renderHook(() =>
+      useAISuggestions({
+        articleId: 'art-1',
+        projectId: 'proj-1',
+        instanceIds: ['inst-1'],
+        runId: 'run-active',
+      }),
+    );
+    await waitFor(() =>
+      expect(Object.keys(result.current.suggestions)).toHaveLength(2),
+    );
+
+    await act(async () => {
+      await result.current.batchAccept(0.8);
+    });
+
+    expect(AISuggestionService.acceptSuggestion).toHaveBeenCalledTimes(1);
+    expect(
+      (AISuggestionService.acceptSuggestion as any).mock.calls[0][0].fieldId,
+    ).toBe('f-real');
+  });
+
   it('batchAccept fires ONE success toast, not one per item (#160)', async () => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValue({
       suggestions: {

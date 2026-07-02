@@ -18,21 +18,10 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from app.models.extraction import ExtractionFieldType
-from app.services.value_semantics import AbsentReason, value_absent_reason
+from app.services.value_semantics import ABSENT_REASON_LABELS, value_absent_reason
 
 # An openpyxl-writable scalar. NEVER a dict, NEVER a list.
 ResolvedScalar = str | int | float | bool | None
-
-
-# Stable per-code labels for a coded absent_reason disposition (ADR-0016). A
-# marker resolves to one of these instead of leaking a dict-stringify into a
-# cell. Sourced from the AbsentReason enum so the codes can't drift; the Phase-4
-# export legend reuses these exact strings so cell and legend can't diverge.
-_ABSENT_REASON_LABELS: dict[str, str] = {
-    AbsentReason.NO_INFORMATION.value: "No information",
-    AbsentReason.NOT_APPLICABLE.value: "Not applicable",
-    AbsentReason.NOT_EVALUATED.value: "Not evaluated",
-}
 
 
 @runtime_checkable
@@ -67,7 +56,10 @@ def resolve_value(raw: Any, *, field: _FieldLike | None = None) -> ResolvedScala
     # garbage reason falls through and never fabricates a disposition label.
     reason = value_absent_reason(raw)
     if reason is not None:
-        return _ABSENT_REASON_LABELS[reason]
+        # ADR-0016: emit the stable per-code label from the single source in
+        # value_semantics (the export legend + appraisal roll-up read the same
+        # map, so a cell, its legend row, and the roll-up can never drift).
+        return ABSENT_REASON_LABELS[reason]
 
     # --- Recursive single-wrap {"value": inner} ---------------------------
     # Handles {"value": x}, double-wrapped {"value": {"value": x}}, and

@@ -46,7 +46,7 @@ import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
 import {useAutoSaveProposals} from '@/hooks/runs';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
-import {countNonAbstentionSuggestions} from '@/lib/ai-extraction/suggestionUtils';
+import {countActionableSuggestions} from '@/lib/ai-extraction/suggestionUtils';
 import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
 import {
@@ -499,11 +499,11 @@ export default function ExtractionFullScreen() {
     onSuggestionRejected: handleAISuggestionRejected
   });
 
-  // Actionable pending suggestions only — a "no information found" proposal is
-  // recorded provenance, not something to act on, so it must not inflate the
-  // header count. Memoized: this screen re-renders on every field keystroke.
+  // Shared actionable count (ADR-0016 Phase 4): unresolved AI proposals awaiting
+  // a human decision — an abstention ("no information") counts, resolved ones
+  // don't. Memoized: this screen re-renders on every field keystroke.
   const aiPendingCount = useMemo(
-    () => countNonAbstentionSuggestions(aiSuggestions),
+    () => countActionableSuggestions(aiSuggestions),
     [aiSuggestions],
   );
 
