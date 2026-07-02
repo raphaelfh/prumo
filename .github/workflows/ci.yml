@@ -126,6 +126,12 @@ jobs:
       ENCRYPTION_KEY: test_encryption_key_32_characters
       DEBUG: "true"
       CORS_ORIGINS: "http://localhost:5173"
+      # docling resolves layout/TableFormer models from this dir instead of
+      # downloading from HuggingFace Hub at parse time (same mechanism as the
+      # Railway image, backend/Dockerfile). Populated by the cache/prefetch
+      # steps below. /home/runner is $HOME on ubuntu-latest — env values are
+      # not tilde-expanded, so the path is spelled out.
+      DOCLING_ARTIFACTS_PATH: /home/runner/.cache/docling-models
 
     steps:
       - uses: actions/checkout@v7
@@ -152,6 +158,59 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --frozen --extra dev
+
+      # test_docling_parser.py needs the docling layout + TableFormer weights.
+      # Downloading them from HuggingFace Hub at test time made the suite
+      # depend on live HF availability — it flaked twice in 15 minutes on
+      # 2026-07-02 (runs 28564620843 / 28565105365, LocalEntryNotFoundError
+      # from an HF 5xx/timeout). Cache the weights keyed on the pinned docling
+      # version; on a miss, prefetch with retries BEFORE pytest so the only
+      # network-dependent step is one that can retry cleanly. The pytest step
+      # then runs HF-offline (mirrors backend/Dockerfile: prefetch +
+      # DOCLING_ARTIFACTS_PATH + HF_HUB_OFFLINE), so a resolution problem
+      # fails fast in the prefetch step instead of flaking mid-suite.
+      - name: Resolve docling version (models cache key)
+        id: docling-version
+        run: |
+          # `|| true` keeps a no-match from tripping errexit/pipefail before
+          # the explicit guard below can produce a readable error.
+          VERSION=$(grep -Eo 'docling==[0-9][0-9.]*' pyproject.toml | head -1 | cut -d= -f3 || true)
+          if [[ -z "${VERSION}" ]]; then
+            echo "::error::could not resolve the pinned docling version from backend/pyproject.toml"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache docling models
+        id: docling-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/docling-models
+          key: docling-models-${{ runner.os }}-${{ steps.docling-version.outputs.version }}
+
+      - name: Prefetch docling models (layout + TableFormer)
+        if: steps.docling-cache.outputs.cache-hit != 'true'
+        run: |
+          # Same model set as the Railway image (backend/Dockerfile): the
+          # OCR-disabled standard pipeline only needs layout + TableFormer.
+          for attempt in 1 2 3; do
+            uv run python -c "
+          from pathlib import Path
+          from docling.utils.model_downloader import download_models
+          download_models(
+              output_dir=Path('${DOCLING_ARTIFACTS_PATH}'),
+              with_layout=True,
+              with_tableformer=True,
+              with_code_formula=False,
+              with_picture_classifier=False,
+              with_rapidocr=False,
+              with_easyocr=False,
+          )" && exit 0
+            echo "docling model prefetch attempt ${attempt} failed; retrying in 20s"
+            sleep 20
+          done
+          echo "::error::docling model prefetch failed after 3 attempts — HF Hub is likely down"
+          exit 1
 
       - name: Install Postgres client (psql)
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
@@ -241,6 +300,13 @@ jobs:
       #     must hit 85%. Modules where bug = data loss / BOLA / HITL state
       #     corruption cannot regress even by a percentage point.
       - name: Run tests with coverage
+        env:
+          # Models come from DOCLING_ARTIFACTS_PATH (cache/prefetch steps
+          # above); forbid any runtime HF download so a missing model is a
+          # deterministic failure here, never a network flake. Mirrors the
+          # runtime stage of backend/Dockerfile.
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
         run: |
           uv run pytest tests/ \
             --cov=app \
