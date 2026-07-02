@@ -6,6 +6,13 @@ owner: '@raphaelfh'
 
 # Extraction RunHeader Refinement — Design
 
+> **Superseded (visual sections) 2026-07-02** by
+> [`2026-07-02-run-header-declutter-design.md`](2026-07-02-run-header-declutter-design.md):
+> the StageRail/Reviewers/RoleChip leaves and the multi-threshold drop
+> cascade described here were replaced by the unified `RunHeader.RunStatus`
+> cluster + status popover. The HeaderShell frosted chrome and h-12 language
+> remain authoritative here.
+
 > **Status:** Proposed — design approved in a completed brainstorm (2026-06-20).
 > Next step: `superpowers:writing-plans` → `superpowers:subagent-driven-development`.
 > This is a **presentation-layer** change: it does not touch the

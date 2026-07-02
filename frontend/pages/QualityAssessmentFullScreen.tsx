@@ -63,6 +63,7 @@ import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermission
 import { useSidebar } from "@/contexts/SidebarContext";
 import { t } from "@/lib/copy";
 import { isRunEditable } from "@/lib/runs/editability";
+import { firstPendingInstanceId, scrollToSectionById } from "@/lib/runs/suggestionLocate";
 import { publishedStatesToValuesMap } from "@/lib/extraction/publishedValues";
 
 interface FieldKey {
@@ -609,7 +610,7 @@ export default function QualityAssessmentFullScreen() {
           <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={toggleSidebar} />
           <RunHeader.Breadcrumb
             onBack={() => navigate(`/projects/${projectId}`)}
-            crumbs={[{ label: template?.name ?? "" }]}
+            title={template?.name ?? ""}
           />
           {/* QA kind badge — compact identifier next to breadcrumb */}
           <Badge
@@ -628,7 +629,6 @@ export default function QualityAssessmentFullScreen() {
               {versionLabel}
             </span>
           ) : null}
-          {runStage != null && <RunHeader.StageRail />}
           <RunHeader.Save
             state={saveState ?? "idle"}
             lastSavedAt={lastSavedAt ?? null}
@@ -637,8 +637,7 @@ export default function QualityAssessmentFullScreen() {
         </RunHeader.Left>
 
         <RunHeader.Center>
-          <RunHeader.Reviewers />
-          <RunHeader.RoleChip />
+          {runStage != null && <RunHeader.RunStatus />}
         </RunHeader.Center>
 
         <RunHeader.Right>
@@ -654,6 +653,17 @@ export default function QualityAssessmentFullScreen() {
             canExtract={!!(session && runDetail && isRunEditable(runDetail.run.stage))}
             extracting={extractingAI}
             onExtract={onExtractWithAI}
+            onOpenSuggestions={() => {
+              // Header "Review N pending suggestions": scroll to the domain
+              // holding the first pending suggestion.
+              const instanceId = firstPendingInstanceId(aiSuggestions);
+              const domain = instanceId
+                ? sortedDomains.find(
+                    (d) => session?.instancesByEntityType[d.entityType.id] === instanceId,
+                  )
+                : undefined;
+              if (domain) scrollToSectionById(domain.entityType.id);
+            }}
           />
           <RunHeader.PrimaryAction />
           <Utility>

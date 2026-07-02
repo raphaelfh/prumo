@@ -8,8 +8,8 @@ import { useLayoutEffect, useRef, useState } from 'react';
  * narrow widths live inside the kebab's `DropdownMenuContent`, which Radix
  * portals OUT of the `@container/headerbar` element — so `@[..]/headerbar:`
  * utilities cannot gate them. A measured width can. The default breakpoint
- * mirrors the `@[40rem]` (640px) container query used for the StageRail/RoleChip
- * fold, so inline collapse and kebab fold cross over at the same width.
+ * mirrors the 640px (`@[40rem]`) region where the header's mid-width folds
+ * cluster, so inline collapse and kebab fold cross over at a similar width.
  *
  * Guarded for non-DOM/test envs: `ResizeObserver` is mocked to a no-op there,
  * but the synchronous first `measure()` still sets the initial state from

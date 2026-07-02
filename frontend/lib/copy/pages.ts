@@ -43,7 +43,6 @@ export const pages = {
     extractionScreenRunErrorTitle: 'Could not open this extraction',
     extractionScreenRunErrorDesc: 'The extraction session could not be loaded. This is usually temporary — please try again.',
     extractionScreenRetry: 'Try again',
-    extractionScreenProjectFallback: 'Project',
     extractionScreenYou: 'You',
     extractionScreenSelectModelFirst: 'Select a model before adding this section',
     extractionScreenParentNotFound: 'Parent instance not found. Create the parent section first.',

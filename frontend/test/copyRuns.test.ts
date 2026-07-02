@@ -8,20 +8,28 @@ describe('runs copy namespace', () => {
     expect(t('runs', 'finalize')).toBe('Finalize');
   });
 
-  it('resolves the new 3-node + help + sidebar keys', () => {
-    expect(t('runs', 'stageExtract')).toBe('Extract');
-    expect(t('runs', 'stageExtractTooltip')).not.toBe('');
-    expect(t('runs', 'stageConsensusTooltip')).not.toBe('');
-    expect(t('runs', 'stageFinalizedTooltip')).not.toBe('');
+  it('resolves the stage-vocabulary + help + sidebar keys', () => {
+    expect(t('runs', 'stageExtract')).toBe('Extraction');
+    expect(t('runs', 'stageAssessment')).toBe('Assessment');
+    expect(t('runs', 'stagePending')).toBe('Pending');
+    expect(t('runs', 'stageCancelled')).toBe('Cancelled');
+    expect(t('runs', 'stageExplainExtract')).not.toBe('');
+    expect(t('runs', 'stageExplainExtractArbiter')).not.toBe('');
+    expect(t('runs', 'stageExplainConsensus')).not.toBe('');
+    expect(t('runs', 'stageExplainConsensusArbiter')).not.toBe('');
+    expect(t('runs', 'stageExplainFinalized')).not.toBe('');
     expect(t('runs', 'sidebarToggle')).not.toBe('');
     expect(t('runs', 'helpTitle')).not.toBe('');
     expect(t('runs', 'shortcutPalette')).not.toBe('');
-    expect(t('runs', 'glossaryExtract')).not.toBe('');
+    expect(t('runs', 'glossaryExtract')).toContain('Extraction');
+    expect(t('runs', 'glossaryAssessment')).toContain('Assessment');
   });
 
   it('resolves the new extraction primary-action keys', () => {
-    expect(t('extraction', 'runHeaderMarkReady')).toBe('Mark ready →');
-    expect(t('extraction', 'runHeaderMarkReadyTooltip')).not.toBe('');
+    expect(t('extraction', 'runHeaderFinishExtraction')).toBe('Finish extraction');
+    expect(t('extraction', 'runHeaderExtractionFinished')).toBe('Extraction finished');
+    expect(t('extraction', 'runHeaderStartConsensus')).toBe('Start consensus');
+    expect(t('extraction', 'runHeaderFinishExtractionTooltip')).not.toBe('');
     expect(t('extraction', 'runHeaderFinalizeTooltip')).not.toBe('');
   });
 });

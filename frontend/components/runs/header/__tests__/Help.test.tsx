@@ -22,4 +22,11 @@ describe('RunHeader.Help', () => {
     ['glossaryExtract', 'glossaryConsensus', 'glossaryFinalize', 'glossaryBlind', 'glossaryDiffer'].forEach((k) =>
       expect(screen.getByText(k)).toBeInTheDocument());
   });
+
+  it('QA runs swap the extraction glossary entry for Assessment', async () => {
+    render(<RunHeader value={makeRunHeaderValue({ kind: 'qa' })}><RunHeader.Right><RunHeader.Help /></RunHeader.Right></RunHeader>);
+    await userEvent.click(screen.getByRole('button', { name: 'helpButton' }));
+    expect(screen.getByText('glossaryAssessment')).toBeInTheDocument();
+    expect(screen.queryByText('glossaryExtract')).toBeNull();
+  });
 });

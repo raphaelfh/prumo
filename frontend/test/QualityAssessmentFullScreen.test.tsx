@@ -34,6 +34,7 @@ vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
 
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 import { SidebarProvider } from "@/contexts/SidebarContext";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import QualityAssessmentFullScreen from "@/pages/QualityAssessmentFullScreen";
 import { apiClient } from "@/integrations/api";
 
@@ -155,6 +156,16 @@ vi.mock("@prumo/pdf-viewer", async () => {
   };
 });
 
+// Spy the DOM-scroll half of the header suggestion-locate pair (jsdom has no
+// scrollIntoView); the key-parsing half stays real so the reverse lookup is
+// covered end-to-end.
+vi.mock("@/lib/runs/suggestionLocate", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/runs/suggestionLocate")>(
+    "@/lib/runs/suggestionLocate",
+  );
+  return { ...actual, scrollToSectionById: vi.fn(() => true) };
+});
+
 // apiClient gets called from the QA hooks; map by URL so the test isn't
 // coupled to the order of fetches.
 vi.mock("@/integrations/api", () => ({
@@ -230,9 +241,13 @@ function renderPage(path = "/projects/p1/articles/a1/quality-assessment/tpl-1") 
           <Route
             path="/projects/:projectId/articles/:articleId/quality-assessment/:templateId"
             element={
-              <SidebarProvider>
-                <QualityAssessmentFullScreen />
-              </SidebarProvider>
+              // TooltipProvider mirrors the app-level provider in App.tsx —
+              // form-panel tooltips (suggestion rows) rely on it in prod.
+              <TooltipProvider>
+                <SidebarProvider>
+                  <QualityAssessmentFullScreen />
+                </SidebarProvider>
+              </TooltipProvider>
             }
           />
         </Routes>
@@ -309,14 +324,13 @@ describe("QualityAssessmentFullScreen", () => {
     expect(screen.getByTestId("qa-form-panel")).toBeInTheDocument();
   });
 
-  it("renders the shared RunHeader StageRail once the run loads", async () => {
+  it("renders the shared RunHeader status chip once the run loads", async () => {
     renderPage();
-    // The StageRail <nav aria-label="Run stage"> replaces the old hand-rolled
-    // header — its presence is the canonical marker that the RunHeader is mounted.
+    // The RunStatus chip (data-testid=run-stage-current) replaces the old
+    // stage rail — its presence is the canonical marker that the RunHeader is
+    // mounted.
     await waitFor(() =>
-      expect(
-        screen.getByRole("navigation", { name: "Run stage" }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId("run-stage-current")).toBeInTheDocument(),
     );
     // Old hand-rolled publish button is gone — PrimaryAction owns that slot now.
     expect(
@@ -324,17 +338,17 @@ describe("QualityAssessmentFullScreen", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders Extract with AI button once the QA session is open", async () => {
-    // RunHeader.AIActions renders a button with "Extract with AI" text.
+  it("renders the AI actions menu with Extract with AI once the QA session is open", async () => {
+    // RunHeader.AIActions is a menu: the Sparkles trigger opens named items.
     renderPage();
-    const button = await screen.findByRole("button", {
+    const trigger = await screen.findByTestId("run-ai-actions");
+    await userEvent.click(trigger);
+    const item = await screen.findByRole("menuitem", {
       name: /extract with ai/i,
     });
-    expect(button).toBeInTheDocument();
-    // The button stays enabled while the session is open and the run is
-    // not finalized — guards against accidentally disabling it (it's the
-    // only entry point to the AI prefill flow).
-    await waitFor(() => expect(button).not.toBeDisabled());
+    // The item stays enabled while the session is open and the run is not
+    // finalized — it's the only entry point to the AI prefill flow.
+    expect(item).not.toHaveAttribute("data-disabled");
   });
 
   it("Extract with AI click posts to /api/v1/extraction/sections with the session run id", async () => {
@@ -344,10 +358,11 @@ describe("QualityAssessmentFullScreen", () => {
     apiClient.mockClear();
 
     renderPage();
-    const button = await screen.findByRole("button", {
+    const trigger = await screen.findByTestId("run-ai-actions");
+    await userEvent.click(trigger);
+    const button = await screen.findByRole("menuitem", {
       name: /extract with ai/i,
     });
-    await waitFor(() => expect(button).not.toBeDisabled());
     await userEvent.click(button);
 
     await waitFor(() => {
@@ -528,9 +543,11 @@ describe("QualityAssessmentFullScreen — blind-reveal stage guards", () => {
     vi.restoreAllMocks();
   });
 
-  it("blind manager during extract sees the Reveal affordance", async () => {
+  it("blind manager during extract sees Reveal inside the status popover", async () => {
     mockRunView({ stage: "extract" });
     renderPage();
+    // Reveal lives in the RunStatus popover now (run-header declutter).
+    await userEvent.click(await screen.findByTestId("run-stage-current"));
     expect(
       await screen.findByRole("button", { name: /reveal reviewers/i }),
     ).toBeInTheDocument();
@@ -541,9 +558,10 @@ describe("QualityAssessmentFullScreen — blind-reveal stage guards", () => {
     async (stage) => {
       mockRunView({ stage });
       renderPage();
-      // StageRail mounts only once the run view has loaded, so canReveal is
-      // settled by the time this resolves.
-      await screen.findByRole("navigation", { name: "Run stage" });
+      // The status chip mounts only once the run view has loaded, so
+      // canReveal is settled by the time this resolves.
+      await userEvent.click(await screen.findByTestId("run-stage-current"));
+      await screen.findByTestId("run-status-popover");
       expect(
         screen.queryByRole("button", { name: /reveal reviewers/i }),
       ).not.toBeInTheDocument();
@@ -553,7 +571,8 @@ describe("QualityAssessmentFullScreen — blind-reveal stage guards", () => {
   it("run-scoped auto-reveal (peers_revealed) hides the Reveal affordance even during extract", async () => {
     mockRunView({ stage: "extract", peersRevealed: true });
     renderPage();
-    await screen.findByRole("navigation", { name: "Run stage" });
+    await userEvent.click(await screen.findByTestId("run-stage-current"));
+    await screen.findByTestId("run-status-popover");
     expect(
       screen.queryByRole("button", { name: /reveal reviewers/i }),
     ).not.toBeInTheDocument();
@@ -650,10 +669,10 @@ describe("QualityAssessmentFullScreen — finalized (published, read-only)", () 
     expect(await screen.findByTestId("qa-finalized-badge")).toBeInTheDocument();
     expect(screen.getByText(/read-only/i)).toBeInTheDocument();
     expect(screen.getByTestId("qa-reopen-button")).toBeInTheDocument();
-    // Header AI-extract stays hidden (now via isRunEditable):
-    expect(
-      screen.queryByRole("button", { name: /extract with ai/i }),
-    ).not.toBeInTheDocument();
+    // Header AI trigger stays absent (pendingCount forced to 0 +
+    // canExtract via isRunEditable) — testid pin, since the menu trigger's
+    // accessible name is no longer "Extract with AI":
+    expect(screen.queryByTestId("run-ai-actions")).not.toBeInTheDocument();
     // Per-domain AI-extract hidden by the provider:
     await screen.findByTestId("qa-domain-participants");
     expect(screen.queryByTestId("section-ai-extract-et-1")).not.toBeInTheDocument();
@@ -662,5 +681,90 @@ describe("QualityAssessmentFullScreen — finalized (published, read-only)", () 
     await waitFor(() => expect(within(domain).getByText("Y")).toBeInTheDocument());
     const trigger = within(domain).getByText("Y").closest("button");
     expect(trigger).toBeDisabled();
+  });
+});
+
+describe("QualityAssessmentFullScreen — header suggestion locate", () => {
+  // Self-contained fixture (the finalized describe's restoreAllMocks wipes
+  // the factory apiClient implementation for everything after it).
+  beforeEach(() => {
+    mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
+    vi.mocked(apiClient).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/hitl/sessions") {
+        return {
+          run_id: "run-1",
+          kind: "quality_assessment",
+          project_template_id: "tpl-1",
+          instances_by_entity_type: { "et-1": "inst-1" },
+        };
+      }
+      if (url === "/api/v1/runs/run-1/view") {
+        return {
+          run: {
+            id: "run-1",
+            project_id: "p1",
+            article_id: "a1",
+            template_id: "tpl-1",
+            kind: "quality_assessment",
+            version_id: "v-1",
+            stage: "extract",
+            status: "running",
+            hitl_config_snapshot: {},
+            parameters: {},
+            results: {},
+            created_at: new Date().toISOString(),
+            created_by: "u-1",
+          },
+          proposals: [],
+          decisions: [],
+          consensus_decisions: [],
+          published_states: [],
+          entity_types: [],
+          current_values: [],
+        };
+      }
+      if (url.includes("/suggestions") && !url.includes("history")) {
+        // One pending AI suggestion for inst-1/f-1 (no status → pending).
+        return {
+          suggestions: [
+            {
+              id: "sug-1",
+              run_id: "run-1",
+              instance_id: "inst-1",
+              field_id: "f-1",
+              proposed_value: { value: "Y" },
+              confidence_score: 0.9,
+              rationale: "",
+              created_at: new Date().toISOString(),
+              evidence: [],
+            },
+          ],
+          count: 1,
+        };
+      }
+      if (url.includes("/files") || url.includes("/text-blocks")) {
+        return [];
+      }
+      return {};
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("Review-pending menu item scrolls to the domain of the first pending suggestion", async () => {
+    const { scrollToSectionById } = await import("@/lib/runs/suggestionLocate");
+    vi.mocked(scrollToSectionById).mockClear();
+
+    renderPage();
+    const trigger = await screen.findByTestId("run-ai-actions");
+    await waitFor(() => expect(trigger).toHaveTextContent("1"));
+    await userEvent.click(trigger);
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /review 1 pending/i }),
+    );
+    // inst-1 belongs to et-1 (session.instancesByEntityType reverse lookup).
+    expect(vi.mocked(scrollToSectionById)).toHaveBeenCalledWith("et-1");
   });
 });

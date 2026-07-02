@@ -22,8 +22,12 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: { auth: { getSession: () => Promise.resolve({ data: { session: null }, error: null }) } },
 }));
 
+// cmdk highlights the active command item via scrollIntoView, which jsdom
+// does not implement — stub it so the ⌘K palette can open under test.
+Element.prototype.scrollIntoView = vi.fn();
+
 const base = {
-  projectId: 'p', projectName: 'P', articleTitle: 'A', onBack: vi.fn(),
+  articleTitle: 'A', onBack: vi.fn(),
   articles: [{ id: 'art-1', title: 'A' }], currentArticleId: 'art-1', onNavigateToArticle: vi.fn(),
   completedFields: 0, totalFields: 0, completionPercentage: 0,
   showPDF: false, onTogglePDF: vi.fn(), viewMode: 'extract' as const, onViewModeChange: vi.fn(),
@@ -55,10 +59,17 @@ describe('ExtractionHeader (post legacy-cascade)', () => {
     expect(screen.getByRole('button', { name: /notifications/i })).toBeInTheDocument();
   });
 
-  // TDD: Task 9 — re-skin onto RunHeader compound
-  it('renders a StageRail navigation landmark', () => {
+  // The RunStatus chip is the canonical marker that the RunHeader is mounted.
+  it('renders the RunStatus chip when a stage is provided', () => {
     render(<MemoryRouter><ExtractionHeader {...base} stage="extract" /></MemoryRouter>);
-    expect(screen.getByRole('navigation', { name: 'Run stage' })).toBeInTheDocument();
+    expect(screen.getByTestId('run-stage-current')).toBeInTheDocument();
+  });
+
+  it('⌘K palette exposes "View run status" and it opens the status popover', async () => {
+    render(<MemoryRouter><ExtractionHeader {...base} stage="extract" /></MemoryRouter>);
+    await userEvent.keyboard('{Meta>}k{/Meta}');
+    await userEvent.click(await screen.findByText('View run status'));
+    expect(await screen.findByTestId('run-status-popover')).toBeInTheDocument();
   });
 
   it('primary button label has no parenthetical like "(advance to consensus)"', () => {
@@ -72,14 +83,14 @@ describe('ExtractionHeader (post legacy-cascade)', () => {
           totalFields={5}
           transition={{
             to: 'consensus',
-            label: 'Mark ready',
+            label: 'Finish extraction',
             gate: { ok: true },
             onAdvance: vi.fn(),
           }}
         />
       </MemoryRouter>,
     );
-    const btn = screen.getByRole('button', { name: /mark ready/i });
+    const btn = screen.getByRole('button', { name: /finish extraction/i });
     expect(btn.textContent).not.toMatch(/\(.*\)/);
   });
 

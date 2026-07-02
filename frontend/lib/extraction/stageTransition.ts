@@ -68,8 +68,8 @@ export function buildExtractionTransition(args: BuildTransitionArgs): StageTrans
     if (canResolveConflicts) {
       return {
         to: 'consensus',
-        label: t('extraction', 'runHeaderOpenConsensus'),
-        tooltip: t('extraction', 'runHeaderOpenConsensusTooltip'),
+        label: t('extraction', 'runHeaderStartConsensus'),
+        tooltip: t('extraction', 'runHeaderStartConsensusTooltip'),
         gate: { ok: true },
         onAdvance: onOpenConsensus,
       };
@@ -78,8 +78,8 @@ export function buildExtractionTransition(args: BuildTransitionArgs): StageTrans
     // reviewer's own completeness. The label reflects the current ready state.
     return makeTransition(
       'consensus', // display target node only; onMarkReady does not advance
-      isReady ? t('extraction', 'runHeaderMarkedReady') : t('extraction', 'runHeaderMarkReady'),
-      t('extraction', 'runHeaderMarkReadyTooltip'),
+      isReady ? t('extraction', 'runHeaderExtractionFinished') : t('extraction', 'runHeaderFinishExtraction'),
+      t('extraction', 'runHeaderFinishExtractionTooltip'),
       isComplete,
       completed,
       total,

@@ -175,6 +175,7 @@ export function QASectionAccordion({
       collapsible
       defaultValue={defaultOpen ? itemValue : undefined}
       data-testid={`qa-domain-${entityType.name}`}
+      data-section-id={entityType.id}
     >
       <AccordionItem
         value={itemValue}

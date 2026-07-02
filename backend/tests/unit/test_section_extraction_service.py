@@ -277,7 +277,7 @@ class TestSectionExtractionFullFlow:
         # The run lifecycle gets exactly one stage advance: pending → extract.
         # The run STAYS in EXTRACT after AI proposing so ``useExtractedValues``
         # can hydrate from ``runDetail.proposals`` and show the values in the
-        # form. The user advances to CONSENSUS explicitly via "Open consensus".
+        # form. The user advances to CONSENSUS explicitly via "Start consensus".
         # Auto-advancing here skipped the extract-stage hydration and left
         # the form blank until F5 (#bug: AI extraction values not appearing).
         from app.models.extraction import ExtractionRunStage

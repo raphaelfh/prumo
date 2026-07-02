@@ -14,10 +14,7 @@ describe('RunHeader.Breadcrumb', () => {
     render(
       <RunHeader value={base}>
         <RunHeader.Left>
-          <RunHeader.Breadcrumb
-            onBack={onBack}
-            crumbs={[{ label: 'Projects' }, { label: 'My Run' }]}
-          />
+          <RunHeader.Breadcrumb onBack={onBack} title="My Run" />
         </RunHeader.Left>
       </RunHeader>,
     );
@@ -27,74 +24,29 @@ describe('RunHeader.Breadcrumb', () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
-  it('renders all crumb labels', () => {
+  it('renders only the title — no crumb list, no project crumb', () => {
     render(
       <RunHeader value={base}>
         <RunHeader.Left>
-          <RunHeader.Breadcrumb
-            onBack={vi.fn()}
-            crumbs={[{ label: 'Projects' }, { label: 'Alpha Study' }, { label: 'My Run' }]}
-          />
+          <RunHeader.Breadcrumb onBack={vi.fn()} title="My Run" />
         </RunHeader.Left>
       </RunHeader>,
     );
-    expect(screen.getByText('Projects')).toBeInTheDocument();
-    expect(screen.getByText('Alpha Study')).toBeInTheDocument();
     expect(screen.getByText('My Run')).toBeInTheDocument();
+    expect(screen.queryByRole('list')).toBeNull();
   });
 
-  it('truncates every crumb so a non-final crumb cannot overflow into the next', () => {
-    // Non-final crumbs must also truncate (min-w-0 + truncate): a whitespace-nowrap
-    // crumb overflows its shrunk <li> at narrow widths and paints over the next
-    // crumb. Both the final title and the non-final crumbs carry the truncate class.
+  it('renders a long title verbatim, wrapped for truncation', () => {
     render(
       <RunHeader value={base}>
         <RunHeader.Left>
-          <RunHeader.Breadcrumb
-            onBack={vi.fn()}
-            crumbs={[{ label: 'Projects' }, { label: 'My Run' }]}
-          />
+          <RunHeader.Breadcrumb onBack={vi.fn()} title="A very long article title that should truncate" />
         </RunHeader.Left>
       </RunHeader>,
     );
-    expect(screen.getByText('My Run').className).toMatch(/truncate/);
-    expect(screen.getByText('Projects').className).toMatch(/truncate/);
-  });
-
-  it('renders clickable crumbs as buttons and non-clickable as spans', async () => {
-    const onClick = vi.fn();
-    render(
-      <RunHeader value={base}>
-        <RunHeader.Left>
-          <RunHeader.Breadcrumb
-            onBack={vi.fn()}
-            crumbs={[{ label: 'Projects', onClick }, { label: 'My Run' }]}
-          />
-        </RunHeader.Left>
-      </RunHeader>,
-    );
-    const projectsBtn = screen.getByRole('button', { name: 'Projects' });
-    expect(projectsBtn).toBeInTheDocument();
-    await userEvent.click(projectsBtn);
-    expect(onClick).toHaveBeenCalledOnce();
-    // last crumb has no onClick → not a button
-    expect(screen.queryByRole('button', { name: 'My Run' })).toBeNull();
-  });
-
-  it('renders a long last-crumb title verbatim (wrapped for truncation)', () => {
-    render(
-      <RunHeader value={base}>
-        <RunHeader.Left>
-          <RunHeader.Breadcrumb
-            onBack={vi.fn()}
-            crumbs={[{ label: 'Projects' }, { label: 'A very long article title that should truncate' }]}
-          />
-        </RunHeader.Left>
-      </RunHeader>,
-    );
-    const last = screen.getByText('A very long article title that should truncate');
-    expect(last).toBeInTheDocument();
-    expect(last.className).toMatch(/truncate/);
+    const title = screen.getByText('A very long article title that should truncate');
+    expect(title).toBeInTheDocument();
+    expect(title.className).toMatch(/truncate/);
   });
 });
 

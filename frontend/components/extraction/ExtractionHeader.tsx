@@ -1,16 +1,14 @@
 /**
- * Extraction interface header — re-skinned onto the shared RunHeader compound.
+ * Extraction interface header — composed from the shared RunHeader compound.
  *
- * The ExtractionHeaderProps interface is kept stable (additive changes only) so
- * callers do not need to change. New optional props enable RunHeader features:
- * stage/transition/isRevision for the StageRail, reviewers for the Reviewers
- * slot, AI props for AIActions, and reopen affordance via the Menu.
+ * stage/transition/isRevision/reviewers feed the RunStatus cluster (stage
+ * chip + avatars + status popover), AI props feed the AIActions menu, and the
+ * reopen affordance lives in the Menu + command palette.
  *
  * @component
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { type UserRole } from '@/lib/comparison/permissions';
 import { RunHeader, type RunHeaderValue, type StageTransition } from '@/components/runs/header';
 // Utility is imported directly (not via the RunHeader compound): it pulls in the
@@ -29,9 +27,8 @@ interface Article {
 }
 
 export interface ExtractionHeaderProps {
-  // Navigation
-  projectId: string;
-  projectName: string;
+  // Navigation — the article title is the single identity text; project
+  // context lives in the sidebar and behind onBack (spec 2026-07-02).
   articleTitle: string;
   onBack: () => void;
 
@@ -68,8 +65,8 @@ export interface ExtractionHeaderProps {
   hasUnsavedChanges?: boolean;
   isComplete: boolean;
   /** @deprecated Legacy header finalize path; the primary action now flows
-   * through `transition` (Mark ready / Open consensus / Approve & finalize).
-   * Optional + unused; full removal is HITL Phase 3. */
+   * through `transition` (Finish extraction / Start consensus / Approve &
+   * finalize). Optional + unused; full removal is HITL Phase 3. */
   onFinalize?: () => void;
   /** @deprecated Pass transition instead; kept for backward compat. */
   finalizeLabel?: string;
@@ -95,7 +92,7 @@ export interface ExtractionHeaderProps {
 
   // ---- NEW optional RunHeader features ----
 
-  /** Current run stage. When provided, a StageRail is shown. */
+  /** Current run stage. When provided, the RunStatus cluster is shown. */
   stage?: ExtractionRunStage;
 
   /** Pre-built stage transition from buildExtractionTransition(). */
@@ -130,9 +127,7 @@ export interface ExtractionHeaderProps {
 // =================== COMPONENT ===================
 
 export function ExtractionHeader(props: ExtractionHeaderProps) {
-  const navigate = useNavigate();
   const {
-    projectName,
     articleTitle,
     onBack,
     sidebarCollapsed,
@@ -170,8 +165,10 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     reopening = false,
   } = props;
 
-  // ---- Cmd-K palette state ----
+  // ---- Cmd-K palette + status-popover state (palette's "View run status"
+  // action drives the controlled RunStatus) ----
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
 
   // Header keyboard shortcuts (documented in the "?" Help panel). The changing
   // callbacks/lists live in a ref so the listener registers ONCE (empty deps)
@@ -253,6 +250,13 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
       run: () => onReveal(),
     });
   }
+  if (stage != null) {
+    paletteActions.push({
+      id: 'status',
+      label: t('runs', 'viewRunStatus'),
+      run: () => setStatusOpen(true),
+    });
+  }
   const headerValue: RunHeaderValue = {
     kind: 'extraction',
     stage,
@@ -276,13 +280,12 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
           <RunHeader.Left>
             <RunHeader.MobileNav onOpen={onOpenMobileNav} />
             <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={onToggleSidebar} />
-            <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName, onClick: () => navigate(`/projects/${props.projectId}`) }, { label: articleTitle }]} />
+            <RunHeader.Breadcrumb onBack={onBack} title={articleTitle} />
             <RunHeader.Save
               state={saveState ?? 'idle'}
               lastSavedAt={lastSavedAt}
               hidden={stage === 'finalized'}
             />
-            {stage != null && <RunHeader.StageRail />}
           </RunHeader.Left>
 
           {/* The ‹N/M› pager is the highest-priority navigation, so it lives in
@@ -298,8 +301,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
           )}
 
           <RunHeader.Center>
-            <RunHeader.Reviewers />
-            <RunHeader.RoleChip />
+            {stage != null && <RunHeader.RunStatus open={statusOpen} onOpenChange={setStatusOpen} />}
           </RunHeader.Center>
 
           <RunHeader.Right>
