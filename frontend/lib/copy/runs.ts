@@ -5,31 +5,46 @@
  * so that QA and other consumers can adopt the same header library.
  */
 export const runs = {
-  // StageRail (3 user-facing nodes: Extract → Consensus → Finalized).
+  // Stage vocabulary (RunStatus chip + status-popover timeline).
   revision: 'Revision',
-  stageExtract: 'Extract',
+  stageExtract: 'Extraction',
+  stageAssessment: 'Assessment',
   stageConsensus: 'Consensus',
   stageFinalized: 'Finalized',
+  stagePending: 'Pending',
+  stageCancelled: 'Cancelled',
   stageExtractTooltip: 'Fill the form and review AI suggestions for this article.',
   stageConsensusTooltip: 'Reconcile reviewer values into one agreed answer.',
   stageFinalizedTooltip: 'Locked and published — reopen to make changes.',
-  // StageRail per-node STATE, appended to each node's accessible name so the
+  // Timeline per-node STATE, appended to each node's accessible name so the
   // state a sighted user reads from the icon is also announced to assistive tech.
   stageStateDone: 'completed',
   stageStateCurrent: 'current step',
   stageStateUpcoming: 'upcoming',
   stageStateLocked: 'locked',
   stageStateCancelled: 'cancelled',
+  // Status-popover timeline explainers — two voices (reviewer vs arbitrator).
+  stageExplainExtract: 'Fill in your answers independently; other reviewers stay hidden.',
+  stageExplainExtractArbiter: 'Reviewers work independently; start consensus when they are ready.',
+  stageExplainConsensus: 'The manager reconciles differences and approves.',
+  stageExplainConsensusArbiter: 'Resolve divergences, then approve and publish.',
+  stageExplainFinalized: 'Published values, read-only — reopen to edit.',
+  // RunStatus chip + popover chrome
+  runStatusLabel: 'Run status',
+  runStatusChipLabel: 'Run status: {{stage}}',
+  statusRequiredFields: '{{done}} of {{total}} required fields',
+  statusViewDivergence: 'View',
+  statusYouReviewAs: 'You review as {{role}}',
+  statusRevisionNote: 'This run is a revision of a published version.',
   // PrimaryAction
   requiredOfTotal: '{{done}} of {{total}} required',
   // Transition label (QA's buildQaTransition uses this shared key)
   finalize: 'Finalize',
-  gateBlocked: 'Complete the required fields first',
   // Reviewers
   reviewersDiffer: '{{count}} differ',
   reviewersReadyHint: '{{ready}}/{{total}} ready',
   reviewersOfExpected: '{{count}} of {{required}} reviewers',
-  // RoleChip
+  // Status popover (role / blind reveal)
   blindSuffix: 'blind',
   revealedSuffix: 'revealed',
   reveal: 'Reveal reviewers',
@@ -42,9 +57,11 @@ export const runs = {
   saveFailed: 'Save failed',
   // Menu
   more: 'More options',
-  // AIActions
+  // AIActions (single menu button)
   extractWithAI: 'Extract with AI',
   extractingWithAI: 'Extracting with AI…',
+  aiActionsLabel: 'AI actions',
+  reviewPendingSuggestions: 'Review {{n}} pending suggestions',
   // Navigation
   articlePrevious: 'Previous article',
   articleNext: 'Next article',
@@ -61,6 +78,7 @@ export const runs = {
   commandGoToArticle: 'Go to article…',
   keyboardShortcuts: 'Keyboard shortcuts',
   commandPaletteOpen: 'Open command palette',
+  viewRunStatus: 'View run status',
   // SidebarToggle (left, mirrors PanelToggle)
   sidebarToggle: 'Toggle navigation',
   // Phone focus-mode hamburger — opens the project navigation drawer.
@@ -75,7 +93,8 @@ export const runs = {
   shortcutTogglePdf: 'Toggle source panel',
   shortcutSidebar: 'Toggle navigation',
   shortcutEsc: 'Close dialogs',
-  glossaryExtract: 'Extract — fill the form and review AI suggestions.',
+  glossaryExtract: 'Extraction — fill the form and review AI suggestions.',
+  glossaryAssessment: 'Assessment — answer the signaling questions and review AI suggestions.',
   glossaryConsensus: 'Consensus — reconcile diverging reviewer values.',
   glossaryFinalize: 'Finalize — lock and publish the agreed values.',
   glossaryBlind: 'Blind — you cannot see other reviewers’ values.',
