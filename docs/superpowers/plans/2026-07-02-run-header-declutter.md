@@ -56,6 +56,8 @@ Playwright e2e, in-house copy lib (`t('ns','key')`).
 - Modify: `frontend/lib/copy/runs.ts`
 - Modify: `frontend/lib/copy/extraction.ts` (RunHeader block, lines ~546-560)
 - Modify: `frontend/lib/extraction/stageTransition.ts`
+- Modify: `frontend/components/runs/header/Help.tsx` (kind-aware glossary)
+- Modify: `frontend/components/runs/header/__tests__/Help.test.tsx`
 - Modify: `frontend/test/copyRuns.test.ts`
 - Modify: `frontend/test/stageTransition.test.ts`
 
@@ -163,18 +165,21 @@ RunStatus/AI keys. Final shape of the touched regions:
   requiredOfTotal: '{{done}} of {{total}} required',
 ```
 
-(keep `finalize`, `gateBlocked`, `reviewersDiffer`, `reviewersReadyHint`,
-`reviewersOfExpected`, `blindSuffix`, `revealedSuffix`, `reveal`,
-`blindExplainer` unchanged — the popover reuses them; delete the now-dead
-`stageExtractTooltip`/`stageConsensusTooltip`/`stageFinalizedTooltip` keys —
-the explainers replace them).
+(keep `finalize`, `reviewersDiffer`, `reviewersReadyHint`,
+`reviewersOfExpected`, `blindSuffix`, `revealedSuffix`, `reveal`, and
+`blindExplainer` — the popover consumes them all; `blindExplainer` becomes
+the blind role-row explainer line. DELETE `gateBlocked` — zero consumers
+today; the gated tooltip uses `transition.gate.reason`, which extraction
+resolves from its own `runHeaderGateBlocked`. Do NOT delete the three
+`stage*Tooltip` keys yet — `StageRail.tsx` still references them in a typed
+Record until Task 7 deletes it; Task 7 prunes those keys in the same commit
+so every intermediate commit stays `tsc`-green. Rename the `// RoleChip`
+section comment to `// Status popover (role / blind reveal)`.)
 
-In the AIActions block add:
+In the AIActions block, KEEP the existing `extractWithAI` /
+`extractingWithAI` keys (do not duplicate them — TS1117) and add:
 
 ```ts
-  // AIActions (single menu button)
-  extractWithAI: 'Extract with AI',
-  extractingWithAI: 'Extracting with AI…',
   aiActionsLabel: 'AI actions',
   reviewPendingSuggestions: 'Review {{n}} pending suggestions',
 ```
@@ -229,7 +234,10 @@ that maps the GLOSSARY keys, pick the extract entry by kind:
 
 and map over `glossaryKeys` instead of `GLOSSARY`. Extend the union type on
 the GLOSSARY constant with `'glossaryAssessment'`. Update
-`__tests__/Help.test.tsx` if it snapshots the glossary text (mechanical).
+`__tests__/Help.test.tsx`: keep the extraction-kind glossary assertion and
+ADD a QA-kind case — render the Help body under a RunHeader value with
+`kind: 'qa'` and assert the Assessment glossary entry renders while the
+Extraction one does not.
 
 - [ ] **Step 5: Update `frontend/lib/extraction/stageTransition.ts` key references**
 
@@ -254,7 +262,7 @@ their own tasks; do NOT run the full suite yet.)
 - [ ] **Step 7: Commit**
 
 ```bash
-git add frontend/lib/copy/runs.ts frontend/lib/copy/extraction.ts frontend/lib/extraction/stageTransition.ts frontend/test/copyRuns.test.ts frontend/test/stageTransition.test.ts
+git add frontend/lib/copy/runs.ts frontend/lib/copy/extraction.ts frontend/lib/extraction/stageTransition.ts frontend/components/runs/header/Help.tsx frontend/components/runs/header/__tests__/Help.test.tsx frontend/test/copyRuns.test.ts frontend/test/stageTransition.test.ts
 git commit -m "feat(runs): stage/action terminology — Finish extraction, Start consensus, Extraction/Assessment + status-popover copy"
 ```
 
@@ -293,7 +301,7 @@ describe('chipState', () => {
 describe('stageNodeStates pending', () => {
   it('renders no current node for pending/null (run not editable yet)', () => {
     for (const s of ['pending', null] as const) {
-      const nodes = stageNodeStates(s as never);
+      const nodes = stageNodeStates(s);
       expect(nodes.every((n) => n.state === 'future')).toBe(true);
     }
   });
@@ -485,12 +493,24 @@ describe('RunStatus popover', () => {
     renderStatus({ reviewers: { count: 0, required: 0, divergent: 0 } });
     expect(screen.queryByTestId('run-status-reviewers')).toBeNull();
   });
-  it('blind reveal lives in the popover when canReveal', async () => {
+  it('blind reveal + explainer live in the popover when canReveal', async () => {
     const onReveal = vi.fn();
     renderStatus({ role: 'manager', isBlind: true, canReveal: true, onReveal });
     await userEvent.click(screen.getByTestId('run-stage-current'));
+    expect(await screen.findByTestId('run-status-popover')).toHaveTextContent('blindExplainer');
     await userEvent.click(await screen.findByRole('button', { name: 'reveal' }));
     expect(onReveal).toHaveBeenCalledOnce();
+  });
+  it('controlled mode: open prop drives visibility, changes route through onOpenChange', async () => {
+    const onOpenChange = vi.fn();
+    render(
+      <RunHeader value={base}>
+        <RunHeader.Center><RunHeader.RunStatus open onOpenChange={onOpenChange} /></RunHeader.Center>
+      </RunHeader>,
+    );
+    expect(await screen.findByTestId('run-status-popover')).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
   it('revision note renders when isRevision', async () => {
     renderStatus({ isRevision: true });
@@ -519,6 +539,7 @@ and render it inside `<RunHeader …>` children — adjust the test to
 import { useState } from 'react';
 import { ChevronDown, Circle, CircleCheck, GitFork, ListChecks, Lock, UserRound } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/copy';
@@ -543,11 +564,11 @@ const CHIP_COPY: Record<ChipState, 'stagePending' | 'stageExtract' | 'stageAsses
   cancelled: 'stageCancelled',
 };
 
-const NODE_COPY: Record<StageKey, 'stageExtract' | 'stageConsensus' | 'stageFinalized'> = {
-  extract: 'stageExtract',
-  consensus: 'stageConsensus',
-  finalized: 'stageFinalized',
-};
+/** Kind-aware stage label key — QA calls the extract stage "Assessment".
+ *  StageKey ⊂ ChipState, so one lookup serves the chip AND the timeline. */
+function labelKeyFor(key: StageKey | ChipState, kind: string) {
+  return key === 'extract' && kind === 'qa' ? ('stageAssessment' as const) : CHIP_COPY[key as ChipState];
+}
 
 const STATE_COPY: Record<StageNode['state'], 'stageStateDone' | 'stageStateCurrent' | 'stageStateUpcoming' | 'stageStateCancelled'> = {
   done: 'stageStateDone',
@@ -566,16 +587,14 @@ function NodeIcon({ node }: { node: StageNode }) {
 export function RunStatus({ open, onOpenChange }: { open?: boolean; onOpenChange?: (o: boolean) => void }) {
   const { kind, stage, isRevision, role, isBlind, canReveal, onReveal, progress, reviewers, onJumpToDivergence } = useRunHeader();
   const [uncontrolled, setUncontrolled] = useState(false);
-  const isControlled = open !== undefined;
-  const actualOpen = isControlled ? open : uncontrolled;
+  const actualOpen = open ?? uncontrolled;
   const setOpen = (o: boolean) => {
     onOpenChange?.(o);
-    if (!isControlled) setUncontrolled(o);
+    if (open === undefined) setUncontrolled(o);
   };
 
   const cs = chipState(stage);
-  const chipKey = cs === 'extract' && kind === 'qa' ? 'stageAssessment' : CHIP_COPY[cs];
-  const chipLabel = t('runs', chipKey);
+  const chipLabel = t('runs', labelKeyFor(cs, kind));
   const isArbiter = role === 'manager' || role === 'consensus';
   const nodes = stageNodeStates(stage);
   const showAvatars = reviewers.count > 0;
@@ -608,10 +627,14 @@ export function RunStatus({ open, onOpenChange }: { open?: boolean; onOpenChange
           </Button>
         </PopoverTrigger>
         {showAvatars && (
+          <Tooltip>
+            <TooltipTrigger asChild>
           <button
             type="button"
             onClick={() => setOpen(true)}
             aria-label={`${reviewersLabel} — ${t('runs', 'runStatusLabel')}`}
+            aria-haspopup="dialog"
+            aria-expanded={actualOpen}
             data-testid="run-status-reviewers"
             className="relative hidden shrink-0 items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring @[48rem]/headerbar:flex"
           >
@@ -627,6 +650,9 @@ export function RunStatus({ open, onOpenChange }: { open?: boolean; onOpenChange
               <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-warning" data-testid="run-status-divergent" aria-hidden="true" />
             )}
           </button>
+            </TooltipTrigger>
+            <TooltipContent>{reviewersLabel}</TooltipContent>
+          </Tooltip>
         )}
       </div>
       <PopoverContent align="start" className="w-72 p-0 text-[13px]" aria-label={t('runs', 'runStatusLabel')} data-testid="run-status-popover">
@@ -638,7 +664,7 @@ export function RunStatus({ open, onOpenChange }: { open?: boolean; onOpenChange
               </span>
               <span className="min-w-0">
                 <span className={cn('font-medium', node.state === 'current' ? 'text-foreground' : 'text-muted-foreground')}>
-                  {t('runs', node.key === 'extract' && kind === 'qa' ? 'stageAssessment' : NODE_COPY[node.key])}
+                  {t('runs', labelKeyFor(node.key, kind))}
                 </span>
                 <span className="sr-only">
                   {', '}
@@ -705,6 +731,9 @@ export function RunStatus({ open, onOpenChange }: { open?: boolean; onOpenChange
                 </Button>
               )}
             </div>
+          )}
+          {role && isBlind && (
+            <div className="text-xs">{t('runs', 'blindExplainer')}</div>
           )}
           {isRevision && (
             <div className="text-xs">{t('runs', 'statusRevisionNote')}</div>
@@ -926,8 +955,8 @@ git commit -m "feat(runs): single AI actions menu — Sparkles trigger + named i
     const helper = screen.getByText('requiredOfTotal');
     expect(helper).toHaveClass('sr-only');
     btn.focus();
-    const tip = await screen.findAllByText('requiredOfTotal');
-    expect(tip.length).toBeGreaterThan(1); // helper + tooltip copy
+    const tip = await screen.findAllByText(/requiredOfTotal/);
+    expect(tip.length).toBeGreaterThan(1); // sr-only helper + tooltip "reason — count"
     await userEvent.click(btn);
     expect(onAdvance).toHaveBeenCalledOnce();
   });
@@ -939,11 +968,12 @@ git commit -m "feat(runs): single AI actions menu — Sparkles trigger + named i
 - [ ] **Step 3: Implement** — in `PrimaryAction.tsx`:
   - helper span className becomes exactly `"sr-only"` (drop the
     `@[52rem]` reveal classes).
-  - tooltip selection: `const tooltipText = gated ? helper : transition.tooltip;`
-    and render the `Tooltip` wrapper whenever `tooltipText` is non-null:
+  - tooltip selection — the gated tooltip carries the REASON and the count
+    (spec §6); `gate.reason` arrives already copy-resolved from the
+    transition builders:
 
 ```tsx
-  const tooltipText = gated ? helper : (transition.tooltip ?? null);
+  const tooltipText = gated ? `${transition.gate.reason} — ${helper}` : (transition.tooltip ?? null);
   return (
     <div className="flex items-center gap-2">
       {helper && <span id={helperId} className="sr-only">{helper}</span>}
@@ -1079,12 +1109,22 @@ git rm frontend/components/runs/header/StageRail.tsx frontend/components/runs/he
 git rm frontend/components/runs/header/__tests__/StageRail.test.tsx frontend/components/runs/header/__tests__/Reviewers.test.tsx frontend/components/runs/header/__tests__/RoleChip.test.tsx
 ```
 
-- [ ] **Step 3: Repair compound-level tests** — grep and update:
+- [ ] **Step 3: Repair compound-level tests + prune the tooltip keys** —
+grep and update:
 
-Run: `rg -n "StageRail|Reviewers|RoleChip" frontend/components/runs/header frontend/test`
-Every hit inside `__tests__/RunHeader*.test.tsx` / `_headerTestUtils.tsx`
-switches to `<RunHeader.RunStatus />` (or is dropped when it asserted deleted
-behavior). Flip `RunStatus.test.tsx` to compound imports.
+Run: `rg -n "StageRail|Reviewers|RoleChip" frontend/components/runs/header frontend/test frontend/e2e`
+Directives per hit class:
+  - `__tests__/RunHeader*.test.tsx` / `_headerTestUtils.tsx` (incl. its
+    lines ~19-20 comments): switch to `<RunHeader.RunStatus />` or drop the
+    assertion of deleted behavior.
+  - `useHeaderCompact.ts:11` doc comment: reword (the hook survives —
+    Utility still consumes it).
+  - `frontend/test/extractionReveal.test.tsx` and the e2e comment hits are
+    owned by Tasks 9/11 — leave for those tasks.
+  - Flip `RunStatus.test.tsx` to compound imports.
+  - NOW delete `stageExtractTooltip` / `stageConsensusTooltip` /
+    `stageFinalizedTooltip` from `frontend/lib/copy/runs.ts` (their last
+    consumer, StageRail, is gone in this commit).
 
 - [ ] **Step 4: Run the header suite**
 
@@ -1094,7 +1134,7 @@ Expected: PASS, zero references to deleted files.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -A frontend/components/runs/header
+git add -A frontend/components/runs/header frontend/lib/copy/runs.ts
 git commit -m "feat(runs): RunStatus replaces StageRail/Reviewers/RoleChip in the compound (atomic swap)"
 ```
 
@@ -1105,11 +1145,10 @@ git commit -m "feat(runs): RunStatus replaces StageRail/Reviewers/RoleChip in th
 **Files:**
 - Create: `frontend/lib/runs/suggestionLocate.ts`
 - Test: `frontend/test/lib/suggestionLocate.test.ts`
-- Modify: `frontend/components/extraction/ExtractionFormView.tsx` (add
-  `data-section-id` on the registered section wrappers, lines ~108 and ~138)
 - Modify: `frontend/components/assessment/QASectionAccordion.tsx` (add
-  `data-section-id={domain.entityType.id}` on the root that carries
-  `data-testid={\`qa-domain-...\`}`, line ~177)
+  `data-section-id={entityType.id}` on the root that carries
+  `data-testid={\`qa-domain-...\`}`, line ~177 — the in-scope variable there
+  is `entityType`)
 
 **Interfaces:**
 - Produces:
@@ -1181,11 +1220,16 @@ export function scrollToSectionById(entityTypeId: string): boolean {
 }
 ```
 
-Add the anchors: in `ExtractionFormView.tsx`, on each wrapper that already
-does `ref={(el) => registerSection(entityType.id, el)}` add
-`data-section-id={entityType.id}` (both occurrences); in
-`QASectionAccordion.tsx` add `data-section-id={domain.entityType.id}`
-alongside the existing `data-testid`.
+Add the anchor ONLY on the QA side: in `QASectionAccordion.tsx` add
+`data-section-id={entityType.id}` alongside the existing `data-testid`. The
+extraction side needs NOTHING — `useActiveSection.ts:81`'s `registerSection`
+already sets `el.dataset.sectionId = id` on both ExtractionFormView
+wrappers. Rationale for the parallel DOM-query path (vs reusing
+`useActiveSection.scrollToSection`): that registry is private to
+`ExtractionFormView`, the header handler lives at page level, and QA has no
+such hook — the `[data-section-id]` query is the minimal shared mechanism
+(the nav-rail active highlight catches up when its IntersectionObserver
+fires).
 
 - [ ] **Step 4: Run to verify pass**
   `npx vitest run frontend/test/lib/suggestionLocate.test.ts`
@@ -1205,6 +1249,8 @@ git commit -m "feat(runs): suggestion-locate helper + section anchors for the he
 - Modify: `frontend/components/extraction/ExtractionHeader.tsx`
 - Modify: `frontend/pages/ExtractionFullScreen.tsx`
 - Modify: `frontend/components/extraction/__tests__/ExtractionHeader.exports.test.tsx`
+- Modify: `frontend/test/extractionReveal.test.tsx` (reveal threading —
+  panel-review blocking find)
 
 **Interfaces:**
 - Consumes: `RunHeader.RunStatus` (Task 7), `Breadcrumb {title}` (Task 6),
@@ -1233,7 +1279,10 @@ ready' transition fixture label (line 75) becomes `'Finish extraction'`.
   - Interface: delete `projectId: string;` and `projectName: string;`; delete
     the `useNavigate` import and call (its only use was the project crumb).
   - Update the deprecated-props docstring (line 71) to name the new labels
-    (`Finish extraction / Start consensus / Approve & finalize`).
+    (`Finish extraction / Start consensus / Approve & finalize`), the
+    top-of-file docstring (line ~6, "stage/transition for the StageRail" →
+    RunStatus) and the `stage` prop doc (line ~98, "a StageRail is shown" →
+    "the RunStatus cluster is shown").
   - Left slot: `<RunHeader.Breadcrumb onBack={onBack} title={articleTitle} />`;
     remove `{stage != null && <RunHeader.StageRail />}` from Left.
   - Center slot becomes:
@@ -1270,7 +1319,7 @@ ready' transition fixture label (line 75) becomes `'Finish extraction'`.
         onAISuggestionsClick={() => {
           const instanceId = firstPendingInstanceId(aiSuggestions);
           const entityTypeId = instanceId
-            ? instances.find((i) => i.id === instanceId)?.entityTypeId
+            ? instances.find((i) => i.id === instanceId)?.entity_type_id
             : undefined;
           if (entityTypeId) scrollToSectionById(entityTypeId);
         }}
@@ -1281,9 +1330,26 @@ ready' transition fixture label (line 75) becomes `'Finish extraction'`.
     "Finish extraction", "Open consensus" → "Start consensus" (behavior
     untouched).
 
+- [ ] **Step 4c: Re-target `frontend/test/extractionReveal.test.tsx`** — the
+  header-level describe drives the OLD RoleChip and passes the deleted
+  `projectId`/`projectName` props. Drop both props from its
+  `baseHeaderProps`, pass `stage="extract"`, and rewrite the reveal flow to
+  the new path: click `screen.getByTestId('run-stage-current')` → click the
+  popover's `getByRole('button', { name: /reveal/i })` → assert `onReveal`
+  fired. This keeps the ExtractionHeader→context→popover reveal THREADING
+  covered (Task 3 covers only the leaf). The page-level `buildOnReveal`
+  describe stays untouched.
+
+- [ ] **Step 4d: Palette wiring test** — in
+  `ExtractionHeader.exports.test.tsx` add: render with `stage="extract"`,
+  open the palette (`await userEvent.keyboard('{Meta>}k{/Meta}')`), click
+  the "View run status" command item, and assert
+  `await screen.findByTestId('run-status-popover')` — this exercises the
+  controlled `open` branch of RunStatus end-to-end.
+
 - [ ] **Step 5: Run the touched suites**
 
-Run: `npx vitest run frontend/components/extraction/__tests__/ExtractionHeader.exports.test.tsx frontend/test/ExtractionFullScreen.readonly.test.tsx`
+Run: `npx vitest run frontend/components/extraction/__tests__/ExtractionHeader.exports.test.tsx frontend/test/ExtractionFullScreen.readonly.test.tsx frontend/test/extractionReveal.test.tsx`
 Expected: PASS (readonly tests still green — header adds no `/read-only/i` /
 `/required left/i` text; AI trigger absent on finalized because
 `pendingCount=0` and `canRunAI=false`).
@@ -1291,7 +1357,7 @@ Expected: PASS (readonly tests still green — header adds no `/read-only/i` /
 - [ ] **Step 6: Commit**
 
 ```bash
-git add frontend/components/extraction/ExtractionHeader.tsx frontend/pages/ExtractionFullScreen.tsx frontend/components/extraction/__tests__/ExtractionHeader.exports.test.tsx
+git add frontend/components/extraction/ExtractionHeader.tsx frontend/pages/ExtractionFullScreen.tsx frontend/components/extraction/__tests__/ExtractionHeader.exports.test.tsx frontend/test/extractionReveal.test.tsx
 git commit -m "feat(extraction): header slots — RunStatus swap, title-only breadcrumb, real suggestion locate, View-run-status palette"
 ```
 
@@ -1325,9 +1391,21 @@ git commit -m "feat(extraction): header slots — RunStatus swap, title-only bre
     const item = await screen.findByRole('menuitem', { name: /extract with ai/i });
 ```
 
-  (the click-posts test clicks the menuitem instead of the old button; the
-  finalized block's `queryByRole('button', { name: /extract with ai/i })`
-  absence assertion stays valid — the whole trigger is absent.)
+  (the click-posts test clicks the menuitem instead of the old button.)
+  - Re-target the finalized AI-absence pin: with the menu, the old
+    `queryByRole('button', { name: /extract with ai/i })` is vacuously null
+    even on editable runs (the trigger's accessible name is "AI actions").
+    Replace it with
+    `expect(screen.queryByTestId('run-ai-actions')).not.toBeInTheDocument()`
+    so the #472 guard keeps pinning something real.
+  - ADD a locate test: module-mock the helper
+    (`vi.mock('@/lib/runs/suggestionLocate', …)` with `firstPendingInstanceId`
+    passing through the real implementation or returning the fixture's
+    pending instance id, and a `scrollToSectionById` spy); with a pending
+    suggestion in the MSW fixture, open the AI menu, click the review item,
+    and assert `scrollToSectionById` was called with that domain's
+    entityType id — this covers the non-obvious
+    `session.instancesByEntityType` reverse lookup.
 
 - [ ] **Step 2: Run to verify fail**
   `npx vitest run frontend/test/QualityAssessmentFullScreen.test.tsx`
@@ -1368,7 +1446,11 @@ git commit -m "feat(qa): header slots — RunStatus swap, title-only breadcrumb,
 ### Task 11: E2E selector updates
 
 **Files:**
-- Modify: `frontend/e2e/flows/extraction-reopen.ui.e2e.ts` (lines ~184-189)
+- Modify: `frontend/e2e/flows/extraction-reopen.ui.e2e.ts` (lines ~160,
+  ~184-189)
+- Modify: `frontend/e2e/flows/qa-reopen.ui.e2e.ts` (lines ~211-218 —
+  panel-review blocking find)
+- Modify: `frontend/e2e/flows/qa-flow.ui.e2e.ts` (line ~165, comment only)
 
 **Interfaces:** none (assertion-only).
 
@@ -1384,12 +1466,26 @@ git commit -m "feat(qa): header slots — RunStatus swap, title-only breadcrumb,
     });
 ```
 
+- [ ] **Step 1b: Re-target the QA reopen assertion** —
+  `qa-reopen.ui.e2e.ts:211-218` asserts
+  `getByRole("navigation", { name: /run stage/i })` contains `/revision/i` —
+  a role+name selector on the deleted StageRail nav (NOT a testid; it
+  breaks). Mirror the extraction twin:
+
+```ts
+    await expect(page.getByTestId("qa-revision-badge")).toBeVisible({
+      timeout: 20000,
+    });
+```
+
 - [ ] **Step 2: Verify the untouched flows still match by inspection**
   - `qa-flow.ui.e2e.ts:166-174`: `getByTestId("run-stage-current").filter({ hasText: /finalized/i })`
     — the chip keeps the testid and renders "Finalized" text at desktop
-    widths. No edit.
-  - `extraction-navigation.ui.e2e.ts`, `qa-reopen.ui.e2e.ts`,
-    `pdf-collapsed-default.ui.e2e.ts`: no header testids. No edit.
+    widths. No functional edit; reword the StageRail comment at line ~165.
+  - `extraction-reopen.ui.e2e.ts:160`: comment mentions StageRail — reword
+    to the RunStatus chip.
+  - `extraction-navigation.ui.e2e.ts`, `pdf-collapsed-default.ui.e2e.ts`:
+    no header selectors. No edit.
 
 Run: `npx tsc --noEmit -p tsconfig.json` (e2e files are type-checked; full
 Playwright runs happen at the gate/P7).
@@ -1397,8 +1493,8 @@ Playwright runs happen at the gate/P7).
 - [ ] **Step 3: Commit**
 
 ```bash
-git add frontend/e2e/flows/extraction-reopen.ui.e2e.ts
-git commit -m "test(e2e): revision assertion re-targets the published banner badge"
+git add frontend/e2e/flows/extraction-reopen.ui.e2e.ts frontend/e2e/flows/qa-reopen.ui.e2e.ts frontend/e2e/flows/qa-flow.ui.e2e.ts
+git commit -m "test(e2e): revision assertions re-target the published banner badges"
 ```
 
 ---
@@ -1444,7 +1540,14 @@ git commit -m "test(e2e): revision assertion re-targets the published banner bad
 
 - [ ] **Step 4: Backend comment touch-ups** — in the three service comments
   and one test comment, replace the quoted `"Open consensus"` with
-  `"Start consensus"` (text-only; no behavior).
+  `"Start consensus"` (text-only; no behavior). Do NOT touch
+  `backend/app/api/v1/endpoints/extraction_runs.py:319-323` — that endpoint
+  docstring is API-contract-visible (serialized into
+  `frontend/types/api/openapi.json:8430`); renaming it would require
+  `npm run generate:api-types` + committing generated files, out of scope
+  here. Likewise leave the two backend "mark ready" comment occurrences
+  alone (`extraction_reviewer_ready_service.py:31`,
+  `tests/integration/test_extraction_runs_ready_api.py:72`).
 
 - [ ] **Step 5: Verify docs-ci locally**
 
@@ -1466,7 +1569,10 @@ git commit -m "docs: run-header declutter — supersede June header specs, arch-
 - [ ] **Step 1: Full frontend suite** — `npm run test:run` → expect PASS.
 - [ ] **Step 2: Lint + types** — `npm run lint && npx tsc --noEmit` → PASS.
 - [ ] **Step 3: Dead-reference sweep** —
-  `rg -n "StageRail|RoleChip|runHeaderMarkReady|runHeaderOpenConsensus|stageExtractTooltip" frontend/ docs/reference/ --glob '!docs/superpowers/**'`
+  `rg -n "StageRail|RoleChip|runHeaderMarkReady|runHeaderOpenConsensus|stageExtractTooltip|gateBlocked" frontend/ docs/reference/ --glob '!docs/superpowers/**'`
+  (`runHeaderGateBlocked` in the extraction namespace is expected to
+  survive — the sweep pattern `gateBlocked` will hit it; only the bare
+  `runs.gateBlocked` key must be gone)
   → expect ZERO hits outside archived specs/plans. `RunHeader.Reviewers`
   compound references likewise gone (`rg -n "RunHeader.Reviewers|<Reviewers"`).
 - [ ] **Step 4: Backend unchanged check** — `git diff --stat origin/dev -- backend/`
