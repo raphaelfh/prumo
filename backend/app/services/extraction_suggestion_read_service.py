@@ -111,18 +111,69 @@ async def _load_run_provenance(
     return prov_by_run
 
 
+# Flat-snapshot marker keys — their presence on a run's provenance means it
+# carries a legacy (or mixed-era) flat snapshot alongside any `sections` map.
+_FLAT_SNAPSHOT_KEYS = ("model", "provider", "prompt_version", "prompt_text")
+
+
+def _provenance_leaves(prov: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The snapshot dicts on a run's provenance that can carry ``ran_by_user_id``:
+    every per-section snapshot, plus the flat snapshot itself when present (legacy
+    or the flat portion of a mixed-era run)."""
+    if not prov:
+        return []
+    leaves: list[dict[str, Any]] = []
+    sections = prov.get("sections")
+    if isinstance(sections, dict):
+        leaves.extend(s for s in sections.values() if isinstance(s, dict))
+    if any(k in prov for k in _FLAT_SNAPSHOT_KEYS) or "ran_by_user_id" in prov:
+        leaves.append(prov)
+    return leaves
+
+
+def _resolve_section_provenance(
+    provenance: dict[str, Any] | None, entity_type_id: UUID | None
+) -> dict[str, Any] | None:
+    """Per-section snapshot for sectioned runs; the flat snapshot for legacy runs.
+
+    - No provenance → None.
+    - No ``sections`` map (legacy flat run) → the snapshot verbatim.
+    - Sectioned run with a snapshot for this entity type → that snapshot.
+    - Mixed-era run (flat keys + sections) with NO snapshot for this entity type
+      → the flat snapshot (minus ``sections``), so a section extracted before this
+      shipped keeps the display it had.
+    - Pure-sectioned run with no snapshot for this entity type → None (never a
+      sibling section's snapshot — that would mis-attribute provenance).
+    """
+    if not provenance:
+        return None
+    sections = provenance.get("sections")
+    if not isinstance(sections, dict):
+        return provenance
+    snap: dict[str, Any] | None = sections.get(str(entity_type_id)) if entity_type_id else None
+    if snap is not None:
+        return snap
+    if any(k in provenance for k in _FLAT_SNAPSHOT_KEYS):
+        return {k: v for k, v in provenance.items() if k != "sections"}
+    return None
+
+
 async def _inject_ran_by_names(
     db: AsyncSession, prov_by_run: dict[UUID, dict[str, Any] | None]
 ) -> None:
     """Resolve each snapshot's ``ran_by_user_id`` to a ``ran_by_name`` in place.
 
-    One batched ``profiles`` lookup for the distinct runner ids. A snapshot
-    whose runner has no profile (or a malformed id) is left untouched — the
-    "Ran by" row stays absent rather than showing a bare uuid.
+    Walks both flat snapshots and every per-section snapshot. One batched
+    ``profiles`` lookup for the distinct runner ids. A snapshot whose runner has
+    no profile (or a malformed id) is left untouched — the "Ran by" row stays
+    absent rather than showing a bare uuid.
     """
-    uuid_by_raw: dict[str, UUID] = {}
+    leaves: list[dict[str, Any]] = []
     for prov in prov_by_run.values():
-        raw = prov.get("ran_by_user_id") if prov else None
+        leaves.extend(_provenance_leaves(prov))
+    uuid_by_raw: dict[str, UUID] = {}
+    for leaf in leaves:
+        raw = leaf.get("ran_by_user_id")
         if raw is None or str(raw) in uuid_by_raw:
             continue
         try:
@@ -137,12 +188,10 @@ async def _inject_ran_by_names(
         )
     ).all()
     name_by_id = {str(pid): full_name for pid, full_name in rows if full_name}
-    for prov in prov_by_run.values():
-        if not prov:
-            continue
-        name = name_by_id.get(str(prov.get("ran_by_user_id")))
+    for leaf in leaves:
+        name = name_by_id.get(str(leaf.get("ran_by_user_id")))
         if name:
-            prov["ran_by_name"] = name
+            leaf["ran_by_name"] = name
 
 
 async def load_suggestions(
@@ -276,6 +325,18 @@ async def load_suggestions(
     # --- Step 5: build response items ---
     items: list[AISuggestionItem] = []
     prov_by_run = await _load_run_provenance(db, {p.run_id for p in deduped})
+    # Map each deduped proposal's instance → entity type so per-section
+    # provenance resolves to the right section snapshot.
+    et_rows = (
+        await db.execute(
+            select(ExtractionInstance.id, ExtractionInstance.entity_type_id).where(
+                ExtractionInstance.id.in_({p.instance_id for p in deduped})
+            )
+        )
+    ).all()
+    et_by_instance: dict[UUID, UUID] = {}
+    for iid, etid in et_rows:
+        et_by_instance[iid] = etid
     for p in deduped:
         evidence_list = [
             EvidenceResponse(
@@ -304,7 +365,9 @@ async def load_suggestions(
                 created_at=p.created_at,
                 evidence=evidence_list,
                 status=status,
-                provenance=prov_by_run.get(p.run_id),
+                provenance=_resolve_section_provenance(
+                    prov_by_run.get(p.run_id), et_by_instance.get(p.instance_id)
+                ),
             )
         )
 
@@ -374,10 +437,17 @@ async def get_suggestion_history(
         rows.sort(key=lambda e: (e.rank, str(e.id)))
 
     items: list[AISuggestionHistoryItem] = []
-    # History feeds the review popover (RunProvenanceDisclosure), the only
-    # surface that shows the "Ran by" row — resolve the runner's display name
-    # here so the frontend needs no profiles join.
+    # History feeds the review popover (the "How this was generated" surface,
+    # the only one that shows the "Ran by" row) — resolve the runner's display
+    # name here so the frontend needs no profiles join.
     prov_by_run = await _load_run_provenance(db, {p.run_id for p in proposals}, resolve_names=True)
+    # All proposals share this coord's instance → one entity-type lookup resolves
+    # the per-section snapshot for every item.
+    entity_type_id = (
+        await db.execute(
+            select(ExtractionInstance.entity_type_id).where(ExtractionInstance.id == instance_id)
+        )
+    ).scalar_one_or_none()
     for p in proposals:
         evidence_list = [
             EvidenceResponse(
@@ -403,7 +473,7 @@ async def get_suggestion_history(
                 rationale=p.rationale,
                 created_at=p.created_at,
                 evidence=evidence_list,
-                provenance=prov_by_run.get(p.run_id),
+                provenance=_resolve_section_provenance(prov_by_run.get(p.run_id), entity_type_id),
             )
         )
 

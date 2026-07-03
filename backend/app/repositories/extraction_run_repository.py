@@ -163,6 +163,47 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         await self.db.flush()
         return run
 
+    async def merge_provenance_section(
+        self,
+        run_id: UUID,
+        entity_type_id: UUID,
+        snapshot: dict[str, Any],
+    ) -> ExtractionRun | None:
+        """Merge one section's provenance snapshot under
+        ``results["provenance"]["sections"][entity_type_id]``.
+
+        Row-locked read-modify-write: concurrent single-section Celery tasks on
+        the same run serialize here instead of last-write-wins clobbering each
+        other's section (``merge_results`` is shallow and the sequential tests
+        cannot cover that race — the lock is the guarantee). Sibling sections and
+        any pre-existing flat legacy keys are preserved. Reassign (not mutate) so
+        SQLAlchemy tracks the JSONB change.
+
+        Args:
+            run_id: the run to update.
+            entity_type_id: the section (entity type) this snapshot describes.
+            snapshot: the section's provenance payload.
+
+        Returns:
+            The updated ExtractionRun, or None if the run does not exist.
+        """
+        run = (
+            await self.db.execute(
+                select(ExtractionRun).where(ExtractionRun.id == run_id).with_for_update()
+            )
+        ).scalar_one_or_none()
+        if run is None:
+            return None
+        results = {**(run.results or {})}
+        provenance = {**(results.get("provenance") or {})}
+        sections = {**(provenance.get("sections") or {})}
+        sections[str(entity_type_id)] = snapshot
+        provenance["sections"] = sections
+        results["provenance"] = provenance
+        run.results = results
+        await self.db.flush()
+        return run
+
     async def fail_run(
         self,
         run_id: UUID,

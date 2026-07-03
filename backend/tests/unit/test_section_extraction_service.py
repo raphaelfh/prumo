@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage
+from app.services.extraction_prompt_input import PromptInputInfo
 from app.services.section_extraction_service import SectionExtractionService
 
 
@@ -538,35 +539,24 @@ class TestExtractForRun:
         service._lifecycle.advance_stage.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_extract_for_run_provenance_has_full_token_shape(
+    async def test_extract_for_run_writes_no_aggregate_provenance_at_completion(
         self, service, qa_run, qa_template
     ):
-        # Provenance tokens must be the consistent {prompt, completion, total}
-        # shape (via _provenance_with_tokens), aggregated across sections — not
-        # the {total}-only shape that rendered as raw-key generic rows.
-        ets = []
-        for i in range(2):
-            et = MagicMock()
-            et.id = uuid4()
-            et.name = f"Section{i}"
-            et.fields = []
-            et.parent_entity_type_id = None
-            ets.append(et)
-        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, ets)
-        # An LLM ran → provenance snapshot set (normally by _extract_with_llm).
-        service._run_provenance = service._build_run_provenance(
-            model="m", prompt_name="qa", prompt_version="1", prompt_text="P"
-        )
+        # Provenance is now written PER SECTION at the choke-point; the batch
+        # completion must NOT also write a run-aggregate ``provenance`` key
+        # (complete_run shallow-merges, so it would clobber the per-section
+        # ``sections`` map with the last section's snapshot).
+        et = MagicMock()
+        et.id = uuid4()
+        et.name = "Participants"
+        et.fields = []
+        et.parent_entity_type_id = None
+        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [et])
 
         await service.extract_for_run(run_id=qa_run.id)
 
         results = service._runs.complete_run.await_args.kwargs["results"]
-        # Two sections at LlmUsage(10, 5) each → aggregate (20, 10, 30).
-        assert results["provenance"]["tokens"] == {
-            "prompt": 20,
-            "completion": 10,
-            "total": 30,
-        }
+        assert "provenance" not in results
 
     @pytest.mark.asyncio
     async def test_extract_for_run_does_not_advance_even_when_enabled(
@@ -736,10 +726,13 @@ class TestFieldsWithHumanDecision:
 
 
 class TestExtractOneEntityTypeForRun:
-    """Field-restoration invariant: after we filter ``full_entity_type.fields``
-    to skip human-edited ones, we must restore the original list in a finally
-    block so callers that reuse the cached entity_type don't see a mutated
-    tree (would otherwise corrupt subsequent extractions in the same Run)."""
+    """No-mutation invariant: filtering out human-settled fields must NOT touch
+    the ORM-managed ``full_entity_type.fields`` collection. It is
+    ``cascade="all, delete-orphan"``, so dropping items schedules them for
+    DELETE on the next flush — and a skipped field is exactly one a human
+    proposal/decision references under an ``ondelete=RESTRICT`` FK, so the
+    orphan delete raises ForeignKeyViolationError mid-extraction. The filtered
+    subset is handed to the LLM via ``fields_override`` instead."""
 
     @pytest.fixture
     def run(self):
@@ -755,7 +748,7 @@ class TestExtractOneEntityTypeForRun:
         return run
 
     @pytest.mark.asyncio
-    async def test_restores_field_list_after_filtering(self, service, run):
+    async def test_does_not_mutate_field_collection_when_filtering(self, service, run):
         f_keep = MagicMock()
         f_keep.id = uuid4()
         f_keep.name = "kept"
@@ -782,10 +775,15 @@ class TestExtractOneEntityTypeForRun:
         service._fields_with_recent_human_proposal = AsyncMock(side_effect=fake_human_probe)
         service._fields_with_human_decision = AsyncMock(return_value=set())
 
-        # LLM + suggestion writes
-        service._extract_with_llm = AsyncMock(
-            return_value=({}, LlmUsage(prompt_tokens=1, completion_tokens=1))
-        )
+        # Capture what the LLM is actually asked to fill — must be the override,
+        # never a mutation of the ORM collection.
+        captured: dict[str, list] = {}
+
+        async def fake_llm(*, pdf_text, entity_type, model, kind, framework, fields_override):  # noqa: ARG001
+            captured["override"] = [f.id for f in fields_override]
+            return ({}, LlmUsage(prompt_tokens=1, completion_tokens=1))
+
+        service._extract_with_llm = AsyncMock(side_effect=fake_llm)
         service._create_suggestions = AsyncMock(return_value=0)
 
         et_summary = MagicMock()
@@ -802,9 +800,11 @@ class TestExtractOneEntityTypeForRun:
             model="gpt-4o-mini",
         )
 
-        # Original fields list must be put back before returning.
+        # Only the un-settled field is sent to the LLM (via the override) ...
+        assert captured["override"] == [f_keep.id]
+        # ... and the delete-orphan-cascaded ORM collection was never mutated.
         assert full_et.fields == [f_keep, f_skip]
-        assert full_et.fields == original_fields_ref
+        assert full_et.fields is original_fields_ref
 
     @pytest.mark.asyncio
     async def test_skips_entity_when_every_field_is_human_edited(self, service, run):
@@ -914,8 +914,9 @@ class TestExtractOneEntityTypeForRun:
 
         captured: dict[str, list] = {}
 
-        async def fake_llm(*, pdf_text, entity_type, model, kind, framework):  # noqa: ARG001
-            captured["fields"] = [f.id for f in entity_type.fields]
+        async def fake_llm(*, pdf_text, entity_type, model, kind, framework, fields_override):  # noqa: ARG001
+            captured["override"] = [f.id for f in fields_override]
+            captured["entity_fields"] = [f.id for f in entity_type.fields]
             return ({}, LlmUsage(prompt_tokens=1, completion_tokens=1))
 
         service._extract_with_llm = AsyncMock(side_effect=fake_llm)
@@ -931,7 +932,10 @@ class TestExtractOneEntityTypeForRun:
             model="gpt-4o-mini",
         )
 
-        assert captured["fields"] == [f_open.id]
+        # Only the untouched field is sent to the LLM, via the override ...
+        assert captured["override"] == [f_open.id]
+        # ... while the ORM collection keeps all three fields (never mutated).
+        assert captured["entity_fields"] == [f_proposal.id, f_decision.id, f_open.id]
 
 
 # ---------------------------------------------------------------------------
@@ -1113,34 +1117,85 @@ class TestCreateSuggestions:
         service._proposals.record_proposal = AsyncMock(return_value=MagicMock(id=uuid4()))
         service.db.flush = AsyncMock()
         service._runs.merge_results = AsyncMock()
+        # Stub the per-section provenance merge explicitly: an auto-attribute on
+        # the MagicMock would let a typo'd method name pass the assertions.
+        service._runs.merge_provenance_section = AsyncMock()
 
     @pytest.mark.asyncio
     async def test_persists_provenance_at_chokepoint_when_llm_ran(self, service):
-        # Provenance is written ONCE at the proposal choke-point so EVERY
-        # suggestion-owning run records how it was generated — even a future
-        # extraction path that forgets to write it at completion.
+        # Provenance is written ONCE at the proposal choke-point, keyed by
+        # entity_type_id, so EVERY suggestion-owning run records how each section
+        # was generated and concurrent sections don't clobber each other.
         self._wire_one_field(service)
+        entity_type_id = uuid4()
         service._run_provenance = service._build_run_provenance(
-            model="gpt-x", prompt_name="extract", prompt_version="1", prompt_text="P"
+            model="gpt-x",
+            prompt_name="extract",
+            prompt_version="1",
+            usage=LlmUsage(prompt_tokens=10, completion_tokens=5),
         )
 
         run = self._make_run()
         await service._create_suggestions(
             project_id=run.project_id,
             article_id=run.article_id,
-            entity_type_id=uuid4(),
+            entity_type_id=entity_type_id,
             parent_instance_id=None,
             extracted_data={"f1": "value"},
             run=run,
-            usage=LlmUsage(prompt_tokens=10, completion_tokens=5),
         )
 
-        service._runs.merge_results.assert_awaited_once()
-        merged_run_id, patch = service._runs.merge_results.await_args.args
+        # Per-section merge, not the shallow run-level merge_results.
+        service._runs.merge_results.assert_not_awaited()
+        service._runs.merge_provenance_section.assert_awaited_once()
+        merged_run_id, merged_et_id, snapshot = (
+            service._runs.merge_provenance_section.await_args.args
+        )
         assert merged_run_id == run.id
-        prov = patch["provenance"]
-        assert prov["model"] == "gpt-x"
-        assert prov["tokens"] == {"prompt": 10, "completion": 5, "total": 15}
+        assert merged_et_id == entity_type_id
+        assert snapshot["model"] == "gpt-x"
+        assert snapshot["tokens"] == {"prompt": 10, "completion": 5, "total": 15}
+
+    @pytest.mark.asyncio
+    async def test_sequential_sections_each_get_own_snapshot(self, service):
+        # ``self._run_provenance`` is shared instance state overwritten per
+        # section by _extract_with_llm. Two sequential sections on one run must
+        # each merge THEIR OWN snapshot under THEIR OWN entity_type_id — a stale
+        # snapshot leaking to the wrong section is the mis-attribution this
+        # feature exists to prevent.
+        self._wire_one_field(service)
+        run = self._make_run()
+        et_a, et_b = uuid4(), uuid4()
+
+        service._run_provenance = service._build_run_provenance(
+            model="m-a", prompt_name="extract", prompt_version="1"
+        )
+        await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=et_a,
+            parent_instance_id=None,
+            extracted_data={"f1": "value"},
+            run=run,
+        )
+        service._run_provenance = service._build_run_provenance(
+            model="m-b", prompt_name="extract", prompt_version="1"
+        )
+        await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=et_b,
+            parent_instance_id=None,
+            extracted_data={"f1": "value"},
+            run=run,
+        )
+
+        calls = service._runs.merge_provenance_section.await_args_list
+        assert len(calls) == 2
+        (rid_a, key_a, snap_a), _ = calls[0]
+        (rid_b, key_b, snap_b), _ = calls[1]
+        assert (rid_a, key_a, snap_a["model"]) == (run.id, et_a, "m-a")
+        assert (rid_b, key_b, snap_b["model"]) == (run.id, et_b, "m-b")
 
     @pytest.mark.asyncio
     async def test_skips_provenance_when_no_llm_ran(self, service):
@@ -1156,10 +1211,9 @@ class TestCreateSuggestions:
             parent_instance_id=None,
             extracted_data={"f1": "value"},
             run=run,
-            usage=LlmUsage(prompt_tokens=1, completion_tokens=1),
         )
 
-        service._runs.merge_results.assert_not_awaited()
+        service._runs.merge_provenance_section.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_creates_no_info_proposal_for_none_and_abstention(self, service):
@@ -1275,54 +1329,60 @@ class TestCreateSuggestions:
         assert prop["rationale"] == "two conflicting statements"
 
     def test_build_run_provenance_shape(self, service):
-        # Run provenance is a flat snapshot of how the suggestions were
-        # generated; params come from the single-source extractor constants so
-        # they can't drift from what was actually sent.
+        # Per-section snapshot of how the suggestions were generated; params come
+        # from the single-source extractor constants so they can't drift from
+        # what was actually sent. No prompt_text — the system prompt lives in the
+        # prompt_composition (a duplicate flat copy serves no reader).
         service.user_id = "user-123"
         prov = service._build_run_provenance(
             model="gpt-4o-mini",
             prompt_name="section_extraction",
             prompt_version="v3",
-            prompt_text="SYSTEM PROMPT TEXT",
         )
         assert prov["ran_by_user_id"] == "user-123"
         assert prov["model"] == "gpt-4o-mini"
         assert prov["strategy"] == "section_extraction"
         assert prov["prompt_version"] == "v3"
-        assert prov["prompt_text"] == "SYSTEM PROMPT TEXT"
+        assert "prompt_text" not in prov
         assert prov["params"]["temperature"] == 0.1
         assert prov["params"]["output_retries"] == 2
         assert "timeout_seconds" in prov["params"]
         assert "provider" in prov
 
-    def test_provenance_with_tokens_merges_usage(self, service):
-        # The WRITE path that actually ships to extraction_runs.results: the
-        # snapshot merged with this run's token usage. The flow tests mock
-        # _extract_with_llm (so _run_provenance stays None and only the
-        # None-branch runs), so cover the merge branch directly here.
-        service.user_id = "user-123"
-        service._run_provenance = service._build_run_provenance(
+    def test_build_run_provenance_includes_composition_and_tokens(self, service):
+        # The complete section snapshot: token usage in {prompt, completion,
+        # total} shape + the structured composition, both optional kwargs.
+        from app.schemas.prompt_composition import (
+            PromptComposition,
+            PromptCompositionArticleRef,
+        )
+
+        snap = service._build_run_provenance(
             model="gpt-4o-mini",
             prompt_name="section_extraction",
-            prompt_version="v3",
-            prompt_text="SYSTEM PROMPT TEXT",
+            prompt_version="v1",
+            usage=LlmUsage(prompt_tokens=10, completion_tokens=5),
+            prompt_composition=PromptComposition(
+                section_name="Source of Data",
+                system_prompt="SYS",
+                section_instruction="I",
+                article_ref=PromptCompositionArticleRef(),
+                fields_requested=["data_source"],
+                llm_calls=1,
+            ),
         )
-        merged = service._provenance_with_tokens(LlmUsage(prompt_tokens=100, completion_tokens=50))
-        assert merged is not None
-        assert merged["model"] == "gpt-4o-mini"
-        assert merged["strategy"] == "section_extraction"
-        assert merged["params"]["temperature"] == 0.1
-        assert merged["ran_by_user_id"] == "user-123"
-        # tokens: prompt/completion/total (total derived by LlmUsage)
-        assert merged["tokens"] == {"prompt": 100, "completion": 50, "total": 150}
+        assert snap["tokens"] == {"prompt": 10, "completion": 5, "total": 15}
+        assert snap["prompt_composition"]["section_name"] == "Source of Data"
+        assert snap["prompt_composition"]["fields_requested"] == ["data_source"]
 
-    def test_provenance_with_tokens_is_none_when_no_llm_ran(self, service):
-        # No LLM extraction ran → no snapshot → no provenance stored (the
-        # branch every mocked-flow test currently exercises).
-        service._run_provenance = None
-        assert (
-            service._provenance_with_tokens(LlmUsage(prompt_tokens=1, completion_tokens=1)) is None
+    def test_build_run_provenance_omits_optional_keys_when_absent(self, service):
+        # No usage / no composition → those keys are simply absent (the no-LLM
+        # and legacy-caller shapes), never null placeholders.
+        snap = service._build_run_provenance(
+            model="m", prompt_name="section_extraction", prompt_version="v1"
         )
+        assert "tokens" not in snap
+        assert "prompt_composition" not in snap
 
     @pytest.mark.asyncio
     async def test_skips_unknown_field_names(self, service):
@@ -2196,6 +2256,89 @@ class TestExtractWithLlmWiring:
         assert "PROBAST" in kwargs["system_prompt"]
         assert "PROBAST" in kwargs["user_prompt"]
 
+    async def test_extract_with_llm_builds_marker_composition(self, service):
+        from app.llm.schema import build_output_models
+        from app.services.section_extraction_service import ARTICLE_MARKDOWN_MARKER
+
+        entity_type = self._entity_type(2)
+        [model_cls] = [build_output_models(entity_type)[0]]
+        output = model_cls.model_validate(
+            {
+                info.alias: {
+                    "value": "v",
+                    "confidence": 0.5,
+                    "reasoning": None,
+                    "evidence": [],
+                    "status": "found",
+                }
+                for info in model_cls.model_fields.values()
+            }
+        )
+        mock_x = AsyncMock(return_value=(output, LlmUsage(prompt_tokens=7, completion_tokens=3)))
+        # Assembly info the composition should reflect (source file + no truncation).
+        service._prompt_input_info = PromptInputInfo(
+            anchor_blocks=[],
+            anchor_file_id=uuid4(),
+            file_name="teste3.pdf",
+            truncated=False,
+            est_tokens=1234,
+        )
+        with (
+            patch("app.services.section_extraction_service.extract_structured", mock_x),
+            patch("app.services.section_extraction_service.build_model", MagicMock()),
+        ):
+            await service._extract_with_llm(
+                pdf_text="ARTICLE BODY", entity_type=entity_type, model="gpt-4o-mini"
+            )
+
+        comp = service._run_provenance["prompt_composition"]
+        # The article is replaced by a marker in the persisted instruction, and
+        # the real body is NOT stored per section.
+        assert ARTICLE_MARKDOWN_MARKER in comp["section_instruction"]
+        assert "ARTICLE BODY" not in comp["section_instruction"]
+        assert comp["section_name"] == "population"
+        assert comp["fields_requested"] == ["field_0", "field_1"]
+        assert comp["llm_calls"] == 1
+        assert comp["article_ref"]["file_name"] == "teste3.pdf"
+        assert comp["article_ref"]["truncated"] is False
+        assert comp["article_ref"]["est_tokens"] == 1234
+        # The section snapshot also carries this section's token usage.
+        assert service._run_provenance["tokens"] == {"prompt": 7, "completion": 3, "total": 10}
+
+    async def test_quality_assessment_composition_uses_qa_template(self, service):
+        from app.llm.schema import build_output_models
+        from app.services.section_extraction_service import ARTICLE_MARKDOWN_MARKER
+
+        entity_type = self._entity_type(1)
+        [model_cls] = build_output_models(entity_type)
+        output = model_cls.model_validate(
+            {
+                "field_0": {
+                    "value": "Low",
+                    "confidence": 0.5,
+                    "reasoning": None,
+                    "evidence": [],
+                    "status": "found",
+                }
+            }
+        )
+        mock_x = AsyncMock(return_value=(output, LlmUsage(prompt_tokens=1, completion_tokens=1)))
+        with (
+            patch("app.services.section_extraction_service.extract_structured", mock_x),
+            patch("app.services.section_extraction_service.build_model", MagicMock()),
+        ):
+            await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=entity_type,
+                model="gpt-4o-mini",
+                kind="quality_assessment",
+                framework="PROBAST",
+            )
+        comp = service._run_provenance["prompt_composition"]
+        # QA composition uses the QA template (framework rendered) + the marker.
+        assert "PROBAST" in comp["section_instruction"]
+        assert ARTICLE_MARKDOWN_MARKER in comp["section_instruction"]
+
     @pytest.mark.asyncio
     async def test_llm_failure_propagates_instead_of_empty_dict(self, service):
         from pydantic_ai import UnexpectedModelBehavior
@@ -2256,7 +2399,14 @@ class TestExtractWithLlmWiring:
 async def test_build_prompt_input_called_with_correct_kwargs(mock_db, mock_storage):
     """_assemble_prompt_text passes storage/user_id/trace_id from the service
     to build_prompt_input. Bypasses _wire_pipeline so the real method runs."""
-    mock_bpi = AsyncMock(return_value=("md", [], None))
+    mock_bpi = AsyncMock(
+        return_value=(
+            "md",
+            PromptInputInfo(
+                anchor_blocks=[], anchor_file_id=None, file_name=None, truncated=False, est_tokens=1
+            ),
+        )
+    )
     with (
         patch("app.services.section_extraction_service.ArticleFileRepository"),
         patch("app.services.section_extraction_service.ExtractionEntityTypeRepository"),

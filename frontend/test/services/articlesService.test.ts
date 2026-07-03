@@ -241,7 +241,8 @@ describe('articlesService.uploadArticleFile', () => {
 
     expect(result.ok).toBe(false);
     expect(storageRemove).toHaveBeenCalledWith(['proj-1/art-4/file.pdf']);
-    // No longer calls supabase.from('article_files')
+    // The article_files table is never touched directly — registration goes
+    // through the backend endpoint, not a PostgREST insert.
     const fromCalls = vi.mocked(supabase.from).mock.calls.map(c => c[0]);
     expect(fromCalls).not.toContain('article_files');
   });

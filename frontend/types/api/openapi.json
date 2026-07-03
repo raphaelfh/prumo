@@ -446,6 +446,54 @@
         "title": "ApiResponse[ApproveFinalizeResponse]",
         "type": "object"
       },
+      "ApiResponse_ArticleContentMarkdownResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArticleContentMarkdownResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ArticleContentMarkdownResponse]",
+        "type": "object"
+      },
       "ApiResponse_ArticleFileResponse_": {
         "properties": {
           "data": {
@@ -1406,6 +1454,54 @@
         "title": "ApiResponse[ProposalRecordResponse]",
         "type": "object"
       },
+      "ApiResponse_RepublishTemplateVersionResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RepublishTemplateVersionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[RepublishTemplateVersionResponse]",
+        "type": "object"
+      },
       "ApiResponse_ReviewerDecisionResponse_": {
         "properties": {
           "data": {
@@ -2192,6 +2288,35 @@
           "published_count"
         ],
         "title": "ApproveFinalizeResponse",
+        "type": "object"
+      },
+      "ArticleContentMarkdownResponse": {
+        "description": "The stored block-projection markdown for an article's MAIN file \u2014 the\nexact text sent to the LLM (ADR-0013), surfaced by the review popover's\n\"How this was generated\" dialog. camelCase on the wire like its siblings.",
+        "properties": {
+          "contentMarkdown": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contentmarkdown"
+          },
+          "fileName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          }
+        },
+        "title": "ArticleContentMarkdownResponse",
         "type": "object"
       },
       "ArticleFileListItem": {
@@ -4680,6 +4805,35 @@
         "title": "PublishedStateResponse",
         "type": "object"
       },
+      "RepublishTemplateVersionResponse": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "repinned_run_count": {
+            "title": "Repinned Run Count",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_id",
+          "version",
+          "changed",
+          "repinned_run_count"
+        ],
+        "title": "RepublishTemplateVersionResponse",
+        "type": "object"
+      },
       "ReviewerDecisionResponse": {
         "properties": {
           "created_at": {
@@ -6524,6 +6678,55 @@
         ]
       }
     },
+    "/api/v1/articles/{article_id}/content-markdown": {
+      "get": {
+        "description": "Return the stored block-projection markdown for the article's MAIN file\n(the exact text the LLM received \u2014 ADR-0013), for the review popover's\nprovenance dialog.\n\n404 when the article is not found OR has never been parsed; 403 when the\ncaller is not a project member. The membership gate runs BEFORE the file\nread so a non-member can't probe whether an article's markdown exists.",
+        "operationId": "get_article_content_markdown_api_v1_articles__article_id__content_markdown_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ArticleContentMarkdownResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Article Content Markdown",
+        "tags": [
+          "articles"
+        ]
+      }
+    },
     "/api/v1/articles/{article_id}/files": {
       "get": {
         "description": "List an article's files (MAIN first) \u2014 the document switcher's source.",
@@ -8045,6 +8248,65 @@
           }
         ],
         "summary": "Update Project Template Active",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/republish-version": {
+      "post": {
+        "description": "Publish the live template structure as a new active version.\n\nIdempotent when nothing changed (returns the current active version\nwithout spawning rows). Runs still in an editable stage\n(``pending``/``extract``) are re-pinned to the new version so open\narticle forms render the edit; runs from ``consensus`` on keep the\nversion they were assessed under. Manager-gated like the sibling\nendpoints \u2014 section/field editing is project-wide configuration.",
+        "operationId": "republish_template_version_api_v1_projects__project_id__templates__template_id__republish_version_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RepublishTemplateVersionResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Republish Template Version",
         "tags": [
           "project-templates"
         ]

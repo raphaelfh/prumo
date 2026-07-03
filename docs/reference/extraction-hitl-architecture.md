@@ -45,8 +45,16 @@ extracting.
 When a Run is created it captures two immutable snapshots: `version_id`
 (an `ExtractionTemplateVersion` row freezing the entity_types + fields
 tree) and `hitl_config_snapshot` (a JSONB copy of the resolved
-`reviewer_count` / `consensus_rule` / `arbitrator_id`). Editing the
-template afterwards never affects existing runs.
+`reviewer_count` / `consensus_rule` / `arbitrator_id`). Version rows are
+immutable, but the *pin* is stage-aware: template configuration edits
+republish the live structure as a new active version
+(`TemplateVersionService.republish`, called by the config UI after every
+section/field mutation via
+`POST /projects/{id}/templates/{tid}/republish-version`), and the
+republish re-pins runs still in an **editable** stage
+(`pending`/`extract`) to the new version so open extraction/QA forms
+render the edit. Runs in `consensus`/`finalized` keep the version they
+were assessed under — editing the template never affects them.
 
 ### 2.1 User-facing vocabulary (do not leak "Run")
 
@@ -347,7 +355,7 @@ The extraction **Import template** dialog reads `extraction_templates_global` th
 | ------ | ---------------- |
 | **UI** | Calls `POST /api/v1/projects/{project_id}/templates/clone` with `global_template_id` and `kind=extraction` (JWT via `apiClient`). The UI may still load the global row first to validate that the id exists in the catalogue. |
 | **Service** | `TemplateCloneService.clone` is **idempotent** on `(project_id, global_template_id)`: first call creates the project row, `extraction_entity_types`, `extraction_fields`, and exactly one active version; later calls return the existing clone and current counts. |
-| **Heal** | If a clone row exists but has zero entity types or fields (partial/legacy data), the service rebuilds structure from the global template and updates the active version snapshot. |
+| **Heal** | Drift is measured against the **active version snapshot**, never the global template. Zero-state clones (empty live structure) rebuild from the global. Non-empty drift (e.g. an edit whose republish call was lost) **self-heals by publishing the live structure** as a new version (`TemplateVersionService.republish`) — never wipe-and-rebuild: with user-editable templates a count mismatch is indistinguishable from a deliberate edit, and the historical wipe destroyed customizations. Factory recovery = delete the template and re-import. |
 
 Configuration flows for QA tools may call the same clone endpoint before sessions; session lifecycle for QA vs extraction is in §5.
 
@@ -543,6 +551,11 @@ publish, AI), keep it in the page-specific component.
     global → project clone (idempotent on
     `(project_id, global_template_id)`). Validates the global template's
     `kind` matches what the caller asked for.
+  - `app/services/template_version_service.py` — `republish`: freezes the
+    live structure into a new active `ExtractionTemplateVersion` (v+1;
+    prior rows untouched) and re-pins `pending`/`extract` runs to it.
+    Surface for `POST /projects/{id}/templates/{tid}/republish-version`,
+    called by the config UI after every section/field edit.
   - `app/services/hitl_session_service.py` — one-shot HITL setup for
     both kinds: clones (QA only) + seeds top-level instances + opens
     or resumes a Run + advances to EXTRACT. Surface for

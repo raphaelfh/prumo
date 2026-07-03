@@ -59,12 +59,15 @@ interface FieldInputProps {
   ) => void | Promise<void>;
   isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   disabled?: boolean;
+  /** Threaded to the review popover's generation dialog so it can lazily fetch
+   *  the stored markdown the LLM received. */
+  articleId?: string;
 }
 
 // =================== COMPONENT ===================
 
 export function FieldInput(props: FieldInputProps) {
-  const { field, instanceId, value, onChange, disabled, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, selectSuggestion, isActionLoading } = props;
+  const { field, instanceId, value, onChange, disabled, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, selectSuggestion, isActionLoading, articleId } = props;
   // Read-only run (published/consensus/pending): every input variant and the
   // disposition buttons disable; the actionable AI chrome (badge + inline
   // accept/reject strip) hides — the History popover stays as audit trail.
@@ -240,6 +243,7 @@ export function FieldInput(props: FieldInputProps) {
           // to its human label, same as the inline card.
           fieldType: field.field_type,
           allowedValues: field.allowed_values,
+          articleId,
         }
       : undefined;
 

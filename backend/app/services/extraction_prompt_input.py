@@ -11,6 +11,7 @@ No unbounded pypdf path remains.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -23,6 +24,22 @@ from app.repositories.article_text_block_repository import ArticleTextBlockRepos
 from app.services.document_parsing_service import DocumentParsingService
 
 
+@dataclass(frozen=True)
+class PromptInputInfo:
+    """How the prompt input was assembled for a run.
+
+    Carries the anchor blocks/file the run resolved against plus the
+    provenance facts the review UI needs: which file the article text came
+    from, whether the token budget dropped any of it, and the token estimate.
+    """
+
+    anchor_blocks: list[Any]
+    anchor_file_id: UUID | None
+    file_name: str | None
+    truncated: bool
+    est_tokens: int
+
+
 async def build_prompt_input(
     *,
     db: AsyncSession,
@@ -33,8 +50,8 @@ async def build_prompt_input(
     logger: Any,
     user_id: str,
     trace_id: str,
-) -> tuple[str, list[Any], UUID | None]:
-    """Return ``(markdown, anchor_blocks, anchor_file_id)`` for *article_id*."""
+) -> tuple[str, PromptInputInfo]:
+    """Return ``(markdown, info)`` for *article_id*."""
     main_file = await article_files.get_latest_pdf(article_id)
     if main_file is None:
         raise FileNotFoundError(f"No PDF for article {article_id}")
@@ -83,4 +100,10 @@ async def build_prompt_input(
         truncated=info_truncated,
         est_tokens=est,
     )
-    return text, blocks, main_file.id
+    return text, PromptInputInfo(
+        anchor_blocks=blocks,
+        anchor_file_id=main_file.id,
+        file_name=main_file.original_filename,
+        truncated=info_truncated,
+        est_tokens=est,
+    )
