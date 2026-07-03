@@ -56,7 +56,7 @@ from app.repositories import (
 )
 from app.schemas.extraction import SectionExtractionRequest
 from app.services.evidence_anchor_service import build_anchor
-from app.services.extraction_prompt_input import build_prompt_input
+from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.value_semantics import AbsentReason
@@ -145,6 +145,9 @@ class SectionExtractionService(LoggerMixin):
         # reused by _create_suggestions for evidence anchoring (no second fetch).
         self._run_anchor_blocks: list = []
         self._run_anchor_file_id: UUID | None = None
+        # Assembly info from the last prompt build (truncation, token estimate,
+        # source file) — feeds the per-section prompt_composition provenance.
+        self._prompt_input_info: PromptInputInfo | None = None
         # Run provenance snapshot, set by _extract_with_llm and merged into the
         # run's results at completion (how the suggestions were generated).
         self._run_provenance: dict[str, Any] | None = None
@@ -190,8 +193,8 @@ class SectionExtractionService(LoggerMixin):
         }
 
     async def _assemble_prompt_text(self, article_id: UUID, model: str) -> str:
-        """Budgeted block-markdown prompt input; stashes run anchor blocks on self."""
-        text, self._run_anchor_blocks, self._run_anchor_file_id = await build_prompt_input(
+        """Budgeted block-markdown prompt input; stashes assembly info on self."""
+        text, info = await build_prompt_input(
             db=self.db,
             article_files=self._article_files,
             storage=self.storage,
@@ -201,6 +204,9 @@ class SectionExtractionService(LoggerMixin):
             user_id=self.user_id,
             trace_id=self.trace_id,
         )
+        self._prompt_input_info = info
+        self._run_anchor_blocks = info.anchor_blocks
+        self._run_anchor_file_id = info.anchor_file_id
         return text
 
     async def extract_section(

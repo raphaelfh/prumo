@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage
+from app.services.extraction_prompt_input import PromptInputInfo
 from app.services.section_extraction_service import SectionExtractionService
 
 
@@ -2256,7 +2257,14 @@ class TestExtractWithLlmWiring:
 async def test_build_prompt_input_called_with_correct_kwargs(mock_db, mock_storage):
     """_assemble_prompt_text passes storage/user_id/trace_id from the service
     to build_prompt_input. Bypasses _wire_pipeline so the real method runs."""
-    mock_bpi = AsyncMock(return_value=("md", [], None))
+    mock_bpi = AsyncMock(
+        return_value=(
+            "md",
+            PromptInputInfo(
+                anchor_blocks=[], anchor_file_id=None, file_name=None, truncated=False, est_tokens=1
+            ),
+        )
+    )
     with (
         patch("app.services.section_extraction_service.ArticleFileRepository"),
         patch("app.services.section_extraction_service.ExtractionEntityTypeRepository"),

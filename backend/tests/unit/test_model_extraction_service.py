@@ -16,7 +16,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage
 from app.llm.prompts.model_identification import IdentifiedModel, ModelIdentificationOutput
+from app.services.extraction_prompt_input import PromptInputInfo
 from app.services.model_extraction_service import ModelExtractionService
+
+
+def _fake_prompt_info(text: str = "mocked article text"):
+    """build_prompt_input returns (text, PromptInputInfo); model extraction discards
+    the info, so any well-formed instance works."""
+    return (
+        text,
+        PromptInputInfo(
+            anchor_blocks=[], anchor_file_id=None, file_name=None, truncated=False, est_tokens=1
+        ),
+    )
 
 
 @pytest.fixture
@@ -52,7 +64,7 @@ def service(mock_db, mock_storage):
         patch("app.services.model_extraction_service.RunLifecycleService") as mock_lifecycle_cls,
         patch(
             "app.services.model_extraction_service.build_prompt_input",
-            AsyncMock(return_value=("mocked article text", [], None)),
+            AsyncMock(return_value=_fake_prompt_info()),
         ),
     ):
         # Mock repositories
@@ -568,7 +580,7 @@ async def test_build_prompt_input_called_with_correct_kwargs(service):
     fresh AsyncMock so the wiring from extract() → build_prompt_input is exercised
     (not masked by the fixture's own patch).
     """
-    mock_bpi = AsyncMock(return_value=("md", [], None))
+    mock_bpi = AsyncMock(return_value=_fake_prompt_info("md"))
     project_id = uuid4()
     article_id = uuid4()
     template_id = uuid4()

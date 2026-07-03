@@ -151,7 +151,7 @@ class ModelExtractionService(LoggerMixin):
         try:
             # 2-3. Assemble budgeted block-markdown prompt input (on-demand parse inside).
             phase_start = perf_counter()
-            pdf_text, _, _ = await build_prompt_input(
+            pdf_text, _ = await build_prompt_input(
                 db=self.db,
                 article_files=self._article_files,
                 storage=self.storage,
