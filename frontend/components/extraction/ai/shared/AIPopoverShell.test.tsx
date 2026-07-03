@@ -21,6 +21,30 @@ describe('AIPopoverShell', () => {
     expect(popover.textContent).toContain('body content');
   });
 
+  it('bounds the popover to the viewport with a single scroll region', () => {
+    render(
+      <Popover defaultOpen>
+        <PopoverTrigger>open</PopoverTrigger>
+        <AIPopoverShell icon={<span>i</span>} title="Review">
+          <div data-testid="body">body content</div>
+        </AIPopoverShell>
+      </Popover>,
+    );
+    const popover = document.querySelector('.bg-popover') as HTMLElement;
+    // Height is bounded by the space Radix reports below/above the trigger, so
+    // the popover can never grow past the viewport and get clipped.
+    expect(popover.className).toContain(
+      'max-h-[min(var(--radix-popover-content-available-height),34rem)]',
+    );
+    expect(popover.className).toContain('flex-col');
+    // The body is the ONLY scroll region and absorbs content growth.
+    const body = document.querySelector('[data-testid="body"]') as HTMLElement;
+    const scroll = body.parentElement as HTMLElement;
+    expect(scroll.className).toContain('overflow-y-auto');
+    expect(scroll.className).toContain('min-h-0');
+    expect(scroll.className).toContain('flex-1');
+  });
+
   it('renders a pinned footer OUTSIDE the scrollable body', () => {
     render(
       <Popover defaultOpen>
