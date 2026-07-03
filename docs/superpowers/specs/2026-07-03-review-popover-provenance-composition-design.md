@@ -1,7 +1,7 @@
 ---
 status: approved
 last_reviewed: 2026-07-03
-owner: raphael
+owner: '@raphaelfh'
 ---
 
 # Review popover slimming + prompt-composition provenance
