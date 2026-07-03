@@ -115,9 +115,8 @@ async def get_article_content_markdown(
     if file is None:
         raise HTTPException(status_code=404, detail="No parsed content for this article")
     return ApiResponse.success(
-        ArticleContentMarkdownResponse(
-            file_name=file.original_filename,
-            content_markdown=file.content_markdown,
+        ArticleContentMarkdownResponse.model_validate(
+            {"file_name": file.original_filename, "content_markdown": file.content_markdown}
         ),
         trace_id=_trace(request),
     )

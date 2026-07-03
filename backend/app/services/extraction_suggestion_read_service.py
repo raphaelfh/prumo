@@ -150,7 +150,7 @@ def _resolve_section_provenance(
     sections = provenance.get("sections")
     if not isinstance(sections, dict):
         return provenance
-    snap = sections.get(str(entity_type_id)) if entity_type_id else None
+    snap: dict[str, Any] | None = sections.get(str(entity_type_id)) if entity_type_id else None
     if snap is not None:
         return snap
     if any(k in provenance for k in _FLAT_SNAPSHOT_KEYS):
@@ -327,15 +327,16 @@ async def load_suggestions(
     prov_by_run = await _load_run_provenance(db, {p.run_id for p in deduped})
     # Map each deduped proposal's instance → entity type so per-section
     # provenance resolves to the right section snapshot.
-    et_by_instance: dict[UUID, UUID] = dict(
-        (
-            await db.execute(
-                select(ExtractionInstance.id, ExtractionInstance.entity_type_id).where(
-                    ExtractionInstance.id.in_({p.instance_id for p in deduped})
-                )
+    et_rows = (
+        await db.execute(
+            select(ExtractionInstance.id, ExtractionInstance.entity_type_id).where(
+                ExtractionInstance.id.in_({p.instance_id for p in deduped})
             )
-        ).all()
-    )
+        )
+    ).all()
+    et_by_instance: dict[UUID, UUID] = {}
+    for iid, etid in et_rows:
+        et_by_instance[iid] = etid
     for p in deduped:
         evidence_list = [
             EvidenceResponse(
