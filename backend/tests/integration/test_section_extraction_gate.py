@@ -270,12 +270,13 @@ async def test_session_run_extraction_persists_provenance(
     monkeypatch.setattr(service, "_assemble_prompt_text", _fake_assemble)
 
     async def _fake_extract(**_kwargs: Any) -> tuple[dict[str, Any], LlmUsage]:
-        # Mirror the real _extract_with_llm, which builds the run provenance snapshot.
+        # Mirror the real _extract_with_llm, which builds the per-section run
+        # provenance snapshot (tokens baked in, keyed later by entity_type_id).
         service._run_provenance = service._build_run_provenance(
             model="gpt-4o-mini",
             prompt_name="section_extraction",
             prompt_version="1",
-            prompt_text="PROMPT TEXT",
+            usage=LlmUsage(prompt_tokens=100, completion_tokens=20),
         )
         data = {
             "sample_size": {
@@ -305,10 +306,11 @@ async def test_session_run_extraction_persists_provenance(
         "session-run extraction did not persist results['provenance'] — the "
         "review popover's 'How this was generated' metadata would be empty."
     )
-    prov = refreshed.results["provenance"]
-    assert prov["model"] == "gpt-4o-mini"
-    assert prov["provider"] == settings.LLM_PROVIDER
-    assert prov["tokens"]["total"] == 120
+    # Provenance is now stored per section under provenance.sections[entity_type_id].
+    section = refreshed.results["provenance"]["sections"][str(SEED.primary_entity_type)]
+    assert section["model"] == "gpt-4o-mini"
+    assert section["provider"] == settings.LLM_PROVIDER
+    assert section["tokens"]["total"] == 120
     # The session run must stay editable (NOT completed by this call).
     assert refreshed.stage == ExtractionRunStage.EXTRACT.value
 
