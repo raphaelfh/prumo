@@ -1,7 +1,15 @@
-import {render, screen} from '@testing-library/react';
-import {describe, expect, it} from 'vitest';
+import {fireEvent, render, screen} from '@testing-library/react';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
 import type {RunProvenance} from '@/types/ai-extraction';
+
+vi.mock('@/hooks/extraction/useArticleContentMarkdown', () => ({
+  useArticleContentMarkdown: vi.fn(),
+}));
+
+import {useArticleContentMarkdown} from '@/hooks/extraction/useArticleContentMarkdown';
 import {GenerationDetailsDialog} from './GenerationDetailsDialog';
+
+const mdHook = useArticleContentMarkdown as unknown as ReturnType<typeof vi.fn>;
 
 const structured: RunProvenance = {
   model: 'gpt-4o-mini',
@@ -21,6 +29,12 @@ const structured: RunProvenance = {
     llmCalls: 2,
   },
 };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Default: the expand hook is idle (not fetched until opened).
+  mdHook.mockReturnValue({data: undefined, isLoading: false, isError: false, refetch: vi.fn()});
+});
 
 describe('GenerationDetailsDialog', () => {
   it('renders params grid, composition recipe, split-calls note and truncated badge', () => {
@@ -69,5 +83,56 @@ describe('GenerationDetailsDialog', () => {
   it('does not render when closed', () => {
     render(<GenerationDetailsDialog provenance={structured} open={false} onOpenChange={() => {}} />);
     expect(screen.queryByText('How this was generated')).not.toBeInTheDocument();
+  });
+
+  it('shows a "view text sent" expand only when an articleId is provided', () => {
+    const {rerender} = render(
+      <GenerationDetailsDialog provenance={structured} open onOpenChange={() => {}} />,
+    );
+    expect(screen.queryByText('View text sent')).not.toBeInTheDocument();
+    rerender(
+      <GenerationDetailsDialog
+        provenance={structured}
+        articleId="art-1"
+        open
+        onOpenChange={() => {}}
+      />,
+    );
+    expect(screen.getByText('View text sent')).toBeInTheDocument();
+  });
+
+  it('expands the stored markdown on click', () => {
+    mdHook.mockReturnValue({
+      data: {fileName: 'teste3.pdf', contentMarkdown: '# STORED MARKDOWN BODY'},
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    render(
+      <GenerationDetailsDialog
+        provenance={structured}
+        articleId="art-1"
+        open
+        onOpenChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText('View text sent'));
+    expect(screen.getByText(/STORED MARKDOWN BODY/)).toBeInTheDocument();
+  });
+
+  it('renders an inline retry when the markdown fetch errors', () => {
+    const refetch = vi.fn();
+    mdHook.mockReturnValue({data: undefined, isLoading: false, isError: true, refetch});
+    render(
+      <GenerationDetailsDialog
+        provenance={structured}
+        articleId="art-1"
+        open
+        onOpenChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText('View text sent'));
+    fireEvent.click(screen.getByText('Retry'));
+    expect(refetch).toHaveBeenCalled();
   });
 });

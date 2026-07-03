@@ -11,4 +11,6 @@ export const articleKeys = {
     [...articleKeys.all, 'files', articleId] as const,
   textBlocks: (articleFileId: string) =>
     [...articleKeys.all, 'text-blocks', articleFileId] as const,
+  contentMarkdown: (articleId: string) =>
+    [...articleKeys.all, 'content-markdown', articleId] as const,
 } as const;
