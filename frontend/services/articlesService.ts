@@ -440,34 +440,6 @@ export function deleteArticle(articleId: string): Promise<ErrorResult<void>> {
 }
 
 // ---------------------------------------------------------------------------
-// GenerationDetailsDialog: the stored markdown the LLM received (provenance)
-// ---------------------------------------------------------------------------
-
-export interface ArticleContentMarkdown {
-  fileName: string | null;
-  contentMarkdown: string | null;
-}
-
-/**
- * Fetches the stored block-projection markdown for an article's MAIN file — the
- * exact text the LLM received (ADR-0013). The endpoint returns a camelCase
- * envelope (aliases), so the payload is read straight through.
- */
-export function getArticleContentMarkdown(
-  articleId: string,
-): Promise<ErrorResult<ArticleContentMarkdown>> {
-  return toResult(async () => {
-    const data = (await apiClient(
-      `/api/v1/articles/${articleId}/content-markdown`,
-    )) as ArticleContentMarkdown;
-    return {
-      fileName: data.fileName ?? null,
-      contentMarkdown: data.contentMarkdown ?? null,
-    };
-  }, 'articlesService.getArticleContentMarkdown');
-}
-
-// ---------------------------------------------------------------------------
 // ArticleDetailDialog: trigger a re-parse for a stuck article file
 // ---------------------------------------------------------------------------
 

@@ -21,12 +21,7 @@ vi.mock('@/lib/file-validation', () => ({detectFileFormat: vi.fn(() => 'applicat
 
 import {supabase} from '@/integrations/supabase/client';
 import {apiClient} from '@/integrations/api';
-import {
-  addArticle,
-  getArticleContentMarkdown,
-  uploadArticleFile,
-  reparseArticleFile,
-} from '@/services/articlesService';
+import {addArticle, uploadArticleFile, reparseArticleFile} from '@/services/articlesService';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -294,40 +289,5 @@ describe('articlesService.uploadArticleFile — backend confirm', () => {
     );
     const fromCalls = vi.mocked(supabase.from).mock.calls.map(c => c[0]);
     expect(fromCalls).not.toContain('article_files');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// getArticleContentMarkdown — the stored markdown the LLM received
-// ---------------------------------------------------------------------------
-
-describe('articlesService.getArticleContentMarkdown', () => {
-  it('GETs the content-markdown endpoint and maps the camelCase payload', async () => {
-    vi.mocked(apiClient).mockResolvedValueOnce({
-      fileName: 'teste3.pdf',
-      contentMarkdown: '# Results\n\nEffect size 0.81.',
-    });
-    const res = await getArticleContentMarkdown('art-1');
-    expect(apiClient).toHaveBeenCalledWith('/api/v1/articles/art-1/content-markdown');
-    expect(res.ok).toBe(true);
-    if (res.ok) {
-      expect(res.data).toEqual({
-        fileName: 'teste3.pdf',
-        contentMarkdown: '# Results\n\nEffect size 0.81.',
-      });
-    }
-  });
-
-  it('coerces missing fields to null (unparsed article)', async () => {
-    vi.mocked(apiClient).mockResolvedValueOnce({fileName: null, contentMarkdown: null});
-    const res = await getArticleContentMarkdown('art-1');
-    expect(res.ok).toBe(true);
-    if (res.ok) expect(res.data).toEqual({fileName: null, contentMarkdown: null});
-  });
-
-  it('returns ok:false when the request fails', async () => {
-    vi.mocked(apiClient).mockRejectedValueOnce(new Error('boom'));
-    const res = await getArticleContentMarkdown('art-1');
-    expect(res.ok).toBe(false);
   });
 });

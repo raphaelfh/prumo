@@ -7,11 +7,11 @@ import {renderHook, waitFor} from '@testing-library/react';
 import type {ReactElement, ReactNode} from 'react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
-vi.mock('@/services/articlesService', () => ({
+vi.mock('@/services/articleFilesService', () => ({
   getArticleContentMarkdown: vi.fn(),
 }));
 
-import {getArticleContentMarkdown} from '@/services/articlesService';
+import {getArticleContentMarkdown} from '@/services/articleFilesService';
 import {useArticleContentMarkdown} from '@/hooks/extraction/useArticleContentMarkdown';
 
 const svc = getArticleContentMarkdown as unknown as ReturnType<typeof vi.fn>;
@@ -41,11 +41,8 @@ describe('useArticleContentMarkdown', () => {
     expect(svc).not.toHaveBeenCalled();
   });
 
-  it('fetches and returns the mapped data when enabled', async () => {
-    svc.mockResolvedValueOnce({
-      ok: true,
-      data: {fileName: 'teste3.pdf', contentMarkdown: '# md'},
-    });
+  it('fetches and returns the data when enabled', async () => {
+    svc.mockResolvedValueOnce({fileName: 'teste3.pdf', contentMarkdown: '# md'});
     const {wrapper} = createWrapper();
     const {result} = renderHook(() => useArticleContentMarkdown('art-1', {enabled: true}), {
       wrapper,
@@ -55,8 +52,8 @@ describe('useArticleContentMarkdown', () => {
     expect(result.current.data).toEqual({fileName: 'teste3.pdf', contentMarkdown: '# md'});
   });
 
-  it('surfaces an error when the service returns ok:false', async () => {
-    svc.mockResolvedValueOnce({ok: false, error: new Error('boom')});
+  it('surfaces an error when the service throws', async () => {
+    svc.mockRejectedValueOnce(new Error('boom'));
     const {wrapper} = createWrapper();
     const {result} = renderHook(() => useArticleContentMarkdown('art-1', {enabled: true}), {
       wrapper,

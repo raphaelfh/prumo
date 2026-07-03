@@ -11,7 +11,7 @@ import {articleKeys} from '@/lib/query-keys/articles';
 import {
   getArticleContentMarkdown,
   type ArticleContentMarkdown,
-} from '@/services/articlesService';
+} from '@/services/articleFilesService';
 
 export function useArticleContentMarkdown(
   articleId: string | undefined,
@@ -21,11 +21,9 @@ export function useArticleContentMarkdown(
     queryKey: articleId
       ? articleKeys.contentMarkdown(articleId)
       : [...articleKeys.all, 'content-markdown', 'disabled'],
-    queryFn: async () => {
-      const result = await getArticleContentMarkdown(articleId!);
-      if (!result.ok) throw result.error;
-      return result.data;
-    },
+    // The service throws on failure (apiClient contract); TanStack turns that
+    // into the query's error state.
+    queryFn: () => getArticleContentMarkdown(articleId!),
     enabled: opts.enabled && Boolean(articleId),
     staleTime: 5 * 60_000,
   });

@@ -16,7 +16,7 @@
  * open; it falls back to the newest version when no selection is known.
  */
 
-import {useEffect, useState} from 'react';
+import {lazy, Suspense, useEffect, useState} from 'react';
 import {ArrowUpRight, Check, ChevronDown, ChevronRight, Sparkles} from 'lucide-react';
 import {Popover, PopoverTrigger} from '@/components/ui/popover';
 import {Badge} from '@/components/ui/badge';
@@ -29,8 +29,15 @@ import {formatFullSuggestionValue, isAbstention} from '@/lib/ai-extraction/sugge
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {AIPopoverShell} from './shared/AIPopoverShell';
-import {GenerationDetailsDialog} from './shared/GenerationDetailsDialog';
 import {AISuggestionEvidence} from './AISuggestionEvidence';
+
+// Lazy-loaded: the generation dialog pulls the article-content service → the
+// shared apiClient (which imports the Supabase client at module scope). Loading
+// it dynamically keeps that chain out of every consumer's static module graph
+// (a heavy, rarely-opened surface — code-splitting it is a win either way).
+const GenerationDetailsDialog = lazy(() =>
+  import('./shared/GenerationDetailsDialog').then((m) => ({default: m.GenerationDetailsDialog})),
+);
 
 const LOW_CONFIDENCE = 0.5;
 
@@ -384,14 +391,16 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
       </AIPopoverShell>
     </Popover>
     {detailsProvenance && (
-      <GenerationDetailsDialog
-        provenance={detailsProvenance}
-        articleId={articleId}
-        open={detailsProvenance !== null}
-        onOpenChange={(next) => {
-          if (!next) setDetailsProvenance(null);
-        }}
-      />
+      <Suspense fallback={null}>
+        <GenerationDetailsDialog
+          provenance={detailsProvenance}
+          articleId={articleId}
+          open={detailsProvenance !== null}
+          onOpenChange={(next) => {
+            if (!next) setDetailsProvenance(null);
+          }}
+        />
+      </Suspense>
     )}
     </>
   );
