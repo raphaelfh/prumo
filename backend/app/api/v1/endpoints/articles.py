@@ -24,9 +24,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.api.deps.security import ensure_project_member, get_current_user_sub
 from app.core.deps import DbSession
+from app.schemas.article import ArticleContentMarkdownResponse
 from app.schemas.common import ApiResponse
 from app.schemas.extraction_run import ArticleRunRef, FormRunsRequest, RunSummaryResponse
 from app.schemas.extraction_suggestion import AISuggestionHistoryItem, AISuggestionsResponse
+from app.services.article_file_service import ArticleFileService
 from app.services.citation_read_service import ArticleNotFoundError, get_article_project_id
 from app.services.extraction_run_read_service import (
     find_active_run,
@@ -38,6 +40,7 @@ from app.services.extraction_suggestion_read_service import (
     get_suggestion_history,
     load_suggestions,
 )
+from app.utils.rate_limiter import limiter
 
 router = APIRouter()
 
@@ -89,6 +92,35 @@ async def get_finalized_run(
     await _gate_article(db, article_id, current_user_sub)
     run = await find_finalized_run(db, article_id, template_id=template_id)
     return ApiResponse.success(run, trace_id=_trace(request))
+
+
+@router.get("/{article_id}/content-markdown")
+@limiter.limit("30/minute")
+async def get_article_content_markdown(
+    article_id: UUID,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse[ArticleContentMarkdownResponse]:
+    """Return the stored block-projection markdown for the article's MAIN file
+    (the exact text the LLM received — ADR-0013), for the review popover's
+    provenance dialog.
+
+    404 when the article is not found OR has never been parsed; 403 when the
+    caller is not a project member. The membership gate runs BEFORE the file
+    read so a non-member can't probe whether an article's markdown exists.
+    """
+    await _gate_article(db, article_id, current_user_sub)
+    file = await ArticleFileService(db).get_content_markdown(article_id)
+    if file is None:
+        raise HTTPException(status_code=404, detail="No parsed content for this article")
+    return ApiResponse.success(
+        ArticleContentMarkdownResponse(
+            file_name=file.original_filename,
+            content_markdown=file.content_markdown,
+        ),
+        trace_id=_trace(request),
+    )
 
 
 @router.post("/form-runs")

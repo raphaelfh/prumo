@@ -188,6 +188,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/articles/{article_id}/content-markdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Article Content Markdown
+         * @description Return the stored block-projection markdown for the article's MAIN file
+         *     (the exact text the LLM received — ADR-0013), for the review popover's
+         *     provenance dialog.
+         *
+         *     404 when the article is not found OR has never been parsed; 403 when the
+         *     caller is not a project member. The membership gate runs BEFORE the file
+         *     read so a non-member can't probe whether an article's markdown exists.
+         */
+        get: operations["get_article_content_markdown_api_v1_articles__article_id__content_markdown_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/articles/{article_id}/files": {
         parameters: {
             query?: never;
@@ -1223,6 +1249,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[ArticleContentMarkdownResponse] */
+        ApiResponse_ArticleContentMarkdownResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ArticleContentMarkdownResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[ArticleFileResponse] */
         ApiResponse_ArticleFileResponse_: {
             /** @description Dados da resposta */
@@ -1847,6 +1890,18 @@ export interface components {
             /** Published Count */
             published_count: number;
             run: components["schemas"]["RunSummaryResponse"];
+        };
+        /**
+         * ArticleContentMarkdownResponse
+         * @description The stored block-projection markdown for an article's MAIN file — the
+         *     exact text sent to the LLM (ADR-0013), surfaced by the review popover's
+         *     "How this was generated" dialog. camelCase on the wire like its siblings.
+         */
+        ArticleContentMarkdownResponse: {
+            /** Contentmarkdown */
+            contentMarkdown?: string | null;
+            /** Filename */
+            fileName?: string | null;
         };
         /**
          * ArticleFileListItem
@@ -3956,6 +4011,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_Union_RunSummaryResponse__NoneType__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_article_content_markdown_api_v1_articles__article_id__content_markdown_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ArticleContentMarkdownResponse_"];
                 };
             };
             /** @description Validation Error */
