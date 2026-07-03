@@ -865,7 +865,7 @@ export const extraction = {
     dispositionAllowNotApplicableHint: 'Let reviewers mark this field as not applicable to the study.',
     dispositionAllowNotEvaluatedLabel: 'Allow "Not evaluated"',
     dispositionAllowNotEvaluatedHint: 'Let reviewers mark this field as not evaluated.',
-    // RunProvenanceDisclosure – "how this was generated" (transparency)
+    // Provenance summary + GenerationDetailsDialog – "how this was generated"
     provenanceToggle: 'How this was generated',
     provenanceRanBy: 'Ran by',
     provenanceProvider: 'Provider',
@@ -879,7 +879,6 @@ export const extraction = {
     provenanceTokens: 'Tokens',
     provenanceStrategy: 'Strategy',
     provenancePromptVersion: 'Prompt version',
-    provenancePromptSent: 'Prompt sent',
     provenanceTokensSummary: '{{n}} tokens',
     provenanceCopyPrompt: 'Copy prompt',
     provenanceCopied: 'Copied!',

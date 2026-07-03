@@ -19,6 +19,17 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
 
+// The generation dialog's markdown-expand hook pulls articlesService → the
+// supabase client; stub it so this display test doesn't need supabase env.
+vi.mock('@/hooks/extraction/useArticleContentMarkdown', () => ({
+  useArticleContentMarkdown: () => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+}));
+
 import { AISuggestionDisplay } from './AISuggestionDisplay';
 import type { AISuggestion, AISuggestionHistoryItem } from '@/types/ai-extraction';
 

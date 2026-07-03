@@ -5,7 +5,8 @@
  * a single (instance, field) coord, groups it by run (newest first), and lets
  * the reviewer SELECT any version to set the field (pure-selection model: one
  * version is "Selected"; the rest offer "Use this version"). The selected
- * version expands to show how it was generated (RunProvenanceDisclosure) and its
+ * version expands to a one-line provenance summary that opens the full
+ * generation-details dialog (GenerationDetailsDialog), plus its
  * cited evidence (with reader-locate). A "no information" version renders as a
  * clean card rather than an empty value. A pinned footer keeps Clear reachable
  * no matter how long the list grows (AIPopoverShell footer slot).
@@ -16,19 +17,19 @@
  */
 
 import {useEffect, useState} from 'react';
-import {Check, ChevronDown, ChevronRight, Sparkles} from 'lucide-react';
+import {ArrowUpRight, Check, ChevronDown, ChevronRight, Sparkles} from 'lucide-react';
 import {Popover, PopoverTrigger} from '@/components/ui/popover';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Separator} from '@/components/ui/separator';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
-import type {AISuggestionHistoryItem, EvidenceCitation} from '@/types/ai-extraction';
+import type {AISuggestionHistoryItem, EvidenceCitation, RunProvenance} from '@/types/ai-extraction';
 import {formatFullSuggestionValue, isAbstention} from '@/lib/ai-extraction/suggestionUtils';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {AIPopoverShell} from './shared/AIPopoverShell';
-import {RunProvenanceDisclosure} from './shared/RunProvenanceDisclosure';
+import {GenerationDetailsDialog} from './shared/GenerationDetailsDialog';
 import {AISuggestionEvidence} from './AISuggestionEvidence';
 
 const LOW_CONFIDENCE = 0.5;
@@ -76,17 +77,60 @@ function EvidenceSection({evidence}: EvidenceSectionProps) {
 // One version row
 // -----------------------------------------------------------------------------
 
+/**
+ * The one-line provenance summary inside a version row: `model · N tokens` plus
+ * a button that opens the full "How this was generated" dialog. Replaces the
+ * old inline disclosure so the popover stays decision-focused (no nested scroll).
+ */
+function ProvenanceSummaryRow({
+  provenance,
+  onOpenDetails,
+}: {
+  provenance: RunProvenance;
+  onOpenDetails: () => void;
+}) {
+  const parts: string[] = [];
+  if (provenance.model) parts.push(String(provenance.model));
+  if (provenance.tokensTotal != null) {
+    parts.push(
+      t('extraction', 'provenanceTokensSummary').replace(
+        '{{n}}',
+        Number(provenance.tokensTotal).toLocaleString(),
+      ),
+    );
+  }
+  const summary = parts.join(' · ');
+
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-md border bg-background/40 px-2.5 py-1.5">
+      <span className="min-w-0 truncate text-[11px] text-muted-foreground" title={summary}>
+        {summary}
+      </span>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-6 shrink-0 gap-1 px-1.5 text-[11px] font-medium text-ai hover:text-ai"
+        onClick={onOpenDetails}
+      >
+        {t('extraction', 'provenanceToggle')}
+        <ArrowUpRight className="h-3 w-3" />
+      </Button>
+    </div>
+  );
+}
+
 interface VersionRowProps {
   version: AISuggestionHistoryItem;
   isSelected: boolean;
   onUse: () => void;
+  onOpenDetails: (provenance: RunProvenance) => void;
   /** Read-only run: the row is audit-only — no "Use this version" action. */
   readOnly?: boolean;
   fieldType?: string | null;
   allowedValues?: unknown;
 }
 
-function VersionRow({version, isSelected, onUse, readOnly, fieldType, allowedValues}: VersionRowProps) {
+function VersionRow({version, isSelected, onUse, onOpenDetails, readOnly, fieldType, allowedValues}: VersionRowProps) {
   const fieldContext = {fieldType, allowedValues};
   const [expanded, setExpanded] = useState(false);
   const showDetails = isSelected || expanded;
@@ -164,7 +208,12 @@ function VersionRow({version, isSelected, onUse, readOnly, fieldType, allowedVal
 
       {showDetails && hasDetails && (
         <div className="mt-2 space-y-2">
-          {version.provenance && <RunProvenanceDisclosure provenance={version.provenance} />}
+          {version.provenance && (
+            <ProvenanceSummaryRow
+              provenance={version.provenance}
+              onOpenDetails={() => onOpenDetails(version.provenance!)}
+            />
+          )}
           {hasReasoning && (
             <div className="space-y-1">
               <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -200,10 +249,13 @@ interface AISuggestionReviewPopoverProps {
    *  CODE to its human label, same as the inline card. */
   fieldType?: string | null;
   allowedValues?: unknown;
+  /** Threaded to the generation dialog so it can lazily fetch the stored
+   *  markdown the LLM received. Omit to hide the "view text sent" expand. */
+  articleId?: string;
 }
 
 export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps) {
-  const {instanceId, fieldId, getHistory, selectedProposalId, onSelect, onClear, trigger, align, fieldType, allowedValues} = props;
+  const {instanceId, fieldId, getHistory, selectedProposalId, onSelect, onClear, trigger, align, fieldType, allowedValues, articleId} = props;
 
   // Read-only run: the popover stays available as audit trail, but the
   // write actions (Use this version / Clear) hide.
@@ -214,6 +266,14 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
   // Optimistic local selection so the highlight follows clicks within a session;
   // seeded from the prop (the active accept_proposal decision / newest).
   const [localSelected, setLocalSelected] = useState<string | undefined>(undefined);
+  // The provenance whose "How this was generated" dialog is open. Opening it
+  // closes the popover (a portal'd dialog would dismiss it anyway — deliberate).
+  const [detailsProvenance, setDetailsProvenance] = useState<RunProvenance | null>(null);
+
+  const handleOpenDetails = (provenance: RunProvenance) => {
+    setOpen(false);
+    setDetailsProvenance(provenance);
+  };
 
   // Reset transient state on close so the next open starts fresh.
   const [prevOpen, setPrevOpen] = useState(open);
@@ -270,6 +330,7 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
     : t('extraction', 'reviewVersionsCount').replace('{{n}}', String(history.length));
 
   return (
+    <>
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <AIPopoverShell
@@ -309,6 +370,7 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
                     version={version}
                     isSelected={version.id === effectiveSelected}
                     onUse={() => handleUse(version)}
+                    onOpenDetails={handleOpenDetails}
                     readOnly={readOnly}
                     fieldType={fieldType}
                     allowedValues={allowedValues}
@@ -321,5 +383,16 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
         )}
       </AIPopoverShell>
     </Popover>
+    {detailsProvenance && (
+      <GenerationDetailsDialog
+        provenance={detailsProvenance}
+        articleId={articleId}
+        open={detailsProvenance !== null}
+        onOpenChange={(next) => {
+          if (!next) setDetailsProvenance(null);
+        }}
+      />
+    )}
+    </>
   );
 }

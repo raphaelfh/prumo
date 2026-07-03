@@ -4,6 +4,17 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
 
+// The generation dialog's markdown-expand hook pulls articlesService → the
+// supabase client; stub it so this popover test doesn't need supabase env.
+vi.mock('@/hooks/extraction/useArticleContentMarkdown', () => ({
+  useArticleContentMarkdown: () => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+}));
+
 import { AISuggestionReviewPopover } from './AISuggestionReviewPopover';
 import { RunEditabilityProvider } from '@/components/runs/RunEditabilityContext';
 import type { AISuggestionHistoryItem } from '@/types/ai-extraction';
