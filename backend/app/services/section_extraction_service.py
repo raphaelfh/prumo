@@ -591,6 +591,11 @@ class SectionExtractionService(LoggerMixin):
             entity_type_id=entity_type.id,
         )
 
+        # Filter via an override, never by mutating ``full_entity_type.fields``:
+        # that relationship is ``cascade="all, delete-orphan"``, so dropping the
+        # skipped (human-settled) fields would DELETE them on the next flush and
+        # hit the ondelete=RESTRICT FK from their proposal (ForeignKeyViolationError).
+        fields_override: list[Any] | None = None
         original_fields = list(full_entity_type.fields or [])
         if skip_fields_with_human_proposals and instance is not None and original_fields:
             field_ids = [f.id for f in original_fields]
@@ -614,34 +619,30 @@ class SectionExtractionService(LoggerMixin):
             filtered = [f for f in original_fields if f.id not in human_fields]
             if not filtered:
                 return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
-            full_entity_type.fields = filtered  # type: ignore[attr-defined]
+            fields_override = filtered
 
-        try:
-            extracted_data, llm_usage = await self._extract_with_llm(
-                pdf_text=pdf_text,
-                entity_type=full_entity_type,
-                model=model,
-                kind=kind,
-                framework=framework,
-            )
-            suggestions_created = await self._create_suggestions(
-                project_id=run.project_id,
-                article_id=run.article_id,
-                entity_type_id=entity_type.id,
-                parent_instance_id=None,
-                extracted_data=extracted_data,
-                run=run,
-                model=model,
-            )
-            return {
-                "suggestions_created": suggestions_created,
-                "tokens_total": llm_usage.total_tokens,
-                "usage": llm_usage,
-            }
-        finally:
-            # Restore the unfiltered field list so callers that rely on
-            # the cached entity_type don't see a mutated tree.
-            full_entity_type.fields = original_fields  # type: ignore[attr-defined]
+        extracted_data, llm_usage = await self._extract_with_llm(
+            pdf_text=pdf_text,
+            entity_type=full_entity_type,
+            model=model,
+            kind=kind,
+            framework=framework,
+            fields_override=fields_override,
+        )
+        suggestions_created = await self._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=entity_type.id,
+            parent_instance_id=None,
+            extracted_data=extracted_data,
+            run=run,
+            model=model,
+        )
+        return {
+            "suggestions_created": suggestions_created,
+            "tokens_total": llm_usage.total_tokens,
+            "usage": llm_usage,
+        }
 
     async def _top_level_entity_types_for_template(
         self,
@@ -1209,6 +1210,7 @@ class SectionExtractionService(LoggerMixin):
         memory_context: list[dict[str, str]] | None = None,
         kind: str = "extraction",
         framework: str | None = None,
+        fields_override: list[Any] | None = None,
     ) -> tuple[dict[str, Any], LlmUsage]:
         """
         Run extraction using the typed LLM call layer.
@@ -1223,6 +1225,8 @@ class SectionExtractionService(LoggerMixin):
                 downstream proposal writes are unchanged.
             framework: When kind=='quality_assessment', the assessment
                 framework (PROBAST / QUADAS-2) the prompts ground in.
+            fields_override: Exact field list for the LLM (e.g. human-settled
+                fields removed); avoids mutating ``entity_type.fields``.
 
         Returns:
             Tuple of extracted data ({field_name: {value, confidence,
@@ -1253,7 +1257,7 @@ class SectionExtractionService(LoggerMixin):
                 memory_context=memory_context,
             )
 
-        output_models = build_output_models(entity_type)
+        output_models = build_output_models(entity_type, fields=fields_override)
         if not output_models:
             self.logger.info(
                 "extraction_skipped_no_fields",
@@ -1298,6 +1302,13 @@ class SectionExtractionService(LoggerMixin):
                 memory_context=memory_context,
             )
         info = self._prompt_input_info
+        # The fields actually sent to the LLM: the human-settled override when the
+        # QA re-run filtered some out (#481), else the entity type's full set.
+        effective_fields = (
+            fields_override
+            if fields_override is not None
+            else (getattr(entity_type, "fields", None) or [])
+        )
         composition = PromptComposition(
             section_name=entity_name,
             system_prompt=system_prompt,
@@ -1308,7 +1319,7 @@ class SectionExtractionService(LoggerMixin):
                 truncated=info.truncated if info else False,
                 est_tokens=info.est_tokens if info else None,
             ),
-            fields_requested=[str(f.name) for f in (getattr(entity_type, "fields", None) or [])],
+            fields_requested=[str(f.name) for f in effective_fields],
             llm_calls=len(output_models),
         )
         self._run_provenance = self._build_run_provenance(

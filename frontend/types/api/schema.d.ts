@@ -690,6 +690,33 @@ export interface paths {
         patch: operations["update_project_template_active_api_v1_projects__project_id__templates__template_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates/{template_id}/republish-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Republish Template Version
+         * @description Publish the live template structure as a new active version.
+         *
+         *     Idempotent when nothing changed (returns the current active version
+         *     without spawning rows). Runs still in an editable stage
+         *     (``pending``/``extract``) are re-pinned to the new version so open
+         *     article forms render the edit; runs from ``consensus`` on keep the
+         *     version they were assessed under. Manager-gated like the sibling
+         *     endpoints — section/field editing is project-wide configuration.
+         */
+        post: operations["republish_template_version_api_v1_projects__project_id__templates__template_id__republish_version_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs": {
         parameters: {
             query?: never;
@@ -1593,6 +1620,23 @@ export interface components {
         ApiResponse_ProposalRecordResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ProposalRecordResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[RepublishTemplateVersionResponse] */
+        ApiResponse_RepublishTemplateVersionResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["RepublishTemplateVersionResponse"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3089,6 +3133,20 @@ export interface components {
             };
             /** Version */
             version: number;
+        };
+        /** RepublishTemplateVersionResponse */
+        RepublishTemplateVersionResponse: {
+            /** Changed */
+            changed: boolean;
+            /** Repinned Run Count */
+            repinned_run_count: number;
+            /** Version */
+            version: number;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
         };
         /** ReviewerDecisionResponse */
         ReviewerDecisionResponse: {
@@ -4939,6 +4997,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_UpdateTemplateActiveResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    republish_template_version_api_v1_projects__project_id__templates__template_id__republish_version_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RepublishTemplateVersionResponse_"];
                 };
             };
             /** @description Validation Error */

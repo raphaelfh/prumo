@@ -8,6 +8,7 @@ merged by the caller. DB field names are mapped through aliases so any
 template name — spaces, parentheses, leading digits — round-trips safely.
 """
 
+from collections.abc import Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
@@ -122,13 +123,22 @@ def _field_result_model(field: Any, index: int) -> type[BaseModel]:
     )
 
 
-def build_output_models(entity_type: Any) -> list[type[BaseModel]]:
+def build_output_models(
+    entity_type: Any,
+    fields: Sequence[Any] | None = None,
+) -> list[type[BaseModel]]:
     """One Pydantic model per chunk of the entity type's fields.
 
     Returns an empty list when the template has no fields — callers skip
     the LLM call entirely.
+
+    ``fields`` overrides the entity type's own field list. Callers that want
+    to send the LLM only a subset (e.g. skipping fields a human already
+    settled) pass it here instead of mutating ``entity_type.fields`` — that
+    relationship is ``cascade="all, delete-orphan"``, so dropping items from it
+    schedules them for DELETE on the next flush.
     """
-    fields = list(getattr(entity_type, "fields", None) or [])
+    fields = list(fields if fields is not None else getattr(entity_type, "fields", None) or [])
     # Fail closed on duplicate names: extraction_fields has no
     # (entity_type, name) unique constraint, and a silent last-win merge would
     # drop the earlier field's data and could mismap its evidence.

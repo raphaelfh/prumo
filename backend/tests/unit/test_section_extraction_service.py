@@ -726,10 +726,13 @@ class TestFieldsWithHumanDecision:
 
 
 class TestExtractOneEntityTypeForRun:
-    """Field-restoration invariant: after we filter ``full_entity_type.fields``
-    to skip human-edited ones, we must restore the original list in a finally
-    block so callers that reuse the cached entity_type don't see a mutated
-    tree (would otherwise corrupt subsequent extractions in the same Run)."""
+    """No-mutation invariant: filtering out human-settled fields must NOT touch
+    the ORM-managed ``full_entity_type.fields`` collection. It is
+    ``cascade="all, delete-orphan"``, so dropping items schedules them for
+    DELETE on the next flush — and a skipped field is exactly one a human
+    proposal/decision references under an ``ondelete=RESTRICT`` FK, so the
+    orphan delete raises ForeignKeyViolationError mid-extraction. The filtered
+    subset is handed to the LLM via ``fields_override`` instead."""
 
     @pytest.fixture
     def run(self):
@@ -745,7 +748,7 @@ class TestExtractOneEntityTypeForRun:
         return run
 
     @pytest.mark.asyncio
-    async def test_restores_field_list_after_filtering(self, service, run):
+    async def test_does_not_mutate_field_collection_when_filtering(self, service, run):
         f_keep = MagicMock()
         f_keep.id = uuid4()
         f_keep.name = "kept"
@@ -772,10 +775,15 @@ class TestExtractOneEntityTypeForRun:
         service._fields_with_recent_human_proposal = AsyncMock(side_effect=fake_human_probe)
         service._fields_with_human_decision = AsyncMock(return_value=set())
 
-        # LLM + suggestion writes
-        service._extract_with_llm = AsyncMock(
-            return_value=({}, LlmUsage(prompt_tokens=1, completion_tokens=1))
-        )
+        # Capture what the LLM is actually asked to fill — must be the override,
+        # never a mutation of the ORM collection.
+        captured: dict[str, list] = {}
+
+        async def fake_llm(*, pdf_text, entity_type, model, kind, framework, fields_override):  # noqa: ARG001
+            captured["override"] = [f.id for f in fields_override]
+            return ({}, LlmUsage(prompt_tokens=1, completion_tokens=1))
+
+        service._extract_with_llm = AsyncMock(side_effect=fake_llm)
         service._create_suggestions = AsyncMock(return_value=0)
 
         et_summary = MagicMock()
@@ -792,9 +800,11 @@ class TestExtractOneEntityTypeForRun:
             model="gpt-4o-mini",
         )
 
-        # Original fields list must be put back before returning.
+        # Only the un-settled field is sent to the LLM (via the override) ...
+        assert captured["override"] == [f_keep.id]
+        # ... and the delete-orphan-cascaded ORM collection was never mutated.
         assert full_et.fields == [f_keep, f_skip]
-        assert full_et.fields == original_fields_ref
+        assert full_et.fields is original_fields_ref
 
     @pytest.mark.asyncio
     async def test_skips_entity_when_every_field_is_human_edited(self, service, run):
@@ -904,8 +914,9 @@ class TestExtractOneEntityTypeForRun:
 
         captured: dict[str, list] = {}
 
-        async def fake_llm(*, pdf_text, entity_type, model, kind, framework):  # noqa: ARG001
-            captured["fields"] = [f.id for f in entity_type.fields]
+        async def fake_llm(*, pdf_text, entity_type, model, kind, framework, fields_override):  # noqa: ARG001
+            captured["override"] = [f.id for f in fields_override]
+            captured["entity_fields"] = [f.id for f in entity_type.fields]
             return ({}, LlmUsage(prompt_tokens=1, completion_tokens=1))
 
         service._extract_with_llm = AsyncMock(side_effect=fake_llm)
@@ -921,7 +932,10 @@ class TestExtractOneEntityTypeForRun:
             model="gpt-4o-mini",
         )
 
-        assert captured["fields"] == [f_open.id]
+        # Only the untouched field is sent to the LLM, via the override ...
+        assert captured["override"] == [f_open.id]
+        # ... while the ORM collection keeps all three fields (never mutated).
+        assert captured["entity_fields"] == [f_proposal.id, f_decision.id, f_open.id]
 
 
 # ---------------------------------------------------------------------------

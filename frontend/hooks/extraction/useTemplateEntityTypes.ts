@@ -13,6 +13,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { supabase } from '@/integrations/supabase/client';
+import { templateEntityTypesKeys } from '@/lib/query-keys/extraction';
 import type { ExtractionField } from '@/types/extraction';
 
 export interface TemplateEntityTypeWithFields {
@@ -20,11 +21,7 @@ export interface TemplateEntityTypeWithFields {
   fields: ExtractionField[];
 }
 
-export const templateEntityTypesKeys = {
-  all: ['template-entity-types'] as const,
-  byTemplate: (templateId: string) =>
-    ['template-entity-types', templateId] as const,
-};
+export { templateEntityTypesKeys };
 
 export function useTemplateEntityTypes(templateId: string | null | undefined) {
   const query = useQuery({
