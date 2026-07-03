@@ -216,6 +216,39 @@ describe('RunReviewerComparison — resolve mode', () => {
     expect(screen.getByTestId('consensus-resolved-inst-1::field-1')).toBeInTheDocument();
   });
 
+  it('an untouched optional field is neutral under All — never mislabeled Agreed', () => {
+    // Add a second field with no decision and not required ⇒ no status entry.
+    const entityTypesTwoFields = [
+      {
+        id: 'et1',
+        label: 'Section',
+        fields: [
+          { id: 'field-1', label: 'Outcome', field_type: 'text' },
+          { id: 'field-2', label: 'Optional note', field_type: 'text' },
+        ],
+      },
+    ];
+    render(
+      <RunReviewerComparison
+        decisionsByCoord={decisionsByCoord}
+        entityTypes={entityTypesTwoFields}
+        instances={instances}
+        ownValues={{}}
+        reviewerLabelById={reviewerLabelById}
+        reviewerAvatarById={reviewerAvatarById}
+        resolution={buildResolution()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('consensus-filter-all'));
+    const optionalRow = screen.getByTestId('consensus-coord-inst-1::field-2');
+    // Neutral dash, not the "Agreed" status label, and no override affordance.
+    expect(optionalRow).toHaveTextContent('—');
+    expect(optionalRow).not.toHaveTextContent('statusAgreed');
+    expect(
+      screen.queryByTestId('consensus-override-toggle-inst-1::field-2'),
+    ).not.toBeInTheDocument();
+  });
+
   it('disabled=true disables adopt and override affordances', () => {
     renderResolve(buildResolution({ disabled: true }));
     expect(screen.getByTestId('consensus-accept-dec-a')).toBeDisabled();

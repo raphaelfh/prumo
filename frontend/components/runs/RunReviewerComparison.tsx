@@ -401,7 +401,7 @@ function ResolveTable({
                     peers={decisionsByCoord.get(r.coordKey) ?? []}
                     reviewerIds={reviewerIds}
                     reviewerLabelById={reviewerLabelById}
-                    status={resolution.statusByCoord.get(r.coordKey) ?? 'agreed'}
+                    status={resolution.statusByCoord.get(r.coordKey)}
                     resolved={resolution.resolvedByCoord.get(r.coordKey)}
                     peersRevealed={resolution.peersRevealed}
                     disabled={resolution.disabled}
@@ -436,7 +436,9 @@ function ResolveRow({
   peers: ReviewerDecisionResponse[];
   reviewerIds: string[];
   reviewerLabelById: Record<string, string>;
-  status: CoordStatus;
+  // Undefined ⇒ an untouched, non-required coord (in no bucket): shown only
+  // under the "All" filter, non-actionable, no status badge.
+  status: CoordStatus | undefined;
   resolved: ResolvedConsensusLike | undefined;
   peersRevealed: boolean;
   disabled: boolean;
@@ -447,9 +449,10 @@ function ResolveRow({
   const [editing, setEditing] = useState(false);
   const [overrideOpen, setOverrideOpen] = useState(false);
   const isResolved = !!resolved;
-  // Agreed rows are non-actionable (arbitrator override on agreed rows is out
-  // of scope); every other state can be adopted / overridden.
-  const canAct = status !== 'agreed';
+  // Agreed rows (and untouched optional coords) are non-actionable — arbitrator
+  // override on agreed rows is out of scope; every other state can be
+  // adopted / overridden.
+  const canAct = status !== 'agreed' && status !== undefined;
   const showActions = canAct && (!isResolved || editing);
 
   const close = () => {
@@ -574,10 +577,12 @@ function ResolveRow({
             </div>
           ) : (
             <div className="flex flex-col items-start gap-1.5">
-              {status !== 'resolved' ? (
+              {status && status !== 'resolved' ? (
                 <Badge variant="outline" className={STATUS_CLASS[status]}>
                   {statusBadgeLabel(status)}
                 </Badge>
+              ) : status === undefined ? (
+                <span className="text-muted-foreground">—</span>
               ) : null}
               {showActions && !overrideOpen ? (
                 <Button
