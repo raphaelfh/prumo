@@ -42,6 +42,15 @@ extraction review popover (`AISuggestionReviewPopover`):
 - A markdown mode for the PDF reader.
 - Quorum/consensus changes — this is a transparency + layout change only.
 
+## Accepted residual (2026-07-03 panel)
+
+Re-running AI on the SAME section of the SAME run overwrites that section's
+provenance slot, so older versions of that section display the newest
+section snapshot. Cross-section clobbering (the shipped bug) is fixed; the
+same-section case is accepted for now — the clean fix is an append-only
+per-section snapshot list resolved by proposal `created_at`, deferred until
+same-run re-runs are a real workflow.
+
 ## 1. Backend — per-section provenance with prompt composition
 
 `SectionExtractionService._build_run_provenance` gains a structured
@@ -145,9 +154,13 @@ summary row (shadcn `Dialog`):
 
 Lazy fetch on expand via TanStack Query → service → typed apiClient. No
 content-markdown read exists in the API layer today (verified 2026-07-03),
-so add
-`GET /api/v1/projects/{project_id}/articles/{article_id}/content-markdown`
-(project-membership checked, `ApiResponse` envelope, typed response model).
+so add `GET /api/v1/articles/{article_id}/content-markdown` — article-scoped
+with the project derived from the article row and membership gated BEFORE the
+read, matching every sibling articles endpoint and avoiding the path-project
+vs article-project BOLA mismatch class (panel-amended 2026-07-03; the
+original draft used a `/projects/{project_id}/...` path). Rate-limited
+(`@limiter.limit`), `ApiResponse` envelope, typed response model with
+camelCase aliases.
 Fetch failure renders an inline error with retry inside the expanded block
 (`ErrorResult`, no toast). When `truncated: true`, label the block as "the
 run sent a budgeted subset of this text".
