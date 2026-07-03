@@ -38,9 +38,36 @@ export interface EvidenceCitation {
 }
 
 /**
- * How a run's suggestions were generated — a run-level provenance snapshot
- * (`extraction_runs.results['provenance']`) surfaced for transparency +
- * traceability. The server payload is snake_case with nested `params`/`tokens`;
+ * Where the article text in a section's prompt came from, and whether the token
+ * budget dropped any of it (a marker stands in for the full text). Part of
+ * {@link PromptComposition}.
+ */
+export interface PromptCompositionArticleRef {
+  fileId?: string | null;
+  fileName?: string | null;
+  truncated?: boolean;
+  estTokens?: number | null;
+}
+
+/**
+ * How one section's LLM prompt was assembled — the recipe the review dialog
+ * renders instead of dumping raw prompt text. `sectionInstruction` carries the
+ * rendered user template with the article replaced by a marker.
+ */
+export interface PromptComposition {
+  sectionName?: string;
+  systemPrompt?: string;
+  sectionInstruction?: string;
+  articleRef?: PromptCompositionArticleRef;
+  fieldsRequested?: string[];
+  llmCalls?: number;
+}
+
+/**
+ * How a run's suggestions were generated — a per-section provenance snapshot
+ * (`extraction_runs.results['provenance']['sections'][entityTypeId]`, resolved
+ * server-side) surfaced for transparency + traceability. The server payload is
+ * snake_case with nested `params`/`tokens`/`prompt_composition`;
  * `aiSuggestionService` flattens it to this camelCase shape. The open index
  * signature keeps the disclosure forward-compatible: a new backend field shows
  * up as a generic row without a frontend change.
@@ -60,6 +87,8 @@ export interface RunProvenance {
   tokensCompletion?: number;
   tokensTotal?: number;
   reasoning?: string;
+  /** Structured prompt recipe. Absent on legacy runs (pre-composition capture). */
+  promptComposition?: PromptComposition;
   [key: string]: unknown;
 }
 
