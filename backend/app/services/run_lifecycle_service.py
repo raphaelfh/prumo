@@ -126,8 +126,19 @@ class RunLifecycleService:
                 f"article {article_id} does not belong to project {project_id}"
             )
 
-        # Resolve template (for kind) — must exist and belong to the same project
-        template = await self.db.get(ProjectExtractionTemplate, project_template_id)
+        # Resolve template (for kind) — must exist and belong to the same
+        # project. FOR SHARE so the active-version resolution below
+        # serializes with TemplateVersionService.republish (FOR UPDATE on
+        # the same row): without it a run created concurrently with a
+        # republish could pin the just-deactivated version and miss the
+        # re-pin UPDATE (which only sees committed runs).
+        template = (
+            await self.db.execute(
+                select(ProjectExtractionTemplate)
+                .where(ProjectExtractionTemplate.id == project_template_id)
+                .with_for_update(read=True)
+            )
+        ).scalar_one_or_none()
         if template is None or template.project_id != project_id:
             raise TemplateNotFoundError(f"Template {project_template_id} not found")
 
@@ -526,7 +537,14 @@ class RunLifecycleService:
             return existing_child, False
 
         # 1. Resolve the active version (lazy-create if the template was
-        #    born outside the backfill path).
+        #    born outside the backfill path). FOR SHARE on the template row
+        #    first, so this serializes with TemplateVersionService.republish
+        #    — same rationale as create_run.
+        await self.db.execute(
+            select(ProjectExtractionTemplate.id)
+            .where(ProjectExtractionTemplate.id == old_run.template_id)
+            .with_for_update(read=True)
+        )
         version_stmt = select(ExtractionTemplateVersion).where(
             ExtractionTemplateVersion.project_template_id == old_run.template_id,
             ExtractionTemplateVersion.is_active.is_(True),

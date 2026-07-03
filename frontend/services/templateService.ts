@@ -11,11 +11,38 @@
  * @module services/templateService
  */
 
+import {apiClient} from '@/integrations/api/client';
 import {supabase} from '@/integrations/supabase/client';
 import type {ErrorResult} from '@/lib/error-utils';
 import {toResult} from '@/lib/error-utils';
+import type {components} from '@/types/api/schema';
 
 // --- Types ---
+
+export type RepublishTemplateVersionResponse =
+  components['schemas']['RepublishTemplateVersionResponse'];
+
+/**
+ * Publish the live template structure as a new active version.
+ *
+ * Section/field edits go straight to PostgREST, but article forms render
+ * from the run's frozen version snapshot — call this after every
+ * structural mutation so the snapshot (and runs still in an editable
+ * stage) pick up the edit.
+ */
+export async function republishTemplateVersion(
+  projectId: string,
+  templateId: string,
+): Promise<ErrorResult<RepublishTemplateVersionResponse>> {
+  return toResult(
+    async () =>
+      apiClient<RepublishTemplateVersionResponse>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/republish-version`,
+        {method: 'POST'},
+      ),
+    'republishTemplateVersion',
+  );
+}
 
 export interface EntityTypeWithCount {
   id: string;

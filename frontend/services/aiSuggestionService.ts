@@ -16,6 +16,7 @@ import type {
   AISuggestionHistoryItem,
   EvidenceCitation,
   LoadSuggestionsResult,
+  PromptComposition,
   RunProvenance,
 } from '@/types/ai-extraction';
 import { getSuggestionKey } from '@/types/ai-extraction';
@@ -73,6 +74,7 @@ function mapProvenance(
     ran_by_name,
     prompt_version,
     prompt_text,
+    prompt_composition,
     ...rest
   } = raw as Record<string, unknown>;
   const p = (params ?? {}) as Record<string, unknown>;
@@ -94,7 +96,32 @@ function mapProvenance(
   assign('tokensPrompt', tk['prompt']);
   assign('tokensCompletion', tk['completion']);
   assign('tokensTotal', tk['total']);
+  const composition = mapPromptComposition(prompt_composition);
+  if (composition !== undefined) out.promptComposition = composition;
   return out;
+}
+
+/**
+ * Flatten the structured `prompt_composition` snapshot (snake_case, nested
+ * `article_ref`) into the camelCase {@link PromptComposition} the dialog renders.
+ */
+function mapPromptComposition(raw: unknown): PromptComposition | undefined {
+  if (raw === null || raw === undefined || typeof raw !== 'object') return undefined;
+  const pc = raw as Record<string, unknown>;
+  const ar = (pc['article_ref'] ?? {}) as Record<string, unknown>;
+  return {
+    sectionName: pc['section_name'] as string | undefined,
+    systemPrompt: pc['system_prompt'] as string | undefined,
+    sectionInstruction: pc['section_instruction'] as string | undefined,
+    articleRef: {
+      fileId: ar['file_id'] as string | null | undefined,
+      fileName: ar['file_name'] as string | null | undefined,
+      truncated: ar['truncated'] as boolean | undefined,
+      estTokens: ar['est_tokens'] as number | null | undefined,
+    },
+    fieldsRequested: pc['fields_requested'] as string[] | undefined,
+    llmCalls: pc['llm_calls'] as number | undefined,
+  };
 }
 
 function mapItemToSuggestion(item: AISuggestionItem): AISuggestion {

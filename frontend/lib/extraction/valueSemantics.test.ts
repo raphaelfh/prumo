@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isValueEmpty,
   isValueFilled,
+  toConsensusValueEnvelope,
   unwrapValueEnvelope,
   valueAbsentReason,
 } from './valueSemantics';
@@ -74,6 +75,30 @@ describe('valueAbsentReason — only valid closed-vocabulary codes', () => {
       expect(valueAbsentReason(raw)).toBe(code);
     });
   }
+});
+
+describe('toConsensusValueEnvelope — override payload = select_existing shape', () => {
+  it('wraps a scalar once (text/select value)', () => {
+    expect(toConsensusValueEnvelope('Low')).toEqual({ value: 'Low' });
+  });
+  it('wraps a {value, unit} number once (canonical nested envelope)', () => {
+    expect(toConsensusValueEnvelope({ value: '5', unit: 'mg' })).toEqual({
+      value: { value: '5', unit: 'mg' },
+    });
+  });
+  it('wraps an array once (multiselect)', () => {
+    expect(toConsensusValueEnvelope(['a', 'b'])).toEqual({ value: ['a', 'b'] });
+  });
+  it('passes a disposition marker through FLAT — never double-wrapped', () => {
+    expect(
+      toConsensusValueEnvelope({ value: null, absent_reason: 'no_information' }),
+    ).toEqual({ value: null, absent_reason: 'no_information' });
+  });
+  it('wraps an out-of-vocabulary reason as an ordinary object (not a marker)', () => {
+    expect(toConsensusValueEnvelope({ value: null, absent_reason: 'nope' })).toEqual({
+      value: { value: null, absent_reason: 'nope' },
+    });
+  });
 });
 
 describe('unwrapValueEnvelope — peels exactly one {value} level', () => {

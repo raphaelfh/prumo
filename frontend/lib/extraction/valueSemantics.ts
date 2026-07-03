@@ -62,3 +62,18 @@ export function isValueEmpty(raw: unknown): boolean {
 export function isValueFilled(raw: unknown): boolean {
   return !isValueEmpty(raw);
 }
+
+/**
+ * Shape a consensus manual-override payload so it is indistinguishable from
+ * what `select_existing` would publish for the same logical value: one
+ * `{value}` envelope around the form-shaped editor output, EXCEPT a resolved
+ * disposition marker, which is already the flat envelope
+ * `{ value: null, absent_reason }` and must not be double-wrapped (mirrors the
+ * `writeRunFieldValue` write contract; an out-of-vocabulary reason is not a
+ * marker and gets wrapped like any other object).
+ */
+export function toConsensusValueEnvelope(editorOutput: unknown): Record<string, unknown> {
+  const reason = valueAbsentReason(editorOutput);
+  if (reason !== null) return { value: null, absent_reason: reason };
+  return { value: editorOutput };
+}

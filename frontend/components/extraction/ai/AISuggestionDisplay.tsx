@@ -38,6 +38,8 @@ export interface AISuggestionReviewBinding {
    *  select/multiselect CODE to its human label, same as the inline card. */
   fieldType?: string | null;
   allowedValues?: unknown;
+  /** Threaded to the generation dialog's "view text sent" markdown expand. */
+  articleId?: string;
 }
 
 interface AISuggestionDisplayProps {

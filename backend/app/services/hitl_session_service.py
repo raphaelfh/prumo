@@ -35,7 +35,7 @@ from app.services.template_clone_service import (
 )
 
 
-async def _take_advisory_xact_lock(db: AsyncSession, left: UUID, right: UUID) -> None:
+async def take_advisory_xact_lock(db: AsyncSession, left: UUID, right: UUID) -> None:
     """Take a transaction-scoped advisory lock keyed by (left, right).
 
     Uses Postgres' built-in ``hashtextextended`` to derive a bigint
@@ -113,7 +113,7 @@ class HITLSessionService:
         )
 
         entity_types = await self._project_entity_types(project_template_id)
-        instances = await self._ensure_instances(
+        instances = await self.ensure_instances(
             project_id=project_id,
             article_id=article_id,
             project_template_id=project_template_id,
@@ -196,7 +196,7 @@ class HITLSessionService:
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
-    async def _ensure_instances(
+    async def ensure_instances(
         self,
         *,
         project_id: UUID,
@@ -211,7 +211,7 @@ class HITLSessionService:
         # transaction-scoped, so it is released on commit / rollback and
         # does not require explicit cleanup. The same lock also protects
         # the active-run lookup in ``_reuse_or_create_run`` (issue #70).
-        await _take_advisory_xact_lock(self.db, article_id, project_template_id)
+        await take_advisory_xact_lock(self.db, article_id, project_template_id)
 
         existing_stmt = select(ExtractionInstance).where(
             ExtractionInstance.article_id == article_id,
@@ -284,7 +284,7 @@ class HITLSessionService:
 
         Maintains the invariant: for every parent instance, every
         cardinality='one' child entity type has exactly one matching
-        instance under it. The original ``_ensure_instances`` only seeded
+        instance under it. The original ``ensure_instances`` only seeded
         top-level singletons; it never touched children. That left a gap:
 
         * A manager adds a new sub-section under ``prediction_models`` in
@@ -378,7 +378,7 @@ class HITLSessionService:
 
         Concurrency note (issue #70): callers always go through
         ``open_or_resume`` so the (article, template) advisory lock taken
-        in ``_ensure_instances`` is already held for this transaction;
+        in ``ensure_instances`` is already held for this transaction;
         the active-run SELECT below cannot race with itself.
         """
         active_stmt = (

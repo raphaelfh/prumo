@@ -49,7 +49,8 @@ import {
   useRun,
   useRunReviewers,
 } from "@/hooks/runs";
-import { ConsensusPanel } from "@/components/runs/ConsensusPanel";
+import { ConsensusResolutionPanel } from "@/components/runs/ConsensusResolutionPanel";
+import { toConsensusValueEnvelope } from "@/lib/extraction/valueSemantics";
 import { RunHeader } from "@/components/runs/header";
 // Imported directly (not via the RunHeader compound) so the shared compound
 // stays free of the supabase-reaching NotificationCenter/feedback deps.
@@ -380,19 +381,6 @@ export default function QualityAssessmentFullScreen() {
       );
   };
 
-  const fieldLabelByCoordMap: Record<string, string> = {};
-  if (session) {
-    for (const domain of domains) {
-      const instanceId = session.instancesByEntityType[domain.entityType.id];
-      if (instanceId) {
-        for (const f of domain.fields) {
-          fieldLabelByCoordMap[`${instanceId}::${f.id}`] = `${domain.entityType.label} · ${f.label}`;
-        }
-      }
-    }
-  }
-  const fieldLabelByCoord = fieldLabelByCoordMap;
-
   const inConsensusStage = runDetail?.run.stage === "consensus";
 
   const handleSelectExisting = async (params: {
@@ -419,7 +407,7 @@ export default function QualityAssessmentFullScreen() {
       instance_id: params.instanceId,
       field_id: params.fieldId,
       mode: "manual_override",
-      value: { value: params.value },
+      value: toConsensusValueEnvelope(params.value),
       rationale: params.rationale,
     });
     await refetchRun();
@@ -515,7 +503,13 @@ export default function QualityAssessmentFullScreen() {
     (domain) => ({
       id: domain.entityType.id,
       label: domain.entityType.label,
-      fields: domain.fields.map((f) => ({ id: f.id, label: f.label })),
+      // Editor-relevant attributes so the resolve-mode override renders the
+      // right typed input per field (not a bare text box).
+      fields: domain.fields.map((f) => ({
+        id: f.id, label: f.label, field_type: f.field_type,
+        allowed_values: f.allowed_values, unit: f.unit, allowed_units: f.allowed_units,
+        allow_other: f.allow_other, other_label: f.other_label, other_placeholder: f.other_placeholder,
+      })),
     }),
   );
   const compareInstances: ComparisonInstance[] = sortedDomains
@@ -725,12 +719,17 @@ export default function QualityAssessmentFullScreen() {
       ) : null}
 
       {showConsensusPanel && runDetail ? (
-        <ConsensusPanel
+        <ConsensusResolutionPanel
           runDetail={runDetail}
           summary={reviewerSummary}
-          fieldLabelByCoord={fieldLabelByCoord}
+          entityTypes={compareEntityTypes}
+          instances={compareInstances}
+          ownValues={values}
           reviewerLabelById={reviewerProfiles.labelById}
-          avatarById={reviewerProfiles.avatarById}
+          reviewerAvatarById={reviewerProfiles.avatarById}
+          // QA consensus is reviewer-level self-publish (backend excludes
+          // viewers via ensure_project_reviewer) — parity with the old panel.
+          canResolve
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}
           onFinalize={handleFinalizeFromConsensus}
@@ -739,6 +738,7 @@ export default function QualityAssessmentFullScreen() {
           isComplete={qaIsComplete}
           requiredCoords={[]}
           peersRevealed={!!runDetail.peers_revealed}
+          showFinalize
         />
       ) : null}
 

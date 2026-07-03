@@ -128,7 +128,7 @@ async def test_unparsed_article_parses_once_then_reuses(
         article_files = ArticleFileRepository(db_session_real)
 
         # --- First call: should parse exactly once ---
-        md1, blocks1, anchor_file_id = await epi.build_prompt_input(
+        md1, info1 = await epi.build_prompt_input(
             db=db_session_real,
             article_files=article_files,
             storage=storage,
@@ -141,12 +141,12 @@ async def test_unparsed_article_parses_once_then_reuses(
         await db_session_real.commit()
 
         assert calls["n"] == 1, f"Expected 1 parse call; got {calls['n']}"
-        assert blocks1, "Expected non-empty blocks after parse"
-        assert anchor_file_id == file_id
+        assert info1.anchor_blocks, "Expected non-empty blocks after parse"
+        assert info1.anchor_file_id == file_id
         assert md1.strip(), "Expected non-empty markdown"
 
         # --- Second call: should reuse, NOT re-parse ---
-        md2, blocks2, _ = await epi.build_prompt_input(
+        md2, _info2 = await epi.build_prompt_input(
             db=db_session_real,
             article_files=article_files,
             storage=storage,

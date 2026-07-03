@@ -60,8 +60,9 @@ import {
   useRun,
   useRunReviewers,
 } from '@/hooks/runs';
-import {ConsensusPanel} from '@/components/runs/ConsensusPanel';
+import {ConsensusResolutionPanel} from '@/components/runs/ConsensusResolutionPanel';
 import {useConsensusReconciliation} from '@/hooks/extraction/useConsensusReconciliation';
+import {toConsensusValueEnvelope} from '@/lib/extraction/valueSemantics';
 
 // Components
 import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
@@ -257,7 +258,6 @@ export default function ExtractionFullScreen() {
   // Consensus-page derived values: coord→label map, required coords,
   // expected reviewer count, and pre-built finalize-warning message.
   const {
-    fieldLabelByCoord,
     requiredCoords,
     expectedReviewerCount,
     finalizeWarning,
@@ -293,7 +293,7 @@ export default function ExtractionFullScreen() {
       instance_id: params.instanceId,
       field_id: params.fieldId,
       mode: 'manual_override',
-      value: { value: params.value },
+      value: toConsensusValueEnvelope(params.value),
       rationale: params.rationale,
     });
     await refetchRun();
@@ -1126,20 +1126,20 @@ export default function ExtractionFullScreen() {
     />
   );
 
-  // Left panel: ConsensusPanel in consensus stage; ExtractionFormPanel otherwise.
-  // RunEditability wraps both branches: the form tree consumes it (read-only
-  // on finalized/pending); ConsensusPanel renders only ui-primitives.
   const extractionFormPanelInner =
     inConsensusStage && runDetail ? (
       <div className="h-full min-h-0 overflow-y-auto" data-testid="extraction-consensus-area">
-        <ConsensusPanel
+        <ConsensusResolutionPanel
           runDetail={runDetail}
           summary={reviewerSummary}
+          entityTypes={entityTypes}
+          instances={instances}
+          ownValues={values}
           requiredCoords={requiredCoords}
           peersRevealed={!!runDetail.peers_revealed}
-          fieldLabelByCoord={fieldLabelByCoord}
           reviewerLabelById={reviewerProfiles.labelById}
-          avatarById={reviewerProfiles.avatarById}
+          reviewerAvatarById={reviewerProfiles.avatarById}
+          canResolve={permissions.canResolveConflicts}
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}
           onFinalize={handleApproveFinalize}

@@ -25,12 +25,12 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
-from app.models.extraction import ExtractionEvidence, ExtractionRunStage
+from app.models.extraction import ExtractionEvidence, ExtractionInstance, ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionProposalSource,
     ExtractionReviewerDecisionType,
@@ -403,6 +403,171 @@ async def test_get_suggestion_history_resolves_ran_by_name(
     )
     assert result.suggestions[0].provenance is not None
     assert "ran_by_name" not in result.suggestions[0].provenance
+
+
+async def _seed_run_provenance(db: AsyncSession, run_id: UUID, prov: dict) -> None:
+    import json
+
+    await db.execute(
+        text(
+            "UPDATE extraction_runs "
+            "SET results = jsonb_set(coalesce(results, '{}'::jsonb), "
+            "'{provenance}', cast(:p as jsonb)) WHERE id = :id"
+        ),
+        {"p": json.dumps(prov), "id": str(run_id)},
+    )
+    await db.flush()
+
+
+async def _instance_entity_type(db: AsyncSession, instance_id: UUID) -> UUID:
+    return (
+        await db.execute(
+            select(ExtractionInstance.entity_type_id).where(ExtractionInstance.id == instance_id)
+        )
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_history_resolves_section_scoped_provenance(db_session: AsyncSession) -> None:
+    """A sectioned run resolves the item's provenance to ITS section snapshot and
+    never leaks the raw ``sections`` map to the client."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, _reviewer_a, _reviewer_b = built
+    et_id = await _instance_entity_type(db_session, instance_id)
+
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {
+            "sections": {
+                str(et_id): {"model": "m-a", "prompt_composition": {"section_name": "A"}},
+                str(uuid4()): {"model": "other-section"},
+            }
+        },
+    )
+
+    history = await get_suggestion_history(
+        db_session, instance_id, field_id, article_id=SEED.primary_article
+    )
+    prov = history[0].provenance
+    assert prov is not None
+    assert prov["model"] == "m-a"
+    assert prov["prompt_composition"]["section_name"] == "A"
+    assert "sections" not in prov  # never expose the whole map
+
+
+@pytest.mark.asyncio
+async def test_mixed_era_run_falls_back_to_flat_for_presection_suggestions(
+    db_session: AsyncSession,
+) -> None:
+    """A run with flat legacy keys AND a sections map (one section extracted
+    after this shipped) still shows the flat snapshot for a section that
+    predates the sections map — never None."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, _reviewer_a, _reviewer_b = built
+
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {
+            "model": "legacy",
+            "prompt_text": "SYS",
+            "sections": {str(uuid4()): {"model": "some-other-section"}},
+        },
+    )
+
+    history = await get_suggestion_history(
+        db_session, instance_id, field_id, article_id=SEED.primary_article
+    )
+    prov = history[0].provenance
+    assert prov is not None
+    assert prov["model"] == "legacy"
+    assert prov["prompt_text"] == "SYS"
+    assert "sections" not in prov  # the sibling section's map is stripped
+
+
+@pytest.mark.asyncio
+async def test_pure_sectioned_run_missing_section_yields_none(
+    db_session: AsyncSession,
+) -> None:
+    """A pure-sectioned run (no flat keys) with no snapshot for this entity type
+    yields None — never a sibling section's snapshot (mis-attribution guard)."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, _reviewer_a, _reviewer_b = built
+
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {"sections": {str(uuid4()): {"model": "some-other-section"}}},
+    )
+
+    history = await get_suggestion_history(
+        db_session, instance_id, field_id, article_id=SEED.primary_article
+    )
+    assert history[0].provenance is None
+
+
+@pytest.mark.asyncio
+async def test_ran_by_name_resolved_inside_sections(db_session: AsyncSession) -> None:
+    """The runner name is resolved INSIDE a per-section snapshot, not just flat."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, _reviewer_a, reviewer_b = built
+    et_id = await _instance_entity_type(db_session, instance_id)
+
+    await db_session.execute(
+        text("UPDATE public.profiles SET full_name = :n WHERE id = :id"),
+        {"n": "Integration Reviewer B (Suggest)", "id": str(reviewer_b)},
+    )
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {"sections": {str(et_id): {"model": "m", "ran_by_user_id": str(reviewer_b)}}},
+    )
+
+    history = await get_suggestion_history(
+        db_session, instance_id, field_id, article_id=SEED.primary_article
+    )
+    assert history[0].provenance is not None
+    assert history[0].provenance["ran_by_name"] == "Integration Reviewer B (Suggest)"
+
+
+@pytest.mark.asyncio
+async def test_load_suggestions_resolves_sections_via_instance_map(
+    db_session: AsyncSession,
+) -> None:
+    """The hot load path resolves per-section provenance via the instance→entity
+    type map, same as the history path."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, _field_id, reviewer_a, _reviewer_b = built
+    et_id = await _instance_entity_type(db_session, instance_id)
+
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {"sections": {str(et_id): {"model": "m-load"}}},
+    )
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=reviewer_a,
+        run_id=run_id,
+    )
+    prov = result.suggestions[0].provenance
+    assert prov is not None
+    assert prov["model"] == "m-load"
+    assert "sections" not in prov
 
 
 @pytest.mark.asyncio
