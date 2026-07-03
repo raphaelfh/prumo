@@ -1111,15 +1111,22 @@ git commit -m "feat(extraction): consensus stage renders the resolve-mode compar
 **Interfaces:**
 - Consumes: same as Task 8 + `buildQaTransition` finalize path unchanged.
 
-- [ ] **Step 0: Verify the QA resolve gate before wiring**
+- [ ] **Step 0: QA resolve gate — RESOLVED (backend-verified 2026-07-03)**
 
-Read `frontend/hooks/shared/useComparisonPermissions.ts` and confirm what
-`canResolveConflicts` returns for a QA reviewer. Decision rule: the
-`resolution` prop must be passed to exactly the callers who can use today's
-`ConsensusPanel` controls successfully (backend is the enforcer). If QA
-reviewers have `canResolveConflicts === true`, gate on it (same as
-extraction); if not, pass `resolution` unconditionally for QA (parity with
-today's always-on panel) and note it in the commit message.
+The consensus endpoint gate is kind-aware
+(`backend/app/api/v1/endpoints/extraction_runs.py:363-366`): extraction →
+`ensure_project_arbitrator`, **QA → `ensure_project_reviewer`** (reviewer-level
+self-publish; viewers excluded). QA today renders `ConsensusPanel`
+unconditionally (`showConsensusPanel = ready && inConsensusStage`), so its
+controls are already offered to any reviewer with the backend as the real
+enforcer. **Decision: pass `resolution` UNCONDITIONALLY for QA** (do not gate
+on `canResolveConflicts` — that is arbitrator-scoped and would break the
+QA reviewer self-publish flow). This is exact parity with today. Blinding is
+safe: reviewer `decisions` are scrubbed per-caller server-side
+(`extraction_run_read_service.py:150`) so a blind QA reviewer sees no peer
+columns, and `consensus_decisions`/`published_states` are the canonical
+post-resolution artifacts the old panel already displayed
+(`:156-157`, unscrubbed by design).
 
 - [ ] **Step 1: Override handler envelopes via the helper** (same edit as
   Task 8 Step 1, in `handleManualOverride` at `:412`).
