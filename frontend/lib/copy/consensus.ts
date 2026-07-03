@@ -72,8 +72,17 @@ export const consensus = {
     resetSuccessTemplate: 'Template override removed',
     resetError: 'Could not clear consensus configuration',
 
-    // --- Runtime divergence-resolution panel (ConsensusPanel) ---
+    // --- Runtime divergence resolution (consensus compare table) ---
     panelResolveTitle: 'Resolve divergence',
+    // Resolve-mode comparison table (spec 2026-07-03)
+    filterAttention: 'Needs attention',
+    filterAll: 'All',
+    filterResolved: 'Resolved',
+    consensusColumnLabel: 'Consensus',
+    overrideAction: 'Override',
+    overrideValueLabel: 'Custom value',
+    adoptValueAria: 'Publish this reviewer’s value as consensus',
+    overrideNoInfoRecorded: '“No information” will be published as the consensus value.',
     sectionConflictsTitle: 'Conflicts',
     sectionConflictsDesc: 'Reviewers gave different values. Resolve each.',
     sectionAttentionTitle: 'Needs attention',
