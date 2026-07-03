@@ -5,6 +5,6 @@
 
 export { AISuggestionActions } from '@/components/shared/ai-suggestions';
 export { AISuggestionConfidence } from './AISuggestionConfidence';
-export { RunProvenanceDisclosure } from './RunProvenanceDisclosure';
+export { GenerationDetailsDialog } from './GenerationDetailsDialog';
 export { AISuggestionValue } from './AISuggestionValue';
 

@@ -198,6 +198,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       selectSuggestion={props.selectSuggestion}
                       getSuggestionsHistory={props.getSuggestionsHistory}
                       isActionLoading={props.isActionLoading}
+                      articleId={articleId}
                     />
                   </div>
                 ))}

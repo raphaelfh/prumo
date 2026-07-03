@@ -218,6 +218,17 @@ class ArticleFileListItem(BaseModel):
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
 
+class ArticleContentMarkdownResponse(BaseModel):
+    """The stored block-projection markdown for an article's MAIN file — the
+    exact text sent to the LLM (ADR-0013), surfaced by the review popover's
+    "How this was generated" dialog. camelCase on the wire like its siblings."""
+
+    file_name: str | None = Field(default=None, alias="fileName")
+    content_markdown: str | None = Field(default=None, alias="contentMarkdown")
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
 # =================== UPLOAD SCHEMAS ===================
 
 

@@ -525,6 +525,58 @@ describe('provenance mapping', () => {
       tokensTotal: 1200,
     });
   });
+
+  it('flattens the structured prompt_composition to camelCase promptComposition', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({
+          provenance: {
+            model: 'x',
+            prompt_composition: {
+              section_name: 'Source of Data',
+              system_prompt: 'You are an expert…',
+              section_instruction: 'Extract…\nArticle text:\n[[ARTICLE_MARKDOWN]]',
+              article_ref: {
+                file_id: 'file-1',
+                file_name: 'teste3.pdf',
+                truncated: false,
+                est_tokens: 23710,
+              },
+              fields_requested: ['data_source'],
+              llm_calls: 2,
+            },
+          },
+        }),
+      ],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    const prov = result.suggestions['inst-1_f-1'].provenance;
+    // The raw snake_case key never leaks through as a generic passthrough row.
+    expect(prov).not.toHaveProperty('prompt_composition');
+    expect(prov?.promptComposition).toEqual({
+      sectionName: 'Source of Data',
+      systemPrompt: 'You are an expert…',
+      sectionInstruction: 'Extract…\nArticle text:\n[[ARTICLE_MARKDOWN]]',
+      articleRef: {
+        fileId: 'file-1',
+        fileName: 'teste3.pdf',
+        truncated: false,
+        estTokens: 23710,
+      },
+      fieldsRequested: ['data_source'],
+      llmCalls: 2,
+    });
+  });
+
+  it('leaves promptComposition undefined for legacy runs without it', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [makeItem({ provenance: { model: 'x', prompt_text: 'SYS' } })],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].provenance?.promptComposition).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

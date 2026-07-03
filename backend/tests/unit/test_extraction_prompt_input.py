@@ -18,9 +18,14 @@ def _block(page, idx, text, bt="paragraph"):
 
 @pytest.mark.asyncio
 async def test_uses_stored_markdown_when_blocks_present(monkeypatch) -> None:
-    """When blocks exist and stored_markdown fits the budget, returns it directly."""
+    """When blocks exist and stored_markdown fits the budget, returns it directly
+    with assembly info (file identity, no truncation, a real token estimate)."""
     aid, fid = uuid4(), uuid4()
-    main_file = SimpleNamespace(id=fid, content_markdown="# Results\n\nEffect size 0.81.")
+    main_file = SimpleNamespace(
+        id=fid,
+        content_markdown="# Results\n\nEffect size 0.81.",
+        original_filename="teste3.pdf",
+    )
     article_files = MagicMock()
     article_files.get_latest_pdf = AsyncMock(return_value=main_file)
     repo = MagicMock()
@@ -29,7 +34,7 @@ async def test_uses_stored_markdown_when_blocks_present(monkeypatch) -> None:
     )
     monkeypatch.setattr(f"{_EP}.ArticleTextBlockRepository", lambda _db: repo)
 
-    text, blocks, file_id = await build_prompt_input(
+    text, info = await build_prompt_input(
         db=AsyncMock(),
         article_files=article_files,
         storage=MagicMock(),
@@ -40,15 +45,18 @@ async def test_uses_stored_markdown_when_blocks_present(monkeypatch) -> None:
         trace_id="t1",
     )
     assert "Results" in text and "Effect size 0.81." in text
-    assert file_id == fid
-    assert len(blocks) == 2
+    assert info.anchor_file_id == fid
+    assert len(info.anchor_blocks) == 2
+    assert info.file_name == "teste3.pdf"
+    assert info.truncated is False
+    assert isinstance(info.est_tokens, int) and info.est_tokens > 0
 
 
 @pytest.mark.asyncio
 async def test_on_demand_parse_when_no_blocks(monkeypatch) -> None:
     """When no blocks exist, DocumentParsingService is called once, blocks reloaded."""
     aid, fid = uuid4(), uuid4()
-    main_file = SimpleNamespace(id=fid, content_markdown=None)
+    main_file = SimpleNamespace(id=fid, content_markdown=None, original_filename=None)
     article_files = MagicMock()
     article_files.get_latest_pdf = AsyncMock(return_value=main_file)
 
@@ -74,7 +82,7 @@ async def test_on_demand_parse_when_no_blocks(monkeypatch) -> None:
 
     db = AsyncMock()
 
-    text, blocks, file_id = await build_prompt_input(
+    text, info = await build_prompt_input(
         db=db,
         article_files=article_files,
         storage=MagicMock(),
@@ -87,8 +95,8 @@ async def test_on_demand_parse_when_no_blocks(monkeypatch) -> None:
 
     mock_parsing_instance.parse_article_file.assert_awaited_once_with(fid)
     db.refresh.assert_awaited_once_with(main_file)
-    assert file_id == fid
-    assert blocks == [block_after_parse]
+    assert info.anchor_file_id == fid
+    assert info.anchor_blocks == [block_after_parse]
     assert "Hello from parse" in text
 
 
@@ -113,10 +121,11 @@ async def test_raises_when_no_pdf_file() -> None:
 
 @pytest.mark.asyncio
 async def test_falls_back_to_assembler_when_markdown_over_budget(monkeypatch) -> None:
-    """When stored_markdown exceeds token budget, assemble_for_model is used instead."""
+    """When stored_markdown exceeds token budget, assemble_for_model is used and its
+    truncation flag + token estimate surface on the returned info."""
     aid, fid = uuid4(), uuid4()
     large_md = "x" * 10_000
-    main_file = SimpleNamespace(id=fid, content_markdown=large_md)
+    main_file = SimpleNamespace(id=fid, content_markdown=large_md, original_filename="big.pdf")
     article_files = MagicMock()
     article_files.get_latest_pdf = AsyncMock(return_value=main_file)
     repo = MagicMock()
@@ -128,11 +137,11 @@ async def test_falls_back_to_assembler_when_markdown_over_budget(monkeypatch) ->
 
     from app.schemas.extraction import AssemblyInfo
 
-    mock_info = AssemblyInfo(total_blocks=1, included_blocks=1, truncated=False, est_tokens=50)
+    mock_info = AssemblyInfo(total_blocks=1, included_blocks=1, truncated=True, est_tokens=50)
     mock_assemble = MagicMock(return_value=("assembled text", mock_info))
     monkeypatch.setattr(f"{_EP}.assemble_for_model", mock_assemble)
 
-    text, blocks, file_id = await build_prompt_input(
+    text, info = await build_prompt_input(
         db=AsyncMock(),
         article_files=article_files,
         storage=MagicMock(),
@@ -145,4 +154,7 @@ async def test_falls_back_to_assembler_when_markdown_over_budget(monkeypatch) ->
 
     mock_assemble.assert_called_once()
     assert text == "assembled text"
-    assert file_id == fid
+    assert info.anchor_file_id == fid
+    assert info.file_name == "big.pdf"
+    assert info.truncated is True
+    assert info.est_tokens == 50

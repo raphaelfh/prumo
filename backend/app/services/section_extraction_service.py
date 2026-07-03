@@ -55,14 +55,20 @@ from app.repositories import (
     ExtractionRunRepository,
 )
 from app.schemas.extraction import SectionExtractionRequest
+from app.schemas.prompt_composition import PromptComposition, PromptCompositionArticleRef
 from app.services.evidence_anchor_service import build_anchor
-from app.services.extraction_prompt_input import build_prompt_input
+from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.value_semantics import AbsentReason
 
 # Maximum number of evidence rows written per extracted field.
 EVIDENCE_CAP = 3
+
+# Stands in for the full article text inside the persisted section_instruction,
+# so the composition is byte-faithful to the run's template without duplicating
+# the (multi-thousand-token) article per section.
+ARTICLE_MARKDOWN_MARKER = "[[ARTICLE_MARKDOWN]]"
 
 
 @dataclass
@@ -145,6 +151,9 @@ class SectionExtractionService(LoggerMixin):
         # reused by _create_suggestions for evidence anchoring (no second fetch).
         self._run_anchor_blocks: list = []
         self._run_anchor_file_id: UUID | None = None
+        # Assembly info from the last prompt build (truncation, token estimate,
+        # source file) — feeds the per-section prompt_composition provenance.
+        self._prompt_input_info: PromptInputInfo | None = None
         # Run provenance snapshot, set by _extract_with_llm and merged into the
         # run's results at completion (how the suggestions were generated).
         self._run_provenance: dict[str, Any] | None = None
@@ -155,43 +164,39 @@ class SectionExtractionService(LoggerMixin):
         model: str,
         prompt_name: str,
         prompt_version: str,
-        prompt_text: str,
+        usage: LlmUsage | None = None,
+        prompt_composition: PromptComposition | None = None,
     ) -> dict[str, Any]:
-        """Flat snapshot of how a run's suggestions were generated, for
-        transparency/traceability. Params come from the single-source extractor
-        constants so they can't drift from what was actually sent."""
-        return {
+        """Per-section snapshot of how a section's suggestions were generated,
+        for transparency/traceability. Params come from the single-source
+        extractor constants so they can't drift from what was actually sent.
+        Includes this section's token usage and the structured prompt
+        composition (the recipe the review UI renders)."""
+        snapshot: dict[str, Any] = {
             "ran_by_user_id": self.user_id,
             "provider": settings.LLM_PROVIDER,
             "model": model,
             "strategy": prompt_name,
             "prompt_version": prompt_version,
-            "prompt_text": prompt_text,
             "params": {
                 "temperature": LLM_TEMPERATURE,
                 "output_retries": OUTPUT_RETRIES_DEFAULT,
                 "timeout_seconds": settings.LLM_TIMEOUT_SECONDS,
             },
         }
-
-    def _provenance_with_tokens(self, usage: LlmUsage) -> dict[str, Any] | None:
-        """The run provenance snapshot plus this run's token usage, or None when
-        no LLM extraction ran. Stored on the suggestion-owning run so the review
-        UI can show how each suggestion was generated."""
-        if self._run_provenance is None:
-            return None
-        return {
-            **self._run_provenance,
-            "tokens": {
+        if usage is not None:
+            snapshot["tokens"] = {
                 "prompt": usage.prompt_tokens,
                 "completion": usage.completion_tokens,
                 "total": usage.total_tokens,
-            },
-        }
+            }
+        if prompt_composition is not None:
+            snapshot["prompt_composition"] = prompt_composition.model_dump()
+        return snapshot
 
     async def _assemble_prompt_text(self, article_id: UUID, model: str) -> str:
-        """Budgeted block-markdown prompt input; stashes run anchor blocks on self."""
-        text, self._run_anchor_blocks, self._run_anchor_file_id = await build_prompt_input(
+        """Budgeted block-markdown prompt input; stashes assembly info on self."""
+        text, info = await build_prompt_input(
             db=self.db,
             article_files=self._article_files,
             storage=self.storage,
@@ -201,6 +206,9 @@ class SectionExtractionService(LoggerMixin):
             user_id=self.user_id,
             trace_id=self.trace_id,
         )
+        self._prompt_input_info = info
+        self._run_anchor_blocks = info.anchor_blocks
+        self._run_anchor_file_id = info.anchor_file_id
         return text
 
     async def extract_section(
@@ -310,7 +318,6 @@ class SectionExtractionService(LoggerMixin):
                 extracted_data=extracted_data,
                 run=run,
                 model=model,
-                usage=llm_usage,
             )
             phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -452,9 +459,6 @@ class SectionExtractionService(LoggerMixin):
         section_results: list[dict[str, Any]] = []
         total_suggestions = 0
         total_tokens = 0
-        # Aggregate prompt+completion so provenance uses the same {prompt,
-        # completion, total} shape as the single-section paths.
-        accumulated_usage = LlmUsage()
         successful = 0
         failed = 0
 
@@ -477,8 +481,6 @@ class SectionExtractionService(LoggerMixin):
                     successful += 1
                     total_suggestions += result["suggestions_created"]
                     total_tokens += result["tokens_total"]
-                    # Skipped sections omit "usage" (0 tokens) — default to empty.
-                    accumulated_usage = accumulated_usage + result.get("usage", LlmUsage())
                     section_results.append(
                         {
                             "entity_type_id": str(entity_type.id),
@@ -517,10 +519,11 @@ class SectionExtractionService(LoggerMixin):
 
             duration_ms = (perf_counter() - start_time) * 1000
 
-            # Persist run provenance with the run-aggregate token usage in the
-            # {prompt, completion, total} shape. None when no LLM ran.
-            run_provenance = self._provenance_with_tokens(accumulated_usage)
-
+            # Provenance is written per-section at the proposal choke-point
+            # (``_create_suggestions`` → ``merge_provenance_section``); do NOT
+            # write a run-aggregate ``provenance`` here — ``complete_run``
+            # shallow-merges, so it would clobber the per-section ``sections`` map
+            # with the last section's snapshot.
             await self._runs.complete_run(
                 run_id=run.id,
                 results={
@@ -533,7 +536,6 @@ class SectionExtractionService(LoggerMixin):
                     "kind": kind,
                     "skip_fields_with_human_proposals": skip_fields_with_human_proposals,
                     "auto_advance_to_review": auto_advance_to_review,
-                    "provenance": run_provenance,
                 },
             )
 
@@ -635,7 +637,6 @@ class SectionExtractionService(LoggerMixin):
             extracted_data=extracted_data,
             run=run,
             model=model,
-            usage=llm_usage,
         )
         return {
             "suggestions_created": suggestions_created,
@@ -1038,7 +1039,6 @@ class SectionExtractionService(LoggerMixin):
                 extracted_data=extracted_data,
                 run=run,
                 model=model,
-                usage=llm_usage,
             )
             section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -1283,11 +1283,51 @@ class SectionExtractionService(LoggerMixin):
             extracted_data.update(dump_extraction(output))
             usage = usage + call_usage
 
+        # Re-render the user template with the article replaced by a marker, so
+        # the persisted composition is byte-faithful to what was sent (minus the
+        # duplicated article text). Same prompt pair the calls above used.
+        if kind == "quality_assessment":
+            section_instruction = quality_assessment.render(
+                entity_name=entity_name,
+                entity_description=entity_description,
+                article_text=ARTICLE_MARKDOWN_MARKER,
+                framework=framework,
+                memory_context=memory_context,
+            )
+        else:
+            section_instruction = section_extraction.render(
+                entity_name=entity_name,
+                entity_description=entity_description,
+                article_text=ARTICLE_MARKDOWN_MARKER,
+                memory_context=memory_context,
+            )
+        info = self._prompt_input_info
+        # The fields actually sent to the LLM: the human-settled override when the
+        # QA re-run filtered some out (#481), else the entity type's full set.
+        effective_fields = (
+            fields_override
+            if fields_override is not None
+            else (getattr(entity_type, "fields", None) or [])
+        )
+        composition = PromptComposition(
+            section_name=entity_name,
+            system_prompt=system_prompt,
+            section_instruction=section_instruction,
+            article_ref=PromptCompositionArticleRef(
+                file_id=str(info.anchor_file_id) if info and info.anchor_file_id else None,
+                file_name=info.file_name if info else None,
+                truncated=info.truncated if info else False,
+                est_tokens=info.est_tokens if info else None,
+            ),
+            fields_requested=[str(f.name) for f in effective_fields],
+            llm_calls=len(output_models),
+        )
         self._run_provenance = self._build_run_provenance(
             model=model,
             prompt_name=prompt_module.NAME,
             prompt_version=prompt_module.VERSION,
-            prompt_text=system_prompt,
+            usage=usage,
+            prompt_composition=composition,
         )
         return extracted_data, usage
 
@@ -1300,26 +1340,24 @@ class SectionExtractionService(LoggerMixin):
         extracted_data: dict[str, Any],
         run: ExtractionRun,
         model: str = settings.LLM_DEFAULT_MODEL,
-        usage: LlmUsage | None = None,
     ) -> int:
         """
         Create extraction suggestions in database via repository.
 
         Automatically create an instance when missing.
         Link suggestions to extraction_run_id for traceability. As the single
-        choke-point for AI proposals, this also persists the run ``provenance``
-        snapshot so every suggestion-owning run carries it (see below).
+        choke-point for AI proposals, this also persists the per-section
+        ``provenance`` snapshot (built in ``_extract_with_llm``, tokens +
+        prompt composition included) keyed by ``entity_type_id`` (see below).
 
         Args:
             project_id: Project ID.
             article_id: Article ID.
-            entity_type_id: entity type.
+            entity_type_id: entity type — also the provenance section key.
             parent_instance_id: Parent instance ID.
             extracted_data: Extracted data.
             run: ExtractionRun used to link suggestions.
             model: LLM model name (used to build the entailment judge model).
-            usage: token usage for this extraction call, paired with the run
-                provenance snapshot. None (or no LLM run) skips provenance.
 
         Returns:
             Number of created suggestions.
@@ -1576,13 +1614,14 @@ class SectionExtractionService(LoggerMixin):
             run_id=str(run.id),
         )
 
-        # Single choke-point for run provenance: persist HOW the suggestions
-        # were generated wherever proposals are recorded, so no extraction path
-        # can silently omit it. ``complete_run`` later shallow-merges its summary
-        # on top (it MERGEs, so this key survives). Skipped when no LLM ran.
-        provenance = self._provenance_with_tokens(usage or LlmUsage())
-        if count and provenance is not None:
-            await self._runs.merge_results(run.id, {"provenance": provenance})
+        # Single choke-point for per-section provenance: persist HOW this
+        # section's suggestions were generated, keyed by entity_type_id, wherever
+        # proposals are recorded — so no extraction path can silently omit it and
+        # concurrent sections on one run don't clobber each other. The snapshot
+        # (tokens + prompt composition) was built section-scoped in
+        # _extract_with_llm. Skipped when no LLM ran (``_run_provenance`` None).
+        if count and self._run_provenance is not None:
+            await self._runs.merge_provenance_section(run.id, entity_type_id, self._run_provenance)
 
         return count
 

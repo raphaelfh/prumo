@@ -257,6 +257,7 @@ export function QASectionAccordion({
                           ? () => isAIActionLoading(instanceId, field.id)
                           : undefined
                       }
+                      articleId={articleId}
                     />
                     {stack.length > 0 ? (
                       <div className="mt-1 flex justify-end">
@@ -312,6 +313,7 @@ export function QASectionAccordion({
                             ? () => isAIActionLoading(instanceId, field.id)
                             : undefined
                         }
+                        articleId={articleId}
                       />
                       {stack.length > 0 ? (
                         <div className="mt-1 flex justify-end">
