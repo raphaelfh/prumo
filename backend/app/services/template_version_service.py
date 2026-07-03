@@ -17,9 +17,10 @@ instance — would silently skip the new section).
 """
 
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
@@ -94,16 +95,19 @@ class TemplateVersionService:
         # lock while create_run takes the template row FOR SHARE; taking the
         # template FOR UPDATE before the advisory locks here would invert
         # that order and deadlock.
-        run_pairs = (
-            await self.db.execute(
-                select(ExtractionRun.project_id, ExtractionRun.article_id)
-                .where(
-                    ExtractionRun.template_id == project_template_id,
-                    ExtractionRun.stage.in_(_EDITABLE_STAGES),
+        run_pairs: list[tuple[UUID, UUID]] = [
+            (row.project_id, row.article_id)
+            for row in (
+                await self.db.execute(
+                    select(ExtractionRun.project_id, ExtractionRun.article_id)
+                    .where(
+                        ExtractionRun.template_id == project_template_id,
+                        ExtractionRun.stage.in_(_EDITABLE_STAGES),
+                    )
+                    .distinct()
                 )
-                .distinct()
-            )
-        ).all()
+            ).all()
+        ]
         for _, article_id in sorted(run_pairs, key=lambda pair: str(pair[1])):
             await take_advisory_xact_lock(self.db, article_id, project_template_id)
 
@@ -193,13 +197,15 @@ class TemplateVersionService:
             )
             .values(version_id=version_id)
         )
-        return result.rowcount or 0
+        # execute() types the return as Result[Any]; an UPDATE yields a
+        # CursorResult at runtime, which carries rowcount.
+        return cast("CursorResult[Any]", result).rowcount or 0
 
     async def _materialize_singleton_instances(
         self,
         *,
         project_template_id: UUID,
-        run_pairs: list,
+        run_pairs: list[tuple[UUID, UUID]],
         user_id: UUID,
     ) -> None:
         """Seed missing cardinality-one instances for every re-pinned run.
