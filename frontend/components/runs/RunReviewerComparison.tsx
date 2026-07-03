@@ -3,10 +3,18 @@
  *
  * Used by BOTH the extraction and QA screens. Rows are `(instance, field)`
  * coordinates grouped by entity_type (section / QA domain) → instance; columns
- * are "You" plus one per reviewer who has a decision on the run. The peer data
- * comes from `reviewerSummary.decisionsByCoord` (already server-blinded via the
- * typed `/runs/{id}/view`), so when the caller is blind there are simply no peer
- * columns — no separate fetch, no direct Supabase read.
+ * are one per reviewer who has a decision on the run (plus "You" in read-only
+ * mode). The peer data comes from `reviewerSummary.decisionsByCoord` (already
+ * server-blinded via the typed `/runs/{id}/view`), so when the caller is blind
+ * there are simply no peer columns — no separate fetch, no direct Supabase read.
+ *
+ * Two modes:
+ *   · **read-only** (no `resolution` prop) — the compare surface for the
+ *     extract / assess stages: a "You" column plus reviewer columns, no actions.
+ *   · **resolve** (`resolution` prop) — the consensus stage: no "You" column, a
+ *     trailing "Consensus" column, filter chips, per-row adopt ("Use this
+ *     value") + a typed override editor, and a resolved-value summary. Still
+ *     presentational — every mutation is a caller callback.
  *
  * Coordinate-key contract: peer decisions are keyed `${instanceId}::${fieldId}`
  * (double colon, from `useReviewerSummary`); the caller's own values are keyed
@@ -14,6 +22,20 @@
  * is the single place that bridges the two.
  */
 
+import { useState } from 'react';
+import { ShieldCheck } from 'lucide-react';
+
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { ConsensusOverrideEditor } from '@/components/runs/ConsensusOverrideEditor';
+import type { FieldValueEditorField } from '@/components/extraction/FieldValueEditor';
+import type { CoordStatus, ResolvedConsensusLike } from '@/lib/runs/reconciliation';
 import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
 import { t } from '@/lib/copy';
 import { absentReasonLabel } from '@/lib/extraction/absentReasonLabel';
@@ -23,6 +45,15 @@ export interface ComparisonField {
   id: string;
   label?: string | null;
   name?: string | null;
+  // Editor-relevant template attributes (present when the caller has them;
+  // absent ⇒ the resolve-mode override editor falls back to a text input).
+  field_type?: string;
+  allowed_values?: unknown;
+  unit?: string | null;
+  allowed_units?: string[] | null;
+  allow_other?: boolean;
+  other_label?: string | null;
+  other_placeholder?: string | null;
 }
 
 export interface ComparisonEntityType {
@@ -39,15 +70,43 @@ export interface ComparisonInstance {
   label?: string | null;
 }
 
+/**
+ * Resolve-mode wiring. Absent ⇒ read-only compare (unchanged). The status/
+ * resolved maps come from `deriveConsensusResolution`; the callbacks are the
+ * page's consensus mutations (which envelope the value + refetch).
+ */
+export interface ComparisonResolution {
+  statusByCoord: ReadonlyMap<string, CoordStatus>;
+  resolvedByCoord: ReadonlyMap<string, ResolvedConsensusLike>;
+  needsAttentionCount: number;
+  resolvedCount: number;
+  disabled: boolean;
+  peersRevealed: boolean;
+  onSelectExisting: (p: {
+    instanceId: string;
+    fieldId: string;
+    decisionId: string;
+  }) => Promise<void> | void;
+  /** value = form-shaped editor output or the flat marker (caller envelopes it). */
+  onManualOverride: (p: {
+    instanceId: string;
+    fieldId: string;
+    value: unknown;
+    rationale: string;
+  }) => Promise<void> | void;
+}
+
 export interface RunReviewerComparisonProps {
   /** `${instanceId}::${fieldId}` → latest decision per distinct reviewer. */
   decisionsByCoord: Map<string, ReviewerDecisionResponse[]>;
   entityTypes: ComparisonEntityType[];
   instances: ComparisonInstance[];
-  /** Caller's own values, keyed `${instanceId}_${fieldId}`. */
+  /** Caller's own values, keyed `${instanceId}_${fieldId}`. Read-only mode only. */
   ownValues: Record<string, unknown>;
   reviewerLabelById: Record<string, string>;
   reviewerAvatarById: Record<string, string | null | undefined>;
+  /** When present, the surface renders in resolve mode (consensus stage). */
+  resolution?: ComparisonResolution;
 }
 
 const peerKey = (instanceId: string, fieldId: string) => `${instanceId}::${fieldId}`;
@@ -65,6 +124,40 @@ function displayValue(raw: unknown): string {
   return String(v);
 }
 
+function toEditorField(field: ComparisonField): FieldValueEditorField {
+  return {
+    id: field.id,
+    label: field.label ?? field.name ?? field.id,
+    field_type: field.field_type ?? 'text',
+    allowed_values: field.allowed_values,
+    unit: field.unit,
+    allowed_units: field.allowed_units,
+    allow_other: field.allow_other,
+    other_label: field.other_label,
+    other_placeholder: field.other_placeholder,
+  };
+}
+
+const STATUS_CLASS: Record<Exclude<CoordStatus, 'resolved'>, string> = {
+  conflict: 'border-warning/30 bg-warning/10 text-warning',
+  required_gap: 'border-warning/30 bg-warning/10 text-warning',
+  single_filler: 'border-border/60 text-muted-foreground',
+  agreed: 'border-success/30 bg-success/10 text-success',
+};
+
+function statusBadgeLabel(status: Exclude<CoordStatus, 'resolved'>): string {
+  switch (status) {
+    case 'conflict':
+      return t('consensus', 'statusConflict');
+    case 'required_gap':
+      return t('consensus', 'badgeRequiredGap');
+    case 'single_filler':
+      return t('consensus', 'badgeSingleFiller');
+    case 'agreed':
+      return t('consensus', 'statusAgreed');
+  }
+}
+
 export function RunReviewerComparison({
   decisionsByCoord,
   entityTypes,
@@ -72,16 +165,19 @@ export function RunReviewerComparison({
   ownValues,
   reviewerLabelById,
   reviewerAvatarById,
+  resolution,
 }: RunReviewerComparisonProps) {
+  const [filter, setFilter] = useState<'attention' | 'all' | 'resolved'>('attention');
+
   // Columns = distinct reviewers who have any decision on the run (sorted for
   // stable order). Empty ⇒ caller is blind / nobody else decided.
   const reviewerIds = [
-    ...new Set(
-      [...decisionsByCoord.values()].flat().map((d) => d.reviewer_id),
-    ),
+    ...new Set([...decisionsByCoord.values()].flat().map((d) => d.reviewer_id)),
   ].sort();
 
-  if (reviewerIds.length === 0) {
+  // Read-only mode with no peers: nothing to compare. In resolve mode we still
+  // render (required gaps must show even on a solo run).
+  if (!resolution && reviewerIds.length === 0) {
     return (
       <div className="p-8 text-center" data-testid="run-reviewer-comparison-empty">
         <p className="text-sm font-medium text-foreground">{t('shared', 'compareNoPeers')}</p>
@@ -95,6 +191,22 @@ export function RunReviewerComparison({
     const list = instancesByEntityType.get(inst.entity_type_id) ?? [];
     list.push(inst);
     instancesByEntityType.set(inst.entity_type_id, list);
+  }
+
+  if (resolution) {
+    return (
+      <ResolveTable
+        decisionsByCoord={decisionsByCoord}
+        entityTypes={entityTypes}
+        instancesByEntityType={instancesByEntityType}
+        reviewerIds={reviewerIds}
+        reviewerLabelById={reviewerLabelById}
+        reviewerAvatarById={reviewerAvatarById}
+        resolution={resolution}
+        filter={filter}
+        setFilter={setFilter}
+      />
+    );
   }
 
   return (
@@ -162,5 +274,362 @@ export function RunReviewerComparison({
         </tbody>
       </table>
     </div>
+  );
+}
+
+interface FlatRow {
+  coordKey: string;
+  entityLabel: string;
+  fieldLabel: string;
+  instanceId: string;
+  field: ComparisonField;
+}
+
+function ResolveTable({
+  decisionsByCoord,
+  entityTypes,
+  instancesByEntityType,
+  reviewerIds,
+  reviewerLabelById,
+  reviewerAvatarById,
+  resolution,
+  filter,
+  setFilter,
+}: {
+  decisionsByCoord: Map<string, ReviewerDecisionResponse[]>;
+  entityTypes: ComparisonEntityType[];
+  instancesByEntityType: Map<string, ComparisonInstance[]>;
+  reviewerIds: string[];
+  reviewerLabelById: Record<string, string>;
+  reviewerAvatarById: Record<string, string | null | undefined>;
+  resolution: ComparisonResolution;
+  filter: 'attention' | 'all' | 'resolved';
+  setFilter: (f: 'attention' | 'all' | 'resolved') => void;
+}) {
+  const rows: FlatRow[] = [];
+  for (const et of entityTypes) {
+    for (const inst of instancesByEntityType.get(et.id) ?? []) {
+      for (const field of et.fields) {
+        const entityLabel =
+          (et.label ?? et.name ?? '') + (inst.label ? ` · ${inst.label}` : '');
+        rows.push({
+          coordKey: peerKey(inst.id, field.id),
+          entityLabel,
+          fieldLabel: field.label ?? field.name ?? field.id,
+          instanceId: inst.id,
+          field,
+        });
+      }
+    }
+  }
+
+  const inAttention = (s: CoordStatus | undefined) =>
+    s === 'conflict' || s === 'required_gap' || s === 'single_filler';
+  const visible = rows.filter((r) => {
+    const s = resolution.statusByCoord.get(r.coordKey);
+    if (filter === 'attention') return inAttention(s);
+    if (filter === 'resolved') return s === 'resolved';
+    return true;
+  });
+
+  const columnCount = reviewerIds.length + 2; // field + reviewers + consensus
+  const chips: Array<{ id: typeof filter; label: string; count: number | null }> = [
+    { id: 'attention', label: t('consensus', 'filterAttention'), count: resolution.needsAttentionCount },
+    { id: 'all', label: t('consensus', 'filterAll'), count: null },
+    { id: 'resolved', label: t('consensus', 'filterResolved'), count: resolution.resolvedCount },
+  ];
+
+  return (
+    <TooltipProvider delayDuration={300}>
+      <div className="space-y-3" data-testid="run-reviewer-comparison">
+        <div className="flex flex-wrap items-center gap-1.5" data-testid="consensus-filters">
+          {chips.map((c) => (
+            <Button
+              key={c.id}
+              type="button"
+              size="sm"
+              variant={filter === c.id ? 'secondary' : 'ghost'}
+              aria-pressed={filter === c.id}
+              onClick={() => setFilter(c.id)}
+              className="h-7 text-xs"
+              data-testid={`consensus-filter-${c.id}`}
+            >
+              {c.label}
+              {c.count !== null ? (
+                <span className="ml-1 text-muted-foreground">· {c.count}</span>
+              ) : null}
+            </Button>
+          ))}
+        </div>
+
+        {visible.length === 0 ? (
+          <p className="p-6 text-sm text-muted-foreground" data-testid="consensus-nothing">
+            {t('consensus', 'nothingToReconcile')}
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border/60 text-left">
+                  <th className="py-2 pr-4 font-medium text-muted-foreground">
+                    {t('shared', 'fieldLabel')}
+                  </th>
+                  {reviewerIds.map((rid) => (
+                    <th key={rid} className="px-3 py-2 font-medium">
+                      <span className="flex items-center gap-1.5">
+                        {reviewerAvatarById[rid] ? (
+                          <img
+                            src={reviewerAvatarById[rid] as string}
+                            alt=""
+                            className="h-4 w-4 rounded-full"
+                          />
+                        ) : null}
+                        {reviewerLabelById[rid] ?? rid}
+                      </span>
+                    </th>
+                  ))}
+                  <th className="px-3 py-2 font-medium min-w-[13rem]">
+                    {t('consensus', 'consensusColumnLabel')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((r) => (
+                  <ResolveRow
+                    key={r.coordKey}
+                    row={r}
+                    peers={decisionsByCoord.get(r.coordKey) ?? []}
+                    reviewerIds={reviewerIds}
+                    reviewerLabelById={reviewerLabelById}
+                    status={resolution.statusByCoord.get(r.coordKey) ?? 'agreed'}
+                    resolved={resolution.resolvedByCoord.get(r.coordKey)}
+                    peersRevealed={resolution.peersRevealed}
+                    disabled={resolution.disabled}
+                    columnCount={columnCount}
+                    onSelectExisting={resolution.onSelectExisting}
+                    onManualOverride={resolution.onManualOverride}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </TooltipProvider>
+  );
+}
+
+function ResolveRow({
+  row,
+  peers,
+  reviewerIds,
+  reviewerLabelById,
+  status,
+  resolved,
+  peersRevealed,
+  disabled,
+  columnCount,
+  onSelectExisting,
+  onManualOverride,
+}: {
+  row: FlatRow;
+  peers: ReviewerDecisionResponse[];
+  reviewerIds: string[];
+  reviewerLabelById: Record<string, string>;
+  status: CoordStatus;
+  resolved: ResolvedConsensusLike | undefined;
+  peersRevealed: boolean;
+  disabled: boolean;
+  columnCount: number;
+  onSelectExisting: ComparisonResolution['onSelectExisting'];
+  onManualOverride: ComparisonResolution['onManualOverride'];
+}) {
+  const [editing, setEditing] = useState(false);
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const isResolved = !!resolved;
+  // Agreed rows are non-actionable (arbitrator override on agreed rows is out
+  // of scope); every other state can be adopted / overridden.
+  const canAct = status !== 'agreed';
+  const showActions = canAct && (!isResolved || editing);
+
+  const close = () => {
+    setEditing(false);
+    setOverrideOpen(false);
+  };
+
+  const resolvedReviewerName =
+    resolved?.mode === 'select_existing'
+      ? (() => {
+          const d = peers.find((x) => x.id === resolved.selected_decision_id);
+          return d ? (reviewerLabelById[d.reviewer_id] ?? d.reviewer_id) : null;
+        })()
+      : null;
+
+  // Seed for "Change" on a manual override: unwrap the stored envelope back to
+  // the form shape. A coded marker seeds empty (the editor's marker toggle can
+  // re-select it) so a re-save can't materialize the label as an in-band string.
+  const overrideSeed =
+    resolved?.mode === 'manual_override' && absentReasonLabel(resolved.value) === null
+      ? unwrapValueEnvelope(resolved.value)
+      : undefined;
+
+  return (
+    <>
+      <tr
+        className="border-b border-border/30 align-top"
+        data-testid={`consensus-coord-${row.coordKey}`}
+      >
+        <th scope="row" className="py-2 pr-4 text-left font-normal text-muted-foreground">
+          <span className="block text-[11px] uppercase tracking-wide text-muted-foreground/70">
+            {row.entityLabel}
+          </span>
+          {row.fieldLabel}
+        </th>
+        {reviewerIds.map((rid) => {
+          const decision = peers.find((d) => d.reviewer_id === rid);
+          const isReject = decision?.decision === 'reject';
+          return (
+            <td key={rid} className="px-3 py-2">
+              {isReject ? (
+                <span className="text-xs italic text-muted-foreground">
+                  {t('shared', 'compareRejected')}
+                </span>
+              ) : decision ? (
+                <span className="flex flex-col items-start gap-1">
+                  <span>{displayValue(decision.value)}</span>
+                  {showActions ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-xs"
+                      disabled={disabled}
+                      aria-label={t('consensus', 'adoptValueAria')}
+                      onClick={() =>
+                        void onSelectExisting({
+                          instanceId: row.instanceId,
+                          fieldId: row.field.id,
+                          decisionId: decision.id,
+                        })
+                      }
+                      data-testid={`consensus-accept-${decision.id}`}
+                    >
+                      {t('consensus', 'panelUseThisValue')}
+                    </Button>
+                  ) : null}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">{t('shared', 'compareNoValue')}</span>
+              )}
+            </td>
+          );
+        })}
+        <td className="px-3 py-2 align-top">
+          {isResolved && !editing ? (
+            <div className="space-y-1" data-testid={`consensus-resolved-${row.coordKey}`}>
+              <Badge
+                variant="outline"
+                className="border-success/30 bg-success/10 text-success"
+              >
+                <ShieldCheck className="mr-1 h-3 w-3" />
+                {t('consensus', 'panelResolved')}
+              </Badge>
+              <div className="text-sm">{displayValue(resolved!.value)}</div>
+              <div className="text-[11px] text-muted-foreground">
+                {resolved!.mode === 'manual_override'
+                  ? t('consensus', 'resolvedCustom')
+                  : peersRevealed && resolvedReviewerName
+                    ? t('consensus', 'resolvedFromReviewer').replace(
+                        '{{reviewer}}',
+                        resolvedReviewerName,
+                      )
+                    : t('consensus', 'resolvedCustom')}
+              </div>
+              {resolved!.rationale ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help text-[11px] underline decoration-dotted">
+                      {t('consensus', 'resolvedRationaleLabel')}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">{resolved!.rationale}</p>
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
+              <div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-xs"
+                  disabled={disabled}
+                  onClick={() => {
+                    setEditing(true);
+                    if (resolved!.mode === 'manual_override') setOverrideOpen(true);
+                  }}
+                  data-testid={`consensus-change-${row.coordKey}`}
+                >
+                  {t('consensus', 'change')}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-start gap-1.5">
+              {status !== 'resolved' ? (
+                <Badge variant="outline" className={STATUS_CLASS[status]}>
+                  {statusBadgeLabel(status)}
+                </Badge>
+              ) : null}
+              {showActions && !overrideOpen ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-xs"
+                  disabled={disabled}
+                  onClick={() => setOverrideOpen(true)}
+                  data-testid={`consensus-override-toggle-${row.coordKey}`}
+                >
+                  {t('consensus', 'overrideAction')}
+                </Button>
+              ) : null}
+              {editing && !overrideOpen ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs"
+                  disabled={disabled}
+                  onClick={close}
+                  data-testid={`consensus-cancel-edit-${row.coordKey}`}
+                >
+                  {t('consensus', 'cancel')}
+                </Button>
+              ) : null}
+            </div>
+          )}
+        </td>
+      </tr>
+      {overrideOpen ? (
+        <tr>
+          <td colSpan={columnCount} className="px-3 pb-3">
+            <ConsensusOverrideEditor
+              coordKey={row.coordKey}
+              field={toEditorField(row.field)}
+              disabled={disabled}
+              initialValue={overrideSeed}
+              initialRationale={resolved?.rationale ?? undefined}
+              onCancel={close}
+              onPublish={async (value, rationale) => {
+                await onManualOverride({
+                  instanceId: row.instanceId,
+                  fieldId: row.field.id,
+                  value,
+                  rationale,
+                });
+                close();
+              }}
+            />
+          </td>
+        </tr>
+      ) : null}
+    </>
   );
 }

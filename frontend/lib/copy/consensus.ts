@@ -78,6 +78,8 @@ export const consensus = {
     filterAttention: 'Needs attention',
     filterAll: 'All',
     filterResolved: 'Resolved',
+    statusConflict: 'Conflict',
+    statusAgreed: 'Agreed',
     consensusColumnLabel: 'Consensus',
     overrideAction: 'Override',
     overrideValueLabel: 'Custom value',
