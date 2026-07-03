@@ -16,13 +16,6 @@
 
 import {memo, useState} from 'react';
 import {Label} from '@/components/ui/label';
-import {Input} from '@/components/ui/input';
-import {Textarea} from '@/components/ui/textarea';
-import {Badge} from '@/components/ui/badge';
-import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/components/ui/select';
-import {SelectWithOther} from '@/components/ui/SelectWithOther';
-import {MultiSelectWithOther} from '@/components/ui/MultiSelectWithOther';
-import {Switch} from '@/components/ui/switch';
 import {AlertCircle, Check, History} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
@@ -32,8 +25,8 @@ import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/
 import {AISuggestionDisplay, type AISuggestionReviewBinding} from './ai/AISuggestionDisplay';
 import {AISuggestionBadge} from './ai/AISuggestionBadge';
 import {AISuggestionReviewPopover} from './ai/AISuggestionReviewPopover';
-import {getRelatedUnits} from '@/lib/unitConversions';
-import {extractUnit, extractValue, isEmptyValue, isValidNumber,} from '@/lib/ai-extraction/valueParser';
+import {FieldValueEditor} from './FieldValueEditor';
+import {isEmptyValue, isValidNumber} from '@/lib/ai-extraction/valueParser';
 import {isSuggestionPending} from '@/lib/ai-extraction/suggestionUtils';
 import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
 import {useJustUpdatedValue} from '@/hooks/extraction/useJustUpdatedValue';
@@ -85,7 +78,6 @@ export function FieldInput(props: FieldInputProps) {
 
     // Fixed comfortable spacing
   const containerPadding = 'py-2.5';
-  const inputHeight = 'h-8';
   const gap = 'gap-x-3.5 gap-y-1';
 
     // Display value logic:
@@ -199,229 +191,20 @@ export function FieldInput(props: FieldInputProps) {
     }
   };
 
-    // Render input by type
-  const renderInput = () => {
-    switch (field.field_type) {
-      case 'text': {
-          // Long description: use textarea (English keywords for label detection)
-        const labelLower = field.label.toLowerCase();
-          const isLongText = labelLower.includes('description') ||
-              labelLower.includes('justification') ||
-              labelLower.includes('comment') ||
-              labelLower.includes('conclusion') ||
-              labelLower.includes('conclusions') ||
-              labelLower.includes('result') ||
-              labelLower.includes('results') ||
-              labelLower.includes('method') ||
-              labelLower.includes('methods') ||
-              labelLower.includes('analysis') ||
-              labelLower.includes('analyses') ||
-              labelLower.includes('discussion') ||
-              labelLower.includes('observation') ||
-              labelLower.includes('observations');
-        
-        if (isLongText) {
-          return (
-            <Textarea
-              value={displayValue || ''}
-              onChange={(e) => handleChange(e.target.value)}
-              placeholder={t('extraction', 'fieldPlaceholderEnter').replace('{{label}}', field.label.toLowerCase())}
-              disabled={inputDisabled}
-              className={cn(
-                  "text-sm min-h-[80px]",
-                hasAIPending && "border-ai/60 bg-ai/5",
-                validationError && "border-destructive"
-              )}
-            />
-          );
-        }
-
-        return (
-          <Input
-            value={displayValue || ''}
-            onChange={(e) => handleChange(e.target.value)}
-            placeholder={t('extraction', 'fieldPlaceholderEnter').replace('{{label}}', field.label.toLowerCase())}
-            disabled={inputDisabled}
-              className={cn(
-                inputHeight,
-                  "text-sm",
-                hasAIPending && "border-ai/60 bg-ai/5",
-                validationError && "border-destructive"
-              )}
-          />
-        );
-      }
-
-      case 'number': {
-        // Parse valor (pode ser objeto {value, unit} ou valor simples)
-        const numValue = extractValue(displayValue);
-        const currentUnit = extractUnit(displayValue) 
-          ?? (field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit);
-
-          // Prefer custom allowed_units over automatic dictionary
-        const relatedUnits = field.allowed_units && field.allowed_units.length > 0
-            ? field.allowed_units // Use units configured by manager (first is default)
-            : (field.unit ? getRelatedUnits(field.unit) : []); // Fallback to automatic dictionary
-        
-        const hasMultipleUnits = relatedUnits.length > 0;
-
-        return (
-          <div className="flex gap-2">
-            <Input
-              type="number"
-              value={numValue || ''}
-              onChange={(e) => {
-                if (hasMultipleUnits) {
-                  handleChange({ value: e.target.value, unit: currentUnit || field.unit });
-                } else {
-                  handleChange(e.target.value);
-                }
-              }}
-              placeholder="0"
-              disabled={inputDisabled}
-              className={cn("flex-1", inputHeight, "text-sm", validationError && "border-destructive")}
-            />
-
-              {/* Unit selector when units are available */}
-            {hasMultipleUnits ? (
-              <Select
-                value={currentUnit || ''}
-                onValueChange={(newUnit) => {
-                  handleChange({ value: numValue, unit: newUnit });
-                }}
-                disabled={inputDisabled}
-              >
-                <SelectTrigger className="w-32 shrink-0">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                    {/* All available units (allowed_units or related) */}
-                  {relatedUnits.map((unit, index) => (
-                    <SelectItem key={unit} value={unit}>
-                      {unit}
-                      {index === 0 && field.allowed_units && field.allowed_units.length > 0 && (
-                          <span className="ml-1 text-xs text-muted-foreground">{t('extraction', 'defaultUnit')}</span>
-                      )}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit) ? (
-                // Fixed badge when there are not multiple units but one is defined
-              <Badge variant="outline" className="shrink-0 self-center">
-                {field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit}
-              </Badge>
-            ) : null}
-          </div>
-        );
-      }
-
-      case 'date':
-        return (
-          <Input
-            type="date"
-            value={displayValue || ''}
-            onChange={(e) => handleChange(e.target.value)}
-            disabled={inputDisabled}
-            className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
-          />
-        );
-
-      case 'select': {
-        const options = field.allowed_values as any[] || [];
-        if (field.allow_other) {
-          return (
-            <SelectWithOther
-              options={options}
-              value={displayValue || null}
-              onChange={handleChange}
-              allowOther={true}
-              otherLabel={field.other_label || t('extraction', 'otherSpecifyDefault')}
-              otherPlaceholder={field.other_placeholder || undefined}
-              disabled={inputDisabled}
-              placeholder={t('extraction', 'selectFieldPlaceholder').replace('{{label}}', field.label.toLowerCase())}
-              className={cn(validationError && 'border-destructive')}
-            />
-          );
-        }
-        return (
-          <Select
-            value={displayValue || ''}
-            onValueChange={handleChange}
-            disabled={inputDisabled}
-          >
-            <SelectTrigger className={cn(inputHeight, "text-sm", validationError && "border-destructive")}>
-                <SelectValue
-                    placeholder={t('extraction', 'selectFieldPlaceholder').replace('{{label}}', field.label.toLowerCase())}/>
-            </SelectTrigger>
-            <SelectContent>
-              {options.map((option: any, index: number) => {
-                const optionValue = typeof option === 'string' ? option : option.value;
-                const optionLabel = typeof option === 'string' ? option : option.label || option.value;
-                return (
-                  <SelectItem key={index} value={optionValue}>
-                    {optionLabel}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        );
-      }
-
-      case 'multiselect': {
-        const mOptions = field.allowed_values as any[] || [];
-        if (field.allow_other) {
-          return (
-            <MultiSelectWithOther
-              options={mOptions}
-              value={displayValue || null}
-              onChange={handleChange}
-              allowOther={true}
-              otherLabel={field.other_label || t('extraction', 'otherSpecifyDefault')}
-              otherPlaceholder={field.other_placeholder || undefined}
-              disabled={inputDisabled}
-              placeholder={t('extraction', 'selectFieldPlaceholder').replace('{{label}}', field.label.toLowerCase())}
-            />
-          );
-        }
-        // fallback simples
-        return (
-          <Input
-            value={Array.isArray(displayValue) ? displayValue.join(', ') : displayValue || ''}
-            onChange={(e) => handleChange(e.target.value.split(',').map(v => v.trim()))}
-            placeholder={t('extraction', 'valuesCommaSeparated')}
-            disabled={inputDisabled}
-            className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
-          />
-        );
-      }
-
-      case 'boolean':
-        return (
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={displayValue || false}
-              onCheckedChange={handleChange}
-              disabled={inputDisabled}
-            />
-            <span className="text-sm text-muted-foreground">
-              {displayValue ? t('extraction', 'yes') : t('extraction', 'no')}
-            </span>
-          </div>
-        );
-
-      default:
-        return (
-          <Input
-            value={value || ''}
-            onChange={(e) => handleChange(e.target.value)}
-            disabled={inputDisabled}
-            className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
-          />
-        );
-    }
-  };
+    // Render input by type — delegated to the shared, AI-chrome-free editor
+    // (FieldValueEditor) so the consensus override can reuse the exact same
+    // per-type inputs. This component keeps the AI badges, disposition row,
+    // validation, and read-only gating around it.
+  const renderInput = () => (
+    <FieldValueEditor
+      field={field}
+      value={displayValue}
+      onChange={handleChange}
+      disabled={inputDisabled}
+      inputClassName={cn(validationError && 'border-destructive')}
+      textAccentClassName={cn(hasAIPending && 'border-ai/60 bg-ai/5')}
+    />
+  );
 
     // Determine whether to show suggestion display below input
     // Show if:
