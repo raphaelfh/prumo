@@ -72,35 +72,32 @@ export const consensus = {
     resetSuccessTemplate: 'Template override removed',
     resetError: 'Could not clear consensus configuration',
 
-    // --- Runtime divergence-resolution panel (ConsensusPanel) ---
+    // --- Runtime divergence resolution (consensus compare table) ---
     panelResolveTitle: 'Resolve divergence',
-    sectionConflictsTitle: 'Conflicts',
-    sectionConflictsDesc: 'Reviewers gave different values. Resolve each.',
-    sectionAttentionTitle: 'Needs attention',
-    sectionAttentionDesc: 'Single-reviewer answers and unfilled required fields.',
-    sectionAgreedHintOne: '1 field agreed — published automatically on finalize.',
-    sectionAgreedHintOther: '{{count}} fields agreed — published automatically on finalize.',
+    // Resolve-mode comparison table (spec 2026-07-03)
+    filterAttention: 'Needs attention',
+    filterAll: 'All',
+    filterResolved: 'Resolved',
+    statusConflict: 'Conflict',
+    statusAgreed: 'Agreed',
+    consensusColumnLabel: 'Consensus',
+    overrideAction: 'Override',
+    overrideValueLabel: 'Custom value',
+    adoptValueAria: 'Publish this reviewer’s value as consensus',
+    overrideNoInfoRecorded: '“No information” will be published as the consensus value.',
     badgeRequiredGap: 'Required · not filled',
     badgeSingleFiller: 'Only one reviewer',
     nothingToReconcile: 'Nothing to reconcile. Use “Approve & finalize” in the header.',
     panelFinalize: 'Finalize',
     panelFinalizing: 'Finalizing…',
-    panelReviewerDisagreedOne: '{{count}} reviewer disagreed.',
-    panelReviewersDisagreedOther: '{{count}} reviewers disagreed.',
     panelResolved: 'Resolved',
-    panelRejected: '(rejected)',
     panelUseThisValue: 'Use this value',
-    panelOverrideWithCustom: 'Override with custom value',
-    panelCustomValueLabel: 'Custom value (JSON; use a string for free-text fields)',
-    panelCustomValuePlaceholder: '"Low" or {"text": "..."}',
     panelRationaleLabel: 'Rationale (optional)',
     panelRationalePlaceholder:
         'Why publish a value none of the reviewers picked?',
     panelPublishOverride: 'Publish override',
-    panelReviewerFallback: 'Reviewer {{id}}…',
 
-    // Resolved-state summary (Task 5)
-    resolvedValueLabel: 'Published value',
+    // Resolved-state summary
     resolvedFromReviewer: 'from {{reviewer}}',
     resolvedCustom: 'custom value',
     resolvedRationaleLabel: 'Rationale',

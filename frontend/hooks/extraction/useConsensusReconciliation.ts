@@ -3,7 +3,6 @@
  *
  * Extracted from ExtractionFullScreen to keep that component under the
  * file-size gate. Contains:
- *   - fieldLabelByCoord map (instance × field → "Section · Field")
  *   - requiredCoords array (all required template coord keys)
  *   - expectedReviewerCount (max of actual participants vs role-based count)
  *   - finalizeWarning (shouldWarn + pre-built confirm message)
@@ -20,7 +19,6 @@ import { useProjectMembers } from '@/hooks/hitl/useProjectMembers';
 import { t } from '@/lib/copy';
 
 export interface ConsensusReconciliation {
-  fieldLabelByCoord: Record<string, string>;
   requiredCoords: string[];
   expectedReviewerCount: number;
   finalizeWarning: { shouldWarn: boolean; confirmMessage: string };
@@ -35,16 +33,12 @@ export function useConsensusReconciliation(params: {
 }): ConsensusReconciliation {
   const { runDetail, reviewerSummary, instances, entityTypes, projectId } = params;
 
-  // {instance::field} → "Section · Field" label map for the ConsensusPanel.
-  const fieldLabelByCoord: Record<string, string> = {};
+  // Required template coords (instance × field where the field is required).
   const requiredCoords: string[] = [];
   for (const inst of instances) {
     const et = entityTypes.find((e) => e.id === inst.entity_type_id);
-    const sectionLabel = et?.label ?? et?.name ?? 'Section';
     for (const f of et?.fields ?? []) {
-      const key = `${inst.id}::${f.id}`;
-      fieldLabelByCoord[key] = `${sectionLabel} · ${f.label}`;
-      if (f.is_required) requiredCoords.push(key);
+      if (f.is_required) requiredCoords.push(`${inst.id}::${f.id}`);
     }
   }
 
@@ -90,7 +84,6 @@ export function useConsensusReconciliation(params: {
   }
 
   return {
-    fieldLabelByCoord,
     requiredCoords,
     expectedReviewerCount,
     finalizeWarning: { shouldWarn: warning.shouldWarn, confirmMessage },
