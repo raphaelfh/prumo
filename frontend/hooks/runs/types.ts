@@ -165,6 +165,10 @@ export interface RunViewFieldResponse {
   allow_other: boolean;
   other_label: string | null;
   other_placeholder: string | null;
+  /** ADR-0016 opt-in disposition flags — gate the "Not applicable" /
+   * "Not evaluated" markers in FieldInput. */
+  allows_not_applicable: boolean;
+  allows_not_evaluated: boolean;
 }
 
 export interface RunViewEntityType {

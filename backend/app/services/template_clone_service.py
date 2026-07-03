@@ -23,6 +23,12 @@ class TemplateNotFoundError(Exception):
     """The supplied global template id does not exist or has the wrong kind."""
 
 
+def _snapshot_structure_counts(version: ExtractionTemplateVersion) -> tuple[int, int]:
+    """Entity-type and field counts recorded in a version snapshot."""
+    entity_types = (version.schema_ or {}).get("entity_types", [])
+    return len(entity_types), sum(len(et.get("fields", [])) for et in entity_types)
+
+
 class TemplateClone:
     """Result envelope returned by ``TemplateCloneService.clone``."""
 
@@ -73,36 +79,37 @@ class TemplateCloneService:
         existing = await self._find_existing_clone(project_id, global_template_id)
         if existing is not None:
             entity_types, fields = await self._project_template_structure_counts(existing.id)
-            global_et, global_field = await self._global_template_structure_counts(
-                global_template_id
-            )
             version = await self._active_version(existing.id)
-            # Heal partial / drifted clones. Two cases bring us here:
+            # The deferred constraint trigger
+            # ``project_extraction_templates_active_version`` (migration
+            # 0004) makes a template-without-active-version state
+            # unrepresentable, so this lookup is a hard guarantee.
+            assert version is not None, (
+                f"Active-version invariant violated for project_extraction_template "
+                f"{existing.id}; the DB trigger should have prevented this."
+            )
+            snapshot_et, snapshot_field = _snapshot_structure_counts(version)
+            # Heal existing clones. Drift is measured against the template's
+            # ACTIVE SNAPSHOT, never against the global template — deliberate
+            # config edits are republished as a new version
+            # (``TemplateVersionService.republish``), so a healthy edited
+            # template has live == snapshot. Two heal cases:
             #   1. Zero-state — the clone row exists but its live structure
-            #      was never inserted (legacy data, aborted clone).
-            #   2. Partial drift — the live structure exists but is smaller
-            #      than the global (some entity_types / fields were deleted
-            #      out-of-band, or a previous clone aborted mid-way). The
-            #      production CHARMS bug (project bc055915, live=1 vs
-            #      snapshot=14) is the canonical example.
-            # In both cases we wipe the partial state and re-insert from
-            # the global template. The snapshot is then re-emitted to
-            # match the freshly inserted live structure. CASCADE on
-            # ``extraction_entity_types`` clears any orphan
-            # ``extraction_instances`` / proposals tied to the partial rows
-            # — acceptable since those instances pointed at a structure
-            # that no longer reflects user intent.
-            drifted = entity_types != global_et or fields != global_field
-            if drifted:
-                if entity_types > 0 or fields > 0:
-                    await self.db.execute(
-                        text(
-                            "DELETE FROM public.extraction_entity_types "
-                            "WHERE project_template_id = CAST(:tid AS uuid)"
-                        ),
-                        {"tid": str(existing.id)},
-                    )
-                    await self.db.flush()
+            #      was never inserted (legacy data, aborted clone). Rebuild
+            #      from the global template: an empty clone is unusable and
+            #      factory state is strictly better. A legacy clone may carry
+            #      an empty placeholder snapshot (live == snapshot == 0), so
+            #      zero-state gets its own clause.
+            #   2. Non-empty drift (live counts != snapshot counts) — publish
+            #      the LIVE structure as a new version. Never wipe: with
+            #      user-editable templates a count mismatch is
+            #      indistinguishable from a deliberate edit whose republish
+            #      call was lost, and the historical wipe-and-rebuild
+            #      destroyed customizations (and 500'd on the RESTRICT FK
+            #      whenever instances existed). Live is authoritative; true
+            #      factory recovery is an explicit delete + re-import.
+            zero_state = entity_types == 0 and fields == 0
+            if zero_state:
                 global_entity_types = await self._global_entity_types(global_template_id)
                 field_count = await self._insert_project_structure_from_global(
                     project_template_id=existing.id,
@@ -115,17 +122,27 @@ class TemplateCloneService:
                 entity_types = len(global_entity_types)
                 fields = field_count
                 version = await self._active_version(existing.id)
-            # The deferred constraint trigger
-            # ``project_extraction_templates_active_version`` (migration
-            # 0004) makes a template-without-active-version state
-            # unrepresentable — every transaction that creates one must
-            # also create an active version row by COMMIT, or the whole
-            # transaction aborts. So this lookup is a hard guarantee,
-            # not a defensive check.
-            assert version is not None, (
-                f"Active-version invariant violated for project_extraction_template "
-                f"{existing.id}; the DB trigger should have prevented this."
-            )
+                assert version is not None, (
+                    f"Heal left project_extraction_template {existing.id} "
+                    f"without an active version."
+                )
+            elif entity_types != snapshot_et or fields != snapshot_field:
+                # Local import: template_version_service imports this module
+                # (TemplateNotFoundError), so a top-level import would cycle.
+                from app.services.template_version_service import (
+                    TemplateVersionService,
+                )
+
+                republished = await TemplateVersionService(self.db).republish(
+                    project_id=project_id,
+                    project_template_id=existing.id,
+                    user_id=user_id,
+                )
+                version = await self.db.get(ExtractionTemplateVersion, republished.version_id)
+                assert version is not None, (
+                    f"Self-heal republish left project_extraction_template "
+                    f"{existing.id} without an active version."
+                )
             # Re-importing a template re-activates it (user intent: "use
             # this template now"). For extraction kind, also enforce the
             # single-active invariant by deactivating siblings *before*
@@ -406,38 +423,6 @@ class TemplateCloneService:
         for f in rows:
             buckets[f.entity_type_id].append(f)
         return buckets
-
-    async def _global_template_structure_counts(
-        self,
-        global_template_id: UUID,
-    ) -> tuple[int, int]:
-        """Entity-type and field counts for a global template in one round
-        trip. Used as the canonical reference for heal drift detection —
-        if a clone's live counts don't match these, structure was lost.
-        """
-        row = (
-            await self.db.execute(
-                text(
-                    """
-                    SELECT
-                        (
-                            SELECT COUNT(*)::bigint
-                            FROM public.extraction_entity_types et
-                            WHERE et.template_id = CAST(:gid AS uuid)
-                        ) AS entity_type_count,
-                        (
-                            SELECT COUNT(*)::bigint
-                            FROM public.extraction_fields f
-                            INNER JOIN public.extraction_entity_types et
-                                ON et.id = f.entity_type_id
-                            WHERE et.template_id = CAST(:gid AS uuid)
-                        ) AS field_count
-                    """
-                ),
-                {"gid": str(global_template_id)},
-            )
-        ).one()
-        return int(row[0]), int(row[1])
 
     async def _project_template_structure_counts(
         self,

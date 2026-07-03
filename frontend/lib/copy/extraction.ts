@@ -178,6 +178,8 @@ export const extraction = {
     errors_removeField: 'Error removing field',
     errors_reorderFields: 'Error reordering',
     errors_cloneTemplate: 'Error cloning template',
+    errors_republishTemplate:
+      'The change was saved, but publishing it to article forms failed. It will be published with your next configuration change.',
     errors_createTemplate: 'Error creating template',
     errors_updateTemplateStatus: 'Error updating status',
     templateClonedSuccess: 'Template "{{name}}" cloned successfully!',

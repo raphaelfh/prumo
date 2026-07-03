@@ -31,9 +31,12 @@ import type {ExtractionField} from '@/types/extraction';
 interface FieldsManagerProps {
   entityTypeId: string;
   sectionName?: string;
+  /** Project template owning the section — enables the republish-on-edit
+   * flow that pushes config changes into article forms. */
+  templateId?: string;
 }
 
-export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps) {
+export function FieldsManager({ entityTypeId, sectionName, templateId }: FieldsManagerProps) {
   const { project } = useProject();
   const projectId = project?.id || '';
 
@@ -50,7 +53,7 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
     validateField,
     createOtherSpecifyField,
     removeOtherSpecifyField,
-  } = useFieldManagement({ entityTypeId, projectId });
+  } = useFieldManagement({ entityTypeId, projectId, templateId });
 
   // Estado local centralizado
   const { state, actions } = useFieldsManagerState();
