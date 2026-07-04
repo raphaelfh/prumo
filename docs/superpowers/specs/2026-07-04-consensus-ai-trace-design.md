@@ -255,6 +255,43 @@ override) under `consensus`. English, single-sourced in
   materialized decision. Run on real PG (delete-orphan/transient-filter
   class needs it).
 
+## No-legacy commitments (repo health)
+
+Principle: each PR removes what it supersedes — no parallel paths, no
+dead branches, no lying comments left behind (CLAUDE.md "clean in code
+you touch"; constitution §Governance). This cycle's concrete
+commitments:
+
+- **One write path, not two.** D8-a *replaces* the QA human-proposal
+  form write; there is no dual-write period. The
+  `useDecisionEndpoint` predicate becomes stage-based only (extract →
+  `/decisions`, both kinds), and the now-unreachable `/proposals` branch
+  of `writeRunFieldValue` is **deleted** (AI/system proposals are
+  backend-written; no frontend human-proposal writer remains).
+- **QA hydration replaces, not falls back.** The raw
+  `runDetail.proposals` mapping block in `QualityAssessmentFullScreen`
+  is deleted when the `current_values` read lands — old runs are covered
+  by the resolver's Layer-1, not by a frontend fallback branch.
+- **Dead code encountered gets resolved, not stepped around.**
+  `useCreateDecision` has zero consumers today — adopt it or delete it
+  in PR 1/2. The `acceptStrategy` non-`'human-proposal'` branch in
+  `useAISuggestions` (and the `AISuggestionService.acceptSuggestion` →
+  `extractionValueService.acceptProposal` chain it alone reaches) must
+  be verified for remaining consumers and, if none, removed — the plan
+  carries an explicit verify-then-prune task with evidence.
+- **Comments that lie get fixed in passing.** The
+  `useAISuggestions.ts:143` comment still describes the pre-ADR-0014
+  PROPOSAL/Publish stage semantics; it is rewritten where D0 touches
+  that code.
+- **Tests stop masking reality.** The QA fixtures that hand-feed
+  decision rows are replaced by flows that create decisions the real way
+  (D8 autosave/materialization), so the suite exercises the actual data
+  path.
+- **No habit-grandfathering.** File-size baseline bumps are limited to
+  the files this feature genuinely grows; where a shrink is reasonable,
+  shrink instead. Copy keys orphaned by these changes are pruned in the
+  same PR.
+
 ## PR slicing
 
 - **PR 1 (feature):** D0–D6 — write-path linkage, consensus trace UI on
@@ -271,8 +308,14 @@ override) under `consensus`. English, single-sourced in
 - Filtering the popover to only the adopted version (rejected: shared
   history is useful arbitration context — cross-marking covers the
   ambiguity instead).
-- Per-row expander comparing all reviewers' AI bases (rejected: heavier
-  component, diverges from the "same modal" goal).
+- Per-row expander comparing all reviewers' AI bases (re-examined
+  2026-07-04, **deferred with intent to measure**: D3's cross-marking
+  already surfaces every reviewer's adoption in one popover list, so the
+  expander adds layout/persistence, not information. Its genuine edge —
+  staying open side-by-side while the arbitrator acts on a conflict row —
+  justifies revisiting if real arbitration shows popover friction; the
+  colspan-row pattern from `ConsensusOverrideEditor` is the intended
+  vehicle then).
 - Schema migrations (D8 uses existing tables; the only backend change is
   the consensus-entry materialization step).
 - Backfilling AI links for historical decisions, and any AI-link recovery
