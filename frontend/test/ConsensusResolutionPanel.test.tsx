@@ -86,7 +86,6 @@ const baseProps = {
   reviewerLabelById: { 'user-a': 'Alice', 'user-b': 'Bob' },
   reviewerAvatarById: { 'user-a': null, 'user-b': null },
   requiredCoords: [] as string[],
-  isComplete: true,
   isResolving: false,
   isFinalizing: false,
   peersRevealed: true,

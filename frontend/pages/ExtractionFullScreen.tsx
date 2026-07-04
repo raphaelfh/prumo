@@ -259,6 +259,7 @@ export default function ExtractionFullScreen() {
   // expected reviewer count, and pre-built finalize-warning message.
   const {
     requiredCoords,
+    requiredFieldsResolved,
     expectedReviewerCount,
     finalizeWarning,
   } = useConsensusReconciliation({
@@ -1056,10 +1057,10 @@ export default function ExtractionFullScreen() {
 
   // P0 guide handler: scroll the form container to top and show a toast.
   // Jump-to-first-empty-field is a documented P1 refinement — not wired here.
-  const onGuide = () => {
+  const onGuide = (message?: string) => {
     const el = document.querySelector('[data-scroll-container="extraction-form"] [data-radix-scroll-area-viewport]');
     if (el) el.scrollTop = 0;
-    toast.info(t('extraction', 'runHeaderGateBlocked'));
+    toast.info(message ?? t('extraction', 'runHeaderGateBlocked'));
   };
 
   // Stage-driven transition for the RunHeader PrimaryAction slot.
@@ -1084,6 +1085,7 @@ export default function ExtractionFullScreen() {
     isComplete,
     completed: completedFields,
     total: totalFields,
+    consensusComplete: requiredFieldsResolved,
     divergencesResolved,
     isReady,
     onMarkReady,
@@ -1143,7 +1145,6 @@ export default function ExtractionFullScreen() {
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}
           onFinalize={handleApproveFinalize}
-          isComplete={isComplete}
           isResolving={consensusMutation.isPending}
           isFinalizing={advanceMutation.isPending || approveFinalize.isPending}
           showFinalize={false}
