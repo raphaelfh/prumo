@@ -255,8 +255,7 @@ export default function ExtractionFullScreen() {
 
   const inConsensusStage = runDetail?.run.stage === 'consensus';
 
-  // Consensus-page derived values: coord→label map, required coords,
-  // expected reviewer count, and pre-built finalize-warning message.
+  // Consensus-page derived values: required coords, run-level completeness, expected reviewer count, finalize warning.
   const {
     requiredCoords,
     requiredFieldsResolved,
