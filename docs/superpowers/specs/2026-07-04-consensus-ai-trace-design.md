@@ -71,7 +71,22 @@ Negative (the panel's blocker):
   `useDecisionEndpoint=false`); nothing creates QA decisions.
   `decisionsByCoord` — the compare table's only source — is empty on real
   QA runs; #483's QA tests hand-feed decisions fixtures, masking this.
-  Pre-existing gap, tracked as a separate follow-up.
+  Knock-on effects, all verified: QA's "Use this value"
+  (`select_existing`) would fail validation against real decision rows
+  (`extraction_consensus_service.py:86-99`); single-user exports read
+  decisions only, so **QA exports are blank today**
+  (`extraction_export_service.py:1185`). Fixed by D8 this cycle.
+- The decisions write path is gated by **stage, not kind**
+  (`extraction_review_service.py:56-59` — `stage != 'extract'` is the
+  only block): a QA run in extract accepts reviewer decisions as-is,
+  same `ensure_project_reviewer` role gate. QA finalize/publish never
+  reads decisions (QA publishes via per-field `manual_override`
+  consensus), so D8 does not disturb it.
+- QA form hydration reads **raw `runDetail.proposals`**
+  (`QualityAssessmentFullScreen.tsx:247-258`), not `current_values` — the
+  backend Layer-1(own proposals)/Layer-2(own decisions) resolver already
+  exists (`resolve_caller_current_values`) and covers both old
+  (proposals-only) and new (decisions) QA runs.
 - Section provenance is last-writer-wins per (run, section): if the same
   section is re-extracted under one run by a different user, older
   proposals in that run group are retroactively attributed to the latest
@@ -153,11 +168,32 @@ Negative (the panel's blocker):
     this is an addition, not a correction).
   - ADR-0009/0010 already carry banners + `superseded_by` frontmatter —
     no action.
-- **D8 — QA scope.** QA inherits every popover/attribution improvement
-  (D2/D3/D5) through the shared components, and gets D6. The per-cell
-  trace (D0/D1/D4) ships on extraction; on QA it is structurally inert
-  until QA has real per-reviewer decisions (see negative facts) — that
-  data-path gap is its own follow-up, out of scope here.
+- **D8 — QA decisions parity (hybrid, user-elected into this cycle).**
+  Gives QA real per-reviewer decisions so the compare table, adopt,
+  trace, and exports work there too:
+  - **(a) Going forward, one shared write path.** QA autosave writes
+    decisions in the extract stage: extend the `useDecisionEndpoint`
+    predicate to `kind === 'quality_assessment'` too (backend already
+    accepts it — stage-gated only). D0's `linkByKey` then applies
+    identically on QA. The QA screen's hydration switches from raw
+    `runDetail.proposals` to `current_values` (Layer-1 keeps old
+    proposals-only runs hydrating; Layer-2 picks up new decisions).
+  - **(b) One-shot materialization at extract→consensus.** In
+    `RunLifecycleService.advance_stage`, for QA runs: each
+    (reviewer, coord) whose newest human proposal has no decision gets an
+    `ExtractionReviewerDecision` inserted as **`edit` with the proposal's
+    value copied** plus the `ExtractionReviewerState` upsert. NOT
+    `accept_proposal`: that kind carries `value=None` by contract, which
+    the table renders as "No value" and the agreement math would collapse
+    two different adoptions into "agreed". No `proposal_record_id` (a
+    human proposal is not an AI proposal; pinning it into the AI-history
+    popover would mis-trace). Idempotent: coords that already have a
+    decision are skipped. Covers runs mid-flight at deploy.
+  - Consequences: QA `select_existing` ("Use this value") starts working
+    against real rows; QA single-user exports stop being blank. The
+    per-cell trace icon appears on QA for post-deploy linked decisions
+    (D0-a); materialized decisions carry no link and follow D4's
+    "show nothing when ambiguous" rule.
 
 ## Architecture
 
@@ -209,23 +245,36 @@ override) under `consensus`. English, single-sourced in
 - D7: docs-ci green (frontmatter, markdownlintignore globs already cover
   `specs/2026-*-design.md` and `specs/archive/**`; verify the plans
   archive path is covered before moving).
+- D8-a: QA autosave posts to `/decisions` in extract (and still
+  `/proposals` never); hydration renders old proposals-only runs and new
+  decision-backed runs identically via `current_values`.
+- D8-b: backend integration — advancing a QA run with human proposals
+  materializes `edit` decisions with copied values + reviewer_states;
+  replaying the advance is idempotent; a coord with an existing decision
+  is untouched; QA `select_existing` consensus succeeds against a
+  materialized decision. Run on real PG (delete-orphan/transient-filter
+  class needs it).
 
 ## PR slicing
 
-- **PR 1 (feature):** D0–D6, D8 — write-path linkage, consensus screens,
-  popover, new leaf, baseline update.
-- **PR 2 (docs):** D7 — non-overlapping paths, safe in parallel.
+- **PR 1 (feature):** D0–D6 — write-path linkage, consensus trace UI on
+  both screens, popover attribution, dead-affordance cleanup, baseline
+  update. Trace icons light up on extraction immediately; QA data
+  arrives with PR 2.
+- **PR 2 (QA parity):** D8 — QA autosave flip + hydration switch +
+  consensus-entry materialization (the cycle's only backend change; no
+  schema migration — existing tables only).
+- **PR 3 (docs):** D7 — non-overlapping paths, safe in parallel.
 
 ## Out of scope
 
-- QA per-reviewer decision rows (pre-existing #483 gap; separate
-  follow-up: QA consensus compare renders no reviewer columns in real
-  flows).
 - Filtering the popover to only the adopted version (rejected: shared
   history is useful arbitration context — cross-marking covers the
   ambiguity instead).
 - Per-row expander comparing all reviewers' AI bases (rejected: heavier
   component, diverges from the "same modal" goal).
-- Backend changes (verified unnecessary: `record_decision` already
-  persists the optional link).
-- Backfilling links for historical decisions.
+- Schema migrations (D8 uses existing tables; the only backend change is
+  the consensus-entry materialization step).
+- Backfilling AI links for historical decisions, and any AI-link recovery
+  for materialized QA decisions (the link was never recorded at write
+  time).
