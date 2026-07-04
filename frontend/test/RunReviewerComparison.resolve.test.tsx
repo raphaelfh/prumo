@@ -61,7 +61,6 @@ function buildResolution(
     decisionCountByCoord: new Map([['inst-1::field-1', 2]]),
     participantCount: 2,
     requiredCoords: [],
-    isComplete: true,
   });
   return {
     statusByCoord: view.statusByCoord,

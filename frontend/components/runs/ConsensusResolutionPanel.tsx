@@ -31,7 +31,6 @@ export interface ConsensusResolutionPanelProps {
   reviewerAvatarById: Record<string, string | null | undefined>;
   /** Every required template coordKey (`${instance}::${field}`) — drives required gaps + finalize gate. */
   requiredCoords: string[];
-  isComplete: boolean;
   isResolving: boolean;
   isFinalizing: boolean;
   peersRevealed: boolean;
@@ -62,7 +61,6 @@ export function ConsensusResolutionPanel({
   reviewerLabelById,
   reviewerAvatarById,
   requiredCoords,
-  isComplete,
   isResolving,
   isFinalizing,
   peersRevealed,
@@ -83,7 +81,6 @@ export function ConsensusResolutionPanel({
     ),
     participantCount: summary.reviewers.length,
     requiredCoords,
-    isComplete,
   });
 
   return (

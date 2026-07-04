@@ -74,7 +74,6 @@ export function deriveConsensusResolution<C extends ResolvedConsensusLike>(p: {
   decisionCountByCoord: ReadonlyMap<string, number>;
   participantCount: number;
   requiredCoords: readonly string[];
-  isComplete: boolean;
 }): ConsensusResolutionView<C> {
   // Newest consensus decision wins per coord (the aggregate can carry more than
   // one if an arbitrator re-resolved a field).
@@ -109,11 +108,18 @@ export function deriveConsensusResolution<C extends ResolvedConsensusLike>(p: {
     }
   }
 
+  // Completeness is measured at the RUN level: `requiredGaps` already flags any
+  // required coord with no reviewer decision and no published value (a published
+  // state is written for every consensus decision, so adopted-peer resolutions
+  // count as filled). This deliberately does NOT consult a caller-scoped
+  // "isComplete" — an arbitrator who resolves a required field by adopting a
+  // peer's value has nothing in their own decision stream, yet the run is
+  // complete. Mirrors the backend gate (`_filled_coords`: published ∪ every
+  // reviewer's decision), so the button state matches what finalize will accept.
   const conflictsResolved = buckets.conflicts.every((c) => resolvedByCoord.has(c));
   const canFinalize =
     conflictsResolved &&
     buckets.requiredGaps.length === 0 &&
-    p.isComplete &&
     p.consensusDecisions.length > 0;
 
   return {
