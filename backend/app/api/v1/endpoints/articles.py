@@ -160,6 +160,7 @@ async def get_instance_ids(
 
 
 @router.get("/{article_id}/suggestions/history")
+@limiter.limit("30/minute")
 async def get_suggestions_history(
     article_id: UUID,
     request: Request,

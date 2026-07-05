@@ -78,10 +78,20 @@ Negative (the panel's blocker):
   (`extraction_export_service.py:1185`). Fixed by D8 this cycle.
 - The decisions write path is gated by **stage, not kind**
   (`extraction_review_service.py:56-59` — `stage != 'extract'` is the
-  only block): a QA run in extract accepts reviewer decisions as-is,
-  same `ensure_project_reviewer` role gate. QA finalize/publish never
-  reads decisions (QA publishes via per-field `manual_override`
-  consensus), so D8 does not disturb it.
+  only block): a QA run in extract accepts reviewer decisions as-is.
+  **Correction (2026-07-05, PR 1 panel):** the write endpoints were
+  member-gated only — no `ensure_project_reviewer` role gate existed
+  (a viewer could POST decisions/proposals), and a caller-supplied
+  `proposal_record_id` on an `edit` decision was persisted without
+  coordinate/source validation. PR 1 added both guards: the reviewer
+  role gate on `create_decision`/`create_proposal` (mirroring
+  `mark_ready`) and a link guard requiring an existing non-human
+  proposal on the same (instance, field). Run equality is intentionally
+  not required for `edit` links — select-version legitimately pins
+  proposals from older runs of the same article (asymmetric with
+  `accept_proposal`, which stays same-run by design). QA
+  finalize/publish never reads decisions (QA publishes via per-field
+  `manual_override` consensus), so D8 does not disturb it.
 - QA form hydration reads **raw `runDetail.proposals`**
   (`QualityAssessmentFullScreen.tsx:247-258`), not `current_values` — the
   backend Layer-1(own proposals)/Layer-2(own decisions) resolver already
@@ -297,7 +307,13 @@ commitments:
 - **PR 1 (feature):** D0–D6 — write-path linkage, consensus trace UI on
   both screens, popover attribution, dead-affordance cleanup, baseline
   update. Trace icons light up on extraction immediately; QA data
-  arrives with PR 2.
+  arrives with PR 2. **Scope amendment (2026-07-05):** PR 1 carries a
+  small backend guard (link validation + reviewer role gate on the run
+  write endpoints) — shipping the D0 write path without it would let
+  forged links into the append-only audit trail. The server-side
+  ran-by identity scrub on the history endpoint stays PR 2 scope
+  (needs the run-scoped-reveal semantics designed with D8); until
+  then the frontend gates ran-by display for consistency only.
 - **PR 2 (QA parity):** D8 — QA autosave flip + hydration switch +
   consensus-entry materialization (the cycle's only backend change; no
   schema migration — existing tables only).
