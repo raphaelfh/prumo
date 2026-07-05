@@ -4,6 +4,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests.integration.conftest import SEED
+
 
 @pytest.mark.asyncio
 async def test_is_project_reviewer_function_exists(db_session: AsyncSession) -> None:
@@ -28,9 +30,8 @@ async def test_is_project_reviewer_admits_manager_reviewer_consensus(
     legitimately writes workflow rows: manager, reviewer, consensus."""
     project_id = (
         await db_session.execute(
-            text(
-                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
-            )
+            text("SELECT id FROM public.projects WHERE id = :pid"),
+            {"pid": str(SEED.primary_project)},
         )
     ).scalar()
     if project_id is None:
@@ -64,9 +65,8 @@ async def test_is_project_reviewer_admits_manager_reviewer_consensus(
 async def test_is_project_reviewer_rejects_outsider(db_session: AsyncSession) -> None:
     project_id = (
         await db_session.execute(
-            text(
-                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
-            )
+            text("SELECT id FROM public.projects WHERE id = :pid"),
+            {"pid": str(SEED.primary_project)},
         )
     ).scalar()
     if project_id is None:
