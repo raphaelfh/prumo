@@ -1,16 +1,18 @@
 /**
- * Auto-save user edits as ``human`` proposals on the active Run, with a
- * proper state machine and lifecycle handlers that survive route
- * changes, tab closes, and visibility switches.
+ * Auto-save user edits on the active Run, with a proper state machine and
+ * lifecycle handlers that survive route changes, tab closes, and visibility
+ * switches. Kind-aware write target: extraction runs write per-reviewer
+ * ``edit`` decisions to ``/runs/{id}/decisions`` (optionally carrying the
+ * D0 AI link); QA runs write ``human`` proposals to ``/runs/{id}/proposals``.
  *
  * Used by both Data Extraction and Quality Assessment full-screen
  * pages — anywhere a flat ``Record<`${instanceId}_${fieldId}`, value>``
- * map needs to be persisted as ProposalRecords on a Run.
+ * map needs to be persisted on a Run.
  *
  * State machine:
  *   - ``idle``    nothing dirty, no save in flight
- *   - ``dirty``   user typed; debounce armed; save pending
- *   - ``saving``  POST(s) in flight to ``/runs/{id}/proposals``
+ *   - ``dirty``   user typed (or adopted an AI version); debounce armed
+ *   - ``saving``  POST(s) in flight to the kind-specific endpoint
  *   - ``saved``   last save acknowledged; ``lastSavedAt`` updated
  *   - ``error``   last save failed; retries on next keystroke
  *
@@ -23,10 +25,9 @@
  *     request alive past page unload (works on iOS Safari where
  *     ``beforeunload`` is ignored).
  *
- * Diff-aware: only fields whose value changed since the last
- * successful save are written, so the append-only
- * ``extraction_proposal_records`` table doesn't accumulate one
- * duplicate row per debounce tick.
+ * Diff-aware: only coords whose [value, AI-link] fingerprint changed since
+ * the last successful save (or the hydrated baseline) are written, so the
+ * append-only tables don't accumulate one duplicate row per debounce tick.
  *
  * Concurrent ``performSave`` invocations are serialized: a save triggered
  * while another is in flight waits for the first batch, recomputes the

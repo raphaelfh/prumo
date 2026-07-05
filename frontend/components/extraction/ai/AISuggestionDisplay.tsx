@@ -46,7 +46,6 @@ interface AISuggestionDisplayProps {
   suggestion: AISuggestion;
   onAccept?: () => void;
   onReject?: () => void;
-  loading?: boolean;
   /** When present, the value area becomes a trigger for the review popover. */
   review?: AISuggestionReviewBinding;
   /** Field type + allowed_values so a select/multiselect CODE renders as its
@@ -99,7 +98,6 @@ export function AISuggestionDisplay({
   suggestion,
   onAccept,
   onReject,
-  loading = false,
   review,
   fieldType,
   allowedValues,
@@ -129,7 +127,6 @@ export function AISuggestionDisplay({
             <AISuggestionActions
               onAccept={onAccept}
               onReject={onReject}
-              loading={loading}
               isAccepted={isAccepted}
               isRejected={isRejected}
             />
@@ -163,7 +160,6 @@ export function AISuggestionDisplay({
             <AISuggestionActions
               onAccept={onAccept}
               onReject={onReject}
-              loading={loading}
               isAccepted={isAccepted}
               isRejected={isRejected}
             />

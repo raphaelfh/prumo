@@ -187,8 +187,6 @@ export const extraction = {
     templateActivatedSuccess: 'Template activated successfully!',
     templateDeactivatedSuccess: 'Template deactivated successfully!',
     errors_loadSuggestions: 'Error loading suggestions',
-    errors_acceptSuggestion: 'Error accepting suggestion',
-    errors_rejectSuggestion: 'Error rejecting suggestion',
     errors_batchAcceptSuggestions: 'Error accepting suggestions in batch',
     errors_loadSuggestionsHistory: 'Error loading suggestion history',
     errors_loadInstances: 'Error loading instances',

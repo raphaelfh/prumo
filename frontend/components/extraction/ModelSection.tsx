@@ -57,7 +57,6 @@ export interface ModelSectionProps {
     instanceId: string,
     fieldId: string,
   ) => Promise<AISuggestionHistoryItem[]>;
-  isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
 
   /** Instance mutations (add/remove repeatable sub-instances). */
   getInstancesForModel: (entityTypeId: string, modelId: string) => ExtractionInstance[];
@@ -111,7 +110,6 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
     selectSuggestion,
     rejectSuggestion,
     getSuggestionsHistory,
-    isActionLoading,
     getInstancesForModel,
     handleAddInstance,
     handleRemoveInstance,
@@ -194,7 +192,6 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
               onRejectAI={rejectSuggestion}
               selectSuggestion={selectSuggestion}
               getSuggestionsHistory={getSuggestionsHistory}
-              isActionLoading={isActionLoading}
               onAddInstance={() => handleAddInstance(modelContainer.id)}
               onRemoveInstance={handleRemoveInstance}
               onExtractionComplete={onExtractionComplete}
@@ -224,8 +221,7 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
                 onRejectAI={rejectSuggestion}
                 selectSuggestion={selectSuggestion}
                 getSuggestionsHistory={getSuggestionsHistory}
-                isActionLoading={isActionLoading}
-                onAddInstance={() => handleAddInstance(entityType.id)}
+                  onAddInstance={() => handleAddInstance(entityType.id)}
                 onRemoveInstance={handleRemoveInstance}
                 onExtractionComplete={onExtractionComplete}
               />

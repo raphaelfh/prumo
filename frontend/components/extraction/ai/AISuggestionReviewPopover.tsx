@@ -27,6 +27,7 @@ import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem, EvidenceCitation, RunProvenance} from '@/types/ai-extraction';
 import {formatFullSuggestionValue, isAbstention} from '@/lib/ai-extraction/suggestionUtils';
 import {decisionMatchesVersion} from '@/lib/runs/valueEquality';
+import {initials} from '@/components/runs/ReviewerAvatarStack';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {AIPopoverShell} from './shared/AIPopoverShell';
@@ -430,7 +431,7 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
                         aria-hidden
                         className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-muted-foreground/15 text-[9px] font-semibold uppercase"
                       >
-                        {ranByName.slice(0, 2)}
+                        {initials(ranByName)}
                       </span>
                       <span className="min-w-0 truncate">
                         {t('extraction', 'reviewRunBy').replace('{{name}}', ranByName)}

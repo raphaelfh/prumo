@@ -28,7 +28,9 @@ interface ReviewerAvatarStackProps {
   testId?: string;
 }
 
-function initials(name: string): string {
+/** Shared initials derivation — also used by the review popover's ran-by
+ *  header so avatar initials never diverge between surfaces. */
+export function initials(name: string): string {
   const parts = name
     .split(/\s+/)
     .filter(Boolean)

@@ -43,8 +43,6 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
 
   const [suggestions, setSuggestions] = useState<Record<string, AISuggestion>>({});
   const [loading, setLoading] = useState(false);
-    // Loading state per suggestion for immediate visual feedback
-  const [actionLoading, setActionLoading] = useState<Record<string, 'accept' | 'reject' | null>>({});
   // D0 (consensus AI trace): this session's real adoption events only —
   // accept/select set the chosen proposal id, reject tombstones with null.
   // NEVER hydrated from the read endpoint: the server marks any non-reject
@@ -132,6 +130,12 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
   // Shared accept body, keyed by an EXPLICIT proposal id + value. Both the
   // quick-accept (latest pending) and the review-popover version selection
   // funnel through here, so accept-by-id and accept-latest stay one code path.
+  // Accepting never writes to the backend from here: the value bubbles up via
+  // onSuggestionAccepted into the screen's form state, and the screen's
+  // autosave persists it (extraction: an `edit` decision carrying
+  // proposal_record_id via linkByKey — D0). Purely local state updates — the
+  // async wrapper/error path that guarded the old service writes was removed
+  // with them (2026-07-05 review).
   const selectProposalCore = async (
     instanceId: string,
     fieldId: string,
@@ -142,68 +146,41 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
   ): Promise<boolean> => {
     const key = getSuggestionKey(instanceId, fieldId);
 
-    // Feedback visual imediato
-    setActionLoading(prev => ({ ...prev, [key]: 'accept' }));
-
-    const clearLoading = () =>
-      setActionLoading(prev => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-
-    const doAccept = async (): Promise<boolean> => {
-      // Accepting never writes to the backend from here. The value bubbles
-      // up via onSuggestionAccepted into the screen's form state, and the
-      // screen's autosave persists it (extraction: an `edit` decision
-      // carrying proposal_record_id via linkByKey — D0).
-
-        // Update status in local state to 'accepted' (do not remove!)
-        // IMPORTANT: Create new object to ensure re-render
-      setSuggestions(prev => {
-        if (!prev[key]) {
-            console.warn(`⚠️ Suggestion ${key} not found in state when accepting`);
-          return prev;
-        }
-        const next = { ...prev };
-        next[key] = {
-          ...next[key],
-          // Reflect the CHOSEN version on the coord so the review popover
-          // highlights it (and the field shows its value/confidence) across
-          // close+reopen — accept-latest passes the same id/value/confidence,
-          // so this is a no-op there.
-          id: proposalRecordId,
-          value,
-          confidence,
-          status: 'accepted' as const,
-        };
-          console.warn(`✅ Suggestion ${key} accepted - state updated to 'accepted'`);
-          return {...next}; // New reference to ensure re-render
-      });
-
-      // D0: record the real adoption event for autosave's linkByKey.
-      setSessionAdoption(prev => ({ ...prev, [key]: proposalRecordId }));
-
-        // Callback to fill input automatically (non-blocking)
-      if (onSuggestionAccepted) {
-          // Run in background so UI is not blocked
-        Promise.resolve(onSuggestionAccepted(instanceId, fieldId, value)).catch(err => {
-          console.error('Erro no callback onSuggestionAccepted:', err);
-        });
+      // Update status in local state to 'accepted' (do not remove!)
+      // IMPORTANT: Create new object to ensure re-render
+    setSuggestions(prev => {
+      if (!prev[key]) {
+          console.warn(`⚠️ Suggestion ${key} not found in state when accepting`);
+        return prev;
       }
+      const next = { ...prev };
+      next[key] = {
+        ...next[key],
+        // Reflect the CHOSEN version on the coord so the review popover
+        // highlights it (and the field shows its value/confidence) across
+        // close+reopen — accept-latest passes the same id/value/confidence,
+        // so this is a no-op there.
+        id: proposalRecordId,
+        value,
+        confidence,
+        status: 'accepted' as const,
+      };
+      return {...next}; // New reference to ensure re-render
+    });
 
-        if (!silent) toast.success(t('extraction', 'toastSuggestionAcceptedSuccess'));
-        return true;
-    };
+    // D0: record the real adoption event for autosave's linkByKey.
+    setSessionAdoption(prev => ({ ...prev, [key]: proposalRecordId }));
 
-    return doAccept()
-      .catch((err: unknown) => {
-        console.error('Error accepting suggestion:', err);
-        const message = getErrorMessage(err);
-        if (!silent) toast.error(`${t('extraction', 'errors_acceptSuggestion')}: ${message}`);
-        return false;
-      })
-      .finally(clearLoading);
+      // Callback to fill input automatically (non-blocking)
+    if (onSuggestionAccepted) {
+        // Run in background so UI is not blocked
+      Promise.resolve(onSuggestionAccepted(instanceId, fieldId, value)).catch(err => {
+        console.error('Error in onSuggestionAccepted callback:', err);
+      });
+    }
+
+    if (!silent) toast.success(t('extraction', 'toastSuggestionAcceptedSuccess'));
+    return true;
   };
 
   const acceptSuggestionCore = async (instanceId: string, fieldId: string, silent: boolean): Promise<boolean> => {
@@ -235,63 +212,41 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     await selectProposalCore(instanceId, fieldId, proposalRecordId, value, confidence, /* silent */ false);
   };
 
+  // Rejecting never writes to the backend from here — same contract as
+  // accept: the cleared value bubbles via onSuggestionRejected and the
+  // screen's autosave persists it (link severed by the tombstone below).
   const rejectSuggestion = async (instanceId: string, fieldId: string) => {
     const key = getSuggestionKey(instanceId, fieldId);
     const suggestion = suggestions[key];
     if (!suggestion) return;
 
-    // Feedback visual imediato
-    setActionLoading(prev => ({ ...prev, [key]: 'reject' }));
-
-    const clearLoading = () =>
-      setActionLoading(prev => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-
-    const doReject = async (): Promise<void> => {
-      // Rejecting never writes to the backend from here — same contract as
-      // accept: the cleared value bubbles via onSuggestionRejected and the
-      // screen's autosave persists it (link severed by the tombstone below).
-
-        // Update status in local state to 'rejected' (do not remove!)
-        // IMPORTANT: Create new object to ensure re-render e mostrar indicador visual
-      setSuggestions(prev => {
-        if (!prev[key]) {
-            console.warn(`⚠️ Suggestion ${key} not found in state when rejecting`);
-          return prev;
-        }
-        const next = { ...prev };
-        next[key] = {
-          ...next[key],
-          status: 'rejected' as const,
-        };
-          console.warn(`✅ Suggestion ${key} rejected - state updated to 'rejected'`);
-          return {...next}; // New reference to ensure re-render
-      });
-
-      // D0: a reject severs any AI link for the coord (tombstone overrides
-      // the caller's persisted decision link in deriveAiLinkByKey).
-      setSessionAdoption(prev => ({ ...prev, [key]: null }));
-
-        // Callback to clear field when rejecting
-      if (onSuggestionRejected) {
-        Promise.resolve(onSuggestionRejected(instanceId, fieldId)).catch(err => {
-          console.error('Erro no callback onSuggestionRejected:', err);
-        });
+      // Update status in local state to 'rejected' (do not remove!)
+      // IMPORTANT: Create new object to ensure re-render
+    setSuggestions(prev => {
+      if (!prev[key]) {
+          console.warn(`⚠️ Suggestion ${key} not found in state when rejecting`);
+        return prev;
       }
+      const next = { ...prev };
+      next[key] = {
+        ...next[key],
+        status: 'rejected' as const,
+      };
+      return {...next}; // New reference to ensure re-render
+    });
 
-        toast.success(t('extraction', 'toastSuggestionRejectedSuccess'));
-    };
+    // D0: a reject severs any AI link for the coord (tombstone overrides
+    // the caller's persisted decision link in deriveAiLinkByKey).
+    setSessionAdoption(prev => ({ ...prev, [key]: null }));
 
-    doReject()
-      .catch((err: unknown) => {
-        console.error('Error rejecting suggestion:', err);
-        const message = getErrorMessage(err);
-        toast.error(`${t('extraction', 'errors_rejectSuggestion')}: ${message}`);
-      })
-      .finally(clearLoading);
+      // Callback to clear field when rejecting
+    if (onSuggestionRejected) {
+      Promise.resolve(onSuggestionRejected(instanceId, fieldId)).catch(err => {
+        console.error('Error in onSuggestionRejected callback:', err);
+      });
+    }
+
+    toast.success(t('extraction', 'toastSuggestionRejectedSuccess'));
   };
 
   const batchAccept = async (threshold = 0.8) => {
@@ -361,12 +316,6 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     return suggestions[key];
   };
 
-    // Helper to check if a suggestion is loading
-  const isActionLoading = (instanceId: string, fieldId: string): 'accept' | 'reject' | null => {
-    const key = getSuggestionKey(instanceId, fieldId);
-    return actionLoading[key] || null;
-  };
-
   return {
     suggestions,
     loading,
@@ -379,7 +328,6 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     getSuggestionsHistory,
     getLatestSuggestion,
     refresh: loadSuggestions,
-    isActionLoading,
   };
 }
 

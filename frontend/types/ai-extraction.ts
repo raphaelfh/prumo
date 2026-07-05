@@ -343,7 +343,6 @@ export interface UseAISuggestionsReturn {
   ) => Promise<AISuggestionHistoryItem[]>;
   getLatestSuggestion: (instanceId: string, fieldId: string) => AISuggestion | undefined;
   refresh: () => Promise<LoadSuggestionsResult>; // Returns result directly for efficient polling
-  isActionLoading: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null; // Whether action is loading
 }
 
 export interface LoadSuggestionsResult {

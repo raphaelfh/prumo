@@ -100,7 +100,7 @@ export const consensus = {
     // Per-cell AI trace (spec 2026-07-04 D1/D4)
     traceTitle: 'AI used by {{name}}',
     traceManualChip: 'Manual',
-    traceManualChipTooltip: 'Entered manually — no AI suggestion exists for this field.',
+    traceManualChipTooltip: 'Entered manually — no AI suggestion in this run for this field.',
 
     // Resolved-state summary
     resolvedFromReviewer: 'from {{reviewer}}',

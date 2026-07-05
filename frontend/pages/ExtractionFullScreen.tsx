@@ -393,7 +393,6 @@ export default function ExtractionFullScreen() {
     rejectSuggestion,
     getSuggestionsHistory,
     refresh: refreshAISuggestions,
-    isActionLoading
   } = useAISuggestions({
     articleId: articleId || '',
     runId: activeRunId ?? undefined,
@@ -1209,7 +1208,6 @@ export default function ExtractionFullScreen() {
           selectSuggestion,
           rejectSuggestion,
           getSuggestionsHistory,
-          isActionLoading,
           models,
           activeModelId,
           setActiveModelId,
@@ -1312,7 +1310,9 @@ export default function ExtractionFullScreen() {
         }}
         canReveal={canReveal}
         onReveal={onReveal}
-        onJumpToDivergence={() => setViewMode('compare')}
+        // D6: inert during consensus (the consensus branch ignores viewMode) —
+        // mirror the QA guard so the status-popover jump never dead-clicks.
+        onJumpToDivergence={inConsensusStage ? undefined : () => setViewMode('compare')}
         // AI extraction seeds proposals and only works in EXTRACT; once the
         // run advances to consensus it's a one-time-done step (re-running errors).
         canRunAI={stage === 'extract' || stage == null}

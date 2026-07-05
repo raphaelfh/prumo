@@ -65,7 +65,6 @@ function props(overrides: Record<string, unknown> = {}) {
     onAcceptAI: vi.fn(),
     onRejectAI: vi.fn(),
     getSuggestionsHistory: vi.fn(async () => []),
-    isActionLoading: () => null,
     ...overrides,
   };
 }

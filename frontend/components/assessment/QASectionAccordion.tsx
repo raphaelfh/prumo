@@ -73,10 +73,6 @@ interface QASectionAccordionProps {
     instanceId: string,
     fieldId: string,
   ) => Promise<AISuggestionHistoryItem[]>;
-  isAIActionLoading?: (
-    instanceId: string,
-    fieldId: string,
-  ) => "accept" | "reject" | null;
   /**
    * Display profiles + activity per (instance, field) within this
    * domain. When provided, the accordion header surfaces a stacked
@@ -116,7 +112,6 @@ export function QASectionAccordion({
   onRejectAI,
   selectSuggestion,
   getSuggestionsHistory,
-  isAIActionLoading,
 }: QASectionAccordionProps) {
   const { entityType, fields } = domain;
   const signaling = fields.filter((f) => !SUMMARY_FIELD_NAMES.has(f.name));
@@ -252,11 +247,6 @@ export function QASectionAccordion({
                       }
                       selectSuggestion={selectSuggestion}
                       getSuggestionsHistory={getSuggestionsHistory}
-                      isActionLoading={
-                        isAIActionLoading
-                          ? () => isAIActionLoading(instanceId, field.id)
-                          : undefined
-                      }
                       articleId={articleId}
                     />
                     {stack.length > 0 ? (
@@ -308,11 +298,6 @@ export function QASectionAccordion({
                         }
                         selectSuggestion={selectSuggestion}
                         getSuggestionsHistory={getSuggestionsHistory}
-                        isActionLoading={
-                          isAIActionLoading
-                            ? () => isAIActionLoading(instanceId, field.id)
-                            : undefined
-                        }
                         articleId={articleId}
                       />
                       {stack.length > 0 ? (

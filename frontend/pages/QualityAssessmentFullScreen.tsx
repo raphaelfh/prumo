@@ -281,7 +281,6 @@ export default function QualityAssessmentFullScreen() {
     selectSuggestion: selectAISuggestion,
     rejectSuggestion: rejectAISuggestion,
     getSuggestionsHistory: getAISuggestionsHistory,
-    isActionLoading: isAIActionLoading,
     refresh: refreshAISuggestions,
   } = useAISuggestions({
     articleId: articleId ?? "",
@@ -807,7 +806,6 @@ export default function QualityAssessmentFullScreen() {
                     onRejectAI={rejectAISuggestion}
                     selectSuggestion={selectAISuggestion}
                     getSuggestionsHistory={getAISuggestionsHistory}
-                    isAIActionLoading={isAIActionLoading}
                   />
                 );
               })}

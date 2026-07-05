@@ -45,7 +45,6 @@ interface SectionAccordionProps {
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
   selectSuggestion?: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown, confidence: number) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
-  isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   onAddInstance?: () => void;
   onRemoveInstance?: (instanceId: string) => void;
     onExtractionComplete?: (runId?: string) => void | Promise<void>; // Callback to refresh suggestions after extraction
@@ -197,7 +196,6 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       onRejectAI={props.onRejectAI}
                       selectSuggestion={props.selectSuggestion}
                       getSuggestionsHistory={props.getSuggestionsHistory}
-                      isActionLoading={props.isActionLoading}
                       articleId={articleId}
                     />
                   </div>
@@ -237,7 +235,6 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       onRejectAI={() => props.onRejectAI?.(instances[0].id, field.id)}
                       selectSuggestion={props.selectSuggestion}
                       getSuggestionsHistory={props.getSuggestionsHistory}
-                      isActionLoading={props.isActionLoading}
                     />
                   );
                 })}

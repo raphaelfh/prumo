@@ -35,4 +35,10 @@ describe('decisionMatchesVersion', () => {
   it('never matches a null decision envelope', () => {
     expect(decisionMatchesVersion(null, 'x')).toBe(false);
   });
+
+  it("treats a legacy '' version as the written null (verbatim adoption stays Adopted)", () => {
+    // The suggestion read path coerces a legacy bare-null proposal to '',
+    // while the write path normalizes '' → null before enveloping.
+    expect(decisionMatchesVersion({value: null}, '')).toBe(true);
+  });
 });

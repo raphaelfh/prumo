@@ -14,6 +14,7 @@
  */
 
 import type {ReviewerDecisionResponse} from '@/hooks/runs/types';
+import {getSuggestionKey} from '@/types/ai-extraction';
 
 export function deriveAiLinkByKey(p: {
   decisions: readonly ReviewerDecisionResponse[];
@@ -28,7 +29,8 @@ export function deriveAiLinkByKey(p: {
     const newestByCoord = new Map<string, ReviewerDecisionResponse>();
     for (const d of p.decisions) {
       if (d.reviewer_id !== p.currentUserId) continue;
-      const key = `${d.instance_id}_${d.field_id}`;
+      // Canonical coord key — must stay aligned with the sessionAdoption map.
+      const key = getSuggestionKey(d.instance_id, d.field_id);
       const prev = newestByCoord.get(key);
       if (!prev || prev.created_at < d.created_at) newestByCoord.set(key, d);
     }

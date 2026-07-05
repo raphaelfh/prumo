@@ -35,12 +35,17 @@ export function decisionMatchesVersion(
   versionValue: unknown,
 ): boolean {
   if (decisionEnvelope === null || decisionEnvelope === undefined) return false;
+  // The write path normalizes '' → null before enveloping, while the
+  // suggestion read path coerces a legacy bare-null proposal to '' — treat
+  // the two as the same emptiness so a verbatim adoption of an empty
+  // version never reads "Edited by".
+  const normalized = versionValue === "" ? null : versionValue;
   const wrapped =
-    versionValue !== null &&
-    typeof versionValue === "object" &&
-    !Array.isArray(versionValue) &&
-    "absent_reason" in (versionValue as Record<string, unknown>)
-      ? versionValue
-      : {value: versionValue};
+    normalized !== null &&
+    typeof normalized === "object" &&
+    !Array.isArray(normalized) &&
+    "absent_reason" in (normalized as Record<string, unknown>)
+      ? normalized
+      : {value: normalized};
   return stableStringify(decisionEnvelope) === stableStringify(wrapped);
 }

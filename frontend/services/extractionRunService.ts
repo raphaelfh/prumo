@@ -12,6 +12,7 @@
 import {apiClient} from '@/integrations/api';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {ReviewKind} from '@/lib/comparison/permissions';
+import type {CreateDecisionRequest, CreateProposalRequest} from '@/hooks/runs/types';
 import type {components} from '@/types/api/schema';
 
 // ---------------------------------------------------------------------------
@@ -185,7 +186,9 @@ export async function writeRunFieldValue(
   const valueEnvelope = absentReason
     ? {value: normalizedValue, absent_reason: absentReason}
     : {value: normalizedValue};
-  const body = useDecisionEndpoint
+  // Bodies are typed against the backend mirror so /decisions payload drift
+  // fails the typecheck instead of surfacing as a runtime 422.
+  const body: CreateDecisionRequest | CreateProposalRequest = useDecisionEndpoint
     ? {
         instance_id: instanceId,
         field_id: fieldId,
