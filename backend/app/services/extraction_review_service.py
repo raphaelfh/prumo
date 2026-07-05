@@ -217,6 +217,10 @@ class ExtractionReviewService:
         }
         inserted = 0
         for proposal in winners:
+            if proposal.source_user_id is None:
+                # Unreachable for source='human' (human_has_user CHECK); the
+                # narrow keeps the reviewer attribution honest if it ever is.
+                continue
             key = (proposal.source_user_id, proposal.instance_id, proposal.field_id)
             if key in decided:
                 continue

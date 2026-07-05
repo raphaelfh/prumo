@@ -478,7 +478,9 @@ export default function QualityAssessmentFullScreen() {
           instance_id: instanceId,
           field_id: fieldId,
           mode: "manual_override",
-          value: { value: v },
+          // Marker-aware wrapping (ADR-0016): a hydrated absent_reason marker
+          // must publish as {value: null, absent_reason}, not double-wrap.
+          value: toConsensusValueEnvelope(v),
           rationale: "Published from Quality-Assessment form",
         });
       }

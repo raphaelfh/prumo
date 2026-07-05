@@ -426,3 +426,29 @@ async def test_viewer_cannot_advance_run(
         )
     ).scalar()
     assert stage == "extract", "a viewer's advance must not transition the run"
+
+
+@pytest.mark.asyncio
+async def test_system_proposal_rejected_via_api(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_manager: UUID,  # noqa: ARG001
+) -> None:
+    """'system' proposals are server-generated (reopen seeding); for QA runs
+    they hydrate into EVERY caller's baseline via current_values Layer-1, so
+    an authenticated member must not be able to plant them."""
+    if not await _seeded(db_session):
+        pytest.skip("Missing fixtures.")
+    run_id = await _create_run_in_extract(db_client)
+
+    res = await db_client.post(
+        f"{API_PREFIX}/{run_id}/proposals",
+        json={
+            "instance_id": str(SEED.primary_instance),
+            "field_id": str(SEED.primary_field),
+            "source": "system",
+            "proposed_value": {"value": "planted"},
+        },
+    )
+    assert res.status_code == 400, res.text
+    assert "server-generated" in res.json()["error"]["message"]

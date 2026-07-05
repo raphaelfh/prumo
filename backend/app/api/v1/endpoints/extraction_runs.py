@@ -65,6 +65,7 @@ from app.services.extraction_run_read_service import (
     get_run_with_workflow_history,
     is_run_arbitrator,
     list_run_participants,
+    scrub_results_ranby,
 )
 from app.services.run_lifecycle_service import (
     CannotReopenRunError,
@@ -110,6 +111,9 @@ async def create_run(
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
     await ensure_project_member(db, body.project_id, current_user_sub)
+    # Creating a run is a write — read-only viewers 403 (mirrors the other
+    # run write endpoints).
+    await ensure_project_reviewer(db, body.project_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:
@@ -215,6 +219,15 @@ async def create_proposal(
     # Writes are reviewer-role-gated (mirrors mark_ready): a read-only viewer
     # is a member but must not author proposals.
     await ensure_project_reviewer(db, run.project_id, current_user_sub)
+    # 'system' proposals are server-generated (reopen seeding) and — for QA
+    # runs — hydrate into EVERY caller's form baseline via current_values
+    # Layer-1. Accepting them from an authenticated member would let one
+    # reviewer plant unattributed values into peers' forms.
+    if body.source == "system":
+        raise HTTPException(
+            status_code=400,
+            detail="source='system' proposals are server-generated and cannot be created via the API",
+        )
     service = ExtractionProposalService(db)
     trace_id = _trace(request)
     # source='human' requires a user attribution. Default to the
@@ -488,8 +501,13 @@ async def advance_run(
         new_stage=run.stage,
         new_status=run.status,
     )
+    summary = RunSummaryResponse.model_validate(run)
+    # The advancing caller may be a blind reviewer: scrub ran-by identity
+    # from results.provenance unconditionally — unblinded callers read the
+    # properly-revealed payload from /view (D8-d).
+    summary = summary.model_copy(update={"results": scrub_results_ranby(summary.results)})
     return ApiResponse.success(
-        RunSummaryResponse.model_validate(run),
+        summary,
         trace_id=getattr(request.state, "trace_id", None),
     )
 
@@ -593,7 +611,10 @@ async def reopen_run(
     new Run lands in stage=EXTRACT so the form picks up where the old
     one left off. Old Run is untouched (audit trail).
     """
-    await _load_run_and_check_member(db, run_id, current_user_sub)
+    source_run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    # Reopening forks a new extract-stage run with seeded proposals — a
+    # write; read-only viewers 403.
+    await ensure_project_reviewer(db, source_run.project_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:

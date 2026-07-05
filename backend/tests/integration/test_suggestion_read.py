@@ -1972,3 +1972,58 @@ async def test_load_suggestions_scrubs_ran_by_user_id(
     assert prov is not None
     assert "ran_by_user_id" not in prov
     assert prov["model"] == "gpt-4o-mini"
+
+
+@pytest.mark.asyncio
+async def test_run_results_scrub_ranby_on_run_detail(db_session: AsyncSession) -> None:
+    """D8-d applies to the run payload itself: RunSummaryResponse.results
+    serializes verbatim on /runs/{id} and /view, so an unrevealed caller must
+    not receive ran-by identity there either (flat + per-section leaves)."""
+    from app.services.extraction_run_read_service import get_run_with_workflow_history
+
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, _field_id, reviewer_a, reviewer_b = built
+    et_id = await _instance_entity_type(db_session, instance_id)
+
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {
+            "model": "flat-m",
+            "ran_by_user_id": str(reviewer_b),
+            "sections": {str(et_id): {"model": "sec-m", "ran_by_user_id": str(reviewer_b)}},
+        },
+    )
+
+    blind = await get_run_with_workflow_history(
+        db_session,
+        run_id,
+        caller_id=reviewer_a,
+        can_see_peers=False,
+        caller_is_arbitrator=False,
+    )
+    prov = blind.run.results["provenance"]
+    assert "ran_by_user_id" not in prov
+    assert all("ran_by_user_id" not in sec for sec in prov["sections"].values())
+    assert prov["model"] == "flat-m", "non-identity keys survive"
+
+    revealed = await get_run_with_workflow_history(
+        db_session,
+        run_id,
+        caller_id=SEED.primary_profile,
+        can_see_peers=True,
+        caller_is_arbitrator=False,
+    )
+    assert revealed.run.results["provenance"]["ran_by_user_id"] == str(reviewer_b)
+    # Copy-on-scrub: the stored payload is untouched by the blind read.
+    stored = (
+        await db_session.execute(
+            text(
+                "SELECT results->'provenance'->>'ran_by_user_id' FROM public.extraction_runs WHERE id = :r"
+            ),
+            {"r": str(run_id)},
+        )
+    ).scalar()
+    assert stored == str(reviewer_b)

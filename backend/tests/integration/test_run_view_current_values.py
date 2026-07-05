@@ -51,11 +51,15 @@ async def test_current_values_empty_when_no_caller_rows(
 async def test_current_values_include_system_seeded_proposals(
     db_session: AsyncSession,
 ) -> None:
-    """Reopen support (D8): a reopened run is seeded with ``source='system'``
-    proposals carrying the finalized parent's values. Layer 1 must surface
-    them to EVERY caller (system rows are not reviewer-attributable, so there
-    is no blind concern), while a caller's own decision still overrides
-    (Layer 2)."""
+    """Reopen support (D8): a reopened QA run is seeded with ``source='system'``
+    proposals carrying the finalized parent's values. With
+    ``include_system_seeds`` (build_run_view passes it for QA runs — the QA
+    publish path flows from the form, so hydrated seeds survive) Layer 1
+    surfaces them to EVERY caller (system rows are not reviewer-attributable,
+    so there is no blind concern), while a caller's own decision still
+    overrides (Layer 2). Without the flag — extraction runs, whose
+    post-extract stages read decisions only — system rows stay hidden, so a
+    seed can never render as a value that silently vanishes at consensus."""
     built = await _build_two_reviewer_review_run(db_session)
     if built is None:
         pytest.skip("Seed graph incomplete")
@@ -87,18 +91,27 @@ async def test_current_values_include_system_seeded_proposals(
         },
     )
 
-    # A fresh caller (no decisions, no human proposals) sees the seed.
-    values = await resolve_caller_current_values(db_session, run_id, caller_id=uuid4())
+    # A fresh caller (no decisions, no human proposals) sees the seed when
+    # the QA flag is on.
+    values = await resolve_caller_current_values(
+        db_session, run_id, caller_id=uuid4(), include_system_seeds=True
+    )
     seeded = [v for v in values if (v.instance_id, v.field_id) == (instance_id, field_id)]
     assert len(seeded) == 1, "system-seeded proposal must hydrate for a fresh caller"
     assert seeded[0].value == {"value": "SYSTEM-SEEDED"}
     assert seeded[0].decision == "system_proposal"
 
     # Reviewer A's own edit decision still overrides the seed on that coord.
-    a_values = await resolve_caller_current_values(db_session, run_id, caller_id=reviewer_a)
+    a_values = await resolve_caller_current_values(
+        db_session, run_id, caller_id=reviewer_a, include_system_seeds=True
+    )
     a_rows = [v for v in a_values if (v.instance_id, v.field_id) == (instance_id, field_id)]
     assert len(a_rows) == 1
     assert a_rows[0].value == {"value": "REVIEWER-A-SECRET"}
+
+    # Default (extraction runs): system rows stay hidden.
+    default_values = await resolve_caller_current_values(db_session, run_id, caller_id=uuid4())
+    assert default_values == [], "system seeds must not hydrate without the QA flag"
 
 
 @pytest.mark.asyncio
