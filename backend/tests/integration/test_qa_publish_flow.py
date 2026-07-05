@@ -72,7 +72,12 @@ def _auth_as(profile_id: UUID) -> None:
 
 
 async def _pick_article(db: AsyncSession) -> tuple[UUID, UUID] | None:
-    row = (await db.execute(text("SELECT id, project_id FROM public.articles LIMIT 1"))).first()
+    row = (
+        await db.execute(
+            text("SELECT id, project_id FROM public.articles WHERE id = :aid"),
+            {"aid": str(SEED.primary_article)},
+        )
+    ).first()
     if row is None:
         return None
     return UUID(str(row[0])), UUID(str(row[1]))

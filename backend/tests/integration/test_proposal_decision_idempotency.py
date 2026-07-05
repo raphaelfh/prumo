@@ -17,17 +17,24 @@ from app.models.extraction_workflow import ExtractionProposalSource
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.run_lifecycle_service import RunLifecycleService
+from tests.integration.conftest import SEED
 
 
 async def _coord(db: AsyncSession):
-    user_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    user_id = (
+        await db.execute(
+            text(
+                "SELECT user_id FROM public.project_members "
+                "WHERE project_id = :pid AND role = 'manager' LIMIT 1"
+            ),
+            {"pid": str(SEED.primary_project)},
+        )
+    ).scalar()
     if user_id is None:
         return None
     # Derive a coherent (project, article, template, instance, field) tuple
-    # from a real extraction instance with a field chain. Scoping off the
-    # instance (rather than picking projects LIMIT 1, which on the shared dev
-    # DB can land on a project that has no extraction template) keeps the
-    # graph coherent so create_run / record_proposal don't fail.
+    # from the seeded extraction instance's field chain, scoped to the seed
+    # project so E2E fixture rows on a shared dev DB can never be picked.
     row = (
         await db.execute(
             text(
@@ -36,8 +43,9 @@ async def _coord(db: AsyncSession):
                 "JOIN public.extraction_entity_types et ON et.id=i.entity_type_id "
                 "JOIN public.extraction_fields f ON f.entity_type_id=et.id "
                 "JOIN public.project_extraction_templates t ON t.id=i.template_id "
-                "WHERE t.kind='extraction' LIMIT 1"
-            )
+                "WHERE t.kind='extraction' AND t.project_id = :pid LIMIT 1"
+            ),
+            {"pid": str(SEED.primary_project)},
         )
     ).first()
     if row is None:

@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.extraction_snapshot import build_template_version_snapshot
+from tests.integration.conftest import SEED
 
 _ENTITY_KEYS = {
     "id",
@@ -51,8 +52,9 @@ async def test_snapshot_carries_role_and_all_field_columns(
         await db_session.execute(
             text(
                 "SELECT id FROM public.project_extraction_templates "
-                "WHERE kind = 'extraction' LIMIT 1"
-            )
+                "WHERE id = :tid AND kind = 'extraction' LIMIT 1"
+            ),
+            {"tid": str(SEED.primary_template)},
         )
     ).scalar()
     if template_id is None:

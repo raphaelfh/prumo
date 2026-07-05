@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction_versioning import ExtractionTemplateVersion
+from tests.integration.conftest import SEED
 
 
 @pytest.mark.asyncio
@@ -25,9 +26,8 @@ async def test_template_version_unique_template_version_constraint(
     # Pick a real existing project_template_id from backfill (v1 was seeded for each)
     project_id = (
         await db_session.execute(
-            text(
-                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
-            )
+            text("SELECT id FROM public.projects WHERE id = :pid"),
+            {"pid": str(SEED.primary_project)},
         )
     ).scalar()
     row = await db_session.execute(
@@ -42,8 +42,10 @@ async def test_template_version_unique_template_version_constraint(
 
     profile_row = await db_session.execute(
         text(
-            "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            "SELECT user_id FROM public.project_members "
+            "WHERE project_id = :pid AND role = 'manager' LIMIT 1"
         ),
+        {"pid": str(SEED.primary_project)},
     )
     profile_id = profile_row.scalar()
     assert profile_id is not None
@@ -66,9 +68,8 @@ async def test_template_version_only_one_active_per_template(
 ) -> None:
     project_id = (
         await db_session.execute(
-            text(
-                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
-            )
+            text("SELECT id FROM public.projects WHERE id = :pid"),
+            {"pid": str(SEED.primary_project)},
         )
     ).scalar()
     row = await db_session.execute(
@@ -83,8 +84,10 @@ async def test_template_version_only_one_active_per_template(
 
     profile_row = await db_session.execute(
         text(
-            "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            "SELECT user_id FROM public.project_members "
+            "WHERE project_id = :pid AND role = 'manager' LIMIT 1"
         ),
+        {"pid": str(SEED.primary_project)},
     )
     profile_id = profile_row.scalar()
     assert profile_id is not None
@@ -130,8 +133,10 @@ async def test_run_lifecycle_lazy_creates_v1_for_template_without_version(
 
     profile_row = await db_session.execute(
         text(
-            "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
+            "SELECT user_id FROM public.project_members "
+            "WHERE project_id = :pid AND role = 'manager' LIMIT 1"
         ),
+        {"pid": str(SEED.primary_project)},
     )
     profile_id = profile_row.scalar()
     assert profile_id is not None

@@ -39,6 +39,7 @@ from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.hitl_session_service import HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
+from tests.integration.conftest import SEED
 
 _MARKER = {"value": None, "absent_reason": "no_information"}
 
@@ -52,13 +53,8 @@ async def _coords(
     dev DB is not seeded."""
     project_id = (
         await db.execute(
-            text(
-                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM "
-                "public.project_extraction_templates t JOIN public.extraction_entity_types et "
-                "ON et.project_template_id = t.id JOIN public.extraction_fields f "
-                "ON f.entity_type_id = et.id JOIN public.extraction_instances i "
-                "ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
-            )
+            text("SELECT id FROM public.projects WHERE id = :pid"),
+            {"pid": str(SEED.primary_project)},
         )
     ).scalar()
     article_id = (

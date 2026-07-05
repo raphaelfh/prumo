@@ -96,8 +96,10 @@ async def home_project_fixture(
     raw = (
         await db_session.execute(
             text(
-                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
-            )
+                "SELECT user_id FROM public.project_members "
+                "WHERE project_id = :pid AND role = 'manager' LIMIT 1"
+            ),
+            {"pid": str(SEED.primary_project)},
         )
     ).scalar()
     if raw is not None:
@@ -281,15 +283,21 @@ async def _pick_extraction_project_template(db: AsyncSession) -> UUID | None:
         await db.execute(
             text(
                 "SELECT id FROM public.project_extraction_templates "
-                "WHERE kind = 'extraction' LIMIT 1"
-            )
+                "WHERE project_id = :pid AND kind = 'extraction' LIMIT 1"
+            ),
+            {"pid": str(SEED.primary_project)},
         )
     ).scalar()
     return UUID(str(raw)) if raw is not None else None
 
 
 async def _pick_article(db: AsyncSession) -> tuple[UUID, UUID] | None:
-    raw = (await db.execute(text("SELECT id, project_id FROM public.articles LIMIT 1"))).first()
+    raw = (
+        await db.execute(
+            text("SELECT id, project_id FROM public.articles WHERE id = :aid"),
+            {"aid": str(SEED.primary_article)},
+        )
+    ).first()
     if raw is None:
         return None
     return UUID(str(raw[0])), UUID(str(raw[1]))
@@ -1154,7 +1162,7 @@ async def test_session_backfills_singleton_children_added_after_model_creation(
                     (project_id, article_id, template_id, entity_type_id,
                      parent_instance_id, label, sort_order, created_by)
                 VALUES (:pid, :aid, :tid, :etid, NULL, 'XGBoost', 0,
-                        (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1))
+                        (SELECT user_id FROM public.project_members WHERE project_id = :pid AND role = 'manager' LIMIT 1))
                 RETURNING id
                 """
             ),
@@ -1278,7 +1286,7 @@ async def test_session_backfill_is_idempotent(
                     (project_id, article_id, template_id, entity_type_id,
                      parent_instance_id, label, sort_order, created_by)
                 VALUES (:pid, :aid, :tid, :etid, NULL, 'XGBoost', 0,
-                        (SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1))
+                        (SELECT user_id FROM public.project_members WHERE project_id = :pid AND role = 'manager' LIMIT 1))
                 RETURNING id
                 """
             ),

@@ -60,6 +60,7 @@ from app.services.extraction_export_service import (
     SectionDescriptor,
 )
 from app.services.hitl_session_service import HITLSessionService
+from tests.integration.conftest import SEED
 
 pytestmark = pytest.mark.asyncio
 
@@ -85,8 +86,10 @@ async def _coord(
     profile = (
         await db.execute(
             text(
-                "SELECT pm.user_id FROM public.project_members pm WHERE pm.role = 'manager' AND EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = pm.project_id) ORDER BY pm.user_id LIMIT 1"
-            )
+                "SELECT user_id FROM public.project_members "
+                "WHERE project_id = :pid AND role = 'manager' LIMIT 1"
+            ),
+            {"pid": str(SEED.primary_project)},
         )
     ).scalar()
     row = (
@@ -98,10 +101,11 @@ async def _coord(
                 JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
                 JOIN public.extraction_fields f ON f.entity_type_id = et.id
                 JOIN public.project_extraction_templates t ON t.id = i.template_id
-                WHERE t.kind = 'extraction'
+                WHERE t.kind = 'extraction' AND t.project_id = :pid
                 LIMIT 1
                 """
-            )
+            ),
+            {"pid": str(SEED.primary_project)},
         )
     ).first()
     if profile is None or row is None:
@@ -303,13 +307,8 @@ async def test_ai_outcome_accept_not_masked_by_other_reviewer_reject(
 
     # Two distinct reviewers on the same coord: target accepts, other rejects.
     reviewer_accept = profile_id
-    reviewer_reject = (
-        await db_session.execute(
-            text("SELECT id FROM public.profiles WHERE id <> :pid LIMIT 1"),
-            {"pid": str(profile_id)},
-        )
-    ).scalar()
-    assert reviewer_reject is not None, "need a second profile for the multi-reviewer case"
+    # Seeded reviewer of the same project — distinct from the manager.
+    reviewer_reject = SEED.reviewer_profile
     await _record_decision(
         db_session,
         run_id=run.id,
@@ -385,13 +384,8 @@ async def test_ai_outcome_single_user_scoped_to_target(
     await db_session.flush()
 
     target_reviewer = profile_id
-    other_reviewer = (
-        await db_session.execute(
-            text("SELECT id FROM public.profiles WHERE id <> :pid LIMIT 1"),
-            {"pid": str(profile_id)},
-        )
-    ).scalar()
-    assert other_reviewer is not None
+    # Seeded reviewer of the same project — distinct from the manager.
+    other_reviewer = SEED.reviewer_profile
     await _record_decision(
         db_session,
         run_id=run.id,

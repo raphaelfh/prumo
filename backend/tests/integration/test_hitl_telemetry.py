@@ -65,8 +65,13 @@ async def _pick_template(db: AsyncSession) -> tuple[UUID, UUID, UUID] | None:
                 "FROM public.projects p "
                 "JOIN public.articles a ON a.project_id = p.id "
                 "JOIN public.project_extraction_templates t ON t.project_id = p.id "
-                "LIMIT 1"
-            )
+                "WHERE p.id = :pid AND a.id = :aid AND t.id = :tid"
+            ),
+            {
+                "pid": str(SEED.primary_project),
+                "aid": str(SEED.primary_article),
+                "tid": str(SEED.primary_template),
+            },
         )
     ).first()
     if row is None:
