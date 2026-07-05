@@ -22,7 +22,7 @@ import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {getRequiredUserId} from '@/services/authService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
-import {deriveAiLinkByKey} from '@/lib/runs/aiLink';
+import {deriveAiLinkByKey, EMPTY_SESSION_ADOPTION} from '@/lib/runs/aiLink';
 import {isRunEditable} from '@/lib/runs/editability';
 import {firstPendingInstanceId, scrollToSectionById} from '@/lib/runs/suggestionLocate';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
@@ -77,10 +77,6 @@ import {useModelManagement} from '@/hooks/extraction/useModelManagement';
 import {usePreserveScroll} from '@/hooks/usePreserveScroll';
 import {t} from '@/lib/copy';
 import {createViewerStore, subscribeReaderLocate} from '@prumo/pdf-viewer';
-
-// Stable empty map so the persisted-links memo (session events excluded)
-// doesn't re-derive on every render.
-const EMPTY_SESSION_ADOPTION: Record<string, string | null> = {};
 
 const SCROLL_CONTAINERS_TO_PRESERVE = [
   // Form panel — actual scroll happens on radix' inner viewport node.
@@ -455,9 +451,6 @@ export default function ExtractionFullScreen() {
   const { saveState, lastSavedAt, hasUnsavedChanges, saveNow } = useAutoSaveProposals({
     runId: activeRunId,
     stage,
-    // kind drives the write target in 'extract': extraction → /decisions
-    // (per-user ReviewerDecision), QA → /proposals. This is the extraction page.
-    kind: 'extraction',
     values,
     // Server-loaded values are the baseline — opening a run must not re-POST
     // them as fresh proposals (the re-record-on-mount duplication).

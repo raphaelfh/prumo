@@ -11,16 +11,6 @@ export interface CreateRunRequest {
   parameters?: Record<string, unknown> | null;
 }
 
-export interface CreateProposalRequest {
-  instance_id: string;
-  field_id: string;
-  source: "ai" | "human" | "system";
-  proposed_value: Record<string, unknown>;
-  source_user_id?: string | null;
-  confidence_score?: number | null;
-  rationale?: string | null;
-}
-
 export interface CreateDecisionRequest {
   instance_id: string;
   field_id: string;

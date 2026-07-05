@@ -16,7 +16,7 @@
  * field to materialize PublishedState rows.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -64,6 +64,7 @@ import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermission
 import { useSidebar } from "@/contexts/SidebarContext";
 import { t } from "@/lib/copy";
 import { isRunEditable } from "@/lib/runs/editability";
+import { deriveAiLinkByKey, EMPTY_SESSION_ADOPTION } from "@/lib/runs/aiLink";
 import { firstPendingInstanceId, scrollToSectionById } from "@/lib/runs/suggestionLocate";
 import { publishedStatesToValuesMap } from "@/lib/extraction/publishedValues";
 
@@ -243,7 +244,7 @@ export default function QualityAssessmentFullScreen() {
   // Server baseline for autosave — the same per-coord map the hydration
   // effect applies, computed inline from ``runDetail`` so it is present when
   // the hydrated ``values`` arrive. Stops opening an assessment from
-  // re-POSTing loaded values as fresh proposals.
+  // re-POSTing loaded values as fresh decisions.
   const loadedValuesMap: Record<string, unknown> = {};
   for (const p of runDetail?.proposals ?? []) {
     const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
@@ -257,31 +258,20 @@ export default function QualityAssessmentFullScreen() {
   }
   const loadedValues = loadedValuesMap;
 
-  const { saveState, lastSavedAt, saveNow } =
-    useAutoSaveProposals({
-      runId: session?.runId ?? null,
-      values,
-      baselineValues: loadedValues,
-      enabled:
-        !!session &&
-        !!runDetail &&
-        isRunEditable(runDetail.run.stage) &&
-        // Viewer writes 403 server-side; never fire them (forms render
-        // read-only via forceReadOnly, this is the flush-path belt).
-        permissions.userRole !== "viewer",
-    });
-
   // AI suggestions wiring — kind-agnostic hooks reused from Data
   // Extraction. ``runId`` scopes the suggestion query so a parallel
   // extraction run on the same article doesn't leak in. Accept/reject
   // never write from the hook: the value bubbles to ``handleValueChange``,
-  // and QA's autosave records it as a ``human`` proposal (until D8 flips
-  // QA onto the decisions write path).
+  // and autosave persists it as a per-reviewer ``edit`` decision (D8) —
+  // linked to its AI basis via ``linkByKey`` below. Declared BEFORE
+  // useAutoSaveProposals: autosave consumes the sessionAdoption-derived
+  // link maps.
   const sessionInstanceIds = Object.values(session?.instancesByEntityType ?? {});
 
   const {
     suggestions: aiSuggestions,
     suggestionsReady: aiSuggestionsReady,
+    sessionAdoption,
     acceptSuggestion: acceptAISuggestion,
     selectSuggestion: selectAISuggestion,
     rejectSuggestion: rejectAISuggestion,
@@ -301,6 +291,49 @@ export default function QualityAssessmentFullScreen() {
       handleValueChange(instanceId, fieldId, null);
     },
   });
+
+  // D0 on QA (D8 parity): coords whose value has a traceable AI basis.
+  // Layer 1 = my own persisted decision links (runDetail); layer 2 = this
+  // session's accept/select/reject events. NEVER derived from
+  // suggestions[].status — the server marks any non-reject decision
+  // 'accepted', which would fabricate links for manually-typed values.
+  const aiLinkByKey = useMemo(
+    () =>
+      deriveAiLinkByKey({
+        decisions: runDetail?.decisions ?? [],
+        currentUserId: userId ?? null,
+        sessionAdoption,
+      }),
+    [runDetail?.decisions, userId, sessionAdoption],
+  );
+  // Persisted links only (layer 1) — the link-side baseline: a same-value
+  // adoption still writes once, then stays clean across remounts.
+  const persistedAiLinkByKey = useMemo(
+    () =>
+      deriveAiLinkByKey({
+        decisions: runDetail?.decisions ?? [],
+        currentUserId: userId ?? null,
+        sessionAdoption: EMPTY_SESSION_ADOPTION,
+      }),
+    [runDetail?.decisions, userId],
+  );
+
+  const { saveState, lastSavedAt, saveNow } =
+    useAutoSaveProposals({
+      runId: session?.runId ?? null,
+      stage: runDetail?.run.stage ?? null,
+      values,
+      baselineValues: loadedValues,
+      linkByKey: aiLinkByKey,
+      baselineLinkByKey: persistedAiLinkByKey,
+      enabled:
+        !!session &&
+        !!runDetail &&
+        isRunEditable(runDetail.run.stage) &&
+        // Viewer writes 403 server-side; never fire them (forms render
+        // read-only via forceReadOnly, this is the flush-path belt).
+        permissions.userRole !== "viewer",
+    });
 
   const { extractForRun, loading: extractingAI } = useRunAIExtraction({
     onSuccess: async () => {

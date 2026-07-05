@@ -16,6 +16,13 @@
 import type {ReviewerDecisionResponse} from '@/hooks/runs/types';
 import {getSuggestionKey} from '@/types/ai-extraction';
 
+/**
+ * Stable empty adoption map for the persisted-links (layer-1-only) memo —
+ * shared by both run screens so the baseline derivation doesn't re-run on
+ * every render.
+ */
+export const EMPTY_SESSION_ADOPTION: Record<string, string | null> = {};
+
 export function deriveAiLinkByKey(p: {
   decisions: readonly ReviewerDecisionResponse[];
   currentUserId: string | null;
