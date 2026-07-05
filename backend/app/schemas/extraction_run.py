@@ -17,11 +17,15 @@ class CreateRunRequest(BaseModel):
 
 
 class CreateProposalRequest(BaseModel):
+    # No attribution field: human proposals are attributed server-side to the
+    # authenticated caller. extra="forbid" makes a client-sent
+    # ``source_user_id`` a loud 422 instead of a silently-dropped forgery.
+    model_config = ConfigDict(extra="forbid")
+
     instance_id: UUID
     field_id: UUID
     source: str = Field(pattern="^(ai|human|system)$")
     proposed_value: dict[str, Any]
-    source_user_id: UUID | None = None
     confidence_score: float | None = None
     rationale: str | None = None
 

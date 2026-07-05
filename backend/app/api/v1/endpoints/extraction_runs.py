@@ -230,20 +230,12 @@ async def create_proposal(
         )
     service = ExtractionProposalService(db)
     trace_id = _trace(request)
-    # source='human' requires a user attribution. Default to the
-    # authenticated caller so clients don't have to thread it through — and
-    # REJECT any other value: D8-c materialization converts source_user_id
-    # into decision attribution at consensus entry, so a caller-supplied
-    # foreign id would forge another reviewer's audit rows. (source='ai'/
-    # 'system' never carry reviewer-attribution semantics — unaffected.)
-    source_user_id = body.source_user_id
-    if body.source == "human":
-        if source_user_id is not None and source_user_id != current_user_sub:
-            raise HTTPException(
-                status_code=400,
-                detail="source_user_id on a human proposal must be the authenticated caller",
-            )
-        source_user_id = current_user_sub
+    # source='human' is attributed server-side to the authenticated caller;
+    # the request schema carries no attribution field, so forged attribution
+    # is unrepresentable at the API boundary. (D8-c materialization reads this
+    # persisted source_user_id as decision attribution at consensus entry —
+    # now always the caller for human rows; ai/system carry no attribution.)
+    source_user_id = current_user_sub if body.source == "human" else None
     try:
         record = await service.record_proposal(
             run_id=run_id,
