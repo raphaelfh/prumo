@@ -212,6 +212,80 @@ async def test_edit_decision_link_same_coord_older_run_ok(
 
 
 @pytest.mark.asyncio
+async def test_link_guard_service_direct(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_manager: UUID,  # noqa: ARG001
+) -> None:
+    """Same guard exercised by direct service calls.
+
+    The API-level cases above run inside the ASGI transport, whose executed
+    lines do not register on coverage (the diff-cover blind spot); these
+    direct calls cover the guard body itself.
+    """
+    from app.services.extraction_review_service import (
+        ExtractionReviewService,
+        InvalidDecisionError,
+    )
+
+    if not await _seeded(db_session):
+        pytest.skip("Missing fixtures.")
+    run_id = await _create_run_in_extract(db_client)
+    proposal_id = await _post_ai_proposal(db_client, run_id)
+
+    other_field = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_fields "
+            "(id, entity_type_id, name, label, field_type, is_required, sort_order,"
+            " allow_other, created_at, updated_at) "
+            "VALUES (:id, :et, 'link_guard_probe_svc', 'Link guard probe svc', 'text',"
+            " false, 998, false, now(), now())"
+        ),
+        {"id": str(other_field), "et": str(SEED.primary_entity_type)},
+    )
+    await db_session.flush()
+
+    service = ExtractionReviewService(db_session)
+
+    # Wrong coord → rejected by the guard.
+    with pytest.raises(InvalidDecisionError, match="AI proposal"):
+        await service.record_decision(
+            run_id=run_id,
+            instance_id=SEED.primary_instance,
+            field_id=other_field,
+            reviewer_id=SEED.primary_profile,
+            decision="edit",
+            proposal_record_id=proposal_id,
+            value={"value": "typed"},
+        )
+
+    # Nonexistent proposal id → rejected (proposal is None branch).
+    with pytest.raises(InvalidDecisionError, match="AI proposal"):
+        await service.record_decision(
+            run_id=run_id,
+            instance_id=SEED.primary_instance,
+            field_id=SEED.primary_field,
+            reviewer_id=SEED.primary_profile,
+            decision="edit",
+            proposal_record_id=uuid4(),
+            value={"value": "typed"},
+        )
+
+    # Same-coord AI link → accepted and persisted with the link.
+    record = await service.record_decision(
+        run_id=run_id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=SEED.primary_profile,
+        decision="edit",
+        proposal_record_id=proposal_id,
+        value={"value": "typed"},
+    )
+    assert record.proposal_record_id == proposal_id
+
+
+@pytest.mark.asyncio
 async def test_viewer_cannot_write_decisions_or_proposals(
     db_client: AsyncClient,
     db_session: AsyncSession,
