@@ -329,3 +329,100 @@ async def test_viewer_cannot_write_decisions_or_proposals(
         },
     )
     assert prop.status_code == 403, prop.text
+
+
+@pytest.mark.asyncio
+async def test_human_proposal_forged_source_user_id_rejected(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_manager: UUID,  # noqa: ARG001
+) -> None:
+    """D8-c guard: materialization converts ``source_user_id`` into decision
+    attribution, so a caller-supplied value differing from the authenticated
+    caller is a forged-attribution attempt and must 400 before persisting."""
+    if not await _seeded(db_session):
+        pytest.skip("Missing fixtures.")
+    run_id = await _create_run_in_extract(db_client)
+
+    res = await db_client.post(
+        f"{API_PREFIX}/{run_id}/proposals",
+        json={
+            "instance_id": str(SEED.primary_instance),
+            "field_id": str(SEED.primary_field),
+            "source": "human",
+            "source_user_id": str(uuid4()),
+            "proposed_value": {"value": "forged attribution"},
+        },
+    )
+    assert res.status_code == 400, res.text
+    assert "authenticated caller" in res.json()["error"]["message"].lower()
+    count = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM public.extraction_proposal_records "
+                "WHERE run_id = :r AND source = 'human'"
+            ),
+            {"r": str(run_id)},
+        )
+    ).scalar()
+    assert count == 0, "nothing persisted on a forged attribution"
+
+
+@pytest.mark.asyncio
+async def test_ai_proposal_keeps_arbitrary_source_user_id(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_manager: UUID,  # noqa: ARG001
+) -> None:
+    """AI seeding is unchanged: source='ai' never carries reviewer attribution
+    semantics, so the forged-attribution guard must not fire. Uses a real
+    non-caller profile (the column carries a profiles FK)."""
+    if not await _seeded(db_session):
+        pytest.skip("Missing fixtures.")
+    run_id = await _create_run_in_extract(db_client)
+
+    res = await db_client.post(
+        f"{API_PREFIX}/{run_id}/proposals",
+        json={
+            "instance_id": str(SEED.primary_instance),
+            "field_id": str(SEED.primary_field),
+            "source": "ai",
+            "source_user_id": str(SEED.outsider_profile),
+            "proposed_value": {"value": "ai candidate"},
+        },
+    )
+    assert res.status_code == 201, res.text
+
+
+@pytest.mark.asyncio
+async def test_viewer_cannot_advance_run(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_manager: UUID,  # noqa: ARG001
+) -> None:
+    """/advance is reviewer-role-gated (D8-c: advancing a QA run now WRITES
+    decision rows via materialization — a read-only viewer must not trigger
+    that, or any stage transition)."""
+    if not await _seeded(db_session):
+        pytest.skip("Missing fixtures.")
+    run_id = await _create_run_in_extract(db_client)
+
+    await db_session.execute(
+        text(
+            "INSERT INTO public.project_members (project_id, user_id, role) "
+            "VALUES (:pid, :uid, 'viewer') ON CONFLICT DO NOTHING"
+        ),
+        {"pid": str(SEED.primary_project), "uid": str(SEED.outsider_profile)},
+    )
+    await db_session.flush()
+
+    _auth_as(SEED.outsider_profile)
+    res = await db_client.post(f"{API_PREFIX}/{run_id}/advance", json={"target_stage": "consensus"})
+    assert res.status_code == 403, res.text
+    stage = (
+        await db_session.execute(
+            text("SELECT stage FROM public.extraction_runs WHERE id = :r"),
+            {"r": str(run_id)},
+        )
+    ).scalar()
+    assert stage == "extract", "a viewer's advance must not transition the run"

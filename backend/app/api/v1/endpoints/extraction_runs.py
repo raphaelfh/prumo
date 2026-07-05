@@ -218,9 +218,18 @@ async def create_proposal(
     service = ExtractionProposalService(db)
     trace_id = _trace(request)
     # source='human' requires a user attribution. Default to the
-    # authenticated caller so clients don't have to thread it through.
+    # authenticated caller so clients don't have to thread it through — and
+    # REJECT any other value: D8-c materialization converts source_user_id
+    # into decision attribution at consensus entry, so a caller-supplied
+    # foreign id would forge another reviewer's audit rows. (source='ai'/
+    # 'system' never carry reviewer-attribution semantics — unaffected.)
     source_user_id = body.source_user_id
-    if body.source == "human" and source_user_id is None:
+    if body.source == "human":
+        if source_user_id is not None and source_user_id != current_user_sub:
+            raise HTTPException(
+                status_code=400,
+                detail="source_user_id on a human proposal must be the authenticated caller",
+            )
         source_user_id = current_user_sub
     try:
         record = await service.record_proposal(
@@ -440,7 +449,12 @@ async def advance_run(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
-    await _load_run_and_check_member(db, run_id, current_user_sub)
+    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    # Reviewer-role gate (mirrors the write endpoints): a stage transition is
+    # a write — and since D8-c a QA extract->consensus advance also
+    # materializes reviewer decision rows. Viewers 403; manager/reviewer/
+    # consensus roles all pass.
+    await ensure_project_reviewer(db, run.project_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:
