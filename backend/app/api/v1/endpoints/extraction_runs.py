@@ -449,12 +449,12 @@ async def advance_run(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
-    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    member_run = await _load_run_and_check_member(db, run_id, current_user_sub)
     # Reviewer-role gate (mirrors the write endpoints): a stage transition is
     # a write — and since D8-c a QA extract->consensus advance also
     # materializes reviewer decision rows. Viewers 403; manager/reviewer/
     # consensus roles all pass.
-    await ensure_project_reviewer(db, run.project_id, current_user_sub)
+    await ensure_project_reviewer(db, member_run.project_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:

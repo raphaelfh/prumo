@@ -125,15 +125,15 @@ async def test_create_proposal_rejects_forged_human_source_user_id() -> None:
         patch(f"{_EP}.ensure_project_reviewer", AsyncMock()),
         patch(f"{_EP}.ExtractionProposalService", return_value=service),
         patch(f"{_EP}._trace", return_value=None),
+        pytest.raises(HTTPException) as exc,
     ):
-        with pytest.raises(HTTPException) as exc:
-            await create_proposal(
-                run_id=run_id,
-                body=body,
-                request=MagicMock(),
-                db=AsyncMock(),
-                current_user_sub=caller,
-            )
+        await create_proposal(
+            run_id=run_id,
+            body=body,
+            request=MagicMock(),
+            db=AsyncMock(),
+            current_user_sub=caller,
+        )
 
     assert exc.value.status_code == 400
     service.record_proposal.assert_not_awaited()
