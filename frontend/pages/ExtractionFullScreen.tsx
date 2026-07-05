@@ -22,7 +22,7 @@ import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {getRequiredUserId} from '@/services/authService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
-import {deriveAiLinkByKey, EMPTY_SESSION_ADOPTION} from '@/lib/runs/aiLink';
+import {useAiLinkMaps} from '@/hooks/runs/useAiLinkMaps';
 import {isRunEditable} from '@/lib/runs/editability';
 import {firstPendingInstanceId, scrollToSectionById} from '@/lib/runs/suggestionLocate';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
@@ -406,33 +406,13 @@ export default function ExtractionFullScreen() {
     onSuggestionRejected: handleAISuggestionRejected
   });
 
-  // D0: coords whose value has a traceable AI basis. Layer 1 = my own
-  // persisted decision links (runDetail); layer 2 = this session's
-  // accept/select/reject events. NEVER derived from suggestions[].status —
-  // the server marks any non-reject decision 'accepted' (see
-  // extraction_suggestion_read_service._resolve_status), which would
-  // fabricate links for manually-typed values.
-  const aiLinkByKey = useMemo(
-    () =>
-      deriveAiLinkByKey({
-        decisions: runDetail?.decisions ?? [],
-        currentUserId,
-        sessionAdoption,
-      }),
-    [runDetail?.decisions, currentUserId, sessionAdoption],
-  );
-  // The persisted (layer-1) links only — autosave's link baseline, parallel
-  // to baselineValues: a mount with value+link matching what's persisted is
-  // clean, while a session adoption that only changes the link still writes.
-  const persistedAiLinkByKey = useMemo(
-    () =>
-      deriveAiLinkByKey({
-        decisions: runDetail?.decisions ?? [],
-        currentUserId,
-        sessionAdoption: EMPTY_SESSION_ADOPTION,
-      }),
-    [runDetail?.decisions, currentUserId],
-  );
+  // D0: coords whose value has a traceable AI basis — see useAiLinkMaps for
+  // the layer semantics and the never-from-status invariant.
+  const { aiLinkByKey, persistedAiLinkByKey } = useAiLinkMaps({
+    decisions: runDetail?.decisions,
+    currentUserId,
+    sessionAdoption,
+  });
 
     // Auto-save hook — in the editable `extract` stage this extraction page
     // writes per-user ``ReviewerDecision`` rows (decision='edit'); it never

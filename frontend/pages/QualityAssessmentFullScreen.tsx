@@ -64,7 +64,7 @@ import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermission
 import { useSidebar } from "@/contexts/SidebarContext";
 import { t } from "@/lib/copy";
 import { isRunEditable } from "@/lib/runs/editability";
-import { deriveAiLinkByKey, EMPTY_SESSION_ADOPTION } from "@/lib/runs/aiLink";
+import { useAiLinkMaps } from "@/hooks/runs/useAiLinkMaps";
 import { firstPendingInstanceId, scrollToSectionById } from "@/lib/runs/suggestionLocate";
 import {
   currentValuesToValuesMap,
@@ -195,9 +195,18 @@ export default function QualityAssessmentFullScreen() {
   // (e.g. peers drop out or the setting flips off).
   const effectiveViewMode = canCompare ? viewMode : "assess";
 
-  // Local input state for the form. Hydrated from the latest proposal per
-  // (instance, field) once the Run detail loads.
+  // Local input state for the form. Hydrated from the caller-scoped
+  // ``current_values`` per (instance, field) once the Run detail loads.
   const [values, setValues] = useState<Record<string, unknown>>({});
+
+  // The ONE ``current_values`` map (D8): hydration merges from it below and
+  // autosave receives the same object as ``baselineValues``, so a hydrated
+  // coord is never re-POSTed as a fresh decision on mount — sameness by
+  // construction, not by parallel derivation.
+  const loadedValues = useMemo(
+    () => currentValuesToValuesMap(runDetail?.current_values),
+    [runDetail?.current_values],
+  );
 
   // Hydrate during render when a new Run detail lands (instead of a
   // synchronous setState in an effect).
@@ -217,9 +226,7 @@ export default function QualityAssessmentFullScreen() {
         // frontend fallback branch on raw proposals exists.
         setValues((prev) => {
           const next: Record<string, unknown> = { ...prev };
-          for (const [k, v] of Object.entries(
-            currentValuesToValuesMap(runDetail.current_values),
-          )) {
+          for (const [k, v] of Object.entries(loadedValues)) {
             if (!(k in next)) next[k] = v;
           }
           return next;
@@ -236,14 +243,6 @@ export default function QualityAssessmentFullScreen() {
     const k = keyOf({ instanceId, fieldId });
     setValues((prev) => ({ ...prev, [k]: value }));
   };
-
-  // Server baseline for autosave — the SAME ``current_values`` map the
-  // hydration above applies (one source, D8), so a hydrated coord is never
-  // re-POSTed as a fresh decision on mount.
-  const loadedValues = useMemo(
-    () => currentValuesToValuesMap(runDetail?.current_values),
-    [runDetail?.current_values],
-  );
 
   // AI suggestions wiring — kind-agnostic hooks reused from Data
   // Extraction. ``runId`` scopes the suggestion query so a parallel
@@ -279,31 +278,13 @@ export default function QualityAssessmentFullScreen() {
     },
   });
 
-  // D0 on QA (D8 parity): coords whose value has a traceable AI basis.
-  // Layer 1 = my own persisted decision links (runDetail); layer 2 = this
-  // session's accept/select/reject events. NEVER derived from
-  // suggestions[].status — the server marks any non-reject decision
-  // 'accepted', which would fabricate links for manually-typed values.
-  const aiLinkByKey = useMemo(
-    () =>
-      deriveAiLinkByKey({
-        decisions: runDetail?.decisions ?? [],
-        currentUserId: userId ?? null,
-        sessionAdoption,
-      }),
-    [runDetail?.decisions, userId, sessionAdoption],
-  );
-  // Persisted links only (layer 1) — the link-side baseline: a same-value
-  // adoption still writes once, then stays clean across remounts.
-  const persistedAiLinkByKey = useMemo(
-    () =>
-      deriveAiLinkByKey({
-        decisions: runDetail?.decisions ?? [],
-        currentUserId: userId ?? null,
-        sessionAdoption: EMPTY_SESSION_ADOPTION,
-      }),
-    [runDetail?.decisions, userId],
-  );
+  // D0 on QA (D8 parity): coords whose value has a traceable AI basis — see
+  // useAiLinkMaps for the layer semantics and the never-from-status invariant.
+  const { aiLinkByKey, persistedAiLinkByKey } = useAiLinkMaps({
+    decisions: runDetail?.decisions,
+    currentUserId: userId,
+    sessionAdoption,
+  });
 
   const { saveState, lastSavedAt, saveNow } =
     useAutoSaveProposals({

@@ -23,27 +23,25 @@ export function envelopeToFieldValue(raw: unknown): unknown {
   return extractValueFromDb({ value: unwrapped, unit });
 }
 
+/** The shared per-row conversion: marker envelopes (`{value: null,
+ *  absent_reason}`) verbatim — FieldInput derives the disposition label from
+ *  the raw envelope, and the generic peel would collapse the marker to null —
+ *  everything else through `envelopeToFieldValue`. */
+function envelopeRowToFieldValue(raw: unknown): unknown {
+  return valueAbsentReason(raw) !== null ? raw : envelopeToFieldValue(raw);
+}
+
 /**
  * Resolve `runDetail.published_states` into the `${instanceId}_${fieldId}`
  * values map both session forms consume (spec 2026-07-02 D3). Published-only,
  * no reviewer-state fallback: a coord without a published row stays absent.
- *
- * Marker envelopes (`{value: null, absent_reason}`) are preserved verbatim —
- * FieldInput derives the disposition label from the raw envelope, and the
- * generic unwrap would collapse the marker to null.
  */
 export function publishedStatesToValuesMap(
   rows: readonly PublishedStateResponse[] | undefined,
 ): Record<string, unknown> {
   const map: Record<string, unknown> = {};
   for (const row of rows ?? []) {
-    const key = `${row.instance_id}_${row.field_id}`;
-    const raw: unknown = row.value;
-    if (valueAbsentReason(raw) !== null) {
-      map[key] = raw;
-      continue;
-    }
-    map[key] = envelopeToFieldValue(raw);
+    map[`${row.instance_id}_${row.field_id}`] = envelopeRowToFieldValue(row.value);
   }
   return map;
 }
@@ -62,13 +60,7 @@ export function currentValuesToValuesMap(
   const map: Record<string, unknown> = {};
   for (const row of rows ?? []) {
     if (row.decision === 'reject') continue;
-    const key = `${row.instance_id}_${row.field_id}`;
-    const raw: unknown = row.value;
-    if (valueAbsentReason(raw) !== null) {
-      map[key] = raw;
-      continue;
-    }
-    map[key] = envelopeToFieldValue(raw);
+    map[`${row.instance_id}_${row.field_id}`] = envelopeRowToFieldValue(row.value);
   }
   return map;
 }

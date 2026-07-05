@@ -1122,12 +1122,14 @@ async def test_qa_materialization_replay_is_noop(db_session: AsyncSession) -> No
         pytest.skip("Missing fixtures.")
     run_id, _instance_id, _field_id, _profile_id, _ = built
 
-    svc = RunLifecycleService(db_session)
+    from app.services.extraction_review_service import ExtractionReviewService
+
     run = await db_session.get(ExtractionRun, run_id)
     assert run is not None
 
-    first = await svc._materialize_qa_decisions(run)
-    second = await svc._materialize_qa_decisions(run)
+    review = ExtractionReviewService(db_session)
+    first = await review.materialize_qa_decisions(run)
+    second = await review.materialize_qa_decisions(run)
     assert first == 1
     assert second == 0, "replaying the materialization is a no-op"
 

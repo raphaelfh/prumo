@@ -119,12 +119,23 @@ function fieldInput(page: Page, coord: Coord) {
 function fieldRow(page: Page, coord: Coord) {
   return page
     .locator("[data-field-row]")
-    .filter({
-      has: page.getByPlaceholder(`Enter ${coord.label.toLowerCase()}`, {
-        exact: true,
-      }),
-    })
+    .filter({ has: fieldInput(page, coord) })
     .first();
+}
+
+/** One /view fetch, shared by every persistence poll in this suite. */
+async function fetchView(
+  request: import("@playwright/test").APIRequestContext,
+  apiUrl: string,
+  runId: string,
+  token: string,
+  traceId: string,
+): Promise<RunViewResponse> {
+  const res = await request.get(`${apiUrl}/api/v1/runs/${runId}/view`, {
+    headers: authHeaders(token, traceId),
+  });
+  expect(res.ok(), await res.text()).toBeTruthy();
+  return (await parseEnvelope<RunViewResponse>(res)).data;
 }
 
 test.describe("Consensus AI trace (D0→D8 round trip)", () => {
@@ -194,28 +205,24 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
 
     // --- Discover three text-field coords (prefer one section for less
     // accordion juggling; fall back to spanning sections).
-    const coords: Coord[] = [];
-    for (const [etId, instanceId] of Object.entries(
-      session.instances_by_entity_type,
-    )) {
-      const [et] = await adminSelect<{ id: string; label: string }>(
+    const etIds = Object.keys(session.instances_by_entity_type);
+    const [sections, textFields] = await Promise.all([
+      adminSelect<{ id: string; label: string }>(
         "extraction_entity_types",
-        `select=id,label&id=eq.${etId}`,
-      );
-      const fields = await adminSelect<{ id: string; label: string }>(
+        `select=id,label&id=in.(${etIds.join(",")})`,
+      ),
+      adminSelect<{ id: string; label: string; entity_type_id: string }>(
         "extraction_fields",
-        `select=id,label&entity_type_id=eq.${etId}&field_type=eq.text`,
-      );
-      for (const f of fields) {
-        coords.push({
-          instanceId,
-          fieldId: f.id,
-          label: f.label,
-          sectionLabel: et?.label ?? "",
-        });
-      }
-      if (coords.length >= 3) break;
-    }
+        `select=id,label,entity_type_id&entity_type_id=in.(${etIds.join(",")})&field_type=eq.text`,
+      ),
+    ]);
+    const sectionLabelById = new Map(sections.map((et) => [et.id, et.label]));
+    const coords: Coord[] = textFields.slice(0, 3).map((f) => ({
+      instanceId: session.instances_by_entity_type[f.entity_type_id],
+      fieldId: f.id,
+      label: f.label,
+      sectionLabel: sectionLabelById.get(f.entity_type_id) ?? "",
+    }));
     test.skip(coords.length < 3, "CHARMS clone exposes fewer than 3 text fields");
     const [coord1, coord2, coord3] = coords;
 
@@ -250,25 +257,9 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     // --- Reviewer A (E2E Reviewer Bela) drives the form in her own context.
     const ctxA = await browser.newContext();
     const pageA = await ctxA.newPage();
-    await loginViaUiAs(pageA, REVIEWER_B_EMAIL, FIXTURE_PASSWORD);
-    const tokenA = await pageA.evaluate(() => {
-      for (const [key, value] of Object.entries(localStorage)) {
-        if (key.startsWith("sb-") && key.endsWith("-auth-token")) {
-          const parsed = JSON.parse(value) as { access_token?: string };
-          if (parsed.access_token) return parsed.access_token;
-        }
-      }
-      return null;
-    });
-    expect(tokenA).toBeTruthy();
+    const tokenA = await loginViaUiAs(pageA, REVIEWER_B_EMAIL, FIXTURE_PASSWORD);
 
-    const viewAsA = async (): Promise<RunViewResponse> => {
-      const res = await request.get(`${env.apiUrl}/api/v1/runs/${runId}/view`, {
-        headers: authHeaders(tokenA!, traceId),
-      });
-      expect(res.ok(), await res.text()).toBeTruthy();
-      return (await parseEnvelope<RunViewResponse>(res)).data;
-    };
+    const viewAsA = () => fetchView(request, env.apiUrl, runId, tokenA, traceId);
 
     await pageA.goto(
       `${env.frontendUrl}/projects/${projectId}/extraction/${TRACE_ARTICLE_ID}`,
@@ -380,24 +371,21 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     });
     await expect(traceButton1).toBeVisible();
 
-    // (ii) The trace popover is READ-ONLY and attributes the adoption.
-    await traceButton1.click();
-    await expect(page.getByText(`Adopted by ${REVIEWER_B_NAME}`)).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /use this version/i }),
-    ).toHaveCount(0);
-    // (iii) The run-group header reveals the runner to the arbitrator —
-    // the server-side ran-by scrub's auto-reveal carve-out, end-to-end.
-    await expect(page.getByText(`Run by ${OWNER_NAME}`)).toBeVisible();
-    await page.keyboard.press("Escape");
-
-    // coord2's popover attributes the same-value adoption too.
-    await row2.getByRole("button", { name: `AI used by ${REVIEWER_B_NAME}` }).click();
-    await expect(page.getByText(`Adopted by ${REVIEWER_B_NAME}`)).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /use this version/i }),
-    ).toHaveCount(0);
-    await page.keyboard.press("Escape");
+    // (ii)+(iii) Both trace popovers (coord2 is the same-value adoption) are
+    // READ-ONLY, attribute the adoption, and reveal the runner to the
+    // arbitrator — the server-side ran-by scrub's auto-reveal carve-out,
+    // end-to-end.
+    for (const row of [row1, row2]) {
+      await row
+        .getByRole("button", { name: `AI used by ${REVIEWER_B_NAME}` })
+        .click();
+      await expect(page.getByText(`Adopted by ${REVIEWER_B_NAME}`)).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: /use this version/i }),
+      ).toHaveCount(0);
+      await expect(page.getByText(`Run by ${OWNER_NAME}`)).toBeVisible();
+      await page.keyboard.press("Escape");
+    }
 
     // (iv) coord3 (typed, no AI proposal on the coord) shows the honest
     // Manual chip.
@@ -432,11 +420,7 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     // scope for this trace flow).
     await expect
       .poll(async () => {
-        const res = await request.get(
-          `${env.apiUrl}/api/v1/runs/${runId}/view`,
-          { headers: authHeaders(ownerToken, traceId) },
-        );
-        const view = (await parseEnvelope<RunViewResponse>(res)).data;
+        const view = await fetchView(request, env.apiUrl, runId, ownerToken, traceId);
         return view.consensus_decisions.some(
           (c) =>
             c.instance_id === coord1.instanceId &&
@@ -509,11 +493,7 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     await expect
       .poll(
         async () => {
-          const res = await request.get(
-            `${env.apiUrl}/api/v1/runs/${runId}/view`,
-            { headers: authHeaders(ownerToken, traceId) },
-          );
-          const view = (await parseEnvelope<RunViewResponse>(res)).data;
+          const view = await fetchView(request, env.apiUrl, runId, ownerToken, traceId);
           return view.decisions.filter((d) => d.decision === "edit").length;
         },
         { timeout: 20_000, intervals: [500, 1000] },
@@ -532,12 +512,7 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     // non-actionable by design — select_existing needs a conflict) and
     // leaves a pre-D8-style human PROPOSAL on an untouched coord, so the
     // advance's one-shot materialization is exercised end-to-end.
-    const viewNow = await (async () => {
-      const res = await request.get(`${env.apiUrl}/api/v1/runs/${runId}/view`, {
-        headers: authHeaders(ownerToken, traceId),
-      });
-      return (await parseEnvelope<RunViewResponse>(res)).data;
-    })();
+    const viewNow = await fetchView(request, env.apiUrl, runId, ownerToken, traceId);
     const ownerDecisions = viewNow.decisions.filter(
       (d) => d.decision === "edit" && d.reviewer_id === ownerId,
     );
@@ -600,12 +575,7 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     );
     expect(adv.ok(), await adv.text()).toBeTruthy();
 
-    const viewAfter = await (async () => {
-      const res = await request.get(`${env.apiUrl}/api/v1/runs/${runId}/view`, {
-        headers: authHeaders(ownerToken, traceId),
-      });
-      return (await parseEnvelope<RunViewResponse>(res)).data;
-    })();
+    const viewAfter = await fetchView(request, env.apiUrl, runId, ownerToken, traceId);
     const materialized = viewAfter.decisions.find(
       (d) =>
         d.instance_id === fixture.firstInstanceId &&

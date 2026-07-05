@@ -65,6 +65,20 @@ class RunNotFoundError(Exception):
     """Raised when a Run lookup returns no row. HTTP translation in router."""
 
 
+def run_reveals_peers(stage: str, *, can_see_peers: bool, is_arbitrator: bool) -> bool:
+    """The run-scoped peer-reveal rule — the ONE truth table shared by the
+    ``/view`` unblind and the suggestion reads' ran-by scrub (lockstep; do
+    not fork a clause-by-clause copy): finalized unblinds everyone,
+    consensus unblinds arbitrators, otherwise only callers who may see
+    peers (consensus role / unblinded managers via ``caller_can_see_peers``).
+    """
+    return (
+        can_see_peers
+        or stage == ExtractionRunStage.FINALIZED.value
+        or (stage == ExtractionRunStage.CONSENSUS.value and is_arbitrator)
+    )
+
+
 async def get_run_or_raise(db: AsyncSession, run_id: UUID) -> RunSummaryResponse:
     """Load a Run by id and return it as a RunSummaryResponse schema.
 
@@ -133,10 +147,8 @@ async def get_run_with_workflow_history(
     # Plain reviewers stay blind to peers even in consensus. This relaxes only
     # the manager API path (RLS 0025 already lets arbitrators read peer rows),
     # so the reviewer↔reviewer lockstep boundary is unchanged.
-    unblinded = (
-        can_see_peers
-        or run.stage == ExtractionRunStage.FINALIZED.value
-        or (run.stage == ExtractionRunStage.CONSENSUS.value and caller_is_arbitrator)
+    unblinded = run_reveals_peers(
+        run.stage, can_see_peers=can_see_peers, is_arbitrator=caller_is_arbitrator
     )
     if unblinded:
         visible_proposals = proposals

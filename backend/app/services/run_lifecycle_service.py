@@ -211,7 +211,7 @@ class RunLifecycleService:
             # stage gate requires 'extract'). Covers runs mid-flight at
             # deploy; post-D8 runs whose reviewers autosaved decisions have
             # nothing left to materialize.
-            await self._materialize_qa_decisions(run)
+            await ExtractionReviewService(self.db).materialize_qa_decisions(run)
         if target == ExtractionRunStage.FINALIZED.value:
             # Invariant: a FINALIZED run must carry at least one published
             # value, which in turn requires at least one ConsensusDecision
@@ -253,69 +253,6 @@ class RunLifecycleService:
         await self.db.flush()
         await self.db.refresh(run)
         return run
-
-    async def _materialize_qa_decisions(self, run: ExtractionRun) -> int:
-        """One-shot QA parity (D8-c): each (reviewer, coord) whose newest
-        human proposal has no decision gets an ``edit`` decision with the
-        proposal's value COPIED — not ``accept_proposal``, whose value=None
-        contract would collapse two different adoptions into "agreed" in the
-        compare table's agreement math. ``proposal_record_id`` stays None (a
-        human proposal is not an AI basis; pinning it into the AI-history
-        popover would mis-trace); the provenance lives in the rationale.
-
-        Idempotent twice over: coords with ANY existing decision are skipped
-        (a real decision — even a differing one — is never overwritten), and
-        ``record_decision``'s replay dedup absorbs identical re-runs.
-        """
-        proposals = (
-            (
-                await self.db.execute(
-                    select(ExtractionProposalRecord)
-                    .where(
-                        ExtractionProposalRecord.run_id == run.id,
-                        ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
-                    )
-                    .order_by(ExtractionProposalRecord.created_at.desc())
-                )
-            )
-            .scalars()
-            .all()
-        )
-        if not proposals:
-            return 0
-        newest_by_key: dict[tuple[UUID, UUID, UUID], ExtractionProposalRecord] = {}
-        for p in proposals:
-            # desc order: first seen per key is the newest (human proposals
-            # carry a non-null source_user_id via the human_has_user CHECK).
-            newest_by_key.setdefault((p.source_user_id, p.instance_id, p.field_id), p)
-        decided = {
-            (d.reviewer_id, d.instance_id, d.field_id)
-            for d in (
-                await self.db.execute(
-                    select(ExtractionReviewerDecision).where(
-                        ExtractionReviewerDecision.run_id == run.id
-                    )
-                )
-            ).scalars()
-        }
-        review = ExtractionReviewService(self.db)
-        inserted = 0
-        for key, proposal in newest_by_key.items():
-            if key in decided:
-                continue
-            reviewer_id, instance_id, field_id = key
-            await review.record_decision(
-                run_id=run.id,
-                instance_id=instance_id,
-                field_id=field_id,
-                reviewer_id=reviewer_id,
-                decision=ExtractionReviewerDecisionType.EDIT,
-                value=proposal.proposed_value,
-                proposal_record_id=None,
-                rationale=(f"Materialized from human proposal {proposal.id} at consensus entry"),
-            )
-            inserted += 1
-        return inserted
 
     async def approve_and_finalize(
         self, *, run_id: UUID, user_id: UUID
