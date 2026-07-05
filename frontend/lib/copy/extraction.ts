@@ -848,6 +848,7 @@ export const extraction = {
     reviewClearHint: 'Each selection is recorded with who chose it and when.',
     reviewDetails: 'Details',
     reviewOpenFromValue: 'Open review · see other versions, evidence and provenance',
+    reviewPinNotInHistory: 'The adopted version is older than the loaded history.',
     // Runtime disposition control (ADR-0016) — set a "no value, on purpose" answer
     // on any field type when the source is silent / the item does not apply.
     dispositionNoInformation: 'No information',

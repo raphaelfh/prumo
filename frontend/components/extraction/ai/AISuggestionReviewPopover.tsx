@@ -310,6 +310,14 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
 
   const effectiveSelected = localSelected ?? selectedProposalId ?? history[0]?.id;
 
+  // D5: the pinned version can be older than the loaded history window. Say
+  // so explicitly — silently dropping the pin would erase the attribution.
+  const pinMissing =
+    !loading &&
+    history.length > 0 &&
+    !!selectedProposalId &&
+    !history.some((h) => h.id === selectedProposalId);
+
   // Group by run id, preserving the (newest-first) order the server returns.
   const runOrder: string[] = [];
   const groupedByRun: Record<string, AISuggestionHistoryItem[]> = {};
@@ -366,6 +374,11 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
           </div>
         ) : (
           <div className="space-y-3 p-2.5">
+            {pinMissing && (
+              <p className="rounded border border-border/60 bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
+                {t('extraction', 'reviewPinNotInHistory')}
+              </p>
+            )}
             {runOrder.map((runId, runIndex) => (
               <div key={runId} className="space-y-2">
                 <div className="rounded bg-muted/50 px-2 py-1 text-xs font-medium text-muted-foreground">

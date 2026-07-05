@@ -398,6 +398,21 @@ describe('useAISuggestions — getSuggestionsHistory', () => {
     expect(AISuggestionService.getHistory).toHaveBeenCalledWith('art-1', 'inst-1', 'f-1', 10);
     expect(history).toHaveLength(1);
   });
+
+  it('forwards an explicit limit (consensus trace passes 50)', async () => {
+    (AISuggestionService.getHistory as any).mockResolvedValueOnce([]);
+    const { result } = renderHook(() =>
+      useAISuggestions({
+        articleId: 'art-1',
+        instanceIds: ['inst-1'],
+      }),
+    );
+
+    await act(async () => {
+      await result.current.getSuggestionsHistory('inst-1', 'f-1', 50);
+    });
+    expect(AISuggestionService.getHistory).toHaveBeenCalledWith('art-1', 'inst-1', 'f-1', 50);
+  });
 });
 
 describe('useAISuggestions — session adoption + readiness (D0)', () => {

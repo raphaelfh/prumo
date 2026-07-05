@@ -92,6 +92,44 @@ describe('AISuggestionReviewPopover', () => {
   });
 });
 
+describe('AISuggestionReviewPopover — pin not in loaded history (D5)', () => {
+  it('shows an explicit notice instead of silently dropping the pin', async () => {
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({ id: 'p-newer' })]}
+        selectedProposalId="p-ancient"
+        onSelect={vi.fn()}
+        trigger={<button>open</button>}
+      />,
+    );
+
+    await user.click(screen.getByText('open'));
+    await screen.findByText('Retrospective cohort');
+    expect(screen.getByText('reviewPinNotInHistory')).toBeInTheDocument();
+  });
+
+  it('shows no notice when the pinned version is loaded', async () => {
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({ id: 'p1' })]}
+        selectedProposalId="p1"
+        onSelect={vi.fn()}
+        trigger={<button>open</button>}
+      />,
+    );
+
+    await user.click(screen.getByText('open'));
+    await screen.findByText('Retrospective cohort');
+    expect(screen.queryByText('reviewPinNotInHistory')).not.toBeInTheDocument();
+  });
+});
+
 describe('AISuggestionReviewPopover — read-only run', () => {
   it('hides Use-this-version and Clear (audit-only popover)', async () => {
     const user = userEvent.setup();

@@ -330,13 +330,17 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
   };
 
   /**
-   * Fetches full suggestion history for a specific field
+   * Fetches full suggestion history for a specific field. `limit` defaults to
+   * the form-popover depth; the consensus trace passes 50 so an adopted
+   * version is less likely to fall outside the loaded window (the popover
+   * shows an explicit notice when it still does — D5). Backend caps at 100.
    */
   const getSuggestionsHistory = async (
     instanceId: string,
-    fieldId: string
+    fieldId: string,
+    limit = 10,
   ): Promise<AISuggestionHistoryItem[]> =>
-    AISuggestionService.getHistory(articleId, instanceId, fieldId, 10).catch((err: unknown) => {
+    AISuggestionService.getHistory(articleId, instanceId, fieldId, limit).catch((err: unknown) => {
       console.error('Error loading suggestion history:', err);
       const message = getErrorMessage(err);
       toast.error(`${t('extraction', 'errors_loadSuggestionsHistory')}: ${message}`);
