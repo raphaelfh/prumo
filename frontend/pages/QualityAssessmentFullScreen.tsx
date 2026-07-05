@@ -591,7 +591,9 @@ export default function QualityAssessmentFullScreen() {
           },
           transition: qaTransition,
           submitting: publishing,
-          onJumpToDivergence: canCompare
+          // D6: the consensus branch ignores viewMode, so the jump would be
+          // inert there — offer it only while the compare view is reachable.
+          onJumpToDivergence: canCompare && !inConsensusStage
             ? () => setViewMode("compare")
             : undefined,
         }}
@@ -632,7 +634,8 @@ export default function QualityAssessmentFullScreen() {
         </RunHeader.Center>
 
         <RunHeader.Right>
-          {canCompare && (
+          {/* D6: no dead toggle during consensus (the resolve table always renders there). */}
+          {canCompare && !inConsensusStage && (
             <RunHeader.CompareToggle
               active={effectiveViewMode === "compare"}
               onToggle={() => setViewMode((m) => (m === "assess" ? "compare" : "assess"))}
@@ -720,9 +723,10 @@ export default function QualityAssessmentFullScreen() {
           ownValues={values}
           reviewerLabelById={reviewerProfiles.labelById}
           reviewerAvatarById={reviewerProfiles.avatarById}
-          // QA consensus is reviewer-level self-publish (backend excludes
-          // viewers via ensure_project_reviewer) — parity with the old panel.
-          canResolve
+          // QA consensus is reviewer-level self-publish; the backend 403s
+          // viewer writes (ensure_project_reviewer), so mirror the gate here —
+          // a viewer must not get chrome whose every click fails (D6).
+          canResolve={permissions.userRole !== "viewer"}
           // Per-cell AI trace (D1-D4). QA decisionsByCoord stays empty until
           // PR 2 (D8) creates real QA decisions; the wiring is ready for it.
           trace={{

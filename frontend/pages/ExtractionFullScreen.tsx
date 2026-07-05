@@ -1263,7 +1263,9 @@ export default function ExtractionFullScreen() {
         onTogglePDF={pdf.toggle}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        hasComparison={canCompare}
+        // D6: during consensus the resolve table is the only compare surface
+        // (viewMode is ignored there) — a live toggle would be a dead control.
+        hasComparison={canCompare && !inConsensusStage}
         userRole={permissions.userRole}
         isBlindMode={permissions.isBlindMode}
         saveState={saveState}
