@@ -7,10 +7,21 @@ export async function loginViaUi(page: Page): Promise<string> {
   if (!env.userEmail || !env.userPassword) {
     throw new Error("Missing E2E_USER_EMAIL or E2E_USER_PASSWORD for UI login.");
   }
+  return loginViaUiAs(page, env.userEmail, env.userPassword);
+}
 
+/**
+ * UI login with explicit credentials — for multi-context flows that drive
+ * several fixture users (reviewer B/C) through the browser in one test.
+ */
+export async function loginViaUiAs(
+  page: Page,
+  email: string,
+  password: string,
+): Promise<string> {
   await page.goto("/auth");
-  await page.fill("#login-email", env.userEmail);
-  await page.fill("#login-password", env.userPassword);
+  await page.fill("#login-email", email);
+  await page.fill("#login-password", password);
   await page.locator("form button[type='submit']").click();
   await page.waitForURL(/\/$/, { timeout: 30000 });
 

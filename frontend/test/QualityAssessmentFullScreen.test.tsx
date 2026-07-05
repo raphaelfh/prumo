@@ -811,6 +811,183 @@ describe("QualityAssessmentFullScreen — finalized (published, read-only)", () 
   });
 });
 
+describe("QualityAssessmentFullScreen — extract hydration from current_values (D8)", () => {
+  beforeEach(() => {
+    mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
+    // Decision-backed run: proposals stay EMPTY — post-D8 the reviewer's
+    // answers live in decisions, surfaced caller-scoped via current_values.
+    vi.mocked(apiClient).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/hitl/sessions") {
+        return {
+          run_id: "run-1",
+          kind: "quality_assessment",
+          project_template_id: "tpl-1",
+          instances_by_entity_type: { "et-1": "inst-1" },
+        };
+      }
+      if (url === "/api/v1/runs/run-1/view") {
+        return {
+          run: {
+            id: "run-1",
+            project_id: "p1",
+            article_id: "a1",
+            template_id: "tpl-1",
+            kind: "quality_assessment",
+            version_id: "v-1",
+            stage: "extract",
+            status: "running",
+            hitl_config_snapshot: {},
+            parameters: {},
+            results: {},
+            created_at: new Date().toISOString(),
+            created_by: "u-1",
+          },
+          proposals: [],
+          decisions: [
+            {
+              id: "dec-own-1",
+              run_id: "run-1",
+              instance_id: "inst-1",
+              field_id: "f-1",
+              reviewer_id: "qa-test-reviewer-id",
+              decision: "edit",
+              proposal_record_id: null,
+              value: { value: "Y" },
+              rationale: null,
+              created_at: new Date().toISOString(),
+            },
+          ],
+          consensus_decisions: [],
+          published_states: [],
+          entity_types: [],
+          current_values: [
+            {
+              instance_id: "inst-1",
+              field_id: "f-1",
+              value: { value: "Y" },
+              decision: "edit",
+            },
+          ],
+        };
+      }
+      if (url.includes("/suggestions")) {
+        return { suggestions: [], count: 0 };
+      }
+      if (url.includes("/files") || url.includes("/text-blocks")) {
+        return [];
+      }
+      return {};
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("hydrates from current_values (not proposals) and does not re-post on mount", async () => {
+    renderPage();
+    const domain = await screen.findByTestId("qa-domain-participants");
+    // The decision-backed value renders even though proposals is empty.
+    await waitFor(() => expect(within(domain).getByText("Y")).toBeInTheDocument());
+    // The autosave baseline derives from the SAME current_values map, so the
+    // hydrated coord is clean — zero decision writes may fire on mount. The
+    // hook only ever writes through its 600ms debounce, so the assertion must
+    // wait PAST that window or it is vacuous (verified: with baselineValues
+    // deliberately broken the immediate assertion still passed).
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    const decisionPosts = vi
+      .mocked(apiClient)
+      .mock.calls.filter(
+        ([url, opts]) =>
+          typeof url === "string" &&
+          /\/decisions$/.test(url) &&
+          (opts as { method?: string } | undefined)?.method === "POST",
+      );
+    expect(decisionPosts).toHaveLength(0);
+  });
+
+  it("publishes a hydrated absent_reason marker flat, not double-wrapped (ADR-0016)", async () => {
+    // The D8 hydration preserves marker envelopes in form values; publish
+    // must wrap via toConsensusValueEnvelope so PublishedState carries
+    // {value: null, absent_reason} — a nested {value: {value: null, ...}}
+    // breaks valueAbsentReason() on every downstream read.
+    vi.mocked(apiClient).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/hitl/sessions") {
+        return {
+          run_id: "run-1",
+          kind: "quality_assessment",
+          project_template_id: "tpl-1",
+          instances_by_entity_type: { "et-1": "inst-1" },
+        };
+      }
+      if (url === "/api/v1/runs/run-1/view") {
+        return {
+          run: {
+            id: "run-1",
+            project_id: "p1",
+            article_id: "a1",
+            template_id: "tpl-1",
+            kind: "quality_assessment",
+            version_id: "v-1",
+            stage: "extract",
+            status: "running",
+            hitl_config_snapshot: {},
+            parameters: {},
+            results: {},
+            created_at: new Date().toISOString(),
+            created_by: "u-1",
+          },
+          proposals: [],
+          decisions: [],
+          consensus_decisions: [],
+          published_states: [],
+          entity_types: [],
+          current_values: [
+            {
+              instance_id: "inst-1",
+              field_id: "f-1",
+              value: { value: null, absent_reason: "no_information" },
+              decision: "edit",
+            },
+          ],
+        };
+      }
+      if (url.includes("/suggestions")) {
+        return { suggestions: [], count: 0 };
+      }
+      if (url.includes("/files") || url.includes("/text-blocks")) {
+        return [];
+      }
+      return {};
+    });
+
+    renderPage();
+    // Wait for the form (and therefore the runDetail hydration handlePublish
+    // reads) before clicking — an early click hits the !runDetail early
+    // return silently.
+    await screen.findByTestId("qa-domain-participants");
+    const button = await screen.findByRole("button", { name: /finalize/i });
+    await waitFor(() => expect(button).not.toHaveAttribute("disabled"));
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      const consensusPosts = vi
+        .mocked(apiClient)
+        .mock.calls.filter(
+          ([url]) => typeof url === "string" && url.includes("/consensus"),
+        );
+      expect(consensusPosts.length).toBeGreaterThanOrEqual(1);
+    });
+    const body = vi
+      .mocked(apiClient)
+      .mock.calls.find(
+        ([url]) => typeof url === "string" && url.includes("/consensus"),
+      )![1] as { body: { value: unknown; mode: string } };
+    expect(body.body.mode).toBe("manual_override");
+    expect(body.body.value).toEqual({ value: null, absent_reason: "no_information" });
+  });
+});
+
 describe("QualityAssessmentFullScreen — header suggestion locate", () => {
   // Self-contained fixture (the finalized describe's restoreAllMocks wipes
   // the factory apiClient implementation for everything after it).

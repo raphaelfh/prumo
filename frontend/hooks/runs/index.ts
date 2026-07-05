@@ -34,7 +34,6 @@ export {
   type ConsensusResultResponse,
   type CreateConsensusRequest,
   type CreateDecisionRequest,
-  type CreateProposalRequest,
   type CreateRunRequest,
   type ProposalRecordResponse,
   type PublishedStateResponse,

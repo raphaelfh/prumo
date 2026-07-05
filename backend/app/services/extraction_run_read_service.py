@@ -11,9 +11,11 @@ Errors are domain exceptions; HTTP translation happens in the router.
 
 from __future__ import annotations
 
+import copy
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -23,7 +25,7 @@ from app.models.extraction import (
     ExtractionRun,
     ExtractionRunStage,
 )
-from app.models.extraction_versioning import ExtractionTemplateVersion
+from app.models.extraction_versioning import ExtractionTemplateVersion, TemplateKind
 from app.models.extraction_workflow import (
     ExtractionConsensusDecision,
     ExtractionProposalRecord,
@@ -63,6 +65,53 @@ from app.services.extraction_reviewer_ready_service import ExtractionReviewerRea
 
 class RunNotFoundError(Exception):
     """Raised when a Run lookup returns no row. HTTP translation in router."""
+
+
+def run_reveals_peers(stage: str, *, can_see_peers: bool, is_arbitrator: bool) -> bool:
+    """The run-scoped peer-reveal rule — the ONE truth table shared by the
+    ``/view`` unblind and the suggestion reads' ran-by scrub (lockstep; do
+    not fork a clause-by-clause copy): finalized unblinds everyone,
+    consensus unblinds arbitrators, otherwise only callers who may see
+    peers (consensus role / unblinded managers via ``caller_can_see_peers``).
+    """
+    return (
+        can_see_peers
+        or stage == ExtractionRunStage.FINALIZED.value
+        or (stage == ExtractionRunStage.CONSENSUS.value and is_arbitrator)
+    )
+
+
+def _provenance_identity_leaves(prov: dict[str, Any]) -> list[dict[str, Any]]:
+    """The snapshot dicts under a provenance payload that can carry ran-by
+    identity: the flat snapshot plus every per-section snapshot."""
+    leaves = [prov]
+    sections = prov.get("sections")
+    if isinstance(sections, dict):
+        leaves.extend(sec for sec in sections.values() if isinstance(sec, dict))
+    return leaves
+
+
+def scrub_results_ranby(results: dict[str, Any]) -> dict[str, Any]:
+    """Strip ran-by identity from ``results['provenance']`` (flat snapshot +
+    per-section leaves) — the D8-d rule applied to the run payload itself:
+    ``RunSummaryResponse.results`` serializes verbatim on /runs/{id} and
+    /view, so a caller the run does not reveal peers to must not receive
+    ``ran_by_user_id``/``ran_by_name`` there either (the suggestion reads
+    scrub the same identity at their own source). Copy-on-scrub: ``results``
+    aliases the ORM row's JSONB payload."""
+    prov = results.get("provenance")
+    if not isinstance(prov, dict):
+        return results
+    if not any(
+        "ran_by_user_id" in leaf or "ran_by_name" in leaf
+        for leaf in _provenance_identity_leaves(prov)
+    ):
+        return results
+    scrubbed = copy.deepcopy(results)
+    for leaf in _provenance_identity_leaves(scrubbed["provenance"]):
+        leaf.pop("ran_by_user_id", None)
+        leaf.pop("ran_by_name", None)
+    return scrubbed
 
 
 async def get_run_or_raise(db: AsyncSession, run_id: UUID) -> RunSummaryResponse:
@@ -133,10 +182,8 @@ async def get_run_with_workflow_history(
     # Plain reviewers stay blind to peers even in consensus. This relaxes only
     # the manager API path (RLS 0025 already lets arbitrators read peer rows),
     # so the reviewer↔reviewer lockstep boundary is unchanged.
-    unblinded = (
-        can_see_peers
-        or run.stage == ExtractionRunStage.FINALIZED.value
-        or (run.stage == ExtractionRunStage.CONSENSUS.value and caller_is_arbitrator)
+    unblinded = run_reveals_peers(
+        run.stage, can_see_peers=can_see_peers, is_arbitrator=caller_is_arbitrator
     )
     if unblinded:
         visible_proposals = proposals
@@ -149,8 +196,13 @@ async def get_run_with_workflow_history(
         ]
         visible_decisions = [d for d in decisions if d.reviewer_id == caller_id]
 
+    run_summary = RunSummaryResponse.model_validate(run)
+    if not unblinded:
+        run_summary = run_summary.model_copy(
+            update={"results": scrub_results_ranby(run_summary.results)}
+        )
     return RunDetailResponse(
-        run=RunSummaryResponse.model_validate(run),
+        run=run_summary,
         proposals=[ProposalRecordResponse.model_validate(p) for p in visible_proposals],
         decisions=[ReviewerDecisionResponse.model_validate(d) for d in visible_decisions],
         consensus_decisions=[ConsensusDecisionResponse.model_validate(c) for c in consensus],
@@ -231,12 +283,22 @@ async def _instances_for_run(db: AsyncSession, run: RunSummaryResponse) -> list[
 
 
 async def resolve_caller_current_values(
-    db: AsyncSession, run_id: UUID, *, caller_id: UUID
+    db: AsyncSession,
+    run_id: UUID,
+    *,
+    caller_id: UUID,
+    include_system_seeds: bool = False,
 ) -> list[RunViewCurrentValue]:
     """The caller's current value per (instance, field) coordinate.
 
     Mirrors the frontend ``loadValuesForUser`` it replaces, value-for-value:
-      Layer 1 (base): the caller's own human proposals, newest-per-coord;
+      Layer 1 (base): the caller's own human proposals — plus, for QA runs
+        only (``include_system_seeds``), ``system``-seeded proposals (reopen
+        seeding; not reviewer-attributable, visible to every caller). QA's
+        publish path flows FROM the form, so hydrated seeds survive; on
+        extraction the post-extract stages read decisions only, so hydrating
+        seeds there would render values that silently vanish at consensus —
+        extraction keeps its pre-D8 behavior (seeds not hydrated);
       Layer 2 (override): the caller's current reviewer decision per coord,
         resolved through the materialized ``extraction_reviewer_states`` pointer
         (``current_decision_id`` -> the live ``extraction_reviewer_decisions`` row).
@@ -261,17 +323,25 @@ async def resolve_caller_current_values(
     """
     merged: dict[tuple[UUID, UUID], RunViewCurrentValue] = {}
 
-    # Layer 1 — caller's own human proposals, newest-first; first-per-coord wins
-    # (ties on created_at are skipped by the `key in merged` guard below).
+    # Layer 1 — the caller's own human proposals (plus, for QA runs, the
+    # system-seeded reopen values; system rows have no author, so surfacing
+    # them to every caller leaks no peer data), newest-first across the
+    # admitted sources; first-per-coord wins (ties on created_at are skipped
+    # by the `key in merged` guard below).
+    layer1_sources = and_(
+        ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
+        ExtractionProposalRecord.source_user_id == caller_id,
+    )
+    if include_system_seeds:
+        layer1_sources = or_(
+            layer1_sources,
+            ExtractionProposalRecord.source == ExtractionProposalSource.SYSTEM.value,
+        )
     proposal_rows = (
         (
             await db.execute(
                 select(ExtractionProposalRecord)
-                .where(
-                    ExtractionProposalRecord.run_id == run_id,
-                    ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
-                    ExtractionProposalRecord.source_user_id == caller_id,
-                )
+                .where(ExtractionProposalRecord.run_id == run_id, layer1_sources)
                 .order_by(ExtractionProposalRecord.created_at.desc())
             )
         )
@@ -286,7 +356,11 @@ async def resolve_caller_current_values(
             instance_id=p.instance_id,
             field_id=p.field_id,
             value=p.proposed_value,
-            decision="human_proposal",
+            decision=(
+                "system_proposal"
+                if p.source == ExtractionProposalSource.SYSTEM.value
+                else "human_proposal"
+            ),
         )
 
     # Layer 2 — caller's current reviewer decision per coord (overrides Layer 1).
@@ -365,7 +439,12 @@ async def build_run_view(
 
     entity_types = await _entity_types_for_run(db, detail.run)
     current_values = (
-        await resolve_caller_current_values(db, run_id, caller_id=caller_id)
+        await resolve_caller_current_values(
+            db,
+            run_id,
+            caller_id=caller_id,
+            include_system_seeds=detail.run.kind == TemplateKind.QUALITY_ASSESSMENT.value,
+        )
         if detail.run.stage in _CURRENT_VALUE_STAGES
         else []
     )

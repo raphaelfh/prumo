@@ -80,7 +80,6 @@ function useHarness() {
   const autosave = useAutoSaveProposals({
     runId: 'run-1',
     stage: 'extract',
-    kind: 'extraction',
     values,
     baselineValues: BASELINE,
     linkByKey,

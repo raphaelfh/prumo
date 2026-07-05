@@ -3,7 +3,7 @@
  * graph so the suite self-provisions on every run (reset-proof, zero-config).
  * Built on the service-role PostgREST helpers (RLS-bypassing) + the clone API.
  */
-import { adminInsert, adminSelect } from "./supabase-admin";
+import { adminInsert, adminSelect, adminUpdate } from "./supabase-admin";
 import { loadE2EEnv } from "./env";
 import * as F from "./fixture-ids";
 
@@ -134,6 +134,13 @@ export async function ensureFixtures(): Promise<void> {
   const reviewerBId = await ensureUser(F.REVIEWER_B_EMAIL, F.FIXTURE_PASSWORD);
   const reviewerCId = await ensureUser(F.REVIEWER_C_EMAIL, F.FIXTURE_PASSWORD);
 
+  // Deterministic display names: the compare table's reviewer labels, the
+  // AI-trace button ("AI used by {name}"), and the "Run by {name}" headers
+  // all render profiles.full_name — name-based locators need these pinned.
+  await adminUpdate("profiles", `id=eq.${ownerId}`, { full_name: F.OWNER_NAME });
+  await adminUpdate("profiles", `id=eq.${reviewerBId}`, { full_name: F.REVIEWER_B_NAME });
+  await adminUpdate("profiles", `id=eq.${reviewerCId}`, { full_name: F.REVIEWER_C_NAME });
+
   // Main project: owner manages; reviewers B & C can record decisions.
   await ensureProject(F.PROJECT_ID, "E2E Test Project", ownerId);
   await ensureMembership(F.PROJECT_ID, ownerId, "manager");
@@ -153,6 +160,8 @@ export async function ensureFixtures(): Promise<void> {
   await ensureArticleText(F.PROJECT_ID, F.QA_BLIND_REVIEW_ARTICLE_ID);
   await ensureArticle(F.QA_REOPEN_ARTICLE_ID, F.PROJECT_ID, "E2E QA Article Three");
   await ensureArticleText(F.PROJECT_ID, F.QA_REOPEN_ARTICLE_ID);
+  await ensureArticle(F.TRACE_ARTICLE_ID, F.PROJECT_ID, "E2E QA Article Four");
+  await ensureArticleText(F.PROJECT_ID, F.TRACE_ARTICLE_ID);
   const ownerToken = await login(F.OWNER_EMAIL, F.FIXTURE_PASSWORD);
   await ensureCharmsImported(F.PROJECT_ID, ownerToken);
 
