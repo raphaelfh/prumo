@@ -11,6 +11,17 @@ export const OWNER_EMAIL = "e2e-owner@prumo.test";
 export const REVIEWER_B_EMAIL = "e2e-reviewer-b@prumo.test";
 export const REVIEWER_C_EMAIL = "e2e-reviewer-c@prumo.test";
 
+/**
+ * Deterministic display names (profiles.full_name), set by ensureFixtures.
+ * Name-based locators depend on these: the compare table's reviewer labels,
+ * the AI-trace button ("AI used by {name}"), and the run-group "Run by
+ * {name}" headers all render full_name — an empty full_name degrades to a
+ * dynamic "Reviewer <hex>" fallback no locator can target.
+ */
+export const OWNER_NAME = "E2E Owner";
+export const REVIEWER_B_NAME = "E2E Reviewer Bela";
+export const REVIEWER_C_NAME = "E2E Reviewer Cora";
+
 /** Main project the extraction/HITL/QA tests operate on (CHARMS imported). */
 export const PROJECT_ID = "5b9d8976-6da5-45e4-84a5-380a40fdbb0b";
 export const ARTICLE_ID = "f00dc63a-6b47-42c3-8a93-af69eb28a1c0";
@@ -33,6 +44,13 @@ export const QA_BLIND_REVIEW_ARTICLE_ID = "f00dc63a-6b47-42c3-8a93-af69eb28a1c2"
  * run non-terminal regardless of sibling test order.
  */
 export const QA_REOPEN_ARTICLE_ID = "f00dc63a-6b47-42c3-8a93-af69eb28a1c3";
+
+/**
+ * Dedicated article for the consensus-AI-trace flow (extraction Scenario A +
+ * QA Scenario B share it via kind-scoped run resets — extraction runs and QA
+ * runs never collide on the same article).
+ */
+export const TRACE_ARTICLE_ID = "f00dc63a-6b47-42c3-8a93-af69eb28a1c4";
 
 /** Dedicated project for the template-import test — intentionally CHARMS-free. */
 export const IMPORT_PROJECT_ID = "e2e00001-0000-4000-8000-000000000001";

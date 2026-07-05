@@ -1,31 +1,25 @@
 /**
  * Hook to load a reviewer's per-field values for an extraction run.
  *
- * Three-mode read path, switched by the run's current stage AND kind:
+ * Read path, switched by the run's current stage:
  *
  *  * published path — ``stage='finalized'``. The run is published and
  *    read-only: the form hydrates ONLY from ``publishedStates`` (spec
  *    2026-07-02 D3) and the values map is fully replaced, never merged.
  *
- *  * reviewer-state path — ``stage='consensus'``, or an extraction run
- *    (``kind='extraction'``) in the editable ``'extract'`` stage.
- *    Extraction humans write per-user ReviewerDecisions, so the form
- *    hydrates from ``extraction_reviewer_states`` (current decision pointer
- *    per coord, scoped to the active user). AI proposals surface as
+ *  * reviewer-state path — ``stage='extract'`` or ``stage='consensus'``.
+ *    Humans write per-user ReviewerDecisions (both run kinds since D8), so
+ *    the form hydrates from ``current_values`` (current decision per coord,
+ *    resolved and caller-scoped server-side). AI proposals surface as
  *    suggestions, not field pre-fills.
- *
- *  * proposals path — a QA run (``kind != 'extraction'``) in ``'extract'``.
- *    QA writes ``human`` proposals on the shared track, so the form
- *    hydrates from ``runDetail.proposals`` (newest-per-coord, blind-filtered).
  *
  *  * ``stage='pending'`` or no run — empty map; autosave is also a
  *    no-op so the user's typing stays in local state until the page
  *    opens a session and the run lands in EXTRACT.
  *
  * Run resolution moved out of this hook: the page resolves it via
- * ``useExtractionSession`` and passes ``runId`` + ``stage`` (+ proposals
- * when in PROPOSAL) in. There is no ``save()`` method anymore — the
- * autosave is the single writer.
+ * ``useExtractionSession`` and passes ``runId`` + ``stage`` in. There is no
+ * ``save()`` method anymore — the autosave is the single writer.
  */
 
 import {
@@ -37,14 +31,10 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 
-import { extractValueFromDb } from '@/lib/validations/selectOther';
 import { dispatchValueUpdates } from '@/lib/extraction/valueUpdates';
-import { pickLatestProposalPerCoord } from '@/lib/extraction/proposalValues';
 import { t } from '@/lib/copy';
 import { envelopeToFieldValue, publishedStatesToValuesMap } from '@/lib/extraction/publishedValues';
-import { unwrapValue } from '@/services/extractionValueService';
 import type {
-  ProposalRecordResponse,
   PublishedStateResponse,
   RunViewCurrentValue,
 } from '@/hooks/runs/types';
@@ -61,14 +51,6 @@ export interface ExtractedValueData {
 interface UseExtractedValuesProps {
   runId: string | null | undefined;
   stage: string | null | undefined;
-  /**
-   * Run kind. In the collapsed ``'extract'`` stage it selects the read path:
-   * ``'extraction'`` hydrates from reviewer-states (per-user decisions); any
-   * other kind hydrates from raw proposals (QA). consensus always uses
-   * reviewer-states regardless of kind; finalized uses ``publishedStates``.
-   */
-  kind?: string | null;
-  proposals?: ProposalRecordResponse[];
   /**
    * Pre-computed reviewer values embedded in the run view (extract /
    * consensus stages) — the current decision per coord, resolved and
@@ -107,25 +89,11 @@ interface UseExtractedValuesReturn {
   refresh: () => Promise<void>;
 }
 
-// Read-path selectors for the collapsed ``extract`` stage. Extraction writes
-// per-user decisions (reviewer-states); QA writes shared proposals. consensus
-// resolves from reviewer-states; finalized resolves from published_states
-// (dedicated branch in ``doLoad``).
-function usesReviewerStatePath(
-  stage: string | null | undefined,
-  kind: string | null | undefined,
-): boolean {
-  return (
-    stage === 'consensus' ||
-    (stage === 'extract' && kind === 'extraction')
-  );
-}
-
-function usesProposalsPath(
-  stage: string | null | undefined,
-  kind: string | null | undefined,
-): boolean {
-  return stage === 'extract' && kind !== 'extraction';
+// Both run kinds write per-user decisions since D8, so extract AND consensus
+// hydrate from the caller-scoped ``current_values`` resolution; finalized
+// resolves from published_states (dedicated branch in ``doLoad``).
+function usesReviewerStatePath(stage: string | null | undefined): boolean {
+  return stage === 'extract' || stage === 'consensus';
 }
 
 function resetValuesIfNeeded(
@@ -169,8 +137,6 @@ export function useExtractedValues(
   const {
     runId,
     stage,
-    kind,
-    proposals,
     currentValues,
     publishedStates,
     currentUserId,
@@ -188,12 +154,11 @@ export function useExtractedValues(
   const applyLoadedValues = (valuesMap: Record<string, any>) => {
     // Expose the raw server map as the autosave baseline (see return docs)
     // so the form never re-POSTs hydrated values on mount. Every hydration
-    // path (proposal + reviewer-state) routes through here, including the
-    // empty-map case, so switching runs replaces the baseline too. Keep the
-    // SAME reference when the content is unchanged: this runs on every
-    // ``loadValues`` (e.g. each ``proposals`` change), and emitting a fresh
-    // object each time churned re-renders (and, with an unstable proposals
-    // prop, looped to OOM).
+    // path routes through here, including the empty-map case, so switching
+    // runs replaces the baseline too. Keep the SAME reference when the
+    // content is unchanged: this runs on every ``loadValues`` (e.g. each
+    // run-view refetch), and emitting a fresh object each time churned
+    // re-renders (and, with an unstable input prop, looped to OOM).
     setLoadedValues((prev) =>
       JSON.stringify(prev) === JSON.stringify(valuesMap) ? prev : valuesMap,
     );
@@ -242,46 +207,7 @@ export function useExtractedValues(
           return;
         }
 
-        if (usesProposalsPath(stage, kind)) {
-          // Bug A (multi-reviewer blind leak): the previous logic took
-          // newest-per-coord regardless of source, which surfaced one
-          // reviewer's ``human`` proposals in another reviewer's form
-          // the moment they opened the same shared Run (sessions are
-          // intentionally shared per (article × template); see
-          // ``hitl_session_service._reuse_or_create_run``). To preserve
-          // the blind-review contract we filter ``human`` proposals by
-          // ``source_user_id``: the current reviewer sees only their
-          // own human edits, plus all AI / system proposals (which are
-          // not reviewer-attributable opinions).
-          // Select the NEWEST proposal per coordinate (by ``created_at``),
-          // honoring the blind-review filter. Selecting by ``created_at``
-          // rather than array position fixes the "edited value reverts to
-          // the old value after refresh" bug: proposals are append-only, the
-          // API returns them oldest-first, and the previous first-hit-wins
-          // loop therefore surfaced the stale original value. The blind
-          // filter (a ``human`` proposal from another reviewer is hidden)
-          // now lives in the shared resolver. See
-          // ``frontend/lib/extraction/proposalValues.ts``.
-          const valuesMap: Record<string, any> = {};
-          const latestByCoord = pickLatestProposalPerCoord(proposals, {
-            currentUserId,
-          });
-          for (const [key, p] of latestByCoord) {
-            const unwrapped = unwrapValue(p.proposed_value);
-            const unit =
-              typeof p.proposed_value === 'object' &&
-              p.proposed_value !== null &&
-              'unit' in (p.proposed_value as Record<string, unknown>)
-                ? ((p.proposed_value as { unit: string | null }).unit ?? null)
-                : null;
-            valuesMap[key] = extractValueFromDb({ value: unwrapped, unit });
-          }
-          applyLoadedValues(valuesMap);
-          setInitialized(true);
-          return;
-        }
-
-        if (usesReviewerStatePath(stage, kind)) {
+        if (usesReviewerStatePath(stage)) {
           // ``currentUserId`` comes from AuthContext (zero network), so the
           // transient /auth/v1/user 5xx that used to blank the form (#49) is
           // gone. A null id means signed out → reset, don't fetch values.

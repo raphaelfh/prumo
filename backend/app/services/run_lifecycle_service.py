@@ -31,6 +31,7 @@ from app.models.extraction_workflow import (
 )
 from app.services._extraction_run_lock import load_run_for_update
 from app.services.extraction_consensus_service import ExtractionConsensusService
+from app.services.extraction_review_service import ExtractionReviewService
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_config_service import HitlConfigService
 from app.services.value_semantics import is_value_filled
@@ -199,6 +200,18 @@ class RunLifecycleService:
         allowed = _ALLOWED_TRANSITIONS.get(run.stage, set())
         if target not in allowed:
             raise InvalidStageTransitionError(f"Cannot transition from {run.stage} to {target}")
+        if (
+            target == ExtractionRunStage.CONSENSUS.value
+            and run.kind == TemplateKind.QUALITY_ASSESSMENT.value
+        ):
+            # D8-c: QA extract wrote human proposals until this cycle; the
+            # compare table, select_existing, and single-user exports read
+            # decisions. Materialize each reviewer's newest human proposal as
+            # an 'edit' decision before the stage flips (record_decision's
+            # stage gate requires 'extract'). Covers runs mid-flight at
+            # deploy; post-D8 runs whose reviewers autosaved decisions have
+            # nothing left to materialize.
+            await ExtractionReviewService(self.db).materialize_qa_decisions(run)
         if target == ExtractionRunStage.FINALIZED.value:
             # Invariant: a FINALIZED run must carry at least one published
             # value, which in turn requires at least one ConsensusDecision

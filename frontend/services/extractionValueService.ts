@@ -1,13 +1,12 @@
 /**
  * Extraction value service — run-reference reads for the extraction
- * surfaces (reopen detection, batch form-run resolution) plus the shared
- * value-envelope peel. All decision WRITES live in
- * `extractionRunService.writeRunFieldValue` (the autosave path); the old
- * direct accept/reject/save writers were removed with the dead
- * `acceptStrategy` chain (2026-07-05 verify-then-prune).
+ * surfaces (reopen detection, batch form-run resolution). All decision
+ * WRITES live in `extractionRunService.writeRunFieldValue` (the autosave
+ * path); the old direct accept/reject/save writers were removed with the
+ * dead `acceptStrategy` chain, and the `unwrapValue` peel went with its
+ * last consumer (the QA proposals read path, D8 2026-07-05).
  */
 import { apiClient } from '@/integrations/api';
-import { unwrapValueEnvelope } from '@/lib/extraction/valueSemantics';
 import type { RunSummaryResponse, ArticleRunRef } from '@/hooks/runs/types';
 
 export interface RunRef {
@@ -15,12 +14,6 @@ export interface RunRef {
   stage: string;
   status: string;
   template_id: string;
-}
-
-export function unwrapValue(raw: unknown): unknown {
-  // One shared peel; a null/absent envelope collapses to null as before.
-  if (raw === null || raw === undefined) return null;
-  return unwrapValueEnvelope(raw) ?? null;
 }
 
 export const ExtractionValueService = {
