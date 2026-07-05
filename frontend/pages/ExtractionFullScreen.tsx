@@ -195,7 +195,6 @@ export default function ExtractionFullScreen() {
   );
 
   const stage = (runDetail?.run.stage ?? null) as import('@/types/ai-extraction').ExtractionRunStage | null;
-  const proposals = runDetail?.proposals;
   const isFinalized = stage === 'finalized';
 
   // Hook to manage extracted values — read path branches on stage.
@@ -209,8 +208,6 @@ export default function ExtractionFullScreen() {
   } = useExtractedValues({
     runId: activeRunId,
     stage,
-    kind: 'extraction',
-    proposals,
     currentValues: runDetail?.current_values,
     publishedStates: runDetail?.published_states,
     currentUserId,

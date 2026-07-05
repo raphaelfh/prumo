@@ -811,6 +811,98 @@ describe("QualityAssessmentFullScreen — finalized (published, read-only)", () 
   });
 });
 
+describe("QualityAssessmentFullScreen — extract hydration from current_values (D8)", () => {
+  beforeEach(() => {
+    mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
+    // Decision-backed run: proposals stay EMPTY — post-D8 the reviewer's
+    // answers live in decisions, surfaced caller-scoped via current_values.
+    vi.mocked(apiClient).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/hitl/sessions") {
+        return {
+          run_id: "run-1",
+          kind: "quality_assessment",
+          project_template_id: "tpl-1",
+          instances_by_entity_type: { "et-1": "inst-1" },
+        };
+      }
+      if (url === "/api/v1/runs/run-1/view") {
+        return {
+          run: {
+            id: "run-1",
+            project_id: "p1",
+            article_id: "a1",
+            template_id: "tpl-1",
+            kind: "quality_assessment",
+            version_id: "v-1",
+            stage: "extract",
+            status: "running",
+            hitl_config_snapshot: {},
+            parameters: {},
+            results: {},
+            created_at: new Date().toISOString(),
+            created_by: "u-1",
+          },
+          proposals: [],
+          decisions: [
+            {
+              id: "dec-own-1",
+              run_id: "run-1",
+              instance_id: "inst-1",
+              field_id: "f-1",
+              reviewer_id: "qa-test-reviewer-id",
+              decision: "edit",
+              proposal_record_id: null,
+              value: { value: "Y" },
+              rationale: null,
+              created_at: new Date().toISOString(),
+            },
+          ],
+          consensus_decisions: [],
+          published_states: [],
+          entity_types: [],
+          current_values: [
+            {
+              instance_id: "inst-1",
+              field_id: "f-1",
+              value: { value: "Y" },
+              decision: "edit",
+            },
+          ],
+        };
+      }
+      if (url.includes("/suggestions")) {
+        return { suggestions: [], count: 0 };
+      }
+      if (url.includes("/files") || url.includes("/text-blocks")) {
+        return [];
+      }
+      return {};
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("hydrates from current_values (not proposals) and does not re-post on mount", async () => {
+    renderPage();
+    const domain = await screen.findByTestId("qa-domain-participants");
+    // The decision-backed value renders even though proposals is empty.
+    await waitFor(() => expect(within(domain).getByText("Y")).toBeInTheDocument());
+    // The autosave baseline derives from the SAME current_values map, so the
+    // hydrated coord is clean — zero decision writes may fire on mount.
+    const decisionPosts = vi
+      .mocked(apiClient)
+      .mock.calls.filter(
+        ([url, opts]) =>
+          typeof url === "string" &&
+          /\/decisions$/.test(url) &&
+          (opts as { method?: string } | undefined)?.method === "POST",
+      );
+    expect(decisionPosts).toHaveLength(0);
+  });
+});
+
 describe("QualityAssessmentFullScreen — header suggestion locate", () => {
   // Self-contained fixture (the finalized describe's restoreAllMocks wipes
   // the factory apiClient implementation for everything after it).

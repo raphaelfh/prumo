@@ -66,7 +66,10 @@ import { t } from "@/lib/copy";
 import { isRunEditable } from "@/lib/runs/editability";
 import { deriveAiLinkByKey, EMPTY_SESSION_ADOPTION } from "@/lib/runs/aiLink";
 import { firstPendingInstanceId, scrollToSectionById } from "@/lib/runs/suggestionLocate";
-import { publishedStatesToValuesMap } from "@/lib/extraction/publishedValues";
+import {
+  currentValuesToValuesMap,
+  publishedStatesToValuesMap,
+} from "@/lib/extraction/publishedValues";
 
 interface FieldKey {
   instanceId: string;
@@ -205,25 +208,18 @@ export default function QualityAssessmentFullScreen() {
       if (runDetail.run.stage === "finalized") {
         // Published truth replaces any local/proposal state (spec
         // 2026-07-02 D3): the read-only form shows what was published,
-        // never the latest proposal stream.
+        // never the latest decision stream.
         setValues(publishedStatesToValuesMap(runDetail.published_states));
       } else {
-        const latestByCoord = new Map<string, unknown>();
-        // Proposals are returned newest-first by the API; iterate so the LAST
-        // write wins per coord regardless of order.
-        for (const p of runDetail.proposals) {
-          const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
-          const value =
-            p.proposed_value &&
-            typeof p.proposed_value === "object" &&
-            "value" in p.proposed_value
-              ? (p.proposed_value.value as unknown)
-              : (p.proposed_value as unknown);
-          latestByCoord.set(k, value);
-        }
+        // D8: hydrate from the caller-scoped ``current_values`` resolution
+        // (own decisions over own human proposals over system seeds) — the
+        // backend's Layer-1 keeps old proposals-only runs hydrating, so no
+        // frontend fallback branch on raw proposals exists.
         setValues((prev) => {
           const next: Record<string, unknown> = { ...prev };
-          for (const [k, v] of latestByCoord) {
+          for (const [k, v] of Object.entries(
+            currentValuesToValuesMap(runDetail.current_values),
+          )) {
             if (!(k in next)) next[k] = v;
           }
           return next;
@@ -241,22 +237,13 @@ export default function QualityAssessmentFullScreen() {
     setValues((prev) => ({ ...prev, [k]: value }));
   };
 
-  // Server baseline for autosave — the same per-coord map the hydration
-  // effect applies, computed inline from ``runDetail`` so it is present when
-  // the hydrated ``values`` arrive. Stops opening an assessment from
-  // re-POSTing loaded values as fresh decisions.
-  const loadedValuesMap: Record<string, unknown> = {};
-  for (const p of runDetail?.proposals ?? []) {
-    const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
-    const value =
-      p.proposed_value &&
-      typeof p.proposed_value === "object" &&
-      "value" in p.proposed_value
-        ? (p.proposed_value.value as unknown)
-        : (p.proposed_value as unknown);
-    loadedValuesMap[k] = value;
-  }
-  const loadedValues = loadedValuesMap;
+  // Server baseline for autosave — the SAME ``current_values`` map the
+  // hydration above applies (one source, D8), so a hydrated coord is never
+  // re-POSTed as a fresh decision on mount.
+  const loadedValues = useMemo(
+    () => currentValuesToValuesMap(runDetail?.current_values),
+    [runDetail?.current_values],
+  );
 
   // AI suggestions wiring — kind-agnostic hooks reused from Data
   // Extraction. ``runId`` scopes the suggestion query so a parallel
