@@ -22,6 +22,7 @@ import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {getRequiredUserId} from '@/services/authService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
+import {deriveAiLinkByKey} from '@/lib/runs/aiLink';
 import {isRunEditable} from '@/lib/runs/editability';
 import {firstPendingInstanceId, scrollToSectionById} from '@/lib/runs/suggestionLocate';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
@@ -76,6 +77,10 @@ import {useModelManagement} from '@/hooks/extraction/useModelManagement';
 import {usePreserveScroll} from '@/hooks/usePreserveScroll';
 import {t} from '@/lib/copy';
 import {createViewerStore, subscribeReaderLocate} from '@prumo/pdf-viewer';
+
+// Stable empty map so the persisted-links memo (session events excluded)
+// doesn't re-derive on every render.
+const EMPTY_SESSION_ADOPTION: Record<string, string | null> = {};
 
 const SCROLL_CONTAINERS_TO_PRESERVE = [
   // Form panel — actual scroll happens on radix' inner viewport node.
@@ -356,12 +361,91 @@ export default function ExtractionFullScreen() {
   // extraction completes. See usePreserveScroll for the rAF dance.
   const preserveScroll = usePreserveScroll(SCROLL_CONTAINERS_TO_PRESERVE);
 
-    // Auto-save hook — writes `human` proposals during the `extract` stage
-    // and per-user ``ReviewerDecision`` rows (decision='edit') during
-    // the `consensus` stage. The stage-aware target preserves the blind-review
-    // contract for multi-reviewer runs: each reviewer's typing during
-    // `consensus` lands in their own decision stream and the run view's
-    // ``currentValues`` are resolved per reviewer_id (Layer 2 of the
+    // Permissions hook (controls comparison access + the viewer write gate) —
+    // declared before the autosave hook, whose `enabled` reads the role.
+  const permissions = useComparisonPermissions(
+    projectId || '',
+    currentUserId,
+    'extraction'
+  );
+
+    // Hook for AI suggestions with callbacks to fill/clear field. Declared
+    // BEFORE useAutoSaveProposals: autosave consumes aiLinkByKey (below),
+    // which derives from this hook's sessionAdoption.
+  const handleAISuggestionAccepted = async (instanceId: string, fieldId: string, value: any) => {
+      // Fill field automatically when suggestion is accepted.
+      // NOTE: accepting makes NO backend call here. updateValue writes the
+      // value into form state and useAutoSaveProposals persists it as this
+      // reviewer's `edit` decision — carrying proposal_record_id via
+      // linkByKey (D0) so the adoption is traceable in consensus. The
+      // suggestion's status flip is optimistic; on reload the server
+      // re-resolves status from the caller's decisions. (refreshValues is
+      // deliberately avoided; it caused a full-page reload.)
+    updateValue(instanceId, fieldId, value);
+  };
+
+  const handleAISuggestionRejected = async (instanceId: string, fieldId: string) => {
+      // Clear the field when a suggestion is rejected. Same as accept: no
+      // direct backend call — updateValue writes null into form state and
+      // autosave persists the cleared value (with the coord's AI link
+      // severed via the sessionAdoption tombstone).
+    updateValue(instanceId, fieldId, null);
+  };
+
+  const {
+    suggestions: aiSuggestions,
+    sessionAdoption,
+    suggestionsReady: aiSuggestionsReady,
+    acceptSuggestion,
+    selectSuggestion,
+    rejectSuggestion,
+    getSuggestionsHistory,
+    refresh: refreshAISuggestions,
+  } = useAISuggestions({
+    articleId: articleId || '',
+    runId: activeRunId ?? undefined,
+    // Wait for the session to resolve a run before issuing the
+    // suggestion query — otherwise the first render fires a global
+    // (no runId) lookup that immediately gets superseded by the
+    // run-scoped one. Pure waste; same UX outcome.
+    enabled: !!articleId && !!projectId && !!activeRunId,
+    onSuggestionAccepted: handleAISuggestionAccepted,
+    onSuggestionRejected: handleAISuggestionRejected
+  });
+
+  // D0: coords whose value has a traceable AI basis. Layer 1 = my own
+  // persisted decision links (runDetail); layer 2 = this session's
+  // accept/select/reject events. NEVER derived from suggestions[].status —
+  // the server marks any non-reject decision 'accepted' (see
+  // extraction_suggestion_read_service._resolve_status), which would
+  // fabricate links for manually-typed values.
+  const aiLinkByKey = useMemo(
+    () =>
+      deriveAiLinkByKey({
+        decisions: runDetail?.decisions ?? [],
+        currentUserId,
+        sessionAdoption,
+      }),
+    [runDetail?.decisions, currentUserId, sessionAdoption],
+  );
+  // The persisted (layer-1) links only — autosave's link baseline, parallel
+  // to baselineValues: a mount with value+link matching what's persisted is
+  // clean, while a session adoption that only changes the link still writes.
+  const persistedAiLinkByKey = useMemo(
+    () =>
+      deriveAiLinkByKey({
+        decisions: runDetail?.decisions ?? [],
+        currentUserId,
+        sessionAdoption: EMPTY_SESSION_ADOPTION,
+      }),
+    [runDetail?.decisions, currentUserId],
+  );
+
+    // Auto-save hook — in the editable `extract` stage this extraction page
+    // writes per-user ``ReviewerDecision`` rows (decision='edit'); it never
+    // writes in `consensus` or any later stage (WRITABLE_STAGES gates it).
+    // Each reviewer's typing lands in their own decision stream and the run
+    // view's ``currentValues`` are resolved per reviewer_id (Layer 2 of the
     // multi-reviewer blind fix).
     //
     // No-op until the session is open and the run is in a writable
@@ -378,13 +462,24 @@ export default function ExtractionFullScreen() {
     // Server-loaded values are the baseline — opening a run must not re-POST
     // them as fresh proposals (the re-record-on-mount duplication).
     baselineValues: loadedValues,
+    // D0: stamp edit decisions with the accepted/selected AI proposal id;
+    // the persisted map is the link-side baseline (same-value adoptions
+    // still write — the human selection event is append-only recorded).
+    linkByKey: aiLinkByKey,
+    baselineLinkByKey: persistedAiLinkByKey,
     // Only the editable EXTRACT stage accepts autosave writes. Past that
     // (consensus, finalized, pending) the backend rejects writes, which
     // surfaced as a spurious "Error saving data automatically" toast on
     // opening a consolidated run. Mirrors the QA full-screen gate;
     // ``!isFinalized`` alone let ``consensus`` through.
     enabled:
-      !!activeRunId && !loading && valuesInitialized && isRunEditable(stage),
+      !!activeRunId &&
+      !loading &&
+      valuesInitialized &&
+      isRunEditable(stage) &&
+      // Viewer writes 403 server-side; never fire them (forms render
+      // read-only via forceReadOnly, this is the flush-path belt).
+      permissions.userRole !== 'viewer',
   });
 
     // "Finish extraction" (reviewer) — flush pending autosave, set the per-reviewer
@@ -427,13 +522,6 @@ export default function ExtractionFullScreen() {
     await refetchRun().catch(() => undefined);
   };
 
-    // Permissions hook (controls comparison access) — extraction screen.
-  const permissions = useComparisonPermissions(
-    projectId || '',
-    currentUserId,
-    'extraction'
-  );
-
     // Other reviewers' values for the compare view come from the shared,
     // server-blinded runDetail (reviewerSummary.decisionsByCoord) — no
     // separate fetch. Compare is offered only when the caller may see peers
@@ -459,52 +547,6 @@ export default function ExtractionFullScreen() {
       .then(() => permissions.refresh())
       .catch((e: unknown) => toast.error(e instanceof Error ? e.message : String(e)));
   };
-
-    // Hook for AI suggestions with callbacks to fill/clear field
-  const handleAISuggestionAccepted = async (instanceId: string, fieldId: string, value: any) => {
-      // Fill field automatically when suggestion is accepted.
-      // NOTE: in this screen the hook runs `acceptStrategy: 'human-proposal'`,
-      // so accepting makes NO backend call. Persistence happens solely here:
-      // updateValue writes the value into form state, and useAutoSaveProposals
-      // records it as a fresh `human` proposal. The suggestion's own
-      // status='accepted' is local-only (not persisted), so it reappears as
-      // pending on reload — only the value survives. (refreshValues is
-      // deliberately avoided; it caused a full-page reload.)
-    updateValue(instanceId, fieldId, value);
-  };
-
-  const handleAISuggestionRejected = async (instanceId: string, fieldId: string) => {
-      // Clear the field when a suggestion is rejected. Same as accept: the
-      // 'human-proposal' strategy makes NO backend call — updateValue writes
-      // null into form state, and useAutoSaveProposals persists the cleared
-      // value. The suggestion's status='rejected' flip is local-only.
-    updateValue(instanceId, fieldId, null);
-  };
-
-  const {
-    suggestions: aiSuggestions,
-    acceptSuggestion,
-    selectSuggestion,
-    rejectSuggestion,
-    getSuggestionsHistory,
-    refresh: refreshAISuggestions,
-    isActionLoading
-  } = useAISuggestions({
-    articleId: articleId || '',
-    projectId: projectId || '',
-    runId: activeRunId ?? undefined,
-    // Wait for the session to resolve a run before issuing the
-    // suggestion query — otherwise the first render fires a global
-    // (no runId) lookup that immediately gets superseded by the
-    // run-scoped one. Pure waste; same UX outcome.
-    enabled: !!articleId && !!projectId && !!activeRunId,
-    // On this screen accept/reject does not write to the backend directly:
-    // the value bubbles to the form pipeline and the autosave persists it as
-    // the user's own value on the `extract`-stage run, keeping one write path.
-    acceptStrategy: 'human-proposal',
-    onSuggestionAccepted: handleAISuggestionAccepted,
-    onSuggestionRejected: handleAISuggestionRejected
-  });
 
   // Shared actionable count (ADR-0016 Phase 4): unresolved AI proposals awaiting
   // a human decision — an abstention ("no information") counts, resolved ones
@@ -1141,6 +1183,14 @@ export default function ExtractionFullScreen() {
           reviewerLabelById={reviewerProfiles.labelById}
           reviewerAvatarById={reviewerProfiles.avatarById}
           canResolve={permissions.canResolveConflicts}
+          // Per-cell AI trace (D1-D4): deeper history window (50) so adopted
+          // versions rarely fall outside it; a not-yet-loaded/failed
+          // suggestions map passes null so no cell mislabels as Manual.
+          trace={{
+            articleId: articleId || '',
+            getHistory: (i, f) => getSuggestionsHistory(i, f, 50),
+            aiSuggestions: aiSuggestionsReady ? aiSuggestions : null,
+          }}
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}
           onFinalize={handleApproveFinalize}
@@ -1165,7 +1215,6 @@ export default function ExtractionFullScreen() {
           selectSuggestion,
           rejectSuggestion,
           getSuggestionsHistory,
-          isActionLoading,
           models,
           activeModelId,
           setActiveModelId,
@@ -1195,7 +1244,14 @@ export default function ExtractionFullScreen() {
     );
 
   const extractionFormPanel = (
-    <RunEditabilityProvider stage={stage}>
+    // showPeerIdentity (D3): auto-revealed consensus / unblinded or manager
+    // extract callers see "Run by {name}" on popover run headers and the
+    // generation dialog's Ran-by rows; blind reviewers keep timestamp-only.
+    <RunEditabilityProvider
+      stage={stage}
+      showPeerIdentity={!!runDetail?.peers_revealed || permissions.canSeeOthers}
+      forceReadOnly={permissions.userRole === 'viewer'}
+    >
       {extractionFormPanelInner}
     </RunEditabilityProvider>
   );
@@ -1232,7 +1288,9 @@ export default function ExtractionFullScreen() {
         onTogglePDF={pdf.toggle}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        hasComparison={canCompare}
+        // D6: during consensus the resolve table is the only compare surface
+        // (viewMode is ignored there) — a live toggle would be a dead control.
+        hasComparison={canCompare && !inConsensusStage}
         userRole={permissions.userRole}
         isBlindMode={permissions.isBlindMode}
         saveState={saveState}
@@ -1260,7 +1318,9 @@ export default function ExtractionFullScreen() {
         }}
         canReveal={canReveal}
         onReveal={onReveal}
-        onJumpToDivergence={() => setViewMode('compare')}
+        // D6: inert during consensus (the consensus branch ignores viewMode) —
+        // mirror the QA guard so the status-popover jump never dead-clicks.
+        onJumpToDivergence={inConsensusStage ? undefined : () => setViewMode('compare')}
         // AI extraction seeds proposals and only works in EXTRACT; once the
         // run advances to consensus it's a one-time-done step (re-running errors).
         canRunAI={stage === 'extract' || stage == null}

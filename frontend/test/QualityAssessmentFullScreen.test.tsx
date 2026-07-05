@@ -579,6 +579,133 @@ describe("QualityAssessmentFullScreen — blind-reveal stage guards", () => {
   });
 });
 
+describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () => {
+  const SEEING_REVIEWER = {
+    ...BLIND_PERMISSIONS,
+    isBlindMode: false,
+    canSeeOthers: true,
+  };
+
+  const DIVERGENT_DECISIONS = [
+    {
+      id: "dec-a",
+      run_id: "run-1",
+      instance_id: "inst-1",
+      field_id: "f-1",
+      reviewer_id: "peer-a",
+      decision: "edit",
+      proposal_record_id: null,
+      value: { value: "Y" },
+      rationale: null,
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: "dec-b",
+      run_id: "run-1",
+      instance_id: "inst-1",
+      field_id: "f-1",
+      reviewer_id: "peer-b",
+      decision: "edit",
+      proposal_record_id: null,
+      value: { value: "N" },
+      rationale: null,
+      created_at: new Date().toISOString(),
+    },
+  ];
+
+  function mockConsensusView() {
+    vi.mocked(apiClient).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/hitl/sessions") {
+        return {
+          run_id: "run-1",
+          kind: "quality_assessment",
+          project_template_id: "tpl-1",
+          instances_by_entity_type: { "et-1": "inst-1" },
+        };
+      }
+      if (url === "/api/v1/runs/run-1/view") {
+        return {
+          run: {
+            id: "run-1",
+            project_id: "p1",
+            article_id: "a1",
+            template_id: "tpl-1",
+            kind: "quality_assessment",
+            version_id: "v-1",
+            stage: "consensus",
+            status: "running",
+            hitl_config_snapshot: {},
+            parameters: {},
+            results: {},
+            created_at: new Date().toISOString(),
+            created_by: "u-1",
+          },
+          proposals: [],
+          decisions: DIVERGENT_DECISIONS,
+          consensus_decisions: [],
+          published_states: [],
+          entity_types: [],
+          current_values: [],
+          peers_revealed: true,
+        };
+      }
+      if (url.includes("/suggestions")) {
+        return { suggestions: [], count: 0 };
+      }
+      if (url.includes("/files") || url.includes("/text-blocks")) {
+        return [];
+      }
+      return {};
+    });
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("consensus: no Compare toggle even though canCompare's preconditions hold", async () => {
+    mockedPermissions.mockReturnValue(SEEING_REVIEWER);
+    mockConsensusView();
+    renderPage();
+    // The consensus resolve surface is up (its data preconditions hold)…
+    await waitFor(() =>
+      expect(screen.getByTestId("consensus-panel")).toBeInTheDocument(),
+    );
+    // …but the header offers no dead Compare toggle (D6).
+    expect(screen.queryByRole("button", { name: /^compare$/i })).not.toBeInTheDocument();
+  });
+
+  it("consensus: a reviewer sees resolve chrome (positive control)", async () => {
+    mockedPermissions.mockReturnValue(SEEING_REVIEWER);
+    mockConsensusView();
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByTestId("consensus-panel")).toBeInTheDocument(),
+    );
+    // Adopt buttons carry the real aria-label copy.
+    expect(
+      screen.getAllByRole("button", { name: /publish this reviewer/i }).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /^override$/i })).toBeInTheDocument();
+  });
+
+  it("consensus: a read-only viewer gets no resolve chrome (its writes 403)", async () => {
+    mockedPermissions.mockReturnValue({
+      ...SEEING_REVIEWER,
+      userRole: "viewer" as never,
+    });
+    mockConsensusView();
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByTestId("consensus-panel")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /publish this reviewer/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^override$/i })).not.toBeInTheDocument();
+  });
+});
+
 describe("QualityAssessmentFullScreen — finalized (published, read-only)", () => {
   beforeEach(() => {
     mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);

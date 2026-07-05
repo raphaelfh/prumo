@@ -513,37 +513,6 @@ _ACTIVE_STAGES = (
 )
 
 
-async def find_active_run(
-    db: AsyncSession,
-    article_id: UUID,
-    *,
-    template_id: UUID | None = None,
-) -> RunSummaryResponse | None:
-    """Return the latest non-terminal extraction run for the article, or None.
-
-    Parity with frontend ``findActiveRun``:
-    - kind = 'extraction'
-    - stage IN (pending, proposal, review, consensus)
-    - optional template_id filter
-    - ordered by created_at DESC, newest wins
-    """
-    stmt = (
-        select(ExtractionRun)
-        .where(
-            ExtractionRun.article_id == article_id,
-            ExtractionRun.kind == "extraction",
-            ExtractionRun.stage.in_(_ACTIVE_STAGES),
-        )
-        .order_by(ExtractionRun.created_at.desc())
-        .limit(1)
-    )
-    if template_id is not None:
-        stmt = stmt.where(ExtractionRun.template_id == template_id)
-
-    run = (await db.execute(stmt)).scalars().first()
-    return RunSummaryResponse.model_validate(run) if run is not None else None
-
-
 async def find_finalized_run(
     db: AsyncSession,
     article_id: UUID,

@@ -116,7 +116,6 @@ function stubSuggestion(key: string, value: string): void {
 // centralized here so a styling change touches one place, not five tests.
 const acceptButton = (c: HTMLElement) => c.querySelector('button.text-success') as HTMLElement | null;
 const rejectButton = (c: HTMLElement) => c.querySelector('button.text-destructive') as HTMLElement | null;
-const spinner = (c: HTMLElement) => c.querySelector('.animate-spin');
 const acceptedRing = (c: HTMLElement) => c.querySelector('button.ring-success');
 const rejectedRing = (c: HTMLElement) => c.querySelector('button.ring-destructive');
 
@@ -241,11 +240,9 @@ function ExtractionHarness(cfg: ExtractionHarnessConfig) {
   const { values, fill } = useFormValues();
   const hook = useAISuggestions({
     articleId: 'a',
-    projectId: 'p',
     enabled: true,
     runId: 'r',
     instanceIds: cfg.instanceIds,
-    acceptStrategy: 'human-proposal',
     onSuggestionAccepted: (i, f, v) => fill(i, f, v),
     onSuggestionRejected: (i, f) => fill(i, f, null),
   });
@@ -266,7 +263,6 @@ function ExtractionHarness(cfg: ExtractionHarnessConfig) {
       acceptSuggestion={hook.acceptSuggestion}
       rejectSuggestion={hook.rejectSuggestion}
       getSuggestionsHistory={hook.getSuggestionsHistory}
-      isActionLoading={hook.isActionLoading}
     />
   );
 }
@@ -275,11 +271,9 @@ function QAHarness() {
   const { values, fill } = useFormValues();
   const hook = useAISuggestions({
     articleId: 'a',
-    projectId: 'p',
     enabled: true,
     runId: 'r',
     instanceIds: ['inst-1'],
-    acceptStrategy: 'human-proposal',
     onSuggestionAccepted: (i, f, v) => fill(i, f, v),
     onSuggestionRejected: (i, f) => fill(i, f, null),
   });
@@ -305,7 +299,6 @@ function QAHarness() {
       onAcceptAI={hook.acceptSuggestion}
       onRejectAI={hook.rejectSuggestion}
       getSuggestionsHistory={hook.getSuggestionsHistory}
-      isAIActionLoading={hook.isActionLoading}
     />
   );
 }
@@ -314,7 +307,7 @@ function QAHarness() {
 
 beforeEach(() => loadSuggestionsMock.mockReset());
 
-describe('AI-action spinner — extraction study-level path', () => {
+describe('AI accept/reject reaches the memoized tree — extraction study-level path', () => {
   type Case = [
     label: 'accept' | 'reject',
     getButton: (c: HTMLElement) => HTMLElement | null,
@@ -337,21 +330,19 @@ describe('AI-action spinner — extraction study-level path', () => {
 
     await waitFor(() => expect(getButton(container)).toBeTruthy());
     expect(screen.getByText('Consecutive patients')).toBeInTheDocument();
-    expect(spinner(container)).toBeNull();
 
     fireEvent.click(getButton(container)!);
 
-    // Under the bug the ExtractionFormView memo swallowed the post-click
-    // clearLoading and `.animate-spin` stuck forever.
-    await waitFor(() => expect(spinner(container)).toBeNull());
-    // The action registered (ring appears) — proves FieldInput re-rendered,
-    // not just that the spinner never showed.
+    // The action registered (ring appears) — proves the status flip
+    // propagated through the ExtractionFormView/FieldInput memo comparators
+    // and FieldInput re-rendered. (The old accept spinner is gone: accepts
+    // are instant local updates since the dead service chain was pruned.)
     await waitFor(() => expect(getRing(container)).toBeTruthy());
   });
 });
 
-describe('AI-accept spinner — extraction model-child path', () => {
-  it('clears the spinner after accepting a child-field suggestion', async () => {
+describe('AI accept reaches the memoized tree — extraction model-child path', () => {
+  it('accepted ring appears after accepting a child-field suggestion', async () => {
     stubSuggestion('child-inst_f-source', 'Registry');
     const { container } = renderHarness(
       <ExtractionHarness
@@ -367,20 +358,18 @@ describe('AI-accept spinner — extraction model-child path', () => {
 
     await waitFor(() => expect(acceptButton(container)).toBeTruthy());
     expect(screen.getByText('Registry')).toBeInTheDocument();
-    expect(spinner(container)).toBeNull();
 
     fireEvent.click(acceptButton(container)!);
 
-    await waitFor(() => expect(spinner(container)).toBeNull());
     await waitFor(() => expect(acceptedRing(container)).toBeTruthy());
   });
 });
 
-describe('AI-accept spinner — quality-assessment path', () => {
-  // QASectionAccordion bypasses ExtractionFormView, so the gate fix is not on
-  // this path; it is protected by FieldInput's comparator and pinned here
-  // independently (stays green even with the ExtractionFormView fix reverted).
-  it('clears the spinner after accepting (QASectionAccordion + real hook)', async () => {
+describe('AI accept reaches the memoized tree — quality-assessment path', () => {
+  // QASectionAccordion bypasses ExtractionFormView; the status-flip
+  // propagation is protected by FieldInput's comparator and pinned here
+  // independently.
+  it('accepted ring appears after accepting (QASectionAccordion + real hook)', async () => {
     stubSuggestion('inst-1_f-doi', 'Consecutive patients');
     const { container } = renderHarness(<QAHarness />);
 
@@ -389,11 +378,9 @@ describe('AI-accept spinner — quality-assessment path', () => {
       expect(acceptButton(container)).toBeTruthy();
     });
     expect(screen.getByText('Consecutive patients')).toBeInTheDocument();
-    expect(spinner(container)).toBeNull();
 
     fireEvent.click(acceptButton(container)!);
 
-    await waitFor(() => expect(spinner(container)).toBeNull());
     await waitFor(() => expect(acceptedRing(container)).toBeTruthy());
   });
 });

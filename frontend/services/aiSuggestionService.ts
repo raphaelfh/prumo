@@ -1,16 +1,19 @@
 /**
- * AI suggestions service — reads AI proposals via the typed API client,
- * persists accept/reject as ReviewerDecisions on the active extraction run.
+ * AI suggestions service — reads AI proposals via the typed API client.
+ * Read-only: accept/select/reject persistence happens through the screens'
+ * autosave (`writeRunFieldValue` with a D0 AI link), not from here — the old
+ * direct accept/reject writers were removed with the dead `acceptStrategy`
+ * chain (2026-07-05 verify-then-prune).
  *
  * The backend endpoints (/api/v1/articles/{id}/suggestions, /history,
  * /instance-ids) replaced the former direct PostgREST reads from
  * `extraction_proposal_records`, `extraction_evidence`,
  * `extraction_reviewer_states`, and the auth-user reads.
- * Caller-scoped status (accepted/rejected/pending) is now resolved
- * server-side and returned in each AISuggestionItem.
+ * Caller-scoped status (accepted/rejected/pending) is resolved server-side
+ * and returned in each AISuggestionItem — note it marks ANY non-reject
+ * caller decision 'accepted', so it must never seed AI-link derivation.
  */
 import { apiClient } from '@/integrations/api';
-import { ExtractionValueService } from '@/services/extractionValueService';
 import type {
   AISuggestion,
   AISuggestionHistoryItem,
@@ -20,7 +23,6 @@ import type {
   RunProvenance,
 } from '@/types/ai-extraction';
 import { getSuggestionKey } from '@/types/ai-extraction';
-import { APIError } from '@/lib/ai-extraction/errors';
 import { unwrapValueEnvelope, valueAbsentReason } from '@/lib/extraction/valueSemantics';
 import type { components } from '@/types/api/schema';
 
@@ -210,75 +212,6 @@ export class AISuggestionService {
     );
 
     return (items ?? []).map(mapHistoryItemToSuggestion);
-  }
-
-  /**
-   * Accept an AI proposal: post a ReviewerDecision with
-   * `decision='accept_proposal'`. The proposal id (which is now the
-   * `suggestionId`) is the `proposal_record_id`.
-   *
-   * Callers should pass ``runId`` — the run the surface is editing.
-   * Without it the service falls back to the latest non-terminal
-   * extraction-kind run on the article, which can resolve to a stale
-   * PENDING/PROPOSAL run when the article carries multiple runs (batch
-   * extraction, reopens, contract-test pollution) and silently 400 on
-   * the decisions endpoint.
-   */
-  static async acceptSuggestion(params: {
-    suggestionId: string;
-    projectId: string;
-    articleId: string;
-    instanceId: string;
-    fieldId: string;
-    value: unknown;
-    confidence: number;
-    reviewerId: string;
-    runId?: string;
-  }): Promise<void> {
-    const { suggestionId, articleId, instanceId, fieldId, runId } = params;
-    const targetRunId = runId ?? (await this.resolveActiveRunId(articleId));
-    if (!targetRunId) {
-      throw new APIError(
-        'No active extraction run for this article — cannot accept proposal.',
-      );
-    }
-    await ExtractionValueService.acceptProposal(
-      targetRunId,
-      instanceId,
-      fieldId,
-      suggestionId,
-    );
-  }
-
-  /**
-   * Reject an AI proposal: post a ReviewerDecision with
-   * `decision='reject'`. The historical proposal stays in
-   * `extraction_proposal_records` for audit.
-   *
-   * Same ``runId`` plumbing rationale as ``acceptSuggestion``.
-   */
-  static async rejectSuggestion(params: {
-    suggestionId: string;
-    reviewerId: string;
-    wasAccepted?: boolean;
-    instanceId?: string;
-    fieldId?: string;
-    projectId?: string;
-    articleId?: string;
-    runId?: string;
-  }): Promise<void> {
-    const { instanceId, fieldId, articleId, runId } = params;
-    if (!instanceId || !fieldId || !articleId) return;
-    const targetRunId = runId ?? (await this.resolveActiveRunId(articleId));
-    if (!targetRunId) return;
-    await ExtractionValueService.rejectValue(targetRunId, instanceId, fieldId);
-  }
-
-  private static async resolveActiveRunId(
-    articleId: string,
-  ): Promise<string | null> {
-    const run = await ExtractionValueService.findActiveRun(articleId, null);
-    return run?.id ?? null;
   }
 
   static async getArticleInstanceIds(articleId: string): Promise<string[]> {

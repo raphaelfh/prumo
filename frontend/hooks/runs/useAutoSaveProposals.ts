@@ -1,16 +1,18 @@
 /**
- * Auto-save user edits as ``human`` proposals on the active Run, with a
- * proper state machine and lifecycle handlers that survive route
- * changes, tab closes, and visibility switches.
+ * Auto-save user edits on the active Run, with a proper state machine and
+ * lifecycle handlers that survive route changes, tab closes, and visibility
+ * switches. Kind-aware write target: extraction runs write per-reviewer
+ * ``edit`` decisions to ``/runs/{id}/decisions`` (optionally carrying the
+ * D0 AI link); QA runs write ``human`` proposals to ``/runs/{id}/proposals``.
  *
  * Used by both Data Extraction and Quality Assessment full-screen
  * pages — anywhere a flat ``Record<`${instanceId}_${fieldId}`, value>``
- * map needs to be persisted as ProposalRecords on a Run.
+ * map needs to be persisted on a Run.
  *
  * State machine:
  *   - ``idle``    nothing dirty, no save in flight
- *   - ``dirty``   user typed; debounce armed; save pending
- *   - ``saving``  POST(s) in flight to ``/runs/{id}/proposals``
+ *   - ``dirty``   user typed (or adopted an AI version); debounce armed
+ *   - ``saving``  POST(s) in flight to the kind-specific endpoint
  *   - ``saved``   last save acknowledged; ``lastSavedAt`` updated
  *   - ``error``   last save failed; retries on next keystroke
  *
@@ -23,10 +25,9 @@
  *     request alive past page unload (works on iOS Safari where
  *     ``beforeunload`` is ignored).
  *
- * Diff-aware: only fields whose value changed since the last
- * successful save are written, so the append-only
- * ``extraction_proposal_records`` table doesn't accumulate one
- * duplicate row per debounce tick.
+ * Diff-aware: only coords whose [value, AI-link] fingerprint changed since
+ * the last successful save (or the hydrated baseline) are written, so the
+ * append-only tables don't accumulate one duplicate row per debounce tick.
  *
  * Concurrent ``performSave`` invocations are serialized: a save triggered
  * while another is in flight waits for the first batch, recomputes the
@@ -45,7 +46,7 @@ import { toast } from 'sonner';
 import { writeRunFieldValue } from '@/services/extractionRunService';
 import { t } from '@/lib/copy';
 import { extractValueForSave } from '@/lib/validations/selectOther';
-import { selectDirtyEntries } from '@/lib/extraction/autosaveDirty';
+import { fingerprintCoord, selectDirtyEntries } from '@/lib/extraction/autosaveDirty';
 
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
@@ -86,6 +87,24 @@ export interface UseAutoSaveProposalsProps {
    * loaded values as fresh proposals/decisions on mount.
    */
   baselineValues?: Record<string, unknown>;
+  /**
+   * D0 (consensus AI trace): coord key (`${instanceId}_${fieldId}`) →
+   * accepted/selected AI proposal id. When a dirty coord has an entry, its
+   * `edit` decision carries `proposal_record_id` so the AI basis survives
+   * into the append-only audit trail. Later manual edits keep the link — the
+   * consensus chip renders "Edited by" when the value differs, so honesty
+   * lives in the read path. Only consulted on the /decisions branch.
+   */
+  linkByKey?: Record<string, string>;
+  /**
+   * D0: the PERSISTED link state the form hydrated from (layer-1 of
+   * `deriveAiLinkByKey`, i.e. session events excluded) — the link-side
+   * counterpart of ``baselineValues``. A coord whose value AND link both
+   * equal their baselines is clean on mount; a session adoption that only
+   * changes the link (same value) still dirties the coord so the human
+   * selection event is recorded.
+   */
+  baselineLinkByKey?: Record<string, string>;
 }
 
 export interface UseAutoSaveProposalsReturn {
@@ -121,7 +140,7 @@ function isWritableStage(stage?: string | null): boolean {
 export function useAutoSaveProposals(
   props: UseAutoSaveProposalsProps,
 ): UseAutoSaveProposalsReturn {
-  const { runId, values, enabled = true, debounceMs = 600, stage, kind, baselineValues } =
+  const { runId, values, enabled = true, debounceMs = 600, stage, kind, baselineValues, linkByKey, baselineLinkByKey } =
     props;
 
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -141,6 +160,8 @@ export function useAutoSaveProposals(
   // Server-persisted baseline (see prop docs). Mirrored in a ref so the
   // diff sees the latest hydrated map without re-creating callbacks.
   const baselineRef = useRef<Record<string, unknown>>(baselineValues ?? {});
+  const linkByKeyRef = useRef<Record<string, string>>(linkByKey ?? {});
+  const baselineLinkRef = useRef<Record<string, string>>(baselineLinkByKey ?? {});
   useEffect(() => {
     valuesRef.current = values;
     runIdRef.current = runId;
@@ -148,6 +169,8 @@ export function useAutoSaveProposals(
     stageRef.current = stage;
     kindRef.current = kind;
     baselineRef.current = baselineValues ?? {};
+    linkByKeyRef.current = linkByKey ?? {};
+    baselineLinkRef.current = baselineLinkByKey ?? {};
   });
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -167,6 +190,8 @@ export function useAutoSaveProposals(
       valuesRef.current,
       lastSavedByKeyRef.current,
       baselineRef.current,
+      linkByKeyRef.current,
+      baselineLinkRef.current,
     );
 
   const performSave = (): Promise<boolean> => {
@@ -231,8 +256,14 @@ export function useAutoSaveProposals(
             normalizedValue: normalized,
             useDecisionEndpoint,
             absentReason,
+            proposalRecordId: linkByKeyRef.current[key] ?? null,
           }).then(() => {
-            lastSavedByKeyRef.current[key] = JSON.stringify(valueData ?? null);
+            // Acknowledge value AND link together (the D0 fingerprint) so a
+            // later link-only adoption re-dirties the coord.
+            lastSavedByKeyRef.current[key] = fingerprintCoord(
+              valueData,
+              linkByKeyRef.current[key],
+            );
           });
         }),
       ).then((results) => {
@@ -291,7 +322,9 @@ export function useAutoSaveProposals(
   // debounce). Keyed by content, not identity: callers may rebuild the
   // values map every render, and an identity-keyed adjustment would
   // re-render forever.
-  const valuesKey = JSON.stringify(values);
+  // The content key includes the link map (D0): a link-only adoption on an
+  // unchanged value must flip the badge and schedule a save like a keystroke.
+  const valuesKey = JSON.stringify([values, linkByKey ?? {}]);
   const [prevValuesKey, setPrevValuesKey] = useState(valuesKey);
   if (valuesKey !== prevValuesKey) {
     setPrevValuesKey(valuesKey);
@@ -299,7 +332,13 @@ export function useAutoSaveProposals(
       enabled &&
       runId &&
       isWritableStage(stage) &&
-      selectDirtyEntries(values, lastSavedByKey, baselineValues ?? {}).length > 0
+      selectDirtyEntries(
+        values,
+        lastSavedByKey,
+        baselineValues ?? {},
+        linkByKey ?? {},
+        baselineLinkByKey ?? {},
+      ).length > 0
     ) {
       setSaveState('dirty');
     }
@@ -321,6 +360,8 @@ export function useAutoSaveProposals(
     };
   }, [
     values,
+    linkByKey,
+    baselineLinkByKey,
     enabled,
     runId,
     stage,
@@ -377,7 +418,13 @@ export function useAutoSaveProposals(
   // or a save acknowledges (``lastSavedByKey`` advances). Computed from
   // render-safe state — never from the mutable refs.
   const hasUnsavedChanges =
-    selectDirtyEntries(values, lastSavedByKey, baselineValues ?? {}).length > 0;
+    selectDirtyEntries(
+      values,
+      lastSavedByKey,
+      baselineValues ?? {},
+      linkByKey ?? {},
+      baselineLinkByKey ?? {},
+    ).length > 0;
 
   return { saveState, lastSavedAt, error, hasUnsavedChanges, saveNow };
 }

@@ -42,7 +42,6 @@ interface InstanceCardProps {
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
   selectSuggestion?: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown, confidence: number) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
-  isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   /** Threaded to FieldInput's review popover generation dialog. */
   articleId?: string;
 }
@@ -217,7 +216,6 @@ export function InstanceCard(props: InstanceCardProps) {
               }}
               selectSuggestion={props.selectSuggestion}
               getSuggestionsHistory={props.getSuggestionsHistory}
-              isActionLoading={props.isActionLoading}
               articleId={props.articleId}
             />
           );

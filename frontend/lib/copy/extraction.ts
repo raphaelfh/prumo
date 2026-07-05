@@ -187,10 +187,7 @@ export const extraction = {
     templateActivatedSuccess: 'Template activated successfully!',
     templateDeactivatedSuccess: 'Template deactivated successfully!',
     errors_loadSuggestions: 'Error loading suggestions',
-    errors_acceptSuggestion: 'Error accepting suggestion',
-    errors_rejectSuggestion: 'Error rejecting suggestion',
     errors_batchAcceptSuggestions: 'Error accepting suggestions in batch',
-    errors_loadSuggestionsHistory: 'Error loading suggestion history',
     errors_loadInstances: 'Error loading instances',
     errors_createInstance: 'Error creating instance',
     errors_updateInstance: 'Error updating instance',
@@ -839,6 +836,7 @@ export const extraction = {
     reviewTitle: 'Review suggestion',
     reviewVersionsCount: '{{n}} version(s)',
     reviewNoVersions: 'No AI versions yet',
+    reviewHistoryError: 'Couldn’t load the version history. Close and reopen to retry.',
     reviewSelected: 'Selected',
     reviewUseThisVersion: 'Use this version',
     reviewNoInformation: 'No information found',
@@ -848,6 +846,11 @@ export const extraction = {
     reviewClearHint: 'Each selection is recorded with who chose it and when.',
     reviewDetails: 'Details',
     reviewOpenFromValue: 'Open review · see other versions, evidence and provenance',
+    reviewPinNotInHistory: 'The adopted version is older than the loaded history.',
+    // Consensus-trace attribution (D3) — pinned-row chip + cross-marks + run headers
+    reviewAdoptedBy: 'Adopted by {{name}}',
+    reviewEditedBy: 'Edited by {{name}}',
+    reviewRunBy: 'Run by {{name}}',
     // Runtime disposition control (ADR-0016) — set a "no value, on purpose" answer
     // on any field type when the source is silent / the item does not apply.
     dispositionNoInformation: 'No information',

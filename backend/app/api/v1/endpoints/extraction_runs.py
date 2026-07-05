@@ -211,7 +211,10 @@ async def create_proposal(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ProposalRecordResponse]:
-    await _load_run_and_check_member(db, run_id, current_user_sub)
+    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    # Writes are reviewer-role-gated (mirrors mark_ready): a read-only viewer
+    # is a member but must not author proposals.
+    await ensure_project_reviewer(db, run.project_id, current_user_sub)
     service = ExtractionProposalService(db)
     trace_id = _trace(request)
     # source='human' requires a user attribution. Default to the
@@ -266,7 +269,11 @@ async def create_decision(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ReviewerDecisionResponse]:
-    await _load_run_and_check_member(db, run_id, current_user_sub)
+    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    # Writes are reviewer-role-gated (mirrors mark_ready): a read-only viewer
+    # is a member but must not author decisions — these rows are the
+    # append-only audit trail the consensus trace renders.
+    await ensure_project_reviewer(db, run.project_id, current_user_sub)
     service = ExtractionReviewService(db)
     trace_id = _trace(request)
     try:

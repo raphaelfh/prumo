@@ -263,33 +263,34 @@ export default function QualityAssessmentFullScreen() {
       values,
       baselineValues: loadedValues,
       enabled:
-        !!session && !!runDetail && isRunEditable(runDetail.run.stage),
+        !!session &&
+        !!runDetail &&
+        isRunEditable(runDetail.run.stage) &&
+        // Viewer writes 403 server-side; never fire them (forms render
+        // read-only via forceReadOnly, this is the flush-path belt).
+        permissions.userRole !== "viewer",
     });
 
   // AI suggestions wiring — kind-agnostic hooks reused from Data
-  // Extraction. Two key adaptations for QA:
-  //  - ``runId`` scopes the suggestion query so a parallel extraction
-  //    run on the same article doesn't leak in.
-  //  - ``acceptStrategy: 'human-proposal'`` keeps the run in PROPOSAL
-  //    (no ReviewerDecision write). Accept just bubbles the value to
-  //    ``handleValueChange``, which records a fresh ``human`` proposal
-  //    via the existing form pipeline.
+  // Extraction. ``runId`` scopes the suggestion query so a parallel
+  // extraction run on the same article doesn't leak in. Accept/reject
+  // never write from the hook: the value bubbles to ``handleValueChange``,
+  // and QA's autosave records it as a ``human`` proposal (until D8 flips
+  // QA onto the decisions write path).
   const sessionInstanceIds = Object.values(session?.instancesByEntityType ?? {});
 
   const {
     suggestions: aiSuggestions,
+    suggestionsReady: aiSuggestionsReady,
     acceptSuggestion: acceptAISuggestion,
     selectSuggestion: selectAISuggestion,
     rejectSuggestion: rejectAISuggestion,
     getSuggestionsHistory: getAISuggestionsHistory,
-    isActionLoading: isAIActionLoading,
     refresh: refreshAISuggestions,
   } = useAISuggestions({
     articleId: articleId ?? "",
-    projectId: projectId ?? "",
     runId: session?.runId,
     instanceIds: sessionInstanceIds,
-    acceptStrategy: "human-proposal",
     enabled: !!session,
     onSuggestionAccepted: (instanceId, fieldId, value) => {
       handleValueChange(instanceId, fieldId, value);
@@ -594,7 +595,9 @@ export default function QualityAssessmentFullScreen() {
           },
           transition: qaTransition,
           submitting: publishing,
-          onJumpToDivergence: canCompare
+          // D6: the consensus branch ignores viewMode, so the jump would be
+          // inert there — offer it only while the compare view is reachable.
+          onJumpToDivergence: canCompare && !inConsensusStage
             ? () => setViewMode("compare")
             : undefined,
         }}
@@ -635,7 +638,8 @@ export default function QualityAssessmentFullScreen() {
         </RunHeader.Center>
 
         <RunHeader.Right>
-          {canCompare && (
+          {/* D6: no dead toggle during consensus (the resolve table always renders there). */}
+          {canCompare && !inConsensusStage && (
             <RunHeader.CompareToggle
               active={effectiveViewMode === "compare"}
               onToggle={() => setViewMode((m) => (m === "assess" ? "compare" : "assess"))}
@@ -690,7 +694,14 @@ export default function QualityAssessmentFullScreen() {
   const showFormStage = ready && !inConsensusStage;
 
   const formPanel = (
-    <RunEditabilityProvider stage={runDetail?.run.stage ?? null}>
+    // showPeerIdentity (D3): mirrors the extraction screen — identity-visible
+    // callers get "Run by {name}" popover headers; blind reviewers stay
+    // timestamp-only.
+    <RunEditabilityProvider
+      stage={runDetail?.run.stage ?? null}
+      showPeerIdentity={!!runDetail?.peers_revealed || permissions.canSeeOthers}
+      forceReadOnly={permissions.userRole === "viewer"}
+    >
     <div className="space-y-3 p-4" data-testid="qa-form-panel">
       {error ? (
         <div
@@ -717,9 +728,17 @@ export default function QualityAssessmentFullScreen() {
           ownValues={values}
           reviewerLabelById={reviewerProfiles.labelById}
           reviewerAvatarById={reviewerProfiles.avatarById}
-          // QA consensus is reviewer-level self-publish (backend excludes
-          // viewers via ensure_project_reviewer) — parity with the old panel.
-          canResolve
+          // QA consensus is reviewer-level self-publish; the backend 403s
+          // viewer writes (ensure_project_reviewer), so mirror the gate here —
+          // a viewer must not get chrome whose every click fails (D6).
+          canResolve={permissions.userRole !== "viewer"}
+          // Per-cell AI trace (D1-D4). QA decisionsByCoord stays empty until
+          // PR 2 (D8) creates real QA decisions; the wiring is ready for it.
+          trace={{
+            articleId: articleId ?? "",
+            getHistory: (i, f) => getAISuggestionsHistory(i, f, 50),
+            aiSuggestions: aiSuggestionsReady ? aiSuggestions : null,
+          }}
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}
           onFinalize={handleFinalizeFromConsensus}
@@ -793,7 +812,6 @@ export default function QualityAssessmentFullScreen() {
                     onRejectAI={rejectAISuggestion}
                     selectSuggestion={selectAISuggestion}
                     getSuggestionsHistory={getAISuggestionsHistory}
-                    isAIActionLoading={isAIActionLoading}
                   />
                 );
               })}

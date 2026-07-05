@@ -222,6 +222,7 @@ vi.mock("@/integrations/api", () => ({
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 import { SidebarProvider } from "@/contexts/SidebarContext";
 import ExtractionFullScreen from "@/pages/ExtractionFullScreen";
+import { apiClient } from "@/integrations/api";
 
 const mockedPermissions = vi.mocked(useComparisonPermissions);
 
@@ -275,6 +276,105 @@ describe("ExtractionFullScreen — finalized (published, read-only)", () => {
     );
     expect(
       screen.queryByTestId("section-ai-extract-et-1"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("ExtractionFullScreen — consensus dead affordances (D6)", () => {
+  // Identity-granted arbitrator: canCompare's data preconditions all hold, so
+  // only the D6 stage guard can hide the toggle.
+  const REVEALED_ARBITRATOR = {
+    ...BLIND_PERMISSIONS,
+    userRole: "manager" as const,
+    isBlindMode: false,
+    canSeeOthers: true,
+    canResolveConflicts: true,
+  };
+
+  function mockStageView(stage: string) {
+    vi.mocked(apiClient).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/hitl/sessions") {
+        return {
+          run_id: "run-1",
+          kind: "extraction",
+          project_template_id: "tpl-1",
+          instances_by_entity_type: { "et-1": "i1" },
+        };
+      }
+      if (url === "/api/v1/runs/run-1/view") {
+        return {
+          ...FINALIZED_RUN_VIEW,
+          run: { ...FINALIZED_RUN_VIEW.run, stage, status: "running" },
+          published_states: [],
+          current_values: [],
+          peers_revealed: true,
+          // Two divergent peer decisions: decisionsByCoord.size > 0.
+          decisions: [
+            {
+              id: "dec-a",
+              run_id: "run-1",
+              instance_id: "i1",
+              field_id: "f1",
+              reviewer_id: "peer-a",
+              decision: "edit",
+              proposal_record_id: null,
+              value: { value: "Yes" },
+              rationale: null,
+              created_at: new Date().toISOString(),
+            },
+            {
+              id: "dec-b",
+              run_id: "run-1",
+              instance_id: "i1",
+              field_id: "f1",
+              reviewer_id: "peer-b",
+              decision: "edit",
+              proposal_record_id: null,
+              value: { value: "No" },
+              rationale: null,
+              created_at: new Date().toISOString(),
+            },
+          ],
+        };
+      }
+      if (url.includes("/reviewers")) {
+        return { reviewers: [] };
+      }
+      if (url.includes("/suggestions")) {
+        return { suggestions: [], count: 0 };
+      }
+      if (url.includes("/files") || url.includes("/text-blocks")) {
+        return [];
+      }
+      return {};
+    });
+  }
+
+  beforeEach(() => {
+    mockedPermissions.mockReturnValue(REVEALED_ARBITRATOR);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("extract stage (positive control): the Compare toggle renders", async () => {
+    mockStageView("extract");
+    renderPage();
+    expect(
+      await screen.findByRole("button", { name: /^compare$/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("consensus stage: no Compare toggle — the resolve table is the only surface", async () => {
+    mockStageView("consensus");
+    renderPage();
+    // Wait until the consensus surface is up so the header is fully settled.
+    await waitFor(() =>
+      expect(screen.getByTestId("extraction-consensus-area")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /^compare$/i }),
     ).not.toBeInTheDocument();
   });
 });

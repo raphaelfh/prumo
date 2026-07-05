@@ -8,6 +8,7 @@ vi.mock('@/hooks/extraction/useArticleContentMarkdown', () => ({
 
 import {useArticleContentMarkdown} from '@/hooks/extraction/useArticleContentMarkdown';
 import {GenerationDetailsDialog} from './GenerationDetailsDialog';
+import {RunEditabilityProvider} from '@/components/runs/RunEditabilityContext';
 
 const mdHook = useArticleContentMarkdown as unknown as ReturnType<typeof vi.fn>;
 
@@ -38,7 +39,14 @@ beforeEach(() => {
 
 describe('GenerationDetailsDialog', () => {
   it('renders params grid, composition recipe, split-calls note and truncated badge', () => {
-    render(<GenerationDetailsDialog provenance={structured} open onOpenChange={() => {}} />);
+    render(
+      // Identity-bearing surfaces ("Ran by", the name in the context pill)
+      // need the peer-identity grant (D3, fail-closed) — see the dedicated
+      // case below for the provider-less behavior.
+      <RunEditabilityProvider stage="extract" showPeerIdentity>
+        <GenerationDetailsDialog provenance={structured} open onOpenChange={() => {}} />
+      </RunEditabilityProvider>,
+    );
     // Title + context
     expect(screen.getByText('How this was generated')).toBeInTheDocument();
     expect(screen.getByText(/Source of Data · raphael/)).toBeInTheDocument();
@@ -134,5 +142,15 @@ describe('GenerationDetailsDialog', () => {
     fireEvent.click(screen.getByText('View text sent'));
     fireEvent.click(screen.getByText('Retry'));
     expect(refetch).toHaveBeenCalled();
+  });
+
+  it('hides the Ran-by surfaces without the peer-identity grant (fail-closed)', () => {
+    // Provider-less render = no grant: the runner's name must not appear in
+    // the context pill nor as a "Ran by" params row (D3 display consistency).
+    render(<GenerationDetailsDialog provenance={structured} open onOpenChange={() => {}} />);
+    expect(screen.queryByText(/raphael/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Ran by')).not.toBeInTheDocument();
+    // Everything non-identity still renders.
+    expect(screen.getByText('gpt-4o-mini')).toBeInTheDocument();
   });
 });

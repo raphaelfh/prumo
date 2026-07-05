@@ -19,6 +19,8 @@
  */
 
 
+import { stableStringify } from "@/lib/runs/valueEquality";
+
 import type { ReviewerDecisionResponse, RunDetailResponse } from "./types";
 
 export interface CurrentDecisionEntry {
@@ -66,25 +68,6 @@ function reviewerKey(
   fieldId: string,
 ): string {
   return `${reviewerId}::${instanceId}::${fieldId}`;
-}
-
-/**
- * Canonical JSON with object keys sorted recursively — matches the backend's
- * `json.dumps(value, sort_keys=True)` so the two agreement checks stay in lock
- * step (Phase B finding F1). Key order never affects equality; a differing
- * sibling key (e.g. `unit`) does.
- *
- * Caveat: JS has no int/float distinction, so `5` and `5.0` both stringify to
- * `"5"` here while the backend keeps `5` vs `5.0`. Harmless in practice — form
- * values are stored as strings (`"5"`), never bare JSON numbers — so a numeric
- * mismatch would only arise from a non-form writer, which is out of scope.
- */
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
 }
 
 /**

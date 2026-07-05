@@ -84,6 +84,25 @@ class ExtractionReviewService:
                     f"proposal_record_id {proposal_record_id} does not belong to "
                     f"(run={run_id}, instance={instance_id}, field={field_id})"
                 )
+        elif proposal_record_id is not None:
+            # D0 (consensus AI trace): any other decision kind may carry the AI
+            # proposal its value originated from. The link lands in the
+            # append-only audit trail the consensus trace renders, so it must
+            # reference an AI proposal on the same (instance, field). Run
+            # equality is intentionally NOT required — select-version pins
+            # proposals from older runs of the same article, and instance/field
+            # equality transitively pins the article.
+            proposal = await ExtractionProposalRepository(self.db).get(proposal_record_id)
+            if (
+                proposal is None
+                or proposal.instance_id != instance_id
+                or proposal.field_id != field_id
+                or proposal.source == "human"
+            ):
+                raise InvalidDecisionError(
+                    f"proposal_record_id {proposal_record_id} must reference an "
+                    f"AI proposal on (instance={instance_id}, field={field_id})"
+                )
         if decision_value == "edit" and value is None:
             raise InvalidDecisionError("decision='edit' requires value")
 
