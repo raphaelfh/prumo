@@ -165,29 +165,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/articles/{article_id}/active-run": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Active Run
-         * @description Return the latest non-terminal extraction run for the article.
-         *
-         *     Returns null (data: null) when no active run exists. 404 when the
-         *     article is not found; 403 when the caller is not a project member.
-         */
-        get: operations["get_active_run_api_v1_articles__article_id__active_run_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/articles/{article_id}/content-markdown": {
         parameters: {
             query?: never;
@@ -4036,39 +4013,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_list_ArticleRunRef__"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_active_run_api_v1_articles__article_id__active_run_get: {
-        parameters: {
-            query?: {
-                template_id?: string | null;
-            };
-            header?: never;
-            path: {
-                article_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_Union_RunSummaryResponse__NoneType__"];
                 };
             };
             /** @description Validation Error */
