@@ -27,6 +27,7 @@ from app.models.extraction import (
     ExtractionEvidence,
     ExtractionInstance,
     ExtractionRun,
+    ExtractionRunStage,
 )
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
@@ -42,6 +43,10 @@ from app.schemas.extraction_suggestion import (
     AISuggestionItem,
     AISuggestionsResponse,
     EvidenceResponse,
+)
+from app.services.extraction_run_read_service import (
+    caller_can_see_peers,
+    is_run_arbitrator,
 )
 from app.services.value_semantics import is_value_empty
 
@@ -83,32 +88,90 @@ def _resolve_status(decision: str | None) -> str:
 
 
 async def _load_run_provenance(
-    db: AsyncSession, run_ids: set[UUID], *, resolve_names: bool = False
-) -> dict[UUID, dict[str, Any] | None]:
+    db: AsyncSession,
+    run_ids: set[UUID],
+    *,
+    caller_id: UUID,
+    resolve_names: bool = False,
+) -> tuple[dict[UUID, dict[str, Any] | None], set[UUID]]:
     """Fetch each run's provenance snapshot (extraction_runs.results['provenance'])
     in one query, so suggestions can show how they were generated without an
-    N+1. Legacy runs without provenance map to None.
+    N+1 — plus the set of runs whose ran-by IDENTITY the caller may see
+    (D8-d). Legacy runs without provenance map to None.
 
-    When ``resolve_names`` is set, each snapshot carrying a ``ran_by_user_id``
-    also gets a resolved ``ran_by_name`` (the runner's profile display name)
-    injected, so the review popover can show *who* ran the extraction without
-    the frontend joining on profiles. Off by default: only the on-demand history
-    path pays the extra profile lookup; the hot ``load_suggestions`` path stays a
-    single query.
+    Reveal mirrors ``/view``'s unblind rules, applied PER RUN (the endpoint is
+    article-scoped but reveal is run-scoped):
+      finalized -> everyone (project membership was gated at the endpoint);
+      consensus -> arbitrators (``is_run_arbitrator``);
+      otherwise -> ``caller_can_see_peers`` (consensus role always; managers
+      per ``settings.managers_see_reviewers[kind]``; reviewers/viewers never).
+
+    When ``resolve_names`` is set, ``ran_by_user_id`` -> ``ran_by_name``
+    injection runs ONLY for revealed runs — no profile lookup for names that
+    would be scrubbed. Off by default: only the on-demand history path pays
+    the extra lookup; the hot ``load_suggestions`` path stays query-lean.
     """
     if not run_ids:
-        return {}
+        return {}, set()
     rows = (
         await db.execute(
-            select(ExtractionRun.id, ExtractionRun.results).where(ExtractionRun.id.in_(run_ids))
+            select(
+                ExtractionRun.id,
+                ExtractionRun.results,
+                ExtractionRun.stage,
+                ExtractionRun.project_id,
+                ExtractionRun.kind,
+            ).where(ExtractionRun.id.in_(run_ids))
         )
     ).all()
     prov_by_run: dict[UUID, dict[str, Any] | None] = {
-        run_id: (results or {}).get("provenance") for run_id, results in rows
+        row.id: (row.results or {}).get("provenance") for row in rows
     }
-    if resolve_names:
-        await _inject_ran_by_names(db, prov_by_run)
-    return prov_by_run
+
+    # One membership/setting probe per distinct (project, kind); one
+    # arbitrator probe per project — an article's runs share both in practice.
+    can_peers_cache: dict[tuple[UUID, str], bool] = {}
+    arbitrator_cache: dict[UUID, bool] = {}
+    revealed: set[UUID] = set()
+    for row in rows:
+        if row.stage == ExtractionRunStage.FINALIZED.value:
+            revealed.add(row.id)
+            continue
+        peers_key = (row.project_id, row.kind)
+        if peers_key not in can_peers_cache:
+            can_peers_cache[peers_key] = await caller_can_see_peers(
+                db, project_id=row.project_id, user_id=caller_id, kind=row.kind
+            )
+        if can_peers_cache[peers_key]:
+            revealed.add(row.id)
+            continue
+        if row.stage == ExtractionRunStage.CONSENSUS.value:
+            if row.project_id not in arbitrator_cache:
+                arbitrator_cache[row.project_id] = await is_run_arbitrator(
+                    db, row.project_id, caller_id
+                )
+            if arbitrator_cache[row.project_id]:
+                revealed.add(row.id)
+
+    if resolve_names and revealed:
+        await _inject_ran_by_names(db, {rid: prov_by_run[rid] for rid in revealed})
+    return prov_by_run, revealed
+
+
+_RANBY_KEYS = ("ran_by_user_id", "ran_by_name")
+
+
+def _scrub_ranby(provenance: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Strip ran-by identity from a RESOLVED snapshot for an unrevealed run.
+
+    Operates on ``_resolve_section_provenance`` output, which is always a
+    single leaf (it never returns a ``sections`` map — pinned by the
+    section-provenance tests). Copy-on-scrub: the input aliases the run row's
+    ``results`` payload and must not be mutated.
+    """
+    if not provenance or not any(k in provenance for k in _RANBY_KEYS):
+        return provenance
+    return {k: v for k, v in provenance.items() if k not in _RANBY_KEYS}
 
 
 # Flat-snapshot marker keys — their presence on a run's provenance means it
@@ -324,7 +387,9 @@ async def load_suggestions(
 
     # --- Step 5: build response items ---
     items: list[AISuggestionItem] = []
-    prov_by_run = await _load_run_provenance(db, {p.run_id for p in deduped})
+    prov_by_run, ranby_revealed = await _load_run_provenance(
+        db, {p.run_id for p in deduped}, caller_id=caller_id
+    )
     # Map each deduped proposal's instance → entity type so per-section
     # provenance resolves to the right section snapshot.
     et_rows = (
@@ -351,6 +416,11 @@ async def load_suggestions(
         ]
         coord = (p.instance_id, p.field_id)
         status = _resolve_status(decision_by_coord.get(coord))
+        provenance = _resolve_section_provenance(
+            prov_by_run.get(p.run_id), et_by_instance.get(p.instance_id)
+        )
+        if p.run_id not in ranby_revealed:
+            provenance = _scrub_ranby(provenance)
         items.append(
             AISuggestionItem(
                 id=p.id,
@@ -365,9 +435,7 @@ async def load_suggestions(
                 created_at=p.created_at,
                 evidence=evidence_list,
                 status=status,
-                provenance=_resolve_section_provenance(
-                    prov_by_run.get(p.run_id), et_by_instance.get(p.instance_id)
-                ),
+                provenance=provenance,
             )
         )
 
@@ -380,6 +448,7 @@ async def get_suggestion_history(
     field_id: UUID,
     *,
     article_id: UUID,
+    caller_id: UUID,
     limit: int = 10,
 ) -> list[AISuggestionHistoryItem]:
     """Return AI proposals for a single (instance, field) coord, newest first.
@@ -388,6 +457,9 @@ async def get_suggestion_history(
     Scoped to article_id via JOIN on ExtractionInstance — if the instance does
     not belong to the path article, an empty list is returned (cross-project
     IDOR guard, mirrors the RLS protection the old PostgREST path had).
+    ``caller_id`` (required, fail-closed) drives the D8-d ran-by scrub: items
+    whose run does not reveal identity to the caller lose
+    ``ran_by_user_id``/``ran_by_name`` (see ``_load_run_provenance``).
     Mirrors AISuggestionService.getHistory.
     """
     proposals = (
@@ -437,10 +509,13 @@ async def get_suggestion_history(
         rows.sort(key=lambda e: (e.rank, str(e.id)))
 
     items: list[AISuggestionHistoryItem] = []
-    # History feeds the review popover (the "How this was generated" surface,
-    # the only one that shows the "Ran by" row) — resolve the runner's display
-    # name here so the frontend needs no profiles join.
-    prov_by_run = await _load_run_provenance(db, {p.run_id for p in proposals}, resolve_names=True)
+    # History feeds the review popover (the "How this was generated" surface
+    # and the run-group "Run by" headers) — resolve the runner's display name
+    # for REVEALED runs only, so the frontend needs no profiles join and a
+    # blind caller's payload never carries the identity at all.
+    prov_by_run, ranby_revealed = await _load_run_provenance(
+        db, {p.run_id for p in proposals}, caller_id=caller_id, resolve_names=True
+    )
     # All proposals share this coord's instance → one entity-type lookup resolves
     # the per-section snapshot for every item.
     entity_type_id = (
@@ -460,6 +535,9 @@ async def get_suggestion_history(
             )
             for ev in evidence_by_proposal.get(p.id, [])
         ]
+        provenance = _resolve_section_provenance(prov_by_run.get(p.run_id), entity_type_id)
+        if p.run_id not in ranby_revealed:
+            provenance = _scrub_ranby(provenance)
         items.append(
             AISuggestionHistoryItem(
                 id=p.id,
@@ -473,7 +551,7 @@ async def get_suggestion_history(
                 rationale=p.rationale,
                 created_at=p.created_at,
                 evidence=evidence_list,
-                provenance=_resolve_section_provenance(prov_by_run.get(p.run_id), entity_type_id),
+                provenance=provenance,
             )
         )
 
