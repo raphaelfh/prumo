@@ -10,7 +10,6 @@ export {
   type UseAutoSaveProposalsProps,
   type UseAutoSaveProposalsReturn,
 } from "./useAutoSaveProposals";
-export { useCreateDecision } from "./useCreateDecision";
 export { useCreateConsensus } from "./useCreateConsensus";
 export { useAdvanceRun } from "./useAdvanceRun";
 export { useMarkReady } from "./useMarkReady";

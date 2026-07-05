@@ -1,11 +1,12 @@
 /**
- * Hook to manage AI suggestions
+ * Hook to manage AI suggestions.
  *
- * Features:
- * - Load pending suggestions
- * - Accept suggestion (create extracted_value)
- * - Reject suggestion
- * - Batch accept by threshold
+ * Accepting/selecting/rejecting never writes to the backend from here: the
+ * value bubbles up via the ``onSuggestion*`` callbacks into the screen's form
+ * state, and the screen's autosave persists it (extraction: an ``edit``
+ * decision carrying ``proposal_record_id`` via linkByKey — D0). ADR-0014
+ * collapsed the stage model; the old PROPOSAL/REVIEW split this hook once
+ * branched on (``acceptStrategy``) no longer exists.
  *
  * @hook
  */
@@ -24,7 +25,6 @@ import {getSuggestionKey} from '@/types/ai-extraction';
 import {AISuggestionService} from '@/services/aiSuggestionService';
 import {filterSuggestionsByConfidence, isAbstention} from '@/lib/ai-extraction/suggestionUtils';
 import {getErrorMessage} from '@/lib/ai-extraction/errors';
-import {getRequiredUserId} from '@/services/authService';
 
 // =================== HOOK ===================
 
@@ -34,11 +34,9 @@ export type { AISuggestion, AISuggestionHistoryItem } from '@/types/ai-extractio
 export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestionsReturn {
   const {
     articleId,
-    projectId,
     enabled = true,
     runId,
     instanceIds: providedInstanceIds,
-    acceptStrategy = 'reviewer-decision',
     onSuggestionAccepted,
     onSuggestionRejected,
   } = props;
@@ -152,32 +150,10 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       });
 
     const doAccept = async (): Promise<boolean> => {
-      if (acceptStrategy === 'human-proposal') {
-        // Quality-Assessment path: the run lives in PROPOSAL until
-        // Publish, so a ReviewerDecision (which requires REVIEW) would
-        // be rejected by the backend. Instead, just bubble the value
-        // up via ``onSuggestionAccepted`` — the consumer records it as
-        // a ``human`` proposal through its existing form pipeline.
-      } else {
-        const userResult = await getRequiredUserId();
-        if (!userResult.ok) throw userResult.error;
-
-        // Accept the chosen proposal via the service (writes ReviewerDecision
-        // with decision='accept_proposal' on a REVIEW-stage run). The backend
-        // accepts any historical proposal_record_id (append-only audit trail),
-        // which is what lets the reviewer switch between versions.
-        await AISuggestionService.acceptSuggestion({
-          suggestionId: proposalRecordId,
-          projectId,
-          articleId,
-          instanceId,
-          fieldId,
-          value,
-          confidence,
-          reviewerId: userResult.data,
-          runId,
-        });
-      }
+      // Accepting never writes to the backend from here. The value bubbles
+      // up via onSuggestionAccepted into the screen's form state, and the
+      // screen's autosave persists it (extraction: an `edit` decision
+      // carrying proposal_record_id via linkByKey — D0).
 
         // Update status in local state to 'accepted' (do not remove!)
         // IMPORTANT: Create new object to ensure re-render
@@ -272,28 +248,9 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       });
 
     const doReject = async (): Promise<void> => {
-      if (acceptStrategy === 'human-proposal') {
-        // QA path: same logic as accept — no ReviewerDecision write.
-        // Local state flip + onSuggestionRejected callback are enough.
-      } else {
-        const userResult = await getRequiredUserId();
-        if (!userResult.ok) throw userResult.error;
-
-          // Check if was accepted before (need to remove extracted_value)
-        const wasAccepted = suggestion.status === 'accepted';
-
-          // Reject suggestion using the service
-        await AISuggestionService.rejectSuggestion({
-          suggestionId: suggestion.id,
-          reviewerId: userResult.data,
-            wasAccepted, // Pass flag to remove extracted_value if needed
-          instanceId,
-          fieldId,
-          projectId,
-          articleId,
-          runId,
-        });
-      }
+      // Rejecting never writes to the backend from here — same contract as
+      // accept: the cleared value bubbles via onSuggestionRejected and the
+      // screen's autosave persists it (link severed by the tombstone below).
 
         // Update status in local state to 'rejected' (do not remove!)
         // IMPORTANT: Create new object to ensure re-render e mostrar indicador visual

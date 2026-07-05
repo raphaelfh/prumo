@@ -391,17 +391,12 @@ export default function ExtractionFullScreen() {
     isActionLoading
   } = useAISuggestions({
     articleId: articleId || '',
-    projectId: projectId || '',
     runId: activeRunId ?? undefined,
     // Wait for the session to resolve a run before issuing the
     // suggestion query — otherwise the first render fires a global
     // (no runId) lookup that immediately gets superseded by the
     // run-scoped one. Pure waste; same UX outcome.
     enabled: !!articleId && !!projectId && !!activeRunId,
-    // On this screen accept/reject does not write to the backend directly:
-    // the value bubbles to the form pipeline and the autosave persists it as
-    // the user's own value on the `extract`-stage run, keeping one write path.
-    acceptStrategy: 'human-proposal',
     onSuggestionAccepted: handleAISuggestionAccepted,
     onSuggestionRejected: handleAISuggestionRejected
   });

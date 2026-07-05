@@ -2,16 +2,15 @@
  * Tests for the ``useAISuggestions`` hook.
  *
  * Locks down the contract that:
- *  - The runId from props flows into ``AISuggestionService.acceptSuggestion``
- *    / ``rejectSuggestion`` (regression: the Data Extraction surface used to
- *    re-resolve the run via ``findActiveRun``, which silently posted decisions
- *    to a stale PENDING run when the article had multiple non-terminal runs).
- *  - The ``acceptStrategy='human-proposal'`` path used by Quality Assessment
- *    DOES NOT write a ReviewerDecision — it only bubbles via the
- *    ``onSuggestion*`` callbacks.
+ *  - Accept / select / reject NEVER write to the backend from the hook —
+ *    they only bubble via the ``onSuggestion*`` callbacks (the screens'
+ *    autosave persists the value; the old ``acceptStrategy`` service
+ *    chain was removed in the 2026-07-05 verify-then-prune).
  *  - Accept / reject flip the local status of the affected suggestion so
  *    the UI can show ✓ / ✕ feedback without a refetch.
  *  - ``batchAccept`` only acts on suggestions above the threshold.
+ *  - ``sessionAdoption`` records only real session events (D0) and is
+ *    never seeded from server-rehydrated status.
  */
 
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -29,8 +28,6 @@ vi.mock('@/services/aiSuggestionService', () => ({
   AISuggestionService: {
     getArticleInstanceIds: vi.fn(async () => ['inst-1']),
     loadSuggestions: vi.fn(async () => ({ suggestions: {}, count: 0 })),
-    acceptSuggestion: vi.fn(async () => undefined),
-    rejectSuggestion: vi.fn(async () => undefined),
     getHistory: vi.fn(async () => []),
   },
 }));
@@ -85,7 +82,6 @@ describe('useAISuggestions — load', () => {
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         instanceIds: ['inst-A', 'inst-B'],
       }),
     );
@@ -105,7 +101,6 @@ describe('useAISuggestions — load', () => {
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         runId: 'run-explicit',
         instanceIds: ['inst-1'],
       }),
@@ -124,7 +119,7 @@ describe('useAISuggestions — load', () => {
       'inst-Y',
     ]);
     const { result } = renderHook(() =>
-      useAISuggestions({ articleId: 'art-1', projectId: 'proj-1' }),
+      useAISuggestions({ articleId: 'art-1' }),
     );
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(AISuggestionService.getArticleInstanceIds).toHaveBeenCalledWith('art-1');
@@ -138,7 +133,7 @@ describe('useAISuggestions — load', () => {
   it('returns empty when there are no instances', async () => {
     (AISuggestionService.getArticleInstanceIds as any).mockResolvedValueOnce([]);
     const { result } = renderHook(() =>
-      useAISuggestions({ articleId: 'art-1', projectId: 'proj-1' }),
+      useAISuggestions({ articleId: 'art-1' }),
     );
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(AISuggestionService.loadSuggestions).not.toHaveBeenCalled();
@@ -149,7 +144,6 @@ describe('useAISuggestions — load', () => {
     renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         enabled: false,
       }),
     );
@@ -160,7 +154,7 @@ describe('useAISuggestions — load', () => {
   });
 });
 
-describe('useAISuggestions — reviewer-decision strategy (Data Extraction)', () => {
+describe('useAISuggestions — accept/reject (bubble-only)', () => {
   beforeEach(() => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValue({
       suggestions: {
@@ -175,61 +169,11 @@ describe('useAISuggestions — reviewer-decision strategy (Data Extraction)', ()
     });
   });
 
-  it('forwards the runId prop into AISuggestionService.acceptSuggestion', async () => {
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        projectId: 'proj-1',
-        instanceIds: ['inst-1'],
-        runId: 'run-active',
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(2),
-    );
-
-    await act(async () => {
-      await result.current.acceptSuggestion('inst-1', 'f-1');
-    });
-
-    expect(AISuggestionService.acceptSuggestion).toHaveBeenCalledTimes(1);
-    const call = (AISuggestionService.acceptSuggestion as any).mock.calls[0][0];
-    expect(call.runId).toBe('run-active');
-    expect(call.suggestionId).toBe('proposal-inst-1-f-1');
-    expect(call.instanceId).toBe('inst-1');
-    expect(call.fieldId).toBe('f-1');
-  });
-
-  it('forwards the runId prop into AISuggestionService.rejectSuggestion', async () => {
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        projectId: 'proj-1',
-        instanceIds: ['inst-1'],
-        runId: 'run-active',
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(2),
-    );
-
-    await act(async () => {
-      await result.current.rejectSuggestion('inst-1', 'f-1');
-    });
-
-    expect(AISuggestionService.rejectSuggestion).toHaveBeenCalledTimes(1);
-    const call = (AISuggestionService.rejectSuggestion as any).mock.calls[0][0];
-    expect(call.runId).toBe('run-active');
-    expect(call.instanceId).toBe('inst-1');
-    expect(call.fieldId).toBe('f-1');
-  });
-
   it('flips local status to "accepted" so the UI can render ✓', async () => {
     const onAccepted = vi.fn();
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         instanceIds: ['inst-1'],
         runId: 'run-active',
         onSuggestionAccepted: onAccepted,
@@ -257,7 +201,6 @@ describe('useAISuggestions — reviewer-decision strategy (Data Extraction)', ()
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         instanceIds: ['inst-1'],
         runId: 'run-active',
         onSuggestionRejected: onRejected,
@@ -279,38 +222,14 @@ describe('useAISuggestions — reviewer-decision strategy (Data Extraction)', ()
     );
   });
 
-  it('keeps existing status untouched when service throws', async () => {
-    (AISuggestionService.acceptSuggestion as any).mockRejectedValueOnce(
-      new Error('400 stage'),
-    );
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        projectId: 'proj-1',
-        instanceIds: ['inst-1'],
-        runId: 'run-active',
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(2),
-    );
-
-    await act(async () => {
-      await result.current.acceptSuggestion('inst-1', 'f-1');
-    });
-
-    expect(
-      result.current.suggestions[getSuggestionKey('inst-1', 'f-1')].status,
-    ).toBe('pending');
-  });
-
   it('batchAccept honours the confidence threshold', async () => {
+    const onAccepted = vi.fn();
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         instanceIds: ['inst-1'],
         runId: 'run-active',
+        onSuggestionAccepted: onAccepted,
       }),
     );
     await waitFor(() =>
@@ -322,10 +241,8 @@ describe('useAISuggestions — reviewer-decision strategy (Data Extraction)', ()
     });
 
     // Only the 0.95-confidence suggestion is above 0.8.
-    expect(AISuggestionService.acceptSuggestion).toHaveBeenCalledTimes(1);
-    expect(
-      (AISuggestionService.acceptSuggestion as any).mock.calls[0][0].fieldId,
-    ).toBe('f-1');
+    await waitFor(() => expect(onAccepted).toHaveBeenCalledTimes(1));
+    expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-1', 'Y');
   });
 
   it('batchAccept never accepts an abstention, even above the confidence threshold', async () => {
@@ -346,12 +263,13 @@ describe('useAISuggestions — reviewer-decision strategy (Data Extraction)', ()
       },
       count: 2,
     });
+    const onAccepted = vi.fn();
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         instanceIds: ['inst-1'],
         runId: 'run-active',
+        onSuggestionAccepted: onAccepted,
       }),
     );
     await waitFor(() =>
@@ -362,10 +280,8 @@ describe('useAISuggestions — reviewer-decision strategy (Data Extraction)', ()
       await result.current.batchAccept(0.8);
     });
 
-    expect(AISuggestionService.acceptSuggestion).toHaveBeenCalledTimes(1);
-    expect(
-      (AISuggestionService.acceptSuggestion as any).mock.calls[0][0].fieldId,
-    ).toBe('f-real');
+    await waitFor(() => expect(onAccepted).toHaveBeenCalledTimes(1));
+    expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-real', 'Y');
   });
 
   it('batchAccept fires ONE success toast, not one per item (#160)', async () => {
@@ -380,7 +296,6 @@ describe('useAISuggestions — reviewer-decision strategy (Data Extraction)', ()
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         instanceIds: ['inst-1'],
         runId: 'run-active',
       }),
@@ -391,108 +306,8 @@ describe('useAISuggestions — reviewer-decision strategy (Data Extraction)', ()
       await result.current.batchAccept(0.8);
     });
 
-    expect(AISuggestionService.acceptSuggestion).toHaveBeenCalledTimes(3);
     // The per-item accepts run silently; only the batch summary toasts.
     expect(toast.success).toHaveBeenCalledTimes(1);
-  });
-
-  it('batchAccept reports an error (no false success) when every accept fails (#160)', async () => {
-    (AISuggestionService.loadSuggestions as any).mockResolvedValue({
-      suggestions: {
-        [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', { confidence: 0.95 }),
-        [getSuggestionKey('inst-1', 'f-2')]: makeSuggestion('inst-1', 'f-2', { confidence: 0.92 }),
-      },
-      count: 2,
-    });
-    (AISuggestionService.acceptSuggestion as any)
-      .mockRejectedValueOnce(new Error('backend down'))
-      .mockRejectedValueOnce(new Error('backend down'));
-
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        projectId: 'proj-1',
-        instanceIds: ['inst-1'],
-        runId: 'run-active',
-      }),
-    );
-    await waitFor(() => expect(Object.keys(result.current.suggestions)).toHaveLength(2));
-
-    await act(async () => {
-      await result.current.batchAccept(0.8);
-    });
-
-    expect(toast.success).not.toHaveBeenCalled();
-    expect(toast.error).toHaveBeenCalled();
-  });
-});
-
-describe('useAISuggestions — human-proposal strategy (Quality Assessment)', () => {
-  beforeEach(() => {
-    (AISuggestionService.loadSuggestions as any).mockResolvedValue({
-      suggestions: {
-        [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1'),
-      },
-      count: 1,
-    });
-  });
-
-  it('does NOT call AISuggestionService.acceptSuggestion (no ReviewerDecision write)', async () => {
-    const onAccepted = vi.fn();
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        projectId: 'proj-1',
-        instanceIds: ['inst-1'],
-        runId: 'qa-run',
-        acceptStrategy: 'human-proposal',
-        onSuggestionAccepted: onAccepted,
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
-    );
-
-    await act(async () => {
-      await result.current.acceptSuggestion('inst-1', 'f-1');
-    });
-
-    expect(AISuggestionService.acceptSuggestion).not.toHaveBeenCalled();
-    expect(
-      result.current.suggestions[getSuggestionKey('inst-1', 'f-1')].status,
-    ).toBe('accepted');
-    await waitFor(() =>
-      expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-1', 'Y'),
-    );
-  });
-
-  it('does NOT call AISuggestionService.rejectSuggestion either', async () => {
-    const onRejected = vi.fn();
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        projectId: 'proj-1',
-        instanceIds: ['inst-1'],
-        runId: 'qa-run',
-        acceptStrategy: 'human-proposal',
-        onSuggestionRejected: onRejected,
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
-    );
-
-    await act(async () => {
-      await result.current.rejectSuggestion('inst-1', 'f-1');
-    });
-
-    expect(AISuggestionService.rejectSuggestion).not.toHaveBeenCalled();
-    expect(
-      result.current.suggestions[getSuggestionKey('inst-1', 'f-1')].status,
-    ).toBe('rejected');
-    await waitFor(() =>
-      expect(onRejected).toHaveBeenCalledWith('inst-1', 'f-1'),
-    );
   });
 });
 
@@ -508,12 +323,11 @@ describe('useAISuggestions — selectSuggestion (accept-by-proposal-id)', () => 
     });
   });
 
-  it('accepts the CHOSEN proposal id (not the in-state latest) and bubbles its value', async () => {
+  it('pins the CHOSEN version locally and bubbles its value', async () => {
     const onAccepted = vi.fn();
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         instanceIds: ['inst-1'],
         runId: 'run-active',
         onSuggestionAccepted: onAccepted,
@@ -527,14 +341,6 @@ describe('useAISuggestions — selectSuggestion (accept-by-proposal-id)', () => 
       await result.current.selectSuggestion('inst-1', 'f-1', 'p-older', 5, 0.7);
     });
 
-    expect(AISuggestionService.acceptSuggestion).toHaveBeenCalledTimes(1);
-    const call = (AISuggestionService.acceptSuggestion as any).mock.calls[0][0];
-    // The chosen id + the chosen version's own confidence, NOT the latest
-    // 'proposal-inst-1-f-1' / its 0.5 confidence.
-    expect(call.suggestionId).toBe('p-older');
-    expect(call.runId).toBe('run-active');
-    expect(call.value).toBe(5);
-    expect(call.confidence).toBe(0.7);
     await waitFor(() =>
       expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-1', 5),
     );
@@ -548,15 +354,13 @@ describe('useAISuggestions — selectSuggestion (accept-by-proposal-id)', () => 
     expect(updated.confidence).toBe(0.7);
   });
 
-  it('human-proposal strategy bubbles a (possibly null) value without a ReviewerDecision write', async () => {
+  it('bubbles a (possibly null) "no information" selection', async () => {
     const onAccepted = vi.fn();
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         instanceIds: ['inst-1'],
         runId: 'qa-run',
-        acceptStrategy: 'human-proposal',
         onSuggestionAccepted: onAccepted,
       }),
     );
@@ -569,7 +373,6 @@ describe('useAISuggestions — selectSuggestion (accept-by-proposal-id)', () => 
       await result.current.selectSuggestion('inst-1', 'f-1', 'p-noinfo', null, 0);
     });
 
-    expect(AISuggestionService.acceptSuggestion).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-1', null),
     );
@@ -584,7 +387,6 @@ describe('useAISuggestions — getSuggestionsHistory', () => {
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         instanceIds: ['inst-1'],
       }),
     );
@@ -614,9 +416,7 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         instanceIds: ['inst-1'],
-        acceptStrategy: 'human-proposal',
       }),
     );
 
@@ -633,9 +433,7 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         instanceIds: ['inst-1'],
-        acceptStrategy: 'human-proposal',
       }),
     );
     await waitFor(() =>
@@ -666,9 +464,7 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         instanceIds: ['inst-1'],
-        acceptStrategy: 'human-proposal',
       }),
     );
     await waitFor(() =>
@@ -689,9 +485,7 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
     const { result } = renderHook(() =>
       useAISuggestions({
         articleId: 'art-1',
-        projectId: 'proj-1',
         instanceIds: ['inst-1'],
-        acceptStrategy: 'human-proposal',
       }),
     );
 

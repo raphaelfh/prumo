@@ -267,13 +267,11 @@ export default function QualityAssessmentFullScreen() {
     });
 
   // AI suggestions wiring — kind-agnostic hooks reused from Data
-  // Extraction. Two key adaptations for QA:
-  //  - ``runId`` scopes the suggestion query so a parallel extraction
-  //    run on the same article doesn't leak in.
-  //  - ``acceptStrategy: 'human-proposal'`` keeps the run in PROPOSAL
-  //    (no ReviewerDecision write). Accept just bubbles the value to
-  //    ``handleValueChange``, which records a fresh ``human`` proposal
-  //    via the existing form pipeline.
+  // Extraction. ``runId`` scopes the suggestion query so a parallel
+  // extraction run on the same article doesn't leak in. Accept/reject
+  // never write from the hook: the value bubbles to ``handleValueChange``,
+  // and QA's autosave records it as a ``human`` proposal (until D8 flips
+  // QA onto the decisions write path).
   const sessionInstanceIds = Object.values(session?.instancesByEntityType ?? {});
 
   const {
@@ -286,10 +284,8 @@ export default function QualityAssessmentFullScreen() {
     refresh: refreshAISuggestions,
   } = useAISuggestions({
     articleId: articleId ?? "",
-    projectId: projectId ?? "",
     runId: session?.runId,
     instanceIds: sessionInstanceIds,
-    acceptStrategy: "human-proposal",
     enabled: !!session,
     onSuggestionAccepted: (instanceId, fieldId, value) => {
       handleValueChange(instanceId, fieldId, value);

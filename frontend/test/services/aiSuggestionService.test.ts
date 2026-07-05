@@ -4,16 +4,7 @@ vi.mock('@/integrations/api', () => ({
   apiClient: vi.fn(),
 }));
 
-vi.mock('@/services/extractionValueService', () => ({
-  ExtractionValueService: {
-    findActiveRun: vi.fn(),
-    acceptProposal: vi.fn(async () => undefined),
-    rejectValue: vi.fn(async () => undefined),
-  },
-}));
-
 import { AISuggestionService } from '@/services/aiSuggestionService';
-import { ExtractionValueService } from '@/services/extractionValueService';
 import { apiClient } from '@/integrations/api';
 
 // ---------------------------------------------------------------------------
@@ -39,102 +30,6 @@ function makeItem(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-});
-
-// ---------------------------------------------------------------------------
-// acceptSuggestion / rejectSuggestion — delegate to ExtractionValueService
-// ---------------------------------------------------------------------------
-
-describe('AISuggestionService.acceptSuggestion', () => {
-  it('uses the provided runId without calling findActiveRun', async () => {
-    await AISuggestionService.acceptSuggestion({
-      suggestionId: 'proposal-1',
-      projectId: 'proj-1',
-      articleId: 'art-1',
-      instanceId: 'inst-1',
-      fieldId: 'field-1',
-      value: 'X',
-      confidence: 0.9,
-      reviewerId: 'user-1',
-      runId: 'run-explicit',
-    });
-    expect(ExtractionValueService.findActiveRun).not.toHaveBeenCalled();
-    expect(ExtractionValueService.acceptProposal).toHaveBeenCalledWith(
-      'run-explicit',
-      'inst-1',
-      'field-1',
-      'proposal-1',
-    );
-  });
-
-  it('falls back to findActiveRun when no runId is supplied', async () => {
-    (ExtractionValueService.findActiveRun as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      id: 'run-fallback',
-      stage: 'extract',
-      status: 'running',
-      template_id: 'tpl-1',
-    });
-    await AISuggestionService.acceptSuggestion({
-      suggestionId: 'proposal-1',
-      projectId: 'proj-1',
-      articleId: 'art-1',
-      instanceId: 'inst-1',
-      fieldId: 'field-1',
-      value: 'X',
-      confidence: 0.9,
-      reviewerId: 'user-1',
-    });
-    expect(ExtractionValueService.findActiveRun).toHaveBeenCalledWith('art-1', null);
-    expect(ExtractionValueService.acceptProposal).toHaveBeenCalledWith(
-      'run-fallback',
-      'inst-1',
-      'field-1',
-      'proposal-1',
-    );
-  });
-});
-
-describe('AISuggestionService.rejectSuggestion', () => {
-  it('uses the provided runId without calling findActiveRun', async () => {
-    await AISuggestionService.rejectSuggestion({
-      suggestionId: 'proposal-1',
-      reviewerId: 'user-1',
-      instanceId: 'inst-1',
-      fieldId: 'field-1',
-      projectId: 'proj-1',
-      articleId: 'art-1',
-      runId: 'run-explicit',
-    });
-    expect(ExtractionValueService.findActiveRun).not.toHaveBeenCalled();
-    expect(ExtractionValueService.rejectValue).toHaveBeenCalledWith(
-      'run-explicit',
-      'inst-1',
-      'field-1',
-    );
-  });
-
-  it('falls back to findActiveRun when no runId is supplied', async () => {
-    (ExtractionValueService.findActiveRun as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      id: 'run-fallback',
-      stage: 'extract',
-      status: 'running',
-      template_id: 'tpl-1',
-    });
-    await AISuggestionService.rejectSuggestion({
-      suggestionId: 'proposal-1',
-      reviewerId: 'user-1',
-      instanceId: 'inst-1',
-      fieldId: 'field-1',
-      projectId: 'proj-1',
-      articleId: 'art-1',
-    });
-    expect(ExtractionValueService.findActiveRun).toHaveBeenCalledWith('art-1', null);
-    expect(ExtractionValueService.rejectValue).toHaveBeenCalledWith(
-      'run-fallback',
-      'inst-1',
-      'field-1',
-    );
-  });
 });
 
 // ---------------------------------------------------------------------------

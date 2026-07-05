@@ -241,11 +241,9 @@ function ExtractionHarness(cfg: ExtractionHarnessConfig) {
   const { values, fill } = useFormValues();
   const hook = useAISuggestions({
     articleId: 'a',
-    projectId: 'p',
     enabled: true,
     runId: 'r',
     instanceIds: cfg.instanceIds,
-    acceptStrategy: 'human-proposal',
     onSuggestionAccepted: (i, f, v) => fill(i, f, v),
     onSuggestionRejected: (i, f) => fill(i, f, null),
   });
@@ -275,11 +273,9 @@ function QAHarness() {
   const { values, fill } = useFormValues();
   const hook = useAISuggestions({
     articleId: 'a',
-    projectId: 'p',
     enabled: true,
     runId: 'r',
     instanceIds: ['inst-1'],
-    acceptStrategy: 'human-proposal',
     onSuggestionAccepted: (i, f, v) => fill(i, f, v),
     onSuggestionRejected: (i, f) => fill(i, f, null),
   });
