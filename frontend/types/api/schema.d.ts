@@ -2298,8 +2298,6 @@ export interface components {
             rationale?: string | null;
             /** Source */
             source: string;
-            /** Source User Id */
-            source_user_id?: string | null;
         };
         /** CreateRunRequest */
         CreateRunRequest: {
