@@ -26,6 +26,7 @@ import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import type {ExtractionCopy} from '@/lib/copy/extraction';
 import {useCopyToClipboard} from '@/hooks/useCopyToClipboard';
+import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {useArticleContentMarkdown} from '@/hooks/extraction/useArticleContentMarkdown';
 import type {RunProvenance} from '@/types/ai-extraction';
 
@@ -223,10 +224,20 @@ export function GenerationDetailsDialog({
   open,
   onOpenChange,
 }: GenerationDetailsDialogProps) {
+  // D3 display consistency: the "Ran by" surfaces follow the same
+  // peer-identity gate as the popover run headers (fail-closed). The dialog
+  // renders inside the run provider's React tree, so context crosses the
+  // portal.
+  const {showPeerIdentity} = useRunEditability();
   const composition = provenance.promptComposition;
-  const contextParts = [composition?.sectionName, provenance.ranByName].filter(Boolean) as string[];
+  const contextParts = [
+    composition?.sectionName,
+    showPeerIdentity ? provenance.ranByName : undefined,
+  ].filter(Boolean) as string[];
 
-  const scalarRows = SCALAR_FIELDS.filter((f) => isPresent(provenance[f.key]));
+  const scalarRows = SCALAR_FIELDS.filter(
+    (f) => (f.key !== 'ranByName' || showPeerIdentity) && isPresent(provenance[f.key]),
+  );
   const genericKeys = Object.keys(provenance).filter(
     (k) => !SCALAR_KEYS.has(k) && !SUPPRESSED_KEYS.has(k) && isPresent(provenance[k]),
   );

@@ -2,7 +2,19 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
+// Template-preserving echo for the attribution keys so the `{{name}}`
+// substitution (the core of D3) is actually exercised; everything else
+// key-echoes as before.
+vi.mock('@/lib/copy', () => ({
+  t: (_ns: string, key: string) =>
+    ((
+      {
+        reviewAdoptedBy: 'Adopted by {{name}}',
+        reviewEditedBy: 'Edited by {{name}}',
+        reviewRunBy: 'Run by {{name}}',
+      } as Record<string, string>
+    )[key] ?? key),
+}));
 
 import { AISuggestionReviewPopover } from './AISuggestionReviewPopover';
 import { RunEditabilityProvider } from '@/components/runs/RunEditabilityContext';
@@ -89,6 +101,143 @@ describe('AISuggestionReviewPopover', () => {
     const clearBtn = await screen.findByRole('button', { name: /reviewClear/ });
     await user.click(clearBtn);
     expect(onClear).toHaveBeenCalled();
+  });
+});
+
+describe('AISuggestionReviewPopover — consensus reuse (D2/D3)', () => {
+  it('renders no Use-this-version action when onSelect is absent', async () => {
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({ id: 'p2' }), v({ id: 'p1' })]}
+        selectedProposalId="p1"
+        trigger={<button>open</button>}
+      />,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findAllByText('Retrospective cohort');
+    expect(
+      screen.queryByRole('button', { name: /reviewUseThisVersion/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('title override + adoption chip: equal value → Adopted by, edited → Edited by', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({ id: 'p1', value: 'Retrospective cohort' })]}
+        selectedProposalId="p1"
+        title="AI used by Ana"
+        adoption={{
+          reviewerLabel: 'Ana',
+          decisionValue: { value: 'Retrospective cohort' },
+          decisionKind: 'edit',
+        }}
+        trigger={<button>open</button>}
+      />,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findByText('AI used by Ana');
+    expect(screen.getByText('Adopted by Ana')).toBeInTheDocument();
+    unmount();
+
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({ id: 'p1', value: 'Retrospective cohort' })]}
+        selectedProposalId="p1"
+        title="AI used by Ana"
+        adoption={{
+          reviewerLabel: 'Ana',
+          decisionValue: { value: 'edited afterwards' },
+          decisionKind: 'edit',
+        }}
+        trigger={<button>open</button>}
+      />,
+    );
+    await user.click(screen.getByText('open'));
+    expect(await screen.findByText('Edited by Ana')).toBeInTheDocument();
+  });
+
+  it('accept_proposal decisions (value=null by contract) always read Adopted by', async () => {
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({ id: 'p1' })]}
+        selectedProposalId="p1"
+        adoption={{ reviewerLabel: 'Ana', decisionValue: null, decisionKind: 'accept_proposal' }}
+        trigger={<button>open</button>}
+      />,
+    );
+    await user.click(screen.getByText('open'));
+    expect(await screen.findByText('Adopted by Ana')).toBeInTheDocument();
+  });
+
+  it('cross-marks versions other reviewers adopted', async () => {
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({ id: 'p2' }), v({ id: 'p1' })]}
+        selectedProposalId="p1"
+        adoptionByProposalId={{ p2: 'Bruno' }}
+        trigger={<button>open</button>}
+      />,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findAllByText('Retrospective cohort');
+    expect(screen.getByText('Adopted by Bruno')).toBeInTheDocument();
+  });
+});
+
+describe('AISuggestionReviewPopover — ran-by run headers (D3)', () => {
+  const historyWithRanBy = [
+    v({ id: 'p1', provenance: { ranByName: 'Carla' } }),
+    v({ id: 'p0', runId: 'run-legacy', timestamp: new Date('2026-04-27T09:00:00Z') }),
+  ];
+
+  it('shows Run by {name} when the provider grants peer identity', async () => {
+    const user = userEvent.setup();
+    render(
+      <RunEditabilityProvider stage="consensus" showPeerIdentity>
+        <AISuggestionReviewPopover
+          instanceId="i"
+          fieldId="f"
+          getHistory={async () => historyWithRanBy}
+          selectedProposalId="p1"
+          trigger={<button>open</button>}
+        />
+      </RunEditabilityProvider>,
+    );
+    await user.click(screen.getByText('open'));
+    expect(await screen.findByText(/Run by Carla/)).toBeInTheDocument();
+    // The legacy run group (no provenance) stays timestamp-only.
+    expect(screen.getByText(/04\/27\/2026/)).toBeInTheDocument();
+  });
+
+  it('stays timestamp-only without the identity grant — including provider-less renders (fail-closed)', async () => {
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => historyWithRanBy}
+        selectedProposalId="p1"
+        onSelect={vi.fn()}
+        trigger={<button>open</button>}
+      />,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findAllByText('Retrospective cohort');
+    expect(screen.queryByText(/Run by Carla/)).not.toBeInTheDocument();
   });
 });
 

@@ -849,6 +849,10 @@ export const extraction = {
     reviewDetails: 'Details',
     reviewOpenFromValue: 'Open review · see other versions, evidence and provenance',
     reviewPinNotInHistory: 'The adopted version is older than the loaded history.',
+    // Consensus-trace attribution (D3) — pinned-row chip + cross-marks + run headers
+    reviewAdoptedBy: 'Adopted by {{name}}',
+    reviewEditedBy: 'Edited by {{name}}',
+    reviewRunBy: 'Run by {{name}}',
     // Runtime disposition control (ADR-0016) — set a "no value, on purpose" answer
     // on any field type when the source is silent / the item does not apply.
     dispositionNoInformation: 'No information',
