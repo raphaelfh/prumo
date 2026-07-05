@@ -34,9 +34,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { ConsensusOverrideEditor } from '@/components/runs/ConsensusOverrideEditor';
+import { ReviewerAITrace } from '@/components/runs/ReviewerAITrace';
 import type { FieldValueEditorField } from '@/components/extraction/FieldValueEditor';
 import type { CoordStatus, ResolvedConsensusLike } from '@/lib/runs/reconciliation';
 import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
+import type { AISuggestion, AISuggestionHistoryItem } from '@/types/ai-extraction';
 import { t } from '@/lib/copy';
 import { absentReasonLabel } from '@/lib/extraction/absentReasonLabel';
 import { unwrapValueEnvelope } from '@/lib/extraction/valueSemantics';
@@ -71,11 +73,29 @@ export interface ComparisonInstance {
 }
 
 /**
+ * Consensus AI-trace wiring (spec 2026-07-04 D1-D4): everything a reviewer
+ * cell needs to mount `ReviewerAITrace`. Lives on the resolution object so
+ * trace affordances exist ONLY in resolve mode.
+ */
+export interface ConsensusTraceContext {
+  articleId: string;
+  getHistory: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
+  /**
+   * Screen's suggestions map keyed `${instanceId}_${fieldId}` — the D4
+   * AI-existence signal. `null` while suggestions are loading/failed so a
+   * transient error can't mislabel decisions as "Manual".
+   */
+  aiSuggestions: Record<string, AISuggestion> | null;
+}
+
+/**
  * Resolve-mode wiring. Absent ⇒ read-only compare (unchanged). The status/
  * resolved maps come from `deriveConsensusResolution`; the callbacks are the
  * page's consensus mutations (which envelope the value + refetch).
  */
 export interface ComparisonResolution {
+  /** Present ⇒ reviewer cells render the per-cell AI trace (D1/D4). */
+  trace?: ConsensusTraceContext;
   statusByCoord: ReadonlyMap<string, CoordStatus>;
   resolvedByCoord: ReadonlyMap<string, ResolvedConsensusLike>;
   needsAttentionCount: number;
@@ -111,6 +131,29 @@ export interface RunReviewerComparisonProps {
 
 const peerKey = (instanceId: string, fieldId: string) => `${instanceId}::${fieldId}`;
 const ownKey = (instanceId: string, fieldId: string) => `${instanceId}_${fieldId}`;
+
+/**
+ * D3 cross-marking input: proposal id → the OTHER reviewers (label, joined)
+ * whose current decision adopted it. Excludes the cell's own reviewer (their
+ * adoption is the popover's pinned-row chip) and rejects.
+ */
+function buildAdoptionMap(
+  peers: ReviewerDecisionResponse[],
+  excludeReviewerId: string,
+  labelById: Record<string, string>,
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const d of peers) {
+    if (d.reviewer_id === excludeReviewerId || !d.proposal_record_id || d.decision === 'reject') {
+      continue;
+    }
+    const label = labelById[d.reviewer_id] ?? d.reviewer_id;
+    map[d.proposal_record_id] = map[d.proposal_record_id]
+      ? `${map[d.proposal_record_id]}, ${label}`
+      : label;
+  }
+  return map;
+}
 
 function displayValue(raw: unknown): string {
   // A coded disposition marker renders as its human label ("No information"), so a
@@ -408,6 +451,7 @@ function ResolveTable({
                     columnCount={columnCount}
                     onSelectExisting={resolution.onSelectExisting}
                     onManualOverride={resolution.onManualOverride}
+                    trace={resolution.trace}
                   />
                 ))}
               </tbody>
@@ -431,6 +475,7 @@ function ResolveRow({
   columnCount,
   onSelectExisting,
   onManualOverride,
+  trace,
 }: {
   row: FlatRow;
   peers: ReviewerDecisionResponse[];
@@ -445,6 +490,7 @@ function ResolveRow({
   columnCount: number;
   onSelectExisting: ComparisonResolution['onSelectExisting'];
   onManualOverride: ComparisonResolution['onManualOverride'];
+  trace?: ConsensusTraceContext;
 }) {
   const [editing, setEditing] = useState(false);
   const [overrideOpen, setOverrideOpen] = useState(false);
@@ -499,7 +545,24 @@ function ResolveRow({
                 </span>
               ) : decision ? (
                 <span className="flex flex-col items-start gap-1">
-                  <span>{displayValue(decision.value)}</span>
+                  <span className="flex items-center gap-1">
+                    <span>{displayValue(decision.value)}</span>
+                    {trace ? (
+                      <ReviewerAITrace
+                        decision={decision}
+                        field={row.field}
+                        articleId={trace.articleId}
+                        getHistory={trace.getHistory}
+                        reviewerLabel={reviewerLabelById[rid] ?? rid}
+                        adoptionByProposalId={buildAdoptionMap(peers, rid, reviewerLabelById)}
+                        hasAISuggestion={
+                          trace.aiSuggestions
+                            ? !!trace.aiSuggestions[ownKey(row.instanceId, row.field.id)]
+                            : null
+                        }
+                      />
+                    ) : null}
+                  </span>
                   {showActions ? (
                     <Button
                       variant="outline"

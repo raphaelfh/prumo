@@ -13,6 +13,7 @@ import {
   RunReviewerComparison,
   type ComparisonEntityType,
   type ComparisonInstance,
+  type ConsensusTraceContext,
 } from '@/components/runs/RunReviewerComparison';
 import { deriveConsensusResolution } from '@/lib/runs/reconciliation';
 import { t } from '@/lib/copy';
@@ -36,6 +37,9 @@ export interface ConsensusResolutionPanelProps {
   peersRevealed: boolean;
   /** Whether this caller may resolve (arbitrator for extraction; reviewer for QA). */
   canResolve: boolean;
+  /** Per-cell AI trace wiring (spec 2026-07-04 D1-D4); forwarded into the
+   *  resolve-mode table. Omit to render the table without trace affordances. */
+  trace?: ConsensusTraceContext;
   onSelectExisting: (p: {
     instanceId: string;
     fieldId: string;
@@ -65,6 +69,7 @@ export function ConsensusResolutionPanel({
   isFinalizing,
   peersRevealed,
   canResolve,
+  trace,
   onSelectExisting,
   onManualOverride,
   onFinalize,
@@ -117,6 +122,7 @@ export function ConsensusResolutionPanel({
                 peersRevealed,
                 onSelectExisting,
                 onManualOverride,
+                trace,
               }
             : undefined
         }

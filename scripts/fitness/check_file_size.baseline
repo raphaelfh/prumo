@@ -7,5 +7,5 @@ frontend/components/articles/ArticleForm.tsx:1272
 frontend/components/articles/ArticlesList.tsx:1360
 frontend/components/extraction/ArticleExtractionTable.tsx:1130
 frontend/lib/copy/extraction.ts:933
-frontend/pages/ExtractionFullScreen.tsx:1332
-frontend/pages/QualityAssessmentFullScreen.tsx:832
+frontend/pages/ExtractionFullScreen.tsx:1341
+frontend/pages/QualityAssessmentFullScreen.tsx:840

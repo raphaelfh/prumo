@@ -276,6 +276,7 @@ export default function QualityAssessmentFullScreen() {
 
   const {
     suggestions: aiSuggestions,
+    suggestionsReady: aiSuggestionsReady,
     acceptSuggestion: acceptAISuggestion,
     selectSuggestion: selectAISuggestion,
     rejectSuggestion: rejectAISuggestion,
@@ -722,6 +723,13 @@ export default function QualityAssessmentFullScreen() {
           // QA consensus is reviewer-level self-publish (backend excludes
           // viewers via ensure_project_reviewer) — parity with the old panel.
           canResolve
+          // Per-cell AI trace (D1-D4). QA decisionsByCoord stays empty until
+          // PR 2 (D8) creates real QA decisions; the wiring is ready for it.
+          trace={{
+            articleId: articleId ?? "",
+            getHistory: (i, f) => getAISuggestionsHistory(i, f, 50),
+            aiSuggestions: aiSuggestionsReady ? aiSuggestions : null,
+          }}
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}
           onFinalize={handleFinalizeFromConsensus}

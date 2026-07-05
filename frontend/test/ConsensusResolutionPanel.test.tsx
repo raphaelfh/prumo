@@ -23,7 +23,7 @@ const dec = (over: Partial<ReviewerDecisionResponse>): ReviewerDecisionResponse 
   field_id: over.field_id ?? 'field-1',
   reviewer_id: over.reviewer_id ?? 'user-a',
   decision: over.decision ?? 'edit',
-  proposal_record_id: null,
+  proposal_record_id: over.proposal_record_id ?? null,
   value: over.value ?? null,
   rationale: null,
   created_at: over.created_at ?? '2026-04-28T10:00:00Z',
@@ -168,5 +168,23 @@ describe('ConsensusResolutionPanel', () => {
     expect(screen.queryByTestId('consensus-finalize-button')).not.toBeInTheDocument();
     // Read-only compare surface is present.
     expect(screen.getByText('youLabel')).toBeInTheDocument();
+  });
+
+  it('forwards the trace context into the resolve table (icon on linked cells)', () => {
+    const linked = [
+      dec({ id: 'dec-a', reviewer_id: 'user-a', proposal_record_id: 'p1', value: { value: 'Yes' } }),
+      dec({ id: 'dec-b', reviewer_id: 'user-b', value: { value: 'No' } }),
+    ];
+    render(
+      <ConsensusResolutionPanel
+        {...baseProps}
+        summary={{ ...summary, decisionsByCoord: new Map([['inst-1::field-1', linked]]) }}
+        runDetail={makeRunDetail([])}
+        canResolve
+        trace={{ articleId: 'a1', getHistory: async () => [], aiSuggestions: {} }}
+      />,
+    );
+    // user-a's linked cell gets the trace icon (aria-label = traceTitle key-echo).
+    expect(screen.getByRole('button', { name: 'traceTitle' })).toBeInTheDocument();
   });
 });

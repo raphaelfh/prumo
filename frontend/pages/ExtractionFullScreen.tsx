@@ -383,6 +383,7 @@ export default function ExtractionFullScreen() {
   const {
     suggestions: aiSuggestions,
     sessionAdoption,
+    suggestionsReady: aiSuggestionsReady,
     acceptSuggestion,
     selectSuggestion,
     rejectSuggestion,
@@ -1157,6 +1158,14 @@ export default function ExtractionFullScreen() {
           reviewerLabelById={reviewerProfiles.labelById}
           reviewerAvatarById={reviewerProfiles.avatarById}
           canResolve={permissions.canResolveConflicts}
+          // Per-cell AI trace (D1-D4): deeper history window (50) so adopted
+          // versions rarely fall outside it; a not-yet-loaded/failed
+          // suggestions map passes null so no cell mislabels as Manual.
+          trace={{
+            articleId: articleId || '',
+            getHistory: (i, f) => getSuggestionsHistory(i, f, 50),
+            aiSuggestions: aiSuggestionsReady ? aiSuggestions : null,
+          }}
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}
           onFinalize={handleApproveFinalize}
