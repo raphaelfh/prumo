@@ -97,6 +97,11 @@ export const consensus = {
         'Why publish a value none of the reviewers picked?',
     panelPublishOverride: 'Publish override',
 
+    // Per-cell AI trace (spec 2026-07-04 D1/D4)
+    traceTitle: 'AI used by {{name}}',
+    traceManualChip: 'Manual',
+    traceManualChipTooltip: 'Entered manually — no AI suggestion exists for this field.',
+
     // Resolved-state summary
     resolvedFromReviewer: 'from {{reviewer}}',
     resolvedCustom: 'custom value',
