@@ -292,18 +292,17 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
    * the form-popover depth; the consensus trace passes 50 so an adopted
    * version is less likely to fall outside the loaded window (the popover
    * shows an explicit notice when it still does — D5). Backend caps at 100.
+   *
+   * Failures propagate: the review popover owns the error surface (an inline
+   * "couldn't load" state) — swallowing to [] here would render a definitive
+   * "No versions" on an audit surface after a throttled/failed fetch.
    */
-  const getSuggestionsHistory = async (
+  const getSuggestionsHistory = (
     instanceId: string,
     fieldId: string,
     limit = 10,
   ): Promise<AISuggestionHistoryItem[]> =>
-    AISuggestionService.getHistory(articleId, instanceId, fieldId, limit).catch((err: unknown) => {
-      console.error('Error loading suggestion history:', err);
-      const message = getErrorMessage(err);
-      toast.error(`${t('extraction', 'errors_loadSuggestionsHistory')}: ${message}`);
-      return [] as AISuggestionHistoryItem[];
-    });
+    AISuggestionService.getHistory(articleId, instanceId, fieldId, limit);
 
   /**
    * Returns the latest suggestion for a field (if present in local state)

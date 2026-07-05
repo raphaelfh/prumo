@@ -297,6 +297,9 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState<AISuggestionHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
+  // A failed/throttled fetch must not read as a definitive "No versions" on
+  // an audit surface — it gets its own inline state.
+  const [historyError, setHistoryError] = useState(false);
   // Optimistic local selection so the highlight follows clicks within a session;
   // seeded from the prop (the active accept_proposal decision / newest).
   const [localSelected, setLocalSelected] = useState<string | undefined>(undefined);
@@ -325,11 +328,13 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
     // synchronous-setState-in-effect cascade lint; mirrors the old popover.
     queueMicrotask(() => {
       setLoading(true);
+      setHistoryError(false);
       void getHistory(instanceId, fieldId)
         .then((data) => setHistory(data))
         .catch((err: unknown) => {
           console.error('[AISuggestionReviewPopover] Error loading history:', err);
           setHistory([]);
+          setHistoryError(true);
         })
         .finally(() => setLoading(false));
     });
@@ -407,6 +412,10 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
       >
         {loading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">…</div>
+        ) : historyError ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            {t('extraction', 'reviewHistoryError')}
+          </div>
         ) : history.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">
             {t('extraction', 'reviewNoVersions')}

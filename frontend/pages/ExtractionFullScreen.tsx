@@ -361,6 +361,14 @@ export default function ExtractionFullScreen() {
   // extraction completes. See usePreserveScroll for the rAF dance.
   const preserveScroll = usePreserveScroll(SCROLL_CONTAINERS_TO_PRESERVE);
 
+    // Permissions hook (controls comparison access + the viewer write gate) —
+    // declared before the autosave hook, whose `enabled` reads the role.
+  const permissions = useComparisonPermissions(
+    projectId || '',
+    currentUserId,
+    'extraction'
+  );
+
     // Hook for AI suggestions with callbacks to fill/clear field. Declared
     // BEFORE useAutoSaveProposals: autosave consumes aiLinkByKey (below),
     // which derives from this hook's sessionAdoption.
@@ -465,7 +473,13 @@ export default function ExtractionFullScreen() {
     // opening a consolidated run. Mirrors the QA full-screen gate;
     // ``!isFinalized`` alone let ``consensus`` through.
     enabled:
-      !!activeRunId && !loading && valuesInitialized && isRunEditable(stage),
+      !!activeRunId &&
+      !loading &&
+      valuesInitialized &&
+      isRunEditable(stage) &&
+      // Viewer writes 403 server-side; never fire them (forms render
+      // read-only via forceReadOnly, this is the flush-path belt).
+      permissions.userRole !== 'viewer',
   });
 
     // "Finish extraction" (reviewer) — flush pending autosave, set the per-reviewer
@@ -507,13 +521,6 @@ export default function ExtractionFullScreen() {
     if (!ok) return;
     await refetchRun().catch(() => undefined);
   };
-
-    // Permissions hook (controls comparison access) — extraction screen.
-  const permissions = useComparisonPermissions(
-    projectId || '',
-    currentUserId,
-    'extraction'
-  );
 
     // Other reviewers' values for the compare view come from the shared,
     // server-blinded runDetail (reviewerSummary.decisionsByCoord) — no
@@ -1243,6 +1250,7 @@ export default function ExtractionFullScreen() {
     <RunEditabilityProvider
       stage={stage}
       showPeerIdentity={!!runDetail?.peers_revealed || permissions.canSeeOthers}
+      forceReadOnly={permissions.userRole === 'viewer'}
     >
       {extractionFormPanelInner}
     </RunEditabilityProvider>

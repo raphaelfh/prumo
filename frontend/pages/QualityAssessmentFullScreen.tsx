@@ -263,7 +263,12 @@ export default function QualityAssessmentFullScreen() {
       values,
       baselineValues: loadedValues,
       enabled:
-        !!session && !!runDetail && isRunEditable(runDetail.run.stage),
+        !!session &&
+        !!runDetail &&
+        isRunEditable(runDetail.run.stage) &&
+        // Viewer writes 403 server-side; never fire them (forms render
+        // read-only via forceReadOnly, this is the flush-path belt).
+        permissions.userRole !== "viewer",
     });
 
   // AI suggestions wiring — kind-agnostic hooks reused from Data
@@ -695,6 +700,7 @@ export default function QualityAssessmentFullScreen() {
     <RunEditabilityProvider
       stage={runDetail?.run.stage ?? null}
       showPeerIdentity={!!runDetail?.peers_revealed || permissions.canSeeOthers}
+      forceReadOnly={permissions.userRole === "viewer"}
     >
     <div className="space-y-3 p-4" data-testid="qa-form-panel">
       {error ? (

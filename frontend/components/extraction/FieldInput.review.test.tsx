@@ -37,6 +37,7 @@ vi.mock('@/hooks/extraction/useJustUpdatedValue', () => ({
 }));
 
 import FieldInput from '@/components/extraction/FieldInput';
+import { RunEditabilityProvider } from '@/components/runs/RunEditabilityContext';
 
 const FIELD = {
   id: 'field-1',
@@ -87,5 +88,25 @@ describe('FieldInput — unified review popover wiring', () => {
     render(<FieldInput {...props({ onRejectAI })} />);
     fireEvent.click(screen.getByTestId('do-clear'));
     expect(onRejectAI).toHaveBeenCalled();
+  });
+
+  it('forceReadOnly (viewer role) disables the input even in the editable stage', () => {
+    // The backend 403s viewer writes; the provider's viewer gate must render
+    // the form read-only instead of letting keystrokes fire doomed autosaves.
+    render(
+      <RunEditabilityProvider stage="extract" forceReadOnly>
+        <FieldInput {...props()} />
+      </RunEditabilityProvider>,
+    );
+    expect(screen.getByDisplayValue('Retrospective cohort')).toBeDisabled();
+  });
+
+  it('positive control: the editable stage without the viewer gate stays enabled', () => {
+    render(
+      <RunEditabilityProvider stage="extract">
+        <FieldInput {...props()} />
+      </RunEditabilityProvider>,
+    );
+    expect(screen.getByDisplayValue('Retrospective cohort')).toBeEnabled();
   });
 });

@@ -279,6 +279,26 @@ describe('AISuggestionReviewPopover — pin not in loaded history (D5)', () => {
   });
 });
 
+describe('AISuggestionReviewPopover — history load failure', () => {
+  it('shows an inline error — never a definitive "No versions" (rate-limit honesty)', async () => {
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => {
+          throw new Error('429 too many requests');
+        }}
+        onSelect={vi.fn()}
+        trigger={<button>open</button>}
+      />,
+    );
+    await user.click(screen.getByText('open'));
+    expect(await screen.findByText('reviewHistoryError')).toBeInTheDocument();
+    expect(screen.queryByText('reviewNoVersions')).not.toBeInTheDocument();
+  });
+});
+
 describe('AISuggestionReviewPopover — read-only run', () => {
   it('hides Use-this-version and Clear (audit-only popover)', async () => {
     const user = userEvent.setup();

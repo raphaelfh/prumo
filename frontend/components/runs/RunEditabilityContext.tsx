@@ -28,13 +28,24 @@ const RunEditabilityCtx = createContext<RunEditabilityValue>(DEFAULT);
 export function RunEditabilityProvider({
   stage,
   showPeerIdentity = false,
+  forceReadOnly = false,
   children,
 }: {
   stage: string | null | undefined;
   showPeerIdentity?: boolean;
+  /**
+   * Read-only regardless of stage — the viewer-role gate. The backend 403s
+   * viewer writes (ensure_project_reviewer on the run write endpoints), so
+   * a viewer session must render read-only instead of turning every
+   * keystroke into a failing autosave.
+   */
+  forceReadOnly?: boolean;
   children: ReactNode;
 }) {
-  const value = { readOnly: !isRunEditable(stage), showPeerIdentity };
+  const value = {
+    readOnly: forceReadOnly || !isRunEditable(stage),
+    showPeerIdentity,
+  };
   return <RunEditabilityCtx.Provider value={value}>{children}</RunEditabilityCtx.Provider>;
 }
 
