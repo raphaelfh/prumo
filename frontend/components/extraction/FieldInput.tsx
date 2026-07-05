@@ -23,7 +23,6 @@ import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 import {AISuggestionDisplay, type AISuggestionReviewBinding} from './ai/AISuggestionDisplay';
-import {AISuggestionBadge} from './ai/AISuggestionBadge';
 import {AISuggestionReviewPopover} from './ai/AISuggestionReviewPopover';
 import {FieldValueEditor} from './FieldValueEditor';
 import {isEmptyValue, isValidNumber} from '@/lib/ai-extraction/valueParser';
@@ -283,15 +282,6 @@ export function FieldInput(props: FieldInputProps) {
           </div>
           
           <div className="flex items-center gap-1 shrink-0">
-              {/* Badge + Info on the right of input (pending or accepted
-                  suggestion) — hidden on read-only runs (published view). */}
-          {!readOnly && aiSuggestion &&
-           (aiSuggestion.status === 'pending' || aiSuggestion.status === 'accepted') && (
-            <AISuggestionBadge
-              suggestion={aiSuggestion}
-            />
-          )}
-
               {/* Single AI trigger: review + select past versions, see how each
                   was generated, locate evidence, or clear. Replaces the old
                   split history + details popovers. */}

@@ -29,9 +29,6 @@ vi.mock('@/components/extraction/ai/AISuggestionReviewPopover', () => ({
 vi.mock('@/components/extraction/ai/AISuggestionDisplay', () => ({
   AISuggestionDisplay: () => <div data-testid="ai-display" />,
 }));
-vi.mock('@/components/extraction/ai/AISuggestionBadge', () => ({
-  AISuggestionBadge: () => null,
-}));
 vi.mock('@/hooks/extraction/useJustUpdatedValue', () => ({
   useJustUpdatedValue: () => false,
 }));
