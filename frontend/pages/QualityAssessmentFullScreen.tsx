@@ -686,7 +686,13 @@ export default function QualityAssessmentFullScreen() {
   const showFormStage = ready && !inConsensusStage;
 
   const formPanel = (
-    <RunEditabilityProvider stage={runDetail?.run.stage ?? null}>
+    // showPeerIdentity (D3): mirrors the extraction screen — identity-visible
+    // callers get "Run by {name}" popover headers; blind reviewers stay
+    // timestamp-only.
+    <RunEditabilityProvider
+      stage={runDetail?.run.stage ?? null}
+      showPeerIdentity={!!runDetail?.peers_revealed || permissions.canSeeOthers}
+    >
     <div className="space-y-3 p-4" data-testid="qa-form-panel">
       {error ? (
         <div

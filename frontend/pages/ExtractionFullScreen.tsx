@@ -1211,7 +1211,13 @@ export default function ExtractionFullScreen() {
     );
 
   const extractionFormPanel = (
-    <RunEditabilityProvider stage={stage}>
+    // showPeerIdentity (D3): auto-revealed consensus / unblinded or manager
+    // extract callers see "Run by {name}" on popover run headers and the
+    // generation dialog's Ran-by rows; blind reviewers keep timestamp-only.
+    <RunEditabilityProvider
+      stage={stage}
+      showPeerIdentity={!!runDetail?.peers_revealed || permissions.canSeeOthers}
+    >
       {extractionFormPanelInner}
     </RunEditabilityProvider>
   );
