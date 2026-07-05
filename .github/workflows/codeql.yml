@@ -2,7 +2,10 @@ name: CodeQL
 
 on:
   push:
-    branches: [main, dev]
+    # main only: every dev commit lands via a PR that was already scanned
+    # by the pull_request trigger below — a second scan on push added
+    # nothing.
+    branches: [main]
   pull_request:
     branches: [dev]
   schedule:
