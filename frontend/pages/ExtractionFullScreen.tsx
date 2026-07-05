@@ -78,6 +78,10 @@ import {usePreserveScroll} from '@/hooks/usePreserveScroll';
 import {t} from '@/lib/copy';
 import {createViewerStore, subscribeReaderLocate} from '@prumo/pdf-viewer';
 
+// Stable empty map so the persisted-links memo (session events excluded)
+// doesn't re-derive on every render.
+const EMPTY_SESSION_ADOPTION: Record<string, string | null> = {};
+
 const SCROLL_CONTAINERS_TO_PRESERVE = [
   // Form panel — actual scroll happens on radix' inner viewport node.
   '[data-scroll-container="extraction-form"] [data-radix-scroll-area-viewport]',
@@ -417,6 +421,18 @@ export default function ExtractionFullScreen() {
       }),
     [runDetail?.decisions, currentUserId, sessionAdoption],
   );
+  // The persisted (layer-1) links only — autosave's link baseline, parallel
+  // to baselineValues: a mount with value+link matching what's persisted is
+  // clean, while a session adoption that only changes the link still writes.
+  const persistedAiLinkByKey = useMemo(
+    () =>
+      deriveAiLinkByKey({
+        decisions: runDetail?.decisions ?? [],
+        currentUserId,
+        sessionAdoption: EMPTY_SESSION_ADOPTION,
+      }),
+    [runDetail?.decisions, currentUserId],
+  );
 
     // Auto-save hook — in the editable `extract` stage this extraction page
     // writes per-user ``ReviewerDecision`` rows (decision='edit'); it never
@@ -439,8 +455,11 @@ export default function ExtractionFullScreen() {
     // Server-loaded values are the baseline — opening a run must not re-POST
     // them as fresh proposals (the re-record-on-mount duplication).
     baselineValues: loadedValues,
-    // D0: stamp edit decisions with the accepted/selected AI proposal id.
+    // D0: stamp edit decisions with the accepted/selected AI proposal id;
+    // the persisted map is the link-side baseline (same-value adoptions
+    // still write — the human selection event is append-only recorded).
     linkByKey: aiLinkByKey,
+    baselineLinkByKey: persistedAiLinkByKey,
     // Only the editable EXTRACT stage accepts autosave writes. Past that
     // (consensus, finalized, pending) the backend rejects writes, which
     // surfaced as a spurious "Error saving data automatically" toast on

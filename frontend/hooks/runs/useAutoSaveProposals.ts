@@ -45,7 +45,7 @@ import { toast } from 'sonner';
 import { writeRunFieldValue } from '@/services/extractionRunService';
 import { t } from '@/lib/copy';
 import { extractValueForSave } from '@/lib/validations/selectOther';
-import { selectDirtyEntries } from '@/lib/extraction/autosaveDirty';
+import { fingerprintCoord, selectDirtyEntries } from '@/lib/extraction/autosaveDirty';
 
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
@@ -95,6 +95,15 @@ export interface UseAutoSaveProposalsProps {
    * lives in the read path. Only consulted on the /decisions branch.
    */
   linkByKey?: Record<string, string>;
+  /**
+   * D0: the PERSISTED link state the form hydrated from (layer-1 of
+   * `deriveAiLinkByKey`, i.e. session events excluded) — the link-side
+   * counterpart of ``baselineValues``. A coord whose value AND link both
+   * equal their baselines is clean on mount; a session adoption that only
+   * changes the link (same value) still dirties the coord so the human
+   * selection event is recorded.
+   */
+  baselineLinkByKey?: Record<string, string>;
 }
 
 export interface UseAutoSaveProposalsReturn {
@@ -130,7 +139,7 @@ function isWritableStage(stage?: string | null): boolean {
 export function useAutoSaveProposals(
   props: UseAutoSaveProposalsProps,
 ): UseAutoSaveProposalsReturn {
-  const { runId, values, enabled = true, debounceMs = 600, stage, kind, baselineValues, linkByKey } =
+  const { runId, values, enabled = true, debounceMs = 600, stage, kind, baselineValues, linkByKey, baselineLinkByKey } =
     props;
 
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -151,6 +160,7 @@ export function useAutoSaveProposals(
   // diff sees the latest hydrated map without re-creating callbacks.
   const baselineRef = useRef<Record<string, unknown>>(baselineValues ?? {});
   const linkByKeyRef = useRef<Record<string, string>>(linkByKey ?? {});
+  const baselineLinkRef = useRef<Record<string, string>>(baselineLinkByKey ?? {});
   useEffect(() => {
     valuesRef.current = values;
     runIdRef.current = runId;
@@ -159,6 +169,7 @@ export function useAutoSaveProposals(
     kindRef.current = kind;
     baselineRef.current = baselineValues ?? {};
     linkByKeyRef.current = linkByKey ?? {};
+    baselineLinkRef.current = baselineLinkByKey ?? {};
   });
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -178,6 +189,8 @@ export function useAutoSaveProposals(
       valuesRef.current,
       lastSavedByKeyRef.current,
       baselineRef.current,
+      linkByKeyRef.current,
+      baselineLinkRef.current,
     );
 
   const performSave = (): Promise<boolean> => {
@@ -244,7 +257,12 @@ export function useAutoSaveProposals(
             absentReason,
             proposalRecordId: linkByKeyRef.current[key] ?? null,
           }).then(() => {
-            lastSavedByKeyRef.current[key] = JSON.stringify(valueData ?? null);
+            // Acknowledge value AND link together (the D0 fingerprint) so a
+            // later link-only adoption re-dirties the coord.
+            lastSavedByKeyRef.current[key] = fingerprintCoord(
+              valueData,
+              linkByKeyRef.current[key],
+            );
           });
         }),
       ).then((results) => {
@@ -303,7 +321,9 @@ export function useAutoSaveProposals(
   // debounce). Keyed by content, not identity: callers may rebuild the
   // values map every render, and an identity-keyed adjustment would
   // re-render forever.
-  const valuesKey = JSON.stringify(values);
+  // The content key includes the link map (D0): a link-only adoption on an
+  // unchanged value must flip the badge and schedule a save like a keystroke.
+  const valuesKey = JSON.stringify([values, linkByKey ?? {}]);
   const [prevValuesKey, setPrevValuesKey] = useState(valuesKey);
   if (valuesKey !== prevValuesKey) {
     setPrevValuesKey(valuesKey);
@@ -311,7 +331,13 @@ export function useAutoSaveProposals(
       enabled &&
       runId &&
       isWritableStage(stage) &&
-      selectDirtyEntries(values, lastSavedByKey, baselineValues ?? {}).length > 0
+      selectDirtyEntries(
+        values,
+        lastSavedByKey,
+        baselineValues ?? {},
+        linkByKey ?? {},
+        baselineLinkByKey ?? {},
+      ).length > 0
     ) {
       setSaveState('dirty');
     }
@@ -333,6 +359,8 @@ export function useAutoSaveProposals(
     };
   }, [
     values,
+    linkByKey,
+    baselineLinkByKey,
     enabled,
     runId,
     stage,
@@ -389,7 +417,13 @@ export function useAutoSaveProposals(
   // or a save acknowledges (``lastSavedByKey`` advances). Computed from
   // render-safe state — never from the mutable refs.
   const hasUnsavedChanges =
-    selectDirtyEntries(values, lastSavedByKey, baselineValues ?? {}).length > 0;
+    selectDirtyEntries(
+      values,
+      lastSavedByKey,
+      baselineValues ?? {},
+      linkByKey ?? {},
+      baselineLinkByKey ?? {},
+    ).length > 0;
 
   return { saveState, lastSavedAt, error, hasUnsavedChanges, saveNow };
 }

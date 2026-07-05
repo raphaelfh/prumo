@@ -704,6 +704,66 @@ describe('useAutoSaveProposals — AI link stamping (D0)', () => {
     expect(body).not.toHaveProperty('proposal_record_id');
   });
 
+  it('a link-only adoption on an unchanged value still writes the linked decision', async () => {
+    apiClientMock.mockResolvedValue({});
+
+    const baseProps: Parameters<typeof useAutoSaveProposals>[0] = {
+      runId: 'run-1',
+      stage: 'extract',
+      kind: 'extraction',
+      values: { 'inst-1_field-1': 'same' },
+      baselineValues: { 'inst-1_field-1': 'same' },
+    };
+    const { result, rerender } = renderHook(
+      (props: Parameters<typeof useAutoSaveProposals>[0]) => useAutoSaveProposals(props),
+      { initialProps: baseProps },
+    );
+
+    // Baseline-equal value, no link: nothing to save.
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).not.toHaveBeenCalled();
+
+    // The reviewer adopts an AI version whose value is byte-identical — the
+    // selection event must still append a linked decision (D0 / §IX).
+    rerender({ ...baseProps, linkByKey: { 'inst-1_field-1': 'prop-9' } });
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/run-1/decisions',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          value: { value: 'same' },
+          proposal_record_id: 'prop-9',
+        }),
+      }),
+    );
+  });
+
+  it('mount with the persisted link (baselineLinkByKey) does not re-post', async () => {
+    apiClientMock.mockResolvedValue({});
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        stage: 'extract',
+        kind: 'extraction',
+        values: { 'inst-1_field-1': 'same' },
+        baselineValues: { 'inst-1_field-1': 'same' },
+        linkByKey: { 'inst-1_field-1': 'prop-9' },
+        baselineLinkByKey: { 'inst-1_field-1': 'prop-9' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).not.toHaveBeenCalled();
+  });
+
   it('never adds proposal_record_id on the proposals endpoint', async () => {
     apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
 

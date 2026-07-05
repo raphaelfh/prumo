@@ -67,6 +67,9 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     // Declare loadSuggestions BEFORE useEffect to avoid init error
   const loadSuggestions = (): Promise<LoadSuggestionsResult> => {
     setLoading(true);
+    // Not ready while ANY load is in flight — consumers (the consensus
+    // Manual chip) must see null, not a stale previous map, mid-refresh.
+    setSuggestionsReady(false);
 
     // Prefer caller-provided instance ids when available (QA gets these
     // straight from the HITL session response). Fall back to the

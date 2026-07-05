@@ -494,8 +494,11 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
     });
   });
 
-  it('suggestionsReady is false after a failed load', async () => {
-    (AISuggestionService.loadSuggestions as any).mockRejectedValueOnce(new Error('boom'));
+  it('suggestionsReady flips true→false when a refresh fails (red-green: kills the always-false mutant)', async () => {
+    (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
+      suggestions: { [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
+      count: 1,
+    });
 
     const { result } = renderHook(() =>
       useAISuggestions({
@@ -504,7 +507,16 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
       }),
     );
 
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    // Positive control: a successful load reports ready.
+    await waitFor(() => expect(result.current.suggestionsReady).toBe(true));
+
+    // The next load fails → the signal must drop back to unavailable so the
+    // consensus Manual chip suppresses instead of trusting a stale map.
+    (AISuggestionService.loadSuggestions as any).mockRejectedValueOnce(new Error('boom'));
+    await act(async () => {
+      await result.current.refresh();
+    });
     expect(result.current.suggestionsReady).toBe(false);
+    expect(result.current.suggestions).toEqual({});
   });
 });
