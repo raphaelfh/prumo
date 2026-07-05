@@ -647,3 +647,81 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     await waitFor(() => expect(apiClientMock).toHaveBeenCalledTimes(1));
   });
 });
+
+describe('useAutoSaveProposals — AI link stamping (D0)', () => {
+  it('attaches proposal_record_id to the edit decision for linked coords', async () => {
+    apiClientMock.mockResolvedValue({});
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        stage: 'extract',
+        kind: 'extraction',
+        values: { 'inst-1_field-1': 'ai text' },
+        linkByKey: { 'inst-1_field-1': 'prop-9' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/run-1/decisions',
+      expect.objectContaining({
+        method: 'POST',
+        keepalive: true,
+        body: {
+          instance_id: 'inst-1',
+          field_id: 'field-1',
+          decision: 'edit',
+          value: { value: 'ai text' },
+          proposal_record_id: 'prop-9',
+        },
+      }),
+    );
+  });
+
+  it('omits proposal_record_id for unlinked coords', async () => {
+    apiClientMock.mockResolvedValue({});
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        stage: 'extract',
+        kind: 'extraction',
+        values: { 'inst-1_field-1': 'typed by hand' },
+        linkByKey: { 'inst-OTHER_field-1': 'prop-9' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+    const body = apiClientMock.mock.calls[0][1].body;
+    expect(body).not.toHaveProperty('proposal_record_id');
+  });
+
+  it('never adds proposal_record_id on the proposals endpoint', async () => {
+    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        values: { 'inst-1_field-1': 'hello' },
+        linkByKey: { 'inst-1_field-1': 'prop-9' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+    const [url, opts] = apiClientMock.mock.calls[0];
+    expect(url).toBe('/api/v1/runs/run-1/proposals');
+    expect(opts.body).not.toHaveProperty('proposal_record_id');
+  });
+});

@@ -86,6 +86,15 @@ export interface UseAutoSaveProposalsProps {
    * loaded values as fresh proposals/decisions on mount.
    */
   baselineValues?: Record<string, unknown>;
+  /**
+   * D0 (consensus AI trace): coord key (`${instanceId}_${fieldId}`) →
+   * accepted/selected AI proposal id. When a dirty coord has an entry, its
+   * `edit` decision carries `proposal_record_id` so the AI basis survives
+   * into the append-only audit trail. Later manual edits keep the link — the
+   * consensus chip renders "Edited by" when the value differs, so honesty
+   * lives in the read path. Only consulted on the /decisions branch.
+   */
+  linkByKey?: Record<string, string>;
 }
 
 export interface UseAutoSaveProposalsReturn {
@@ -121,7 +130,7 @@ function isWritableStage(stage?: string | null): boolean {
 export function useAutoSaveProposals(
   props: UseAutoSaveProposalsProps,
 ): UseAutoSaveProposalsReturn {
-  const { runId, values, enabled = true, debounceMs = 600, stage, kind, baselineValues } =
+  const { runId, values, enabled = true, debounceMs = 600, stage, kind, baselineValues, linkByKey } =
     props;
 
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -141,6 +150,7 @@ export function useAutoSaveProposals(
   // Server-persisted baseline (see prop docs). Mirrored in a ref so the
   // diff sees the latest hydrated map without re-creating callbacks.
   const baselineRef = useRef<Record<string, unknown>>(baselineValues ?? {});
+  const linkByKeyRef = useRef<Record<string, string>>(linkByKey ?? {});
   useEffect(() => {
     valuesRef.current = values;
     runIdRef.current = runId;
@@ -148,6 +158,7 @@ export function useAutoSaveProposals(
     stageRef.current = stage;
     kindRef.current = kind;
     baselineRef.current = baselineValues ?? {};
+    linkByKeyRef.current = linkByKey ?? {};
   });
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -231,6 +242,7 @@ export function useAutoSaveProposals(
             normalizedValue: normalized,
             useDecisionEndpoint,
             absentReason,
+            proposalRecordId: linkByKeyRef.current[key] ?? null,
           }).then(() => {
             lastSavedByKeyRef.current[key] = JSON.stringify(valueData ?? null);
           });

@@ -597,3 +597,105 @@ describe('useAISuggestions — getSuggestionsHistory', () => {
     expect(history).toHaveLength(1);
   });
 });
+
+describe('useAISuggestions — session adoption + readiness (D0)', () => {
+  it('fabrication regression: a server-rehydrated "accepted" status produces NO adoption entry', async () => {
+    // The backend marks any non-reject caller decision 'accepted' (including
+    // plain manual edits), so hydrated status must never seed the link map.
+    (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
+      suggestions: {
+        [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', {
+          status: 'accepted',
+        }),
+      },
+      count: 1,
+    });
+
+    const { result } = renderHook(() =>
+      useAISuggestions({
+        articleId: 'art-1',
+        projectId: 'proj-1',
+        instanceIds: ['inst-1'],
+        acceptStrategy: 'human-proposal',
+      }),
+    );
+
+    await waitFor(() => expect(result.current.suggestionsReady).toBe(true));
+    expect(result.current.sessionAdoption).toEqual({});
+  });
+
+  it('accept and select set the coord entry to the chosen proposal id', async () => {
+    (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
+      suggestions: { [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
+      count: 1,
+    });
+
+    const { result } = renderHook(() =>
+      useAISuggestions({
+        articleId: 'art-1',
+        projectId: 'proj-1',
+        instanceIds: ['inst-1'],
+        acceptStrategy: 'human-proposal',
+      }),
+    );
+    await waitFor(() =>
+      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
+    );
+
+    await act(async () => {
+      await result.current.acceptSuggestion('inst-1', 'f-1');
+    });
+    expect(result.current.sessionAdoption).toEqual({
+      [getSuggestionKey('inst-1', 'f-1')]: 'proposal-inst-1-f-1',
+    });
+
+    await act(async () => {
+      await result.current.selectSuggestion('inst-1', 'f-1', 'proposal-older', 'Z', 0.7);
+    });
+    expect(result.current.sessionAdoption).toEqual({
+      [getSuggestionKey('inst-1', 'f-1')]: 'proposal-older',
+    });
+  });
+
+  it('reject tombstones the coord entry with null', async () => {
+    (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
+      suggestions: { [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
+      count: 1,
+    });
+
+    const { result } = renderHook(() =>
+      useAISuggestions({
+        articleId: 'art-1',
+        projectId: 'proj-1',
+        instanceIds: ['inst-1'],
+        acceptStrategy: 'human-proposal',
+      }),
+    );
+    await waitFor(() =>
+      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
+    );
+
+    await act(async () => {
+      await result.current.rejectSuggestion('inst-1', 'f-1');
+    });
+    expect(result.current.sessionAdoption).toEqual({
+      [getSuggestionKey('inst-1', 'f-1')]: null,
+    });
+  });
+
+  it('suggestionsReady is false after a failed load', async () => {
+    (AISuggestionService.loadSuggestions as any).mockRejectedValueOnce(new Error('boom'));
+
+    const { result } = renderHook(() =>
+      useAISuggestions({
+        articleId: 'art-1',
+        projectId: 'proj-1',
+        instanceIds: ['inst-1'],
+        acceptStrategy: 'human-proposal',
+      }),
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.suggestionsReady).toBe(false);
+  });
+});

@@ -47,6 +47,16 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
   const [loading, setLoading] = useState(false);
     // Loading state per suggestion for immediate visual feedback
   const [actionLoading, setActionLoading] = useState<Record<string, 'accept' | 'reject' | null>>({});
+  // D0 (consensus AI trace): this session's real adoption events only —
+  // accept/select set the chosen proposal id, reject tombstones with null.
+  // NEVER hydrated from the read endpoint: the server marks any non-reject
+  // caller decision 'accepted' (including plain manual edits), so hydrated
+  // status would fabricate AI provenance for manually-typed values.
+  const [sessionAdoption, setSessionAdoption] = useState<Record<string, string | null>>({});
+  // True only after a successful load — consumers use it to tell "no AI
+  // suggestion exists" apart from "the AI-existence signal is unavailable"
+  // (a failed load must not mislabel decisions as Manual in consensus).
+  const [suggestionsReady, setSuggestionsReady] = useState(false);
 
   // Stable, content-derived key for the caller-provided instance ids. The
   // loader reads ONLY this primitive (never the `providedInstanceIds` array
@@ -84,6 +94,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         return AISuggestionService.loadSuggestions(articleId, instanceIds, runId);
       })
       .then((result) => {
+        setSuggestionsReady(true);
         // CRITICAL: setSuggestions updates state asynchronously
         // Use updater function so previous state is considered
         setSuggestions(() => {
@@ -103,6 +114,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         console.error('Error loading suggestions:', err);
         const message = getErrorMessage(err);
         toast.error(`${t('extraction', 'errors_loadSuggestions')}: ${message}`);
+        setSuggestionsReady(false);
         setSuggestions({});
         return { suggestions: {}, count: 0 } as LoadSuggestionsResult;
       })
@@ -189,6 +201,9 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
           console.warn(`✅ Suggestion ${key} accepted - state updated to 'accepted'`);
           return {...next}; // New reference to ensure re-render
       });
+
+      // D0: record the real adoption event for autosave's linkByKey.
+      setSessionAdoption(prev => ({ ...prev, [key]: proposalRecordId }));
 
         // Callback to fill input automatically (non-blocking)
       if (onSuggestionAccepted) {
@@ -296,6 +311,10 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
           return {...next}; // New reference to ensure re-render
       });
 
+      // D0: a reject severs any AI link for the coord (tombstone overrides
+      // the caller's persisted decision link in deriveAiLinkByKey).
+      setSessionAdoption(prev => ({ ...prev, [key]: null }));
+
         // Callback to clear field when rejecting
       if (onSuggestionRejected) {
         Promise.resolve(onSuggestionRejected(instanceId, fieldId)).catch(err => {
@@ -387,6 +406,8 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
   return {
     suggestions,
     loading,
+    sessionAdoption,
+    suggestionsReady,
     acceptSuggestion,
     selectSuggestion,
     rejectSuggestion,

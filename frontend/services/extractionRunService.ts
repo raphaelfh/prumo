@@ -145,6 +145,14 @@ export interface WriteProposalParams {
    * legacy write never gains a spurious `absent_reason` key.
    */
   absentReason?: string | null;
+  /**
+   * D0 (consensus AI trace): the accepted/selected AI proposal this coord's
+   * value originated from. Included only on the /decisions branch so the
+   * arbitrator can trace an edit back to its AI basis; the backend validates
+   * it references a non-human proposal on the same (instance, field). Never
+   * sent on /proposals (a human proposal has no AI-link field).
+   */
+  proposalRecordId?: string | null;
 }
 
 /**
@@ -160,8 +168,15 @@ export interface WriteProposalParams {
 export async function writeRunFieldValue(
   params: WriteProposalParams,
 ): Promise<void> {
-  const {runId, instanceId, fieldId, normalizedValue, useDecisionEndpoint, absentReason} =
-    params;
+  const {
+    runId,
+    instanceId,
+    fieldId,
+    normalizedValue,
+    useDecisionEndpoint,
+    absentReason,
+    proposalRecordId,
+  } = params;
   const endpoint = useDecisionEndpoint
     ? `/api/v1/runs/${runId}/decisions`
     : `/api/v1/runs/${runId}/proposals`;
@@ -176,6 +191,7 @@ export async function writeRunFieldValue(
         field_id: fieldId,
         decision: 'edit' as const,
         value: valueEnvelope,
+        ...(proposalRecordId ? {proposal_record_id: proposalRecordId} : {}),
       }
     : {
         instance_id: instanceId,

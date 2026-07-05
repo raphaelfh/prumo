@@ -329,6 +329,20 @@ export interface UseAISuggestionsProps {
 export interface UseAISuggestionsReturn {
   suggestions: Record<string, AISuggestion>; // key: `${instanceId}_${fieldId}`
   loading: boolean;
+  /**
+   * D0: this session's real adoption events — accept/select set the chosen
+   * proposal id, reject tombstones with null. Starts empty every mount and is
+   * never hydrated from the read endpoint (whose `status` marks any non-reject
+   * decision 'accepted' and would fabricate AI provenance). Feeds
+   * `deriveAiLinkByKey` together with the caller's persisted decision links.
+   */
+  sessionAdoption: Record<string, string | null>;
+  /**
+   * True only after a successful suggestions load; false while loading and
+   * after a load error. Distinguishes "no AI suggestion exists" from "the
+   * AI-existence signal is unavailable" (consensus Manual-chip gating).
+   */
+  suggestionsReady: boolean;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   /**
    * Accept a SPECIFIC historical version by its proposal id (not just the
