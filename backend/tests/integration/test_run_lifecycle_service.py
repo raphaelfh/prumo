@@ -1,5 +1,6 @@
 """Integration tests for RunLifecycleService."""
 
+import json
 from uuid import UUID, uuid4
 
 import pytest
@@ -965,6 +966,47 @@ async def test_approve_and_finalize_real_form_double_wrapped_unit_diverges(
 # ---------------------------------------------------------------------------
 
 
+async def _insert_legacy_human_proposal(
+    db: AsyncSession,
+    *,
+    run_id: UUID,
+    instance_id: UUID,
+    field_id: UUID,
+    profile_id: UUID,
+    value: str,
+    backdate_minutes: int = 0,
+) -> UUID:
+    """Raw-INSERT a pre-D8 human proposal (the service now rejects them).
+
+    Legacy rows only exist as stored data, so tests seed them the way they
+    actually exist: straight into the table. ``backdate_minutes`` matters
+    because created_at's server_default now() is TRANSACTION-scoped in PG —
+    two rows in one test transaction would tie, making newest-per-coord
+    nondeterministic (in production each autosave POST was its own
+    transaction, so timestamps are naturally distinct).
+    """
+    proposal_id = uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO public.extraction_proposal_records "
+            "(id, run_id, instance_id, field_id, source, source_user_id, "
+            " proposed_value, created_at) "
+            "VALUES (:id, :r, :i, :f, 'human', :u, CAST(:v AS jsonb), "
+            "        now() - make_interval(mins => :backdate))"
+        ),
+        {
+            "id": str(proposal_id),
+            "r": str(run_id),
+            "i": str(instance_id),
+            "f": str(field_id),
+            "u": str(profile_id),
+            "v": json.dumps({"value": value}),
+            "backdate": backdate_minutes,
+        },
+    )
+    return proposal_id
+
+
 async def _qa_run_with_human_proposal(
     db: AsyncSession,
 ) -> tuple[UUID, UUID, UUID, UUID, UUID] | None:
@@ -972,7 +1014,6 @@ async def _qa_run_with_human_proposal(
 
     Returns (run_id, instance_id, field_id, profile_id, newest_proposal_id).
     """
-    from app.services.extraction_proposal_service import ExtractionProposalService
     from tests.integration.test_extraction_proposal_service import (
         _setup_qa_run_with_instance_field,
     )
@@ -982,35 +1023,24 @@ async def _qa_run_with_human_proposal(
         return None
     run_id, instance_id, field_id, profile_id = built
 
-    proposals = ExtractionProposalService(db)
-    older = await proposals.record_proposal(
+    await _insert_legacy_human_proposal(
+        db,
         run_id=run_id,
         instance_id=instance_id,
         field_id=field_id,
-        source="human",
-        proposed_value={"value": "first answer"},
-        source_user_id=profile_id,
+        profile_id=profile_id,
+        value="first answer",
+        backdate_minutes=1,
     )
-    # created_at is server_default now(), which is TRANSACTION-scoped in PG —
-    # both rows would tie inside one test transaction. Back-date the older row
-    # so newest-per-coord is deterministic (in production each autosave POST
-    # is its own transaction, so timestamps are naturally distinct).
-    await db.execute(
-        text(
-            "UPDATE public.extraction_proposal_records "
-            "SET created_at = created_at - interval '1 minute' WHERE id = :id"
-        ),
-        {"id": str(older.id)},
-    )
-    newest = await proposals.record_proposal(
+    newest_id = await _insert_legacy_human_proposal(
+        db,
         run_id=run_id,
         instance_id=instance_id,
         field_id=field_id,
-        source="human",
-        proposed_value={"value": "final answer"},
-        source_user_id=profile_id,
+        profile_id=profile_id,
+        value="final answer",
     )
-    return run_id, instance_id, field_id, profile_id, newest.id
+    return run_id, instance_id, field_id, profile_id, newest_id
 
 
 @pytest.mark.asyncio
@@ -1145,8 +1175,6 @@ async def test_qa_materialization_replay_is_noop(db_session: AsyncSession) -> No
 
 @pytest.mark.asyncio
 async def test_extraction_advance_does_not_materialize(db_session: AsyncSession) -> None:
-    from uuid import uuid4
-
     from tests.integration.test_extraction_proposal_service import (
         _setup_run_with_instance_field,
     )
@@ -1157,21 +1185,14 @@ async def test_extraction_advance_does_not_materialize(db_session: AsyncSession)
     run_id, instance_id, field_id, profile_id = built
 
     # A stray human proposal on an EXTRACTION run (raw insert — the proposal
-    # service's Layer-1b gate rightly blocks human proposals for extraction).
-    await db_session.execute(
-        text(
-            "INSERT INTO public.extraction_proposal_records "
-            "(id, run_id, instance_id, field_id, source, source_user_id, proposed_value) "
-            "VALUES (:id, :r, :i, :f, 'human', :u, CAST(:v AS jsonb))"
-        ),
-        {
-            "id": str(uuid4()),
-            "r": str(run_id),
-            "i": str(instance_id),
-            "f": str(field_id),
-            "u": str(profile_id),
-            "v": '{"value": "stray"}',
-        },
+    # service's gate blocks human proposals for both kinds).
+    await _insert_legacy_human_proposal(
+        db_session,
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        profile_id=profile_id,
+        value="stray",
     )
 
     svc = RunLifecycleService(db_session)
