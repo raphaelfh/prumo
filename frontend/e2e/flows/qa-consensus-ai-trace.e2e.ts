@@ -1,0 +1,699 @@
+/**
+ * Consensus AI trace round trip (spec 2026-07-04, D0→D8).
+ *
+ * Scenario A (extraction): a reviewer adopts AI suggestions in the UI
+ * (including the same-value adoption the [value, link] autosave fingerprint
+ * fixed), the decisions persist with `proposal_record_id`, and the consensus
+ * compare table renders the per-reviewer AI trace — read-only popover,
+ * "Adopted by {name}" attribution, "Run by {name}" group headers (the ran-by
+ * scrub's arbitrator auto-reveal carve-out, end-to-end), the honest "Manual"
+ * chip, and no dead compare affordances (D6). The arbitrator adopts the
+ * reviewer's value and the resolved summary attributes it.
+ *
+ * Scenario B (QA decisions parity, D8): QA form writes go to /decisions
+ * (ZERO human /proposals writes), rehydrate through current_values, the
+ * advance materializes decisions the compare table + select_existing can
+ * use, and the single-user export job completes.
+ *
+ * File name rides the `local-hitl` project's `qa-*.e2e.ts` glob: single
+ * worker, serial — both scenarios hard-reset runs on the dedicated
+ * TRACE_ARTICLE_ID and must never run in parallel with themselves or the
+ * other QA suites. NEVER point this at prod: it mutates fixture state.
+ */
+
+import { expect, test, type Page } from "@playwright/test";
+
+import { authHeaders, parseEnvelope } from "../_fixtures/api";
+import { loginViaUi, loginViaUiAs } from "../_fixtures/auth";
+import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+import {
+  FIXTURE_PASSWORD,
+  OWNER_NAME,
+  REVIEWER_B_EMAIL,
+  REVIEWER_B_NAME,
+  TRACE_ARTICLE_ID,
+} from "../_fixtures/fixture-ids";
+import { prepareCleanQaRun } from "../_fixtures/hitl";
+import {
+  adminDelete,
+  adminSelect,
+  adminUpdate,
+  resolveActiveExtractionTemplateId,
+} from "../_fixtures/supabase-admin";
+
+interface RunViewResponse {
+  run: { id: string; stage: string };
+  decisions: Array<{
+    id: string;
+    instance_id: string;
+    field_id: string;
+    reviewer_id: string;
+    decision: string;
+    proposal_record_id: string | null;
+    value: { value: unknown } | null;
+    created_at: string;
+  }>;
+  consensus_decisions: Array<{ instance_id: string; field_id: string }>;
+}
+
+interface Coord {
+  instanceId: string;
+  fieldId: string;
+  label: string;
+  sectionLabel: string;
+}
+
+const A_TYPED_COORD2 = "Multicenter registry data";
+const AI_COORD1 = "Retrospective cohort";
+const B_DIVERGENT_COORD1 = "Prospective cohort";
+const A_TYPED_COORD3 = "Manually recorded detail";
+
+test.describe.configure({ mode: "serial" });
+
+/** Newest decision for a coord in a /view payload (append-only trail). */
+function newestDecision(
+  view: RunViewResponse,
+  coord: Coord,
+): RunViewResponse["decisions"][number] | undefined {
+  return view.decisions
+    .filter(
+      (d) => d.instance_id === coord.instanceId && d.field_id === coord.fieldId,
+    )
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Open the section accordion containing the coord if its row is hidden.
+ *  The accordion header button reads "{label} {done}/{total} {pct}%" — the
+ *  nav rail renders a similar "{label} {done}/{total}" button, so anchor on
+ *  the trailing percent to hit the header, and only click when collapsed. */
+async function ensureFieldVisible(page: Page, coord: Coord): Promise<void> {
+  const row = fieldRow(page, coord);
+  if (await row.isVisible().catch(() => false)) return;
+  const header = page
+    .getByRole("button", {
+      name: new RegExp(`^${escapeRegex(coord.sectionLabel)} \\d+/\\d+ \\d+%`),
+    })
+    .first();
+  if ((await header.getAttribute("aria-expanded")) !== "true") {
+    await header.click();
+  }
+  await expect(row).toBeVisible({ timeout: 10_000 });
+  await row.scrollIntoViewIfNeeded();
+}
+
+/** The text input for a coord — the placeholder is
+ *  `Enter {label.toLowerCase()}` (fieldPlaceholderEnter) and the full label
+ *  keeps it unique within the template. (The shadcn Input renders without an
+ *  explicit type attribute, so input[type='text'] selectors match nothing.) */
+function fieldInput(page: Page, coord: Coord) {
+  return page.getByPlaceholder(`Enter ${coord.label.toLowerCase()}`, {
+    exact: true,
+  });
+}
+
+/** The FieldInput row for a coord — anchored on its input's placeholder. */
+function fieldRow(page: Page, coord: Coord) {
+  return page
+    .locator("[data-field-row]")
+    .filter({
+      has: page.getByPlaceholder(`Enter ${coord.label.toLowerCase()}`, {
+        exact: true,
+      }),
+    })
+    .first();
+}
+
+test.describe("Consensus AI trace (D0→D8 round trip)", () => {
+  test("Scenario A: extraction adoption → consensus trace", async ({
+    page,
+    browser,
+    request,
+  }) => {
+    test.setTimeout(240_000);
+    const required = missingEnvKeys([
+      "E2E_USER_EMAIL",
+      "E2E_USER_PASSWORD",
+      "E2E_PROJECT_ID",
+      "E2E_AUTH_TOKEN",
+      "E2E_USER_ID",
+      "E2E_REVIEWER_C_TOKEN",
+    ]);
+    test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
+
+    const env = loadE2EEnv();
+    const projectId = env.projectId!;
+    const ownerToken = process.env.E2E_AUTH_TOKEN!;
+    const ownerId = process.env.E2E_USER_ID!;
+    const reviewerCToken = process.env.E2E_REVIEWER_C_TOKEN!;
+    const traceId = createTraceId("e2e-consensus-ai-trace");
+
+    // --- Provision: fresh extraction run in `extract` on the trace article.
+    await adminDelete(
+      "extraction_runs",
+      `project_id=eq.${projectId}&article_id=eq.${TRACE_ARTICLE_ID}&kind=eq.extraction`,
+    );
+    const templateId = await resolveActiveExtractionTemplateId(projectId);
+    const sessionRes = await request.post(`${env.apiUrl}/api/v1/hitl/sessions`, {
+      headers: authHeaders(ownerToken, traceId),
+      data: {
+        kind: "extraction",
+        project_id: projectId,
+        article_id: TRACE_ARTICLE_ID,
+        project_template_id: templateId,
+      },
+      timeout: 30_000,
+    });
+    expect(sessionRes.ok(), await sessionRes.text()).toBeTruthy();
+    const session = (
+      await parseEnvelope<{
+        run_id: string;
+        instances_by_entity_type: Record<string, string>;
+      }>(sessionRes)
+    ).data;
+    const runId = session.run_id;
+
+    const stageRes = await request.get(`${env.apiUrl}/api/v1/runs/${runId}`, {
+      headers: authHeaders(ownerToken, traceId),
+    });
+    const stage = (await parseEnvelope<{ run: { stage: string } }>(stageRes))
+      .data.run.stage;
+    if (stage !== "extract") {
+      const adv = await request.post(
+        `${env.apiUrl}/api/v1/runs/${runId}/advance`,
+        {
+          headers: authHeaders(ownerToken, traceId),
+          data: { target_stage: "extract" },
+        },
+      );
+      expect(adv.ok(), await adv.text()).toBeTruthy();
+    }
+
+    // --- Discover three text-field coords (prefer one section for less
+    // accordion juggling; fall back to spanning sections).
+    const coords: Coord[] = [];
+    for (const [etId, instanceId] of Object.entries(
+      session.instances_by_entity_type,
+    )) {
+      const [et] = await adminSelect<{ id: string; label: string }>(
+        "extraction_entity_types",
+        `select=id,label&id=eq.${etId}`,
+      );
+      const fields = await adminSelect<{ id: string; label: string }>(
+        "extraction_fields",
+        `select=id,label&entity_type_id=eq.${etId}&field_type=eq.text`,
+      );
+      for (const f of fields) {
+        coords.push({
+          instanceId,
+          fieldId: f.id,
+          label: f.label,
+          sectionLabel: et?.label ?? "",
+        });
+      }
+      if (coords.length >= 3) break;
+    }
+    test.skip(coords.length < 3, "CHARMS clone exposes fewer than 3 text fields");
+    const [coord1, coord2, coord3] = coords;
+
+    // --- Seed AI proposals (owner is reviewer-capable; viewers now 403 here)
+    // + run provenance so the popover's ran-by header has an identity to
+    // reveal (proposal POSTs alone don't write results.provenance).
+    for (const [coord, value] of [
+      [coord1, AI_COORD1],
+      [coord2, A_TYPED_COORD2],
+    ] as const) {
+      const res = await request.post(
+        `${env.apiUrl}/api/v1/runs/${runId}/proposals`,
+        {
+          headers: authHeaders(ownerToken, traceId),
+          data: {
+            instance_id: coord.instanceId,
+            field_id: coord.fieldId,
+            source: "ai",
+            proposed_value: { value },
+            confidence_score: 0.9,
+            rationale: "e2e seeded",
+          },
+          timeout: 15_000,
+        },
+      );
+      expect(res.ok(), await res.text()).toBeTruthy();
+    }
+    await adminUpdate("extraction_runs", `id=eq.${runId}`, {
+      results: { provenance: { model: "e2e-seed", ran_by_user_id: ownerId } },
+    });
+
+    // --- Reviewer A (E2E Reviewer Bela) drives the form in her own context.
+    const ctxA = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    await loginViaUiAs(pageA, REVIEWER_B_EMAIL, FIXTURE_PASSWORD);
+    const tokenA = await pageA.evaluate(() => {
+      for (const [key, value] of Object.entries(localStorage)) {
+        if (key.startsWith("sb-") && key.endsWith("-auth-token")) {
+          const parsed = JSON.parse(value) as { access_token?: string };
+          if (parsed.access_token) return parsed.access_token;
+        }
+      }
+      return null;
+    });
+    expect(tokenA).toBeTruthy();
+
+    const viewAsA = async (): Promise<RunViewResponse> => {
+      const res = await request.get(`${env.apiUrl}/api/v1/runs/${runId}/view`, {
+        headers: authHeaders(tokenA!, traceId),
+      });
+      expect(res.ok(), await res.text()).toBeTruthy();
+      return (await parseEnvelope<RunViewResponse>(res)).data;
+    };
+
+    await pageA.goto(
+      `${env.frontendUrl}/projects/${projectId}/extraction/${TRACE_ARTICLE_ID}`,
+    );
+    await expect(pageA.locator("[data-field-row]").first()).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // (2a) Type into coord2 FIRST and wait for the write to land — the
+    // same-value adoption below must be a LINK-ONLY change on a clean value.
+    await ensureFieldVisible(pageA, coord2);
+    await fieldInput(pageA, coord2).fill(A_TYPED_COORD2);
+    await expect
+      .poll(
+        async () => newestDecision(await viewAsA(), coord2)?.value?.value,
+        { timeout: 20_000, intervals: [500, 1000] },
+      )
+      .toBe(A_TYPED_COORD2);
+
+    // (2b) Accept the AI suggestion on coord2 — value byte-identical, the
+    // regression the [value, link] fingerprint fixed. (The button reads
+    // "Accept suggestion", or "Suggestion accepted" if a refetch already
+    // mirrored the typed decision's server status; clicking fires either way.)
+    const acceptOn = async (coord: Coord) => {
+      await ensureFieldVisible(pageA, coord);
+      await fieldRow(pageA, coord)
+        .getByRole("button", { name: /accept suggestion|suggestion accepted/i })
+        .first()
+        .click();
+    };
+    await acceptOn(coord2);
+    await acceptOn(coord1);
+
+    // (2c) Fill coord3 manually — no AI proposal exists there.
+    await ensureFieldVisible(pageA, coord3);
+    await fieldInput(pageA, coord3).fill(A_TYPED_COORD3);
+
+    // (3) Persistence: the adoptions carry the AI link; the manual coord
+    // does not (D0 write path, server-validated).
+    await expect
+      .poll(
+        async () => {
+          const view = await viewAsA();
+          return {
+            c1: newestDecision(view, coord1)?.proposal_record_id != null,
+            c2: newestDecision(view, coord2)?.proposal_record_id != null,
+            c3: newestDecision(view, coord3)?.proposal_record_id ?? null,
+            c3Value: newestDecision(view, coord3)?.value?.value ?? null,
+          };
+        },
+        { timeout: 20_000, intervals: [500, 1000] },
+      )
+      .toEqual({ c1: true, c2: true, c3: null, c3Value: A_TYPED_COORD3 });
+    await ctxA.close();
+
+    // (4) Reviewer B (E2E Reviewer Cora) records a divergent value on coord1.
+    const decisionB = await request.post(
+      `${env.apiUrl}/api/v1/runs/${runId}/decisions`,
+      {
+        headers: authHeaders(reviewerCToken, traceId),
+        data: {
+          instance_id: coord1.instanceId,
+          field_id: coord1.fieldId,
+          decision: "edit",
+          value: { value: B_DIVERGENT_COORD1 },
+        },
+        timeout: 15_000,
+      },
+    );
+    expect(decisionB.ok(), await decisionB.text()).toBeTruthy();
+
+    // (5) Manager/arbitrator: start consensus and open the resolve table.
+    const advConsensus = await request.post(
+      `${env.apiUrl}/api/v1/runs/${runId}/advance`,
+      {
+        headers: authHeaders(ownerToken, traceId),
+        data: { target_stage: "consensus" },
+      },
+    );
+    expect(advConsensus.ok(), await advConsensus.text()).toBeTruthy();
+
+    await loginViaUi(page);
+    await page.goto(
+      `${env.frontendUrl}/projects/${projectId}/extraction/${TRACE_ARTICLE_ID}`,
+    );
+    await expect(page.getByTestId("run-reviewer-comparison")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // Divergent rows need attention → coord1 visible under the default
+    // filter; show ALL rows so coord2/coord3 assertions can run too.
+    await page.getByTestId("consensus-filter-all").click();
+
+    const row1 = page.getByTestId(
+      `consensus-coord-${coord1.instanceId}::${coord1.fieldId}`,
+    );
+    const row2 = page.getByTestId(
+      `consensus-coord-${coord2.instanceId}::${coord2.fieldId}`,
+    );
+    const row3 = page.getByTestId(
+      `consensus-coord-${coord3.instanceId}::${coord3.fieldId}`,
+    );
+
+    // (i) coord1 renders both reviewer values; A's cell carries the trace.
+    await expect(row1).toContainText(AI_COORD1);
+    await expect(row1).toContainText(B_DIVERGENT_COORD1);
+    const traceButton1 = row1.getByRole("button", {
+      name: `AI used by ${REVIEWER_B_NAME}`,
+    });
+    await expect(traceButton1).toBeVisible();
+
+    // (ii) The trace popover is READ-ONLY and attributes the adoption.
+    await traceButton1.click();
+    await expect(page.getByText(`Adopted by ${REVIEWER_B_NAME}`)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /use this version/i }),
+    ).toHaveCount(0);
+    // (iii) The run-group header reveals the runner to the arbitrator —
+    // the server-side ran-by scrub's auto-reveal carve-out, end-to-end.
+    await expect(page.getByText(`Run by ${OWNER_NAME}`)).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // coord2's popover attributes the same-value adoption too.
+    await row2.getByRole("button", { name: `AI used by ${REVIEWER_B_NAME}` }).click();
+    await expect(page.getByText(`Adopted by ${REVIEWER_B_NAME}`)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /use this version/i }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    // (iv) coord3 (typed, no AI proposal on the coord) shows the honest
+    // Manual chip.
+    await expect(row3.getByText("Manual", { exact: true })).toBeVisible();
+
+    // (v) Dead affordances stay dead in consensus (D6): no Compare toggle,
+    // and the status popover offers no divergence jump.
+    await expect(
+      page.getByRole("button", { name: "Toggle comparison mode" }),
+    ).toHaveCount(0);
+    await page.getByTestId("run-stage-current").click();
+    await expect(page.getByTestId("run-status-popover")).toBeVisible();
+    await expect(
+      page
+        .getByTestId("run-status-popover")
+        .getByRole("button", { name: /^view$/i }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    // (6) Adopt A's coord1 value → the resolved summary attributes it.
+    await row1
+      .locator("td")
+      .filter({ hasText: AI_COORD1 })
+      .first()
+      .getByRole("button", { name: /publish this reviewer/i })
+      .click();
+    await expect(row1.getByText(`from ${REVIEWER_B_NAME}`)).toBeVisible({
+      timeout: 15_000,
+    });
+    // The consensus decision persisted (finalize itself is covered by the
+    // dedicated finalize-gate suites — full CHARMS completeness is out of
+    // scope for this trace flow).
+    await expect
+      .poll(async () => {
+        const res = await request.get(
+          `${env.apiUrl}/api/v1/runs/${runId}/view`,
+          { headers: authHeaders(ownerToken, traceId) },
+        );
+        const view = (await parseEnvelope<RunViewResponse>(res)).data;
+        return view.consensus_decisions.some(
+          (c) =>
+            c.instance_id === coord1.instanceId &&
+            c.field_id === coord1.fieldId,
+        );
+      })
+      .toBe(true);
+  });
+
+  test("Scenario B: QA decisions parity (D8)", async ({ page, request }) => {
+    test.setTimeout(240_000);
+    const required = missingEnvKeys([
+      "E2E_USER_EMAIL",
+      "E2E_USER_PASSWORD",
+      "E2E_PROJECT_ID",
+      "E2E_AUTH_TOKEN",
+      "E2E_USER_ID",
+      "E2E_QA_GLOBAL_TEMPLATE_ID",
+      "E2E_RATE_LIMIT_TOKEN",
+    ]);
+    test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
+
+    const env = loadE2EEnv();
+    const projectId = env.projectId!;
+    const ownerToken = process.env.E2E_AUTH_TOKEN!;
+    const ownerId = process.env.E2E_USER_ID!;
+    const reviewerBToken = process.env.E2E_RATE_LIMIT_TOKEN!;
+    const qaTemplateId = process.env.E2E_QA_GLOBAL_TEMPLATE_ID!;
+    const traceId = createTraceId("e2e-qa-parity");
+
+    const fixture = await prepareCleanQaRun({
+      request,
+      apiUrl: env.apiUrl,
+      token: ownerToken,
+      projectId,
+      articleId: TRACE_ARTICLE_ID,
+      qaTemplateId,
+      traceId,
+    });
+    const { runId } = fixture;
+
+    // (1) Answer two signaling questions in the UI while recording every
+    // run write: the form must POST /decisions and NEVER /proposals.
+    const decisionPosts: string[] = [];
+    const proposalPosts: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() !== "POST") return;
+      const url = req.url();
+      if (/\/api\/v1\/runs\/[^/]+\/decisions$/.test(url)) decisionPosts.push(url);
+      if (/\/api\/v1\/runs\/[^/]+\/proposals$/.test(url)) proposalPosts.push(url);
+    });
+
+    await loginViaUi(page);
+    await page.goto(
+      `${env.frontendUrl}/projects/${projectId}/articles/${TRACE_ARTICLE_ID}/quality-assessment/${fixture.projectTemplateId}`,
+    );
+    const combos = page.locator("[data-field-row] [role='combobox']");
+    await expect(combos.first()).toBeVisible({ timeout: 30_000 });
+
+    const pickedLabels: string[] = [];
+    for (const index of [0, 1]) {
+      await combos.nth(index).click();
+      const option = page.locator("[role='option']").first();
+      await expect(option).toBeVisible();
+      pickedLabels.push((await option.innerText()).trim());
+      await option.click();
+    }
+
+    // Both answers land as decisions.
+    await expect
+      .poll(
+        async () => {
+          const res = await request.get(
+            `${env.apiUrl}/api/v1/runs/${runId}/view`,
+            { headers: authHeaders(ownerToken, traceId) },
+          );
+          const view = (await parseEnvelope<RunViewResponse>(res)).data;
+          return view.decisions.filter((d) => d.decision === "edit").length;
+        },
+        { timeout: 20_000, intervals: [500, 1000] },
+      )
+      .toBeGreaterThanOrEqual(2);
+    expect(decisionPosts.length).toBeGreaterThanOrEqual(2);
+    expect(proposalPosts).toEqual([]);
+
+    // (2) Reload → both answers rehydrate (current_values read path).
+    await page.reload();
+    await expect(combos.first()).toBeVisible({ timeout: 30_000 });
+    await expect(combos.nth(0)).toContainText(pickedLabels[0]);
+    await expect(combos.nth(1)).toContainText(pickedLabels[1]);
+
+    // (3) A second reviewer diverges on one answered coord (agreed rows are
+    // non-actionable by design — select_existing needs a conflict) and
+    // leaves a pre-D8-style human PROPOSAL on an untouched coord, so the
+    // advance's one-shot materialization is exercised end-to-end.
+    const viewNow = await (async () => {
+      const res = await request.get(`${env.apiUrl}/api/v1/runs/${runId}/view`, {
+        headers: authHeaders(ownerToken, traceId),
+      });
+      return (await parseEnvelope<RunViewResponse>(res)).data;
+    })();
+    const ownerDecisions = viewNow.decisions.filter(
+      (d) => d.decision === "edit" && d.reviewer_id === ownerId,
+    );
+    expect(ownerDecisions.length).toBeGreaterThanOrEqual(2);
+    const conflictCoord = ownerDecisions[0];
+    const answered = new Set(
+      ownerDecisions.map((d) => `${d.instance_id}::${d.field_id}`),
+    );
+    const qaFields = await adminSelect<{ id: string }>(
+      "extraction_fields",
+      `select=id&entity_type_id=eq.${fixture.firstEntityTypeId}`,
+    );
+    const untouchedField = qaFields.find(
+      (f) => !answered.has(`${fixture.firstInstanceId}::${f.id}`),
+    );
+    expect(untouchedField, "PROBAST section has an unanswered field").toBeTruthy();
+
+    const divergent = await request.post(
+      `${env.apiUrl}/api/v1/runs/${runId}/decisions`,
+      {
+        headers: authHeaders(reviewerBToken, traceId),
+        data: {
+          instance_id: conflictCoord.instance_id,
+          field_id: conflictCoord.field_id,
+          decision: "edit",
+          value: { value: "e2e-divergent-answer" },
+        },
+        timeout: 15_000,
+      },
+    );
+    expect(divergent.ok(), await divergent.text()).toBeTruthy();
+
+    // Pre-D8 mid-flight shape: a bare human proposal with no decision (QA
+    // still accepts human proposals; the endpoint attributes it to the
+    // caller — a forged source_user_id would 400).
+    const legacyProposal = await request.post(
+      `${env.apiUrl}/api/v1/runs/${runId}/proposals`,
+      {
+        headers: authHeaders(reviewerBToken, traceId),
+        data: {
+          instance_id: fixture.firstInstanceId,
+          field_id: untouchedField!.id,
+          source: "human",
+          proposed_value: { value: "PY-materialized" },
+        },
+        timeout: 15_000,
+      },
+    );
+    expect(legacyProposal.ok(), await legacyProposal.text()).toBeTruthy();
+
+    // (4) Advance to consensus → materialization converts the bare proposal
+    // into Bela's edit decision; the compare table works against real rows
+    // and "Use this value" (select_existing) succeeds on the conflict.
+    const adv = await request.post(
+      `${env.apiUrl}/api/v1/runs/${runId}/advance`,
+      {
+        headers: authHeaders(ownerToken, traceId),
+        data: { target_stage: "consensus" },
+      },
+    );
+    expect(adv.ok(), await adv.text()).toBeTruthy();
+
+    const viewAfter = await (async () => {
+      const res = await request.get(`${env.apiUrl}/api/v1/runs/${runId}/view`, {
+        headers: authHeaders(ownerToken, traceId),
+      });
+      return (await parseEnvelope<RunViewResponse>(res)).data;
+    })();
+    const materialized = viewAfter.decisions.find(
+      (d) =>
+        d.instance_id === fixture.firstInstanceId &&
+        d.field_id === untouchedField!.id &&
+        d.reviewer_id !== ownerId,
+    );
+    expect(materialized, "advance materialized the bare human proposal").toBeTruthy();
+    expect(materialized!.decision).toBe("edit");
+    expect(materialized!.value).toEqual({ value: "PY-materialized" });
+    expect(materialized!.proposal_record_id).toBeNull();
+
+    await page.reload();
+    await expect(page.getByTestId("run-reviewer-comparison")).toBeVisible({
+      timeout: 30_000,
+    });
+    // The conflict row needs attention (default filter); adopt one side —
+    // select_existing must succeed against a real decision row (no 4xx).
+    const conflictRow = page.getByTestId(
+      `consensus-coord-${conflictCoord.instance_id}::${conflictCoord.field_id}`,
+    );
+    await expect(conflictRow).toBeVisible();
+    await conflictRow
+      .getByRole("button", { name: /publish this reviewer/i })
+      .first()
+      .click();
+    // The resolved row leaves the default "Needs attention" filter — assert
+    // its attributed summary under "Resolved".
+    await expect(page.getByTestId("consensus-filter-resolved")).toContainText(
+      "1",
+      { timeout: 15_000 },
+    );
+    await page.getByTestId("consensus-filter-resolved").click();
+    await expect(
+      conflictRow.getByText(new RegExp(`from (${OWNER_NAME}|${REVIEWER_B_NAME})`)),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // (4) Single-user QA export succeeds — pre-D8 the value map was blank.
+    // Small exports return the workbook inline (sync path); larger ones
+    // return a job envelope to poll. Handle both.
+    const exportRes = await request.post(
+      `${env.apiUrl}/api/v1/projects/${projectId}/extraction-export`,
+      {
+        headers: authHeaders(ownerToken, traceId),
+        data: {
+          template_id: fixture.projectTemplateId,
+          mode: "single_user",
+          reviewer_id: ownerId,
+          article_scope: "selected_only",
+          article_ids: [TRACE_ARTICLE_ID],
+          include_ai_metadata: false,
+          anonymize_reviewer_names: false,
+        },
+        timeout: 60_000,
+      },
+    );
+    expect(exportRes.ok(), await exportRes.text()).toBeTruthy();
+    const contentType = exportRes.headers()["content-type"] ?? "";
+    if (contentType.includes("spreadsheet")) {
+      const buf = await exportRes.body();
+      expect(buf.length).toBeGreaterThan(100);
+      expect(buf.slice(0, 4).toString("hex")).toBe("504b0304"); // ZIP magic
+    } else {
+      const { job_id: jobId } = (
+        await parseEnvelope<{ job_id: string }>(exportRes)
+      ).data;
+      await expect
+        .poll(
+          async () => {
+            const res = await request.get(
+              `${env.apiUrl}/api/v1/projects/${projectId}/extraction-export/status/${jobId}`,
+              { headers: authHeaders(ownerToken, traceId) },
+            );
+            if (!res.ok()) return `http-${res.status()}`;
+            const body = (
+              await parseEnvelope<{
+                status: string;
+                download_url: string | null;
+              }>(res)
+            ).data;
+            return body.status === "completed" && body.download_url
+              ? "completed-with-url"
+              : body.status;
+          },
+          { timeout: 60_000, intervals: [1000, 2000] },
+        )
+        .toBe("completed-with-url");
+    }
+    // Value-level non-blankness is pinned by the backend export integration
+    // test (test_qa_single_user_export_not_blank_after_advance).
+  });
+});
