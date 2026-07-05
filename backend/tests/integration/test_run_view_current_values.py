@@ -5,7 +5,11 @@ reviewer's rows are never returned (caller-scoped blind boundary)."""
 
 from __future__ import annotations
 
+import json
+from uuid import uuid4
+
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.extraction_run_read_service import resolve_caller_current_values
@@ -38,10 +42,63 @@ async def test_current_values_empty_when_no_caller_rows(
     # resolver returns an EMPTY list, not an error (the proposal stage path never
     # calls this). Use non-existent ids so emptiness is deterministic (a LIMIT 1
     # real run/user could already share rows and make `== []` flaky).
-    from uuid import uuid4
 
     values = await resolve_caller_current_values(db_session, uuid4(), caller_id=uuid4())
     assert values == [], "no matching rows must resolve to an empty list"
+
+
+@pytest.mark.asyncio
+async def test_current_values_include_system_seeded_proposals(
+    db_session: AsyncSession,
+) -> None:
+    """Reopen support (D8): a reopened run is seeded with ``source='system'``
+    proposals carrying the finalized parent's values. Layer 1 must surface
+    them to EVERY caller (system rows are not reviewer-attributable, so there
+    is no blind concern), while a caller's own decision still overrides
+    (Layer 2)."""
+    built = await _build_two_reviewer_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, reviewer_a, _reviewer_b = built
+
+    coord = (
+        await db_session.execute(
+            text(
+                "SELECT instance_id, field_id FROM public.extraction_reviewer_decisions "
+                "WHERE run_id = :rid LIMIT 1"
+            ),
+            {"rid": str(run_id)},
+        )
+    ).first()
+    assert coord is not None
+    instance_id, field_id = coord
+
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_proposal_records "
+            "(id, run_id, instance_id, field_id, source, proposed_value) "
+            "VALUES (gen_random_uuid(), :rid, :iid, :fid, 'system', CAST(:val AS jsonb))"
+        ),
+        {
+            "rid": str(run_id),
+            "iid": str(instance_id),
+            "fid": str(field_id),
+            "val": json.dumps({"value": "SYSTEM-SEEDED"}),
+        },
+    )
+
+    # A fresh caller (no decisions, no human proposals) sees the seed.
+    values = await resolve_caller_current_values(db_session, run_id, caller_id=uuid4())
+    seeded = [v for v in values if (v.instance_id, v.field_id) == (instance_id, field_id)]
+    assert len(seeded) == 1, "system-seeded proposal must hydrate for a fresh caller"
+    assert seeded[0].value == {"value": "SYSTEM-SEEDED"}
+    assert seeded[0].decision == "system_proposal"
+
+    # Reviewer A's own edit decision still overrides the seed on that coord.
+    a_values = await resolve_caller_current_values(db_session, run_id, caller_id=reviewer_a)
+    a_rows = [v for v in a_values if (v.instance_id, v.field_id) == (instance_id, field_id)]
+    assert len(a_rows) == 1
+    assert a_rows[0].value == {"value": "REVIEWER-A-SECRET"}
 
 
 @pytest.mark.asyncio

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -236,7 +236,9 @@ async def resolve_caller_current_values(
     """The caller's current value per (instance, field) coordinate.
 
     Mirrors the frontend ``loadValuesForUser`` it replaces, value-for-value:
-      Layer 1 (base): the caller's own human proposals, newest-per-coord;
+      Layer 1 (base): the caller's own human proposals PLUS ``system``-seeded
+        proposals (reopen seeding — not reviewer-attributable, visible to every
+        caller), newest-per-coord across both sources;
       Layer 2 (override): the caller's current reviewer decision per coord,
         resolved through the materialized ``extraction_reviewer_states`` pointer
         (``current_decision_id`` -> the live ``extraction_reviewer_decisions`` row).
@@ -261,16 +263,24 @@ async def resolve_caller_current_values(
     """
     merged: dict[tuple[UUID, UUID], RunViewCurrentValue] = {}
 
-    # Layer 1 — caller's own human proposals, newest-first; first-per-coord wins
-    # (ties on created_at are skipped by the `key in merged` guard below).
+    # Layer 1 — the caller's own human proposals plus system-seeded proposals
+    # (reopen seeding carries the finalized parent's values; system rows have
+    # no author, so surfacing them to every caller leaks no peer data),
+    # newest-first across both sources; first-per-coord wins (ties on
+    # created_at are skipped by the `key in merged` guard below).
     proposal_rows = (
         (
             await db.execute(
                 select(ExtractionProposalRecord)
                 .where(
                     ExtractionProposalRecord.run_id == run_id,
-                    ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
-                    ExtractionProposalRecord.source_user_id == caller_id,
+                    or_(
+                        and_(
+                            ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
+                            ExtractionProposalRecord.source_user_id == caller_id,
+                        ),
+                        ExtractionProposalRecord.source == ExtractionProposalSource.SYSTEM.value,
+                    ),
                 )
                 .order_by(ExtractionProposalRecord.created_at.desc())
             )
@@ -286,7 +296,11 @@ async def resolve_caller_current_values(
             instance_id=p.instance_id,
             field_id=p.field_id,
             value=p.proposed_value,
-            decision="human_proposal",
+            decision=(
+                "system_proposal"
+                if p.source == ExtractionProposalSource.SYSTEM.value
+                else "human_proposal"
+            ),
         )
 
     # Layer 2 — caller's current reviewer decision per coord (overrides Layer 1).
