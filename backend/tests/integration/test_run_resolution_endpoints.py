@@ -1,7 +1,6 @@
 """Integration tests for article-scoped run-resolution endpoints.
 
 Tests three endpoints:
-  GET /api/v1/articles/{article_id}/active-run?template_id=...
   GET /api/v1/articles/{article_id}/finalized-run?template_id=...
   POST /api/v1/articles/form-runs  body: {article_ids, template_id, project_id}
 
@@ -148,68 +147,6 @@ async def _force_finalize_run(db: AsyncSession, run_id: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_active_run_returns_200_with_run_id(
-    db_client: AsyncClient,
-    db_session: AsyncSession,  # noqa: ARG001 — seed ordering
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    """Happy path: a member gets 200 with the active run's id."""
-    created = await _create_extraction_run(db_client)
-    run_id = created["id"]
-    article_id = str(SEED.primary_article)
-
-    resp = await db_client.get(f"{_ARTICLES_URL}/{article_id}/active-run")
-    assert resp.status_code == 200, resp.text
-
-    payload = resp.json()
-    assert payload["ok"] is True
-    data = payload["data"]
-    assert data is not None
-    assert data["id"] == run_id
-
-
-@pytest.mark.asyncio
-async def test_active_run_with_template_id_filter(
-    db_client: AsyncClient,
-    db_session: AsyncSession,  # noqa: ARG001
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    """active-run with correct template_id still returns the run."""
-    created = await _create_extraction_run(db_client)
-    run_id = created["id"]
-    article_id = str(SEED.primary_article)
-    template_id = str(SEED.primary_template)
-
-    resp = await db_client.get(
-        f"{_ARTICLES_URL}/{article_id}/active-run",
-        params={"template_id": template_id},
-    )
-    assert resp.status_code == 200, resp.text
-    payload = resp.json()
-    assert payload["ok"] is True
-    assert payload["data"]["id"] == run_id
-
-
-@pytest.mark.asyncio
-async def test_active_run_returns_null_when_finalized(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    """active-run returns null when the only run for that article is finalized."""
-    created = await _create_extraction_run(db_client)
-    run_id = created["id"]
-    await _force_finalize_run(db_session, run_id)
-
-    article_id = str(SEED.primary_article)
-    resp = await db_client.get(f"{_ARTICLES_URL}/{article_id}/active-run")
-    assert resp.status_code == 200, resp.text
-    payload = resp.json()
-    assert payload["ok"] is True
-    assert payload["data"] is None
-
-
-@pytest.mark.asyncio
 async def test_finalized_run_returns_null_when_no_finalized_run(
     db_client: AsyncClient,
     db_session: AsyncSession,  # noqa: ARG001
@@ -244,19 +181,6 @@ async def test_finalized_run_returns_run_when_finalized(
     assert payload["ok"] is True
     assert payload["data"] is not None
     assert payload["data"]["id"] == run_id
-
-
-@pytest.mark.asyncio
-async def test_active_run_returns_403_for_non_member(
-    db_client: AsyncClient,
-    db_session: AsyncSession,  # noqa: ARG001
-    outsider_user: UUID,  # noqa: ARG001
-) -> None:
-    """BOLA gate: non-member gets 403 on active-run."""
-    # Seed an article owned by primary_project (outsider is not a member)
-    article_id = str(SEED.primary_article)
-    resp = await db_client.get(f"{_ARTICLES_URL}/{article_id}/active-run")
-    assert resp.status_code == 403, resp.text
 
 
 @pytest.mark.asyncio

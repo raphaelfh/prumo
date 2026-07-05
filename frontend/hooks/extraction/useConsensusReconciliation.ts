@@ -20,6 +20,14 @@ import { t } from '@/lib/copy';
 
 export interface ConsensusReconciliation {
   requiredCoords: string[];
+  /**
+   * Run-level required-field completeness: every required coord has a reviewer
+   * decision or a published value (published states are written for every
+   * consensus decision, so adopted-peer resolutions count). This is the signal
+   * the header finalize gate must use — NOT the caller-scoped form `isComplete`,
+   * which strands an arbitrator who resolved required fields by adopting peers.
+   */
+  requiredFieldsResolved: boolean;
   expectedReviewerCount: number;
   finalizeWarning: { shouldWarn: boolean; confirmMessage: string };
 }
@@ -85,6 +93,7 @@ export function useConsensusReconciliation(params: {
 
   return {
     requiredCoords,
+    requiredFieldsResolved: reconciliation.requiredGaps.length === 0,
     expectedReviewerCount,
     finalizeWarning: { shouldWarn: warning.shouldWarn, confirmMessage },
   };

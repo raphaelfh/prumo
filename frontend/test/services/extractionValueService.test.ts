@@ -4,89 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/integrations/api', () => ({ apiClient: vi.fn() }));
 
 import { apiClient } from '@/integrations/api';
-import { ExtractionValueService, unwrapValue } from '@/services/extractionValueService';
+import { ExtractionValueService } from '@/services/extractionValueService';
 
 const apiClientMock = apiClient as unknown as ReturnType<typeof vi.fn>;
-
-// ---------------------------------------------------------------------------
-// unwrapValue — routed through the shared envelope oracle; null-collapse kept
-// ---------------------------------------------------------------------------
-
-describe('unwrapValue', () => {
-  it('peels one {value} envelope and collapses a null/absent inner to null', () => {
-    expect(unwrapValue({ value: 'x' })).toBe('x');
-    expect(unwrapValue({ value: 0 })).toBe(0);
-    expect(unwrapValue({ value: null })).toBeNull();
-    expect(unwrapValue(null)).toBeNull();
-    expect(unwrapValue(undefined)).toBeNull();
-    expect(unwrapValue('x')).toBe('x');
-    expect(unwrapValue({ unit: 'mg' })).toEqual({ unit: 'mg' }); // non-envelope dict untouched
-  });
-});
 
 beforeEach(() => {
   apiClientMock.mockReset();
   // Default: return null (no active run)
   apiClientMock.mockResolvedValue(null);
-});
-
-// ---------------------------------------------------------------------------
-// findActiveRun
-// ---------------------------------------------------------------------------
-describe('ExtractionValueService.findActiveRun', () => {
-  it('returns null when the API returns null', async () => {
-    apiClientMock.mockResolvedValueOnce(null);
-    const result = await ExtractionValueService.findActiveRun('article-1', 'tpl-1');
-    expect(result).toBeNull();
-  });
-
-  it('returns mapped RunRef when the API returns a RunSummaryResponse', async () => {
-    apiClientMock.mockResolvedValueOnce({
-      id: 'run-1',
-      stage: 'extract',
-      status: 'running',
-      template_id: 'tpl-1',
-      project_id: 'proj-1',
-      article_id: 'article-1',
-      kind: 'extraction',
-      version_id: 'v1',
-      hitl_config_snapshot: {},
-      parameters: {},
-      results: {},
-      created_at: '2026-04-28T10:00:00Z',
-      created_by: 'user-1',
-    });
-    const result = await ExtractionValueService.findActiveRun('article-1', 'tpl-1');
-    expect(result).toEqual({
-      id: 'run-1',
-      stage: 'extract',
-      status: 'running',
-      template_id: 'tpl-1',
-    });
-  });
-
-  it('calls apiClient with the correct path (with template_id)', async () => {
-    apiClientMock.mockResolvedValueOnce(null);
-    await ExtractionValueService.findActiveRun('article-42', 'tpl-7');
-    expect(apiClientMock).toHaveBeenCalledWith(
-      '/api/v1/articles/article-42/active-run?template_id=tpl-7',
-    );
-  });
-
-  it('calls apiClient with path without query param when template_id is null', async () => {
-    apiClientMock.mockResolvedValueOnce(null);
-    await ExtractionValueService.findActiveRun('article-42', null);
-    expect(apiClientMock).toHaveBeenCalledWith('/api/v1/articles/article-42/active-run');
-  });
-
-  it('does NOT touch supabase', async () => {
-    // If supabase were imported and called, the test environment would error
-    // because we never mock it here. This test simply verifies apiClient is
-    // the sole transport by confirming the call lands on it.
-    apiClientMock.mockResolvedValueOnce(null);
-    await ExtractionValueService.findActiveRun('article-1', null);
-    expect(apiClientMock).toHaveBeenCalledTimes(1);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -209,71 +134,5 @@ describe('ExtractionValueService.findFormRunsByArticle', () => {
     apiClientMock.mockResolvedValueOnce([]);
     await ExtractionValueService.findFormRunsByArticle(['article-A'], 'tpl-1', 'proj-1');
     expect(apiClientMock).toHaveBeenCalledTimes(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Write paths (saveValue / acceptProposal / rejectValue) — unchanged
-// ---------------------------------------------------------------------------
-describe('ExtractionValueService write paths', () => {
-  it('saveValue posts an edit decision with wrapped value', async () => {
-    apiClientMock.mockResolvedValueOnce({});
-    await ExtractionValueService.saveValue('run-1', 'inst-1', 'field-1', 42);
-    expect(apiClientMock).toHaveBeenCalledWith('/api/v1/runs/run-1/decisions', {
-      method: 'POST',
-      body: {
-        instance_id: 'inst-1',
-        field_id: 'field-1',
-        decision: 'edit',
-        value: { value: 42 },
-        rationale: undefined,
-      },
-    });
-  });
-
-  it('saveValue forwards rationale when provided', async () => {
-    apiClientMock.mockResolvedValueOnce({});
-    await ExtractionValueService.saveValue('run-1', 'inst-1', 'field-1', null, 'because');
-    const lastCall = apiClientMock.mock.calls.at(-1)!;
-    expect(lastCall[1].body.rationale).toBe('because');
-    expect(lastCall[1].body.value).toEqual({ value: null });
-  });
-
-  it('acceptProposal posts decision=accept_proposal with proposal_record_id', async () => {
-    apiClientMock.mockResolvedValueOnce({});
-    await ExtractionValueService.acceptProposal('run-1', 'inst-1', 'field-1', 'proposal-1');
-    expect(apiClientMock).toHaveBeenCalledWith('/api/v1/runs/run-1/decisions', {
-      method: 'POST',
-      body: {
-        instance_id: 'inst-1',
-        field_id: 'field-1',
-        decision: 'accept_proposal',
-        proposal_record_id: 'proposal-1',
-      },
-    });
-  });
-
-  it('rejectValue posts a reject decision with no value', async () => {
-    apiClientMock.mockResolvedValueOnce({});
-    await ExtractionValueService.rejectValue('run-1', 'inst-1', 'field-1');
-    expect(apiClientMock).toHaveBeenCalledWith('/api/v1/runs/run-1/decisions', {
-      method: 'POST',
-      body: {
-        instance_id: 'inst-1',
-        field_id: 'field-1',
-        decision: 'reject',
-      },
-    });
-  });
-
-  it('writes always target the runId passed in (no implicit findActiveRun)', async () => {
-    apiClientMock.mockResolvedValue({});
-    apiClientMock.mockClear();
-    await ExtractionValueService.saveValue('explicit-run', 'inst-1', 'field-1', 1);
-    await ExtractionValueService.acceptProposal('explicit-run', 'inst-1', 'field-1', 'p-1');
-    await ExtractionValueService.rejectValue('explicit-run', 'inst-1', 'field-1');
-    for (const call of apiClientMock.mock.calls) {
-      expect(call[0]).toBe('/api/v1/runs/explicit-run/decisions');
-    }
   });
 });

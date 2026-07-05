@@ -9,6 +9,9 @@
  *   - Mutex on concurrent ``saveNow``
  *   - ``saveNow`` cancels the debounce timer
  *   - ``hasUnsavedChanges`` reflects the diff against last-saved
+ *   - One shared write path (D8): every write is an ``edit`` decision on
+ *     ``/runs/{id}/decisions`` for BOTH run kinds; autosave only writes in
+ *     the ``extract`` stage
  */
 
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -31,15 +34,14 @@ import { useAutoSaveProposals } from '@/hooks/runs/useAutoSaveProposals';
 
 const apiClientMock = apiClient as unknown as ReturnType<typeof vi.fn>;
 
-const PROPOSAL_RESPONSE = {
-  id: 'p-1',
+const DECISION_RESPONSE = {
+  id: 'd-1',
   run_id: 'run-1',
   instance_id: 'inst-1',
   field_id: 'field-1',
-  source: 'human',
-  source_user_id: null,
-  proposed_value: { value: 'hello' },
-  confidence_score: null,
+  decision: 'edit',
+  proposal_record_id: null,
+  value: { value: 'hello' },
   rationale: null,
   created_at: '2026-04-28T00:00:00Z',
 };
@@ -53,12 +55,13 @@ afterEach(() => {
 });
 
 describe('useAutoSaveProposals — basic write semantics', () => {
-  it('writes a human proposal per changed coord on saveNow()', async () => {
-    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+  it("writes an 'edit' decision per changed coord on saveNow()", async () => {
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
+        stage: 'extract',
         values: { 'inst-1_field-1': 'hello' },
       }),
     );
@@ -69,15 +72,15 @@ describe('useAutoSaveProposals — basic write semantics', () => {
 
     expect(apiClientMock).toHaveBeenCalledTimes(1);
     expect(apiClientMock).toHaveBeenCalledWith(
-      '/api/v1/runs/run-1/proposals',
+      '/api/v1/runs/run-1/decisions',
       expect.objectContaining({
         method: 'POST',
         keepalive: true,
         body: {
           instance_id: 'inst-1',
           field_id: 'field-1',
-          source: 'human',
-          proposed_value: { value: 'hello' },
+          decision: 'edit',
+          value: { value: 'hello' },
         },
       }),
     );
@@ -86,12 +89,13 @@ describe('useAutoSaveProposals — basic write semantics', () => {
   });
 
   it('skips coords whose value did not change since the last save', async () => {
-    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { result, rerender } = renderHook(
       ({ values }) =>
         useAutoSaveProposals({
           runId: 'run-1',
+          stage: 'extract',
           values,
         }),
       {
@@ -123,6 +127,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
     const { result } = renderHook(() =>
       useAutoSaveProposals({
         runId: null,
+        stage: 'extract',
         values: { 'inst-1_field-1': 'hello' },
       }),
     );
@@ -135,11 +140,12 @@ describe('useAutoSaveProposals — basic write semantics', () => {
   });
 
   it('skips only undefined; null and empty-string are persisted as clears (#25)', async () => {
-    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
+        stage: 'extract',
         values: {
           'inst-1_field-empty': '',
           'inst-1_field-null': null,
@@ -164,7 +170,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
       (c) => (c[1] as { body: { field_id: string } }).body.field_id === 'field-empty',
     );
     expect(
-      (clearCall![1] as { body: { proposed_value: unknown } }).body.proposed_value,
+      (clearCall![1] as { body: { value: unknown } }).body.value,
     ).toEqual({ value: null });
   });
 
@@ -172,6 +178,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
     const { result } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
+        stage: 'extract',
         values: { 'inst-1_field-1': 'hello' },
         enabled: false,
       }),
@@ -184,14 +191,13 @@ describe('useAutoSaveProposals — basic write semantics', () => {
   });
 });
 
-describe('useAutoSaveProposals — kind-aware write target (Layer 2 fix)', () => {
-  // Bug B (multi-reviewer blind review): for an extraction run in the editable
-  // ``extract`` stage every reviewer's edit must land as a per-user
-  // ``ReviewerDecision`` so the run view's reviewer-scoped read
-  // (``currentValues``) keeps them blinded from each other. A shared
-  // /proposals write would break the per-user contract (and is now rejected
-  // by the backend for extraction). Fix: extraction in ``extract`` POSTs to
-  // /decisions with decision='edit'; QA stays on /proposals.
+describe('useAutoSaveProposals — one shared write path (D8)', () => {
+  // D8: the write target no longer depends on the run kind. Every autosave
+  // write in the editable ``extract`` stage is a per-reviewer ``edit``
+  // decision on /decisions — extraction (the multi-reviewer blind contract)
+  // and quality_assessment (decisions parity) alike. The old ``kind`` prop
+  // and the human /proposals fallback are gone: outside ``extract`` the hook
+  // writes nothing.
 
   it("writes an 'edit' ReviewerDecision per dirty coord for extraction in 'extract'", async () => {
     apiClientMock.mockResolvedValue({ ok: true });
@@ -200,7 +206,6 @@ describe('useAutoSaveProposals — kind-aware write target (Layer 2 fix)', () =>
       useAutoSaveProposals({
         runId: 'run-1',
         stage: 'extract',
-        kind: 'extraction',
         values: { 'inst-1_field-1': 'reviewer-typed' },
       }),
     );
@@ -225,14 +230,13 @@ describe('useAutoSaveProposals — kind-aware write target (Layer 2 fix)', () =>
     );
   });
 
-  it("does NOT post a /proposals write for extraction in 'extract' (no double write)", async () => {
+  it('never posts to /proposals (the human proposal write path is gone)', async () => {
     apiClientMock.mockResolvedValue({ ok: true });
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
         stage: 'extract',
-        kind: 'extraction',
         values: { 'inst-1_field-1': 'x' },
       }),
     );
@@ -241,6 +245,7 @@ describe('useAutoSaveProposals — kind-aware write target (Layer 2 fix)', () =>
       await result.current.saveNow();
     });
 
+    expect(apiClientMock).toHaveBeenCalled();
     for (const call of apiClientMock.mock.calls) {
       expect(call[0]).not.toMatch(/\/proposals$/);
     }
@@ -253,7 +258,6 @@ describe('useAutoSaveProposals — kind-aware write target (Layer 2 fix)', () =>
       useAutoSaveProposals({
         runId: 'run-1',
         stage: 'extract',
-        kind: 'extraction',
         values: { 'inst-1_field-1': '' },
       }),
     );
@@ -269,14 +273,16 @@ describe('useAutoSaveProposals — kind-aware write target (Layer 2 fix)', () =>
     });
   });
 
-  it("falls back to /proposals when stage is undefined (QA backwards compat)", async () => {
-    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+  it('does not write when stage is undefined (stage-based guard, D8)', async () => {
+    // Pre-D8 a stage-less caller fell back to human /proposals writes (the
+    // legacy QA flow). Both QA and extraction now pass the run stage; a
+    // stage-less invocation writes nothing rather than something wrong.
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
         values: { 'inst-1_field-1': 'hello' },
-        // stage omitted on purpose — QA never passes it
       }),
     );
 
@@ -284,20 +290,19 @@ describe('useAutoSaveProposals — kind-aware write target (Layer 2 fix)', () =>
       await result.current.saveNow();
     });
 
-    expect(apiClientMock).toHaveBeenCalledWith(
-      '/api/v1/runs/run-1/proposals',
-      expect.objectContaining({ method: 'POST' }),
-    );
+    expect(apiClientMock).not.toHaveBeenCalled();
+    expect(result.current.saveState).toBe('idle');
   });
 
-  it("writes to /proposals for a QA run in 'extract' (kind='quality_assessment')", async () => {
-    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+  it("writes an 'edit' decision for a QA run in 'extract' (decisions parity)", async () => {
+    // QA passes stage exactly like extraction; the kind is irrelevant to the
+    // write target since D8.
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
         stage: 'extract',
-        kind: 'quality_assessment',
         values: { 'inst-1_field-1': 'hello' },
       }),
     );
@@ -307,7 +312,7 @@ describe('useAutoSaveProposals — kind-aware write target (Layer 2 fix)', () =>
     });
 
     expect(apiClientMock).toHaveBeenCalledWith(
-      '/api/v1/runs/run-1/proposals',
+      '/api/v1/runs/run-1/decisions',
       expect.objectContaining({ method: 'POST' }),
     );
   });
@@ -317,14 +322,12 @@ describe('useAutoSaveProposals — non-writable stages are inert', () => {
   // Regression: opening a run parked at ``consensus`` (or ``finalized``)
   // fired a doomed POST on load, which the backend rejects (HTTP 400 "run
   // stage is consensus, not in ['extract']") and the UI surfaced as a
-  // spurious "Error saving data automatically" toast. Past the editable
-  // ``extract`` stage, autosave must not write at all. In ``extract``,
-  // extraction routes to /decisions and QA/undefined to /proposals — those
-  // remain writable (covered by the kind-aware suite above).
+  // spurious "Error saving data automatically" toast. Only the editable
+  // ``extract`` stage writes — /decisions for both kinds (D8).
   it.each(['consensus', 'finalized', 'pending'])(
     'does NOT POST and stays idle when stage=%s',
     async (stage) => {
-      apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+      apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
       const { result } = renderHook(() =>
         useAutoSaveProposals({
@@ -352,12 +355,13 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
     });
     apiClientMock.mockImplementation(async () => {
       await block;
-      return PROPOSAL_RESPONSE;
+      return DECISION_RESPONSE;
     });
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
+        stage: 'extract',
         values: { 'inst-1_field-1': 'hello' },
       }),
     );
@@ -374,17 +378,18 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
 
   it('queues a trailing save when values change during an in-flight save', async () => {
     let releaseFirst!: () => void;
-    const firstRequest = new Promise<typeof PROPOSAL_RESPONSE>((resolve) => {
-      releaseFirst = () => resolve(PROPOSAL_RESPONSE);
+    const firstRequest = new Promise<typeof DECISION_RESPONSE>((resolve) => {
+      releaseFirst = () => resolve(DECISION_RESPONSE);
     });
     apiClientMock
       .mockReturnValueOnce(firstRequest)
-      .mockResolvedValueOnce(PROPOSAL_RESPONSE);
+      .mockResolvedValueOnce(DECISION_RESPONSE);
 
     const { result, rerender } = renderHook(
       ({ values }) =>
         useAutoSaveProposals({
           runId: 'run-1',
+          stage: 'extract',
           values,
         }),
       {
@@ -417,10 +422,10 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
 
     expect(apiClientMock).toHaveBeenCalledTimes(2);
     expect(apiClientMock).toHaveBeenLastCalledWith(
-      '/api/v1/runs/run-1/proposals',
+      '/api/v1/runs/run-1/decisions',
       expect.objectContaining({
         body: expect.objectContaining({
-          proposed_value: { value: 'second' },
+          value: { value: 'second' },
         }),
       }),
     );
@@ -428,14 +433,15 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
 
   it('surfaces partial failures and retries only the failed coord', async () => {
     apiClientMock
-      .mockResolvedValueOnce(PROPOSAL_RESPONSE)
+      .mockResolvedValueOnce(DECISION_RESPONSE)
       .mockRejectedValueOnce(new Error('network drop'))
-      .mockResolvedValueOnce(PROPOSAL_RESPONSE);
+      .mockResolvedValueOnce(DECISION_RESPONSE);
 
     const { result, rerender } = renderHook(
       ({ values }) =>
         useAutoSaveProposals({
           runId: 'run-1',
+          stage: 'extract',
           values,
         }),
       {
@@ -460,7 +466,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
     expect(result.current.error).not.toBeNull();
 
     apiClientMock.mockClear();
-    apiClientMock.mockResolvedValueOnce(PROPOSAL_RESPONSE);
+    apiClientMock.mockResolvedValueOnce(DECISION_RESPONSE);
     rerender({
       values: { 'inst-1_a': '1', 'inst-1_b': '2', 'inst-1_c': '3' },
     });
@@ -483,6 +489,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
     const { result } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
+        stage: 'extract',
         values: { 'inst-1_field-1': 'unsaved-edit' },
       }),
     );
@@ -501,12 +508,13 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
 
 describe('useAutoSaveProposals — state machine', () => {
   it('transitions idle → dirty → saving → saved through the debounce', async () => {
-    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { result, rerender } = renderHook(
       ({ values }) =>
         useAutoSaveProposals({
           runId: 'run-1',
+          stage: 'extract',
           values,
           debounceMs: 20,
         }),
@@ -534,6 +542,7 @@ describe('useAutoSaveProposals — state machine', () => {
       ({ values }) =>
         useAutoSaveProposals({
           runId: 'run-1',
+          stage: 'extract',
           values,
         }),
       {
@@ -548,7 +557,7 @@ describe('useAutoSaveProposals — state machine', () => {
     });
     expect(result.current.saveState).toBe('error');
 
-    apiClientMock.mockResolvedValueOnce(PROPOSAL_RESPONSE);
+    apiClientMock.mockResolvedValueOnce(DECISION_RESPONSE);
     rerender({ values: { 'inst-1_a': 'y' } });
     expect(result.current.saveState).toBe('dirty');
 
@@ -561,11 +570,12 @@ describe('useAutoSaveProposals — state machine', () => {
 
 describe('useAutoSaveProposals — lifecycle survivability', () => {
   it('flushes pending edits on unmount (the original bug)', async () => {
-    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { unmount } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
+        stage: 'extract',
         values: { 'inst-1_field-1': 'mid-typing' },
         debounceMs: 5000,
       }),
@@ -576,17 +586,18 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
 
     await waitFor(() => expect(apiClientMock).toHaveBeenCalledTimes(1));
     expect(apiClientMock).toHaveBeenCalledWith(
-      '/api/v1/runs/run-1/proposals',
+      '/api/v1/runs/run-1/decisions',
       expect.objectContaining({ keepalive: true }),
     );
   });
 
   it('does not flush on unmount when there are no dirty changes', async () => {
-    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { result, unmount } = renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
+        stage: 'extract',
         values: { 'inst-1_field-1': 'persisted' },
       }),
     );
@@ -604,11 +615,12 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
   });
 
   it('pagehide triggers an immediate flush', async () => {
-    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
+        stage: 'extract',
         values: { 'inst-1_field-1': 'about-to-leave' },
         debounceMs: 5000,
       }),
@@ -620,17 +632,18 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
 
     await waitFor(() => expect(apiClientMock).toHaveBeenCalledTimes(1));
     expect(apiClientMock).toHaveBeenCalledWith(
-      '/api/v1/runs/run-1/proposals',
+      '/api/v1/runs/run-1/decisions',
       expect.objectContaining({ keepalive: true }),
     );
   });
 
   it('visibilitychange to "hidden" triggers a flush', async () => {
-    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     renderHook(() =>
       useAutoSaveProposals({
         runId: 'run-1',
+        stage: 'extract',
         values: { 'inst-1_field-1': 'tab-switched' },
         debounceMs: 5000,
       }),
@@ -645,5 +658,118 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     });
 
     await waitFor(() => expect(apiClientMock).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('useAutoSaveProposals — AI link stamping (D0)', () => {
+  it('attaches proposal_record_id to the edit decision for linked coords', async () => {
+    apiClientMock.mockResolvedValue({});
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        stage: 'extract',
+        values: { 'inst-1_field-1': 'ai text' },
+        linkByKey: { 'inst-1_field-1': 'prop-9' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/run-1/decisions',
+      expect.objectContaining({
+        method: 'POST',
+        keepalive: true,
+        body: {
+          instance_id: 'inst-1',
+          field_id: 'field-1',
+          decision: 'edit',
+          value: { value: 'ai text' },
+          proposal_record_id: 'prop-9',
+        },
+      }),
+    );
+  });
+
+  it('omits proposal_record_id for unlinked coords', async () => {
+    apiClientMock.mockResolvedValue({});
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        stage: 'extract',
+        values: { 'inst-1_field-1': 'typed by hand' },
+        linkByKey: { 'inst-OTHER_field-1': 'prop-9' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+    const body = apiClientMock.mock.calls[0][1].body;
+    expect(body).not.toHaveProperty('proposal_record_id');
+  });
+
+  it('a link-only adoption on an unchanged value still writes the linked decision', async () => {
+    apiClientMock.mockResolvedValue({});
+
+    const baseProps: Parameters<typeof useAutoSaveProposals>[0] = {
+      runId: 'run-1',
+      stage: 'extract',
+      values: { 'inst-1_field-1': 'same' },
+      baselineValues: { 'inst-1_field-1': 'same' },
+    };
+    const { result, rerender } = renderHook(
+      (props: Parameters<typeof useAutoSaveProposals>[0]) => useAutoSaveProposals(props),
+      { initialProps: baseProps },
+    );
+
+    // Baseline-equal value, no link: nothing to save.
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).not.toHaveBeenCalled();
+
+    // The reviewer adopts an AI version whose value is byte-identical — the
+    // selection event must still append a linked decision (D0 / §IX).
+    rerender({ ...baseProps, linkByKey: { 'inst-1_field-1': 'prop-9' } });
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/run-1/decisions',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          value: { value: 'same' },
+          proposal_record_id: 'prop-9',
+        }),
+      }),
+    );
+  });
+
+  it('mount with the persisted link (baselineLinkByKey) does not re-post', async () => {
+    apiClientMock.mockResolvedValue({});
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        stage: 'extract',
+        values: { 'inst-1_field-1': 'same' },
+        baselineValues: { 'inst-1_field-1': 'same' },
+        linkByKey: { 'inst-1_field-1': 'prop-9' },
+        baselineLinkByKey: { 'inst-1_field-1': 'prop-9' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).not.toHaveBeenCalled();
   });
 });

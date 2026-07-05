@@ -4,7 +4,7 @@
  * resolution surface: filter chips, adopt, typed override, resolved summary,
  * provenance gating, and the disabled state.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
@@ -23,7 +23,7 @@ const dec = (over: Partial<ReviewerDecisionResponse>): ReviewerDecisionResponse 
   field_id: over.field_id ?? 'field-1',
   reviewer_id: over.reviewer_id ?? 'user-a',
   decision: over.decision ?? 'edit',
-  proposal_record_id: null,
+  proposal_record_id: over.proposal_record_id ?? null,
   value: over.value ?? null,
   rationale: null,
   created_at: over.created_at ?? '2026-04-28T10:00:00Z',
@@ -52,16 +52,16 @@ const reviewerAvatarById = { 'user-a': null, 'user-b': null };
 function buildResolution(
   over: Partial<ComparisonResolution> & {
     consensusDecisions?: Parameters<typeof deriveConsensusResolution>[0]['consensusDecisions'];
+    divergentCoords?: ReadonlySet<string>;
   } = {},
 ): ComparisonResolution {
   const view = deriveConsensusResolution({
     consensusDecisions: over.consensusDecisions ?? [],
     publishedCoords: new Set(),
-    divergentCoords: new Set(['inst-1::field-1']),
+    divergentCoords: over.divergentCoords ?? new Set(['inst-1::field-1']),
     decisionCountByCoord: new Map([['inst-1::field-1', 2]]),
     participantCount: 2,
     requiredCoords: [],
-    isComplete: true,
   });
   return {
     statusByCoord: view.statusByCoord,
@@ -72,6 +72,7 @@ function buildResolution(
     peersRevealed: over.peersRevealed ?? true,
     onSelectExisting: over.onSelectExisting ?? vi.fn(),
     onManualOverride: over.onManualOverride ?? vi.fn(),
+    trace: over.trace,
   };
 }
 
@@ -255,5 +256,113 @@ describe('RunReviewerComparison — resolve mode', () => {
     expect(
       screen.getByTestId('consensus-override-toggle-inst-1::field-1'),
     ).toBeDisabled();
+  });
+});
+
+describe('RunReviewerComparison — per-cell AI trace (D1/D4)', () => {
+  // Key format matches getSuggestionKey: `${instanceId}_${fieldId}`.
+  const traceWithSuggestion = {
+    articleId: 'a1',
+    getHistory: async () => [],
+    aiSuggestions: {
+      'inst-1_field-1': { id: 'p1', status: 'pending' } as never,
+    },
+  };
+
+  const renderWith = (
+    decisions: ReviewerDecisionResponse[],
+    resolution: ComparisonResolution,
+  ) =>
+    render(
+      <RunReviewerComparison
+        decisionsByCoord={new Map([['inst-1::field-1', decisions]])}
+        entityTypes={entityTypes}
+        instances={instances}
+        ownValues={{}}
+        reviewerLabelById={reviewerLabelById}
+        reviewerAvatarById={reviewerAvatarById}
+        resolution={resolution}
+      />,
+    );
+
+  it('renders the trace icon on linked reviewer cells — including AGREED rows', () => {
+    // Both reviewers adopted the same AI basis with the same value: agreed.
+    renderWith(
+      [
+        dec({ id: 'dec-a', reviewer_id: 'user-a', proposal_record_id: 'p1', value: { value: 'Yes' } }),
+        dec({ id: 'dec-b', reviewer_id: 'user-b', proposal_record_id: 'p1', value: { value: 'Yes' } }),
+      ],
+      buildResolution({ divergentCoords: new Set(), trace: traceWithSuggestion }),
+    );
+    // Agreed rows hide under the default attention filter — show All first.
+    fireEvent.click(screen.getByTestId('consensus-filter-all'));
+    expect(screen.getAllByRole('button', { name: 'traceTitle' })).toHaveLength(2);
+  });
+
+  it('Manual chip only when the coord verifiably has no AI suggestion', () => {
+    renderWith(
+      [
+        dec({ id: 'dec-a', reviewer_id: 'user-a', proposal_record_id: 'p1', value: { value: 'Yes' } }),
+        dec({ id: 'dec-b', reviewer_id: 'user-b', proposal_record_id: null, value: { value: 'No' } }),
+      ],
+      buildResolution({
+        trace: { articleId: 'a1', getHistory: async () => [], aiSuggestions: {} },
+      }),
+    );
+    expect(screen.getAllByRole('button', { name: 'traceTitle' })).toHaveLength(1);
+    expect(screen.getByText('traceManualChip')).toBeInTheDocument();
+  });
+
+  it('renders neither icon nor chip for unlinked cells when the AI signal is unavailable', () => {
+    renderWith(
+      [
+        dec({ id: 'dec-a', reviewer_id: 'user-a', proposal_record_id: null, value: { value: 'Yes' } }),
+        dec({ id: 'dec-b', reviewer_id: 'user-b', proposal_record_id: null, value: { value: 'No' } }),
+      ],
+      buildResolution({
+        trace: { articleId: 'a1', getHistory: async () => [], aiSuggestions: null },
+      }),
+    );
+    expect(screen.queryByRole('button', { name: 'traceTitle' })).not.toBeInTheDocument();
+    expect(screen.queryByText('traceManualChip')).not.toBeInTheDocument();
+  });
+
+  it('keeps the Consensus column free of trace affordances (manual_override → Custom, no chip)', () => {
+    renderWith(
+      [
+        dec({ id: 'dec-a', reviewer_id: 'user-a', proposal_record_id: 'p1', value: { value: 'Yes' } }),
+        dec({ id: 'dec-b', reviewer_id: 'user-b', proposal_record_id: 'p2', value: { value: 'No' } }),
+      ],
+      buildResolution({
+        trace: traceWithSuggestion,
+        consensusDecisions: [
+          {
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            created_at: '2026-07-04T00:00:00Z',
+            mode: 'manual_override',
+            value: { value: 'Arbitrated' },
+          },
+        ],
+      }),
+    );
+    // Resolved rows hide under the default attention filter.
+    fireEvent.click(screen.getByTestId('consensus-filter-resolved'));
+    const consensusCell = screen.getByTestId('consensus-resolved-inst-1::field-1');
+    expect(
+      within(consensusCell).queryByRole('button', { name: 'traceTitle' }),
+    ).not.toBeInTheDocument();
+    expect(within(consensusCell).queryByText('traceManualChip')).not.toBeInTheDocument();
+  });
+
+  it('renders no trace anywhere when the resolution carries no trace context', () => {
+    renderWith(
+      [
+        dec({ id: 'dec-a', reviewer_id: 'user-a', proposal_record_id: 'p1', value: { value: 'Yes' } }),
+        dec({ id: 'dec-b', reviewer_id: 'user-b', proposal_record_id: 'p2', value: { value: 'No' } }),
+      ],
+      buildResolution({}),
+    );
+    expect(screen.queryByRole('button', { name: 'traceTitle' })).not.toBeInTheDocument();
   });
 });

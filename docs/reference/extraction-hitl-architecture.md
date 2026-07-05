@@ -443,6 +443,10 @@ publish, AI), keep it in the page-specific component.
 
 ### HITL lifecycle
 
+- **Consensus surface** — The resolve-mode compare table
+  (`RunReviewerComparison` inside `ConsensusResolutionPanel`) rendered by
+  both run screens during the consensus stage; adopt-or-override per
+  coordinate. The earlier `ConsensusPanel` card list was deleted in #483.
 - **Run** — *Atomic unit of HITL work* (see §2).
 - **stage / status** — orthogonal axes (see §2).
 - **ProposalRecord** — Append-only proposed value. `source=human`

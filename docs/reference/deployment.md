@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-06-27
+last_reviewed: 2026-07-05
 owner: '@raphaelfh'
 ---
 
@@ -237,8 +237,8 @@ head commit. As of 2026-05-24 the relevant ones for backend code:
      corruption. Snapshot today is 89%.
 4. **`backend-e2e`** — `pytest -m e2e`.
 5. **`backend-build`** — Docker image build.
-6. **`frontend-lint`** + **`frontend-build`** + the E2E gates when the
-   corresponding secrets are configured.
+6. **`frontend-lint`** + **`frontend-build`** + the ephemeral-stack
+   frontend E2E (self-provisioned, no secrets needed).
 7. **`docs-ci`** — runs on the same push. Railway's "Wait for CI" waits
    for the **full** Actions suite (CI **and** `docs-ci`), so a `docs-ci`
    that reports SKIPPED (path-filtered) can wedge the deploy — recover
@@ -246,9 +246,9 @@ head commit. As of 2026-05-24 the relevant ones for backend code:
    from the repo root).
 
 After a deploy, the `post-deploy-smoke` workflow (push-triggered +
-hourly) re-checks `/health`, the frontend, and a CORS preflight from the
-prod origin; a failure emails the owner. It is the deploy safety net,
-not a gate.
+every 6 hours) re-checks `/health`, the frontend, and a CORS preflight
+from the prod origin; a failure emails the owner. It is the deploy
+safety net, not a gate.
 
 Override the env-driven thresholds via repo variables
 (`PRUMO_DIFF_COVERAGE_MIN`, `PRUMO_CRITICAL_COVERAGE_MIN`) when

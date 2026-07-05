@@ -278,26 +278,10 @@ export interface ModelExtractionResponse {
 // =================== HOOK PROPS ===================
 
 /**
- * How "accept this AI suggestion" is persisted on the backend.
- *
- * - ``reviewer-decision`` (default, used by Data Extraction): the hook
- *   calls ``/runs/{id}/decisions`` with ``decision='accept_proposal'``.
- *   Requires the run to be in REVIEW stage.
- * - ``human-proposal`` (used by Quality Assessment): the hook does NOT
- *   write a decision. It just bubbles ``onSuggestionAccepted`` so the
- *   page records a fresh ``human`` proposal via its own flow. QA stays
- *   in PROPOSAL until the user clicks Publish.
- */
-export type AISuggestionAcceptStrategy =
-  | 'reviewer-decision'
-  | 'human-proposal';
-
-/**
  * Props for the useAISuggestions hook
  */
 export interface UseAISuggestionsProps {
   articleId: string;
-  projectId: string;
   enabled?: boolean;
   /**
    * Scope suggestions to a specific Run. When omitted the hook falls
@@ -312,13 +296,6 @@ export interface UseAISuggestionsProps {
    * article. QA already has these from the HITL session response.
    */
   instanceIds?: string[];
-  /**
-   * Default ``'reviewer-decision'``. Set to ``'human-proposal'`` to
-   * have accept/reject only update local state and rely on the
-   * consumer's ``onSuggestion*`` callbacks to persist the value via the
-   * caller's own proposal pipeline.
-   */
-  acceptStrategy?: AISuggestionAcceptStrategy;
   onSuggestionAccepted?: (instanceId: string, fieldId: string, value: any) => void;
   onSuggestionRejected?: (instanceId: string, fieldId: string) => void;
 }
@@ -329,6 +306,20 @@ export interface UseAISuggestionsProps {
 export interface UseAISuggestionsReturn {
   suggestions: Record<string, AISuggestion>; // key: `${instanceId}_${fieldId}`
   loading: boolean;
+  /**
+   * D0: this session's real adoption events — accept/select set the chosen
+   * proposal id, reject tombstones with null. Starts empty every mount and is
+   * never hydrated from the read endpoint (whose `status` marks any non-reject
+   * decision 'accepted' and would fabricate AI provenance). Feeds
+   * `deriveAiLinkByKey` together with the caller's persisted decision links.
+   */
+  sessionAdoption: Record<string, string | null>;
+  /**
+   * True only after a successful suggestions load; false while loading and
+   * after a load error. Distinguishes "no AI suggestion exists" from "the
+   * AI-existence signal is unavailable" (consensus Manual-chip gating).
+   */
+  suggestionsReady: boolean;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   /**
    * Accept a SPECIFIC historical version by its proposal id (not just the
@@ -345,10 +336,13 @@ export interface UseAISuggestionsReturn {
   ) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   batchAccept: (threshold?: number) => Promise<void>;
-  getSuggestionsHistory: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
+  getSuggestionsHistory: (
+    instanceId: string,
+    fieldId: string,
+    limit?: number,
+  ) => Promise<AISuggestionHistoryItem[]>;
   getLatestSuggestion: (instanceId: string, fieldId: string) => AISuggestion | undefined;
   refresh: () => Promise<LoadSuggestionsResult>; // Returns result directly for efficient polling
-  isActionLoading: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null; // Whether action is loading
 }
 
 export interface LoadSuggestionsResult {

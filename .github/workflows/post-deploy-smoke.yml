@@ -6,14 +6,15 @@ name: Post-deploy Smoke
 # prod is stale, nobody notices.
 #
 # Runs after every push to main (deploy trigger) with a delay for
-# Railway's Wait-for-CI + build, plus hourly as a synthetic monitor.
-# A failure emails the repo owner via standard workflow notifications.
+# Railway's Wait-for-CI + build, plus every 6 hours as a synthetic
+# monitor. A failure emails the repo owner via standard workflow
+# notifications.
 
 on:
   push:
     branches: [main]
   schedule:
-    - cron: "7 * * * *"
+    - cron: "7 */6 * * *"
   workflow_dispatch:
 
 jobs:

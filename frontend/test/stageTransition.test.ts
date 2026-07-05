@@ -12,6 +12,7 @@ function makeArgs(overrides: Partial<Parameters<typeof buildExtractionTransition
     isComplete: false,
     completed: 0,
     total: 30,
+    consensusComplete: false,
     divergencesResolved: true,
     isReady: false,
     onMarkReady: noop,
@@ -68,7 +69,7 @@ describe('buildExtractionTransition', () => {
   it('Consensus + manager + complete + resolved → Approve & finalize, onAdvance===onApproveFinalize', () => {
     const onApproveFinalize = vi.fn();
     const r = buildExtractionTransition(
-      makeArgs({ stage: 'consensus', canResolveConflicts: true, isComplete: true, divergencesResolved: true, onApproveFinalize }),
+      makeArgs({ stage: 'consensus', canResolveConflicts: true, consensusComplete: true, divergencesResolved: true, onApproveFinalize }),
     );
     expect(r!.to).toBe('finalized');
     expect(r!.label).toBe('runHeaderApproveFinalize');
@@ -77,24 +78,47 @@ describe('buildExtractionTransition', () => {
     expect(r!.onAdvance).toBe(onApproveFinalize);
   });
 
-  it('Consensus + manager + unresolved divergence → gated, onAdvance===onGuide', () => {
+  it('Consensus finalize uses run-level completeness, not the caller-scoped form (bug: arbitrator adopted peers)', () => {
+    // The reported dead end: the run is reconciled (consensusComplete) but the
+    // arbitrator's own form is empty (isComplete=false). The gate must open.
+    const onApproveFinalize = vi.fn();
+    const r = buildExtractionTransition(
+      makeArgs({
+        stage: 'consensus',
+        canResolveConflicts: true,
+        consensusComplete: true,
+        isComplete: false,
+        divergencesResolved: true,
+        onApproveFinalize,
+      }),
+    );
+    expect(r!.gate.ok).toBe(true);
+    expect(r!.onAdvance).toBe(onApproveFinalize);
+  });
+
+  it('Consensus + manager + unresolved divergence → gated, onAdvance toasts the gate reason', () => {
     const onGuide = vi.fn();
     const onApproveFinalize = vi.fn();
     const r = buildExtractionTransition(
-      makeArgs({ stage: 'consensus', canResolveConflicts: true, isComplete: true, divergencesResolved: false, onGuide, onApproveFinalize }),
+      makeArgs({ stage: 'consensus', canResolveConflicts: true, consensusComplete: true, divergencesResolved: false, onGuide, onApproveFinalize }),
     );
     expect(r!.gate.ok).toBe(false);
-    expect(r!.onAdvance).toBe(onGuide);
+    expect((r!.gate as { ok: false; reason: string }).reason).toBe('runHeaderApproveBlocked');
+    // Blocked click toasts the SAME copy as the tooltip, not the extract-stage default.
+    void r!.onAdvance();
+    expect(onGuide).toHaveBeenCalledWith('runHeaderApproveBlocked');
+    expect(onApproveFinalize).not.toHaveBeenCalled();
   });
 
-  it('Consensus + manager + incomplete → gated, onAdvance===onGuide', () => {
+  it('Consensus + manager + incomplete → gated, onAdvance toasts the gate reason', () => {
     const onGuide = vi.fn();
     const r = buildExtractionTransition(
-      makeArgs({ stage: 'consensus', canResolveConflicts: true, isComplete: false, divergencesResolved: true, completed: 5, total: 20, onGuide }),
+      makeArgs({ stage: 'consensus', canResolveConflicts: true, consensusComplete: false, divergencesResolved: true, completed: 5, total: 20, onGuide }),
     );
     expect(r!.gate.ok).toBe(false);
     expect((r!.gate as { ok: false; remaining: number }).remaining).toBe(15);
-    expect(r!.onAdvance).toBe(onGuide);
+    void r!.onAdvance();
+    expect(onGuide).toHaveBeenCalledWith('runHeaderApproveBlocked');
   });
 
   it('Consensus without canResolveConflicts → null (reviewer cannot finalize)', () => {

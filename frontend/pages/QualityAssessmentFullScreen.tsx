@@ -16,7 +16,7 @@
  * field to materialize PublishedState rows.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -64,8 +64,12 @@ import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermission
 import { useSidebar } from "@/contexts/SidebarContext";
 import { t } from "@/lib/copy";
 import { isRunEditable } from "@/lib/runs/editability";
+import { useAiLinkMaps } from "@/hooks/runs/useAiLinkMaps";
 import { firstPendingInstanceId, scrollToSectionById } from "@/lib/runs/suggestionLocate";
-import { publishedStatesToValuesMap } from "@/lib/extraction/publishedValues";
+import {
+  currentValuesToValuesMap,
+  publishedStatesToValuesMap,
+} from "@/lib/extraction/publishedValues";
 
 interface FieldKey {
   instanceId: string;
@@ -191,9 +195,18 @@ export default function QualityAssessmentFullScreen() {
   // (e.g. peers drop out or the setting flips off).
   const effectiveViewMode = canCompare ? viewMode : "assess";
 
-  // Local input state for the form. Hydrated from the latest proposal per
-  // (instance, field) once the Run detail loads.
+  // Local input state for the form. Hydrated from the caller-scoped
+  // ``current_values`` per (instance, field) once the Run detail loads.
   const [values, setValues] = useState<Record<string, unknown>>({});
+
+  // The ONE ``current_values`` map (D8): hydration merges from it below and
+  // autosave receives the same object as ``baselineValues``, so a hydrated
+  // coord is never re-POSTed as a fresh decision on mount — sameness by
+  // construction, not by parallel derivation.
+  const loadedValues = useMemo(
+    () => currentValuesToValuesMap(runDetail?.current_values),
+    [runDetail?.current_values],
+  );
 
   // Hydrate during render when a new Run detail lands (instead of a
   // synchronous setState in an effect).
@@ -204,25 +217,16 @@ export default function QualityAssessmentFullScreen() {
       if (runDetail.run.stage === "finalized") {
         // Published truth replaces any local/proposal state (spec
         // 2026-07-02 D3): the read-only form shows what was published,
-        // never the latest proposal stream.
+        // never the latest decision stream.
         setValues(publishedStatesToValuesMap(runDetail.published_states));
       } else {
-        const latestByCoord = new Map<string, unknown>();
-        // Proposals are returned newest-first by the API; iterate so the LAST
-        // write wins per coord regardless of order.
-        for (const p of runDetail.proposals) {
-          const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
-          const value =
-            p.proposed_value &&
-            typeof p.proposed_value === "object" &&
-            "value" in p.proposed_value
-              ? (p.proposed_value.value as unknown)
-              : (p.proposed_value as unknown);
-          latestByCoord.set(k, value);
-        }
+        // D8: hydrate from the caller-scoped ``current_values`` resolution
+        // (own decisions over own human proposals over system seeds) — the
+        // backend's Layer-1 keeps old proposals-only runs hydrating, so no
+        // frontend fallback branch on raw proposals exists.
         setValues((prev) => {
           const next: Record<string, unknown> = { ...prev };
-          for (const [k, v] of latestByCoord) {
+          for (const [k, v] of Object.entries(loadedValues)) {
             if (!(k in next)) next[k] = v;
           }
           return next;
@@ -240,56 +244,29 @@ export default function QualityAssessmentFullScreen() {
     setValues((prev) => ({ ...prev, [k]: value }));
   };
 
-  // Server baseline for autosave — the same per-coord map the hydration
-  // effect applies, computed inline from ``runDetail`` so it is present when
-  // the hydrated ``values`` arrive. Stops opening an assessment from
-  // re-POSTing loaded values as fresh proposals.
-  const loadedValuesMap: Record<string, unknown> = {};
-  for (const p of runDetail?.proposals ?? []) {
-    const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
-    const value =
-      p.proposed_value &&
-      typeof p.proposed_value === "object" &&
-      "value" in p.proposed_value
-        ? (p.proposed_value.value as unknown)
-        : (p.proposed_value as unknown);
-    loadedValuesMap[k] = value;
-  }
-  const loadedValues = loadedValuesMap;
-
-  const { saveState, lastSavedAt, saveNow } =
-    useAutoSaveProposals({
-      runId: session?.runId ?? null,
-      values,
-      baselineValues: loadedValues,
-      enabled:
-        !!session && !!runDetail && isRunEditable(runDetail.run.stage),
-    });
-
   // AI suggestions wiring — kind-agnostic hooks reused from Data
-  // Extraction. Two key adaptations for QA:
-  //  - ``runId`` scopes the suggestion query so a parallel extraction
-  //    run on the same article doesn't leak in.
-  //  - ``acceptStrategy: 'human-proposal'`` keeps the run in PROPOSAL
-  //    (no ReviewerDecision write). Accept just bubbles the value to
-  //    ``handleValueChange``, which records a fresh ``human`` proposal
-  //    via the existing form pipeline.
+  // Extraction. ``runId`` scopes the suggestion query so a parallel
+  // extraction run on the same article doesn't leak in. Accept/reject
+  // never write from the hook: the value bubbles to ``handleValueChange``,
+  // and autosave persists it as a per-reviewer ``edit`` decision (D8) —
+  // linked to its AI basis via ``linkByKey`` below. Declared BEFORE
+  // useAutoSaveProposals: autosave consumes the sessionAdoption-derived
+  // link maps.
   const sessionInstanceIds = Object.values(session?.instancesByEntityType ?? {});
 
   const {
     suggestions: aiSuggestions,
+    suggestionsReady: aiSuggestionsReady,
+    sessionAdoption,
     acceptSuggestion: acceptAISuggestion,
     selectSuggestion: selectAISuggestion,
     rejectSuggestion: rejectAISuggestion,
     getSuggestionsHistory: getAISuggestionsHistory,
-    isActionLoading: isAIActionLoading,
     refresh: refreshAISuggestions,
   } = useAISuggestions({
     articleId: articleId ?? "",
-    projectId: projectId ?? "",
     runId: session?.runId,
     instanceIds: sessionInstanceIds,
-    acceptStrategy: "human-proposal",
     enabled: !!session,
     onSuggestionAccepted: (instanceId, fieldId, value) => {
       handleValueChange(instanceId, fieldId, value);
@@ -300,6 +277,31 @@ export default function QualityAssessmentFullScreen() {
       handleValueChange(instanceId, fieldId, null);
     },
   });
+
+  // D0 on QA (D8 parity): coords whose value has a traceable AI basis — see
+  // useAiLinkMaps for the layer semantics and the never-from-status invariant.
+  const { aiLinkByKey, persistedAiLinkByKey } = useAiLinkMaps({
+    decisions: runDetail?.decisions,
+    currentUserId: userId,
+    sessionAdoption,
+  });
+
+  const { saveState, lastSavedAt, saveNow } =
+    useAutoSaveProposals({
+      runId: session?.runId ?? null,
+      stage: runDetail?.run.stage ?? null,
+      values,
+      baselineValues: loadedValues,
+      linkByKey: aiLinkByKey,
+      baselineLinkByKey: persistedAiLinkByKey,
+      enabled:
+        !!session &&
+        !!runDetail &&
+        isRunEditable(runDetail.run.stage) &&
+        // Viewer writes 403 server-side; never fire them (forms render
+        // read-only via forceReadOnly, this is the flush-path belt).
+        permissions.userRole !== "viewer",
+    });
 
   const { extractForRun, loading: extractingAI } = useRunAIExtraction({
     onSuccess: async () => {
@@ -476,7 +478,9 @@ export default function QualityAssessmentFullScreen() {
           instance_id: instanceId,
           field_id: fieldId,
           mode: "manual_override",
-          value: { value: v },
+          // Marker-aware wrapping (ADR-0016): a hydrated absent_reason marker
+          // must publish as {value: null, absent_reason}, not double-wrap.
+          value: toConsensusValueEnvelope(v),
           rationale: "Published from Quality-Assessment form",
         });
       }
@@ -594,7 +598,9 @@ export default function QualityAssessmentFullScreen() {
           },
           transition: qaTransition,
           submitting: publishing,
-          onJumpToDivergence: canCompare
+          // D6: the consensus branch ignores viewMode, so the jump would be
+          // inert there — offer it only while the compare view is reachable.
+          onJumpToDivergence: canCompare && !inConsensusStage
             ? () => setViewMode("compare")
             : undefined,
         }}
@@ -635,7 +641,8 @@ export default function QualityAssessmentFullScreen() {
         </RunHeader.Center>
 
         <RunHeader.Right>
-          {canCompare && (
+          {/* D6: no dead toggle during consensus (the resolve table always renders there). */}
+          {canCompare && !inConsensusStage && (
             <RunHeader.CompareToggle
               active={effectiveViewMode === "compare"}
               onToggle={() => setViewMode((m) => (m === "assess" ? "compare" : "assess"))}
@@ -689,18 +696,15 @@ export default function QualityAssessmentFullScreen() {
   const showConsensusPanel = ready && inConsensusStage && !!runDetail;
   const showFormStage = ready && !inConsensusStage;
 
-  // Completeness signal for ConsensusPanel's no-divergence finalize fast-path.
-  // QA has no required-field gate (its publish preflight only requires at
-  // least one filled value — see handlePublish), so mirror that here: without
-  // this the panel never receives isComplete, canFinalize stays false, and a
-  // no-divergence QA run shows a wrong "incomplete" message with finalize
-  // disabled.
-  const qaIsComplete = Object.values(values).some(
-    (v) => v !== undefined && v !== null && v !== "",
-  );
-
   const formPanel = (
-    <RunEditabilityProvider stage={runDetail?.run.stage ?? null}>
+    // showPeerIdentity (D3): mirrors the extraction screen — identity-visible
+    // callers get "Run by {name}" popover headers; blind reviewers stay
+    // timestamp-only.
+    <RunEditabilityProvider
+      stage={runDetail?.run.stage ?? null}
+      showPeerIdentity={!!runDetail?.peers_revealed || permissions.canSeeOthers}
+      forceReadOnly={permissions.userRole === "viewer"}
+    >
     <div className="space-y-3 p-4" data-testid="qa-form-panel">
       {error ? (
         <div
@@ -727,15 +731,22 @@ export default function QualityAssessmentFullScreen() {
           ownValues={values}
           reviewerLabelById={reviewerProfiles.labelById}
           reviewerAvatarById={reviewerProfiles.avatarById}
-          // QA consensus is reviewer-level self-publish (backend excludes
-          // viewers via ensure_project_reviewer) — parity with the old panel.
-          canResolve
+          // QA consensus is reviewer-level self-publish; the backend 403s
+          // viewer writes (ensure_project_reviewer), so mirror the gate here —
+          // a viewer must not get chrome whose every click fails (D6).
+          canResolve={permissions.userRole !== "viewer"}
+          // Per-cell AI trace (D1-D4). QA decisionsByCoord stays empty until
+          // PR 2 (D8) creates real QA decisions; the wiring is ready for it.
+          trace={{
+            articleId: articleId ?? "",
+            getHistory: (i, f) => getAISuggestionsHistory(i, f, 50),
+            aiSuggestions: aiSuggestionsReady ? aiSuggestions : null,
+          }}
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}
           onFinalize={handleFinalizeFromConsensus}
           isResolving={consensusMutation.isPending}
           isFinalizing={advanceMutation.isPending}
-          isComplete={qaIsComplete}
           requiredCoords={[]}
           peersRevealed={!!runDetail.peers_revealed}
           showFinalize
@@ -804,7 +815,6 @@ export default function QualityAssessmentFullScreen() {
                     onRejectAI={rejectAISuggestion}
                     selectSuggestion={selectAISuggestion}
                     getSuggestionsHistory={getAISuggestionsHistory}
-                    isAIActionLoading={isAIActionLoading}
                   />
                 );
               })}

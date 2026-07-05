@@ -1,12 +1,13 @@
 /**
  * Tests for the rewritten ``useExtractedValues``.
  *
- * The hook branches by stage AND run kind:
- *  - QA (``kind != 'extraction'``) in ``extract``: hydrate from
- *    ``runDetail.proposals`` (newest-per-coord, blind-filtered). No DB call.
- *  - extraction in ``extract``, or any kind in ``consensus``: hydrate from
- *    the ``currentValues`` embedded in the run view (current decision per
- *    coord, resolved + reviewer-scoped server-side). No DB call.
+ * The hook branches by stage (both run kinds write per-user decisions
+ * since D8 — the QA proposals read path is gone; the blind boundary is
+ * pinned server-side in the ``resolve_caller_current_values`` integration
+ * tests):
+ *  - ``extract`` / ``consensus``: hydrate from the ``currentValues``
+ *    embedded in the run view (current decision per coord, resolved +
+ *    caller-scoped server-side). No DB call.
  *  - ``finalized``: hydrate ONLY from ``publishedStates`` (published truth,
  *    spec 2026-07-02 D3) — the values map is fully REPLACED, never merged.
  *  - missing run / pending / unknown: empty.
@@ -25,16 +26,6 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
-vi.mock('@/services/extractionValueService', () => ({
-  unwrapValue: (raw: unknown) => {
-    if (raw === null || raw === undefined) return null;
-    if (typeof raw === 'object' && raw !== null && 'value' in raw) {
-      return (raw as { value: unknown }).value ?? null;
-    }
-    return raw;
-  },
-}));
-
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
@@ -44,7 +35,7 @@ vi.mock('@/lib/copy', () => ({
 }));
 
 import { useExtractedValues } from '@/hooks/extraction/useExtractedValues';
-import type { ProposalRecordResponse } from '@/hooks/runs/types';
+import type { RunViewCurrentValue } from '@/hooks/runs/types';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -54,243 +45,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('useExtractedValues — QA in extract (proposals path)', () => {
-  it('hydrates from proposals (newest-per-coord) without hitting reviewer_states', async () => {
-    const { result } = renderHook(() =>
-      useExtractedValues({
-        currentUserId: 'user-1',
-        runId: 'run-1',
-        stage: 'extract',
-        kind: 'quality_assessment',
-        proposals: [
-          {
-            id: 'p-newest',
-            run_id: 'run-1',
-            instance_id: 'inst-1',
-            field_id: 'field-1',
-            source: 'human',
-            source_user_id: 'user-1',
-            proposed_value: { value: 'newest' },
-            confidence_score: null,
-            rationale: null,
-            created_at: '2026-04-28T11:00:00Z',
-          },
-          {
-            id: 'p-old',
-            run_id: 'run-1',
-            instance_id: 'inst-1',
-            field_id: 'field-1',
-            source: 'ai',
-            source_user_id: null,
-            proposed_value: { value: 'old' },
-            confidence_score: 0.9,
-            rationale: null,
-            created_at: '2026-04-28T10:00:00Z',
-          },
-          {
-            id: 'p-other',
-            run_id: 'run-1',
-            instance_id: 'inst-2',
-            field_id: 'field-2',
-            source: 'ai',
-            source_user_id: null,
-            proposed_value: { value: 'A', unit: 'mg' },
-            confidence_score: 0.8,
-            rationale: null,
-            created_at: '2026-04-28T10:00:00Z',
-          },
-        ],
-      }),
-    );
-
-    await waitFor(() => expect(result.current.initialized).toBe(true));
-    expect(result.current.values['inst-1_field-1']).toBe('newest');
-    expect(result.current.values['inst-2_field-2']).toEqual({
-      value: 'A',
-      unit: 'mg',
-    });  });
-
-  it('returns empty when no proposals are provided', async () => {
-    const { result } = renderHook(() =>
-      useExtractedValues({
-        currentUserId: 'user-1',
-        runId: 'run-1',
-        stage: 'extract',
-        kind: 'quality_assessment',
-        proposals: [],
-      }),
-    );
-    await waitFor(() => expect(result.current.initialized).toBe(true));
-    expect(result.current.values).toEqual({});
-  });
-});
-
-describe('useExtractedValues — QA-in-extract blinding (multi-reviewer)', () => {
-  // Bug A (multi-reviewer blind leak): the PROPOSAL stage hydration
-  // used to take the newest proposal per coord regardless of source,
-  // which meant a `human` proposal written by reviewer A appeared in
-  // reviewer B's form as soon as B opened the same article — silently
-  // breaking the blind-review contract. Fix: filter `human` proposals
-  // by `source_user_id === current_user_id`. AI / system proposals are
-  // always visible (they are not reviewer-attributable opinions).
-  it("does NOT hydrate another reviewer's human proposal (the leak)", async () => {
-    const { result } = renderHook(() =>
-      useExtractedValues({
-        currentUserId: 'user-1',
-        runId: 'run-1',
-        stage: 'extract',
-        kind: 'quality_assessment',
-        proposals: [
-          {
-            id: 'p-other-human',
-            run_id: 'run-1',
-            instance_id: 'inst-1',
-            field_id: 'field-1',
-            source: 'human',
-            source_user_id: 'user-2', // a different reviewer
-            proposed_value: { value: "leaked-from-A" },
-            confidence_score: null,
-            rationale: null,
-            created_at: '2026-04-28T10:00:00Z',
-          },
-        ],
-      }),
-    );
-
-    await waitFor(() => expect(result.current.initialized).toBe(true));
-    // user-1 is the auth user (mock). user-2's human proposal must be
-    // invisible — blind-review contract.
-    expect(result.current.values['inst-1_field-1']).toBeUndefined();
-  });
-
-  it("DOES hydrate the current reviewer's own human proposal", async () => {
-    const { result } = renderHook(() =>
-      useExtractedValues({
-        currentUserId: 'user-1',
-        runId: 'run-1',
-        stage: 'extract',
-        kind: 'quality_assessment',
-        proposals: [
-          {
-            id: 'p-mine',
-            run_id: 'run-1',
-            instance_id: 'inst-1',
-            field_id: 'field-1',
-            source: 'human',
-            source_user_id: 'user-1', // matches the mocked auth user
-            proposed_value: { value: 'mine' },
-            confidence_score: null,
-            rationale: null,
-            created_at: '2026-04-28T10:00:00Z',
-          },
-        ],
-      }),
-    );
-
-    await waitFor(() => expect(result.current.initialized).toBe(true));
-    expect(result.current.values['inst-1_field-1']).toBe('mine');
-  });
-
-  it('always hydrates AI proposals (not reviewer-attributable)', async () => {
-    const { result } = renderHook(() =>
-      useExtractedValues({
-        currentUserId: 'user-1',
-        runId: 'run-1',
-        stage: 'extract',
-        kind: 'quality_assessment',
-        proposals: [
-          {
-            id: 'p-ai',
-            run_id: 'run-1',
-            instance_id: 'inst-1',
-            field_id: 'field-1',
-            source: 'ai',
-            source_user_id: null,
-            proposed_value: { value: 'ai-extracted' },
-            confidence_score: 0.9,
-            rationale: null,
-            created_at: '2026-04-28T10:00:00Z',
-          },
-        ],
-      }),
-    );
-
-    await waitFor(() => expect(result.current.initialized).toBe(true));
-    expect(result.current.values['inst-1_field-1']).toBe('ai-extracted');
-  });
-
-  it('always hydrates system proposals (e.g. reopen seed)', async () => {
-    const { result } = renderHook(() =>
-      useExtractedValues({
-        currentUserId: 'user-1',
-        runId: 'run-1',
-        stage: 'extract',
-        kind: 'quality_assessment',
-        proposals: [
-          {
-            id: 'p-system',
-            run_id: 'run-1',
-            instance_id: 'inst-1',
-            field_id: 'field-1',
-            source: 'system',
-            source_user_id: null,
-            proposed_value: { value: 'carried-over' },
-            confidence_score: null,
-            rationale: null,
-            created_at: '2026-04-28T10:00:00Z',
-          },
-        ],
-      }),
-    );
-
-    await waitFor(() => expect(result.current.initialized).toBe(true));
-    expect(result.current.values['inst-1_field-1']).toBe('carried-over');
-  });
-
-  it('newest-per-coord wins ONLY among visible proposals (other reviewer is skipped, not picked)', async () => {
-    // Two proposals for the same coord. Newest is from another reviewer
-    // (must be filtered). Older AI proposal should remain visible.
-    const { result } = renderHook(() =>
-      useExtractedValues({
-        currentUserId: 'user-1',
-        runId: 'run-1',
-        stage: 'extract',
-        kind: 'quality_assessment',
-        proposals: [
-          {
-            id: 'p-other-newest',
-            run_id: 'run-1',
-            instance_id: 'inst-1',
-            field_id: 'field-1',
-            source: 'human',
-            source_user_id: 'user-2',
-            proposed_value: { value: 'leaked-from-A' },
-            confidence_score: null,
-            rationale: null,
-            created_at: '2026-04-28T11:00:00Z',
-          },
-          {
-            id: 'p-ai-older',
-            run_id: 'run-1',
-            instance_id: 'inst-1',
-            field_id: 'field-1',
-            source: 'ai',
-            source_user_id: null,
-            proposed_value: { value: 'ai-extracted' },
-            confidence_score: 0.9,
-            rationale: null,
-            created_at: '2026-04-28T10:00:00Z',
-          },
-        ],
-      }),
-    );
-
-    await waitFor(() => expect(result.current.initialized).toBe(true));
-    expect(result.current.values['inst-1_field-1']).toBe('ai-extracted');
-  });
-});
-
-describe('useExtractedValues — extraction in extract via currentValues', () => {
+describe('useExtractedValues — extract via currentValues', () => {
   it('hydrates from currentValues and skips reject decisions', async () => {
     const i1 = 'inst-1';
     const f1 = 'field-1';
@@ -301,7 +56,6 @@ describe('useExtractedValues — extraction in extract via currentValues', () =>
         currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'extract',
-        kind: 'extraction',
         currentValues: [
           {
             instance_id: i1,
@@ -325,6 +79,37 @@ describe('useExtractedValues — extraction in extract via currentValues', () =>
     // (b) reject decision is excluded
     expect(result.current.values[`${i1}_${f2}`]).toBeUndefined();
   });
+
+  it('hydrates Layer-1 rows (human_proposal / system_proposal) like decisions', async () => {
+    // Pre-D8 QA runs (proposals-only) and reopened runs (system seeds) come
+    // through the same caller-scoped resolution — the hook treats every
+    // non-reject row identically.
+    const { result } = renderHook(() =>
+      useExtractedValues({
+        currentUserId: 'user-1',
+        runId: 'run-1',
+        stage: 'extract',
+        currentValues: [
+          {
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            value: { value: 'typed pre-D8' },
+            decision: 'human_proposal',
+          },
+          {
+            instance_id: 'inst-2',
+            field_id: 'field-2',
+            value: { value: 'reopen seed' },
+            decision: 'system_proposal',
+          },
+        ],
+      }),
+    );
+
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.values['inst-1_field-1']).toBe('typed pre-D8');
+    expect(result.current.values['inst-2_field-2']).toBe('reopen seed');
+  });
 });
 
 describe('useExtractedValues — stage=review and beyond', () => {
@@ -341,7 +126,6 @@ describe('useExtractedValues — stage=review and beyond', () => {
         currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'extract',
-        kind: 'extraction',
         currentValues: [
           {
             instance_id: 'inst-1',
@@ -358,7 +142,7 @@ describe('useExtractedValues — stage=review and beyond', () => {
           {
             instance_id: 'inst-3',
             field_id: 'field-3',
-            // double-envelope: outer { value: ... } stripped by unwrapValue,
+            // double-envelope: outer { value: ... } stripped by the unwrap,
             // inner { value: 'A', unit: 'mg' } is the unwrapped form
             value: { value: { value: 'A', unit: 'mg' } },
             decision: 'edit',
@@ -367,7 +151,8 @@ describe('useExtractedValues — stage=review and beyond', () => {
       }),
     );
 
-    await waitFor(() => expect(result.current.initialized).toBe(true));    expect(result.current.values['inst-1_field-1']).toBe(42);
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.values['inst-1_field-1']).toBe(42);
     expect(result.current.values['inst-2_field-2']).toBeUndefined();
     expect(result.current.values['inst-3_field-3']).toEqual({
       value: 'A',
@@ -386,7 +171,8 @@ describe('useExtractedValues — missing run / no auth', () => {
       }),
     );
     await waitFor(() => expect(result.current.initialized).toBe(true));
-    expect(result.current.values).toEqual({});  });
+    expect(result.current.values).toEqual({});
+  });
 
   it('returns empty when there is no authenticated user (review path)', async () => {
     const { result } = renderHook(() =>
@@ -394,11 +180,11 @@ describe('useExtractedValues — missing run / no auth', () => {
         currentUserId: null,
         runId: 'run-1',
         stage: 'extract',
-        kind: 'extraction',
       }),
     );
 
-    await waitFor(() => expect(result.current.loading).toBe(false));    expect(result.current.values).toEqual({});
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.values).toEqual({});
   });
 });
 
@@ -418,13 +204,13 @@ describe('useExtractedValues — disabled state (no run yet)', () => {
         currentUserId: 'user-1',
         runId: null,
         stage: null,
-        proposals: [],
         enabled: false,
       }),
     );
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.initialized).toBe(true);
-    expect(result.current.values).toEqual({});  });
+    expect(result.current.values).toEqual({});
+  });
 
   it('does not get stuck even when runId is set but enabled is explicitly false', async () => {
     const { result } = renderHook(() =>
@@ -432,12 +218,11 @@ describe('useExtractedValues — disabled state (no run yet)', () => {
         currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'extract',
-        kind: 'extraction',
-        proposals: [],
         enabled: false,
       }),
     );
-    await waitFor(() => expect(result.current.loading).toBe(false));  });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+  });
 
   it('becomes initialized once enabled flips from false to true', async () => {
     const currentValues = [
@@ -454,8 +239,6 @@ describe('useExtractedValues — disabled state (no run yet)', () => {
           currentUserId: 'user-1',
           runId: 'run-1',
           stage: 'extract',
-        kind: 'extraction',
-          proposals: [],
           currentValues,
           enabled,
         }),
@@ -484,8 +267,7 @@ describe('useExtractedValues — local update', () => {
         currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'extract',
-        kind: 'quality_assessment',
-        proposals: [],
+        currentValues: [],
       }),
     );
     await waitFor(() => expect(result.current.initialized).toBe(true));
@@ -500,7 +282,7 @@ describe('useExtractedValues — local update', () => {
 
 describe('useExtractedValues — local-edits-win on backend refetch', () => {
   // Regression: a TanStack ``useRun`` refetch (window focus, stale time,
-  // mount) produces a fresh ``proposals`` array reference. Without
+  // mount) produces a fresh ``currentValues`` array reference. Without
   // preserving locally-edited keys, ``mergeValuesById`` would overwrite
   // the user's in-flight edit with the previously-saved backend value,
   // and the autosave hook would then see ``no dirty entries`` and skip
@@ -508,32 +290,25 @@ describe('useExtractedValues — local-edits-win on backend refetch', () => {
   // This locks in: once a key exists in local state, the merge MUST NOT
   // clobber it with a backend-shaped value.
 
-  it('preserves a locally-edited value when proposals refetch with the previous backend value', async () => {
-    const initialProposals = [
+  it('preserves a locally-edited value when currentValues refetch with the previous backend value', async () => {
+    const initialCurrentValues: RunViewCurrentValue[] = [
       {
-        id: 'p-1',
-        run_id: 'run-1',
         instance_id: 'inst-1',
         field_id: 'field-1',
-        source: 'human' as const,
-        source_user_id: 'user-1',
-        proposed_value: { value: 'old' },
-        confidence_score: null,
-        rationale: null,
-        created_at: '2026-04-28T10:00:00Z',
+        value: { value: 'old' },
+        decision: 'edit',
       },
     ];
 
     const { result, rerender } = renderHook(
-      ({ proposals }) =>
+      ({ currentValues }) =>
         useExtractedValues({
           currentUserId: 'user-1',
           runId: 'run-1',
           stage: 'extract',
-        kind: 'quality_assessment',
-          proposals,
+          currentValues,
         }),
-      { initialProps: { proposals: initialProposals } },
+      { initialProps: { currentValues: initialCurrentValues } },
     );
 
     await waitFor(() => expect(result.current.initialized).toBe(true));
@@ -550,8 +325,8 @@ describe('useExtractedValues — local-edits-win on backend refetch', () => {
     // TanStack refetch: a new array reference with the SAME old backend
     // values (the user's POST hasn't landed yet, so the server still
     // returns 'old'). This re-fires ``loadValues``.
-    const refetched = initialProposals.map((p) => ({ ...p }));
-    rerender({ proposals: refetched });
+    const refetched = initialCurrentValues.map((cv) => ({ ...cv }));
+    rerender({ currentValues: refetched });
 
     // The local edit must survive — the user is still typing.
     await waitFor(() =>
@@ -560,69 +335,41 @@ describe('useExtractedValues — local-edits-win on backend refetch', () => {
   });
 
   it('still picks up newly-introduced keys (e.g. AI-extracted fields) on refetch', async () => {
+    const mine: RunViewCurrentValue = {
+      instance_id: 'inst-1',
+      field_id: 'field-1',
+      value: { value: 'mine' },
+      decision: 'edit',
+    };
     const { result, rerender } = renderHook<
       ReturnType<typeof useExtractedValues>,
-      { proposals: ProposalRecordResponse[] }
+      { currentValues: RunViewCurrentValue[] }
     >(
-      ({ proposals }) =>
+      ({ currentValues }) =>
         useExtractedValues({
           currentUserId: 'user-1',
           runId: 'run-1',
           stage: 'extract',
-        kind: 'quality_assessment',
-          proposals,
+          currentValues,
         }),
-      {
-        initialProps: {
-          proposals: [
-            {
-              id: 'p-existing',
-              run_id: 'run-1',
-              instance_id: 'inst-1',
-              field_id: 'field-1',
-              source: 'human' as const,
-              source_user_id: 'user-1',
-              proposed_value: { value: 'mine' },
-              confidence_score: null,
-              rationale: null,
-              created_at: '2026-04-28T10:00:00Z',
-            },
-          ],
-        },
-      },
+      { initialProps: { currentValues: [mine] } },
     );
 
     await waitFor(() => expect(result.current.initialized).toBe(true));
     expect(result.current.values['inst-1_field-1']).toBe('mine');
     expect(result.current.values['inst-2_field-2']).toBeUndefined();
 
-    // AI extraction lands a brand-new proposal for a coord the user
-    // hasn't touched. Refetch surfaces it; the form should show it.
+    // A decision lands on a coord the user hasn't touched (e.g. the
+    // reviewer accepted an AI suggestion elsewhere). Refetch surfaces it;
+    // the form should show it.
     rerender({
-      proposals: [
+      currentValues: [
+        mine,
         {
-          id: 'p-existing',
-          run_id: 'run-1',
-          instance_id: 'inst-1',
-          field_id: 'field-1',
-          source: 'human' as const,
-          source_user_id: 'user-1',
-          proposed_value: { value: 'mine' },
-          confidence_score: null,
-          rationale: null,
-          created_at: '2026-04-28T10:00:00Z',
-        },
-        {
-          id: 'p-new',
-          run_id: 'run-1',
           instance_id: 'inst-2',
           field_id: 'field-2',
-          source: 'ai' as const,
-          source_user_id: null,
-          proposed_value: { value: 'ai-suggested' },
-          confidence_score: 0.9,
-          rationale: null,
-          created_at: '2026-04-28T10:30:00Z',
+          value: { value: 'ai-suggested' },
+          decision: 'edit',
         },
       ],
     });
@@ -637,45 +384,32 @@ describe('useExtractedValues — local-edits-win on backend refetch', () => {
 
 describe('useExtractedValues — run boundary reset', () => {
   it('replaces preserved local values when the active run changes', async () => {
-    const run1Proposals = [
+    const run1Values: RunViewCurrentValue[] = [
       {
-        id: 'p-run-1',
-        run_id: 'run-1',
         instance_id: 'inst-1',
         field_id: 'field-1',
-        source: 'human' as const,
-        source_user_id: 'user-1',
-        proposed_value: { value: 'old-run-value' },
-        confidence_score: null,
-        rationale: null,
-        created_at: '2026-04-28T10:00:00Z',
+        value: { value: 'old-run-value' },
+        decision: 'edit',
       },
     ];
-    const run2Proposals = [
+    const run2Values: RunViewCurrentValue[] = [
       {
-        id: 'p-run-2',
-        run_id: 'run-2',
         instance_id: 'inst-1',
         field_id: 'field-1',
-        source: 'human' as const,
-        source_user_id: 'user-1',
-        proposed_value: { value: 'new-run-value' },
-        confidence_score: null,
-        rationale: null,
-        created_at: '2026-04-28T11:00:00Z',
+        value: { value: 'new-run-value' },
+        decision: 'edit',
       },
     ];
 
     const { result, rerender } = renderHook(
-      ({ runId, proposals }) =>
+      ({ runId, currentValues }) =>
         useExtractedValues({
           currentUserId: 'user-1',
           runId,
           stage: 'extract',
-        kind: 'quality_assessment',
-          proposals,
+          currentValues,
         }),
-      { initialProps: { runId: 'run-1', proposals: run1Proposals } },
+      { initialProps: { runId: 'run-1', currentValues: run1Values } },
     );
 
     await waitFor(() => expect(result.current.initialized).toBe(true));
@@ -688,7 +422,7 @@ describe('useExtractedValues — run boundary reset', () => {
       expect(result.current.values['inst-1_field-1']).toBe('unsaved-run-1-edit'),
     );
 
-    rerender({ runId: 'run-2', proposals: run2Proposals });
+    rerender({ runId: 'run-2', currentValues: run2Values });
 
     await waitFor(() =>
       expect(result.current.values['inst-1_field-1']).toBe('new-run-value'),
@@ -715,7 +449,6 @@ describe('finalized stage — published values', () => {
       useExtractedValues({
         runId: 'run-1',
         stage: 'finalized',
-        kind: 'extraction',
         currentUserId: 'user-1',
         currentValues: [
           { instance_id: 'i1', field_id: 'f1', value: { value: 'MY-DRAFT' }, decision: 'edit' },
@@ -735,7 +468,6 @@ describe('finalized stage — published values', () => {
       useExtractedValues({
         runId: 'run-1',
         stage: 'finalized',
-        kind: 'extraction',
         currentUserId: 'user-1',
         publishedStates: published as never,
       }),
@@ -754,7 +486,6 @@ describe('finalized stage — published values', () => {
         useExtractedValues({
           runId: 'run-1',
           stage,
-          kind: 'extraction',
           currentUserId: 'user-1',
           currentValues: [
             { instance_id: 'i1', field_id: 'f1', value: { value: 'MY-DRAFT' }, decision: 'edit' },

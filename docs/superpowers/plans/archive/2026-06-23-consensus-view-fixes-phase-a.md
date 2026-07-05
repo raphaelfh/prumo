@@ -1,8 +1,13 @@
 ---
-status: draft
+status: superseded
 last_reviewed: 2026-06-23
 owner: '@raphaelfh'
 ---
+
+> **SUPERSEDED** by the 2026-07-03 compare-table spec
+> (`docs/superpowers/specs/2026-07-03-consensus-compare-view-design.md`): the
+> consensus surface is the resolve-mode compare table; `ConsensusPanel` was
+> deleted in #483.
 
 # Consensus View Fixes — Phase A (frontend) Implementation Plan
 

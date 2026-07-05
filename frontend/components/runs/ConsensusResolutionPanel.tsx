@@ -13,6 +13,7 @@ import {
   RunReviewerComparison,
   type ComparisonEntityType,
   type ComparisonInstance,
+  type ConsensusTraceContext,
 } from '@/components/runs/RunReviewerComparison';
 import { deriveConsensusResolution } from '@/lib/runs/reconciliation';
 import { t } from '@/lib/copy';
@@ -31,12 +32,14 @@ export interface ConsensusResolutionPanelProps {
   reviewerAvatarById: Record<string, string | null | undefined>;
   /** Every required template coordKey (`${instance}::${field}`) — drives required gaps + finalize gate. */
   requiredCoords: string[];
-  isComplete: boolean;
   isResolving: boolean;
   isFinalizing: boolean;
   peersRevealed: boolean;
   /** Whether this caller may resolve (arbitrator for extraction; reviewer for QA). */
   canResolve: boolean;
+  /** Per-cell AI trace wiring (spec 2026-07-04 D1-D4); forwarded into the
+   *  resolve-mode table. Omit to render the table without trace affordances. */
+  trace?: ConsensusTraceContext;
   onSelectExisting: (p: {
     instanceId: string;
     fieldId: string;
@@ -62,11 +65,11 @@ export function ConsensusResolutionPanel({
   reviewerLabelById,
   reviewerAvatarById,
   requiredCoords,
-  isComplete,
   isResolving,
   isFinalizing,
   peersRevealed,
   canResolve,
+  trace,
   onSelectExisting,
   onManualOverride,
   onFinalize,
@@ -83,7 +86,6 @@ export function ConsensusResolutionPanel({
     ),
     participantCount: summary.reviewers.length,
     requiredCoords,
-    isComplete,
   });
 
   return (
@@ -120,6 +122,7 @@ export function ConsensusResolutionPanel({
                 peersRevealed,
                 onSelectExisting,
                 onManualOverride,
+                trace,
               }
             : undefined
         }

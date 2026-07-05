@@ -14,7 +14,6 @@ const baseParams = {
   decisionCountByCoord: new Map<string, number>(),
   participantCount: 2,
   requiredCoords: [] as string[],
-  isComplete: true,
 };
 
 describe('deriveConsensusResolution', () => {
@@ -60,7 +59,7 @@ describe('deriveConsensusResolution', () => {
     expect(v.canFinalize).toBe(false);
   });
 
-  it('canFinalize: conflicts resolved + no required gap + complete + >=1 decision', () => {
+  it('canFinalize: conflicts resolved + no required gap + >=1 decision', () => {
     const v = deriveConsensusResolution({
       ...baseParams,
       divergentCoords: new Set(['i1::f1']),
@@ -70,16 +69,22 @@ describe('deriveConsensusResolution', () => {
     expect(v.canFinalize).toBe(true);
   });
 
-  it('canFinalize false when isComplete=false or no consensus decision exists', () => {
+  it('canFinalize false when no consensus decision exists', () => {
     expect(deriveConsensusResolution({ ...baseParams }).canFinalize).toBe(false);
-    expect(
-      deriveConsensusResolution({
-        ...baseParams,
-        isComplete: false,
-        consensusDecisions: [dec('i1::f9', '2026-01-01T00:00:00Z')],
-        decisionCountByCoord: new Map([['i1::f9', 2]]),
-      }).canFinalize,
-    ).toBe(false);
+  });
+
+  it('canFinalize uses run-level completeness: a required coord satisfied only by a published value (no caller decision) still finalizes', () => {
+    // The bug: an arbitrator resolves a required field by adopting a peer's
+    // value — a PublishedState exists but nothing in the caller's own stream.
+    // requiredGaps must credit the published coord, so the run finalizes.
+    const v = deriveConsensusResolution({
+      ...baseParams,
+      requiredCoords: ['i1::f2'],
+      publishedCoords: new Set(['i1::f2']),
+      consensusDecisions: [dec('i1::f2', '2026-01-01T00:00:00Z', 'select_existing')],
+    });
+    expect(v.statusByCoord.get('i1::f2')).toBe('resolved');
+    expect(v.canFinalize).toBe(true);
   });
 
   it('a required gap blocks finalize even with a consensus decision elsewhere', () => {

@@ -23,7 +23,6 @@ import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 import {AISuggestionDisplay, type AISuggestionReviewBinding} from './ai/AISuggestionDisplay';
-import {AISuggestionBadge} from './ai/AISuggestionBadge';
 import {AISuggestionReviewPopover} from './ai/AISuggestionReviewPopover';
 import {FieldValueEditor} from './FieldValueEditor';
 import {isEmptyValue, isValidNumber} from '@/lib/ai-extraction/valueParser';
@@ -57,7 +56,6 @@ interface FieldInputProps {
     value: unknown,
     confidence: number,
   ) => void | Promise<void>;
-  isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   disabled?: boolean;
   /** Threaded to the review popover's generation dialog so it can lazily fetch
    *  the stored markdown the LLM received. */
@@ -67,7 +65,7 @@ interface FieldInputProps {
 // =================== COMPONENT ===================
 
 export function FieldInput(props: FieldInputProps) {
-  const { field, instanceId, value, onChange, disabled, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, selectSuggestion, isActionLoading, articleId } = props;
+  const { field, instanceId, value, onChange, disabled, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, selectSuggestion, articleId } = props;
   // Read-only run (published/consensus/pending): every input variant and the
   // disposition buttons disable; the actionable AI chrome (badge + inline
   // accept/reject strip) hides — the History popover stays as audit trail.
@@ -284,15 +282,6 @@ export function FieldInput(props: FieldInputProps) {
           </div>
           
           <div className="flex items-center gap-1 shrink-0">
-              {/* Badge + Info on the right of input (pending or accepted
-                  suggestion) — hidden on read-only runs (published view). */}
-          {!readOnly && aiSuggestion &&
-           (aiSuggestion.status === 'pending' || aiSuggestion.status === 'accepted') && (
-            <AISuggestionBadge
-              suggestion={aiSuggestion}
-            />
-          )}
-
               {/* Single AI trigger: review + select past versions, see how each
                   was generated, locate evidence, or clear. Replaces the old
                   split history + details popovers. */}
@@ -382,7 +371,6 @@ export function FieldInput(props: FieldInputProps) {
             suggestion={aiSuggestion}
             onAccept={onAcceptAI}
             onReject={onRejectAI}
-            loading={isActionLoading ? isActionLoading(instanceId, field.id) === 'accept' || isActionLoading(instanceId, field.id) === 'reject' : false}
             // Same review surface as the History icon (shared binding): clicking
             // the inline value/confidence opens the version history + provenance.
             review={reviewBinding}
@@ -410,20 +398,11 @@ export default memo(FieldInput, (prevProps, nextProps) => {
   const aiSuggestionChanged = prevProps.aiSuggestion?.id !== nextProps.aiSuggestion?.id ||
                                 prevProps.aiSuggestion?.status !== nextProps.aiSuggestion?.status;
 
-  // The accept/reject spinner is driven by isActionLoading(instanceId, fieldId),
-  // which is derived state — NOT a tracked prop. Omitting it means a loading
-  // transition (notably clearLoading after an accept resolves) changes no compared
-  // prop, so the memoized field keeps a stale loading=true and the spinner spins
-  // forever. Compare the resolved loading state for THIS field explicitly.
-  const prevActionLoading = prevProps.isActionLoading?.(prevProps.instanceId, prevProps.field.id) ?? null;
-  const nextActionLoading = nextProps.isActionLoading?.(nextProps.instanceId, nextProps.field.id) ?? null;
-
   return (
     prevProps.field.id === nextProps.field.id &&
     prevProps.instanceId === nextProps.instanceId &&
     prevProps.value === nextProps.value &&
     prevProps.disabled === nextProps.disabled &&
-    prevActionLoading === nextActionLoading && // Re-render when the accept/reject spinner toggles
     !aiSuggestionChanged // Re-render when suggestion changes (status or ID)
   );
 });

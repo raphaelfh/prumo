@@ -26,6 +26,8 @@ import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem, EvidenceCitation, RunProvenance} from '@/types/ai-extraction';
 import {formatFullSuggestionValue, isAbstention} from '@/lib/ai-extraction/suggestionUtils';
+import {decisionMatchesVersion} from '@/lib/runs/valueEquality';
+import {initials} from '@/components/runs/ReviewerAvatarStack';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {AIPopoverShell} from './shared/AIPopoverShell';
@@ -129,6 +131,10 @@ function ProvenanceSummaryRow({
 interface VersionRowProps {
   version: AISuggestionHistoryItem;
   isSelected: boolean;
+  /** Replaces the "Selected" chip text (consensus: "Adopted/Edited by {name}"). */
+  selectedChipLabel?: string;
+  /** Small tag naming OTHER reviewers who adopted this version (D3). */
+  crossTag?: string;
   onUse: () => void;
   onOpenDetails: (provenance: RunProvenance) => void;
   /** Read-only run: the row is audit-only — no "Use this version" action. */
@@ -137,7 +143,7 @@ interface VersionRowProps {
   allowedValues?: unknown;
 }
 
-function VersionRow({version, isSelected, onUse, onOpenDetails, readOnly, fieldType, allowedValues}: VersionRowProps) {
+function VersionRow({version, isSelected, selectedChipLabel, crossTag, onUse, onOpenDetails, readOnly, fieldType, allowedValues}: VersionRowProps) {
   const fieldContext = {fieldType, allowedValues};
   const [expanded, setExpanded] = useState(false);
   const showDetails = isSelected || expanded;
@@ -186,10 +192,15 @@ function VersionRow({version, isSelected, onUse, onOpenDetails, readOnly, fieldT
               {confidencePercent}%{isLow ? ` · ${t('extraction', 'reviewLowConfidence')}` : ''}
             </Badge>
           )}
+          {crossTag && (
+            <span className="inline-flex items-center rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              {crossTag}
+            </span>
+          )}
           {isSelected ? (
             <span className="inline-flex items-center gap-1 rounded border border-success/30 bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success">
               <Check className="h-3 w-3" />
-              {t('extraction', 'reviewSelected')}
+              {selectedChipLabel ?? t('extraction', 'reviewSelected')}
             </span>
           ) : readOnly ? null : (
             <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={onUse}>
@@ -248,8 +259,21 @@ interface AISuggestionReviewPopoverProps {
   getHistory: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   /** The currently-selected version id; falls back to the newest when absent. */
   selectedProposalId?: string;
-  onSelect: (proposalRecordId: string, value: unknown, confidence: number) => void;
+  /** Absent → read-only surface: no "Use this version" anywhere (the
+   *  consensus trace mounts the popover as pure audit — D2). */
+  onSelect?: (proposalRecordId: string, value: unknown, confidence: number) => void;
   onClear?: () => void;
+  /** Header title override (consensus trace: "AI used by {reviewer}" — D3). */
+  title?: string;
+  /** Consensus trace: relate the pinned version to the reviewer's decision.
+   *  The pinned row's chip reads "Adopted by {name}" when the decision kept
+   *  the AI value (or is an accept_proposal, whose value is null by
+   *  contract), "Edited by {name}" when it differs — D3. */
+  adoption?: {reviewerLabel: string; decisionValue: unknown; decisionKind: string};
+  /** proposal id → other reviewer label(s); matching version rows get a small
+   *  "Adopted by {label}" tag so shared history under one reviewer's title
+   *  cannot mis-read as "nobody else adopted" — D3 cross-marking. */
+  adoptionByProposalId?: Record<string, string>;
   trigger: React.ReactNode;
   align?: 'start' | 'center' | 'end';
   /** Field type + allowed_values so each version resolves a select/multiselect
@@ -262,14 +286,20 @@ interface AISuggestionReviewPopoverProps {
 }
 
 export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps) {
-  const {instanceId, fieldId, getHistory, selectedProposalId, onSelect, onClear, trigger, align, fieldType, allowedValues, articleId} = props;
+  const {instanceId, fieldId, getHistory, selectedProposalId, onSelect, onClear, trigger, align, fieldType, allowedValues, articleId, title, adoption, adoptionByProposalId} = props;
 
   // Read-only run: the popover stays available as audit trail, but the
-  // write actions (Use this version / Clear) hide.
-  const {readOnly} = useRunEditability();
+  // write actions (Use this version / Clear) hide. An absent onSelect makes
+  // the surface read-only regardless of stage (consensus trace — D2).
+  // showPeerIdentity gates the ran-by run headers (D3, fail-closed).
+  const {readOnly, showPeerIdentity} = useRunEditability();
+  const readOnlyEffective = readOnly || !onSelect;
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState<AISuggestionHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
+  // A failed/throttled fetch must not read as a definitive "No versions" on
+  // an audit surface — it gets its own inline state.
+  const [historyError, setHistoryError] = useState(false);
   // Optimistic local selection so the highlight follows clicks within a session;
   // seeded from the prop (the active accept_proposal decision / newest).
   const [localSelected, setLocalSelected] = useState<string | undefined>(undefined);
@@ -298,17 +328,27 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
     // synchronous-setState-in-effect cascade lint; mirrors the old popover.
     queueMicrotask(() => {
       setLoading(true);
+      setHistoryError(false);
       void getHistory(instanceId, fieldId)
         .then((data) => setHistory(data))
         .catch((err: unknown) => {
           console.error('[AISuggestionReviewPopover] Error loading history:', err);
           setHistory([]);
+          setHistoryError(true);
         })
         .finally(() => setLoading(false));
     });
   }, [open, instanceId, fieldId, getHistory]);
 
   const effectiveSelected = localSelected ?? selectedProposalId ?? history[0]?.id;
+
+  // D5: the pinned version can be older than the loaded history window. Say
+  // so explicitly — silently dropping the pin would erase the attribution.
+  const pinMissing =
+    !loading &&
+    history.length > 0 &&
+    !!selectedProposalId &&
+    !history.some((h) => h.id === selectedProposalId);
 
   // Group by run id, preserving the (newest-first) order the server returns.
   const runOrder: string[] = [];
@@ -324,8 +364,20 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
 
   const handleUse = (version: AISuggestionHistoryItem) => {
     setLocalSelected(version.id);
-    onSelect(version.id, version.value, version.confidence);
+    onSelect?.(version.id, version.value, version.confidence);
   };
+
+  // D3 adoption chip: name the reviewer on the pinned row and say honestly
+  // whether they kept the AI value or edited it afterwards. accept_proposal
+  // decisions carry value=null by contract — always "Adopted by".
+  const pinnedVersion = history.find((h) => h.id === effectiveSelected);
+  const adoptionChipLabel = adoption
+    ? (adoption.decisionKind === 'accept_proposal' ||
+       decisionMatchesVersion(adoption.decisionValue, pinnedVersion?.value)
+        ? t('extraction', 'reviewAdoptedBy')
+        : t('extraction', 'reviewEditedBy')
+      ).replace('{{name}}', adoption.reviewerLabel)
+    : undefined;
 
   const handleClear = () => {
     setOpen(false);
@@ -342,11 +394,11 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <AIPopoverShell
         icon={<Sparkles className="h-4 w-4" />}
-        title={t('extraction', 'reviewTitle')}
+        title={title ?? t('extraction', 'reviewTitle')}
         count={countLabel}
         align={align}
         footer={
-          onClear && !readOnly ? (
+          onClear && !readOnlyEffective ? (
             <div className="flex items-center justify-between gap-2 px-3 py-2">
               <span className="min-w-0 truncate text-[11px] text-muted-foreground" title={t('extraction', 'reviewClearHint')}>
                 {t('extraction', 'reviewClearHint')}
@@ -360,32 +412,71 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
       >
         {loading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">…</div>
+        ) : historyError ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            {t('extraction', 'reviewHistoryError')}
+          </div>
         ) : history.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">
             {t('extraction', 'reviewNoVersions')}
           </div>
         ) : (
           <div className="space-y-3 p-2.5">
-            {runOrder.map((runId, runIndex) => (
+            {pinMissing && (
+              <p className="rounded border border-border/60 bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
+                {t('extraction', 'reviewPinNotInHistory')}
+              </p>
+            )}
+            {runOrder.map((runId, runIndex) => {
+              const ranByName = showPeerIdentity
+                ? groupedByRun[runId][0].provenance?.ranByName
+                : undefined;
+              return (
               <div key={runId} className="space-y-2">
-                <div className="rounded bg-muted/50 px-2 py-1 text-xs font-medium text-muted-foreground">
-                  {formatTimestamp(groupedByRun[runId][0].timestamp)}
+                <div className="flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs font-medium text-muted-foreground">
+                  {ranByName ? (
+                    <>
+                      <span
+                        aria-hidden
+                        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-muted-foreground/15 text-[9px] font-semibold uppercase"
+                      >
+                        {initials(ranByName)}
+                      </span>
+                      <span className="min-w-0 truncate">
+                        {t('extraction', 'reviewRunBy').replace('{{name}}', ranByName)}
+                        {' · '}
+                        {formatTimestamp(groupedByRun[runId][0].timestamp)}
+                      </span>
+                    </>
+                  ) : (
+                    formatTimestamp(groupedByRun[runId][0].timestamp)
+                  )}
                 </div>
                 {groupedByRun[runId].map((version) => (
                   <VersionRow
                     key={version.id}
                     version={version}
                     isSelected={version.id === effectiveSelected}
+                    selectedChipLabel={adoptionChipLabel}
+                    crossTag={
+                      adoptionByProposalId?.[version.id]
+                        ? t('extraction', 'reviewAdoptedBy').replace(
+                            '{{name}}',
+                            adoptionByProposalId[version.id],
+                          )
+                        : undefined
+                    }
                     onUse={() => handleUse(version)}
                     onOpenDetails={handleOpenDetails}
-                    readOnly={readOnly}
+                    readOnly={readOnlyEffective}
                     fieldType={fieldType}
                     allowedValues={allowedValues}
                   />
                 ))}
                 {runIndex < runOrder.length - 1 && <Separator />}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </AIPopoverShell>

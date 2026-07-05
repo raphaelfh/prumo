@@ -4,7 +4,6 @@ Provides endpoints for the frontend to resolve extraction runs by article
 and to read AI suggestions, replacing the PostgREST queries in
 ExtractionValueService and AISuggestionService:
 
-  GET  /{article_id}/active-run?template_id=    -> RunSummaryResponse | None
   GET  /{article_id}/finalized-run?template_id= -> RunSummaryResponse | None
   POST /form-runs                               -> list[ArticleRunRef]
   GET  /{article_id}/instance-ids               -> list[UUID]
@@ -31,7 +30,6 @@ from app.schemas.extraction_suggestion import AISuggestionHistoryItem, AISuggest
 from app.services.article_file_service import ArticleFileService
 from app.services.citation_read_service import ArticleNotFoundError, get_article_project_id
 from app.services.extraction_run_read_service import (
-    find_active_run,
     find_finalized_run,
     resolve_form_runs,
 )
@@ -56,24 +54,6 @@ async def _gate_article(db: DbSession, article_id: UUID, caller_id: UUID) -> Non
     except ArticleNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     await ensure_project_member(db, project_id, caller_id)
-
-
-@router.get("/{article_id}/active-run")
-async def get_active_run(
-    article_id: UUID,
-    request: Request,
-    db: DbSession,
-    current_user_sub: UUID = Depends(get_current_user_sub),
-    template_id: UUID | None = None,
-) -> ApiResponse[RunSummaryResponse | None]:
-    """Return the latest non-terminal extraction run for the article.
-
-    Returns null (data: null) when no active run exists. 404 when the
-    article is not found; 403 when the caller is not a project member.
-    """
-    await _gate_article(db, article_id, current_user_sub)
-    run = await find_active_run(db, article_id, template_id=template_id)
-    return ApiResponse.success(run, trace_id=_trace(request))
 
 
 @router.get("/{article_id}/finalized-run")
@@ -160,6 +140,7 @@ async def get_instance_ids(
 
 
 @router.get("/{article_id}/suggestions/history")
+@limiter.limit("30/minute")
 async def get_suggestions_history(
     article_id: UUID,
     request: Request,
@@ -176,7 +157,12 @@ async def get_suggestions_history(
     """
     await _gate_article(db, article_id, current_user_sub)
     items = await get_suggestion_history(
-        db, instance_id, field_id, article_id=article_id, limit=limit
+        db,
+        instance_id,
+        field_id,
+        article_id=article_id,
+        caller_id=current_user_sub,
+        limit=limit,
     )
     return ApiResponse.success(items, trace_id=_trace(request))
 

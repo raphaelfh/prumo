@@ -73,6 +73,10 @@ divergence resolved). This resolves the two-Finalize-button split (I6); the
 `handleFinalize` is unwired (Phase 2 stops writing `instance.status`; fully deleted
 in Phase 3 — see Consequences).
 
+> Update (2026-07-05): the consensus surface is now the resolve-mode compare
+> table (`ConsensusPanel` deleted, #483); the finalize/ready/auto-reveal
+> decisions here are unchanged.
+
 **Per-coordinate consensus writes are role-gated at the API layer (kind-aware).**
 The standalone `POST /api/v1/runs/{id}/consensus` (`record_consensus`) — the
 per-coordinate path behind both the extraction `ConsensusPanel` divergence resolver
