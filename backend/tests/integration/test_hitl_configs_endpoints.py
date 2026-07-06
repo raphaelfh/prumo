@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+from tests.integration.conftest import SEED
 
 
 async def _delete_existing_configs(
@@ -51,10 +52,11 @@ async def manager_project(
                 FROM public.project_members pm
                 JOIN public.project_extraction_templates pet
                   ON pet.project_id = pm.project_id
-                WHERE pm.role = 'manager'
+                WHERE pm.project_id = :pid AND pm.role = 'manager'
                 LIMIT 1
                 """
-            )
+            ),
+            {"pid": str(SEED.primary_project)},
         )
     ).first()
     if row is None:

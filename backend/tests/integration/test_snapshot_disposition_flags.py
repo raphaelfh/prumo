@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.extraction_snapshot import build_template_version_snapshot
+from tests.integration.conftest import SEED
 
 
 @pytest.mark.asyncio
@@ -18,8 +19,10 @@ async def test_snapshot_carries_disposition_flags(db_session: AsyncSession) -> N
             text(
                 "SELECT t.id FROM public.project_extraction_templates t "
                 "JOIN public.extraction_entity_types et ON et.project_template_id = t.id "
-                "JOIN public.extraction_fields f ON f.entity_type_id = et.id LIMIT 1"
-            )
+                "JOIN public.extraction_fields f ON f.entity_type_id = et.id "
+                "WHERE t.id = :tid LIMIT 1"
+            ),
+            {"tid": str(SEED.primary_template)},
         )
     ).scalar()
     if tid is None:
