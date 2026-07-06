@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-07-02
+last_reviewed: 2026-07-06
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-07-02 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-07-06 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -121,7 +121,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0041_reviewer_ready_select_rls` (post-squash numbering; run
+`0044_instance_delete_cascade` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -163,7 +163,7 @@ migration `0039_absent_reason_backfill`. Decision record:
 | `extraction_templates_global` | + `kind` column, unique `(id, kind)` | 0011 |
 | `project_extraction_templates` | + `kind`, unique `(id, kind)` | 0011 |
 | `extraction_runs` | + `kind`, `version_id` FK, `hitl_config_snapshot`; composite FK `(template_id, kind)` enforces template-run kind coherence; stage enum reconstructed | 0011 + 0014 |
-| `extraction_evidence` | + `run_id`, `proposal_record_id`, `reviewer_decision_id`, `consensus_decision_id`. Legacy `target_type`/`target_id` columns dropped in 0017; CHECK now requires the workflow path. | 0013 + 0017 |
+| `extraction_evidence` | + `run_id`, `proposal_record_id`, `reviewer_decision_id`, `consensus_decision_id`. Legacy `target_type`/`target_id` columns dropped in 0017; CHECK now requires the workflow path. Target FKs are `ON DELETE CASCADE` — evidence follows its sole workflow target (0044; SET NULL could never satisfy the CHECK). | 0013 + 0017 + 0044 |
 | `extraction_fields` | + `allows_not_applicable`, `allows_not_evaluated` opt-in disposition flags (ADR-0016; copied into `version.schema_` by the snapshot builder) | 0038 |
 
 ### Legacy tables — fully removed

@@ -50,7 +50,11 @@ export interface UseModelExtractionReturn {
  * @returns Extract function, loading state and error
  */
 export function useModelExtraction(options?: {
-  onSuccess?: (runId: string, modelsCreated: number) => void;
+  onSuccess?: (
+    runId: string,
+    modelsCreated: number,
+    createdModels: Array<{instanceId: string; modelName: string}>,
+  ) => void;
 }): UseModelExtractionReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,14 +101,23 @@ export function useModelExtraction(options?: {
         // IMPORTANT: Do not await - callback must not block loading reset
         if (options?.onSuccess) {
           Promise.resolve(
-            options.onSuccess(result.data.runId, modelsCreated)
+            options.onSuccess(
+              result.data.runId,
+              modelsCreated,
+              result.data.modelsCreated.map(m => ({
+                instanceId: m.instanceId,
+                modelName: m.modelName,
+              })),
+            )
           ).catch(err => {
             console.error('[useModelExtraction] Erro no callback onSuccess:', err);
           });
         }
       };
 
-      doExtract()
+      // Returned (not fire-and-forget) so callers can sequence on completion —
+      // useFullAIExtraction Phase 2 reads the extracted models right after this.
+      return doExtract()
         .catch((err: unknown) => {
           console.error('[useModelExtraction] Erro capturado', {
             error: err instanceof Error ? err.message : String(err),

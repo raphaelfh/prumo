@@ -244,7 +244,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
         setProgress(null);
       };
 
-      doExtract()
+      return doExtract()
         .catch((err: unknown) => {
           console.error('[useBatchAllModelsSectionsExtraction] Caught error', {
             error: err instanceof Error ? err.message : String(err),

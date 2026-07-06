@@ -179,7 +179,7 @@ export function useBatchSectionExtractionChunked(options?: {
         setProgress(null);
       };
 
-      doExtract()
+      return doExtract()
         .catch((err: unknown) => {
           console.error('[useBatchSectionExtractionChunked] Erro capturado', {
             error: err instanceof Error ? err.message : String(err),
