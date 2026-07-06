@@ -19,12 +19,18 @@ import {Badge} from '@/components/ui/badge';
 import {Separator} from '@/components/ui/separator';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {Alert, AlertDescription} from '@/components/ui/alert';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {Check, Edit2, Mail, Shield, Trash2, UserPlus, Users as UsersIcon, X} from 'lucide-react';
 import {SettingsSection, SettingsCard} from '@/components/settings';
 import {MEMBER_ROLES, type MemberRole} from '@/types/project';
 import {t} from '@/lib/copy';
 
 type ProjectMember = ProjectMemberRow;
+
+/** True when a service error is the DB min-one-manager guard (PM001). */
+function isLastManagerGuard(error: Error): boolean {
+  return error instanceof PgError && error.code === 'PM001';
+}
 
 interface TeamMembersSectionProps {
   projectId: string;
@@ -110,7 +116,13 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
     const result = await updateMemberRole(memberId, editingRole);
     if (!result.ok) {
       console.error('Error updating role:', result.error);
-      toast.error(t('project', 'teamErrorUpdatingRole'));
+      // A concurrent edit / stale UI can still demote the last manager and hit
+      // the DB guard; surface the dedicated message instead of the generic one.
+      toast.error(
+        isLastManagerGuard(result.error)
+          ? t('project', 'teamLastManagerGuard')
+          : t('project', 'teamErrorUpdatingRole'),
+      );
       return;
     }
     toast.success(`${t('project', 'teamRoleChangedTo')} ${MEMBER_ROLES[editingRole].label}`);
@@ -124,12 +136,20 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
     const result = await removeProjectMember(memberId);
     if (!result.ok) {
       console.error('Error removing member:', result.error);
-      toast.error(t('project', 'teamErrorRemovingMember'));
+      toast.error(
+        isLastManagerGuard(result.error)
+          ? t('project', 'teamLastManagerGuard')
+          : t('project', 'teamErrorRemovingMember'),
+      );
       return;
     }
     toast.success(t('project', 'teamMemberRemoved'));
     void loadMembers();
   };
+
+  // A project must keep >= 1 manager; the sole manager's demote/remove
+  // affordances are disabled (the DB PM001 guard is the hard backstop).
+  const managerCount = members.filter((m) => m.role === 'manager').length;
 
   return (
       <SettingsSection
@@ -196,7 +216,10 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
                   </Alert>
               ) : (
                   <div className="space-y-0">
-                      {members.map((member, index) => (
+                      {members.map((member, index) => {
+                          const isSoleManager =
+                              member.role === 'manager' && managerCount === 1;
+                          return (
                           <div key={member.id}>
                               {index > 0 && <Separator className="my-2"/>}
                               <div className="flex items-center justify-between py-1.5">
@@ -233,12 +256,29 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
                                                   value={editingRole ?? member.role}
                                                   onValueChange={(v: MemberRole) => setEditingRole(v)}
                                               >
-                                                  <SelectTrigger className="w-[120px] h-8 text-[13px]">
-                                                      <SelectValue/>
-                                                  </SelectTrigger>
+                                                  {isSoleManager ? (
+                                                      <Tooltip>
+                                                          <TooltipTrigger asChild>
+                                                              <SelectTrigger className="w-[120px] h-8 text-[13px]">
+                                                                  <SelectValue/>
+                                                              </SelectTrigger>
+                                                          </TooltipTrigger>
+                                                          <TooltipContent>
+                                                              {t('project', 'teamLastManagerGuard')}
+                                                          </TooltipContent>
+                                                      </Tooltip>
+                                                  ) : (
+                                                      <SelectTrigger className="w-[120px] h-8 text-[13px]">
+                                                          <SelectValue/>
+                                                      </SelectTrigger>
+                                                  )}
                                                   <SelectContent>
                                                       {(Object.keys(MEMBER_ROLES) as MemberRole[]).map((role) => (
-                                                          <SelectItem key={role} value={role}>
+                                                          <SelectItem
+                                                              key={role}
+                                                              value={role}
+                                                              disabled={isSoleManager && role !== 'manager'}
+                                                          >
                                                               {MEMBER_ROLES[role].label}
                                                           </SelectItem>
                                                       ))}
@@ -278,21 +318,43 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
                                               >
                                                   <Edit2 className="h-4 w-4" strokeWidth={1.5}/>
                                               </Button>
-                                              <Button
-                                                  size="icon"
-                                                  variant="ghost"
-                                                  className="h-8 w-8 hover:bg-muted/50"
-                                                  onClick={() => handleRemoveMember(member.id)}
-                                                  aria-label={t('project', 'teamAriaRemoveMember')}
-                                              >
-                                                  <Trash2 className="h-4 w-4" strokeWidth={1.5}/>
-                                              </Button>
+                                              {isSoleManager ? (
+                                                  <Tooltip>
+                                                      <TooltipTrigger asChild>
+                                                          <span tabIndex={0} className="inline-flex">
+                                                              <Button
+                                                                  size="icon"
+                                                                  variant="ghost"
+                                                                  className="h-8 w-8 hover:bg-muted/50"
+                                                                  disabled
+                                                                  aria-label={t('project', 'teamAriaRemoveMember')}
+                                                              >
+                                                                  <Trash2 className="h-4 w-4" strokeWidth={1.5}/>
+                                                              </Button>
+                                                          </span>
+                                                      </TooltipTrigger>
+                                                      <TooltipContent>
+                                                          {t('project', 'teamLastManagerGuard')}
+                                                      </TooltipContent>
+                                                  </Tooltip>
+                                              ) : (
+                                                  <Button
+                                                      size="icon"
+                                                      variant="ghost"
+                                                      className="h-8 w-8 hover:bg-muted/50"
+                                                      onClick={() => handleRemoveMember(member.id)}
+                                                      aria-label={t('project', 'teamAriaRemoveMember')}
+                                                  >
+                                                      <Trash2 className="h-4 w-4" strokeWidth={1.5}/>
+                                                  </Button>
+                                              )}
                                           </>
                                       )}
                                   </div>
                               </div>
                           </div>
-                      ))}
+                          );
+                      })}
                   </div>
               )}
           </SettingsCard>
