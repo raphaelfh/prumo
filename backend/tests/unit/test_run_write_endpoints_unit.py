@@ -71,7 +71,7 @@ async def test_create_proposal_awaits_reviewer_role_gate() -> None:
         run_id=run_id,
         instance_id=uuid4(),
         field_id=uuid4(),
-        source="human",
+        source="ai",
         source_user_id=caller,
         proposed_value={"value": "x"},
         confidence_score=None,
@@ -81,7 +81,7 @@ async def test_create_proposal_awaits_reviewer_role_gate() -> None:
     body = CreateProposalRequest(
         instance_id=record.instance_id,
         field_id=record.field_id,
-        source="human",
+        source="ai",
         proposed_value={"value": "x"},
     )
     service = MagicMock()
