@@ -494,6 +494,52 @@ async def test_migration_0042_round_trip(
     assert cols_after == set(), "upgrade head must re-drop all three blob columns"
 
 
+_MIN_MANAGER_TRIGGER = text(
+    "SELECT 1 FROM pg_trigger "
+    "WHERE tgname = 'trg_project_members_min_one_manager' AND NOT tgisinternal"
+)
+_MIN_MANAGER_FUNC = text("SELECT 1 FROM pg_proc WHERE proname = 'enforce_min_one_manager'")
+
+
+@pytest.mark.asyncio
+async def test_migration_0043_round_trip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0043_min_one_manager_guard`` creates the ``enforce_min_one_manager``
+    function + its ``trg_project_members_min_one_manager`` trigger (and heals
+    zero-manager projects). Downgrading to the explicit parent
+    ``0042_drop_article_blob_columns`` drops the trigger + function (the heal
+    is intentionally not reverted); ``upgrade head`` re-creates them
+    idempotently. Downgrades to the explicit parent (not ``-1``) so the test
+    stays correct as later migrations stack on top."""
+    assert (await migration_session.execute(_MIN_MANAGER_FUNC)).scalar() == 1, (
+        "enforce_min_one_manager function must exist at HEAD"
+    )
+    assert (await migration_session.execute(_MIN_MANAGER_TRIGGER)).scalar() == 1, (
+        "trg_project_members_min_one_manager trigger must exist at HEAD"
+    )
+
+    _run_alembic("downgrade", "0042_drop_article_blob_columns", database_url=migration_db_url)
+    try:
+        await migration_session.commit()
+        assert (await migration_session.execute(_MIN_MANAGER_TRIGGER)).scalar() is None, (
+            "downgrade must drop the trigger"
+        )
+        assert (await migration_session.execute(_MIN_MANAGER_FUNC)).scalar() is None, (
+            "downgrade must drop the function"
+        )
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    await migration_session.commit()
+    assert (await migration_session.execute(_MIN_MANAGER_FUNC)).scalar() == 1, (
+        "upgrade head must restore the function"
+    )
+    assert (await migration_session.execute(_MIN_MANAGER_TRIGGER)).scalar() == 1, (
+        "upgrade head must restore the trigger"
+    )
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     """Pin the head revision id. If a future migration is added without
@@ -502,8 +548,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0042_drop_article_blob_columns" in out, (
-        f"Expected head revision '0042_drop_article_blob_columns', got:\n{out}"
+    assert "0043_min_one_manager_guard" in out, (
+        f"Expected head revision '0043_min_one_manager_guard', got:\n{out}"
     )
 
 

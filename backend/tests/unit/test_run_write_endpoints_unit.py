@@ -71,7 +71,7 @@ async def test_create_proposal_awaits_reviewer_role_gate() -> None:
         run_id=run_id,
         instance_id=uuid4(),
         field_id=uuid4(),
-        source="human",
+        source="ai",
         source_user_id=caller,
         proposed_value={"value": "x"},
         confidence_score=None,
@@ -81,7 +81,7 @@ async def test_create_proposal_awaits_reviewer_role_gate() -> None:
     body = CreateProposalRequest(
         instance_id=record.instance_id,
         field_id=record.field_id,
-        source="human",
+        source="ai",
         proposed_value={"value": "x"},
     )
     service = MagicMock()
@@ -100,43 +100,6 @@ async def test_create_proposal_awaits_reviewer_role_gate() -> None:
 
     gate.assert_awaited_once_with(db, project_id, caller)
     assert resp.ok is True
-
-
-@pytest.mark.asyncio
-async def test_create_proposal_rejects_forged_human_source_user_id() -> None:
-    """D8-c guard: a human proposal whose body.source_user_id differs from the
-    authenticated caller 400s BEFORE the service runs (materialization turns
-    that column into decision attribution)."""
-    from fastapi import HTTPException
-
-    run_id, project_id, caller = uuid4(), uuid4(), uuid4()
-    body = CreateProposalRequest(
-        instance_id=uuid4(),
-        field_id=uuid4(),
-        source="human",
-        source_user_id=uuid4(),  # != caller
-        proposed_value={"value": "forged"},
-    )
-    service = MagicMock()
-    service.record_proposal = AsyncMock()
-
-    with (
-        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run(project_id))),
-        patch(f"{_EP}.ensure_project_reviewer", AsyncMock()),
-        patch(f"{_EP}.ExtractionProposalService", return_value=service),
-        patch(f"{_EP}._trace", return_value=None),
-        pytest.raises(HTTPException) as exc,
-    ):
-        await create_proposal(
-            run_id=run_id,
-            body=body,
-            request=MagicMock(),
-            db=AsyncMock(),
-            current_user_sub=caller,
-        )
-
-    assert exc.value.status_code == 400
-    service.record_proposal.assert_not_awaited()
 
 
 @pytest.mark.asyncio

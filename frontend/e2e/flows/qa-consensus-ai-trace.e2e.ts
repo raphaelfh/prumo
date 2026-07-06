@@ -36,6 +36,7 @@ import {
 import { prepareCleanQaRun } from "../_fixtures/hitl";
 import {
   adminDelete,
+  adminInsert,
   adminSelect,
   adminUpdate,
   resolveActiveExtractionTemplateId,
@@ -544,11 +545,13 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
       },
     );
     expect(divergent.ok(), await divergent.text()).toBeTruthy();
+    const reviewerBId = (
+      await parseEnvelope<{ reviewer_id: string }>(divergent)
+    ).data!.reviewer_id;
 
-    // Pre-D8 mid-flight shape: a bare human proposal with no decision (QA
-    // still accepts human proposals; the endpoint attributes it to the
-    // caller — a forged source_user_id would 400).
-    const legacyProposal = await request.post(
+    // The human-proposal write path is closed for QA too (post-drain gate):
+    // an API client replaying the pre-D8 write gets 400 → /decisions.
+    const rejectedProposal = await request.post(
       `${env.apiUrl}/api/v1/runs/${runId}/proposals`,
       {
         headers: authHeaders(reviewerBToken, traceId),
@@ -561,7 +564,23 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
         timeout: 15_000,
       },
     );
-    expect(legacyProposal.ok(), await legacyProposal.text()).toBeTruthy();
+    expect(rejectedProposal.status()).toBe(400);
+    expect(await rejectedProposal.text()).toContain("/decisions");
+
+    // Pre-D8 mid-flight shape: a bare human proposal with no decision.
+    // Legacy rows now exist only as stored data, so seed one the way it
+    // actually exists in a pre-D8 database — directly in the table.
+    await adminInsert("extraction_proposal_records", [
+      {
+        id: crypto.randomUUID(),
+        run_id: runId,
+        instance_id: fixture.firstInstanceId,
+        field_id: untouchedField!.id,
+        source: "human",
+        source_user_id: reviewerBId,
+        proposed_value: { value: "PY-materialized" },
+      },
+    ]);
 
     // (4) Advance to consensus → materialization converts the bare proposal
     // into Bela's edit decision; the compare table works against real rows

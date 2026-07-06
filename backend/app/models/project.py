@@ -114,6 +114,12 @@ class Project(BaseModel):
         "ProjectMember",
         back_populates="project",
         cascade="all, delete-orphan",
+        # Defer member deletion to the DB-level ON DELETE CASCADE. Without this,
+        # an ORM session.delete(project) would DELETE member rows first, while
+        # the project row still exists — tripping the min-one-manager trigger's
+        # cascade carve-out (0043) and raising PM001 mid-delete. No ORM path
+        # deletes a project today; this keeps the future one from bricking.
+        passive_deletes=True,
     )
     articles: Mapped[list["Article"]] = relationship(
         "Article",

@@ -3047,6 +3047,7 @@
         "type": "object"
       },
       "CreateProposalRequest": {
+        "additionalProperties": false,
         "properties": {
           "confidence_score": {
             "anyOf": [
@@ -3089,18 +3090,6 @@
             "pattern": "^(ai|human|system)$",
             "title": "Source",
             "type": "string"
-          },
-          "source_user_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source User Id"
           }
         },
         "required": [

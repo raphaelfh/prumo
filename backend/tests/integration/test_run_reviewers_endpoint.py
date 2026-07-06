@@ -46,9 +46,8 @@ async def auth_as_profile(
 async def _pick_fixtures(db: AsyncSession) -> tuple[str, str, str, str, str] | None:
     project_id = (
         await db.execute(
-            text(
-                "SELECT p.id FROM public.projects p WHERE EXISTS (SELECT 1 FROM public.project_extraction_templates t JOIN public.extraction_entity_types et ON et.project_template_id = t.id JOIN public.extraction_fields f ON f.entity_type_id = et.id JOIN public.extraction_instances i ON i.template_id = t.id WHERE t.project_id = p.id) ORDER BY p.id LIMIT 1"
-            )
+            text("SELECT id FROM public.projects WHERE id = :pid"),
+            {"pid": str(SEED.primary_project)},
         )
     ).scalar()
     article_id = (
