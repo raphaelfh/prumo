@@ -122,15 +122,20 @@ def test_extraction_published_state_instantiation() -> None:
     assert state.version == 1
 
 
-def test_proposal_record_fk_uses_restrict_not_set_null() -> None:
-    """Issue #22 regression: `proposal_record_id` FK must be RESTRICT.
+def test_proposal_record_fk_is_deferred_no_action_never_set_null() -> None:
+    """Issue #22 regression, amended by migration 0044.
 
     SET NULL would cascade into a CHECK violation for accept_proposal
     rows because `accept_has_proposal` forbids a NULL proposal id for
-    that decision. RESTRICT keeps the error surface clean and prevents
-    the parent proposal from being deleted while still referenced.
+    that decision — so the FK must never be SET NULL. 0044 relaxed the
+    original RESTRICT to NO ACTION DEFERRABLE INITIALLY DEFERRED: the
+    guarantee still holds at COMMIT for a standalone proposal delete,
+    while the instance-delete cascade (which removes proposal and
+    decision in the same transaction) is no longer aborted mid-flight.
     """
     col = ExtractionReviewerDecision.__table__.c.proposal_record_id
     fks = list(col.foreign_keys)
     assert len(fks) == 1
-    assert fks[0].ondelete == "RESTRICT"
+    assert fks[0].ondelete is None  # NO ACTION — never SET NULL / RESTRICT
+    assert fks[0].deferrable is True
+    assert fks[0].initially == "DEFERRED"

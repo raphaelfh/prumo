@@ -151,12 +151,16 @@ class ExtractionReviewerDecision(BaseModel):
     )
     proposal_record_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        # Issue #22: must be RESTRICT — the CHECK constraint
+        # Issue #22: never SET NULL — the CHECK constraint
         # `accept_has_proposal` forbids NULL when decision='accept_proposal'.
-        # A SET NULL action would surface as a confusing CHECK violation
-        # instead of the expected RESTRICT error when something tries to
-        # delete a referenced proposal record.
-        ForeignKey("public.extraction_proposal_records.id", ondelete="RESTRICT"),
+        # Deferred NO ACTION (migration 0044) keeps that guarantee at COMMIT
+        # while letting the instance-delete cascade remove proposal and
+        # decision atomically (RESTRICT aborted the whole-graph delete).
+        ForeignKey(
+            "public.extraction_proposal_records.id",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
         nullable=True,
     )
     value: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
@@ -241,7 +245,10 @@ class ExtractionReviewerState(BaseModel):
                 "public.extraction_reviewer_decisions.id",
             ],
             name="fk_extraction_reviewer_states_decision_run_match",
-            ondelete="RESTRICT",
+            # Deferred NO ACTION (0044): enforced at COMMIT so the
+            # instance-delete cascade can remove decision + state atomically.
+            deferrable=True,
+            initially="DEFERRED",
         ),
         {"schema": "public"},
     )
@@ -349,10 +356,13 @@ class ExtractionConsensusDecision(BaseModel):
                 "public.extraction_reviewer_decisions.id",
             ],
             name="fk_extraction_consensus_decisions_selected_run_match",
-            # RESTRICT, not SET NULL: run_id is NOT NULL, so a composite SET NULL
+            # Never SET NULL: run_id is NOT NULL, so a composite SET NULL
             # would try to null run_id too and abort with a not-null violation.
             # (SET NULL was also incoherent with the select_existing CHECK.) (#81)
-            ondelete="RESTRICT",
+            # Deferred NO ACTION (0044): enforced at COMMIT so the
+            # instance-delete cascade can remove decision + selection atomically.
+            deferrable=True,
+            initially="DEFERRED",
         ),
         CheckConstraint(
             "mode <> 'select_existing' OR selected_decision_id IS NOT NULL",

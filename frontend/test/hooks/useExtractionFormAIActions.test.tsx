@@ -9,7 +9,15 @@ const extractAllSections = vi.fn().mockResolvedValue(undefined);
 const extractAllSectionsForAllModels = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@/hooks/extraction/useModelExtraction', () => ({
-  useModelExtraction: ({onSuccess}: {onSuccess: (runId: string, n: number) => Promise<void>}) => {
+  useModelExtraction: ({
+    onSuccess,
+  }: {
+    onSuccess: (
+      runId: string,
+      n: number,
+      createdModels: Array<{instanceId: string; modelName: string}>,
+    ) => Promise<void>;
+  }) => {
     (globalThis as Record<string, unknown>).__modelExtractionOnSuccess = onSuccess;
     return {extractModels, loading: false};
   },
@@ -83,10 +91,44 @@ describe('useExtractionFormAIActions', () => {
     const cb = (globalThis as Record<string, unknown>).__modelExtractionOnSuccess as (
       r: string,
       n: number,
+      createdModels: Array<{instanceId: string; modelName: string}>,
     ) => Promise<void>;
-    await act(() => cb('run-1', 2));
+    await act(() => cb('run-1', 2, []));
     expect(props.onRefreshModels).toHaveBeenCalled();
     expect(props.onRefreshInstances).toHaveBeenCalled();
+  });
+
+  it('model-extraction onSuccess chains section extraction for the created models', async () => {
+    const props = baseProps();
+    renderHook(() => useExtractionFormAIActions(props));
+    const cb = (globalThis as Record<string, unknown>).__modelExtractionOnSuccess as (
+      r: string,
+      n: number,
+      createdModels: Array<{instanceId: string; modelName: string}>,
+    ) => Promise<void>;
+    const created = [
+      {instanceId: 'inst-new-1', modelName: 'CatBoost'},
+      {instanceId: 'inst-new-2', modelName: 'XGBoost'},
+    ];
+    await act(() => cb('run-1', 2, created));
+    expect(extractAllSectionsForAllModels).toHaveBeenCalledWith({
+      projectId: 'p',
+      articleId: 'a',
+      templateId: 't',
+      models: created,
+    });
+  });
+
+  it('model-extraction onSuccess does NOT chain sections when nothing was created', async () => {
+    const props = baseProps();
+    renderHook(() => useExtractionFormAIActions(props));
+    const cb = (globalThis as Record<string, unknown>).__modelExtractionOnSuccess as (
+      r: string,
+      n: number,
+      createdModels: Array<{instanceId: string; modelName: string}>,
+    ) => Promise<void>;
+    await act(() => cb('run-1', 0, []));
+    expect(extractAllSectionsForAllModels).not.toHaveBeenCalled();
   });
 
   it('batch-section onSuccess refreshes instances and fires completion callback', async () => {
