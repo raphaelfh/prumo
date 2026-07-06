@@ -146,7 +146,11 @@ export function updateMemberRole(
       .from('project_members')
       .update({role})
       .eq('id', memberId);
-    if (error) throw error;
+    // Re-wrap into PgError so the pg code (e.g. 'PM001' from the
+    // min-one-manager guard) survives toResult and the caller can branch on
+    // `instanceof PgError && .code`. A bare throw would reach the component as
+    // a PostgrestError, defeating that check.
+    if (error) throw new PgError(error.message, error.code);
   }, 'projectSettingsService.updateMemberRole');
 }
 
@@ -163,7 +167,8 @@ export function removeProjectMember(
       .from('project_members')
       .delete()
       .eq('id', memberId);
-    if (error) throw error;
+    // Re-wrap so the pg code (e.g. 'PM001') reaches the caller as a PgError.
+    if (error) throw new PgError(error.message, error.code);
   }, 'projectSettingsService.removeProjectMember');
 }
 
