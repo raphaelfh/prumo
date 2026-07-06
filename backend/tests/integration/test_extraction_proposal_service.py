@@ -22,11 +22,10 @@ async def _setup_qa_run_with_instance_field(
 ) -> tuple[UUID, UUID, UUID, UUID] | None:
     """Build a kind='quality_assessment' run + advance to EXTRACT.
 
-    Used by tests that need the QA-specific behaviour, where ``human``
-    proposals MUST keep being accepted in the editable ``extract`` stage
-    (QA has no per-reviewer blind contract, so its human writes stay on the
-    shared proposal track). The kind discriminator in the proposal service
-    exempts QA from the Layer 1b extraction-only gate.
+    Used by tests that assert the QA-specific behaviour of the proposal
+    service's kind gate. Since D8 unified the write path (QA forms POST
+    /decisions), ``human`` proposals are rejected for QA runs too — the
+    kind discriminator only changes the error's rationale, not the outcome.
 
     Builds a transient QA template under PRIMARY_PROJECT via ``TemplateFactory``
     so the test does not depend on a pre-cloned QA project template existing
@@ -232,27 +231,6 @@ async def test_record_ai_proposal(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_record_human_proposal_requires_user_id(
-    db_session: AsyncSession,
-) -> None:
-    fx = await _setup_run_with_instance_field(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    run_id, instance_id, field_id, _ = fx
-    service = ExtractionProposalService(db_session)
-    with pytest.raises(InvalidProposalError):
-        await service.record_proposal(
-            run_id=run_id,
-            instance_id=instance_id,
-            field_id=field_id,
-            source=ExtractionProposalSource.HUMAN,
-            proposed_value={"text": "manual"},
-            source_user_id=None,
-        )
-    await db_session.rollback()
-
-
-@pytest.mark.asyncio
 async def test_record_proposal_blocked_outside_extract_stage(
     db_session: AsyncSession,
 ) -> None:
@@ -280,34 +258,33 @@ async def test_record_proposal_blocked_outside_extract_stage(
 
 
 @pytest.mark.asyncio
-async def test_record_human_proposal_accepted_in_extract_for_qa(
+async def test_record_human_proposal_rejected_in_extract_for_qa(
     db_session: AsyncSession,
 ) -> None:
-    """Quality-Assessment / human flows must keep working in the editable
-    ``extract`` stage.
+    """Post-D8, QA ``human`` proposals are rejected like extraction's.
 
-    Layer 1b: The extraction-only gate added in this layer must NOT block
-    QA's write — QA is a one-shot single-user flow that legitimately needs
-    ``human`` proposals on the shared track. Coverage of QA's permissiveness
-    is therefore explicit and uses a kind='quality_assessment' template (the
-    sibling extraction-kind rejection lives in
-    ``test_record_human_proposal_rejected_in_extract_for_extraction``).
+    The QA form writes /decisions since D8-a, so the only writers left on
+    the human-proposal track would be API bypasses (curl, agent client) —
+    exactly the callers whose bare proposals forced
+    ``materialize_qa_decisions`` to reconcile at every extract->consensus
+    advance. Rejecting them bounds the materializer to pre-D8 rows already
+    in the database (which arrive via raw INSERT in its tests, matching
+    how legacy data actually exists).
     """
     fx = await _setup_qa_run_with_instance_field(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
     run_id, instance_id, field_id, profile_id = fx
     service = ExtractionProposalService(db_session)
-    record = await service.record_proposal(
-        run_id=run_id,
-        instance_id=instance_id,
-        field_id=field_id,
-        source=ExtractionProposalSource.HUMAN,
-        proposed_value={"value": "Y"},
-        source_user_id=profile_id,
-    )
-    assert record.id is not None
-    assert record.source == "human"
+    with pytest.raises(InvalidProposalError, match="/decisions"):
+        await service.record_proposal(
+            run_id=run_id,
+            instance_id=instance_id,
+            field_id=field_id,
+            source=ExtractionProposalSource.HUMAN,
+            proposed_value={"value": "Y"},
+            source_user_id=profile_id,
+        )
     await db_session.rollback()
 
 
@@ -325,8 +302,8 @@ async def test_record_human_proposal_rejected_in_extract_for_extraction(
     a future bypass of the frontend filter (curl, agent client) cannot
     resurrect the bug — humans write via /decisions.
 
-    QA legitimately needs human proposals and is therefore exempted (covered
-    by the sibling QA test above).
+    QA human proposals are rejected too since D8 (covered by the sibling QA
+    test above); the two kinds differ only in rationale, not outcome.
     """
     fx = await _setup_run_with_instance_field(db_session, kind="extraction")
     if fx is None:

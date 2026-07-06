@@ -55,17 +55,16 @@ from app.models.extraction import (
 )
 from app.models.extraction_workflow import (
     ExtractionConsensusMode,
-    ExtractionProposalSource,
     ExtractionReviewerDecisionType,
 )
 from app.services.exports.extraction.workbook import build_workbook
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import ExportMode, ExtractionExportService
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.hitl_session_service import HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
+from tests.integration.test_run_lifecycle_service import _insert_legacy_human_proposal
 
 pytestmark = pytest.mark.asyncio
 
@@ -245,22 +244,24 @@ async def _seed_finalized_qa_run(
     domain2_instance = instance_by_et[domain2_et]
 
     # --- 3. Park human verdict proposals, advance, publish, finalize. ---
-    proposal_service = ExtractionProposalService(db)
-    p1 = await proposal_service.record_proposal(
+    # Pre-D8 QA shape: parked human proposals that accept_proposal decisions
+    # link to. The write path rejects human proposals now, so seed them the
+    # way legacy rows actually exist — directly in the table.
+    p1_id = await _insert_legacy_human_proposal(
+        db,
         run_id=run_id,
         instance_id=domain1_instance,
         field_id=domain1_verdict,
-        source=ExtractionProposalSource.HUMAN,
-        source_user_id=profile_id,
-        proposed_value={"value": "Low"},
+        profile_id=profile_id,
+        value="Low",
     )
-    p2 = await proposal_service.record_proposal(
+    p2_id = await _insert_legacy_human_proposal(
+        db,
         run_id=run_id,
         instance_id=domain2_instance,
         field_id=domain2_verdict,
-        source=ExtractionProposalSource.HUMAN,
-        source_user_id=profile_id,
-        proposed_value={"value": "High"},
+        profile_id=profile_id,
+        value="High",
     )
 
     lifecycle = RunLifecycleService(db)
@@ -275,7 +276,7 @@ async def _seed_finalized_qa_run(
         field_id=domain1_verdict,
         reviewer_id=profile_id,
         decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
-        proposal_record_id=p1.id,
+        proposal_record_id=p1_id,
     )
     await review_service.record_decision(
         run_id=run_id,
@@ -283,7 +284,7 @@ async def _seed_finalized_qa_run(
         field_id=domain2_verdict,
         reviewer_id=profile_id,
         decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
-        proposal_record_id=p2.id,
+        proposal_record_id=p2_id,
     )
 
     if with_second_reviewer:
