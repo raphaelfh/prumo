@@ -86,7 +86,7 @@ const baseProps = {
 beforeEach(() => {
   // Use resetAllMocks (not clearAllMocks) so the per-test
   // ``mockReturnValueOnce`` queues from prior tests don't bleed in and
-  // hand the wrong chain to a later supabase.from() call.
+  // hand the wrong chained return to a later mocked call.
   vi.resetAllMocks();
   // Default fetchModelProgress to zero progress (overridden per test as needed).
   mockFetchModelProgress.mockResolvedValue({ completed: 0, total: 0, percentage: 0 });
