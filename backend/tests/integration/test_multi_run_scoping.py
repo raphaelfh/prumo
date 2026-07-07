@@ -311,7 +311,10 @@ async def test_reviewer_state_cannot_point_at_decision_in_other_run(
     _run_b, decision_b = await _build_extract_run()
 
     # Try to point run_a's reviewer_state at decision_b (which belongs to
-    # run_b). The composite FK should reject it.
+    # run_b). The composite FK should reject it. Since 0044 the FK is
+    # INITIALLY DEFERRED (checked at COMMIT, which the SAVEPOINT fixture
+    # never reaches) — force the check to fire at statement time.
+    await db_session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
     with pytest.raises(Exception) as exc_info:
         await db_session.execute(
             text(

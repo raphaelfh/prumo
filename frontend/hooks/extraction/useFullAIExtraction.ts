@@ -256,7 +256,7 @@ export function useFullAIExtraction(options?: {
         setProgress(null);
       };
 
-      doExtract()
+      return doExtract()
         .catch((err: unknown) => {
           console.error('[useFullAIExtraction] Error caught', {
             error: err instanceof Error ? err.message : String(err),

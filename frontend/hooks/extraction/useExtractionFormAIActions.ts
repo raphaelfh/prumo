@@ -50,9 +50,22 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
   const sessionRunId = runId ?? undefined;
 
   const {extractModels, loading: extractingModels} = useModelExtraction({
-    onSuccess: async () => {
+    onSuccess: async (_runId, _modelsCreated, createdModels) => {
+      // Refresh so the new models appear immediately, then extract every
+      // created model's sections — a bare model with empty fields is not
+      // a finished extraction from the user's point of view. The batch
+      // hook's own onSuccess re-refreshes and fires onExtractionComplete.
       onRefreshModels()
         .then(() => onRefreshInstances())
+        .then(() => {
+          if (createdModels.length === 0) return undefined;
+          return extractAllSectionsForAllModels({
+            projectId,
+            articleId,
+            templateId,
+            models: createdModels,
+          });
+        })
         .catch((error: unknown) => {
           console.error('[useExtractionFormAIActions] refresh after model extraction failed:', error);
         });

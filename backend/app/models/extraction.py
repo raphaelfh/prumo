@@ -508,19 +508,22 @@ class ExtractionEvidence(BaseModel):
         ForeignKey("public.extraction_runs.id", ondelete="CASCADE"),
         nullable=True,
     )
+    # CASCADE, not SET NULL: evidence points at exactly one workflow target,
+    # so nulling it can never satisfy the workflow_target_present CHECK —
+    # the row follows its target (migration 0044).
     proposal_record_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_proposal_records.id", ondelete="SET NULL"),
+        ForeignKey("public.extraction_proposal_records.id", ondelete="CASCADE"),
         nullable=True,
     )
     reviewer_decision_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_reviewer_decisions.id", ondelete="SET NULL"),
+        ForeignKey("public.extraction_reviewer_decisions.id", ondelete="CASCADE"),
         nullable=True,
     )
     consensus_decision_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_consensus_decisions.id", ondelete="SET NULL"),
+        ForeignKey("public.extraction_consensus_decisions.id", ondelete="CASCADE"),
         nullable=True,
     )
 
