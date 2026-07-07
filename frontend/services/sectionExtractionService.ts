@@ -199,6 +199,9 @@ export class SectionExtractionService {
         projectId: request.projectId,
         articleId: request.articleId,
         templateId: request.templateId,
+        // Reuse the session run when provided so model extraction never forks a
+        // parallel run that would orphan the reviewer's decisions.
+        runId: request.runId,
         model: request.options?.model,
       });
 
@@ -256,6 +259,9 @@ export class SectionExtractionService {
         articleId: request.articleId,
         templateId: request.templateId,
         parentInstanceId: request.parentInstanceId,
+        // Reuse the session run so batch model-section extraction never forks a
+        // parallel run that would orphan the reviewer's decisions.
+        runId: request.runId,
         extractAllSections: true,
         sectionIds: request.sectionIds,
         pdfText: request.pdfText,

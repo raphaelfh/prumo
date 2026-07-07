@@ -1860,6 +1860,15 @@ async def test_history_mixed_stages_scrub_is_per_run(
         {"model": "m-finalized", "ran_by_user_id": str(reviewer_b)},
     )
 
+    # Stage run1 as finalized directly (the read path is under test, not the
+    # finalize gates). Must happen BEFORE creating run2: the one-live-run
+    # invariant (0045 partial unique index) allows a sibling only once run1
+    # is terminal — and run1's reviewer decisions survive the stage flip.
+    await db_session.execute(
+        text("UPDATE public.extraction_runs SET stage = 'finalized' WHERE id = :r"),
+        {"r": str(run1_id)},
+    )
+
     # Second run on the same coord, staying in extract.
     lifecycle = RunLifecycleService(db_session)
     run2 = await lifecycle.create_run(
@@ -1886,12 +1895,6 @@ async def test_history_mixed_stages_scrub_is_per_run(
         db_session,
         run2.id,
         {"model": "m-extract", "ran_by_user_id": str(reviewer_b)},
-    )
-    # Stage run1 as finalized directly (the read path is under test, not the
-    # finalize gates).
-    await db_session.execute(
-        text("UPDATE public.extraction_runs SET stage = 'finalized' WHERE id = :r"),
-        {"r": str(run1_id)},
     )
     await db_session.flush()
 

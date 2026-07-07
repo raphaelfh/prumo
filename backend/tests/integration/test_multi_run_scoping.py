@@ -1,12 +1,19 @@
 """Integration tests for multi-run scoping invariants.
 
 Mirrors the production scenario that triggered the recent bug: a single
-(project × article × template) tuple can carry many non-terminal Runs
+(project × article × template) tuple can carry many sibling Runs
 (batch extraction, reopens, contract-test pollution). Decisions /
 proposals must always be evaluated against the *specific* Run id passed
 in by the caller — never re-resolved against "the latest non-terminal
 run", which is the trap the frontend ``findActiveRun`` fallback used to
 fall into.
+
+Since migration 0045 (partial unique index
+``uq_one_live_extraction_run_per_coord``) at most ONE live (pending /
+extract / consensus) run may exist per coordinate, so sibling runs in
+these tests are flipped to a terminal stage before the next one is
+created. Cancelling does not delete workflow rows, so the per-run
+scoping assertions are unchanged.
 
 The invariants we lock down here are:
 
@@ -143,9 +150,10 @@ async def test_decision_on_pending_run_is_rejected(db_session: AsyncSession) -> 
 async def test_decision_targets_specific_run_even_with_siblings(
     db_session: AsyncSession,
 ) -> None:
-    """Article carries (PENDING, EXTRACT, EXTRACT) at the same time. A
-    decision on the editing EXTRACT run succeeds and leaves the others
-    untouched — the ReviewerState row is scoped to that run only."""
+    """Article carries sibling runs next to the editing EXTRACT run
+    (terminal since the 0045 one-live-run invariant). A decision on the
+    editing EXTRACT run succeeds and leaves the others untouched — the
+    ReviewerState row is scoped to that run only."""
     fx = await _coords(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
@@ -153,9 +161,8 @@ async def test_decision_targets_specific_run_even_with_siblings(
 
     lifecycle = RunLifecycleService(db_session)
 
-    # Sibling PENDING run on the same article — never advances. This is
-    # exactly the situation that tricked the frontend ``findActiveRun``
-    # fallback into picking the wrong run.
+    # Sibling run on the same article — the situation that tricked the
+    # frontend ``findActiveRun`` fallback into picking the wrong run.
     pending_sibling = await lifecycle.create_run(
         project_id=project_id,
         article_id=article_id,
@@ -163,8 +170,15 @@ async def test_decision_targets_specific_run_even_with_siblings(
         user_id=profile_id,
         parameters={"reason": "multi-run-scope sibling pending"},
     )
+    # One-live-run invariant (uq_one_live_extraction_run_per_coord, 0045):
+    # flip the sibling terminal before creating the next run at this coord.
+    await lifecycle.advance_stage(
+        run_id=pending_sibling.id,
+        target_stage=ExtractionRunStage.CANCELLED,
+        user_id=profile_id,
+    )
 
-    # Sibling EXTRACT run — also non-terminal, but no proposals on it.
+    # Sibling run that reached EXTRACT — but no proposals on it.
     proposal_sibling = await lifecycle.create_run(
         project_id=project_id,
         article_id=article_id,
@@ -175,6 +189,12 @@ async def test_decision_targets_specific_run_even_with_siblings(
     await lifecycle.advance_stage(
         run_id=proposal_sibling.id,
         target_stage=ExtractionRunStage.EXTRACT,
+        user_id=profile_id,
+    )
+    # One-live-run invariant (0045): terminal before the target run exists.
+    await lifecycle.advance_stage(
+        run_id=proposal_sibling.id,
+        target_stage=ExtractionRunStage.CANCELLED,
         user_id=profile_id,
     )
 
@@ -199,12 +219,11 @@ async def test_decision_targets_specific_run_even_with_siblings(
         proposed_value={"value": "ai-suggestion"},
     )
 
-    # Stage sanity for the runs we just built. We deliberately do NOT
-    # assert anything about the absolute "latest non-terminal sibling" here
-    # — the dev DB carries unrelated runs from other tests / contract suites,
-    # and the bug we're guarding against is specifically that the latest
-    # (whatever its stage) gets resolved as the target. The decision MUST
-    # respect the run id the caller passes in, regardless of what's around.
+    # Stage sanity for the runs we just built. Since the 0045 invariant the
+    # siblings are terminal (cancelled) and only the target run is live —
+    # but the bug we're guarding against is unchanged: the decision MUST
+    # respect the run id the caller passes in, never a run re-resolved from
+    # the coordinate, regardless of what's around.
     assert target_run.stage == ExtractionRunStage.EXTRACT.value
     pending_after = (
         await db_session.execute(
@@ -212,14 +231,14 @@ async def test_decision_targets_specific_run_even_with_siblings(
             {"id": str(pending_sibling.id)},
         )
     ).scalar()
-    assert pending_after == ExtractionRunStage.PENDING.value
+    assert pending_after == ExtractionRunStage.CANCELLED.value
     proposal_after = (
         await db_session.execute(
             text("SELECT stage FROM public.extraction_runs WHERE id = :id"),
             {"id": str(proposal_sibling.id)},
         )
     ).scalar()
-    assert proposal_after == ExtractionRunStage.EXTRACT.value
+    assert proposal_after == ExtractionRunStage.CANCELLED.value
 
     service = ExtractionReviewService(db_session)
     decision = await service.record_decision(
@@ -304,6 +323,13 @@ async def test_reviewer_state_cannot_point_at_decision_in_other_run(
             reviewer_id=profile_id,
             decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
             proposal_record_id=proposal.id,
+        )
+        # One-live-run invariant (0045): free the coordinate for the next
+        # build — cancelling keeps the decision / reviewer-state rows.
+        await lifecycle.advance_stage(
+            run_id=run.id,
+            target_stage=ExtractionRunStage.CANCELLED,
+            user_id=profile_id,
         )
         return run.id, decision.id
 

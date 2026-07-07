@@ -624,8 +624,23 @@ async def test_model_used_resolved_from_run_parameters(
     run_a.parameters = {"model": "gpt-4o-mini"}
     await db_session.flush()
 
+    proposal_a = uuid4()
+    db_session.add(
+        _ai_proposal(
+            proposal_id=proposal_a,
+            run_id=run_a.id,
+            instance_id=instance_id,
+            field_id=field_id,
+            value="value-a",
+        )
+    )
+    await db_session.flush()
+
     # Run B — cloned from run_a's metadata but with a different model.
-    # We insert directly to avoid _make_run deleting run_a.
+    # We insert directly to avoid _make_run deleting run_a. Run A is
+    # flipped terminal first: uq_one_live_extraction_run_per_coord (0045)
+    # allows at most ONE live run per (project, article, template, kind);
+    # cancelling keeps run_a's proposal + parameters rows intact.
     run_b = ExtractionRun(
         project_id=run_a.project_id,
         article_id=run_a.article_id,
@@ -638,19 +653,16 @@ async def test_model_used_resolved_from_run_parameters(
         parameters={"model": "gpt-4o"},
         created_by=run_a.created_by,
     )
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_runs SET stage = 'cancelled', "
+            "status = 'failed' WHERE id = :rid"
+        ),
+        {"rid": str(run_a.id)},
+    )
     db_session.add(run_b)
     await db_session.flush()
 
-    proposal_a = uuid4()
-    db_session.add(
-        _ai_proposal(
-            proposal_id=proposal_a,
-            run_id=run_a.id,
-            instance_id=instance_id,
-            field_id=field_id,
-            value="value-a",
-        )
-    )
     proposal_b = uuid4()
     db_session.add(
         _ai_proposal(

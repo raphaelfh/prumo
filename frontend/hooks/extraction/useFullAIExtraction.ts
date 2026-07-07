@@ -44,6 +44,13 @@ export interface UseFullAIExtractionReturn {
     projectId: string;
     articleId: string;
     templateId: string;
+    /**
+     * Active HITL session run to extract into. When set, every sub-extraction
+     * (models + sections) REUSES this run so a reviewer's saved decisions are
+     * never orphaned onto a forked run. Omit for standalone (bulk table)
+     * extraction, where the backend creates + owns a fresh run.
+     */
+    runId?: string;
   }) => Promise<void>;
   loading: boolean;
   error: string | null;
@@ -134,6 +141,7 @@ export function useFullAIExtraction(options?: {
       projectId: string;
       articleId: string;
       templateId: string;
+      runId?: string;
     }) => {
         console.warn('[useFullAIExtraction] Starting full AI extraction', params);
       setLoading(true);
@@ -141,7 +149,7 @@ export function useFullAIExtraction(options?: {
       setProgress(null);
 
       const doExtract = async () => {
-        const { projectId, articleId, templateId } = params;
+        const { projectId, articleId, templateId, runId } = params;
 
           // PHASE 1: Extract models and top-level sections in parallel
           console.warn('[useFullAIExtraction] Phase 1: Extracting models and top-level sections in parallel...');
@@ -155,8 +163,8 @@ export function useFullAIExtraction(options?: {
         // failure is handled here and never reaches the catch below — that is
         // what removes the double error toast (#102).
         const [modelsSettled, topLevelSettled] = await Promise.allSettled([
-          extractModelsHook({ projectId, articleId, templateId }),
-          extractTopLevelSections({ projectId, articleId, templateId }),
+          extractModelsHook({ projectId, articleId, templateId, runId }),
+          extractTopLevelSections({ projectId, articleId, templateId, runId }),
         ]);
 
         const topLevelSectionsResult =
@@ -211,6 +219,7 @@ export function useFullAIExtraction(options?: {
           articleId,
           templateId,
           models,
+          runId,
         });
 
           console.warn('[useFullAIExtraction] Full AI extraction completed successfully');

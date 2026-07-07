@@ -164,6 +164,16 @@ async def test_evidence_gets_attribution_label_and_not_found_recorded(
     assert count == 1
 
     # --- Run a second call with a not_found field; assert 0 proposals written ---
+    # uq_one_live_extraction_run_per_coord (0045): retire run 1 to a terminal
+    # stage before creating a sibling run at the same coordinate. The stage
+    # flip does not delete run 1's evidence/proposal rows (no cascade).
+    await db_session_real.execute(
+        text(
+            "UPDATE public.extraction_runs SET stage = 'cancelled', status = 'failed' "
+            "WHERE id = :rid"
+        ),
+        {"rid": str(run.id)},
+    )
     run2 = await _build_run_in_extract(db_session_real)
     service2 = _make_service(db_session_real)
     service2._run_anchor_blocks = []

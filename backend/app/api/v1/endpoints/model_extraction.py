@@ -174,6 +174,7 @@ async def extract_models(
             article_id=payload.article_id,
             template_id=payload.template_id,
             model=payload.model or settings.LLM_DEFAULT_MODEL,
+            run_id=payload.run_id,
         )
 
         db_commit_start = perf_counter()

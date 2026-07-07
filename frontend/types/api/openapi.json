@@ -4370,6 +4370,18 @@
             "title": "Projectid",
             "type": "string"
           },
+          "runId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runid"
+          },
           "templateId": {
             "format": "uuid",
             "title": "Templateid",

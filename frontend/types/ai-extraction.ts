@@ -180,6 +180,13 @@ export interface ModelExtractionRequest {
   projectId: string;
   articleId: string;
   templateId: string;
+  /**
+   * Active HITL session run to append the extracted models to. When set (the
+   * extraction surface), the backend REUSES that run instead of forking a
+   * parallel one that would shadow the reviewer's saved decisions. Omit for
+   * standalone (e.g. bulk table) extraction where no session run exists.
+   */
+  runId?: string;
   options?: {
     model?: SupportedAIModel;
   };
@@ -202,6 +209,7 @@ export interface BatchSectionExtractionRequest {
   articleId: string;
   templateId: string;
   parentInstanceId: string; // Model instance (required)
+  runId?: string; // Active session run to reuse (avoids orphaning decisions)
   extractAllSections: true; // Flag for batch extraction
   sectionIds?: string[]; // Filter specific sections (for chunking)
   pdfText?: string; // Pre-processed PDF text (avoids reprocessing)
