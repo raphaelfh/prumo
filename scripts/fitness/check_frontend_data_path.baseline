@@ -13,5 +13,4 @@ frontend/services/articlesService.ts:146
 frontend/services/extractionDataService.ts:63
 frontend/services/extractionDataService.ts:64
 frontend/services/extractionExportService.ts:7
-frontend/test/hooks/useModelManagement.test.tsx:74
 frontend/test/services/articlesService.test.ts:244
