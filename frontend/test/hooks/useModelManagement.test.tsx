@@ -60,6 +60,21 @@ function mockLoadModelsToEmpty() {
   mockLoadModelInstances.mockResolvedValueOnce({ ok: true, data: [] });
 }
 
+/** Hand-resolvable promise for driving deterministic load-ordering races. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function modelRow(id: string, label: string) {
+  return { id, label, sort_order: 0, created_at: '2026-01-01T00:00:00Z' };
+}
+
 const baseProps = {
   projectId: 'p-1',
   articleId: 'a-1',
@@ -324,5 +339,216 @@ describe('useModelManagement → removeModel', () => {
         await result.current.removeModel('inst-x');
       }),
     ).rejects.toThrow('rls');
+  });
+});
+
+describe('useModelManagement → overlapping load staleness (prod flapping 2026-07-05)', () => {
+  // The mount-load effect re-fires on every articleId / entity-type /
+  // modelInstancesSig change, and loadModels() has two async gaps
+  // (loadModelInstances + the per-model progress fan-out). Without a
+  // generation guard, whichever load RESOLVES last wins — so a slow load
+  // for a no-longer-current article can overwrite the current article's
+  // models. Prod logs showed this as "Encontradas 1 → 0 → 1" for one
+  // article while another article's loads interleaved. These tests pin
+  // the invariant: a resolved load for a superseded (article, entity-type)
+  // must never commit its result.
+
+  it('drops a stale article load that resolves AFTER navigation to another article', async () => {
+    const first = deferred<{ ok: true; data: any[] }>();
+    const second = deferred<{ ok: true; data: any[] }>();
+    mockLoadModelInstances.mockImplementation((articleId: string) => {
+      if (articleId === 'a-1') return first.promise;
+      if (articleId === 'a-2') return second.promise;
+      return Promise.resolve({ ok: true, data: [] });
+    });
+
+    const { result, rerender } = renderHook(
+      (props: typeof baseProps) => useModelManagement(props),
+      { initialProps: { ...baseProps, articleId: 'a-1' } },
+    );
+
+    // Navigate to a-2 while a-1's load is still in flight (pager next).
+    rerender({ ...baseProps, articleId: 'a-2' });
+
+    // The current article (a-2) resolves first with its own model.
+    await act(async () => {
+      second.resolve({ ok: true, data: [modelRow('m-2', 'XGBoost')] });
+    });
+    await waitFor(() =>
+      expect(result.current.models.map((m) => m.modelName)).toEqual(['XGBoost']),
+    );
+
+    // The stale a-1 load now resolves LAST with a different model set.
+    await act(async () => {
+      first.resolve({ ok: true, data: [modelRow('m-1', 'LogReg')] });
+      await Promise.resolve();
+    });
+
+    // It must NOT overwrite the current article's state.
+    expect(result.current.models.map((m) => m.modelName)).toEqual(['XGBoost']);
+    expect(result.current.activeModelId).toBe('m-2');
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('drops a stale FAILED load so it cannot clobber the current article with an error', async () => {
+    const first = deferred<{ ok: false; error: { message: string } }>();
+    const second = deferred<{ ok: true; data: any[] }>();
+    mockLoadModelInstances.mockImplementation((articleId: string) => {
+      if (articleId === 'a-1') return first.promise;
+      if (articleId === 'a-2') return second.promise;
+      return Promise.resolve({ ok: true, data: [] });
+    });
+
+    const { result, rerender } = renderHook(
+      (props: typeof baseProps) => useModelManagement(props),
+      { initialProps: { ...baseProps, articleId: 'a-1' } },
+    );
+    rerender({ ...baseProps, articleId: 'a-2' });
+
+    await act(async () => {
+      second.resolve({ ok: true, data: [modelRow('m-2', 'XGBoost')] });
+    });
+    await waitFor(() =>
+      expect(result.current.models.map((m) => m.modelName)).toEqual(['XGBoost']),
+    );
+
+    // Stale a-1 load fails after a-2 already succeeded.
+    await act(async () => {
+      first.resolve({ ok: false, error: { message: 'rls denied' } });
+      await Promise.resolve();
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.models.map((m) => m.modelName)).toEqual(['XGBoost']);
+  });
+
+  it('drops a stale modelInstances-prop load superseded DURING the progress fan-out', async () => {
+    // The run-open page (the actual prod surface for the 2026-07-05 flap)
+    // supplies modelInstances from the server RunView, so loadModels takes
+    // the prop branch — there is NO loadModelInstances read, and the ONLY
+    // async gap is the per-model progress fan-out. This pins the second
+    // guard (the isStale re-check after Promise.all): a load superseded
+    // while its progress is resolving must not commit its models.
+    const p1 = deferred<{ completed: number; total: number; percentage: number }>();
+    const p2 = deferred<{ completed: number; total: number; percentage: number }>();
+    mockFetchModelProgress.mockImplementation((_articleId: string, instanceId: string) => {
+      if (instanceId === 'm-1') return p1.promise;
+      if (instanceId === 'm-2') return p2.promise;
+      return Promise.resolve({ completed: 0, total: 0, percentage: 0 });
+    });
+
+    const { result, rerender } = renderHook(
+      (props: typeof baseProps & { modelInstances: any[] }) => useModelManagement(props),
+      { initialProps: { ...baseProps, modelInstances: [modelRow('m-1', 'LogReg')] } },
+    );
+
+    // A newer view arrives (modelInstancesSig changes) before the first
+    // load's progress resolves.
+    rerender({ ...baseProps, modelInstances: [modelRow('m-2', 'XGBoost')] });
+
+    // Current view (m-2) progress resolves first → commits [XGBoost].
+    await act(async () => {
+      p2.resolve({ completed: 1, total: 2, percentage: 50 });
+    });
+    await waitFor(() =>
+      expect(result.current.models.map((m) => m.modelName)).toEqual(['XGBoost']),
+    );
+
+    // The stale first load's progress resolves LAST — must not clobber.
+    await act(async () => {
+      p1.resolve({ completed: 0, total: 2, percentage: 0 });
+      await Promise.resolve();
+    });
+
+    expect(result.current.models.map((m) => m.modelName)).toEqual(['XGBoost']);
+    expect(result.current.activeModelId).toBe('m-2');
+    expect(mockLoadModelInstances).not.toHaveBeenCalled();
+  });
+});
+
+describe('useModelManagement → optimistic mutation vs in-flight load', () => {
+  // createModel / removeModel write state OPTIMISTICALLY. A refresh load
+  // started BEFORE the mutation carries a pre-mutation instances snapshot;
+  // when its progress fan-out resolves it must NOT clobber the mutation's
+  // result (drop a just-created model, or resurrect a just-removed one).
+  // The generation guard only protects loads superseded by a newer LOAD —
+  // a mutation must also claim the next generation to supersede older
+  // in-flight loads.
+
+  it('does not let an in-flight refresh drop a model created during its progress fan-out', async () => {
+    // Steady state: one model Alpha already loaded.
+    mockLoadModelInstances.mockResolvedValue({ ok: true, data: [modelRow('m-A', 'Alpha')] });
+    mockFetchModelProgress.mockResolvedValueOnce({ completed: 0, total: 0, percentage: 0 });
+
+    const { result } = renderHook(() => useModelManagement(baseProps));
+    await waitFor(() =>
+      expect(result.current.models.map((m) => m.modelName)).toEqual(['Alpha']),
+    );
+    expect(result.current.activeModelId).toBe('m-A');
+
+    // Start a refresh that parks in the progress fan-out (snapshot = [Alpha]).
+    const progress = deferred<{ completed: number; total: number; percentage: number }>();
+    mockFetchModelProgress.mockReturnValueOnce(progress.promise);
+    await act(async () => {
+      void result.current.refreshModels();
+    });
+    await waitFor(() => expect(mockFetchModelProgress).toHaveBeenCalledTimes(2));
+
+    // While the refresh is parked, the user creates Beta.
+    (createManualModelHierarchy as any).mockResolvedValue({
+      model_id: 'm-B',
+      model_label: 'Beta',
+      child_instances: [],
+    });
+    await act(async () => {
+      await result.current.createModel('Beta', '');
+    });
+    expect(result.current.models.map((m) => m.modelName)).toEqual(['Alpha', 'Beta']);
+    expect(result.current.activeModelId).toBe('m-B');
+
+    // The refresh's progress resolves LAST with its pre-create snapshot.
+    await act(async () => {
+      progress.resolve({ completed: 0, total: 0, percentage: 0 });
+      await Promise.resolve();
+    });
+
+    // Beta must survive; the stale refresh must not reset the active model.
+    expect(result.current.models.map((m) => m.modelName)).toEqual(['Alpha', 'Beta']);
+    expect(result.current.activeModelId).toBe('m-B');
+  });
+
+  it('does not let an in-flight refresh resurrect a model removed during its progress fan-out', async () => {
+    mockLoadModelInstances.mockResolvedValue({ ok: true, data: [modelRow('m-A', 'Alpha')] });
+    mockFetchModelProgress.mockResolvedValueOnce({ completed: 0, total: 0, percentage: 0 });
+
+    const { result } = renderHook(() => useModelManagement(baseProps));
+    await waitFor(() =>
+      expect(result.current.models.map((m) => m.modelName)).toEqual(['Alpha']),
+    );
+
+    // Refresh parks in the fan-out with snapshot = [Alpha].
+    const progress = deferred<{ completed: number; total: number; percentage: number }>();
+    mockFetchModelProgress.mockReturnValueOnce(progress.promise);
+    await act(async () => {
+      void result.current.refreshModels();
+    });
+    await waitFor(() => expect(mockFetchModelProgress).toHaveBeenCalledTimes(2));
+
+    // User removes Alpha while the refresh is parked.
+    (extractionInstanceService.removeInstance as any).mockResolvedValue(true);
+    await act(async () => {
+      await result.current.removeModel('m-A');
+    });
+    expect(result.current.models).toHaveLength(0);
+    expect(result.current.activeModelId).toBeNull();
+
+    // The refresh's stale snapshot resolves LAST — must not bring Alpha back.
+    await act(async () => {
+      progress.resolve({ completed: 0, total: 0, percentage: 0 });
+      await Promise.resolve();
+    });
+
+    expect(result.current.models).toHaveLength(0);
+    expect(result.current.activeModelId).toBeNull();
   });
 });
