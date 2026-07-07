@@ -15,7 +15,7 @@ UI can immediately record decisions.
 
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article
@@ -27,6 +27,12 @@ from app.models.extraction import (
     ExtractionRunStage,
     ProjectExtractionTemplate,
     TemplateKind,
+)
+from app.models.extraction_workflow import (
+    ExtractionConsensusDecision,
+    ExtractionProposalRecord,
+    ExtractionProposalSource,
+    ExtractionReviewerDecision,
 )
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.template_clone_service import (
@@ -381,6 +387,36 @@ class HITLSessionService:
         in ``ensure_instances`` is already held for this transaction;
         the active-run SELECT below cannot race with itself.
         """
+
+        # Prefer the non-terminal run that HOLDS HUMAN WORK — the one whose most
+        # recent human activity is latest — falling back to the newest by
+        # created_at when no run carries any. Ordering by created_at alone
+        # silently orphans saved work the moment a newer (e.g. AI/model-
+        # extraction) run appears for the same coordinate: the opener would
+        # resume the newer empty run and the earlier run's work would vanish on
+        # refresh. "Human work" spans every surface a person's input lands on:
+        #   - reviewer decisions   (the extraction/QA edit path),
+        #   - consensus decisions  (an arbitrator's manual override / selection),
+        #   - human proposals      (the QA fill path + pre-D8 runs).
+        # ``greatest`` ignores NULLs (returns the latest non-null, or NULL when a
+        # run has none of these), and ``nulls_last`` keeps a freshly-opened empty
+        # run from outranking one that holds work. Correlated scalar subqueries.
+        def _run_max_created_at(model, *extra_where):  # type: ignore[no-untyped-def]
+            return (
+                select(func.max(model.created_at))
+                .where(model.run_id == ExtractionRun.id, *extra_where)
+                .correlate(ExtractionRun)
+                .scalar_subquery()
+            )
+
+        last_human_activity = func.greatest(
+            _run_max_created_at(ExtractionReviewerDecision),
+            _run_max_created_at(ExtractionConsensusDecision),
+            _run_max_created_at(
+                ExtractionProposalRecord,
+                ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
+            ),
+        )
         active_stmt = (
             select(ExtractionRun)
             .where(
@@ -395,7 +431,10 @@ class HITLSessionService:
                     ]
                 ),
             )
-            .order_by(ExtractionRun.created_at.desc())
+            .order_by(
+                last_human_activity.desc().nulls_last(),
+                ExtractionRun.created_at.desc(),
+            )
         )
         run = (await self.db.execute(active_stmt)).scalars().first()
         created = False

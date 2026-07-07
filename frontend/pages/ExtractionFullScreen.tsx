@@ -49,7 +49,6 @@ import {useAutoSaveProposals} from '@/hooks/runs';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
 import {countActionableSuggestions} from '@/lib/ai-extraction/suggestionUtils';
-import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
 import {
   useAdvanceRun,
@@ -526,23 +525,16 @@ export default function ExtractionFullScreen() {
     [aiSuggestions],
   );
 
-  // Full AI extraction — mirrors HeaderMoreMenu wiring exactly.
-  // When an active run is available (in `extract` stage), ``extractForRun``
-  // reuses it (preserving human proposals). Otherwise ``extractFullAI``
-  // creates a fresh run via the legacy multi-step orchestration.
-  const { extractFullAI, loading: extractingFullAI, progress: extractionProgress } = useFullAIExtraction({
+  // AI extraction always runs on the OPEN session run (``extractForRun``
+  // reuses it, preserving human decisions). The old run-less ``extractFullAI``
+  // fallback is gone: it forked a parallel run that shadowed the reviewer's
+  // saved decisions on refresh (the silent data-loss bug). The button is gated
+  // on ``activeRunId`` (see ``canRunAI``), so a session must be open first.
+  const { extractForRun, loading: extractingAI } = useRunAIExtraction({
     onSuccess: async () => {
       await handleExtractionComplete();
     },
   });
-
-  const { extractForRun, loading: extractingForRun } = useRunAIExtraction({
-    onSuccess: async () => {
-      await handleExtractionComplete();
-    },
-  });
-
-  const extractingAI = extractingFullAI || extractingForRun;
 
   // Handler wired to RunHeader.AIActions — mirrors HeaderMoreMenu.handleFullAIExtraction.
   const onExtractWithAI = () => {
@@ -550,24 +542,17 @@ export default function ExtractionFullScreen() {
       console.warn('[ExtractionFullScreen] articleId or templateId not provided for AI extraction');
       return;
     }
-    if (activeRunId) {
-      void extractForRun({
-        projectId: projectId ?? '',
-        articleId,
-        templateId: template.id,
-        runId: activeRunId,
-      }).catch((error: unknown) => {
-        console.error('[ExtractionFullScreen] Run AI extraction error:', error);
-      });
-    } else {
-      void extractFullAI({
-        projectId: projectId ?? '',
-        articleId,
-        templateId: template.id,
-      }).catch((error: unknown) => {
-        console.error('[ExtractionFullScreen] Full AI extraction error:', error);
-      });
-    }
+    // Belt-and-suspenders: never fire a run-less extraction (the orphaning
+    // bug). The button is already disabled until the session run resolves.
+    if (!activeRunId) return;
+    void extractForRun({
+      projectId: projectId ?? '',
+      articleId,
+      templateId: template.id,
+      runId: activeRunId,
+    }).catch((error: unknown) => {
+      console.error('[ExtractionFullScreen] Run AI extraction error:', error);
+    });
   };
 
   // Partition entity types into study-level + model container + per-model
@@ -1110,12 +1095,11 @@ export default function ExtractionFullScreen() {
 
   // AI extraction progress overlay (fixed-position; DOM placement irrelevant).
   const aiProgressOverlay =
-    (extractingFullAI && extractionProgress) ||
     (aiExtractionState?.loading && aiExtractionState?.progress) ||
     isProgressMinimized ? (
       <div className="fixed bottom-6 right-6 z-[9999] w-96 max-w-[calc(100vw-3rem)]">
         <FullAIExtractionProgress
-          progress={extractionProgress ?? aiExtractionState?.progress ?? { stage: 'extracting_models' }}
+          progress={aiExtractionState?.progress ?? { stage: 'extracting_models' }}
           onClose={() => {
             setAiExtractionState(null);
             setIsProgressMinimized(false);
@@ -1293,7 +1277,9 @@ export default function ExtractionFullScreen() {
         onJumpToDivergence={inConsensusStage ? undefined : () => setViewMode('compare')}
         // AI extraction seeds proposals and only works in EXTRACT; once the
         // run advances to consensus it's a one-time-done step (re-running errors).
-        canRunAI={stage === 'extract' || stage == null}
+        // Gated on an OPEN session run — extraction always targets that run, so
+        // it never forks a parallel run that would orphan the reviewer's edits.
+        canRunAI={!!activeRunId && (stage === 'extract' || stage == null)}
         onExtractionComplete={handleExtractionComplete}
         aiSuggestions={aiSuggestions}
         aiPendingCount={isFinalized ? 0 : aiPendingCount}

@@ -2895,6 +2895,8 @@ export interface components {
              * Format: uuid
              */
             projectId: string;
+            /** Runid */
+            runId?: string | null;
             /**
              * Templateid
              * Format: uuid

@@ -771,6 +771,7 @@ class SectionExtractionService(LoggerMixin):
         section_ids: list[UUID] | None = None,
         pdf_text: str | None = None,
         model: str = settings.LLM_DEFAULT_MODEL,
+        run_id: UUID | None = None,
     ) -> BatchExtractionResult:
         """
         Extract all child sections from a model with summarized memory.
@@ -788,6 +789,10 @@ class SectionExtractionService(LoggerMixin):
             section_ids: Specific IDs to extract (optional).
             pdf_text: Preprocessed PDF text (optional).
             model: Modelo OpenAI.
+            run_id: Existing run to append to. When set (the extraction surface),
+                the run is REUSED and its lifecycle left to the HITL session, so
+                a reviewer's decisions are never orphaned onto a forked run.
+                Mirrors ``extract_section``'s ``manage_lifecycle`` pattern.
 
         Returns:
             BatchExtractionResult with extraction statistics.
@@ -795,26 +800,40 @@ class SectionExtractionService(LoggerMixin):
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
 
-        # Create primary run for batch extraction via lifecycle service.
-        run = await self._lifecycle.create_run(
-            project_id=project_id,
-            article_id=article_id,
-            project_template_id=template_id,
-            user_id=UUID(self.user_id),
-            parameters={
-                "model": model,
-                "batch_extraction": True,
-                "parent_instance_id": str(parent_instance_id),
-                "section_ids": [str(sid) for sid in section_ids] if section_ids else None,
-            },
-        )
-        run = await self._lifecycle.advance_stage(
-            run_id=run.id,
-            target_stage=ExtractionRunStage.EXTRACT,
-            user_id=UUID(self.user_id),
-        )
-
-        await self._runs.start_run(run.id)
+        # Resolve the run. When a ``run_id`` is passed, REUSE the session-owned
+        # run (append child-section proposals) and leave its lifecycle to the
+        # HITL session — forking here would shadow the reviewer's decisions.
+        # Only the standalone path (run_id is None) creates + owns its run.
+        manage_lifecycle = run_id is None
+        if not manage_lifecycle:
+            existing_run = await self.db.get(ExtractionRun, run_id)
+            if existing_run is None:
+                raise ValueError(f"Run {run_id} not found")
+            if existing_run.stage != ExtractionRunStage.EXTRACT.value:
+                raise ValueError(
+                    f"Run {run_id} stage is {existing_run.stage}; "
+                    "batch section extraction requires EXTRACT"
+                )
+            run = existing_run
+        else:
+            run = await self._lifecycle.create_run(
+                project_id=project_id,
+                article_id=article_id,
+                project_template_id=template_id,
+                user_id=UUID(self.user_id),
+                parameters={
+                    "model": model,
+                    "batch_extraction": True,
+                    "parent_instance_id": str(parent_instance_id),
+                    "section_ids": [str(sid) for sid in section_ids] if section_ids else None,
+                },
+            )
+            run = await self._lifecycle.advance_stage(
+                run_id=run.id,
+                target_stage=ExtractionRunStage.EXTRACT,
+                user_id=UUID(self.user_id),
+            )
+            await self._runs.start_run(run.id)
 
         self.logger.info(
             "batch_extraction_start",
@@ -916,21 +935,24 @@ class SectionExtractionService(LoggerMixin):
 
             duration = (perf_counter() - start_time) * 1000
 
-            # 4. Complete primary run
-            phase_start = perf_counter()
-            await self._runs.complete_run(
-                run_id=run.id,
-                results={
-                    "total_sections": total_sections,
-                    "successful_sections": successful,
-                    "failed_sections": failed,
-                    "total_suggestions_created": total_suggestions,
-                    "total_tokens_used": total_tokens,
-                    "duration_ms": duration,
-                    "phase_durations_ms": phase_durations_ms,
-                },
-            )
-            phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
+            # 4. Complete primary run — standalone path only. In the session-run
+            # (reuse) path the HITL session owns the lifecycle, so completing here
+            # would close the run and break further edits on it.
+            if manage_lifecycle:
+                phase_start = perf_counter()
+                await self._runs.complete_run(
+                    run_id=run.id,
+                    results={
+                        "total_sections": total_sections,
+                        "successful_sections": successful,
+                        "failed_sections": failed,
+                        "total_suggestions_created": total_suggestions,
+                        "total_tokens_used": total_tokens,
+                        "duration_ms": duration,
+                        "phase_durations_ms": phase_durations_ms,
+                    },
+                )
+                phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
 
             self.logger.info(
                 "batch_extraction_complete",
@@ -957,13 +979,16 @@ class SectionExtractionService(LoggerMixin):
             )
 
         except Exception as e:
-            await self._runs.rollback_and_fail(
-                run.id,
-                str(e),
-                logger=self.logger,
-                trace_id=self.trace_id,
-                log_prefix="section_extraction",
-            )
+            # Only fail the run in the standalone path — the session owns the
+            # lifecycle in the reuse path; the error propagates for it to handle.
+            if manage_lifecycle:
+                await self._runs.rollback_and_fail(
+                    run.id,
+                    str(e),
+                    logger=self.logger,
+                    trace_id=self.trace_id,
+                    log_prefix="section_extraction",
+                )
             raise
 
     async def _extract_section_with_memory(
@@ -1640,10 +1665,15 @@ class SectionExtractionService(LoggerMixin):
         1. ``entity_type_id`` present → single-section path via
            ``extract_section``. Handles both standalone and existing-run
            (``run_id`` set) callers; the service routes internally.
-        2. ``run_id`` set (no ``entity_type_id``) → ``extract_for_run`` iterates
-           every top-level entity_type of that run's template (QA surface).
-        3. ``extract_all_sections`` → batch sweep of child sections under
-           ``parent_instance_id`` (per-model CHARMS batch).
+        2. ``parent_instance_id`` present (no ``entity_type_id``) →
+           ``extract_all_sections`` batch sweep of child sections under that
+           model instance. Checked BEFORE the ``run_id`` branch so a batch
+           request that now carries the session ``run_id`` (to REUSE it, not
+           fork a shadow run) still routes here — the full-run sweep below has
+           no ``parent_instance_id``.
+        3. ``run_id`` set (no ``entity_type_id``/``parent_instance_id``) →
+           ``extract_for_run`` iterates every top-level entity_type of that
+           run's template (QA / full-run surface).
         """
         model = payload.model or settings.LLM_DEFAULT_MODEL
 
@@ -1658,6 +1688,18 @@ class SectionExtractionService(LoggerMixin):
                 run_id=payload.run_id,
             )
 
+        if payload.parent_instance_id is not None:
+            return await self.extract_all_sections(
+                project_id=payload.project_id,
+                article_id=payload.article_id,
+                template_id=payload.template_id,
+                parent_instance_id=payload.parent_instance_id,
+                section_ids=payload.section_ids,
+                pdf_text=payload.pdf_text,
+                model=model,
+                run_id=payload.run_id,
+            )
+
         if payload.run_id is not None:
             return await self.extract_for_run(
                 run_id=payload.run_id,
@@ -1666,13 +1708,9 @@ class SectionExtractionService(LoggerMixin):
                 model=model,
             )
 
-        # Branch 3: extract_all_sections (validator guarantees parent_instance_id).
-        return await self.extract_all_sections(
-            project_id=payload.project_id,
-            article_id=payload.article_id,
-            template_id=payload.template_id,
-            parent_instance_id=payload.parent_instance_id,  # type: ignore[arg-type]
-            section_ids=payload.section_ids,
-            pdf_text=payload.pdf_text,
-            model=model,
+        # The request validator requires one of entity_type_id / parent_instance_id
+        # / run_id, so this is unreachable — kept as a defensive guard.
+        raise ValueError(
+            "SectionExtractionRequest matched no dispatch branch "
+            "(need entity_type_id, parent_instance_id, or run_id)"
         )
