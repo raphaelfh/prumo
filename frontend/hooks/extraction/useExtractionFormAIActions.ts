@@ -64,6 +64,9 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
             articleId,
             templateId,
             models: createdModels,
+            // Chained sections land on the SAME session run as the models —
+            // omitting this would fork a shadow run (the orphaning bug).
+            runId: sessionRunId,
           });
         })
         .catch((error: unknown) => {
