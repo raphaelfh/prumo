@@ -19,6 +19,10 @@ from app.api.deps.security import (
     ensure_project_reviewer,
     get_current_user_sub,
 )
+from app.api.v1.endpoints._integrity import (
+    ONE_LIVE_RUN_CONFLICT_DETAIL,
+    is_one_live_run_conflict,
+)
 from app.core.deps import DbSession
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
@@ -144,25 +148,37 @@ async def create_run(
         )
         raise HTTPException(status_code=404, detail=str(e)) from e
     except IntegrityError as e:
-        # One-live-run invariant (uq_one_live_extraction_run_per_coord, 0045):
-        # a non-terminal run already exists for this (article, template). The
-        # HITL surfaces resume it via POST /hitl/sessions; this raw-create
-        # endpoint surfaces the conflict instead of forking a shadow run.
-        logger.warning(
-            "hitl_run_create_conflict_live_run",
+        if is_one_live_run_conflict(e):
+            # One-live-run invariant (uq_one_live_extraction_run_per_coord,
+            # 0045): a non-terminal run already exists for this (article,
+            # template). The HITL surfaces resume it via POST /hitl/sessions;
+            # this raw-create endpoint surfaces the conflict instead of forking
+            # a shadow run.
+            logger.warning(
+                "hitl_run_create_conflict_live_run",
+                trace_id=trace_id,
+                project_template_id=str(body.project_template_id),
+                article_id=str(body.article_id),
+                error=str(e.orig),
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=ONE_LIVE_RUN_CONFLICT_DETAIL,
+            ) from e
+        # Any OTHER integrity error is not "run already in progress": article,
+        # template and project are pre-validated and version_id/created_by/kind
+        # are coherent by construction, so this is a genuinely unexpected
+        # violation. Re-raise it to the app-wide handler (→ 500) rather than
+        # mislabel it as a live-run conflict.
+        logger.error(
+            "hitl_run_create_unexpected_integrity_error",
             trace_id=trace_id,
             project_template_id=str(body.project_template_id),
             article_id=str(body.article_id),
             error=str(e.orig),
+            exc_info=True,
         )
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "An extraction run is already in progress for this article and "
-                "template. Resume it (POST /api/v1/hitl/sessions) or cancel it "
-                "before creating a new one."
-            ),
-        ) from e
+        raise
     await db.commit()
     logger.info(
         "hitl_run_created",
