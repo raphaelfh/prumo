@@ -408,11 +408,9 @@ async def test_list_by_run_returns_chronological_filtered_by_run_id(
     """list_by_run returns every proposal for the given run, in insertion order,
     and does NOT leak proposals from a different run on the same coordinates."""
     fx1 = await _setup_run_with_instance_field(db_session)
-    fx2 = await _setup_run_with_instance_field(db_session)
-    if fx1 is None or fx2 is None:
+    if fx1 is None:
         pytest.skip("Missing fixtures.")
     run_a, instance_id, field_id, _ = fx1
-    run_b, _instance_b, _field_b, _ = fx2
     service = ExtractionProposalService(db_session)
 
     a1 = await service.record_proposal(
@@ -429,6 +427,22 @@ async def test_list_by_run_returns_chronological_filtered_by_run_id(
         source=ExtractionProposalSource.AI,
         proposed_value={"v": "a2"},
     )
+
+    # One-live-run invariant (uq_one_live_extraction_run_per_coord, 0045):
+    # cancel run A before opening the sibling run on the same coordinate.
+    # Cancelling does not delete its proposals; list_by_run is stage-agnostic.
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_runs "
+            "SET stage = 'cancelled', status = 'failed' WHERE id = :rid"
+        ),
+        {"rid": str(run_a)},
+    )
+    fx2 = await _setup_run_with_instance_field(db_session)
+    if fx2 is None:
+        pytest.skip("Missing fixtures.")
+    run_b, _instance_b, _field_b, _ = fx2
+
     # Proposal on a DIFFERENT run with the same coordinates — must NOT appear.
     b1 = await service.record_proposal(
         run_id=run_b,

@@ -241,6 +241,10 @@ class ModelExtractionRequest(BaseModel):
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
     template_id: UUID = Field(..., alias="templateId")
+    # The active HITL session run to append to. When set (the extraction
+    # surface), model extraction REUSES that run instead of forking a parallel
+    # one that would shadow the reviewer's decisions. None = standalone run.
+    run_id: UUID | None = Field(default=None, alias="runId")
 
     # Opcoes de extraction
     model: str | None = Field(

@@ -216,12 +216,12 @@ class TestSectionExtractionFullFlow:
         mock_entity.fields = [mock_field]
         service._entity_types.get_with_fields = AsyncMock(return_value=mock_entity)
 
-        # Mock run creation
+        # Mock run resolution — the standalone path goes through the
+        # resolve-or-create gate (one-live-run invariant); created=True keeps
+        # the standalone lifecycle semantics (start/complete owned here).
         mock_run = MagicMock()
         mock_run.id = run_id
-        # Run creation now flows through the lifecycle service
-        service._lifecycle.create_run = AsyncMock(return_value=mock_run)
-        service._lifecycle.advance_stage = AsyncMock(return_value=mock_run)
+        service._lifecycle.resolve_or_create_extract_run = AsyncMock(return_value=(mock_run, True))
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
         service._runs.fail_run = AsyncMock()
@@ -275,18 +275,15 @@ class TestSectionExtractionFullFlow:
         assert result.tokens_total == 150
         service._proposals.record_proposal.assert_awaited()
 
-        # The run lifecycle gets exactly one stage advance: pending → extract.
-        # The run STAYS in EXTRACT after AI proposing so ``useExtractedValues``
-        # can hydrate from ``runDetail.proposals`` and show the values in the
-        # form. The user advances to CONSENSUS explicitly via "Start consensus".
-        # Auto-advancing here skipped the extract-stage hydration and left
-        # the form blank until F5 (#bug: AI extraction values not appearing).
-        from app.models.extraction import ExtractionRunStage
-
-        advance_calls = service._lifecycle.advance_stage.await_args_list
-        target_stages = [call.kwargs.get("target_stage") for call in advance_calls]
-        assert ExtractionRunStage.EXTRACT in target_stages
-        assert ExtractionRunStage.CONSENSUS not in target_stages
+        # The gate delivers a run already parked in EXTRACT and the service
+        # never advances it further: the run STAYS in EXTRACT after AI
+        # proposing so ``useExtractedValues`` can hydrate from
+        # ``runDetail.proposals`` and show the values in the form. The user
+        # advances to CONSENSUS explicitly via "Start consensus" — an
+        # auto-advance here skipped the extract-stage hydration and left the
+        # form blank until F5 (#bug: AI extraction values not appearing).
+        service._lifecycle.resolve_or_create_extract_run.assert_awaited_once()
+        service._lifecycle.advance_stage.assert_not_awaited()
 
 
 class TestExtractSectionWithExistingRun:
@@ -1606,8 +1603,9 @@ class TestExtractSectionException:
     async def test_marks_run_as_failed_on_exception(self, service):
         run = MagicMock()
         run.id = uuid4()
-        service._lifecycle.create_run = AsyncMock(return_value=run)
-        service._lifecycle.advance_stage = AsyncMock(return_value=run)
+        # Standalone path resolves through the one-live-run gate; created=True
+        # keeps the standalone lifecycle semantics.
+        service._lifecycle.resolve_or_create_extract_run = AsyncMock(return_value=(run, True))
         service._runs.start_run = AsyncMock()
         service._runs.rollback_and_fail = AsyncMock()
 
@@ -1666,8 +1664,9 @@ class TestExtractSectionLlmFailure:
 
         run = MagicMock()
         run.id = uuid4()
-        service._lifecycle.create_run = AsyncMock(return_value=run)
-        service._lifecycle.advance_stage = AsyncMock(return_value=run)
+        # Standalone path resolves through the one-live-run gate; created=True
+        # keeps the standalone lifecycle semantics.
+        service._lifecycle.resolve_or_create_extract_run = AsyncMock(return_value=(run, True))
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
         service._runs.fail_run = AsyncMock()
@@ -1716,8 +1715,9 @@ class TestExtractAllSections:
         return run
 
     def _minimal_lifecycle_wire(self, service, run):
-        service._lifecycle.create_run = AsyncMock(return_value=run)
-        service._lifecycle.advance_stage = AsyncMock(return_value=run)
+        # Standalone path resolves through the one-live-run gate; created=True
+        # keeps the standalone lifecycle semantics.
+        service._lifecycle.resolve_or_create_extract_run = AsyncMock(return_value=(run, True))
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
         service._runs.fail_run = AsyncMock()
@@ -1870,8 +1870,9 @@ class TestExtractAllSections:
     @pytest.mark.asyncio
     async def test_batch_fails_run_on_unexpected_error(self, service):
         run = self._make_run()
-        service._lifecycle.create_run = AsyncMock(return_value=run)
-        service._lifecycle.advance_stage = AsyncMock(return_value=run)
+        # Standalone path resolves through the one-live-run gate; created=True
+        # keeps the standalone lifecycle semantics.
+        service._lifecycle.resolve_or_create_extract_run = AsyncMock(return_value=(run, True))
         service._runs.start_run = AsyncMock()
         service._runs.rollback_and_fail = AsyncMock()
         service._assemble_prompt_text = AsyncMock(return_value="text")
@@ -1925,9 +1926,10 @@ class TestExtractAllSections:
         service._entity_types.get_children = AsyncMock(return_value=[child1, child2, child3])
 
         # Wire _extract_section_with_memory: section 2 (child2) raises LLM error;
-        # sections 1 and 3 succeed.  _extract_section_with_memory is responsible
-        # for calling fail_run internally on the LLM path; we check that at the
-        # batch level rollback_and_fail is never called.
+        # sections 1 and 3 succeed. Sections share THE batch run (no per-section
+        # runs since the one-live-run invariant), so the parent loop simply
+        # counts the failure; we check that at the batch level rollback_and_fail
+        # is never called.
         call_count = 0
 
         async def _fake_extract_with_memory(**kwargs):  # noqa: ARG001
@@ -1959,21 +1961,20 @@ class TestExtractAllSections:
         service._runs.rollback_and_fail.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_section_llm_failure_runs_real_split_handler(self, service):
+    async def test_section_llm_failure_fails_only_the_batch_run(self, service):
         """Drive the REAL _extract_section_with_memory with the LLM seam
-        raising: its split except-handler fails the SECTION run (session
-        healthy) before re-raising. When it is the only section, the batch is
-        all-failed and raises BatchAllSectionsFailed (run failed, not a false
-        success)."""
+        raising. Sections no longer own runs (one-live-run invariant): the
+        exception propagates to the batch loop, and when it was the only
+        section the batch is all-failed — BatchAllSectionsFailed, with the
+        BATCH run rolled back + failed. No per-section run is ever created
+        or failed."""
         from pydantic_ai import UnexpectedModelBehavior
 
         from app.services.section_extraction_service import BatchAllSectionsFailed
 
         batch_run = self._make_run()
-        section_run = self._make_run()
-        # First create_run call returns the batch run, second the section run.
-        service._lifecycle.create_run = AsyncMock(side_effect=[batch_run, section_run])
-        service._lifecycle.advance_stage = AsyncMock(side_effect=[batch_run, section_run])
+        service._lifecycle.resolve_or_create_extract_run = AsyncMock(return_value=(batch_run, True))
+        service._lifecycle.create_run = AsyncMock()
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
         service._runs.fail_run = AsyncMock()
@@ -2003,11 +2004,15 @@ class TestExtractAllSections:
                 pdf_text="text",
             )
 
-        # The real split handler failed the SECTION run before the batch guard.
-        service._runs.fail_run.assert_awaited_once()
-        failed_run_id, error_message = service._runs.fail_run.await_args.args
-        assert failed_run_id == section_run.id
-        assert "reask budget exhausted" in error_message
+        # ONE run total: the batch run, resolved through the gate — the old
+        # one-run-per-section create is gone.
+        service._lifecycle.create_run.assert_not_called()
+        service._runs.fail_run.assert_not_awaited()
+        # The batch guard failed THE batch run with the all-failed summary
+        # (the per-section LLM error lives in section_results / the logs).
+        service._runs.rollback_and_fail.assert_awaited_once()
+        assert service._runs.rollback_and_fail.await_args.args[0] == batch_run.id
+        assert "All 1 section(s) failed" in service._runs.rollback_and_fail.await_args.args[1]
 
 
 # ---------------------------------------------------------------------------

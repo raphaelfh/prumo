@@ -72,6 +72,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
     projectId: props.projectId,
     articleId: props.articleId,
     templateId: props.templateId,
+    runId: props.runId,
     activeModelId: props.activeModelId,
     models: props.models,
     onRefreshModels: props.onRefreshModels,
@@ -199,6 +200,9 @@ export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, 
     prevProps.modelParentEntityType === nextProps.modelParentEntityType &&
     prevProps.models.length === nextProps.models.length &&
     prevProps.showPDF === nextProps.showPDF &&
+    // ``runId`` gates AI extraction onto the session run; a stale value here
+    // would let the handlers fork a parallel run (the orphaning bug).
+    prevProps.runId === nextProps.runId &&
     !aiSuggestionsChanged
   );
 });

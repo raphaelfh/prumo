@@ -121,9 +121,24 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0044_instance_delete_cascade` (post-squash numbering; run
+`0045_one_live_run_guard` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
+
+**One-live-run invariant (0045).** At most ONE non-terminal run (stage in
+`pending` / `extract` / `consensus`) exists per `(project_id, article_id,
+template_id, kind)` — enforced by the partial unique index
+`uq_one_live_extraction_run_per_coord`. "The atomic HITL session for one
+(article × project_template × kind)" is therefore a DB guarantee, not
+service-layer folklore: a second live run used to silently shadow the first
+one's reviewer decisions on session open (the run-orphaning data-loss bug).
+Standalone AI-extraction creators go through
+`RunLifecycleService.resolve_or_create_extract_run` (reuse-the-live-run gate,
+serialized by the `(article, template)` advisory lock); the session opener
+ranks by human-work recency (`last_human_activity_order`) as
+defense-in-depth. The 0045 heal cancelled pre-existing duplicate live runs
+non-destructively (canonical = most recent human work; shadows flipped to
+`cancelled`/`failed`, all workflow rows kept).
 
 ### Value envelope & `absent_reason` marker (ADR-0016)
 

@@ -202,6 +202,17 @@ async def test_edit_decision_link_same_coord_older_run_ok(
     older_run = await _create_run_in_extract(db_client)
     older_proposal = await _post_ai_proposal(db_client, older_run)
 
+    # uq_one_live_extraction_run_per_coord (0045): only one live run per
+    # coordinate — finalize the older run before creating its successor.
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_runs "
+            "SET stage = 'finalized', status = 'completed' WHERE id = :rid"
+        ),
+        {"rid": str(older_run)},
+    )
+    await db_session.flush()
+
     newer_run = await _create_run_in_extract(db_client)
     res = await db_client.post(
         f"{API_PREFIX}/{newer_run}/decisions",
