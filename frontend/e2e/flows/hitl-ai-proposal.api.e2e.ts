@@ -26,6 +26,7 @@ import { resolveAuthToken, loginViaUi } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 import { fillRequiredFieldsAndFinalize } from "../_fixtures/hitl-finalize";
 import {
+  adminDelete,
   adminSelect,
   resolveActiveExtractionTemplateId,
 } from "../_fixtures/supabase-admin";
@@ -79,7 +80,17 @@ test.describe("HITL AI proposal pipeline", () => {
     const traceId = createTraceId("e2e-hitl-ai-proposal");
     const templateId = await resolveActiveExtractionTemplateId(env.projectId!);
 
-    // Ensure instances exist by opening a HITL session (idempotent).
+    // Seed instances via a HITL session (idempotent), then clear the runs it
+    // leaves behind. Under the one-live-run invariant (migration 0045) the
+    // session's live run would make the fresh `POST /runs` below collide with
+    // `uq_one_live_extraction_run_per_coord` (409). Deleting extraction_runs
+    // leaves the seeded extraction_instances intact. Mirrors
+    // extraction-reopen.ui.e2e.ts; the leading delete also clears any run a
+    // sibling test left on this shared coordinate.
+    await adminDelete(
+      "extraction_runs",
+      `project_id=eq.${env.projectId}&article_id=eq.${env.articleId}&kind=eq.extraction`,
+    );
     await request.post(`${env.apiUrl}/api/v1/hitl/sessions`, {
       headers: authHeaders(token, traceId),
       data: {
@@ -90,6 +101,10 @@ test.describe("HITL AI proposal pipeline", () => {
       },
       timeout: 30000,
     });
+    await adminDelete(
+      "extraction_runs",
+      `project_id=eq.${env.projectId}&article_id=eq.${env.articleId}&kind=eq.extraction`,
+    );
 
     // Resolve a (instance, field) coordinate within the template — iterate
     // until we find an entity_type that actually has fields, since the

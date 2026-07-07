@@ -22,6 +22,7 @@ import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 import {
+  adminDelete,
   adminSelect,
   resolveActiveExtractionTemplateId,
 } from "../_fixtures/supabase-admin";
@@ -50,9 +51,20 @@ test.describe("HITL run lifecycle invariants", () => {
     const traceId = createTraceId("e2e-run-lifecycle");
     const templateId = await resolveActiveExtractionTemplateId(env.projectId!);
 
-    // Ensure instances exist under (template, article) by opening a HITL
-    // session — idempotent and creates one extraction_instance per
-    // entity_type when called for the first time on this triple.
+    // Seed instances under (template, article) by opening a HITL session —
+    // idempotent, one extraction_instance per top-level entity_type — then
+    // clear the run it leaves behind. Under the one-live-run invariant
+    // (migration 0045) the session's live run would make the fresh
+    // `POST /runs` below collide with `uq_one_live_extraction_run_per_coord`
+    // (409). Deleting extraction_runs leaves the seeded instances intact, and
+    // the fresh run below lands in PENDING so the bad-transition assertions
+    // still have a PENDING run to reject. Mirrors extraction-reopen.ui.e2e.ts;
+    // the leading delete also clears any run a sibling left on this shared
+    // coordinate.
+    await adminDelete(
+      "extraction_runs",
+      `project_id=eq.${env.projectId}&article_id=eq.${env.articleId}&kind=eq.extraction`,
+    );
     await request.post(`${env.apiUrl}/api/v1/hitl/sessions`, {
       headers: authHeaders(token, traceId),
       data: {
@@ -63,6 +75,10 @@ test.describe("HITL run lifecycle invariants", () => {
       },
       timeout: 30000,
     });
+    await adminDelete(
+      "extraction_runs",
+      `project_id=eq.${env.projectId}&article_id=eq.${env.articleId}&kind=eq.extraction`,
+    );
 
     // Pick TWO distinct (instance, field) coordinates so we can test
     // coordinate-coherence failures. The shared template can be polluted
