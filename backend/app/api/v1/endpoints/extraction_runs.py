@@ -10,6 +10,7 @@ the ones that drive consensus + publish later.
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps.security import (
@@ -142,6 +143,26 @@ async def create_run(
             error=str(e),
         )
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except IntegrityError as e:
+        # One-live-run invariant (uq_one_live_extraction_run_per_coord, 0045):
+        # a non-terminal run already exists for this (article, template). The
+        # HITL surfaces resume it via POST /hitl/sessions; this raw-create
+        # endpoint surfaces the conflict instead of forking a shadow run.
+        logger.warning(
+            "hitl_run_create_conflict_live_run",
+            trace_id=trace_id,
+            project_template_id=str(body.project_template_id),
+            article_id=str(body.article_id),
+            error=str(e.orig),
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "An extraction run is already in progress for this article and "
+                "template. Resume it (POST /api/v1/hitl/sessions) or cancel it "
+                "before creating a new one."
+            ),
+        ) from e
     await db.commit()
     logger.info(
         "hitl_run_created",

@@ -658,6 +658,24 @@ class ExtractionRun(Base, UUIDMixin):
         # Indices GIN for JSONB
         Index("idx_extraction_runs_parameters_gin", "parameters", postgresql_using="gin"),
         Index("idx_extraction_runs_results_gin", "results", postgresql_using="gin"),
+        # One-live-run invariant (migration 0045): at most ONE non-terminal
+        # (pending/extract/consensus) run per (project, article, template,
+        # kind). A second live run silently shadows the first one's reviewer
+        # decisions on session open — the run-orphaning data-loss bug. Writers
+        # go through RunLifecycleService.resolve_or_create_extract_run (or the
+        # session opener), which reuses the live run under the (article,
+        # template) advisory lock; this index is the DB-level backstop.
+        # ``kind`` is implied by template_id (composite FK below) — included
+        # for intent + planner support.
+        Index(
+            "uq_one_live_extraction_run_per_coord",
+            "project_id",
+            "article_id",
+            "template_id",
+            "kind",
+            unique=True,
+            postgresql_where=text("stage IN ('pending', 'extract', 'consensus')"),
+        ),
         ForeignKeyConstraint(
             ["template_id", "kind"],
             [

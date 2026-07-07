@@ -87,13 +87,15 @@ def service(mock_db, mock_storage):
         mock_run_repo_instance = MagicMock()
         mock_run_repo.return_value = mock_run_repo_instance
 
-        # The new service uses RunLifecycleService for run creation; we
+        # The new service uses RunLifecycleService for run resolution; we
         # mock it here so the fixture stays decoupled from the lifecycle
-        # repository chain. Tests that need a specific run can override
-        # `mock_lifecycle.create_run.return_value` and `.advance_stage`.
+        # repository chain. Tests that need a specific run override
+        # `mock_lifecycle.resolve_or_create_extract_run.return_value`
+        # (the (run, created) tuple of the one-live-run gate).
         mock_lifecycle_instance = MagicMock()
         mock_lifecycle_instance.create_run = AsyncMock()
         mock_lifecycle_instance.advance_stage = AsyncMock()
+        mock_lifecycle_instance.resolve_or_create_extract_run = AsyncMock()
         mock_lifecycle_cls.return_value = mock_lifecycle_instance
 
         svc = ModelExtractionService(
@@ -339,8 +341,9 @@ class TestFullExtractionFlow:
         mock_run = MagicMock()
         mock_run.id = run_id
         # Run creation now flows through the lifecycle service
-        service._lifecycle.create_run = AsyncMock(return_value=mock_run)
-        service._lifecycle.advance_stage = AsyncMock(return_value=mock_run)
+        # Standalone path goes through the resolve-or-create gate (one-live-run
+        # invariant); created=True keeps the standalone lifecycle semantics.
+        service._lifecycle.resolve_or_create_extract_run = AsyncMock(return_value=(mock_run, True))
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
         service._runs.fail_run = AsyncMock()
@@ -458,18 +461,17 @@ class TestFullExtractionFlow:
                 run_id=run_id,
             )
 
-        # Reused the passed run — zero lifecycle mutation.
+        # Reused the passed run — zero lifecycle mutation, gate bypassed.
         assert result.extraction_run_id == str(run_id)
         mock_db.get.assert_awaited_once()
+        service._lifecycle.resolve_or_create_extract_run.assert_not_called()
         service._lifecycle.create_run.assert_not_called()
         service._lifecycle.advance_stage.assert_not_called()
         service._runs.start_run.assert_not_called()
         service._runs.complete_run.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_extract_rejects_run_id_not_in_extract_stage(
-        self, service, mock_db, mock_storage
-    ):
+    async def test_extract_rejects_run_id_not_in_extract_stage(self, service, mock_db):
         """A passed run that is not in EXTRACT stage is rejected — extraction
         must never append to a consolidated/finalized run."""
         existing_run = MagicMock()
@@ -521,8 +523,9 @@ class TestFullExtractionFlow:
 
         mock_run = MagicMock()
         mock_run.id = run_id
-        service._lifecycle.create_run = AsyncMock(return_value=mock_run)
-        service._lifecycle.advance_stage = AsyncMock(return_value=mock_run)
+        # Standalone path goes through the resolve-or-create gate (one-live-run
+        # invariant); created=True keeps the standalone lifecycle semantics.
+        service._lifecycle.resolve_or_create_extract_run = AsyncMock(return_value=(mock_run, True))
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
         # The service delegates rollback-then-fail to the repository's
@@ -592,8 +595,9 @@ class TestFullExtractionFlow:
 
         mock_run = MagicMock()
         mock_run.id = run_id
-        service._lifecycle.create_run = AsyncMock(return_value=mock_run)
-        service._lifecycle.advance_stage = AsyncMock(return_value=mock_run)
+        # Standalone path goes through the resolve-or-create gate (one-live-run
+        # invariant); created=True keeps the standalone lifecycle semantics.
+        service._lifecycle.resolve_or_create_extract_run = AsyncMock(return_value=(mock_run, True))
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
         service._runs.rollback_and_fail = AsyncMock()
@@ -646,8 +650,9 @@ class TestFullExtractionFlow:
         mock_run = MagicMock()
         mock_run.id = run_id
         # Run creation now flows through the lifecycle service
-        service._lifecycle.create_run = AsyncMock(return_value=mock_run)
-        service._lifecycle.advance_stage = AsyncMock(return_value=mock_run)
+        # Standalone path goes through the resolve-or-create gate (one-live-run
+        # invariant); created=True keeps the standalone lifecycle semantics.
+        service._lifecycle.resolve_or_create_extract_run = AsyncMock(return_value=(mock_run, True))
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
         service._runs.fail_run = AsyncMock()
@@ -697,8 +702,7 @@ async def test_build_prompt_input_called_with_correct_kwargs(service):
 
     mock_run = MagicMock()
     mock_run.id = run_id
-    service._lifecycle.create_run = AsyncMock(return_value=mock_run)
-    service._lifecycle.advance_stage = AsyncMock(return_value=mock_run)
+    service._lifecycle.resolve_or_create_extract_run = AsyncMock(return_value=(mock_run, True))
     service._runs.start_run = AsyncMock()
     service._runs.complete_run = AsyncMock()
     service._runs.rollback_and_fail = AsyncMock()

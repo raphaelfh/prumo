@@ -8,7 +8,13 @@ Faithful HTTP-level reproduction of the reported flow, as the seeded MANAGER
   3. POST /api/v1/hitl/sessions (extraction) again    -> RELOAD
 
 Then assert the manager's edit is still in ``run_view.current_values``.
-If it is empty, the bug is reproduced at the backend boundary.
+
+The orphaning mechanism (a newer parallel non-terminal run shadowing the run
+that holds the manager's work) is UNREPRESENTABLE since migration 0045: the
+partial unique index ``uq_one_live_extraction_run_per_coord`` rejects the
+second live run outright, so the shadow-run tests below assert the rejection
+itself. The resolver's human-work ranking (defense-in-depth for pre-heal
+data) is covered by the heal test in ``test_one_live_run_guard_migration``.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
@@ -123,18 +130,31 @@ async def test_manager_edit_survives_reload(
     assert found[0]["value"] == {"value": "MANAGER-TYPED-VALUE"}, found[0]
 
 
+_SHADOW_RUN_INSERT = text(
+    """
+    INSERT INTO public.extraction_runs
+        (id, project_id, article_id, template_id, version_id, kind,
+         stage, status, created_by, created_at)
+    SELECT gen_random_uuid(), project_id, article_id, template_id,
+           version_id, kind, 'extract', 'pending', created_by,
+           now() + interval '1 second'
+    FROM public.extraction_runs WHERE id = :r1
+    RETURNING id
+    """
+)
+
+
 @pytest.mark.asyncio
-async def test_manager_edit_survives_a_newer_empty_run(
+async def test_second_live_run_is_unrepresentable(
     db_client: AsyncClient,
     db_session: AsyncSession,
     auth_as_manager: UUID,  # noqa: ARG001
 ) -> None:
-    """REGRESSION: the manager edits run R1, then a NEWER non-terminal run R2
-    appears (e.g. a model/full-AI extraction that forked its own run). On
-    reload, open_or_resume must resolve the run that HOLDS the reviewer's
-    work (R1) — never the newer empty R2 — so the manager's edits survive.
-
-    Before the fix, reload resolved R2 (newest) and current_values was empty."""
+    """The orphaning MECHANISM is dead at the DB level (migration 0045): with
+    the session run R1 live, inserting the shadow run R2 that used to swallow
+    the manager's edits on refresh violates
+    ``uq_one_live_extraction_run_per_coord`` outright. Before 0045 this INSERT
+    succeeded and reload resolved the empty R2, losing R1's decisions."""
     opened = await _open_session(db_client)
     run_1 = opened["run_id"]
 
@@ -167,111 +187,38 @@ async def test_manager_edit_survives_a_newer_empty_run(
     )
     assert dec.status_code in (200, 201), dec.text
 
-    # A newer non-terminal run appears (e.g. AI full-extraction created one,
-    # or a standalone extraction run) — created strictly AFTER R1's edit.
-    run_2 = (
-        await db_session.execute(
-            text(
-                """
-                INSERT INTO public.extraction_runs
-                    (id, project_id, article_id, template_id, version_id, kind,
-                     stage, status, created_by, created_at)
-                SELECT gen_random_uuid(), project_id, article_id, template_id,
-                       version_id, kind, 'extract', status, created_by,
-                       now() + interval '1 second'
-                FROM public.extraction_runs WHERE id = :r1
-                RETURNING id
-                """
-            ),
-            {"r1": run_1},
-        )
-    ).scalar()
-    await db_session.commit()
-
+    # The manager's edit is exactly where they left it on reload.
     reloaded = await _open_session(db_client)
+    assert reloaded["run_id"] == run_1
     cv = reloaded["run_view"]["current_values"]
     found = [c for c in cv if c["instance_id"] == instance_id and c["field_id"] == field_id]
-    # After the fix: reload resolves R1 (the run with the reviewer's decision),
-    # NOT the newer empty R2, and the manager's edit is intact.
-    assert reloaded["run_id"] == run_1, (
-        f"reload must resolve the run holding human work (R1={run_1}), "
-        f"got {reloaded['run_id']} (R2={run_2})"
-    )
-    assert found, f"manager edit LOST: current_values={cv!r}"
-    assert found[0]["value"] == {"value": "MANAGER-TYPED-VALUE"}, found[0]
+    assert found and found[0]["value"] == {"value": "MANAGER-TYPED-VALUE"}, cv
+
+    # The forked shadow run (what model/full-AI extraction used to create) is
+    # rejected by the partial unique index. LAST statement on purpose: the
+    # violation aborts the fixture's savepoint-wrapped transaction, so nothing
+    # else may run on this session — teardown rolls the outer txn back.
+    with pytest.raises(IntegrityError, match="uq_one_live_extraction_run_per_coord"):
+        await db_session.execute(_SHADOW_RUN_INSERT, {"r1": run_1})
 
 
 @pytest.mark.asyncio
-async def test_consensus_only_run_survives_a_newer_empty_run(
+async def test_consensus_stage_run_also_blocks_a_second_live_run(
     db_client: AsyncClient,
     db_session: AsyncSession,
     auth_as_manager: UUID,  # noqa: ARG001
 ) -> None:
-    """REGRESSION (adversarial review): a run holding ONLY consensus work — an
-    arbitrator's manual override, with ZERO reviewer decisions — must not be
-    orphaned by a newer empty run. The resolver ranks by ALL human activity
-    (reviewer decisions, consensus decisions, human proposals), not just
-    reviewer decisions."""
+    """CONSENSUS is inside the partial index too (adversarial-review finding:
+    consensus-only arbitrator work used to be orphanable): with R1 in
+    consensus, a fresh extract-stage fork is still rejected. Stage flip stays
+    transaction-local so the shared coordinate is untouched on rollback."""
     opened = await _open_session(db_client)
     run_1 = opened["run_id"]
 
-    coord = (
-        await db_session.execute(
-            text(
-                """
-                SELECT i.id, f.id
-                FROM public.extraction_instances i
-                JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
-                JOIN public.extraction_fields f ON f.entity_type_id = et.id
-                WHERE i.template_id = :tid AND i.article_id = :aid
-                ORDER BY i.id, f.id
-                LIMIT 1
-                """
-            ),
-            {"tid": str(SEED.primary_template), "aid": str(SEED.primary_article)},
-        )
-    ).first()
-    instance_id, field_id = str(coord[0]), str(coord[1])
-
-    # R1 moves to consensus and holds an arbitrator manual-override — consensus
-    # work, but no reviewer decisions (so the reviewer-only signal is NULL).
     await db_session.execute(
         text("UPDATE public.extraction_runs SET stage = 'consensus' WHERE id = :rid"),
         {"rid": run_1},
     )
-    await db_session.execute(
-        text(
-            """
-            INSERT INTO public.extraction_consensus_decisions
-                (id, run_id, instance_id, field_id, consensus_user_id, mode, value, created_at)
-            VALUES (gen_random_uuid(), :rid, :iid, :fid, :uid, 'manual_override',
-                    '{"value": "ARBITRATOR-VALUE"}'::jsonb, now())
-            """
-        ),
-        {"rid": run_1, "iid": instance_id, "fid": field_id, "uid": str(SEED.primary_profile)},
-    )
-    # A newer empty EXTRACT run appears (strictly after R1's consensus work).
-    run_2 = (
-        await db_session.execute(
-            text(
-                """
-                INSERT INTO public.extraction_runs
-                    (id, project_id, article_id, template_id, version_id, kind,
-                     stage, status, created_by, created_at)
-                SELECT gen_random_uuid(), project_id, article_id, template_id,
-                       version_id, kind, 'extract', status, created_by,
-                       now() + interval '1 second'
-                FROM public.extraction_runs WHERE id = :r1
-                RETURNING id
-                """
-            ),
-            {"r1": run_1},
-        )
-    ).scalar()
-    await db_session.commit()
-
-    reloaded = await _open_session(db_client)
-    assert reloaded["run_id"] == run_1, (
-        f"reload must resolve the consensus-work run (R1={run_1}), "
-        f"got {reloaded['run_id']} (R2={run_2})"
-    )
+    # LAST statement on purpose — see test_second_live_run_is_unrepresentable.
+    with pytest.raises(IntegrityError, match="uq_one_live_extraction_run_per_coord"):
+        await db_session.execute(_SHADOW_RUN_INSERT, {"r1": run_1})

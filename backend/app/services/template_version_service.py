@@ -30,11 +30,9 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
+from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.extraction_snapshot import build_template_version_snapshot
-from app.services.hitl_session_service import (
-    HITLSessionService,
-    take_advisory_xact_lock,
-)
+from app.services.hitl_session_service import HITLSessionService
 from app.services.template_clone_service import TemplateNotFoundError
 
 __all__ = ["RepublishResult", "TemplateNotFoundError", "TemplateVersionService"]

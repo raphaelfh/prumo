@@ -14,7 +14,6 @@ from time import perf_counter
 from typing import Any
 from uuid import UUID
 
-from pydantic_ai.exceptions import AgentRunError
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +29,7 @@ from app.llm.extractor import (
     extract_structured,
 )
 from app.llm.prompts import quality_assessment, section_extraction
-from app.llm.provider import MissingLLMKeyError, build_model
+from app.llm.provider import build_model
 from app.llm.schema import build_output_models, dump_extraction
 from app.llm.validators import evidence_is_plausible
 from app.models.extraction import (
@@ -250,9 +249,11 @@ class SectionExtractionService(LoggerMixin):
         # owns ``start_run`` / ``complete_run`` / ``fail_run`` and the
         # stage advance — calling them here would close the run after one
         # section, breaking subsequent section-by-section AI clicks.
-        manage_lifecycle = run_id is None
-
-        if not manage_lifecycle:
+        # Without a ``run_id`` the resolve-or-create gate applies (one-live-run
+        # invariant, index 0045): the coordinate's live run is reused when one
+        # exists — an unconditional create would 23505 — so ``manage_lifecycle``
+        # follows CREATION, not the run_id parameter.
+        if run_id is not None:
             existing_run = await self.db.get(ExtractionRun, run_id)
             if existing_run is None:
                 raise ValueError(f"Run {run_id} not found")
@@ -261,8 +262,9 @@ class SectionExtractionService(LoggerMixin):
                     f"Run {run_id} stage is {existing_run.stage}; AI extraction requires EXTRACT",
                 )
             run = existing_run
+            manage_lifecycle = False
         else:
-            run = await self._lifecycle.create_run(
+            run, manage_lifecycle = await self._lifecycle.resolve_or_create_extract_run(
                 project_id=project_id,
                 article_id=article_id,
                 project_template_id=template_id,
@@ -273,12 +275,8 @@ class SectionExtractionService(LoggerMixin):
                     "parent_instance_id": (str(parent_instance_id) if parent_instance_id else None),
                 },
             )
-            run = await self._lifecycle.advance_stage(
-                run_id=run.id,
-                target_stage=ExtractionRunStage.EXTRACT,
-                user_id=UUID(self.user_id),
-            )
-            await self._runs.start_run(run.id)
+            if manage_lifecycle:
+                await self._runs.start_run(run.id)
 
         self.logger.info(
             "section_extraction_start",
@@ -803,9 +801,12 @@ class SectionExtractionService(LoggerMixin):
         # Resolve the run. When a ``run_id`` is passed, REUSE the session-owned
         # run (append child-section proposals) and leave its lifecycle to the
         # HITL session — forking here would shadow the reviewer's decisions.
-        # Only the standalone path (run_id is None) creates + owns its run.
-        manage_lifecycle = run_id is None
-        if not manage_lifecycle:
+        # Without a ``run_id`` the resolve-or-create gate applies (one-live-run
+        # invariant, index 0045): the coordinate's live run is reused when one
+        # exists — this is also what lets the FE's CHUNKED batch calls share
+        # one run instead of 23505-ing on the second chunk. ``manage_lifecycle``
+        # follows CREATION, not the run_id parameter.
+        if run_id is not None:
             existing_run = await self.db.get(ExtractionRun, run_id)
             if existing_run is None:
                 raise ValueError(f"Run {run_id} not found")
@@ -815,8 +816,9 @@ class SectionExtractionService(LoggerMixin):
                     "batch section extraction requires EXTRACT"
                 )
             run = existing_run
+            manage_lifecycle = False
         else:
-            run = await self._lifecycle.create_run(
+            run, manage_lifecycle = await self._lifecycle.resolve_or_create_extract_run(
                 project_id=project_id,
                 article_id=article_id,
                 project_template_id=template_id,
@@ -828,12 +830,8 @@ class SectionExtractionService(LoggerMixin):
                     "section_ids": [str(sid) for sid in section_ids] if section_ids else None,
                 },
             )
-            run = await self._lifecycle.advance_stage(
-                run_id=run.id,
-                target_stage=ExtractionRunStage.EXTRACT,
-                user_id=UUID(self.user_id),
-            )
-            await self._runs.start_run(run.id)
+            if manage_lifecycle:
+                await self._runs.start_run(run.id)
 
         self.logger.info(
             "batch_extraction_start",
@@ -872,13 +870,12 @@ class SectionExtractionService(LoggerMixin):
             failed = 0
             total_suggestions = 0
 
-            # 3. Extract each section sequentially with memory
+            # 3. Extract each section sequentially with memory — every section
+            # appends to THE batch run (no more one-run-per-section pollution).
             for entity_type in child_types:
                 try:
                     result = await self._extract_section_with_memory(
-                        project_id=project_id,
-                        article_id=article_id,
-                        template_id=template_id,
+                        run=run,
                         entity_type=entity_type,
                         parent_instance_id=parent_instance_id,
                         pdf_text=pdf_text,
@@ -993,9 +990,7 @@ class SectionExtractionService(LoggerMixin):
 
     async def _extract_section_with_memory(
         self,
-        project_id: UUID,
-        article_id: UUID,
-        template_id: UUID,
+        run: ExtractionRun,
         entity_type: Any,
         parent_instance_id: UUID,
         pdf_text: str,
@@ -1003,12 +998,21 @@ class SectionExtractionService(LoggerMixin):
         model: str,
     ) -> dict[str, Any]:
         """
-        Extract one section with summarized memory context.
+        Extract one section with summarized memory context onto the batch run.
+
+        The section appends its proposals to the SHARED batch run — it never
+        creates or completes a run of its own. The old one-run-per-section
+        design scattered a batch's proposals across N EXTRACT-stage runs that
+        nothing ever closed: the session opener resolved only the newest, the
+        rest were invisible pollution, and under the one-live-run invariant
+        (index 0045) the second section's create would fail outright. Per-
+        section provenance still flows through the ``_create_suggestions``
+        choke point; lifecycle and failure accounting belong to the caller
+        (``extract_all_sections``), whose loop counts this section's raised
+        exception as a failed section.
 
         Args:
-            project_id: Project ID.
-            article_id: Article ID.
-            template_id: Template ID.
+            run: The batch run (session-owned or batch-created) to append to.
             entity_type: Entity type to extract.
             parent_instance_id: Parent instance ID.
             pdf_text: PDF text.
@@ -1018,103 +1022,40 @@ class SectionExtractionService(LoggerMixin):
         Returns:
             Dict with suggestions_created, tokens_total, and summary.
         """
-        section_start = perf_counter()
         section_phase_durations_ms: dict[str, float] = {}
 
-        # Create run for this specific section via lifecycle service.
-        run = await self._lifecycle.create_run(
-            project_id=project_id,
-            article_id=article_id,
-            project_template_id=template_id,
-            user_id=UUID(self.user_id),
-            parameters={
-                "model": model,
-                "entity_type_id": str(entity_type.id),
-                "parent_instance_id": str(parent_instance_id),
-                "batch_section": True,
-                "memory_context_size": len(memory_history),
-            },
+        # Run extraction with memory context
+        phase_start = perf_counter()
+        extracted_data, llm_usage = await self._extract_with_llm(
+            pdf_text=pdf_text,
+            entity_type=entity_type,
+            model=model,
+            memory_context=memory_history,
         )
-        run = await self._lifecycle.advance_stage(
-            run_id=run.id,
-            target_stage=ExtractionRunStage.EXTRACT,
-            user_id=UUID(self.user_id),
+        section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
+
+        # Create suggestions
+        phase_start = perf_counter()
+        suggestions_created = await self._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=entity_type.id,
+            parent_instance_id=parent_instance_id,
+            extracted_data=extracted_data,
+            run=run,
+            model=model,
         )
+        section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
-        await self._runs.start_run(run.id)
+        # Generate memory summary (max 200 chars)
+        summary = self._generate_extraction_summary(entity_type, extracted_data)
 
-        try:
-            # Run extraction with memory context
-            phase_start = perf_counter()
-            extracted_data, llm_usage = await self._extract_with_llm(
-                pdf_text=pdf_text,
-                entity_type=entity_type,
-                model=model,
-                memory_context=memory_history,
-            )
-            section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
-
-            # Create suggestions
-            phase_start = perf_counter()
-            suggestions_created = await self._create_suggestions(
-                project_id=project_id,
-                article_id=article_id,
-                entity_type_id=entity_type.id,
-                parent_instance_id=parent_instance_id,
-                extracted_data=extracted_data,
-                run=run,
-                model=model,
-            )
-            section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
-
-            # Generate memory summary (max 200 chars)
-            summary = self._generate_extraction_summary(entity_type, extracted_data)
-
-            # Run stays in EXTRACT — see ``extract_section`` for the
-            # rationale. The user advances to CONSENSUS via "Start consensus"
-            # after inspecting the AI-proposed values.
-
-            # Complete run
-            phase_start = perf_counter()
-            await self._runs.complete_run(
-                run_id=run.id,
-                results={
-                    "suggestions_created": suggestions_created,
-                    "tokens_prompt": llm_usage.prompt_tokens,
-                    "tokens_completion": llm_usage.completion_tokens,
-                    "tokens_total": llm_usage.total_tokens,
-                    "summary": summary,
-                    "duration_ms": (perf_counter() - section_start) * 1000,
-                    "phase_durations_ms": section_phase_durations_ms,
-                },
-            )
-            section_phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
-
-            return {
-                "suggestions_created": suggestions_created,
-                "tokens_total": llm_usage.total_tokens,
-                "summary": summary,
-                "phase_durations_ms": section_phase_durations_ms,
-            }
-
-        except (AgentRunError, MissingLLMKeyError) as e:
-            # LLM-semantic failure (reask exhausted, usage ceiling, missing
-            # key): the DB session is healthy. Fail ONLY this section's run —
-            # rollback_and_fail would discard the whole uncommitted batch
-            # transaction (sibling sections + the parent batch run).
-            await self._runs.fail_run(run.id, str(e))
-            raise
-        except Exception as e:
-            # DB-layer failure: the transaction may be poisoned
-            # (InFailedSQLTransactionError) — rollback before failing.
-            await self._runs.rollback_and_fail(
-                run.id,
-                str(e),
-                logger=self.logger,
-                trace_id=self.trace_id,
-                log_prefix="section_extraction",
-            )
-            raise
+        return {
+            "suggestions_created": suggestions_created,
+            "tokens_total": llm_usage.total_tokens,
+            "summary": summary,
+            "phase_durations_ms": section_phase_durations_ms,
+        }
 
     def _generate_extraction_summary(
         self,

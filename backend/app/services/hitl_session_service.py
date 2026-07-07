@@ -15,7 +15,7 @@ UI can immediately record decisions.
 
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article
@@ -28,31 +28,16 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
     TemplateKind,
 )
-from app.models.extraction_workflow import (
-    ExtractionConsensusDecision,
-    ExtractionProposalRecord,
-    ExtractionProposalSource,
-    ExtractionReviewerDecision,
+from app.services.advisory_locks import take_advisory_xact_lock
+from app.services.run_lifecycle_service import (
+    NON_TERMINAL_STAGES,
+    RunLifecycleService,
+    last_human_activity_order,
 )
-from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.template_clone_service import (
     TemplateCloneService,
     TemplateNotFoundError,
 )
-
-
-async def take_advisory_xact_lock(db: AsyncSession, left: UUID, right: UUID) -> None:
-    """Take a transaction-scoped advisory lock keyed by (left, right).
-
-    Uses Postgres' built-in ``hashtextextended`` to derive a bigint
-    fingerprint from the UUID pair — Postgres treats the result as a
-    signed bigint, which is exactly what ``pg_advisory_xact_lock(bigint)``
-    wants. The lock is released automatically on commit/rollback.
-    """
-    await db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
-        {"key": f"{left}:{right}"},
-    )
 
 
 class HITLSessionInputError(Exception):
@@ -389,50 +374,26 @@ class HITLSessionService:
         """
 
         # Prefer the non-terminal run that HOLDS HUMAN WORK — the one whose most
-        # recent human activity is latest — falling back to the newest by
-        # created_at when no run carries any. Ordering by created_at alone
-        # silently orphans saved work the moment a newer (e.g. AI/model-
-        # extraction) run appears for the same coordinate: the opener would
-        # resume the newer empty run and the earlier run's work would vanish on
-        # refresh. "Human work" spans every surface a person's input lands on:
-        #   - reviewer decisions   (the extraction/QA edit path),
-        #   - consensus decisions  (an arbitrator's manual override / selection),
-        #   - human proposals      (the QA fill path + pre-D8 runs).
-        # ``greatest`` ignores NULLs (returns the latest non-null, or NULL when a
-        # run has none of these), and ``nulls_last`` keeps a freshly-opened empty
-        # run from outranking one that holds work. Correlated scalar subqueries.
-        def _run_max_created_at(model, *extra_where):  # type: ignore[no-untyped-def]
-            return (
-                select(func.max(model.created_at))
-                .where(model.run_id == ExtractionRun.id, *extra_where)
-                .correlate(ExtractionRun)
-                .scalar_subquery()
-            )
-
-        last_human_activity = func.greatest(
-            _run_max_created_at(ExtractionReviewerDecision),
-            _run_max_created_at(ExtractionConsensusDecision),
-            _run_max_created_at(
-                ExtractionProposalRecord,
-                ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
-            ),
-        )
+        # recent human activity (reviewer decision, consensus decision, or
+        # human proposal) is latest — falling back to the newest by created_at
+        # when no run carries any. Ordering by created_at alone silently
+        # orphans saved work the moment a newer (e.g. AI/model-extraction) run
+        # appears for the same coordinate: the opener would resume the newer
+        # empty run and the earlier run's work would vanish on refresh.
+        # ``last_human_activity_order`` is the shared ranking (also used by the
+        # standalone-extraction gate) — see run_lifecycle_service for the
+        # NULLS-LAST semantics. Under the one-live-run index (0045) at most one
+        # row matches; the ranking is the pre-heal / defense-in-depth ordering.
         active_stmt = (
             select(ExtractionRun)
             .where(
                 ExtractionRun.project_id == project_id,
                 ExtractionRun.article_id == article_id,
                 ExtractionRun.template_id == project_template_id,
-                ExtractionRun.stage.in_(
-                    [
-                        ExtractionRunStage.PENDING.value,
-                        ExtractionRunStage.EXTRACT.value,
-                        ExtractionRunStage.CONSENSUS.value,
-                    ]
-                ),
+                ExtractionRun.stage.in_(NON_TERMINAL_STAGES),
             )
             .order_by(
-                last_human_activity.desc().nulls_last(),
+                last_human_activity_order().desc().nulls_last(),
                 ExtractionRun.created_at.desc(),
             )
         )

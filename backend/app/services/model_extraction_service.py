@@ -130,13 +130,14 @@ class ModelExtractionService(LoggerMixin):
         # 1. Resolve the run. When ``run_id`` is passed (extraction surface),
         # REUSE that session-owned run and leave its lifecycle to the HITL
         # session — creating a fresh run here would fork a parallel run that
-        # shadows the reviewer's decisions (the orphaning bug). Only the
-        # standalone path (run_id is None) creates + owns its run, populating
-        # the NOT NULL columns (version_id, hitl_config_snapshot) + kind via the
-        # unified lifecycle service, then advancing pending → extract. Mirrors
-        # ``extract_section``'s ``manage_lifecycle`` pattern.
-        manage_lifecycle = run_id is None
-        if not manage_lifecycle:
+        # shadows the reviewer's decisions (the orphaning bug). Without a
+        # ``run_id`` the resolve-or-create gate applies: the coordinate's live
+        # run is reused when one exists (one-live-run invariant, index 0045 —
+        # an unconditional create would 23505), and only a truly fresh
+        # coordinate creates + owns its run. ``manage_lifecycle`` therefore
+        # follows CREATION, not the run_id parameter: reused runs are never
+        # started/completed/failed here. Mirrors ``extract_section``.
+        if run_id is not None:
             existing_run = await self.db.get(ExtractionRun, run_id)
             if existing_run is None:
                 raise ValueError(f"Run {run_id} not found")
@@ -145,8 +146,9 @@ class ModelExtractionService(LoggerMixin):
                     f"Run {run_id} stage is {existing_run.stage}; model extraction requires EXTRACT"
                 )
             run = existing_run
+            manage_lifecycle = False
         else:
-            run = await self._lifecycle.create_run(
+            run, manage_lifecycle = await self._lifecycle.resolve_or_create_extract_run(
                 project_id=project_id,
                 article_id=article_id,
                 project_template_id=template_id,
@@ -156,12 +158,8 @@ class ModelExtractionService(LoggerMixin):
                     "extraction_type": "model_identification",
                 },
             )
-            run = await self._lifecycle.advance_stage(
-                run_id=run.id,
-                target_stage=ExtractionRunStage.EXTRACT,
-                user_id=UUID(self.user_id),
-            )
-            await self._runs.start_run(run.id)
+            if manage_lifecycle:
+                await self._runs.start_run(run.id)
 
         self.logger.info(
             "model_extraction_start",

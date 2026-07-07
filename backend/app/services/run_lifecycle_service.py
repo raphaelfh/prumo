@@ -30,6 +30,7 @@ from app.models.extraction_workflow import (
     ExtractionReviewerState,
 )
 from app.services._extraction_run_lock import load_run_for_update
+from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.extraction_snapshot import build_template_version_snapshot
@@ -57,6 +58,11 @@ class CreateRunInputError(Exception):
     """Raised when create_run receives cross-project or otherwise invalid ids."""
 
 
+class RunBusyError(Exception):
+    """Raised when the coordinate's live run cannot accept the requested work
+    (e.g. AI extraction against a run already advanced to CONSENSUS)."""
+
+
 class EmptyFinalizeError(InvalidStageTransitionError):
     """Raised when a Run cannot be finalized because it has no consensus
     decisions. A FINALIZED Run is meant to represent "the canonical
@@ -80,6 +86,47 @@ class IncompleteFinalizeError(InvalidStageTransitionError):
     type with zero instances — e.g. CHARMS ``prediction_models`` with no
     models — does not block. See ADR 0009.
     """
+
+
+# Stages during which a run is "live": the one-live-run invariant (partial
+# unique index ``uq_one_live_extraction_run_per_coord``, migration 0045)
+# allows at most ONE run in these stages per (project, article, template,
+# kind) coordinate. finalized / cancelled are terminal and unconstrained.
+NON_TERMINAL_STAGES: tuple[str, ...] = (
+    ExtractionRunStage.PENDING.value,
+    ExtractionRunStage.EXTRACT.value,
+    ExtractionRunStage.CONSENSUS.value,
+)
+
+
+def last_human_activity_order() -> Any:
+    """Correlated ORDER BY expression: a run's most recent HUMAN activity.
+
+    ``greatest`` of the newest reviewer decision, consensus decision, and
+    human proposal on the run (NULL when the run carries none). The single
+    source of "which live run holds the human work" — used by the session
+    opener's run resolution AND by ``resolve_or_create_extract_run`` so the
+    two can never disagree about the canonical run. Callers order by
+    ``last_human_activity_order().desc().nulls_last()`` with a
+    ``created_at desc`` tie-break.
+    """
+
+    def _run_max_created_at(model: Any, *extra_where: Any) -> Any:
+        return (
+            select(func.max(model.created_at))
+            .where(model.run_id == ExtractionRun.id, *extra_where)
+            .correlate(ExtractionRun)
+            .scalar_subquery()
+        )
+
+    return func.greatest(
+        _run_max_created_at(ExtractionReviewerDecision),
+        _run_max_created_at(ExtractionConsensusDecision),
+        _run_max_created_at(
+            ExtractionProposalRecord,
+            ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
+        ),
+    )
 
 
 # Allowed transitions: from -> set of valid target stages
@@ -176,6 +223,79 @@ class RunLifecycleService:
         await self.db.flush()
         await self.db.refresh(run)
         return run
+
+    async def resolve_or_create_extract_run(
+        self,
+        *,
+        project_id: UUID,
+        article_id: UUID,
+        project_template_id: UUID,
+        user_id: UUID,
+        parameters: dict[str, Any] | None = None,
+    ) -> tuple[ExtractionRun, bool]:
+        """Resolve the coordinate's live run in EXTRACT, creating one only if
+        none exists — the collision gate for every standalone AI-extraction
+        path. Under the one-live-run invariant (partial unique index, 0045) an
+        unconditional ``create_run`` raises 23505 whenever a session run is
+        already open; this gate reuses it instead, so AI work lands on the run
+        the reviewer is editing rather than forking a shadow run (the pre-0045
+        data-loss bug). A live run already in CONSENSUS raises ``RunBusyError``
+        — adjudication-in-progress accepts no new AI proposals.
+
+        Returns ``(run, created)``: ``created=True`` → the caller owns the
+        run's lifecycle (start/complete/fail, the standalone semantics);
+        ``created=False`` → session-owned, hands off (the ``run_id``-reuse
+        contract of ``extract_section``). Serialized against the session
+        opener and concurrent gate callers by the same (article, template)
+        advisory lock ``ensure_instances`` takes, so the SELECT-then-INSERT
+        cannot race; the index backstops any path that skips the lock.
+        """
+        await take_advisory_xact_lock(self.db, article_id, project_template_id)
+
+        # At most one row exists once the 0045 index is in place; the
+        # human-work ordering matters only in the pre-heal window and
+        # keeps this resolution identical to the session opener's.
+        result = await self.db.execute(
+            select(ExtractionRun)
+            .where(
+                ExtractionRun.project_id == project_id,
+                ExtractionRun.article_id == article_id,
+                ExtractionRun.template_id == project_template_id,
+                ExtractionRun.stage.in_(NON_TERMINAL_STAGES),
+            )
+            .order_by(
+                last_human_activity_order().desc().nulls_last(),
+                ExtractionRun.created_at.desc(),
+            )
+        )
+        existing = result.scalars().first()
+        if existing is not None:
+            if existing.stage == ExtractionRunStage.CONSENSUS.value:
+                raise RunBusyError(
+                    f"Run {existing.id} is in consensus; AI extraction can only "
+                    "target a run in the extract stage"
+                )
+            if existing.stage == ExtractionRunStage.PENDING.value:
+                existing = await self.advance_stage(
+                    run_id=existing.id,
+                    target_stage=ExtractionRunStage.EXTRACT,
+                    user_id=user_id,
+                )
+            return existing, False
+
+        run = await self.create_run(
+            project_id=project_id,
+            article_id=article_id,
+            project_template_id=project_template_id,
+            user_id=user_id,
+            parameters=parameters,
+        )
+        run = await self.advance_stage(
+            run_id=run.id,
+            target_stage=ExtractionRunStage.EXTRACT,
+            user_id=user_id,
+        )
+        return run, True
 
     async def advance_stage(
         self,
