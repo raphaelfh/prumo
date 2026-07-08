@@ -9,12 +9,15 @@ import type {
 } from '@/hooks/runs/types';
 
 /**
- * One envelope → form-value conversion shared by every stage-hydration
- * path that peels the outer envelope first (published + reviewer-state):
- * peel, sniff the double-wrapped unit ({value:{value,unit}} — the only
- * unit shape writers produce), normalize via extractValueFromDb.
+ * The generic envelope → form-value peel, applied to every NON-marker row by
+ * `envelopeRowToFieldValue` (its only caller): peel the outer envelope, sniff
+ * the double-wrapped unit ({value:{value,unit}} — the only unit shape writers
+ * produce), normalize via extractValueFromDb. Module-private: callers hydrate
+ * through `envelopeRowToFieldValue` (or the map builders) so a marker envelope
+ * is preserved instead of collapsed — routing a row straight through here would
+ * flatten `{value:null, absent_reason}` to null.
  */
-export function envelopeToFieldValue(raw: unknown): unknown {
+function envelopeToFieldValue(raw: unknown): unknown {
   const unwrapped = unwrapValueEnvelope(raw) ?? null;
   const unit =
     typeof unwrapped === 'object' && unwrapped !== null && 'unit' in unwrapped
