@@ -876,6 +876,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/reopen-extraction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen Run To Extract
+         * @description Return a consensus-stage extraction run to extract, discarding consensus work.
+         *
+         *     Arbitrator-only (manager/consensus): this hard-deletes the run's consensus
+         *     decisions + published values so reviewers can edit again. The gate lives at the
+         *     API layer because the service-role session bypasses RLS. See ADR-0017.
+         */
+        post: operations["reopen_run_to_extract_api_v1_runs__run_id__reopen_extraction_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/reviewers": {
         parameters: {
             query?: never;
@@ -5269,6 +5293,37 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RunSummaryResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reopen_run_to_extract_api_v1_runs__run_id__reopen_extraction_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
