@@ -80,6 +80,37 @@ describe('useExtractedValues — extract via currentValues', () => {
     expect(result.current.values[`${i1}_${f2}`]).toBeUndefined();
   });
 
+  it('preserves an ADR-0016 no_information marker verbatim (FieldInput derives the disposition)', async () => {
+    // Regression: an accepted "No information" answer is stored as the marker
+    // envelope { value: null, absent_reason: 'no_information' }. The reviewer
+    // hydration must hand FieldInput the RAW marker (so `valueAbsentReason`
+    // lights the disposition button and the coord counts as filled) — the
+    // generic peel collapsed it to null, which de-selected the button, dropped
+    // the field from the section count, and let the accepted-AI fallback render
+    // the abstention object as "[object Object]".
+    const { result } = renderHook(() =>
+      useExtractedValues({
+        currentUserId: 'user-1',
+        runId: 'run-1',
+        stage: 'extract',
+        currentValues: [
+          {
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            value: { value: null, absent_reason: 'no_information' },
+            decision: 'edit',
+          },
+        ],
+      }),
+    );
+
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.values['inst-1_field-1']).toEqual({
+      value: null,
+      absent_reason: 'no_information',
+    });
+  });
+
   it('hydrates Layer-1 rows (human_proposal / system_proposal) like decisions', async () => {
     // Pre-D8 QA runs (proposals-only) and reopened runs (system seeds) come
     // through the same caller-scoped resolution — the hook treats every
