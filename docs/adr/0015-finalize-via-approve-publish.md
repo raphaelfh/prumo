@@ -8,7 +8,9 @@ adr_number: '0015'
 # Finalize via approve-and-publish; per-reviewer ready flag; consensus auto-reveal
 
 > **Status:** Accepted · Date: 2026-06-21 · Deciders: @raphaelfh
-> **Supersedes:** the no-divergence dead-end of 0009 · **Superseded by:** N/A
+> **Supersedes:** the no-divergence dead-end of 0009 · **Superseded by:** 0018
+> (the QA carve-outs only — `approve_and_finalize` is no longer extraction-only
+> and QA consensus/finalize is now arbitrator-level, mirroring extraction)
 
 ## Context and Problem Statement
 

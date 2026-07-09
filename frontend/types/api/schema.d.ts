@@ -756,7 +756,7 @@ export interface paths {
         put?: never;
         /**
          * Approve And Finalize Run
-         * @description One-action consensus → finalized for extraction runs.
+         * @description One-action consensus → finalized for extraction and QA runs.
          *
          *     Publishes the agreed value for every existing-instance × field coord that is not
          *     yet published (reusing the per-coord consensus path), then advances to FINALIZED —

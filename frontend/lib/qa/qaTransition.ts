@@ -6,55 +6,85 @@ export interface BuildQaTransitionArgs {
   stage: ExtractionRunStage | null;
   /** Whether the current user can resolve conflicts (canResolveConflicts from useComparisonPermissions). */
   canResolveConflicts: boolean;
-  /**
-   * QA's primary publish handler — drives the full proposal→review→consensus→finalized
-   * pipeline in one shot. Used for proposal + review stages.
-   */
-  onPublish: () => void | Promise<void>;
-  /**
-   * Finalize handler — used when the run is already in consensus stage.
-   * Maps to handleFinalizeFromConsensus on the page.
-   */
-  onFinalize: () => void | Promise<void>;
+  /** The caller already flagged themselves ready (run.reviewers_ready). */
+  isReady: boolean;
+  /** Every diverging coord carries a consensus decision (reviewerSummary-derived). */
+  divergencesResolved: boolean;
+  /** Extract, reviewer: flag this reviewer ready (advisory — no stage move). */
+  onMarkReady: () => void | Promise<void>;
+  /** Extract, manager/consensus: advance extract → consensus. */
+  onOpenConsensus: () => void | Promise<void>;
+  /** Consensus, manager/consensus: publish agreed values then finalize (one action). */
+  onApproveFinalize: () => void | Promise<void>;
+  /** Blocked-click affordance — toasts the gate's own reason. */
+  onGuide: (message?: string) => void;
 }
 
 /**
- * Builds a StageTransition for the QA PrimaryAction slot.
+ * Builds a StageTransition for the QA PrimaryAction slot — the same staged
+ * machine as buildExtractionTransition (extraction-HITL parity): reviewers
+ * signal readiness during EXTRACT, an arbitrator opens CONSENSUS (a real,
+ * visitable stage — never skipped), and finalize only happens from inside
+ * consensus via approve-finalize (which publishes every agreed value).
  *
- * QA's publish flow is opaque — the handler drives proposal→review→consensus→finalized
- * in one shot, so there is no per-stage completeness percentage to gate on.
- * The gate is always ok:true; the runtime handler (handlePublish) performs its own
- * preflight check and surfaces a toast if no fields are filled.
- *
- * Mirrors buildExtractionTransition's shape so PrimaryAction renders identically.
+ * Differences from extraction, both deliberate: QA has no required-field
+ * completeness metric (signaling questions are all optional), so the
+ * reviewer's Mark-ready gate is always ok; and the consensus gate has no
+ * `consensusComplete` term (requiredCoords is empty for QA), leaving
+ * divergence resolution as the only finalize precondition.
  */
 export function buildQaTransition(args: BuildQaTransitionArgs): StageTransition | null {
-  const { stage, canResolveConflicts, onPublish, onFinalize } = args;
+  const {
+    stage,
+    canResolveConflicts,
+    isReady,
+    divergencesResolved,
+    onMarkReady,
+    onOpenConsensus,
+    onApproveFinalize,
+    onGuide,
+  } = args;
 
   if (stage === 'extract') {
-    // Primary action: publish the assessment (drives the full pipeline).
+    // Manager / consensus: open consensus at will (the N/M-ready hint guides timing).
+    if (canResolveConflicts) {
+      return {
+        to: 'consensus',
+        label: t('extraction', 'runHeaderStartConsensus'),
+        tooltip: t('extraction', 'runHeaderStartConsensusTooltip'),
+        gate: { ok: true },
+        onAdvance: onOpenConsensus,
+      };
+    }
+    // Reviewer: per-reviewer ready signal — does NOT advance the run.
     return {
-      to: 'finalized',
-      label: t('runs', 'finalize'),
+      to: 'consensus', // display target node only; onMarkReady does not advance
+      label: isReady
+        ? t('qa', 'runHeaderAssessmentFinished')
+        : t('qa', 'runHeaderFinishAssessment'),
+      tooltip: t('qa', 'runHeaderFinishAssessmentTooltip'),
       gate: { ok: true },
-      onAdvance: onPublish,
+      onAdvance: onMarkReady,
     };
   }
 
-  if (stage === 'consensus') {
-    if (canResolveConflicts) {
-      // Manager/reconciler can finalize from consensus directly.
-      return {
-        to: 'finalized',
-        label: t('runs', 'finalize'),
-        gate: { ok: true },
-        onAdvance: onFinalize,
-      };
+  // Consensus → Approve & finalize (publish-agreed then advance), manager only.
+  if (stage === 'consensus' && canResolveConflicts) {
+    const label = t('extraction', 'runHeaderApproveFinalize');
+    const tooltip = t('extraction', 'runHeaderApproveFinalizeTooltip');
+    if (divergencesResolved) {
+      return { to: 'finalized', label, tooltip, gate: { ok: true }, onAdvance: onApproveFinalize };
     }
-    // Reviewer in consensus: no primary action (manager must finalize).
-    return null;
+    const reason = t('qa', 'runHeaderApproveBlocked');
+    return {
+      to: 'finalized',
+      label,
+      tooltip,
+      gate: { ok: false, reason, remaining: 0 },
+      onAdvance: () => onGuide(reason),
+    };
   }
 
-  // finalized, pending, cancelled, null → no primary action.
+  // consensus-without-permission, finalized, pending, cancelled, null → none.
   return null;
 }

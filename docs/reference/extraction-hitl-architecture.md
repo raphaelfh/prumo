@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-07-08
+last_reviewed: 2026-07-09
 owner: '@raphaelfh'
 ---
 
@@ -423,9 +423,15 @@ Both flows open a session through the unified
   or resumes a Run on the existing project template.
 
 Every field change becomes a `human` ProposalRecord (QA keeps the shared
-proposal track); "Publish assessment" advances `extract → consensus`, posts a
-`manual_override` consensus per filled field (which materializes PublishedState
-rows), and advances to `finalized`.
+proposal track). As of 2026-07-09 (ADR-0018) QA mirrors the extraction stage
+flow instead of a one-shot publish: reviewers signal readiness ("Finish
+assessment"), an **arbitrator** opens consensus (`extract → consensus`, which
+materializes reviewer decisions), resolves any divergence in the consensus
+panel, and **Approve & finalize** publishes every agreed value then advances to
+`finalized`. Resolving/publishing consensus (`POST /runs/{id}/consensus`) and
+flipping a run to `finalized` (via `approve-finalize` or `advance`) are
+arbitrator-only for **both** kinds; the earlier reviewer-level, single-click QA
+"Publish assessment" is retired.
 
 ### QA / Data-extraction code reuse boundary
 
