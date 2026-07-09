@@ -15,6 +15,7 @@ export { useAdvanceRun } from "./useAdvanceRun";
 export { useMarkReady } from "./useMarkReady";
 export { useApproveFinalize } from "./useApproveFinalize";
 export { useReopenRun } from "./useReopenRun";
+export { useReopenExtraction } from "./useReopenExtraction";
 export {
   useReviewerSummary,
   type CurrentDecisionEntry,
