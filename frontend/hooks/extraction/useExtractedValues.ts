@@ -33,7 +33,7 @@ import { toast } from 'sonner';
 
 import { dispatchValueUpdates } from '@/lib/extraction/valueUpdates';
 import { t } from '@/lib/copy';
-import { envelopeToFieldValue, publishedStatesToValuesMap } from '@/lib/extraction/publishedValues';
+import { currentValuesToValuesMap, publishedStatesToValuesMap } from '@/lib/extraction/publishedValues';
 import type {
   PublishedStateResponse,
   RunViewCurrentValue,
@@ -217,13 +217,15 @@ export function useExtractedValues(
             return;
           }
 
-          const valuesMap: Record<string, any> = {};
-          for (const cv of currentValues ?? []) {
-            if (cv.decision === 'reject') continue;
-            const key = `${cv.instance_id}_${cv.field_id}`;
-            valuesMap[key] = envelopeToFieldValue(cv.value);
-          }
-          applyLoadedValues(valuesMap);
+          // Marker-preserving conversion (the SAME map builder the QA screen
+          // uses): a resolved ADR-0016 disposition — e.g. an accepted "No
+          // information" — hydrates as the raw `{value:null, absent_reason}`
+          // envelope so FieldInput lights the disposition button and the coord
+          // counts as filled. The bare `envelopeToFieldValue` peel collapsed
+          // the marker to null, which de-selected the button, dropped the
+          // section count, and rendered the accepted-AI fallback as
+          // "[object Object]".
+          applyLoadedValues(currentValuesToValuesMap(currentValues));
           setInitialized(true);
           return;
         }
