@@ -379,25 +379,22 @@ class RunLifecycleService:
     ) -> tuple[ExtractionRun, int]:
         """Atomically publish every agreed-but-unpublished coord, then finalize.
 
-        The single-action "Approve & finalize" for extraction: each existing-instance
-        × field coord that has a single unambiguous resolved reviewer value and no
-        ``PublishedState`` yet is published via
+        The single-action "Approve & finalize" for both run kinds: each
+        existing-instance × field coord that has a single unambiguous resolved
+        reviewer value and no ``PublishedState`` yet is published via
         ``ExtractionConsensusService.record_consensus`` (a ``manual_override``), then the
         run advances CONSENSUS → FINALIZED. Because the publishes and the finalize gates
         run in the SAME transaction, ``EmptyFinalizeError`` and ``IncompleteFinalizeError``
         become satisfiable naturally (the no-divergence dead-end is gone). Coords whose
         reviewers still diverge unresolved are rejected so the manager resolves them
-        first via the per-coord consensus endpoint. Extraction-only — QA publishes via
-        its own flow.
+        first via the per-coord consensus endpoint. QA runs qualify since D8
+        materializes reviewer decisions at consensus entry — their staged flow
+        (mark ready → start consensus → approve) mirrors extraction; only the
+        required-field completeness gate stays extraction-only (ADR-0009).
         """
         run = await load_run_for_update(self.db, run_id)
         if run is None:
             raise ValueError(f"Run {run_id} not found")
-        if run.kind != TemplateKind.EXTRACTION.value:
-            raise InvalidStageTransitionError(
-                "approve_and_finalize applies to extraction runs only; "
-                "quality-assessment runs publish via their own flow."
-            )
         if run.stage != ExtractionRunStage.CONSENSUS.value:
             raise InvalidStageTransitionError(
                 f"approve_and_finalize requires stage 'consensus', got '{run.stage}'."

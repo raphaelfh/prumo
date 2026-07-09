@@ -6,7 +6,8 @@
  *   1. Open `POST /api/v1/hitl/sessions` with kind=quality_assessment (clones template + creates instances
  *      + parks Run in EXTRACT).
  *   2. Visit /projects/{pid}/articles/{aid}/quality-assessment/{globalTemplateId}.
- *   3. Verify the form rendered and the Publish button is wired.
+ *   3. Verify the form rendered and the staged header action is wired
+ *      (Start consensus → Approve & finalize; extraction-HITL parity).
  *   4. Reload the page and verify the run + project_template_id are reused
  *      (idempotent session).
  *
@@ -87,14 +88,14 @@ test.describe("Quality Assessment HITL flow", () => {
     await expect(page.getByTestId("qa-kind-badge")).toContainText("Quality Assessment");
     await expect(page.getByTestId("qa-form-panel")).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId("qa-domains")).toBeVisible({ timeout: 15000 });
-    // The publish/finalize action lives in RunHeader.PrimaryAction — no qa-publish-button testid.
-    // Verify the action button is reachable via role (label varies by stage).
+    // The staged action lives in RunHeader.PrimaryAction — label depends on
+    // role: "Start consensus" (manager) or "Finish assessment" (reviewer).
     await expect(
-      page.getByRole("button", { name: /finalize|publish/i }).first(),
+      page.getByRole("button", { name: /start consensus|finish assessment/i }).first(),
     ).toBeVisible();
   });
 
-  test("Publish assessment finalizes the run", async ({ page, request }) => {
+  test("Staged publish: Start consensus, then Approve & finalize", async ({ page, request }) => {
     const required = missingEnvKeys([
       "E2E_USER_EMAIL",
       "E2E_USER_PASSWORD",
@@ -125,7 +126,8 @@ test.describe("Quality Assessment HITL flow", () => {
     expect(sessionRes.ok()).toBeTruthy();
     const session = (await parseEnvelope<OpenSessionResponse>(sessionRes)).data;
 
-    // Inject a single proposal so Publish has something to manual_override.
+    // A filled field autosaves as a reviewer decision — the agreed value
+    // approve-finalize will publish.
     const [firstEntityTypeId, firstInstanceId] = Object.entries(
       session.instances_by_entity_type,
     )[0];
@@ -138,8 +140,8 @@ test.describe("Quality Assessment HITL flow", () => {
     );
     expect(fieldsRes.ok()).toBeTruthy();
 
-    // Visit the page, click Publish. The button is disabled when there's
-    // nothing filled, so we need to type into a field first.
+    // Visit the page and fill a field first — approve-finalize rejects a
+    // run with zero decisions (EmptyFinalizeError), so publish something.
     await page.goto(
       `${env.frontendUrl}/projects/${env.projectId}/articles/${env.articleId}/quality-assessment/${qaTemplateId}`,
     );
@@ -156,11 +158,20 @@ test.describe("Quality Assessment HITL flow", () => {
       .first()
       .click();
 
-    // The publish/finalize action is now in RunHeader.PrimaryAction.
-    // buildQaTransition sets label = t('runs','finalize') = "Finalize".
-    const finalizeButton = page.getByRole("button", { name: /finalize/i });
-    await expect(finalizeButton).toBeEnabled({ timeout: 5000 });
-    await finalizeButton.click();
+    // Staged flow (extraction parity): the manager opens consensus first —
+    // the run must LAND on the consensus stage, never skip it.
+    const startConsensus = page.getByRole("button", { name: /start consensus/i });
+    await expect(startConsensus).toBeEnabled({ timeout: 5000 });
+    await startConsensus.click();
+    await expect(
+      page.getByTestId("run-stage-current").filter({ hasText: /consensus/i }),
+    ).toBeVisible({ timeout: 30000 });
+
+    // Then Approve & finalize publishes the agreed value and finalizes
+    // (single reviewer → no divergence → the gate is open).
+    const approveButton = page.getByRole("button", { name: /approve & finalize/i });
+    await expect(approveButton).toBeEnabled({ timeout: 5000 });
+    await approveButton.click();
 
     // Once finalized, the RunHeader RunStatus chip reads the current stage.
     // The chip carries data-testid="run-stage-current" and its text is "Finalized".
@@ -186,8 +197,8 @@ test.describe("Quality Assessment HITL flow", () => {
     expect(runBody.data.run.stage).toBe("finalized");
     expect(runBody.data.run.status).toBe("completed");
 
-    // And there's at least one PublishedState row from the manual_override
-    // we just clicked through.
+    // And there's at least one PublishedState row from the agreed value
+    // approve-finalize just published.
     const detailRes = await request.get(`${env.apiUrl}/api/v1/runs/${session.run_id}`, {
       headers: authHeaders(token, traceId),
       timeout: 15000,

@@ -404,24 +404,15 @@ async def create_consensus(
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ConsensusResultResponse]:
     # Publishing a consensus decision (and its canonical PublishedState) is a
-    # privileged write. The gate lives at the API layer because the service-role
-    # session bypasses RLS (which already excludes viewers via is_project_reviewer);
-    # without it any project member — including a read-only viewer — could publish
-    # consensus + canonical values.
-    #
-    # The gate is kind-aware because this endpoint backs two flows:
-    #   · extraction → arbitrator-only (manager / consensus), matching ADR-0015 and
-    #     approve-finalize: resolving divergence / publishing values is an adjudicator
-    #     action, not a reviewer one.
-    #   · quality_assessment → reviewer-level: QA "Publish assessment" routes through
-    #     here per filled field and is, by design, available to any reviewer
-    #     (single-reviewer self-publish; see frontend lib/qa/qaTransition). Gating at
-    #     reviewer level keeps that flow working while still excluding viewers.
+    # privileged adjudicator write for BOTH kinds. QA mirrors extraction as of
+    # 2026-07-09: resolving divergence / publishing canonical values is a
+    # manager (arbitrator) action, not a reviewer one — the QA staged flow moved
+    # finalize authority to the manager (see frontend lib/qa/qaTransition). The
+    # gate lives at the API layer because the service-role session bypasses RLS;
+    # without it any project member — including a read-only viewer — could
+    # publish consensus + canonical values.
     run_summary = await _load_run_and_check_member(db, run_id, current_user_sub)
-    if run_summary.kind == "extraction":
-        await ensure_project_arbitrator(db, run_summary.project_id, current_user_sub)
-    else:
-        await ensure_project_reviewer(db, run_summary.project_id, current_user_sub)
+    await ensure_project_arbitrator(db, run_summary.project_id, current_user_sub)
     service = ExtractionConsensusService(db)
     trace_id = _trace(request)
     try:
@@ -497,6 +488,14 @@ async def advance_run(
     # materializes reviewer decision rows. Viewers 403; manager/reviewer/
     # consensus roles all pass.
     await ensure_project_reviewer(db, member_run.project_id, current_user_sub)
+    # Finalizing publishes canonical state — an adjudicator action for both
+    # kinds (mirrors /consensus + /approve-finalize). Reviewers drive the
+    # earlier transitions but must not flip a run to FINALIZED, so the direct
+    # /advance route cannot bypass the arbitrator-only finalize authority.
+    # Literal "finalized" (not the model enum) keeps the api→models layering —
+    # the request schema already validates target_stage against the stage set.
+    if body.target_stage == "finalized":
+        await ensure_project_arbitrator(db, member_run.project_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:
@@ -548,7 +547,7 @@ async def approve_and_finalize_run(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ApproveFinalizeResponse]:
-    """One-action consensus → finalized for extraction runs.
+    """One-action consensus → finalized for extraction and QA runs.
 
     Publishes the agreed value for every existing-instance × field coord that is not
     yet published (reusing the per-coord consensus path), then advances to FINALIZED —

@@ -11,9 +11,12 @@
  * 3. Each field change becomes a `human` proposal on the Run; reloading
  *    the page rehydrates from the latest proposal per (instance, field).
  *
- * Final publish (advance review → consensus → finalize) is wired to the
- * "Publish assessment" button, which posts a manual_override consensus per
- * field to materialize PublishedState rows.
+ * Stage flow mirrors extraction (staged, never one-shot): reviewers flag
+ * "Finish assessment" (advisory mark-ready), an arbitrator opens consensus
+ * (extract → consensus; the backend materializes reviewer decisions, D8-c),
+ * divergences are resolved in the ConsensusResolutionPanel, and
+ * "Approve & finalize" publishes every agreed value then finalizes —
+ * consensus is a real, visitable stage, never skipped.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -42,8 +45,10 @@ import { useRunAIExtraction } from "@/hooks/extraction/ai/useRunAIExtraction";
 import { countActionableSuggestions } from "@/lib/ai-extraction/suggestionUtils";
 import {
   useAdvanceRun,
+  useApproveFinalize,
   useAutoSaveProposals,
   useCreateConsensus,
+  useMarkReady,
   useReopenRun,
   useReviewerSummary,
   useRun,
@@ -170,6 +175,8 @@ export default function QualityAssessmentFullScreen() {
 
   const advanceMutation = useAdvanceRun(session?.runId ?? "");
   const consensusMutation = useCreateConsensus(session?.runId ?? "");
+  const markReady = useMarkReady(session?.runId ?? "");
+  const approveFinalize = useApproveFinalize(session?.runId ?? "");
   const reopenMutation = useReopenRun();
   const reviewerSummary = useReviewerSummary(runDetail);
   const reviewerProfiles = useRunReviewers(session?.runId ?? null, {
@@ -318,7 +325,6 @@ export default function QualityAssessmentFullScreen() {
       ? String(runDetail.run.parameters.parent_run_id)
       : null;
 
-  const [publishing, setPublishing] = useState(false);
   const [reopening, setReopening] = useState(false);
 
   // PDF panel state — lifted so RunHeader.PanelToggle can share the same toggle.
@@ -415,16 +421,63 @@ export default function QualityAssessmentFullScreen() {
     await refetchRun();
   };
 
-  const handleFinalizeFromConsensus = async () => {
-    if (!session) return;
-    await advanceMutation.mutateAsync({ target_stage: "finalized" });
+  // Plain-identifier dep so the compiler can track this dep without
+  // optional-chaining (optional-chained deps like `session?.runId` defeat it).
+  const sessionRunId = session?.runId;
+
+  // "Finish assessment" (reviewer) — flush pending autosave, then set the
+  // advisory per-reviewer ready flag. The run stays in EXTRACT; the manager
+  // opens consensus separately (extraction-HITL parity). Promise-chain
+  // guards (no try/finally) keep the React Compiler happy; the mutation
+  // hooks toast their own errors.
+  const onMarkReady = async () => {
+    if (!sessionRunId) return;
+    const saved = await saveNow().then(() => true).catch(() => false);
+    if (!saved) return;
+    const ok = await markReady
+      .mutateAsync({ ready: true })
+      .then(() => true)
+      .catch(() => false);
+    if (!ok) return;
+    await refetchRun();
+    toast.success(t("qa", "markReadySuccess"));
+  };
+
+  // "Start consensus" (manager/consensus) — flush autosave, then advance
+  // EXTRACT → CONSENSUS so the resolve surface becomes reachable. The
+  // backend materializes each reviewer's proposals as decisions on this
+  // transition (D8-c) and auto-reveals a blind manager (run-scoped).
+  const onOpenConsensus = async () => {
+    if (!sessionRunId) return;
+    const saved = await saveNow().then(() => true).catch(() => false);
+    if (!saved) return;
+    const ok = await advanceMutation
+      .mutateAsync({ target_stage: "consensus" })
+      .then(() => true)
+      .catch(() => false);
+    if (!ok) return;
+    await refetchRun().catch(() => undefined);
+  };
+
+  // "Approve & finalize" — one backend-atomic action: publish every agreed
+  // value, then advance consensus → finalized. Gate rejections (unresolved
+  // divergence / zero decisions) surface via useApproveFinalize's toast.
+  const handleApproveFinalize = async () => {
+    if (!sessionRunId) return;
+    const ok = await approveFinalize
+      .mutateAsync()
+      .then(() => true)
+      .catch(() => false);
+    if (!ok) return;
     await refetchRun();
     toast.success(t("qa", "finalizationSuccess"));
   };
 
-  // Plain-identifier dep so the compiler can track this dep without
-  // optional-chaining (optional-chained deps like `session?.runId` defeat it).
-  const sessionRunId = session?.runId;
+  // Blocked-click affordance for the gated Approve & finalize button.
+  const onGuide = (message?: string) => {
+    toast.error(message ?? t("qa", "runHeaderApproveBlocked"));
+  };
+
   const handleReopen = async () => {
     if (!sessionRunId) return;
     setReopening(true);
@@ -442,61 +495,6 @@ export default function QualityAssessmentFullScreen() {
     });
     setReopening(false);
   };
-  const handlePublish = async () => {
-    if (!session || !runDetail) return;
-
-    // Preflight: an empty publish has no semantic meaning — the run would
-    // reach FINALIZED with zero PublishedState rows. Bail out before any
-    // stage-advance side-effect so the run is not left half-progressed.
-    const filled = Object.entries(values).filter(
-      ([, v]) => v !== undefined && v !== null && v !== "",
-    );
-    if (filled.length === 0) {
-      toast.error(t("qa", "publishEmptyError"));
-      return;
-    }
-
-    setPublishing(true);
-    const doPublish = async () => {
-      // Flush any pending debounced edits before the stage advances —
-      // otherwise the consensus loop below would publish stale values.
-      await saveNow();
-
-      // Collapsed lifecycle: the run sits in the editable EXTRACT stage; the
-      // publish walks it straight to CONSENSUS (no separate review stage).
-      const stage = runDetail.run.stage;
-      if (stage === "extract") {
-        await advanceMutation.mutateAsync({ target_stage: "consensus" });
-      }
-
-      // Manual-override consensus per filled (instance, field) — writes the
-      // value directly to PublishedState without requiring a per-field
-      // ReviewerDecision row.
-      for (const [k, v] of filled) {
-        const [instanceId, fieldId] = k.split("_");
-        await consensusMutation.mutateAsync({
-          instance_id: instanceId,
-          field_id: fieldId,
-          mode: "manual_override",
-          // Marker-aware wrapping (ADR-0016): a hydrated absent_reason marker
-          // must publish as {value: null, absent_reason}, not double-wrap.
-          value: toConsensusValueEnvelope(v),
-          rationale: "Published from Quality-Assessment form",
-        });
-      }
-
-      await advanceMutation.mutateAsync({ target_stage: "finalized" });
-      await refetchRun();
-      toast.success(t("qa", "publishSuccess"));
-    };
-    await doPublish().catch((err: unknown) => {
-      toast.error(
-        err instanceof Error ? err.message : t("qa", "publishError"),
-      );
-    });
-    setPublishing(false);
-  };
-
   const sortedDomains = domains;
 
   // Compare-view inputs derived from the QA template tree: one instance per
@@ -548,12 +546,30 @@ export default function QualityAssessmentFullScreen() {
   // The API returns stage as `string`; cast to the narrow union the header lib expects.
   const runStage = (runDetail?.run.stage ?? null) as ExtractionRunStage | null;
 
-  // Stage-driven transition for RunHeader.PrimaryAction.
+  // Stage-driven transition for RunHeader.PrimaryAction (extraction parity:
+  // Finish assessment / Start consensus / Approve & finalize).
+  //
+  // divergencesResolved: every diverging coord carries a consensus decision
+  // (a no-divergence run is trivially resolved). isReady: the caller already
+  // flagged themselves ready.
+  const resolvedCoordKeys = new Set(
+    (runDetail?.consensus_decisions ?? []).map(
+      (c) => `${c.instance_id}::${c.field_id}`,
+    ),
+  );
+  const divergencesResolved = [...reviewerSummary.divergentCoords].every((c) =>
+    resolvedCoordKeys.has(c),
+  );
+  const isReady = (runDetail?.reviewers_ready ?? []).includes(userId ?? "");
   const qaTransition = buildQaTransition({
     stage: runStage,
     canResolveConflicts: permissions.canResolveConflicts,
-    onPublish: handlePublish,
-    onFinalize: handleFinalizeFromConsensus,
+    isReady,
+    divergencesResolved,
+    onMarkReady,
+    onOpenConsensus,
+    onApproveFinalize: handleApproveFinalize,
+    onGuide,
   });
 
   // AI extract callback — called by RunHeader.AIActions.
@@ -597,7 +613,10 @@ export default function QualityAssessmentFullScreen() {
             divergent: reviewerSummary.divergentCoords.size,
           },
           transition: qaTransition,
-          submitting: publishing,
+          submitting:
+            markReady.isPending ||
+            advanceMutation.isPending ||
+            approveFinalize.isPending,
           // D6: the consensus branch ignores viewMode, so the jump would be
           // inert there — offer it only while the compare view is reachable.
           onJumpToDivergence: canCompare && !inConsensusStage
@@ -731,10 +750,11 @@ export default function QualityAssessmentFullScreen() {
           ownValues={values}
           reviewerLabelById={reviewerProfiles.labelById}
           reviewerAvatarById={reviewerProfiles.avatarById}
-          // QA consensus is reviewer-level self-publish; the backend 403s
-          // viewer writes (ensure_project_reviewer), so mirror the gate here —
-          // a viewer must not get chrome whose every click fails (D6).
-          canResolve={permissions.userRole !== "viewer"}
+          // Resolving/publishing consensus is an arbitrator action (QA mirrors
+          // extraction as of 2026-07-09; the backend 403s non-arbitrators on
+          // /consensus). Gate the chrome on canResolveConflicts so a plain
+          // reviewer/viewer never gets buttons whose every click would fail.
+          canResolve={permissions.canResolveConflicts}
           // Per-cell AI trace (D1-D4). QA decisionsByCoord stays empty until
           // PR 2 (D8) creates real QA decisions; the wiring is ready for it.
           trace={{
@@ -744,12 +764,12 @@ export default function QualityAssessmentFullScreen() {
           }}
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}
-          onFinalize={handleFinalizeFromConsensus}
+          onFinalize={handleApproveFinalize}
           isResolving={consensusMutation.isPending}
-          isFinalizing={advanceMutation.isPending}
+          isFinalizing={approveFinalize.isPending}
           requiredCoords={[]}
           peersRevealed={!!runDetail.peers_revealed}
-          showFinalize
+          showFinalize={false}
         />
       ) : null}
 
