@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -595,6 +595,53 @@ class RunLifecycleService:
             if is_value_filled(resolved):
                 resolved_values.append((instance_id, field_id, resolved))
         return resolved_values
+
+    async def reopen_to_extract(
+        self, *, run_id: UUID, user_id: UUID
+    ) -> tuple[ExtractionRun, int, int]:
+        """Return a CONSENSUS extraction run to EXTRACT, discarding consensus work.
+
+        The arbitrator-only escape hatch for "opened consensus too early". Hard-deletes
+        the run's ``ExtractionConsensusDecision`` + ``ExtractionPublishedState`` rows so
+        the slate is clean on BOTH sides: the frontend derives "resolved" from consensus
+        decisions, and the backend approve-all / finalize gates key off published states.
+        Consensus-attached evidence cascades (FK ``ON DELETE CASCADE``, migration 0044);
+        reviewer decisions/states/proposals and ``reviewers_ready`` are preserved. The
+        discard is deliberate and confirmed in the UI — see ADR-0017.
+
+        Sets ``stage`` directly (NOT via ``advance_stage``, and ``consensus -> extract``
+        is deliberately absent from ``_ALLOWED_TRANSITIONS``) so the forward-only
+        transition map and the reviewer-gated ``/advance`` endpoint cannot reach the
+        backward move. Extraction-only. ``user_id`` is captured for the endpoint's audit
+        log. Returns ``(run, discarded_consensus, discarded_published)``.
+        """
+        run = await load_run_for_update(self.db, run_id)
+        if run is None:
+            raise ValueError(f"Run {run_id} not found")
+        if run.kind != TemplateKind.EXTRACTION.value:
+            raise InvalidStageTransitionError(
+                "reopen_to_extract applies to extraction runs only; "
+                "quality-assessment runs publish via their own flow."
+            )
+        if run.stage != ExtractionRunStage.CONSENSUS.value:
+            raise InvalidStageTransitionError(
+                f"reopen_to_extract requires stage 'consensus', got '{run.stage}'."
+            )
+        # ConsensusDecision first: its evidence cascades (FK ON DELETE CASCADE, 0044).
+        # rowcount gives the discarded counts with no extra SELECT; the shared
+        # FOR UPDATE lock makes them exact.
+        consensus_res = await self.db.execute(
+            delete(ExtractionConsensusDecision).where(ExtractionConsensusDecision.run_id == run_id)
+        )
+        published_res = await self.db.execute(
+            delete(ExtractionPublishedState).where(ExtractionPublishedState.run_id == run_id)
+        )
+        discarded_consensus = consensus_res.rowcount or 0
+        discarded_published = published_res.rowcount or 0
+        run.stage = ExtractionRunStage.EXTRACT.value  # status untouched (mirrors advance_stage)
+        await self.db.flush()
+        await self.db.refresh(run)
+        return run, discarded_consensus, discarded_published
 
     async def reopen_run(
         self,
