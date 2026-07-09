@@ -557,6 +557,16 @@ export const extraction = {
     runHeaderCompareToggle: 'Compare reviewers',
     runHeaderReopenForRevision: 'Reopen for revision',
     runHeaderReopening: 'Reopening…',
+    // Reopen consensus -> extraction (arbitrator-only, destructive). See ADR-0017.
+    runHeaderReopenExtraction: 'Reopen extraction',
+    reopenExtractionTitle: 'Reopen for extraction?',
+    reopenExtractionBodyDiscard:
+      'This discards {{count}} resolved consensus decision(s), and any evidence attached to them, and returns the article to Extraction where reviewers can edit again. This cannot be undone.',
+    reopenExtractionBodyClean:
+      'This returns the article to Extraction so reviewers can edit again. Nothing has been resolved yet, so nothing is discarded.',
+    reopenExtractionConfirmDiscard: 'Reopen & discard',
+    reopenExtractionConfirmClean: 'Reopen',
+    reopenExtractionToast: 'Article reopened for extraction.',
     // Section navigation rail
     sectionNavRequiredLeft: '{{count}} required left',
     sectionNavComplete: 'All required fields complete',

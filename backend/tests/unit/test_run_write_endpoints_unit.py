@@ -240,3 +240,44 @@ async def test_reopen_run_awaits_reviewer_role_gate() -> None:
 
     gate.assert_awaited_once_with(db, project_id, caller)
     assert resp.ok is True
+
+
+@pytest.mark.asyncio
+async def test_reopen_run_to_extract_awaits_arbitrator_gate() -> None:
+    """consensus->extract discard is arbitrator-only (manager/consensus), and the
+    handler forwards the caller as user_id for the audit log."""
+    from app.api.v1.endpoints.extraction_runs import reopen_run_to_extract
+
+    run_id, project_id, caller = uuid4(), uuid4(), uuid4()
+    run = SimpleNamespace(
+        id=uuid4(),
+        project_id=project_id,
+        article_id=uuid4(),
+        template_id=uuid4(),
+        kind="extraction",
+        version_id=uuid4(),
+        stage="extract",
+        status="pending",
+        hitl_config_snapshot={},
+        parameters={},
+        results={},
+        created_at="2026-07-08T00:00:00Z",
+        created_by=caller,
+    )
+    service = MagicMock()
+    service.reopen_to_extract = AsyncMock(return_value=(run, 2, 1))
+
+    with (
+        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run(project_id))),
+        patch(f"{_EP}.ensure_project_arbitrator", AsyncMock()) as gate,
+        patch(f"{_EP}.RunLifecycleService", return_value=service),
+        patch(f"{_EP}._trace", return_value=None),
+    ):
+        db = AsyncMock()
+        resp = await reopen_run_to_extract(
+            run_id=run_id, request=MagicMock(), db=db, current_user_sub=caller
+        )
+
+    gate.assert_awaited_once_with(db, project_id, caller)
+    service.reopen_to_extract.assert_awaited_once_with(run_id=run_id, user_id=caller)
+    assert resp.ok is True

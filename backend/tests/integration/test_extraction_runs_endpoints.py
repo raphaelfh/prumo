@@ -1331,3 +1331,79 @@ async def test_consensus_on_finalized_run_returns_400(
     )
     assert resp.status_code == 400, resp.text
     assert "not 'consensus'" in resp.json()["error"]["message"].lower()
+
+
+# =================== POST /runs/{id}/reopen-extraction ===================
+
+
+@pytest.mark.asyncio
+async def test_reopen_extraction_manager_ok(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001 — default caller is the seed manager (arbitrator)
+) -> None:
+    run_id, *_ = await _setup_consensus_run(db_client, db_session)
+    resp = await db_client.post(f"{API_PREFIX}/{run_id}/reopen-extraction")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["stage"] == "extract"
+
+
+@pytest.mark.asyncio
+async def test_reopen_extraction_rejects_reviewer(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    run_id, *_ = await _setup_consensus_run(db_client, db_session)
+    _auth_as(SEED.reviewer_profile)
+    resp = await db_client.post(f"{API_PREFIX}/{run_id}/reopen-extraction")
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reopen_extraction_rejects_viewer(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    run_id, *_ = await _setup_consensus_run(db_client, db_session)
+    await db_session.execute(
+        text(
+            "INSERT INTO public.project_members (project_id, user_id, role) "
+            "VALUES (:pid, :uid, 'viewer')"
+        ),
+        {"pid": str(SEED.primary_project), "uid": str(SEED.outsider_profile)},
+    )
+    await db_session.flush()
+    _auth_as(SEED.outsider_profile)
+    resp = await db_client.post(f"{API_PREFIX}/{run_id}/reopen-extraction")
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reopen_extraction_wrong_stage_returns_400(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    run_id, *_ = await _setup_review_run(db_client, db_session)  # pre-consensus
+    resp = await db_client.post(f"{API_PREFIX}/{run_id}/reopen-extraction")
+    assert resp.status_code == 400, resp.text
+    assert "consensus" in resp.json()["error"]["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_reopen_extraction_qa_kind_returns_400(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001 — manager caller reaches the service kind-check
+) -> None:
+    from tests.integration.test_qa_publish_flow import _qa_run_in_consensus
+
+    fx = await _qa_run_in_consensus(db_client, db_session)
+    if fx is None:
+        pytest.skip("QA template seed unavailable")
+    run_id, *_ = fx
+    resp = await db_client.post(f"{API_PREFIX}/{run_id}/reopen-extraction")
+    assert resp.status_code == 400, resp.text
+    assert "extraction runs only" in resp.json()["error"]["message"].lower()

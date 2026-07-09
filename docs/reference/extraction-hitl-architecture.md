@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-07-06
+last_reviewed: 2026-07-08
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-07-06 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-07-08 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -33,9 +33,23 @@ through five stages, in this order — no skipping:
 
 ```text
 pending → extract → consensus → finalized
-                              ↓
-                         cancelled (terminal at any non-terminal stage)
+             ↑__________|    ↓
+      (reopen_to_extract)  cancelled (terminal at any non-terminal stage)
 ```
+
+The `consensus → extract` **back-edge** is arbitrator-only and destructive:
+`RunLifecycleService.reopen_to_extract`
+(`POST /api/v1/runs/{id}/reopen-extraction`, `ensure_project_arbitrator`) sends a
+consensus-stage extraction run back to `extract` **in place** (same run), hard-
+deleting that run's `ExtractionConsensusDecision` + `ExtractionPublishedState`
+rows (consensus-attached evidence cascades) while preserving reviewer
+decisions/states/proposals and `reviewers_ready`. It sets `stage` directly and is
+**deliberately absent from `_ALLOWED_TRANSITIONS`** so the reviewer-gated
+`/advance` cannot reach it and `advance_stage` stays forward-only. Extraction
+only. The discard is deliberate (constitution §IX reconciliation) and confirmed in
+the UI — see [ADR-0017](../adr/0017-reopen-consensus-to-extract.md). Distinct from
+the `finalized` reopen (`reopen_run` / `POST /runs/{id}/reopen`), which forks a
+*new* child run.
 
 `stage` is the lifecycle position; `status` is the execution condition
 (`pending` / `running` / `completed` / `failed`). They are orthogonal —
