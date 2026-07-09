@@ -597,7 +597,10 @@ class RunLifecycleService:
         return resolved_values
 
     async def reopen_to_extract(
-        self, *, run_id: UUID, user_id: UUID
+        self,
+        *,
+        run_id: UUID,
+        user_id: UUID,  # noqa: ARG002 — parity with sibling transitions; endpoint owns the audit log
     ) -> tuple[ExtractionRun, int, int]:
         """Return a CONSENSUS extraction run to EXTRACT, discarding consensus work.
 
