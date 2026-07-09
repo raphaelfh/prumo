@@ -681,3 +681,58 @@ async def reopen_run(
         RunSummaryResponse.model_validate(new_run),
         trace_id=trace_id,
     )
+
+
+@router.post("/{run_id}/reopen-extraction")
+async def reopen_run_to_extract(
+    run_id: UUID,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse[RunSummaryResponse]:
+    """Return a consensus-stage extraction run to extract, discarding consensus work.
+
+    Arbitrator-only (manager/consensus): this hard-deletes the run's consensus
+    decisions + published values so reviewers can edit again. The gate lives at the
+    API layer because the service-role session bypasses RLS. See ADR-0017.
+    """
+    member_run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    await ensure_project_arbitrator(db, member_run.project_id, current_user_sub)
+    service = RunLifecycleService(db)
+    trace_id = _trace(request)
+    try:
+        run, discarded_consensus, discarded_published = await service.reopen_to_extract(
+            run_id=run_id, user_id=current_user_sub
+        )
+    except InvalidStageTransitionError as e:
+        logger.warning(
+            "hitl_reopen_to_extract_rejected",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            error=str(e),
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError as e:
+        logger.warning(
+            "hitl_reopen_to_extract_run_not_found",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            error=str(e),
+        )
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    await db.commit()
+    # Self-contained forensic line (the sole DB-external record of a destructive
+    # discard) — include project + article for SRE scoping. See ADR-0017.
+    logger.info(
+        "hitl_run_reopened_to_extract",
+        trace_id=trace_id,
+        run_id=str(run.id),
+        project_id=str(run.project_id),
+        article_id=str(run.article_id),
+        discarded_consensus_count=discarded_consensus,
+        discarded_published_count=discarded_published,
+        by=str(current_user_sub),
+    )
+    summary = RunSummaryResponse.model_validate(run)
+    summary = summary.model_copy(update={"results": scrub_results_ranby(summary.results)})
+    return ApiResponse.success(summary, trace_id=trace_id)

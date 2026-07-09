@@ -37,6 +37,27 @@ A sub-agent that returns `PASS` but cannot show evidence is downgraded
 to `UNKNOWN`. There is no "should pass" — only fresh outputs you can
 cite.
 
+## Headless credentials (why this works in non-interactive sessions)
+
+The remote gates use **credential-based auth that persists across sessions**,
+NOT interactive OAuth MCP servers (which cannot complete their login flow in a
+headless / CI / cron run — the historical reason preflight kept RED-halting):
+
+- **Supabase advisors** → the Management API with a Personal Access Token in
+  env `SUPABASE_ACCESS_TOKEN` (`sbp_...`, created at
+  <https://supabase.com/dashboard/account/tokens>; store it in a gitignored
+  `.env` or your shell profile — never commit it). The Supabase MCP is only a
+  fallback for interactive sessions. When neither is available the advisor gate
+  degrades on DB-surface impact (WARN if the promotion touches no
+  migrations/models, UNKNOWN if it does) instead of hard-blocking every deploy.
+- **Railway** (worker/Redis) → the `railway` CLI (`railway login`, repo linked
+  to prumo/production). MCP is fallback only.
+- **Vercel** → the `vercel` CLI (`vercel login`).
+
+So a fully headless preflight needs, once: `SUPABASE_ACCESS_TOKEN` set, and the
+`railway` + `vercel` CLIs logged in. Missing only the Supabase PAT still yields a
+usable gate for non-DB promotions (see the remote-supabase degradation).
+
 ---
 
 ## Phase 1 — Parse arguments & resolve the checkout
@@ -62,11 +83,22 @@ STOP:
 
 ```text
 Regenerate the Supabase advisor baseline for prumo. Steps:
-1. ToolSearch "select:mcp__supabase__get_advisors" (max_results 3) to load the tool.
-2. Call get_advisors type="security" (fits inline) and type="performance".
-   The performance call may exceed the token cap and be auto-saved to a
-   file — if so, the error message gives the path; read and json.load
-   that file. Both payloads have shape {"result":{"lints":[...]}}.
+1. Resolve advisors headlessly-first (same credential order as the
+   remote-supabase gate). Project ref REF = `project_id` in
+   <PROJECT_ROOT>/supabase/config.toml (fallback gdfslcfeobjdxihqtcsk).
+   - If env SUPABASE_ACCESS_TOKEN is set: curl the Management API
+       curl -s -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+         "https://api.supabase.com/v1/projects/$REF/advisors/security"
+       curl -s -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+         "https://api.supabase.com/v1/projects/$REF/advisors/performance"
+     (each returns {"lints":[...]}); require HTTP 200 + "lints".
+   - Else ToolSearch "select:mcp__supabase__get_advisors" (max_results 3) and
+     call get_advisors type="security" and type="performance" (the performance
+     payload may exceed the token cap and be auto-saved to a file — read and
+     json.load it; the path is in the error message; MCP shape is
+     {"result":{"lints":[...]}}).
+   - If neither credential is available, STOP and return
+     "advisor baseline NOT written: no SUPABASE_ACCESS_TOKEN and no Supabase MCP".
 3. For EVERY advisor in both sets, build fingerprint
    f"{categories[0].lower()}:{cache_key}" using the advisor's first
    category and its cache_key verbatim (keep spaces/commas).
@@ -183,64 +215,90 @@ evidence: |
 
 ```text
 You are the `remote-supabase` preflight gate for prumo. READ-ONLY.
-Use only the Supabase MCP tools (mcp__supabase__*).
 
-Run three checks:
+This gate MUST work headlessly (non-interactive / CI / cron), so it resolves a
+Supabase credential in priority order and never hard-blocks merely because an
+interactive OAuth MCP is unavailable. Resolve the project ref first: read
+`project_id` from <PROJECT_ROOT>/supabase/config.toml (fallback:
+gdfslcfeobjdxihqtcsk); call it REF.
 
-  A. Advisors vs the checked-in baseline. Call get_advisors with
-     type="security" then type="performance" (the performance payload may
-     exceed the token cap and be auto-saved to a file — if so, read and
-     json.load that file; its path is in the error message). For every
-     advisor compute a fingerprint:
+CREDENTIAL RESOLUTION (stop at the first that works):
+
+  PATH 1 — headless, PREFERRED. env `SUPABASE_ACCESS_TOKEN` (a Supabase
+  Personal Access Token, `sbp_...`). If set, fetch advisors from the Management API:
+    curl -s -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+      "https://api.supabase.com/v1/projects/$REF/advisors/security"
+    curl -s -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+      "https://api.supabase.com/v1/projects/$REF/advisors/performance"
+  Each returns {"lints":[...]}. Require HTTP 200 + a "lints" key before trusting
+  (a 401/403 means the PAT is invalid — treat as "no credential", fall through).
+
+  PATH 2 — interactive fallback. The Supabase MCP. ToolSearch
+  "select:mcp__supabase__get_advisors,mcp__supabase__list_migrations,mcp__supabase__get_logs"
+  (max_results 5). Usable only in a session that authenticated the MCP.
+
+  PATH 3 — no credential. Do NOT crash to a blanket UNKNOWN. The advisor check
+  is a DB-regression guard, so degrade on the pending promotion's DB-surface impact:
+    git -C <PROJECT_ROOT> fetch origin --quiet
+    DB_TOUCHED = `git -C <PROJECT_ROOT> diff --name-only origin/main...origin/dev -- \
+                    backend/alembic/versions/ supabase/migrations/ backend/app/models/`
+                 returns ≥1 path.
+    - DB_TOUCHED = false → status WARN, and STOP (do not run A/B/C). Summary:
+      "advisors unverified (no SUPABASE_ACCESS_TOKEN, no MCP); dev→main touches
+      no DB surface, so advisors cannot have regressed — set SUPABASE_ACCESS_TOKEN
+      for full verification." This is non-blocking (GREEN-with-notes).
+    - DB_TOUCHED = true → status UNKNOWN, and STOP. Summary: "advisors unverified
+      AND dev→main changes DB surface (migrations/models) — set
+      SUPABASE_ACCESS_TOKEN (a Supabase PAT) or authenticate the Supabase MCP
+      before promoting." This blocks (RED).
+
+When a credential IS available (PATH 1 or 2), run three checks:
+
+  A. Advisors vs the checked-in baseline. (Management API: the two curls above.
+     MCP: get_advisors type="security" then "performance" — the performance
+     payload may exceed the token cap and be auto-saved to a file; read and
+     json.load it, its path is in the error message.) For every advisor compute:
 
        fingerprint = "<category>:<cache_key>"
 
      where <category> is the advisor's first `categories` entry lowercased
      ("security"/"performance") and <cache_key> is its `cache_key` verbatim
-     (keep any spaces/commas).
-
-     Read the baseline set from
+     (keep any spaces/commas). Read the baseline set from
      <PROJECT_ROOT>/.claude/skills/preflight/supabase-advisors.baseline
      (every non-blank line NOT starting with "#" is one known fingerprint).
      Partition the live advisors:
-       - KNOWN = fingerprint present in the baseline → the pre-existing
-         backlog. These never FAIL the gate, but the presence of ≥1 KNOWN
-         advisor makes check A contribute WARN (a non-blocking "N known
-         advisors (baselined)" note). Check A is PASS only when
-         get_advisors returns zero advisors of any kind.
-       - NEW = fingerprint absent from the baseline → a real regression.
-         A NEW advisor with level "ERROR"/"WARN"/"WARNING" → contributes
-         FAIL; a NEW advisor with level "INFO" → contributes WARN.
-     No advisors returned at all → PASS. If the baseline file is missing
-     or unreadable, do NOT fail — report WARN "advisor baseline missing,
-     run /preflight --update-advisors-baseline" (nothing can be ratcheted).
+       - KNOWN = in the baseline → pre-existing backlog. Never FAILs, but ≥1
+         KNOWN makes check A contribute WARN ("N known advisors (baselined)").
+         Check A is PASS only when zero advisors of any kind are returned.
+       - NEW = absent from the baseline → a real regression. NEW with level
+         "ERROR"/"WARN"/"WARNING" → FAIL; NEW with "INFO" → WARN.
+     No advisors at all → PASS. Baseline file missing/unreadable → WARN
+     "advisor baseline missing, run /preflight --update-advisors-baseline".
 
-  B. Migration drift. Call list_migrations and compare its returned
-     count to the number of *.sql files under
-     <PROJECT_ROOT>/supabase/migrations/
-     (you may shell out: `ls <PROJECT_ROOT>/supabase/migrations/*.sql | wc -l`).
-     Mismatch → FAIL ("auth/storage migration drift"). Match → PASS.
-     NOTE: this checks auth/storage migrations only — Alembic state is
-     checked indirectly via the Railway gate (Railway's Dockerfile CMD
-     runs `alembic upgrade head` before gunicorn boots).
+  B. Migration drift (auth/storage only). MCP: list_migrations count vs
+     `ls <PROJECT_ROOT>/supabase/migrations/*.sql | wc -l`. Management API:
+     `GET /v1/projects/$REF/database/migrations` count vs the same local count.
+     Mismatch → FAIL ("auth/storage migration drift"); match → PASS. If the
+     migrations source is unavailable on the chosen path, note "migrations not
+     checked on this path" (does not block). NOTE: Alembic state is checked
+     indirectly via the Railway gate (its Dockerfile runs `alembic upgrade head`).
 
-  C. Recent errors. Call get_logs for the last 5 minutes filtering to
-     errors only (level=error or status>=500). Any error rows → WARN
-     (could be benign noise). None → PASS.
+  C. Recent errors (last 5 min, level=error / status>=500). MCP get_logs, or
+     the Management API logs endpoint. Any errors → WARN; none → PASS. If logs
+     are unavailable on the chosen path, note "logs not checked" (does not block).
 
-Aggregate: the worst status across A, B, C wins (FAIL > WARN > PASS).
-A non-empty baseline backlog therefore lands this gate at WARN (not
-FAIL) until a NEW advisor appears.
+Aggregate: worst status across the checks that ran (FAIL > UNKNOWN > WARN > PASS).
 
 Return ONLY the following YAML block:
 
 gate: remote-supabase
 status: PASS | WARN | FAIL | UNKNOWN
-summary: <e.g. "0 new advisors (199 baselined), migrations 12=12, 0 errors in 5min">
+summary: <e.g. "0 new advisors (199 baselined) via PAT, migrations 12=12, 0 errors" OR "advisors unverified; dev→main touches no DB surface (WARN)">
 evidence: |
-  Advisors: <N new — list each new fingerprint + level — and M baselined>
-  Migrations: <local=N, remote=N>
-  Logs: <count and worst line, or "clean">
+  Credential: <PAT | MCP | none (DB_TOUCHED=<true|false>)>
+  Advisors: <N new — list each fingerprint + level — and M baselined, or "not run">
+  Migrations: <local=N, remote=N, or "not checked">
+  Logs: <count and worst line, or "clean", or "not checked">
 ```
 
 ---
@@ -273,25 +331,28 @@ Four checks across Vercel and Railway (web + worker + Redis):
      - HTTP 200 → PASS
      - Anything else, or curl exit non-zero → FAIL
 
-  D. Railway — worker + Redis health.
-     The worker has no public endpoint, so probe via Railway MCP:
-       1. Call mcp__railway__list_deployments with service_id
-          7acd0799-9685-4445-971a-707bc1b9c41f (worker service in the
-          prumo project, environment production). Take the latest
-          deployment.
-          - status != "SUCCESS" → FAIL ("worker last deploy <status>")
-          - status == "SUCCESS" → continue
-       2. Call mcp__railway__get_logs for the same worker service with
-          limit=40. Look for two markers in the most recent boot block:
-            - "Connected to redis://" → Redis reachable
-            - "celery@... ready." → worker accepting jobs
-          Both present → PASS. Either missing → WARN. Both missing or
-          presence of "[ERROR]" / "ConnectionError" → FAIL.
-     This single check covers both the worker process and Redis — if
-     Redis is down, the worker logs will show "Connection refused" and
-     the gate fails fast.
+  D. Railway — worker + Redis health (via the authenticated Railway CLI —
+     headless, no MCP; the repo is linked to the prumo/production environment).
+     The worker has no public endpoint, so read its logs:
+       1. `railway status 2>&1 | head`  — confirm Project "prumo" +
+          Environment "production" (if it errors "Unauthorized" / "not linked",
+          the CLI is unusable — fall back to the MCP below).
+       2. `railway logs --service worker 2>&1 | head -80`  — in the most recent
+          boot block look for:
+            - "celery@... ready."               → worker accepting jobs
+            - "Connected to redis://" (or no redis error) → Redis reachable
+            - "Starting Container"               → a boot occurred
+          celery-ready present AND no redis error → PASS. Boot present but the
+          celery-ready marker missing → WARN. "[ERROR]" / "ConnectionError" /
+          "Connection refused" in the recent block → FAIL.
+     If the Railway CLI is unavailable/unauthenticated, fall back to
+     `mcp__railway__get_logs` (service_id 7acd0799-9685-4445-971a-707bc1b9c41f,
+     limit=40) with the same marker logic; if neither works, report the worker
+     sub-check TOOL-MISSING (WARN-tier — do NOT fabricate a PASS/FAIL). Check C
+     (curl /health) is independent of this and MUST still run regardless.
 
-Aggregate: worst status across A, B, C, D wins.
+Aggregate: worst status across A, B, C, D wins (a TOOL-MISSING sub-check is
+WARN-tier, never RED on its own).
 
 Return ONLY the following YAML block:
 

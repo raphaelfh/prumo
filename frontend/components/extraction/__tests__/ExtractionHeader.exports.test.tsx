@@ -99,6 +99,33 @@ describe('ExtractionHeader (post legacy-cascade)', () => {
     expect(screen.queryByTestId('extraction-hitl-banner')).not.toBeInTheDocument();
   });
 
+  describe('reopen-extraction menu item', () => {
+    it('appears in the More menu when canReopenExtraction and fires onReopenExtraction', async () => {
+      const onReopenExtraction = vi.fn();
+      render(
+        <MemoryRouter>
+          <ExtractionHeader
+            {...base}
+            stage="consensus"
+            canReopenExtraction
+            onReopenExtraction={onReopenExtraction}
+          />
+        </MemoryRouter>,
+      );
+      await userEvent.click(screen.getByRole('button', { name: /more/i }));
+      await userEvent.click(await screen.findByRole('menuitem', { name: /reopen extraction/i }));
+      expect(onReopenExtraction).toHaveBeenCalledTimes(1);
+    });
+
+    it('is absent when canReopenExtraction is false', async () => {
+      render(<MemoryRouter><ExtractionHeader {...base} stage="consensus" /></MemoryRouter>);
+      await userEvent.click(screen.getByRole('button', { name: /more/i }));
+      expect(
+        screen.queryByRole('menuitem', { name: /reopen extraction/i }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   // TDD: Task 9 regression — article prev/next pager restored in re-skinned header
   describe('article pager', () => {
     const art1 = { id: 'art-1', title: 'Article 1' };

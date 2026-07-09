@@ -122,6 +122,10 @@ export interface ExtractionHeaderProps {
   canReopen?: boolean;
   onReopen?: () => void;
   reopening?: boolean;
+
+  /** Show a "Reopen extraction" item in the Menu (consensus stage, arbitrator only). */
+  canReopenExtraction?: boolean;
+  onReopenExtraction?: () => void;
 }
 
 // =================== COMPONENT ===================
@@ -163,6 +167,8 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     canReopen = false,
     onReopen,
     reopening = false,
+    canReopenExtraction = false,
+    onReopenExtraction,
   } = props;
 
   // ---- Cmd-K palette + status-popover state (palette's "View run status"
@@ -236,6 +242,13 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
       id: 'reopen',
       label: t('extraction', 'runHeaderReopenForRevision'),
       run: () => onReopen?.(),
+    });
+  }
+  if (canReopenExtraction) {
+    paletteActions.push({
+      id: 'reopen-extraction',
+      label: t('extraction', 'runHeaderReopenExtraction'),
+      run: () => onReopenExtraction?.(),
     });
   }
   paletteActions.push({
@@ -326,6 +339,11 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                   {reopening
                     ? t('extraction', 'runHeaderReopening')
                     : t('extraction', 'runHeaderReopenForRevision')}
+                </RunHeader.MenuItem>
+              )}
+              {canReopenExtraction && (
+                <RunHeader.MenuItem onSelect={() => onReopenExtraction?.()}>
+                  {t('extraction', 'runHeaderReopenExtraction')}
                 </RunHeader.MenuItem>
               )}
             </Utility>

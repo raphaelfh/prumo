@@ -55,6 +55,7 @@ import {
   useApproveFinalize,
   useCreateConsensus,
   useMarkReady,
+  useReopenExtraction,
   useReopenRun,
   useReviewerSummary,
   useRun,
@@ -69,6 +70,8 @@ import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
 import {RunPdfContent} from '@/components/runs/RunPdfContent';
 import {ExtractionFormPanel} from '@/components/extraction/ExtractionFormPanel';
 import {AddModelDialog, RemoveModelDialog} from '@/components/extraction/hierarchy';
+import {ReopenExtractionDialog} from '@/components/extraction/dialogs/ReopenExtractionDialog';
+import {deriveCanReopenExtraction} from '@/lib/extraction/reopenExtraction';
 import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtractionProgress';
 
 // Additional hooks
@@ -226,6 +229,8 @@ export default function ExtractionFullScreen() {
   });
   const reopenMutation = useReopenRun();
   const [reopening, setReopening] = useState(false);
+  const reopenExtractionMutation = useReopenExtraction();
+  const [reopenExtractionOpen, setReopenExtractionOpen] = useState(false);
   const parentRunId =
     runDetail?.run.parameters &&
     typeof runDetail.run.parameters === 'object' &&
@@ -339,6 +344,25 @@ export default function ExtractionFullScreen() {
       );
     });
     setReopening(false);
+  };
+
+  // Consensus -> extract on the SAME run (arbitrator-only). The mutation discards
+  // this run's consensus work server-side; refetch the run detail (stage + cleared
+  // consensus rows) and the form values so the screen re-renders as EXTRACT.
+  const handleReopenExtraction = () => {
+    if (!activeRunId) return;
+    void reopenExtractionMutation
+      .mutateAsync(activeRunId)
+      .then(async () => {
+        await Promise.all([refreshValues(), refetchRun()]);
+        setReopenExtractionOpen(false);
+        toast.success(t('extraction', 'reopenExtractionToast'));
+      })
+      .catch((err: unknown) => {
+        toast.error(
+          err instanceof Error ? err.message : t('pages', 'extractionScreenReopenError'),
+        );
+      });
   };
 
   // Hook to compute progress. Pass the materialized instances so optional
@@ -1093,6 +1117,11 @@ export default function ExtractionFullScreen() {
   // Reopen is surfaced via the header Menu instead of the orphaned banner.
   const canReopen = isFinalized || (!activeRunId && !!finalizedRun);
 
+  // Backward reopen (consensus -> extract): arbitrator-only, consensus stage only.
+  // resolvedCoordKeys.size is exactly what the discard removes (drives the dialog copy).
+  const canReopenExtraction = deriveCanReopenExtraction(permissions.canResolveConflicts, stage);
+  const reopenResolvedCount = resolvedCoordKeys.size;
+
   // AI extraction progress overlay (fixed-position; DOM placement irrelevant).
   const aiProgressOverlay =
     (aiExtractionState?.loading && aiExtractionState?.progress) ||
@@ -1300,6 +1329,8 @@ export default function ExtractionFullScreen() {
         canReopen={canReopen}
         onReopen={() => void handleReopen()}
         reopening={reopening}
+        canReopenExtraction={canReopenExtraction}
+        onReopenExtraction={() => setReopenExtractionOpen(true)}
       />
         }
       />
@@ -1319,6 +1350,14 @@ export default function ExtractionFullScreen() {
         extractedFieldsCount={modelToRemove?.fieldsCount || 0}
         onConfirm={handleConfirmRemoveModel}
         onCancel={() => setModelToRemove(null)}
+      />
+
+      <ReopenExtractionDialog
+        open={reopenExtractionOpen}
+        onOpenChange={setReopenExtractionOpen}
+        resolvedCount={reopenResolvedCount}
+        onConfirm={handleReopenExtraction}
+        pending={reopenExtractionMutation.isPending}
       />
     </div>
   );

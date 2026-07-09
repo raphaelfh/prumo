@@ -8730,6 +8730,55 @@
         ]
       }
     },
+    "/api/v1/runs/{run_id}/reopen-extraction": {
+      "post": {
+        "description": "Return a consensus-stage extraction run to extract, discarding consensus work.\n\nArbitrator-only (manager/consensus): this hard-deletes the run's consensus\ndecisions + published values so reviewers can edit again. The gate lives at the\nAPI layer because the service-role session bypasses RLS. See ADR-0017.",
+        "operationId": "reopen_run_to_extract_api_v1_runs__run_id__reopen_extraction_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RunSummaryResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Reopen Run To Extract",
+        "tags": [
+          "extraction-runs"
+        ]
+      }
+    },
     "/api/v1/runs/{run_id}/reviewers": {
       "get": {
         "description": "Display profiles for everyone who participated in the run.\n\nSources of \"participation\":\n  \u00b7 ProposalRecord with `source='human'` (the proposer's user id)\n  \u00b7 ReviewerDecision (the reviewer's user id)\n  \u00b7 ConsensusDecision (the arbitrator's user id)\n\nReturns the union as a list of {id, full_name, avatar_url}. The\nconsensus panel and divergence indicators consume this to render\nreal names / avatars instead of bare UUIDs.",
