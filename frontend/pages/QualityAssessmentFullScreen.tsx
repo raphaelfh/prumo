@@ -755,12 +755,15 @@ export default function QualityAssessmentFullScreen() {
           // /consensus). Gate the chrome on canResolveConflicts so a plain
           // reviewer/viewer never gets buttons whose every click would fail.
           canResolve={permissions.canResolveConflicts}
-          // Per-cell AI trace (D1-D4). QA decisionsByCoord stays empty until
-          // PR 2 (D8) creates real QA decisions; the wiring is ready for it.
-          trace={{
+          // Consensus AI trace (D2): a single top-level channel. showPeerIdentity
+          // + currentUserId gate field-level peer cross-marks to self in blind
+          // review (server already strips peer rows — this is the second layer).
+          aiTrace={{
             articleId: articleId ?? "",
             getHistory: (i, f) => getAISuggestionsHistory(i, f, 50),
             aiSuggestions: aiSuggestionsReady ? aiSuggestions : null,
+            showPeerIdentity: !!runDetail.peers_revealed || permissions.canSeeOthers,
+            currentUserId: userId ?? null,
           }}
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}

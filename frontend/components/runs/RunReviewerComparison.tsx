@@ -35,9 +35,11 @@ import {
 } from '@/components/ui/tooltip';
 import { ConsensusOverrideEditor } from '@/components/runs/ConsensusOverrideEditor';
 import { ReviewerAITrace } from '@/components/runs/ReviewerAITrace';
+import { FieldAITrace } from '@/components/runs/FieldAITrace';
 import type { FieldValueEditorField } from '@/components/extraction/FieldValueEditor';
 import type { CoordStatus, ResolvedConsensusLike } from '@/lib/runs/reconciliation';
 import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
+import { buildPeerAdoptionMap } from '@/lib/runs/adoption';
 import type { AISuggestion, AISuggestionHistoryItem } from '@/types/ai-extraction';
 import { t } from '@/lib/copy';
 import { absentReasonLabel } from '@/lib/extraction/absentReasonLabel';
@@ -73,19 +75,32 @@ export interface ComparisonInstance {
 }
 
 /**
- * Consensus AI-trace wiring (spec 2026-07-04 D1-D4): everything a reviewer
- * cell needs to mount `ReviewerAITrace`. Lives on the resolution object so
- * trace affordances exist ONLY in resolve mode.
+ * Consensus AI-trace wiring (spec 2026-07-09 D2): everything the per-field
+ * (`FieldAITrace`) and per-cell (`ReviewerAITrace`) traces need. A single
+ * top-level channel on `RunReviewerComparison` — passed UNCONDITIONALLY by the
+ * consensus panel (both resolve and read-only surfaces consume it), never
+ * nested under `resolution`. Adding this while leaving a second copy on
+ * `resolution` would be the parallel-path anti-pattern — so `resolution` no
+ * longer carries a trace.
  */
 export interface ConsensusTraceContext {
   articleId: string;
   getHistory: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   /**
-   * Screen's suggestions map keyed `${instanceId}_${fieldId}` — the D4
+   * Screen's suggestions map keyed `${instanceId}_${fieldId}` — the
    * AI-existence signal. `null` while suggestions are loading/failed so a
-   * transient error can't mislabel decisions as "Manual".
+   * transient error can't mislabel a coord as having no AI.
    */
   aiSuggestions: Record<string, AISuggestion> | null;
+  /**
+   * Whether peer identity may be revealed (`peers_revealed || canSeeOthers`).
+   * When false, field-level cross-marks collapse to the caller's own (server
+   * already strips peer rows — this is the second, fail-closed layer for blind
+   * review, matching the ran-by header's gate).
+   */
+  showPeerIdentity: boolean;
+  /** The caller's own reviewer id — the mark kept when peer identity is hidden. */
+  currentUserId: string | null;
 }
 
 /**
@@ -94,8 +109,6 @@ export interface ConsensusTraceContext {
  * page's consensus mutations (which envelope the value + refetch).
  */
 export interface ComparisonResolution {
-  /** Present ⇒ reviewer cells render the per-cell AI trace (D1/D4). */
-  trace?: ConsensusTraceContext;
   statusByCoord: ReadonlyMap<string, CoordStatus>;
   resolvedByCoord: ReadonlyMap<string, ResolvedConsensusLike>;
   needsAttentionCount: number;
@@ -127,32 +140,86 @@ export interface RunReviewerComparisonProps {
   reviewerAvatarById: Record<string, string | null | undefined>;
   /** When present, the surface renders in resolve mode (consensus stage). */
   resolution?: ComparisonResolution;
+  /**
+   * Consensus AI-trace channel (D2). Passed unconditionally by the consensus
+   * panel; drives the per-field trace on BOTH the resolve and read-only
+   * branches, plus the retained per-cell trace in resolve mode. Omitted by the
+   * extract/assess compare mounts, which keep no trace affordances.
+   */
+  aiTrace?: ConsensusTraceContext;
 }
 
 const peerKey = (instanceId: string, fieldId: string) => `${instanceId}::${fieldId}`;
 const ownKey = (instanceId: string, fieldId: string) => `${instanceId}_${fieldId}`;
 
 /**
- * D3 cross-marking input: proposal id → the OTHER reviewers (label, joined)
- * whose current decision adopted it. Excludes the cell's own reviewer (their
- * adoption is the popover's pinned-row chip) and rejects.
+ * Build the per-field trace slot (D1) for one coord. Renders the endorsement-
+ * neutral `FieldAITrace` iff the coord has an AI proposal; silent otherwise.
+ * Field-level cross-marks include the caller's own adoption (D6) and are gated
+ * to self when peer identity is hidden (blind fail-closed).
  */
-function buildAdoptionMap(
+function fieldTraceSlot(
+  aiTrace: ConsensusTraceContext | undefined,
+  instanceId: string,
+  field: ComparisonField,
   peers: ReviewerDecisionResponse[],
-  excludeReviewerId: string,
-  labelById: Record<string, string>,
-): Record<string, string> {
-  const map: Record<string, string> = {};
-  for (const d of peers) {
-    if (d.reviewer_id === excludeReviewerId || !d.proposal_record_id || d.decision === 'reject') {
-      continue;
-    }
-    const label = labelById[d.reviewer_id] ?? d.reviewer_id;
-    map[d.proposal_record_id] = map[d.proposal_record_id]
-      ? `${map[d.proposal_record_id]}, ${label}`
-      : label;
-  }
-  return map;
+  reviewerLabelById: Record<string, string>,
+): React.ReactNode {
+  if (!aiTrace) return null;
+  const key = ownKey(instanceId, field.id);
+  const hasAISuggestion = aiTrace.aiSuggestions ? !!aiTrace.aiSuggestions[key] : null;
+  // Fail fast before building the peer-adoption map: most coords have no AI
+  // proposal, and FieldAITrace renders nothing for them anyway.
+  if (hasAISuggestion !== true) return null;
+  const marks = buildPeerAdoptionMap(
+    peers,
+    reviewerLabelById,
+    aiTrace.showPeerIdentity ? undefined : { onlyReviewerId: aiTrace.currentUserId },
+  );
+  return (
+    <FieldAITrace
+      instanceId={instanceId}
+      fieldId={field.id}
+      field={field}
+      articleId={aiTrace.articleId}
+      getHistory={aiTrace.getHistory}
+      adoptionByProposalId={marks}
+      hasAISuggestion={hasAISuggestion}
+    />
+  );
+}
+
+/**
+ * Shared field-label cell (D4) for both the read-only and resolve branches.
+ * The eyebrow + label markup is byte-identical to the pre-refactor cells when
+ * no `traceSlot` is passed (extract/assess mounts stay unchanged); the trace
+ * icon trails the label text only (never the eyebrow), and the label keeps
+ * `min-w-0 truncate` alongside the shrink-0 icon (D9).
+ */
+function FieldLabelCell({
+  entityLabel,
+  fieldLabel,
+  traceSlot,
+}: {
+  entityLabel: string;
+  fieldLabel: string;
+  traceSlot?: React.ReactNode;
+}) {
+  return (
+    <th scope="row" className="py-2 pr-4 text-left font-normal text-muted-foreground">
+      <span className="block text-[11px] uppercase tracking-wide text-muted-foreground/70">
+        {entityLabel}
+      </span>
+      {traceSlot ? (
+        <span className="flex items-center gap-1">
+          <span className="min-w-0 truncate">{fieldLabel}</span>
+          {traceSlot}
+        </span>
+      ) : (
+        fieldLabel
+      )}
+    </th>
+  );
 }
 
 function displayValue(raw: unknown): string {
@@ -209,6 +276,7 @@ export function RunReviewerComparison({
   reviewerLabelById,
   reviewerAvatarById,
   resolution,
+  aiTrace,
 }: RunReviewerComparisonProps) {
   const [filter, setFilter] = useState<'attention' | 'all' | 'resolved'>('attention');
 
@@ -218,9 +286,11 @@ export function RunReviewerComparison({
     ...new Set([...decisionsByCoord.values()].flat().map((d) => d.reviewer_id)),
   ].sort();
 
-  // Read-only mode with no peers: nothing to compare. In resolve mode we still
-  // render (required gaps must show even on a solo run).
-  if (!resolution && reviewerIds.length === 0) {
+  // Read-only mode with no peers: nothing to compare — UNLESS a trace context
+  // is present, in which case a non-resolver/viewer at consensus must still see
+  // the per-field AI trace on the field rows (the feature's core justification).
+  // In resolve mode we always render (required gaps must show on a solo run).
+  if (!resolution && !aiTrace && reviewerIds.length === 0) {
     return (
       <div className="p-8 text-center" data-testid="run-reviewer-comparison-empty">
         <p className="text-sm font-medium text-foreground">{t('shared', 'compareNoPeers')}</p>
@@ -246,6 +316,7 @@ export function RunReviewerComparison({
         reviewerLabelById={reviewerLabelById}
         reviewerAvatarById={reviewerAvatarById}
         resolution={resolution}
+        aiTrace={aiTrace}
         filter={filter}
         setFilter={setFilter}
       />
@@ -253,6 +324,9 @@ export function RunReviewerComparison({
   }
 
   return (
+    // TooltipProvider (renders no DOM — pure context) so the per-field trace's
+    // tooltip works in the read-only branch too; harmless when no trace mounts.
+    <TooltipProvider delayDuration={300}>
     <div className="overflow-x-auto" data-testid="run-reviewer-comparison">
       <table className="w-full border-collapse text-sm">
         <thead>
@@ -277,21 +351,18 @@ export function RunReviewerComparison({
               et.fields.map((field) => {
                 const peers = decisionsByCoord.get(peerKey(inst.id, field.id)) ?? [];
                 const fieldLabel = field.label ?? field.name ?? field.id;
+                const entityLabel =
+                  (et.label ?? et.name ?? '') + (inst.label ? ` · ${inst.label}` : '');
                 return (
                   <tr
                     key={`${inst.id}_${field.id}`}
                     className="border-b border-border/30 align-top"
                   >
-                    <th
-                      scope="row"
-                      className="py-2 pr-4 text-left font-normal text-muted-foreground"
-                    >
-                      <span className="block text-[11px] uppercase tracking-wide text-muted-foreground/70">
-                        {et.label ?? et.name ?? ''}
-                        {inst.label ? ` · ${inst.label}` : ''}
-                      </span>
-                      {fieldLabel}
-                    </th>
+                    <FieldLabelCell
+                      entityLabel={entityLabel}
+                      fieldLabel={fieldLabel}
+                      traceSlot={fieldTraceSlot(aiTrace, inst.id, field, peers, reviewerLabelById)}
+                    />
                     <td className="px-3 py-2">{displayValue(ownValues[ownKey(inst.id, field.id)])}</td>
                     {reviewerIds.map((rid) => {
                       const decision = peers.find((d) => d.reviewer_id === rid);
@@ -317,6 +388,7 @@ export function RunReviewerComparison({
         </tbody>
       </table>
     </div>
+    </TooltipProvider>
   );
 }
 
@@ -336,6 +408,7 @@ function ResolveTable({
   reviewerLabelById,
   reviewerAvatarById,
   resolution,
+  aiTrace,
   filter,
   setFilter,
 }: {
@@ -346,6 +419,7 @@ function ResolveTable({
   reviewerLabelById: Record<string, string>;
   reviewerAvatarById: Record<string, string | null | undefined>;
   resolution: ComparisonResolution;
+  aiTrace?: ConsensusTraceContext;
   filter: 'attention' | 'all' | 'resolved';
   setFilter: (f: 'attention' | 'all' | 'resolved') => void;
 }) {
@@ -451,7 +525,7 @@ function ResolveTable({
                     columnCount={columnCount}
                     onSelectExisting={resolution.onSelectExisting}
                     onManualOverride={resolution.onManualOverride}
-                    trace={resolution.trace}
+                    aiTrace={aiTrace}
                   />
                 ))}
               </tbody>
@@ -475,7 +549,7 @@ function ResolveRow({
   columnCount,
   onSelectExisting,
   onManualOverride,
-  trace,
+  aiTrace,
 }: {
   row: FlatRow;
   peers: ReviewerDecisionResponse[];
@@ -490,7 +564,7 @@ function ResolveRow({
   columnCount: number;
   onSelectExisting: ComparisonResolution['onSelectExisting'];
   onManualOverride: ComparisonResolution['onManualOverride'];
-  trace?: ConsensusTraceContext;
+  aiTrace?: ConsensusTraceContext;
 }) {
   const [editing, setEditing] = useState(false);
   const [overrideOpen, setOverrideOpen] = useState(false);
@@ -528,12 +602,11 @@ function ResolveRow({
         className="border-b border-border/30 align-top"
         data-testid={`consensus-coord-${row.coordKey}`}
       >
-        <th scope="row" className="py-2 pr-4 text-left font-normal text-muted-foreground">
-          <span className="block text-[11px] uppercase tracking-wide text-muted-foreground/70">
-            {row.entityLabel}
-          </span>
-          {row.fieldLabel}
-        </th>
+        <FieldLabelCell
+          entityLabel={row.entityLabel}
+          fieldLabel={row.fieldLabel}
+          traceSlot={fieldTraceSlot(aiTrace, row.instanceId, row.field, peers, reviewerLabelById)}
+        />
         {reviewerIds.map((rid) => {
           const decision = peers.find((d) => d.reviewer_id === rid);
           const isReject = decision?.decision === 'reject';
@@ -547,17 +620,19 @@ function ResolveRow({
                 <span className="flex flex-col items-start gap-1">
                   <span className="flex items-center gap-1">
                     <span>{displayValue(decision.value)}</span>
-                    {trace ? (
+                    {aiTrace ? (
                       <ReviewerAITrace
                         decision={decision}
                         field={row.field}
-                        articleId={trace.articleId}
-                        getHistory={trace.getHistory}
+                        articleId={aiTrace.articleId}
+                        getHistory={aiTrace.getHistory}
                         reviewerLabel={reviewerLabelById[rid] ?? rid}
-                        adoptionByProposalId={buildAdoptionMap(peers, rid, reviewerLabelById)}
+                        adoptionByProposalId={buildPeerAdoptionMap(peers, reviewerLabelById, {
+                          excludeReviewerId: rid,
+                        })}
                         hasAISuggestion={
-                          trace.aiSuggestions
-                            ? !!trace.aiSuggestions[ownKey(row.instanceId, row.field.id)]
+                          aiTrace.aiSuggestions
+                            ? !!aiTrace.aiSuggestions[ownKey(row.instanceId, row.field.id)]
                             : null
                         }
                       />

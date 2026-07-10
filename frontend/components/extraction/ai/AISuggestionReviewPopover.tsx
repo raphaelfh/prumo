@@ -26,7 +26,7 @@ import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem, EvidenceCitation, RunProvenance} from '@/types/ai-extraction';
 import {formatFullSuggestionValue, isAbstention} from '@/lib/ai-extraction/suggestionUtils';
-import {decisionMatchesVersion} from '@/lib/runs/valueEquality';
+import {adoptionWording, type PeerAdoptionMark} from '@/lib/runs/adoption';
 import {initials} from '@/components/runs/ReviewerAvatarStack';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
@@ -133,8 +133,10 @@ interface VersionRowProps {
   isSelected: boolean;
   /** Replaces the "Selected" chip text (consensus: "Adopted/Edited by {name}"). */
   selectedChipLabel?: string;
-  /** Small tag naming OTHER reviewers who adopted this version (D3). */
-  crossTag?: string;
+  /** Reviewers whose CURRENT decision links to THIS version (D6). The Adopted-
+   *  vs-Edited split is computed here against the now-loaded `version.value`;
+   *  existence was already decided by the caller keying on the append-only link. */
+  marks?: PeerAdoptionMark[];
   onUse: () => void;
   onOpenDetails: (provenance: RunProvenance) => void;
   /** Read-only run: the row is audit-only — no "Use this version" action. */
@@ -143,10 +145,23 @@ interface VersionRowProps {
   allowedValues?: unknown;
 }
 
-function VersionRow({version, isSelected, selectedChipLabel, crossTag, onUse, onOpenDetails, readOnly, fieldType, allowedValues}: VersionRowProps) {
+function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpenDetails, readOnly, fieldType, allowedValues}: VersionRowProps) {
   const fieldContext = {fieldType, allowedValues};
   const [expanded, setExpanded] = useState(false);
   const showDetails = isSelected || expanded;
+
+  // Honest peer cross-marks: partition into Adopted vs Edited against the
+  // loaded version value in one pass. Value comparison only refines wording —
+  // it never created these marks (the caller keyed them on the link).
+  const adoptedNames: string[] = [];
+  const editedNames: string[] = [];
+  for (const m of marks ?? []) {
+    const bucket =
+      adoptionWording(m.decisionKind, m.decisionValue, version) === 'adopted'
+        ? adoptedNames
+        : editedNames;
+    bucket.push(m.reviewerLabel);
+  }
 
   const noInfo = isAbstention(version.value);
   const hasReasoning = !!version.reasoning?.trim();
@@ -192,9 +207,14 @@ function VersionRow({version, isSelected, selectedChipLabel, crossTag, onUse, on
               {confidencePercent}%{isLow ? ` · ${t('extraction', 'reviewLowConfidence')}` : ''}
             </Badge>
           )}
-          {crossTag && (
+          {adoptedNames.length > 0 && (
             <span className="inline-flex items-center rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              {crossTag}
+              {t('extraction', 'reviewAdoptedBy').replace('{{name}}', adoptedNames.join(', '))}
+            </span>
+          )}
+          {editedNames.length > 0 && (
+            <span className="inline-flex items-center rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              {t('extraction', 'reviewEditedBy').replace('{{name}}', editedNames.join(', '))}
             </span>
           )}
           {isSelected ? (
@@ -269,11 +289,16 @@ interface AISuggestionReviewPopoverProps {
    *  The pinned row's chip reads "Adopted by {name}" when the decision kept
    *  the AI value (or is an accept_proposal, whose value is null by
    *  contract), "Edited by {name}" when it differs — D3. */
-  adoption?: {reviewerLabel: string; decisionValue: unknown; decisionKind: string};
-  /** proposal id → other reviewer label(s); matching version rows get a small
-   *  "Adopted by {label}" tag so shared history under one reviewer's title
-   *  cannot mis-read as "nobody else adopted" — D3 cross-marking. */
-  adoptionByProposalId?: Record<string, string>;
+  adoption?: PeerAdoptionMark;
+  /** proposal id → the reviewers whose current decision LINKS to that version;
+   *  matching version rows get honest "Adopted by / Edited by {names}" tags
+   *  (existence keyed on the link, wording refined per loaded value — D6). */
+  adoptionByProposalId?: Record<string, PeerAdoptionMark[]>;
+  /** When no explicit selection is known, fall back to painting the newest
+   *  version as "Selected". True for the write path (the newest suggestion is
+   *  effectively active); pass false on a pure-audit surface (per-field trace)
+   *  so a value nobody chose is never mislabeled as chosen — D8. */
+  pinNewestWhenNoSelection?: boolean;
   trigger: React.ReactNode;
   align?: 'start' | 'center' | 'end';
   /** Field type + allowed_values so each version resolves a select/multiselect
@@ -286,7 +311,7 @@ interface AISuggestionReviewPopoverProps {
 }
 
 export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps) {
-  const {instanceId, fieldId, getHistory, selectedProposalId, onSelect, onClear, trigger, align, fieldType, allowedValues, articleId, title, adoption, adoptionByProposalId} = props;
+  const {instanceId, fieldId, getHistory, selectedProposalId, onSelect, onClear, trigger, align, fieldType, allowedValues, articleId, title, adoption, adoptionByProposalId, pinNewestWhenNoSelection = true} = props;
 
   // Read-only run: the popover stays available as audit trail, but the
   // write actions (Use this version / Clear) hide. An absent onSelect makes
@@ -340,7 +365,8 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
     });
   }, [open, instanceId, fieldId, getHistory]);
 
-  const effectiveSelected = localSelected ?? selectedProposalId ?? history[0]?.id;
+  const effectiveSelected =
+    localSelected ?? selectedProposalId ?? (pinNewestWhenNoSelection ? history[0]?.id : undefined);
 
   // D5: the pinned version can be older than the loaded history window. Say
   // so explicitly — silently dropping the pin would erase the attribution.
@@ -368,14 +394,17 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
   };
 
   // D3 adoption chip: name the reviewer on the pinned row and say honestly
-  // whether they kept the AI value or edited it afterwards. accept_proposal
-  // decisions carry value=null by contract — always "Adopted by".
+  // whether they kept the AI value or edited it afterwards. Fails closed to
+  // "Adopted by" for accept_proposal (value=null by contract) and for a pin
+  // that fell outside the loaded window (`pinnedVersion` undefined) — never a
+  // fabricated "Edited by" from comparing against an absent value (D5).
   const pinnedVersion = history.find((h) => h.id === effectiveSelected);
   const adoptionChipLabel = adoption
-    ? (adoption.decisionKind === 'accept_proposal' ||
-       decisionMatchesVersion(adoption.decisionValue, pinnedVersion?.value)
-        ? t('extraction', 'reviewAdoptedBy')
-        : t('extraction', 'reviewEditedBy')
+    ? t(
+        'extraction',
+        adoptionWording(adoption.decisionKind, adoption.decisionValue, pinnedVersion) === 'adopted'
+          ? 'reviewAdoptedBy'
+          : 'reviewEditedBy',
       ).replace('{{name}}', adoption.reviewerLabel)
     : undefined;
 
@@ -458,14 +487,7 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
                     version={version}
                     isSelected={version.id === effectiveSelected}
                     selectedChipLabel={adoptionChipLabel}
-                    crossTag={
-                      adoptionByProposalId?.[version.id]
-                        ? t('extraction', 'reviewAdoptedBy').replace(
-                            '{{name}}',
-                            adoptionByProposalId[version.id],
-                          )
-                        : undefined
-                    }
+                    marks={adoptionByProposalId?.[version.id]}
                     onUse={() => handleUse(version)}
                     onOpenDetails={handleOpenDetails}
                     readOnly={readOnlyEffective}

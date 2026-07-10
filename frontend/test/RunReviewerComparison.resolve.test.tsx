@@ -12,6 +12,7 @@ vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
 import {
   RunReviewerComparison,
   type ComparisonResolution,
+  type ConsensusTraceContext,
 } from '@/components/runs/RunReviewerComparison';
 import { deriveConsensusResolution } from '@/lib/runs/reconciliation';
 import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
@@ -72,11 +73,10 @@ function buildResolution(
     peersRevealed: over.peersRevealed ?? true,
     onSelectExisting: over.onSelectExisting ?? vi.fn(),
     onManualOverride: over.onManualOverride ?? vi.fn(),
-    trace: over.trace,
   };
 }
 
-const renderResolve = (resolution: ComparisonResolution) =>
+const renderResolve = (resolution: ComparisonResolution, aiTrace?: ConsensusTraceContext) =>
   render(
     <RunReviewerComparison
       decisionsByCoord={decisionsByCoord}
@@ -86,6 +86,7 @@ const renderResolve = (resolution: ComparisonResolution) =>
       reviewerLabelById={reviewerLabelById}
       reviewerAvatarById={reviewerAvatarById}
       resolution={resolution}
+      aiTrace={aiTrace}
     />,
   );
 
@@ -261,17 +262,24 @@ describe('RunReviewerComparison — resolve mode', () => {
 
 describe('RunReviewerComparison — per-cell AI trace (D1/D4)', () => {
   // Key format matches getSuggestionKey: `${instanceId}_${fieldId}`.
-  const traceWithSuggestion = {
+  const traceWithSuggestion: ConsensusTraceContext = {
     articleId: 'a1',
     getHistory: async () => [],
     aiSuggestions: {
       'inst-1_field-1': { id: 'p1', status: 'pending' } as never,
     },
+    showPeerIdentity: true,
+    currentUserId: 'user-a',
   };
+  const trace = (over: Partial<ConsensusTraceContext>): ConsensusTraceContext => ({
+    ...traceWithSuggestion,
+    ...over,
+  });
 
   const renderWith = (
     decisions: ReviewerDecisionResponse[],
     resolution: ComparisonResolution,
+    aiTrace?: ConsensusTraceContext,
   ) =>
     render(
       <RunReviewerComparison
@@ -282,20 +290,24 @@ describe('RunReviewerComparison — per-cell AI trace (D1/D4)', () => {
         reviewerLabelById={reviewerLabelById}
         reviewerAvatarById={reviewerAvatarById}
         resolution={resolution}
+        aiTrace={aiTrace}
       />,
     );
 
-  it('renders the trace icon on linked reviewer cells — including AGREED rows', () => {
+  it('renders the per-cell trace icon on linked reviewer cells — including AGREED rows', () => {
     // Both reviewers adopted the same AI basis with the same value: agreed.
     renderWith(
       [
         dec({ id: 'dec-a', reviewer_id: 'user-a', proposal_record_id: 'p1', value: { value: 'Yes' } }),
         dec({ id: 'dec-b', reviewer_id: 'user-b', proposal_record_id: 'p1', value: { value: 'Yes' } }),
       ],
-      buildResolution({ divergentCoords: new Set(), trace: traceWithSuggestion }),
+      buildResolution({ divergentCoords: new Set() }),
+      traceWithSuggestion,
     );
     // Agreed rows hide under the default attention filter — show All first.
     fireEvent.click(screen.getByTestId('consensus-filter-all'));
+    // Two per-cell (ReviewerAITrace) icons; the per-field icon uses a distinct
+    // aria-label (fieldTraceAria), so the traceTitle count stays at 2.
     expect(screen.getAllByRole('button', { name: 'traceTitle' })).toHaveLength(2);
   });
 
@@ -305,9 +317,8 @@ describe('RunReviewerComparison — per-cell AI trace (D1/D4)', () => {
         dec({ id: 'dec-a', reviewer_id: 'user-a', proposal_record_id: 'p1', value: { value: 'Yes' } }),
         dec({ id: 'dec-b', reviewer_id: 'user-b', proposal_record_id: null, value: { value: 'No' } }),
       ],
-      buildResolution({
-        trace: { articleId: 'a1', getHistory: async () => [], aiSuggestions: {} },
-      }),
+      buildResolution({}),
+      trace({ aiSuggestions: {} }),
     );
     expect(screen.getAllByRole('button', { name: 'traceTitle' })).toHaveLength(1);
     expect(screen.getByText('traceManualChip')).toBeInTheDocument();
@@ -319,9 +330,8 @@ describe('RunReviewerComparison — per-cell AI trace (D1/D4)', () => {
         dec({ id: 'dec-a', reviewer_id: 'user-a', proposal_record_id: null, value: { value: 'Yes' } }),
         dec({ id: 'dec-b', reviewer_id: 'user-b', proposal_record_id: null, value: { value: 'No' } }),
       ],
-      buildResolution({
-        trace: { articleId: 'a1', getHistory: async () => [], aiSuggestions: null },
-      }),
+      buildResolution({}),
+      trace({ aiSuggestions: null }),
     );
     expect(screen.queryByRole('button', { name: 'traceTitle' })).not.toBeInTheDocument();
     expect(screen.queryByText('traceManualChip')).not.toBeInTheDocument();
@@ -334,7 +344,6 @@ describe('RunReviewerComparison — per-cell AI trace (D1/D4)', () => {
         dec({ id: 'dec-b', reviewer_id: 'user-b', proposal_record_id: 'p2', value: { value: 'No' } }),
       ],
       buildResolution({
-        trace: traceWithSuggestion,
         consensusDecisions: [
           {
             instance_id: 'inst-1',
@@ -345,6 +354,7 @@ describe('RunReviewerComparison — per-cell AI trace (D1/D4)', () => {
           },
         ],
       }),
+      traceWithSuggestion,
     );
     // Resolved rows hide under the default attention filter.
     fireEvent.click(screen.getByTestId('consensus-filter-resolved'));
@@ -355,7 +365,7 @@ describe('RunReviewerComparison — per-cell AI trace (D1/D4)', () => {
     expect(within(consensusCell).queryByText('traceManualChip')).not.toBeInTheDocument();
   });
 
-  it('renders no trace anywhere when the resolution carries no trace context', () => {
+  it('renders no trace anywhere when no aiTrace context is passed', () => {
     renderWith(
       [
         dec({ id: 'dec-a', reviewer_id: 'user-a', proposal_record_id: 'p1', value: { value: 'Yes' } }),
@@ -364,5 +374,66 @@ describe('RunReviewerComparison — per-cell AI trace (D1/D4)', () => {
       buildResolution({}),
     );
     expect(screen.queryByRole('button', { name: 'traceTitle' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'fieldTraceAria' })).not.toBeInTheDocument();
+  });
+});
+
+describe('RunReviewerComparison — per-field AI trace (D1/D2)', () => {
+  const aiTrace: ConsensusTraceContext = {
+    articleId: 'a1',
+    getHistory: async () => [],
+    aiSuggestions: { 'inst-1_field-1': { id: 'p1', status: 'pending' } as never },
+    showPeerIdentity: true,
+    currentUserId: 'user-a',
+  };
+
+  it('renders the per-field icon in the READ-ONLY branch (non-resolver at consensus)', () => {
+    // No `resolution` ⇒ read-only branch. aiTrace present ⇒ the field-label row
+    // still shows the AI trace — the feature's core justification.
+    render(
+      <RunReviewerComparison
+        decisionsByCoord={decisionsByCoord}
+        entityTypes={entityTypes}
+        instances={instances}
+        ownValues={{}}
+        reviewerLabelById={reviewerLabelById}
+        reviewerAvatarById={reviewerAvatarById}
+        aiTrace={aiTrace}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'fieldTraceAria' })).toBeInTheDocument();
+  });
+
+  it('scope boundary: NO per-field icon when no aiTrace, but the field label still renders', () => {
+    render(
+      <RunReviewerComparison
+        decisionsByCoord={decisionsByCoord}
+        entityTypes={entityTypes}
+        instances={instances}
+        ownValues={{}}
+        reviewerLabelById={reviewerLabelById}
+        reviewerAvatarById={reviewerAvatarById}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'fieldTraceAria' })).not.toBeInTheDocument();
+    expect(screen.getByText('Outcome')).toBeInTheDocument();
+  });
+
+  it('renders the per-field icon even on a solo/blind run with no peer columns', () => {
+    // Empty decisionsByCoord ⇒ zero peer columns; the read-only branch must NOT
+    // early-return the "no peers" empty state when aiTrace is present.
+    render(
+      <RunReviewerComparison
+        decisionsByCoord={new Map()}
+        entityTypes={entityTypes}
+        instances={instances}
+        ownValues={{}}
+        reviewerLabelById={{}}
+        reviewerAvatarById={{}}
+        aiTrace={aiTrace}
+      />,
+    );
+    expect(screen.queryByTestId('run-reviewer-comparison-empty')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'fieldTraceAria' })).toBeInTheDocument();
   });
 });
