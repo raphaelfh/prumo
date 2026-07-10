@@ -37,9 +37,10 @@ export interface ConsensusResolutionPanelProps {
   peersRevealed: boolean;
   /** Whether this caller may resolve (arbitrator for extraction; reviewer for QA). */
   canResolve: boolean;
-  /** Per-cell AI trace wiring (spec 2026-07-04 D1-D4); forwarded into the
-   *  resolve-mode table. Omit to render the table without trace affordances. */
-  trace?: ConsensusTraceContext;
+  /** Consensus AI-trace wiring (spec 2026-07-09 D2); forwarded UNCONDITIONALLY
+   *  as a top-level channel so the per-field trace reaches non-resolvers/viewers
+   *  too — only the resolve chrome stays gated behind `canResolve`. */
+  aiTrace?: ConsensusTraceContext;
   onSelectExisting: (p: {
     instanceId: string;
     fieldId: string;
@@ -69,7 +70,7 @@ export function ConsensusResolutionPanel({
   isFinalizing,
   peersRevealed,
   canResolve,
-  trace,
+  aiTrace,
   onSelectExisting,
   onManualOverride,
   onFinalize,
@@ -111,6 +112,7 @@ export function ConsensusResolutionPanel({
         ownValues={ownValues}
         reviewerLabelById={reviewerLabelById}
         reviewerAvatarById={reviewerAvatarById}
+        aiTrace={aiTrace}
         resolution={
           canResolve
             ? {
@@ -122,7 +124,6 @@ export function ConsensusResolutionPanel({
                 peersRevealed,
                 onSelectExisting,
                 onManualOverride,
-                trace,
               }
             : undefined
         }

@@ -180,21 +180,69 @@ describe('AISuggestionReviewPopover — consensus reuse (D2/D3)', () => {
     expect(await screen.findByText('Adopted by Ana')).toBeInTheDocument();
   });
 
-  it('cross-marks versions other reviewers adopted', async () => {
+  it('cross-marks split Adopted vs Edited per peer, keyed on the link (D6)', async () => {
     const user = userEvent.setup();
     render(
       <AISuggestionReviewPopover
         instanceId="i"
         fieldId="f"
-        getHistory={async () => [v({ id: 'p2' }), v({ id: 'p1' })]}
+        getHistory={async () => [v({ id: 'p2', value: 'Retrospective cohort' }), v({ id: 'p1' })]}
         selectedProposalId="p1"
-        adoptionByProposalId={{ p2: 'Bruno' }}
+        adoptionByProposalId={{
+          p2: [
+            // accept_proposal (value=null) → Adopted, no value check
+            { reviewerLabel: 'Bruno', decisionValue: null, decisionKind: 'accept_proposal' },
+            // linked edit whose value DIFFERS from p2's value → Edited
+            { reviewerLabel: 'Carla', decisionValue: { value: 'changed it' }, decisionKind: 'edit' },
+          ],
+        }}
         trigger={<button>open</button>}
       />,
     );
     await user.click(screen.getByText('open'));
     await screen.findAllByText('Retrospective cohort');
     expect(screen.getByText('Adopted by Bruno')).toBeInTheDocument();
+    expect(screen.getByText('Edited by Carla')).toBeInTheDocument();
+  });
+
+  it('never fabricates "Edited by" when the linked version is outside the loaded window (D5)', async () => {
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({ id: 'p-newer' })]}
+        selectedProposalId="p-ancient"
+        adoption={{ reviewerLabel: 'Ana', decisionValue: { value: 'stale edit' }, decisionKind: 'edit' }}
+        trigger={<button>open</button>}
+      />,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findByText('Retrospective cohort');
+    // The pin fell out of the loaded window → the "not in history" banner shows
+    // and the attribution degrades to silent omission (fail-closed, spec D5) —
+    // crucially, it is NEVER a fabricated "Edited by" from comparing against an
+    // absent value. `adoptionWording(..., undefined) → 'adopted'` is unit-tested
+    // in adoption.test.ts; here we guard the no-fabrication invariant.
+    expect(screen.getByText('reviewPinNotInHistory')).toBeInTheDocument();
+    expect(screen.queryByText('Edited by Ana')).not.toBeInTheDocument();
+  });
+
+  it('suppresses the newest-version "Selected" chip when pinNewestWhenNoSelection is false (D8)', async () => {
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({ id: 'p2' }), v({ id: 'p1' })]}
+        pinNewestWhenNoSelection={false}
+        trigger={<button>open</button>}
+      />,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findAllByText('Retrospective cohort');
+    // No explicit selection + suppression → nothing painted as "Selected".
+    expect(screen.queryByText('reviewSelected')).not.toBeInTheDocument();
   });
 });
 

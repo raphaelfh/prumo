@@ -961,6 +961,59 @@ async def test_approve_and_finalize_real_form_double_wrapped_unit_diverges(
     await db_session.rollback()
 
 
+@pytest.mark.asyncio
+async def test_approve_and_finalize_qa_publishes_agreed_and_finalizes(
+    db_session: AsyncSession,
+) -> None:
+    """QA runs finalize through the SAME approve-finalize as extraction (staged
+    HITL flow parity): agreed reviewer decisions publish automatically, then
+    the run advances CONSENSUS → FINALIZED. Regression guard: the service used
+    to reject kind='quality_assessment' because the frontend drove a one-shot
+    extract→consensus→finalized publish that skipped the consensus stage.
+
+    The agreed value here is an ADR-0016 absent_reason marker so the test also
+    pins that approve-finalize publishes marker envelopes VERBATIM for the QA
+    kind ({value: null, absent_reason} — never double-wrapped)."""
+    from app.services.extraction_review_service import ExtractionReviewService
+    from tests.integration.test_extraction_proposal_service import (
+        _setup_qa_run_with_instance_field,
+    )
+
+    built = await _setup_qa_run_with_instance_field(db_session)
+    if built is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, profile_id = built
+
+    marker = {"value": None, "absent_reason": "no_information"}
+    await ExtractionReviewService(db_session).record_decision(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        reviewer_id=profile_id,
+        decision="edit",
+        value=marker,
+    )
+    svc = RunLifecycleService(db_session)
+    await svc.advance_stage(run_id=run_id, target_stage="consensus", user_id=profile_id)
+
+    finalized, published_count = await svc.approve_and_finalize(run_id=run_id, user_id=profile_id)
+    assert finalized.stage == ExtractionRunStage.FINALIZED.value
+    assert published_count == 1
+
+    published = (
+        (
+            await db_session.execute(
+                text("SELECT value FROM public.extraction_published_states WHERE run_id = :r"),
+                {"r": str(run_id)},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert published == [marker]
+    await db_session.rollback()
+
+
 # ---------------------------------------------------------------------------
 # D8-c: QA decision materialization at extract -> consensus
 # ---------------------------------------------------------------------------

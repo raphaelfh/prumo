@@ -102,6 +102,10 @@ export const consensus = {
     traceManualChip: 'Manual',
     traceManualChipTooltip: 'Entered manually — no AI suggestion in this run for this field.',
 
+    // Per-field AI trace (spec 2026-07-09 D1) — endorsement-neutral: "the AI
+    // proposed something for this field", never "this value is AI-derived".
+    fieldTraceAria: 'AI suggestions for this field',
+
     // Resolved-state summary
     resolvedFromReviewer: 'from {{reviewer}}',
     resolvedCustom: 'custom value',

@@ -1166,13 +1166,17 @@ export default function ExtractionFullScreen() {
           reviewerLabelById={reviewerProfiles.labelById}
           reviewerAvatarById={reviewerProfiles.avatarById}
           canResolve={permissions.canResolveConflicts}
-          // Per-cell AI trace (D1-D4): deeper history window (50) so adopted
-          // versions rarely fall outside it; a not-yet-loaded/failed
-          // suggestions map passes null so no cell mislabels as Manual.
-          trace={{
+          // Consensus AI trace (D2): a single top-level channel, deeper history
+          // window (50) so adopted versions rarely fall outside it; a not-yet-
+          // loaded/failed suggestions map passes null so no coord mislabels.
+          // showPeerIdentity + currentUserId gate field-level peer cross-marks
+          // to self in blind review (server already strips peer rows).
+          aiTrace={{
             articleId: articleId || '',
             getHistory: (i, f) => getSuggestionsHistory(i, f, 50),
             aiSuggestions: aiSuggestionsReady ? aiSuggestions : null,
+            showPeerIdentity: !!runDetail.peers_revealed || permissions.canSeeOthers,
+            currentUserId: currentUserId || null,
           }}
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}

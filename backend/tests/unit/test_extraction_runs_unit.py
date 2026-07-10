@@ -19,6 +19,7 @@ from fastapi import HTTPException
 
 from app.api.deps.security import ensure_project_arbitrator
 from app.api.v1.endpoints.extraction_runs import (
+    advance_run,
     approve_and_finalize_run,
     create_consensus,
     get_run,
@@ -26,7 +27,11 @@ from app.api.v1.endpoints.extraction_runs import (
     mark_run_ready,
 )
 from app.models.extraction_workflow import ExtractionReviewerReady
-from app.schemas.extraction_run import CreateConsensusRequest, MarkReadyRequest
+from app.schemas.extraction_run import (
+    AdvanceStageRequest,
+    CreateConsensusRequest,
+    MarkReadyRequest,
+)
 from app.services.coordinate_coherence import CoordinateMismatchError
 from app.services.extraction_consensus_service import (
     InvalidConsensusError,
@@ -196,8 +201,9 @@ async def test_consensus_extraction_requires_arbitrator() -> None:
 
 
 @pytest.mark.asyncio
-async def test_consensus_quality_assessment_requires_reviewer() -> None:
-    """QA "publish assessment" stays at reviewer level (single-reviewer self-publish)."""
+async def test_consensus_quality_assessment_requires_arbitrator() -> None:
+    """QA mirrors extraction (2026-07-09): the consensus publish is an
+    arbitrator action for BOTH kinds — a plain reviewer no longer self-publishes."""
     with (
         patch(
             f"{_EP}._load_run_and_check_member",
@@ -217,6 +223,60 @@ async def test_consensus_quality_assessment_requires_reviewer() -> None:
                 current_user_sub=uuid4(),
             )
     assert raised.value.status_code == 400
+    arb.assert_awaited_once()
+    rev.assert_not_called()
+
+
+# --------------------------------------------------------------------------
+# POST /runs/{id}/advance — finalize is arbitrator-gated (both kinds)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_advance_to_finalized_requires_arbitrator() -> None:
+    """Flipping a run to FINALIZED via /advance demands the arbitrator role on
+    top of the reviewer gate, closing the reviewer-level bypass around
+    /approve-finalize. Direct-coroutine test (the ASGI transport hides these
+    handler lines from diff-cover)."""
+    with (
+        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run_summary())),
+        patch(f"{_EP}.ensure_project_reviewer", AsyncMock()) as rev,
+        patch(f"{_EP}.ensure_project_arbitrator", AsyncMock()) as arb,
+        patch(f"{_EP}.RunLifecycleService") as svc,
+    ):
+        svc.return_value.advance_stage = AsyncMock(side_effect=InvalidStageTransitionError("stop"))
+        with pytest.raises(HTTPException) as raised:
+            await advance_run(
+                run_id=uuid4(),
+                body=AdvanceStageRequest(target_stage="finalized"),
+                request=_request(),
+                db=AsyncMock(),
+                current_user_sub=uuid4(),
+            )
+    assert raised.value.status_code == 400
+    rev.assert_awaited_once()
+    arb.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_advance_to_consensus_skips_arbitrator_gate() -> None:
+    """Non-finalize transitions (e.g. extract→consensus) stay reviewer-level —
+    the arbitrator gate is NOT invoked, matching extraction."""
+    with (
+        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run_summary())),
+        patch(f"{_EP}.ensure_project_reviewer", AsyncMock()) as rev,
+        patch(f"{_EP}.ensure_project_arbitrator", AsyncMock()) as arb,
+        patch(f"{_EP}.RunLifecycleService") as svc,
+    ):
+        svc.return_value.advance_stage = AsyncMock(side_effect=InvalidStageTransitionError("stop"))
+        with pytest.raises(HTTPException):
+            await advance_run(
+                run_id=uuid4(),
+                body=AdvanceStageRequest(target_stage="consensus"),
+                request=_request(),
+                db=AsyncMock(),
+                current_user_sub=uuid4(),
+            )
     rev.assert_awaited_once()
     arb.assert_not_called()
 
@@ -278,15 +338,18 @@ async def test_approve_finalize_service_raises_when_run_missing() -> None:
 
 
 @pytest.mark.asyncio
-async def test_approve_finalize_service_rejects_non_extraction_run() -> None:
+async def test_approve_finalize_service_rejects_wrong_stage() -> None:
+    """Both kinds qualify since the QA staged-flow parity; the remaining
+    pre-flight guard is the stage check (QA integration coverage lives in
+    test_run_lifecycle_service.test_approve_and_finalize_qa_*)."""
     svc = RunLifecycleService(AsyncMock())
-    qa_run = MagicMock(kind="quality_assessment")
+    qa_run = MagicMock(kind="quality_assessment", stage="extract")
     with (
         patch(
             "app.services.run_lifecycle_service.load_run_for_update",
             AsyncMock(return_value=qa_run),
         ),
-        pytest.raises(InvalidStageTransitionError, match="extraction runs only"),
+        pytest.raises(InvalidStageTransitionError, match="consensus"),
     ):
         await svc.approve_and_finalize(run_id=uuid4(), user_id=uuid4())
 

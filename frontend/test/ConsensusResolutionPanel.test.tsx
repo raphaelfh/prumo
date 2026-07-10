@@ -170,7 +170,7 @@ describe('ConsensusResolutionPanel', () => {
     expect(screen.getByText('youLabel')).toBeInTheDocument();
   });
 
-  it('forwards the trace context into the resolve table (icon on linked cells)', () => {
+  it('forwards the aiTrace context into the resolve table (per-cell icon on linked cells)', () => {
     const linked = [
       dec({ id: 'dec-a', reviewer_id: 'user-a', proposal_record_id: 'p1', value: { value: 'Yes' } }),
       dec({ id: 'dec-b', reviewer_id: 'user-b', value: { value: 'No' } }),
@@ -181,10 +181,38 @@ describe('ConsensusResolutionPanel', () => {
         summary={{ ...summary, decisionsByCoord: new Map([['inst-1::field-1', linked]]) }}
         runDetail={makeRunDetail([])}
         canResolve
-        trace={{ articleId: 'a1', getHistory: async () => [], aiSuggestions: {} }}
+        aiTrace={{
+          articleId: 'a1',
+          getHistory: async () => [],
+          aiSuggestions: {},
+          showPeerIdentity: true,
+          currentUserId: 'user-a',
+        }}
       />,
     );
-    // user-a's linked cell gets the trace icon (aria-label = traceTitle key-echo).
+    // user-a's linked cell gets the per-cell trace icon (aria-label = traceTitle key-echo).
     expect(screen.getByRole('button', { name: 'traceTitle' })).toBeInTheDocument();
+  });
+
+  it('passes aiTrace UNCONDITIONALLY: a non-resolver (canResolve=false) still sees the per-field icon (D2)', () => {
+    // The core justification — a non-arbitrator / viewer at consensus lands on
+    // the read-only compare, and must still see where a field's value came from.
+    render(
+      <ConsensusResolutionPanel
+        {...baseProps}
+        runDetail={makeRunDetail([])}
+        canResolve={false}
+        aiTrace={{
+          articleId: 'a1',
+          getHistory: async () => [],
+          aiSuggestions: { 'inst-1_field-1': { id: 'p1', status: 'pending' } as never },
+          showPeerIdentity: true,
+          currentUserId: 'user-a',
+        }}
+      />,
+    );
+    // No resolve chrome, but the per-field trace icon is present on the field row.
+    expect(screen.queryByTestId('consensus-filters')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'fieldTraceAria' })).toBeInTheDocument();
   });
 });
