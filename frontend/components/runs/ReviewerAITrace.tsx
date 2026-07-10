@@ -20,6 +20,7 @@ import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem} from '@/types/ai-extraction';
 import type {ReviewerDecisionResponse} from '@/hooks/runs/types';
+import type {PeerAdoptionMark} from '@/lib/runs/adoption';
 import {AISuggestionReviewPopover} from '@/components/extraction/ai/AISuggestionReviewPopover';
 import type {ComparisonField} from './RunReviewerComparison';
 
@@ -29,8 +30,9 @@ export interface ReviewerAITraceProps {
   articleId: string;
   getHistory: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   reviewerLabel: string;
-  /** proposal id → OTHER reviewers' label(s) adopting it (D3 cross-marking). */
-  adoptionByProposalId: Record<string, string>;
+  /** proposal id → OTHER reviewers linked to it, with honest Adopted/Edited
+   *  wording resolved per version in the popover (D6 cross-marking). */
+  adoptionByProposalId: Record<string, PeerAdoptionMark[]>;
   /**
    * The screen's aiSuggestions map has an entry for this coord. `null` means
    * the signal is unavailable (suggestions loading/failed) — render nothing

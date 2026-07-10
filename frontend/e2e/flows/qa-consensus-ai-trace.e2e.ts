@@ -388,9 +388,28 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
       await page.keyboard.press("Escape");
     }
 
+    // (iii.b) The per-field AI trace (spec 2026-07-09 D1) rides the field-label
+    // row itself — column-independent and endorsement-neutral, the entry point a
+    // NON-resolver/viewer also gets. It opens the SAME popover read-only and
+    // carries the honest link-primary cross-mark. Present on AI coords (row1),
+    // absent on the typed coord (row3).
+    const fieldTrace1 = row1.getByRole("button", {
+      name: "AI suggestions for this field",
+    });
+    await expect(fieldTrace1).toBeVisible();
+    await fieldTrace1.click();
+    await expect(page.getByText(`Adopted by ${REVIEWER_B_NAME}`)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /use this version/i }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
     // (iv) coord3 (typed, no AI proposal on the coord) shows the honest
-    // Manual chip.
+    // Manual chip — and no per-field trace icon.
     await expect(row3.getByText("Manual", { exact: true })).toBeVisible();
+    await expect(
+      row3.getByRole("button", { name: "AI suggestions for this field" }),
+    ).toHaveCount(0);
 
     // (v) Dead affordances stay dead in consensus (D6): no Compare toggle,
     // and the status popover offers no divergence jump.

@@ -8,6 +8,6 @@ frontend/components/articles/ArticleForm.tsx:1272
 frontend/components/articles/ArticlesList.tsx:1360
 frontend/components/extraction/ArticleExtractionTable.tsx:1130
 frontend/lib/copy/extraction.ts:941
-frontend/pages/ExtractionFullScreen.tsx:1365
-frontend/pages/QualityAssessmentFullScreen.tsx:871
+frontend/pages/ExtractionFullScreen.tsx:1369
+frontend/pages/QualityAssessmentFullScreen.tsx:874
 frontend/test/QualityAssessmentFullScreen.test.tsx:1111
