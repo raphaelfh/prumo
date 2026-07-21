@@ -11,18 +11,23 @@
  * 3. Each field change becomes a `human` proposal on the Run; reloading
  *    the page rehydrates from the latest proposal per (instance, field).
  *
- * Final publish (advance review → consensus → finalize) is wired to the
- * "Publish assessment" button, which posts a manual_override consensus per
- * field to materialize PublishedState rows.
+ * Stage flow mirrors extraction (staged, never one-shot): reviewers flag
+ * "Finish assessment" (advisory mark-ready), an arbitrator opens consensus
+ * (extract → consensus; the backend materializes reviewer decisions, D8-c),
+ * divergences are resolved in the ConsensusResolutionPanel, and
+ * "Approve & finalize" publishes every agreed value then finalizes —
+ * consensus is a real, visitable stage, never skipped.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Loader2 } from "lucide-react";
 
 import { RunSplitShell } from "@/components/runs/RunSplitShell";
+import { RunEditabilityProvider } from "@/components/runs/RunEditabilityContext";
+import { HITLPublishedBanner } from "@/components/runs/HITLStatusBadges";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
 import type {
@@ -37,17 +42,24 @@ import { resolveQATemplateKind } from "@/services/projectSettingsService";
 import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
 import { useAISuggestions } from "@/hooks/extraction/ai/useAISuggestions";
 import { useRunAIExtraction } from "@/hooks/extraction/ai/useRunAIExtraction";
+import { countActionableSuggestions } from "@/lib/ai-extraction/suggestionUtils";
 import {
   useAdvanceRun,
+  useApproveFinalize,
   useAutoSaveProposals,
   useCreateConsensus,
+  useMarkReady,
   useReopenRun,
   useReviewerSummary,
   useRun,
   useRunReviewers,
 } from "@/hooks/runs";
-import { ConsensusPanel } from "@/components/runs/ConsensusPanel";
+import { ConsensusResolutionPanel } from "@/components/runs/ConsensusResolutionPanel";
+import { toConsensusValueEnvelope } from "@/lib/extraction/valueSemantics";
 import { RunHeader } from "@/components/runs/header";
+// Imported directly (not via the RunHeader compound) so the shared compound
+// stays free of the supabase-reaching NotificationCenter/feedback deps.
+import { Utility } from "@/components/runs/header/Utility";
 import { buildQaTransition } from "@/lib/qa/qaTransition";
 import { usePdfPanel } from "@/hooks/usePdfPanel";
 import { setManagerReviewVisibility } from "@/services/hitlConfigService";
@@ -56,6 +68,13 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { t } from "@/lib/copy";
+import { isRunEditable } from "@/lib/runs/editability";
+import { useAiLinkMaps } from "@/hooks/runs/useAiLinkMaps";
+import { firstPendingInstanceId, scrollToSectionById } from "@/lib/runs/suggestionLocate";
+import {
+  currentValuesToValuesMap,
+  publishedStatesToValuesMap,
+} from "@/lib/extraction/publishedValues";
 
 interface FieldKey {
   instanceId: string;
@@ -156,6 +175,8 @@ export default function QualityAssessmentFullScreen() {
 
   const advanceMutation = useAdvanceRun(session?.runId ?? "");
   const consensusMutation = useCreateConsensus(session?.runId ?? "");
+  const markReady = useMarkReady(session?.runId ?? "");
+  const approveFinalize = useApproveFinalize(session?.runId ?? "");
   const reopenMutation = useReopenRun();
   const reviewerSummary = useReviewerSummary(runDetail);
   const reviewerProfiles = useRunReviewers(session?.runId ?? null, {
@@ -181,9 +202,18 @@ export default function QualityAssessmentFullScreen() {
   // (e.g. peers drop out or the setting flips off).
   const effectiveViewMode = canCompare ? viewMode : "assess";
 
-  // Local input state for the form. Hydrated from the latest proposal per
-  // (instance, field) once the Run detail loads.
+  // Local input state for the form. Hydrated from the caller-scoped
+  // ``current_values`` per (instance, field) once the Run detail loads.
   const [values, setValues] = useState<Record<string, unknown>>({});
+
+  // The ONE ``current_values`` map (D8): hydration merges from it below and
+  // autosave receives the same object as ``baselineValues``, so a hydrated
+  // coord is never re-POSTed as a fresh decision on mount — sameness by
+  // construction, not by parallel derivation.
+  const loadedValues = useMemo(
+    () => currentValuesToValuesMap(runDetail?.current_values),
+    [runDetail?.current_values],
+  );
 
   // Hydrate during render when a new Run detail lands (instead of a
   // synchronous setState in an effect).
@@ -191,26 +221,24 @@ export default function QualityAssessmentFullScreen() {
   if (runDetail !== prevRunDetail) {
     setPrevRunDetail(runDetail);
     if (runDetail) {
-      const latestByCoord = new Map<string, unknown>();
-      // Proposals are returned newest-first by the API; iterate so the LAST
-      // write wins per coord regardless of order.
-      for (const p of runDetail.proposals) {
-        const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
-        const value =
-          p.proposed_value &&
-          typeof p.proposed_value === "object" &&
-          "value" in p.proposed_value
-            ? (p.proposed_value.value as unknown)
-            : (p.proposed_value as unknown);
-        latestByCoord.set(k, value);
+      if (runDetail.run.stage === "finalized") {
+        // Published truth replaces any local/proposal state (spec
+        // 2026-07-02 D3): the read-only form shows what was published,
+        // never the latest decision stream.
+        setValues(publishedStatesToValuesMap(runDetail.published_states));
+      } else {
+        // D8: hydrate from the caller-scoped ``current_values`` resolution
+        // (own decisions over own human proposals over system seeds) — the
+        // backend's Layer-1 keeps old proposals-only runs hydrating, so no
+        // frontend fallback branch on raw proposals exists.
+        setValues((prev) => {
+          const next: Record<string, unknown> = { ...prev };
+          for (const [k, v] of Object.entries(loadedValues)) {
+            if (!(k in next)) next[k] = v;
+          }
+          return next;
+        });
       }
-      setValues((prev) => {
-        const next: Record<string, unknown> = { ...prev };
-        for (const [k, v] of latestByCoord) {
-          if (!(k in next)) next[k] = v;
-        }
-        return next;
-      });
     }
   }
 
@@ -223,55 +251,29 @@ export default function QualityAssessmentFullScreen() {
     setValues((prev) => ({ ...prev, [k]: value }));
   };
 
-  // Server baseline for autosave — the same per-coord map the hydration
-  // effect applies, computed inline from ``runDetail`` so it is present when
-  // the hydrated ``values`` arrive. Stops opening an assessment from
-  // re-POSTing loaded values as fresh proposals.
-  const loadedValuesMap: Record<string, unknown> = {};
-  for (const p of runDetail?.proposals ?? []) {
-    const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
-    const value =
-      p.proposed_value &&
-      typeof p.proposed_value === "object" &&
-      "value" in p.proposed_value
-        ? (p.proposed_value.value as unknown)
-        : (p.proposed_value as unknown);
-    loadedValuesMap[k] = value;
-  }
-  const loadedValues = loadedValuesMap;
-
-  const { saveState, lastSavedAt, saveNow } =
-    useAutoSaveProposals({
-      runId: session?.runId ?? null,
-      values,
-      baselineValues: loadedValues,
-      enabled:
-        !!session && !!runDetail && runDetail.run.stage === "extract",
-    });
-
   // AI suggestions wiring — kind-agnostic hooks reused from Data
-  // Extraction. Two key adaptations for QA:
-  //  - ``runId`` scopes the suggestion query so a parallel extraction
-  //    run on the same article doesn't leak in.
-  //  - ``acceptStrategy: 'human-proposal'`` keeps the run in PROPOSAL
-  //    (no ReviewerDecision write). Accept just bubbles the value to
-  //    ``handleValueChange``, which records a fresh ``human`` proposal
-  //    via the existing form pipeline.
+  // Extraction. ``runId`` scopes the suggestion query so a parallel
+  // extraction run on the same article doesn't leak in. Accept/reject
+  // never write from the hook: the value bubbles to ``handleValueChange``,
+  // and autosave persists it as a per-reviewer ``edit`` decision (D8) —
+  // linked to its AI basis via ``linkByKey`` below. Declared BEFORE
+  // useAutoSaveProposals: autosave consumes the sessionAdoption-derived
+  // link maps.
   const sessionInstanceIds = Object.values(session?.instancesByEntityType ?? {});
 
   const {
     suggestions: aiSuggestions,
+    suggestionsReady: aiSuggestionsReady,
+    sessionAdoption,
     acceptSuggestion: acceptAISuggestion,
+    selectSuggestion: selectAISuggestion,
     rejectSuggestion: rejectAISuggestion,
     getSuggestionsHistory: getAISuggestionsHistory,
-    isActionLoading: isAIActionLoading,
     refresh: refreshAISuggestions,
   } = useAISuggestions({
     articleId: articleId ?? "",
-    projectId: projectId ?? "",
     runId: session?.runId,
     instanceIds: sessionInstanceIds,
-    acceptStrategy: "human-proposal",
     enabled: !!session,
     onSuggestionAccepted: (instanceId, fieldId, value) => {
       handleValueChange(instanceId, fieldId, value);
@@ -282,6 +284,31 @@ export default function QualityAssessmentFullScreen() {
       handleValueChange(instanceId, fieldId, null);
     },
   });
+
+  // D0 on QA (D8 parity): coords whose value has a traceable AI basis — see
+  // useAiLinkMaps for the layer semantics and the never-from-status invariant.
+  const { aiLinkByKey, persistedAiLinkByKey } = useAiLinkMaps({
+    decisions: runDetail?.decisions,
+    currentUserId: userId,
+    sessionAdoption,
+  });
+
+  const { saveState, lastSavedAt, saveNow } =
+    useAutoSaveProposals({
+      runId: session?.runId ?? null,
+      stage: runDetail?.run.stage ?? null,
+      values,
+      baselineValues: loadedValues,
+      linkByKey: aiLinkByKey,
+      baselineLinkByKey: persistedAiLinkByKey,
+      enabled:
+        !!session &&
+        !!runDetail &&
+        isRunEditable(runDetail.run.stage) &&
+        // Viewer writes 403 server-side; never fire them (forms render
+        // read-only via forceReadOnly, this is the flush-path belt).
+        permissions.userRole !== "viewer",
+    });
 
   const { extractForRun, loading: extractingAI } = useRunAIExtraction({
     onSuccess: async () => {
@@ -298,7 +325,6 @@ export default function QualityAssessmentFullScreen() {
       ? String(runDetail.run.parameters.parent_run_id)
       : null;
 
-  const [publishing, setPublishing] = useState(false);
   const [reopening, setReopening] = useState(false);
 
   // PDF panel state — lifted so RunHeader.PanelToggle can share the same toggle.
@@ -346,8 +372,15 @@ export default function QualityAssessmentFullScreen() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  // Reveal: manager can un-blind QA reviewer identities for this project.
-  const canReveal = permissions.userRole === "manager" && permissions.isBlindMode;
+  // Reveal (the persistent project-toggle): offered only to a blind manager
+  // DURING extract, mirroring the extraction screen. Once the run reaches
+  // consensus the run-scoped auto-reveal covers it (ADR-0015), so the
+  // persistent toggle is no longer surfaced.
+  const canReveal =
+    permissions.userRole === "manager" &&
+    permissions.isBlindMode &&
+    runDetail?.run.stage === "extract" &&
+    !runDetail.peers_revealed;
   const onReveal = () => {
     void setManagerReviewVisibility(projectId ?? "", "quality_assessment", true)
       .then(() => permissions.refresh())
@@ -355,19 +388,6 @@ export default function QualityAssessmentFullScreen() {
         toast.error(e instanceof Error ? e.message : String(e)),
       );
   };
-
-  const fieldLabelByCoordMap: Record<string, string> = {};
-  if (session) {
-    for (const domain of domains) {
-      const instanceId = session.instancesByEntityType[domain.entityType.id];
-      if (instanceId) {
-        for (const f of domain.fields) {
-          fieldLabelByCoordMap[`${instanceId}::${f.id}`] = `${domain.entityType.label} · ${f.label}`;
-        }
-      }
-    }
-  }
-  const fieldLabelByCoord = fieldLabelByCoordMap;
 
   const inConsensusStage = runDetail?.run.stage === "consensus";
 
@@ -395,22 +415,69 @@ export default function QualityAssessmentFullScreen() {
       instance_id: params.instanceId,
       field_id: params.fieldId,
       mode: "manual_override",
-      value: { value: params.value },
+      value: toConsensusValueEnvelope(params.value),
       rationale: params.rationale,
     });
     await refetchRun();
   };
 
-  const handleFinalizeFromConsensus = async () => {
-    if (!session) return;
-    await advanceMutation.mutateAsync({ target_stage: "finalized" });
+  // Plain-identifier dep so the compiler can track this dep without
+  // optional-chaining (optional-chained deps like `session?.runId` defeat it).
+  const sessionRunId = session?.runId;
+
+  // "Finish assessment" (reviewer) — flush pending autosave, then set the
+  // advisory per-reviewer ready flag. The run stays in EXTRACT; the manager
+  // opens consensus separately (extraction-HITL parity). Promise-chain
+  // guards (no try/finally) keep the React Compiler happy; the mutation
+  // hooks toast their own errors.
+  const onMarkReady = async () => {
+    if (!sessionRunId) return;
+    const saved = await saveNow().then(() => true).catch(() => false);
+    if (!saved) return;
+    const ok = await markReady
+      .mutateAsync({ ready: true })
+      .then(() => true)
+      .catch(() => false);
+    if (!ok) return;
+    await refetchRun();
+    toast.success(t("qa", "markReadySuccess"));
+  };
+
+  // "Start consensus" (manager/consensus) — flush autosave, then advance
+  // EXTRACT → CONSENSUS so the resolve surface becomes reachable. The
+  // backend materializes each reviewer's proposals as decisions on this
+  // transition (D8-c) and auto-reveals a blind manager (run-scoped).
+  const onOpenConsensus = async () => {
+    if (!sessionRunId) return;
+    const saved = await saveNow().then(() => true).catch(() => false);
+    if (!saved) return;
+    const ok = await advanceMutation
+      .mutateAsync({ target_stage: "consensus" })
+      .then(() => true)
+      .catch(() => false);
+    if (!ok) return;
+    await refetchRun().catch(() => undefined);
+  };
+
+  // "Approve & finalize" — one backend-atomic action: publish every agreed
+  // value, then advance consensus → finalized. Gate rejections (unresolved
+  // divergence / zero decisions) surface via useApproveFinalize's toast.
+  const handleApproveFinalize = async () => {
+    if (!sessionRunId) return;
+    const ok = await approveFinalize
+      .mutateAsync()
+      .then(() => true)
+      .catch(() => false);
+    if (!ok) return;
     await refetchRun();
     toast.success(t("qa", "finalizationSuccess"));
   };
 
-  // Plain-identifier dep so the compiler can track this dep without
-  // optional-chaining (optional-chained deps like `session?.runId` defeat it).
-  const sessionRunId = session?.runId;
+  // Blocked-click affordance for the gated Approve & finalize button.
+  const onGuide = (message?: string) => {
+    toast.error(message ?? t("qa", "runHeaderApproveBlocked"));
+  };
+
   const handleReopen = async () => {
     if (!sessionRunId) return;
     setReopening(true);
@@ -428,59 +495,6 @@ export default function QualityAssessmentFullScreen() {
     });
     setReopening(false);
   };
-  const handlePublish = async () => {
-    if (!session || !runDetail) return;
-
-    // Preflight: an empty publish has no semantic meaning — the run would
-    // reach FINALIZED with zero PublishedState rows. Bail out before any
-    // stage-advance side-effect so the run is not left half-progressed.
-    const filled = Object.entries(values).filter(
-      ([, v]) => v !== undefined && v !== null && v !== "",
-    );
-    if (filled.length === 0) {
-      toast.error(t("qa", "publishEmptyError"));
-      return;
-    }
-
-    setPublishing(true);
-    const doPublish = async () => {
-      // Flush any pending debounced edits before the stage advances —
-      // otherwise the consensus loop below would publish stale values.
-      await saveNow();
-
-      // Collapsed lifecycle: the run sits in the editable EXTRACT stage; the
-      // publish walks it straight to CONSENSUS (no separate review stage).
-      const stage = runDetail.run.stage;
-      if (stage === "extract") {
-        await advanceMutation.mutateAsync({ target_stage: "consensus" });
-      }
-
-      // Manual-override consensus per filled (instance, field) — writes the
-      // value directly to PublishedState without requiring a per-field
-      // ReviewerDecision row.
-      for (const [k, v] of filled) {
-        const [instanceId, fieldId] = k.split("_");
-        await consensusMutation.mutateAsync({
-          instance_id: instanceId,
-          field_id: fieldId,
-          mode: "manual_override",
-          value: { value: v },
-          rationale: "Published from Quality-Assessment form",
-        });
-      }
-
-      await advanceMutation.mutateAsync({ target_stage: "finalized" });
-      await refetchRun();
-      toast.success(t("qa", "publishSuccess"));
-    };
-    await doPublish().catch((err: unknown) => {
-      toast.error(
-        err instanceof Error ? err.message : t("qa", "publishError"),
-      );
-    });
-    setPublishing(false);
-  };
-
   const sortedDomains = domains;
 
   // Compare-view inputs derived from the QA template tree: one instance per
@@ -491,7 +505,13 @@ export default function QualityAssessmentFullScreen() {
     (domain) => ({
       id: domain.entityType.id,
       label: domain.entityType.label,
-      fields: domain.fields.map((f) => ({ id: f.id, label: f.label })),
+      // Editor-relevant attributes so the resolve-mode override renders the
+      // right typed input per field (not a bare text box).
+      fields: domain.fields.map((f) => ({
+        id: f.id, label: f.label, field_type: f.field_type,
+        allowed_values: f.allowed_values, unit: f.unit, allowed_units: f.allowed_units,
+        allow_other: f.allow_other, other_label: f.other_label, other_placeholder: f.other_placeholder,
+      })),
     }),
   );
   const compareInstances: ComparisonInstance[] = sortedDomains
@@ -526,12 +546,30 @@ export default function QualityAssessmentFullScreen() {
   // The API returns stage as `string`; cast to the narrow union the header lib expects.
   const runStage = (runDetail?.run.stage ?? null) as ExtractionRunStage | null;
 
-  // Stage-driven transition for RunHeader.PrimaryAction.
+  // Stage-driven transition for RunHeader.PrimaryAction (extraction parity:
+  // Finish assessment / Start consensus / Approve & finalize).
+  //
+  // divergencesResolved: every diverging coord carries a consensus decision
+  // (a no-divergence run is trivially resolved). isReady: the caller already
+  // flagged themselves ready.
+  const resolvedCoordKeys = new Set(
+    (runDetail?.consensus_decisions ?? []).map(
+      (c) => `${c.instance_id}::${c.field_id}`,
+    ),
+  );
+  const divergencesResolved = [...reviewerSummary.divergentCoords].every((c) =>
+    resolvedCoordKeys.has(c),
+  );
+  const isReady = (runDetail?.reviewers_ready ?? []).includes(userId ?? "");
   const qaTransition = buildQaTransition({
     stage: runStage,
     canResolveConflicts: permissions.canResolveConflicts,
-    onPublish: handlePublish,
-    onFinalize: handleFinalizeFromConsensus,
+    isReady,
+    divergencesResolved,
+    onMarkReady,
+    onOpenConsensus,
+    onApproveFinalize: handleApproveFinalize,
+    onGuide,
   });
 
   // AI extract callback — called by RunHeader.AIActions.
@@ -575,8 +613,13 @@ export default function QualityAssessmentFullScreen() {
             divergent: reviewerSummary.divergentCoords.size,
           },
           transition: qaTransition,
-          submitting: publishing,
-          onJumpToDivergence: canCompare
+          submitting:
+            markReady.isPending ||
+            advanceMutation.isPending ||
+            approveFinalize.isPending,
+          // D6: the consensus branch ignores viewMode, so the jump would be
+          // inert there — offer it only while the compare view is reachable.
+          onJumpToDivergence: canCompare && !inConsensusStage
             ? () => setViewMode("compare")
             : undefined,
         }}
@@ -586,7 +629,7 @@ export default function QualityAssessmentFullScreen() {
           <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={toggleSidebar} />
           <RunHeader.Breadcrumb
             onBack={() => navigate(`/projects/${projectId}`)}
-            crumbs={[{ label: template?.name ?? "" }]}
+            title={template?.name ?? ""}
           />
           {/* QA kind badge — compact identifier next to breadcrumb */}
           <Badge
@@ -605,7 +648,6 @@ export default function QualityAssessmentFullScreen() {
               {versionLabel}
             </span>
           ) : null}
-          {runStage != null && <RunHeader.StageRail />}
           <RunHeader.Save
             state={saveState ?? "idle"}
             lastSavedAt={lastSavedAt ?? null}
@@ -614,34 +656,37 @@ export default function QualityAssessmentFullScreen() {
         </RunHeader.Left>
 
         <RunHeader.Center>
-          <RunHeader.Reviewers />
-          <RunHeader.RoleChip />
+          {runStage != null && <RunHeader.RunStatus />}
         </RunHeader.Center>
 
         <RunHeader.Right>
+          {/* D6: no dead toggle during consensus (the resolve table always renders there). */}
+          {canCompare && !inConsensusStage && (
+            <RunHeader.CompareToggle
+              active={effectiveViewMode === "compare"}
+              onToggle={() => setViewMode((m) => (m === "assess" ? "compare" : "assess"))}
+              label={t("runs", "compareToggleLabel")}
+            />
+          )}
           <RunHeader.AIActions
-            pendingCount={Object.keys(aiSuggestions).length}
-            canExtract={!!(session && !finalized)}
+            pendingCount={finalized ? 0 : countActionableSuggestions(aiSuggestions)}
+            canExtract={!!(session && runDetail && isRunEditable(runDetail.run.stage))}
             extracting={extractingAI}
             onExtract={onExtractWithAI}
+            onOpenSuggestions={() => {
+              // Header "Review N pending suggestions": scroll to the domain
+              // holding the first pending suggestion.
+              const instanceId = firstPendingInstanceId(aiSuggestions);
+              const domain = instanceId
+                ? sortedDomains.find(
+                    (d) => session?.instancesByEntityType[d.entityType.id] === instanceId,
+                  )
+                : undefined;
+              if (domain) scrollToSectionById(domain.entityType.id);
+            }}
           />
           <RunHeader.PrimaryAction />
-          <span className="mx-1 hidden h-5 w-px bg-border/60 @[40rem]/headerbar:block" aria-hidden="true" />
-          <span className="hidden @[40rem]/headerbar:inline-flex">
-            <RunHeader.Help />
-          </span>
-          <RunHeader.Menu>
-            {canCompare && (
-              <RunHeader.MenuItem
-                onSelect={() =>
-                  setViewMode((m) => (m === "assess" ? "compare" : "assess"))
-                }
-              >
-                {effectiveViewMode === "assess"
-                  ? t("qa", "compareToggle")
-                  : t("qa", "assessToggle")}
-              </RunHeader.MenuItem>
-            )}
+          <Utility>
             {finalized && (
               <RunHeader.MenuItem
                 onSelect={() => void handleReopen()}
@@ -651,7 +696,7 @@ export default function QualityAssessmentFullScreen() {
                   : t("qa", "reopenButton")}
               </RunHeader.MenuItem>
             )}
-          </RunHeader.Menu>
+          </Utility>
           <RunHeader.PanelToggle
             pressed={pdfPanelState.isOpen}
             onToggle={pdfPanelState.toggle}
@@ -670,17 +715,15 @@ export default function QualityAssessmentFullScreen() {
   const showConsensusPanel = ready && inConsensusStage && !!runDetail;
   const showFormStage = ready && !inConsensusStage;
 
-  // Completeness signal for ConsensusPanel's no-divergence finalize fast-path.
-  // QA has no required-field gate (its publish preflight only requires at
-  // least one filled value — see handlePublish), so mirror that here: without
-  // this the panel never receives isComplete, canFinalize stays false, and a
-  // no-divergence QA run shows a wrong "incomplete" message with finalize
-  // disabled.
-  const qaIsComplete = Object.values(values).some(
-    (v) => v !== undefined && v !== null && v !== "",
-  );
-
   const formPanel = (
+    // showPeerIdentity (D3): mirrors the extraction screen — identity-visible
+    // callers get "Run by {name}" popover headers; blind reviewers stay
+    // timestamp-only.
+    <RunEditabilityProvider
+      stage={runDetail?.run.stage ?? null}
+      showPeerIdentity={!!runDetail?.peers_revealed || permissions.canSeeOthers}
+      forceReadOnly={permissions.userRole === "viewer"}
+    >
     <div className="space-y-3 p-4" data-testid="qa-form-panel">
       {error ? (
         <div
@@ -699,20 +742,37 @@ export default function QualityAssessmentFullScreen() {
       ) : null}
 
       {showConsensusPanel && runDetail ? (
-        <ConsensusPanel
+        <ConsensusResolutionPanel
           runDetail={runDetail}
           summary={reviewerSummary}
-          fieldLabelByCoord={fieldLabelByCoord}
+          entityTypes={compareEntityTypes}
+          instances={compareInstances}
+          ownValues={values}
           reviewerLabelById={reviewerProfiles.labelById}
-          avatarById={reviewerProfiles.avatarById}
+          reviewerAvatarById={reviewerProfiles.avatarById}
+          // Resolving/publishing consensus is an arbitrator action (QA mirrors
+          // extraction as of 2026-07-09; the backend 403s non-arbitrators on
+          // /consensus). Gate the chrome on canResolveConflicts so a plain
+          // reviewer/viewer never gets buttons whose every click would fail.
+          canResolve={permissions.canResolveConflicts}
+          // Consensus AI trace (D2): a single top-level channel. showPeerIdentity
+          // + currentUserId gate field-level peer cross-marks to self in blind
+          // review (server already strips peer rows — this is the second layer).
+          aiTrace={{
+            articleId: articleId ?? "",
+            getHistory: (i, f) => getAISuggestionsHistory(i, f, 50),
+            aiSuggestions: aiSuggestionsReady ? aiSuggestions : null,
+            showPeerIdentity: !!runDetail.peers_revealed || permissions.canSeeOthers,
+            currentUserId: userId ?? null,
+          }}
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}
-          onFinalize={handleFinalizeFromConsensus}
+          onFinalize={handleApproveFinalize}
           isResolving={consensusMutation.isPending}
-          isFinalizing={advanceMutation.isPending}
-          isComplete={qaIsComplete}
+          isFinalizing={approveFinalize.isPending}
           requiredCoords={[]}
           peersRevealed={!!runDetail.peers_revealed}
+          showFinalize={false}
         />
       ) : null}
 
@@ -776,8 +836,8 @@ export default function QualityAssessmentFullScreen() {
                     aiSuggestions={aiSuggestions}
                     onAcceptAI={acceptAISuggestion}
                     onRejectAI={rejectAISuggestion}
+                    selectSuggestion={selectAISuggestion}
                     getSuggestionsHistory={getAISuggestionsHistory}
-                    isAIActionLoading={isAIActionLoading}
                   />
                 );
               })}
@@ -786,6 +846,19 @@ export default function QualityAssessmentFullScreen() {
         </>
       ) : null}
     </div>
+    </RunEditabilityProvider>
+  );
+
+  // Published/revision banner between header and panels (shared component,
+  // spec 2026-07-02 D4).
+  const qaSubHeader = (
+    <HITLPublishedBanner
+      kind="qa"
+      finalized={finalized}
+      parentRunId={parentRunId}
+      onReopen={() => void handleReopen()}
+      reopening={reopening}
+    />
   );
 
   return (
@@ -793,6 +866,7 @@ export default function QualityAssessmentFullScreen() {
       pdfPanel={pdfPanel}
       formPanel={formPanel}
       header={header}
+      subHeader={qaSubHeader}
       pdfState={pdfPanelState}
       viewerStore={viewerStore}
     />

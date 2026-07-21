@@ -33,3 +33,14 @@ export const extractionKeys = {
   job: (jobId: string) =>
     [...extractionKeys.all, 'section-job', jobId] as const,
 } as const;
+
+/**
+ * Key factory for live template structure reads (entity types + fields).
+ * Lives here (not in the hook) so republish flows can invalidate without
+ * importing the hook module's supabase dependency chain.
+ */
+export const templateEntityTypesKeys = {
+  all: ['template-entity-types'] as const,
+  byTemplate: (templateId: string) =>
+    ['template-entity-types', templateId] as const,
+};

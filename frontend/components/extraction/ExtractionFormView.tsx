@@ -38,9 +38,9 @@ export interface ExtractionFormViewProps {
   updateValue: (instanceId: string, fieldId: string, value: ExtractionValue) => void;
   aiSuggestions: Record<string, AISuggestion>;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
+  selectSuggestion: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown, confidence: number) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
-  isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   models: Array<{ instanceId: string; modelName: string }>;
   activeModelId: string | null;
   setActiveModelId: (id: string) => void;
@@ -72,6 +72,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
     projectId: props.projectId,
     articleId: props.articleId,
     templateId: props.templateId,
+    runId: props.runId,
     activeModelId: props.activeModelId,
     models: props.models,
     onRefreshModels: props.onRefreshModels,
@@ -121,8 +122,8 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
                 aiSuggestions={props.aiSuggestions}
                 onAcceptAI={props.acceptSuggestion}
                 onRejectAI={props.rejectSuggestion}
+                selectSuggestion={props.selectSuggestion}
                 getSuggestionsHistory={props.getSuggestionsHistory}
-                isActionLoading={props.isActionLoading}
                 onAddInstance={() => props.handleAddInstance(entityType.id)}
                 onRemoveInstance={props.handleRemoveInstance}
                 onExtractionComplete={props.onExtractionComplete}
@@ -151,9 +152,9 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
               updateValue={props.updateValue}
               aiSuggestions={props.aiSuggestions}
               acceptSuggestion={props.acceptSuggestion}
+              selectSuggestion={props.selectSuggestion}
               rejectSuggestion={props.rejectSuggestion}
               getSuggestionsHistory={props.getSuggestionsHistory}
-              isActionLoading={props.isActionLoading}
               getInstancesForModel={props.getInstancesForModel}
               handleAddInstance={props.handleAddInstance}
               handleRemoveInstance={props.handleRemoveInstance}
@@ -184,8 +185,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
 // reference + key count, published after each extraction; showPDF
 // toggles the section rail collapsed state).
 // Compared props: values, instances, studyLevelSections, modelChildSections,
-// activeModelId, modelParentEntityType, models.length, showPDF, isActionLoading,
-// aiSuggestions.
+// activeModelId, modelParentEntityType, models.length, showPDF, aiSuggestions.
 export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, nextProps) => {
   const aiSuggestionsChanged =
     prevProps.aiSuggestions !== nextProps.aiSuggestions ||
@@ -200,10 +200,9 @@ export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, 
     prevProps.modelParentEntityType === nextProps.modelParentEntityType &&
     prevProps.models.length === nextProps.models.length &&
     prevProps.showPDF === nextProps.showPDF &&
-    // `isActionLoading` gets a new ref on every `actionLoading` change. Omitting
-    // it lets the memo swallow the post-accept `clearLoading` (its only changed
-    // prop), so the spinner never clears. See FieldInput's comparator.
-    prevProps.isActionLoading === nextProps.isActionLoading &&
+    // ``runId`` gates AI extraction onto the session run; a stale value here
+    // would let the handlers fork a parallel run (the orphaning bug).
+    prevProps.runId === nextProps.runId &&
     !aiSuggestionsChanged
   );
 });

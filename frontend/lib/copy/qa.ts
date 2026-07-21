@@ -44,10 +44,6 @@ export const qa = {
   managerVisibilitySectionDesc:
     'Control whether managers see other reviewers’ assessments for this project.',
 
-  // Assess vs. compare view toggle (assessment screen header)
-  compareToggle: 'Comparison',
-  assessToggle: 'Assessment',
-
   // QualityAssessmentFullScreen — header, status, toasts
   badge: 'Quality Assessment',
   badgeShort: 'QA',
@@ -61,9 +57,14 @@ export const qa = {
   finalizationSuccess: 'Assessment finalized.',
   reopenSuccess: 'Assessment reopened for revision.',
   reopenError: 'Failed to reopen assessment',
-  publishSuccess: 'Assessment published.',
-  publishError: 'Failed to publish assessment',
-  publishEmptyError: 'Fill at least one signaling question before publishing.',
+  // Run-header staged transition (extraction-parity: Mark ready / Start
+  // consensus / Approve & finalize — kind-neutral labels reuse the
+  // extraction namespace keys, these carry the QA-specific wording).
+  runHeaderFinishAssessment: 'Finish assessment',
+  runHeaderFinishAssessmentTooltip: 'Signal that you are done assessing this article.',
+  runHeaderAssessmentFinished: 'Assessment finished',
+  runHeaderApproveBlocked: 'Resolve every diverging question first',
+  markReadySuccess: 'Assessment marked as ready.',
 
   // Active template bar
   activeTemplateLabel: 'Active tool:',

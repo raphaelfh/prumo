@@ -1,18 +1,20 @@
 /**
- * Extraction interface header — re-skinned onto the shared RunHeader compound.
+ * Extraction interface header — composed from the shared RunHeader compound.
  *
- * The ExtractionHeaderProps interface is kept stable (additive changes only) so
- * callers do not need to change. New optional props enable RunHeader features:
- * stage/transition/isRevision for the StageRail, reviewers for the Reviewers
- * slot, AI props for AIActions, and reopen affordance via the Menu.
+ * stage/transition/isRevision/reviewers feed the RunStatus cluster (stage
+ * chip + avatars + status popover), AI props feed the AIActions menu, and the
+ * reopen affordance lives in the Menu + command palette.
  *
  * @component
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { type UserRole } from '@/lib/comparison/permissions';
 import { RunHeader, type RunHeaderValue, type StageTransition } from '@/components/runs/header';
+// Utility is imported directly (not via the RunHeader compound): it pulls in the
+// app-wide NotificationCenter/feedback, which reach the supabase client, and the
+// shared compound must stay free of that so its pure part tests don't need it.
+import { Utility } from '@/components/runs/header/Utility';
 import type { ExtractionRunStage } from '@/types/ai-extraction';
 import type { SaveState } from '@/hooks/runs';
 import { t } from '@/lib/copy';
@@ -25,9 +27,8 @@ interface Article {
 }
 
 export interface ExtractionHeaderProps {
-  // Navigation
-  projectId: string;
-  projectName: string;
+  // Navigation — the article title is the single identity text; project
+  // context lives in the sidebar and behind onBack (spec 2026-07-02).
   articleTitle: string;
   onBack: () => void;
 
@@ -64,8 +65,8 @@ export interface ExtractionHeaderProps {
   hasUnsavedChanges?: boolean;
   isComplete: boolean;
   /** @deprecated Legacy header finalize path; the primary action now flows
-   * through `transition` (Mark ready / Open consensus / Approve & finalize).
-   * Optional + unused; full removal is HITL Phase 3. */
+   * through `transition` (Finish extraction / Start consensus / Approve &
+   * finalize). Optional + unused; full removal is HITL Phase 3. */
   onFinalize?: () => void;
   /** @deprecated Pass transition instead; kept for backward compat. */
   finalizeLabel?: string;
@@ -91,7 +92,7 @@ export interface ExtractionHeaderProps {
 
   // ---- NEW optional RunHeader features ----
 
-  /** Current run stage. When provided, a StageRail is shown. */
+  /** Current run stage. When provided, the RunStatus cluster is shown. */
   stage?: ExtractionRunStage;
 
   /** Pre-built stage transition from buildExtractionTransition(). */
@@ -121,14 +122,16 @@ export interface ExtractionHeaderProps {
   canReopen?: boolean;
   onReopen?: () => void;
   reopening?: boolean;
+
+  /** Show a "Reopen extraction" item in the Menu (consensus stage, arbitrator only). */
+  canReopenExtraction?: boolean;
+  onReopenExtraction?: () => void;
 }
 
 // =================== COMPONENT ===================
 
 export function ExtractionHeader(props: ExtractionHeaderProps) {
-  const navigate = useNavigate();
   const {
-    projectName,
     articleTitle,
     onBack,
     sidebarCollapsed,
@@ -164,10 +167,14 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     canReopen = false,
     onReopen,
     reopening = false,
+    canReopenExtraction = false,
+    onReopenExtraction,
   } = props;
 
-  // ---- Cmd-K palette state ----
+  // ---- Cmd-K palette + status-popover state (palette's "View run status"
+  // action drives the controlled RunStatus) ----
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
 
   // Header keyboard shortcuts (documented in the "?" Help panel). The changing
   // callbacks/lists live in a ref so the listener registers ONCE (empty deps)
@@ -237,6 +244,13 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
       run: () => onReopen?.(),
     });
   }
+  if (canReopenExtraction) {
+    paletteActions.push({
+      id: 'reopen-extraction',
+      label: t('extraction', 'runHeaderReopenExtraction'),
+      run: () => onReopenExtraction?.(),
+    });
+  }
   paletteActions.push({
     id: 'panel',
     label: t('runs', 'togglePanel'),
@@ -247,6 +261,13 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
       id: 'reveal',
       label: t('runs', 'reveal'),
       run: () => onReveal(),
+    });
+  }
+  if (stage != null) {
+    paletteActions.push({
+      id: 'status',
+      label: t('runs', 'viewRunStatus'),
+      run: () => setStatusOpen(true),
     });
   }
   const headerValue: RunHeaderValue = {
@@ -272,28 +293,38 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
           <RunHeader.Left>
             <RunHeader.MobileNav onOpen={onOpenMobileNav} />
             <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={onToggleSidebar} />
-            <RunHeader.Breadcrumb onBack={onBack} crumbs={[{ label: projectName, onClick: () => navigate(`/projects/${props.projectId}`) }, { label: articleTitle }]} />
-            {articles.length > 1 && (
-              <RunHeader.Worklist
-                articles={articles}
-                currentId={currentArticleId}
-                onNavigate={onNavigateToArticle}
-              />
-            )}
+            <RunHeader.Breadcrumb onBack={onBack} title={articleTitle} />
             <RunHeader.Save
               state={saveState ?? 'idle'}
               lastSavedAt={lastSavedAt}
               hidden={stage === 'finalized'}
             />
-            {stage != null && <RunHeader.StageRail />}
           </RunHeader.Left>
 
+          {/* The ‹N/M› pager is the highest-priority navigation, so it lives in
+              its OWN protected slot between the (overflow-hidden) identity and
+              context tracks — never clipped by either, shrink-0, always visible
+              whenever there is more than one article. */}
+          {articles.length > 1 && (
+            <RunHeader.Worklist
+              articles={articles}
+              currentId={currentArticleId}
+              onNavigate={onNavigateToArticle}
+            />
+          )}
+
           <RunHeader.Center>
-            <RunHeader.Reviewers />
-            <RunHeader.RoleChip />
+            {stage != null && <RunHeader.RunStatus open={statusOpen} onOpenChange={setStatusOpen} />}
           </RunHeader.Center>
 
           <RunHeader.Right>
+            {hasComparison && (
+              <RunHeader.CompareToggle
+                active={viewMode === 'compare'}
+                onToggle={() => onViewModeChange(viewMode === 'compare' ? 'extract' : 'compare')}
+                label={t('runs', 'compareToggleLabel')}
+              />
+            )}
             <RunHeader.AIActions
               pendingCount={aiPendingCount}
               canExtract={!!(canRunAI && onExtractWithAI)}
@@ -302,16 +333,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
               onOpenSuggestions={props.onAISuggestionsClick}
             />
             <RunHeader.PrimaryAction />
-            <span className="mx-1 hidden h-5 w-px bg-border/60 @[40rem]/headerbar:block" aria-hidden="true" />
-            <span className="hidden @[40rem]/headerbar:inline-flex">
-              <RunHeader.Help />
-            </span>
-            <RunHeader.Menu>
-              {hasComparison && (
-                <RunHeader.MenuItem onSelect={() => onViewModeChange(viewMode === 'compare' ? 'extract' : 'compare')}>
-                  {t('extraction', 'runHeaderCompareToggle')}
-                </RunHeader.MenuItem>
-              )}
+            <Utility>
               {canReopen && (
                 <RunHeader.MenuItem onSelect={() => onReopen?.()}>
                   {reopening
@@ -319,7 +341,12 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                     : t('extraction', 'runHeaderReopenForRevision')}
                 </RunHeader.MenuItem>
               )}
-            </RunHeader.Menu>
+              {canReopenExtraction && (
+                <RunHeader.MenuItem onSelect={() => onReopenExtraction?.()}>
+                  {t('extraction', 'runHeaderReopenExtraction')}
+                </RunHeader.MenuItem>
+              )}
+            </Utility>
             <RunHeader.PanelToggle pressed={showPDF} onToggle={onTogglePDF} />
           </RunHeader.Right>
         </RunHeader>

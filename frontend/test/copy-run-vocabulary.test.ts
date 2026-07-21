@@ -59,7 +59,7 @@ describe('user-facing copy does not leak the internal "Run" entity', () => {
 
   it('no longer ships the "Finalize run" labels in the shared consensus panel', () => {
     const src = readFileSync(
-      resolve(here, '../components/runs/ConsensusPanel.tsx'),
+      resolve(here, '../components/runs/ConsensusResolutionPanel.tsx'),
       'utf8',
     );
     // The panel is shared by extraction + QA, so the finalize affordance is

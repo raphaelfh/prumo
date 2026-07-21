@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -79,7 +79,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Run fitness functions
@@ -126,6 +126,12 @@ jobs:
       ENCRYPTION_KEY: test_encryption_key_32_characters
       DEBUG: "true"
       CORS_ORIGINS: "http://localhost:5173"
+      # docling resolves layout/TableFormer models from this dir instead of
+      # downloading from HuggingFace Hub at parse time (same mechanism as the
+      # Railway image, backend/Dockerfile). Populated by the cache/prefetch
+      # steps below. /home/runner is $HOME on ubuntu-latest — env values are
+      # not tilde-expanded, so the path is spelled out.
+      DOCLING_ARTIFACTS_PATH: /home/runner/.cache/docling-models
 
     steps:
       - uses: actions/checkout@v7
@@ -140,7 +146,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -153,6 +159,59 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
+      # test_docling_parser.py needs the docling layout + TableFormer weights.
+      # Downloading them from HuggingFace Hub at test time made the suite
+      # depend on live HF availability — it flaked twice in 15 minutes on
+      # 2026-07-02 (runs 28564620843 / 28565105365, LocalEntryNotFoundError
+      # from an HF 5xx/timeout). Cache the weights keyed on the pinned docling
+      # version; on a miss, prefetch with retries BEFORE pytest so the only
+      # network-dependent step is one that can retry cleanly. The pytest step
+      # then runs HF-offline (mirrors backend/Dockerfile: prefetch +
+      # DOCLING_ARTIFACTS_PATH + HF_HUB_OFFLINE), so a resolution problem
+      # fails fast in the prefetch step instead of flaking mid-suite.
+      - name: Resolve docling version (models cache key)
+        id: docling-version
+        run: |
+          # `|| true` keeps a no-match from tripping errexit/pipefail before
+          # the explicit guard below can produce a readable error.
+          VERSION=$(grep -Eo 'docling==[0-9][0-9.]*' pyproject.toml | head -1 | cut -d= -f3 || true)
+          if [[ -z "${VERSION}" ]]; then
+            echo "::error::could not resolve the pinned docling version from backend/pyproject.toml"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache docling models
+        id: docling-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/docling-models
+          key: docling-models-${{ runner.os }}-${{ steps.docling-version.outputs.version }}
+
+      - name: Prefetch docling models (layout + TableFormer)
+        if: steps.docling-cache.outputs.cache-hit != 'true'
+        run: |
+          # Same model set as the Railway image (backend/Dockerfile): the
+          # OCR-disabled standard pipeline only needs layout + TableFormer.
+          for attempt in 1 2 3; do
+            uv run python -c "
+          from pathlib import Path
+          from docling.utils.model_downloader import download_models
+          download_models(
+              output_dir=Path('${DOCLING_ARTIFACTS_PATH}'),
+              with_layout=True,
+              with_tableformer=True,
+              with_code_formula=False,
+              with_picture_classifier=False,
+              with_rapidocr=False,
+              with_easyocr=False,
+          )" && exit 0
+            echo "docling model prefetch attempt ${attempt} failed; retrying in 20s"
+            sleep 20
+          done
+          echo "::error::docling model prefetch failed after 3 attempts — HF Hub is likely down"
+          exit 1
+
       - name: Install Postgres client (psql)
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
@@ -160,56 +219,10 @@ jobs:
         run: bash ../scripts/validate_migration_boundaries.sh
         working-directory: backend
 
+      # Stub content lives in tests/integration/supabase_stub.sql — the same
+      # file the migration round-trip fixture applies to its scratch DB.
       - name: Bootstrap auth schema stub (Supabase auth.users + RLS helpers)
-        run: |
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 <<'SQL'
-          CREATE SCHEMA IF NOT EXISTS auth;
-          -- Supabase's auth.users carries far more columns (instance_id, aud,
-          -- role, encrypted_password, ...). Tests that exercise the JWT path
-          -- — notably test_membership_guards.outsider_user — insert with the
-          -- minimum useful subset, so mirror it in the stub.
-          CREATE TABLE IF NOT EXISTS auth.users (
-            id UUID PRIMARY KEY,
-            email TEXT,
-            instance_id UUID,
-            aud TEXT,
-            role TEXT
-          );
-          -- Stub auth.uid() and auth.role(): real implementations live in
-          -- Supabase's auth schema. Alembic migrations reference these via
-          -- RLS policies, so we need them defined for `alembic upgrade head`
-          -- to succeed in CI. Returning NULL is fine for migration time —
-          -- tests don't exercise RLS via these helpers.
-          CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
-            LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
-          CREATE OR REPLACE FUNCTION auth.role() RETURNS text
-            LANGUAGE sql STABLE AS $$ SELECT NULL::text $$;
-          -- Supabase pre-creates these roles; migrations GRANT to them.
-          DO $$ BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-              CREATE ROLE anon NOLOGIN;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
-              CREATE ROLE authenticated NOLOGIN;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
-              CREATE ROLE service_role NOLOGIN BYPASSRLS;
-            END IF;
-          END $$;
-          -- storage.objects stub: migration 0003 attaches RLS policies to it.
-          -- Columns mirror what the policies reference (bucket_id, name).
-          CREATE SCHEMA IF NOT EXISTS storage;
-          CREATE TABLE IF NOT EXISTS storage.objects (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            bucket_id TEXT,
-            name TEXT,
-            owner UUID,
-            created_at TIMESTAMPTZ DEFAULT now(),
-            updated_at TIMESTAMPTZ DEFAULT now(),
-            metadata JSONB
-          );
-          ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-          SQL
+        run: psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f tests/integration/supabase_stub.sql
 
       - name: Apply Alembic migrations
         run: uv run alembic upgrade head
@@ -241,6 +254,13 @@ jobs:
       #     must hit 85%. Modules where bug = data loss / BOLA / HITL state
       #     corruption cannot regress even by a percentage point.
       - name: Run tests with coverage
+        env:
+          # Models come from DOCLING_ARTIFACTS_PATH (cache/prefetch steps
+          # above); forbid any runtime HF download so a missing model is a
+          # deterministic failure here, never a network flake. Mirrors the
+          # runtime stage of backend/Dockerfile.
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
         run: |
           uv run pytest tests/ \
             --cov=app \
@@ -362,7 +382,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -375,51 +395,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
+      # Stub content lives in tests/integration/supabase_stub.sql — the same
+      # file the migration round-trip fixture applies to its scratch DB.
       - name: Bootstrap auth schema stub
-        run: |
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 <<'SQL'
-          CREATE SCHEMA IF NOT EXISTS auth;
-          -- Supabase's auth.users carries far more columns (instance_id, aud,
-          -- role, encrypted_password, ...). Tests that exercise the JWT path
-          -- — notably test_membership_guards.outsider_user — insert with the
-          -- minimum useful subset, so mirror it in the stub.
-          CREATE TABLE IF NOT EXISTS auth.users (
-            id UUID PRIMARY KEY,
-            email TEXT,
-            instance_id UUID,
-            aud TEXT,
-            role TEXT
-          );
-          CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
-            LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
-          CREATE OR REPLACE FUNCTION auth.role() RETURNS text
-            LANGUAGE sql STABLE AS $$ SELECT NULL::text $$;
-          -- Supabase pre-creates these roles; migrations GRANT to them.
-          DO $$ BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-              CREATE ROLE anon NOLOGIN;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
-              CREATE ROLE authenticated NOLOGIN;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
-              CREATE ROLE service_role NOLOGIN BYPASSRLS;
-            END IF;
-          END $$;
-          -- storage.objects stub: migration 0003 attaches RLS policies to it.
-          -- Columns mirror what the policies reference (bucket_id, name).
-          CREATE SCHEMA IF NOT EXISTS storage;
-          CREATE TABLE IF NOT EXISTS storage.objects (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            bucket_id TEXT,
-            name TEXT,
-            owner UUID,
-            created_at TIMESTAMPTZ DEFAULT now(),
-            updated_at TIMESTAMPTZ DEFAULT now(),
-            metadata JSONB
-          );
-          ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-          SQL
+        run: psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f tests/integration/supabase_stub.sql
 
       - name: Apply Alembic migrations
         run: uv run alembic upgrade head
@@ -457,7 +436,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
@@ -493,7 +472,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
@@ -525,7 +504,7 @@ jobs:
       DEBUG: "true"
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: astral-sh/setup-uv@v7
@@ -535,7 +514,7 @@ jobs:
       - name: Install backend deps
         working-directory: backend
         run: uv sync --frozen
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
@@ -560,7 +539,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
@@ -574,40 +553,6 @@ jobs:
           VITE_SUPABASE_URL: https://placeholder.supabase.co
           VITE_SUPABASE_ANON_KEY: placeholder_key
           VITE_API_URL: http://localhost:8000
-
-  # =================== E2E CONFIG GATE ===================
-  # Single setup job that probes which E2E secrets are configured and exposes
-  # the result as job outputs. Downstream e2e jobs gate on those outputs.
-  #
-  # Why: GitHub does not allow `secrets.*` in job-level `if:` expressions
-  # (the workflow YAML fails validation, producing a 0-job/0-second run).
-  # Job outputs derived from secrets ARE allowed in `if:`, so we route
-  # secret-presence detection through this setup job.
-  e2e-config:
-    name: E2E config gate
-    runs-on: ubuntu-latest
-    outputs:
-      has_local: ${{ steps.probe.outputs.has_local }}
-      has_remote: ${{ steps.probe.outputs.has_remote }}
-    steps:
-      - id: probe
-        env:
-          E2E_API_URL: ${{ secrets.E2E_API_URL }}
-          E2E_FRONTEND_URL: ${{ secrets.E2E_FRONTEND_URL }}
-          E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
-          E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
-        run: |
-          if [[ -n "${E2E_API_URL}" ]]; then
-            echo "has_local=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_local=false" >> "$GITHUB_OUTPUT"
-          fi
-          if [[ -n "${E2E_FRONTEND_URL}" && -n "${E2E_API_URL}" \
-             && -n "${E2E_USER_EMAIL}" && -n "${E2E_USER_PASSWORD}" ]]; then
-            echo "has_remote=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_remote=false" >> "$GITHUB_OUTPUT"
-          fi
 
   # =================== FRONTEND E2E (EPHEMERAL STACK) ===================
   # Boots the full stack inside the runner — Supabase (CLI/Docker) +
@@ -631,7 +576,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: astral-sh/setup-uv@v7
@@ -642,14 +587,14 @@ jobs:
         working-directory: backend
         run: uv sync --frozen
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
       - name: Install frontend deps
         run: npm ci
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         with:
           version: latest
       - name: Start Supabase (auth/storage migrations auto-applied)
@@ -730,49 +675,3 @@ jobs:
             test-results/
           retention-days: 7
           if-no-files-found: ignore
-
-  # =================== FRONTEND E2E REMOTE ===================
-  frontend-e2e-remote:
-    name: Frontend E2E Remote Smoke
-    runs-on: ubuntu-latest
-    needs: [frontend-e2e-ephemeral, e2e-config]
-    if: needs.e2e-config.outputs.has_remote == 'true'
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
-
-      - name: Run remote smoke project
-        run: npm run test:e2e:remote
-        env:
-          E2E_FRONTEND_URL: ${{ secrets.E2E_FRONTEND_URL }}
-          E2E_API_URL: ${{ secrets.E2E_API_URL }}
-          E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
-          E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
-          E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
-          E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
-          E2E_AUTH_TOKEN: ${{ secrets.E2E_AUTH_TOKEN }}
-          E2E_PROJECT_ID: ${{ secrets.E2E_PROJECT_ID }}
-          E2E_ARTICLE_ID: ${{ secrets.E2E_ARTICLE_ID }}
-          E2E_TEMPLATE_ID: ${{ secrets.E2E_TEMPLATE_ID }}
-          E2E_ENTITY_TYPE_ID: ${{ secrets.E2E_ENTITY_TYPE_ID }}
-
-      - name: Upload Playwright remote artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-remote-results
-          path: |
-            playwright-report
-            test-results

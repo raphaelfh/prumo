@@ -16,13 +16,19 @@ A test in test_suggestion_read.py pins this invariant explicitly.
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionEvidence, ExtractionInstance
+from app.models.extraction import (
+    ExtractionEvidence,
+    ExtractionInstance,
+    ExtractionRun,
+    ExtractionRunStage,
+)
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,
@@ -30,6 +36,7 @@ from app.models.extraction_workflow import (
     ExtractionReviewerDecisionType,
     ExtractionReviewerState,
 )
+from app.models.user import Profile
 from app.schemas.extraction import parse_position
 from app.schemas.extraction_suggestion import (
     AISuggestionHistoryItem,
@@ -37,6 +44,12 @@ from app.schemas.extraction_suggestion import (
     AISuggestionsResponse,
     EvidenceResponse,
 )
+from app.services.extraction_run_read_service import (
+    caller_can_see_peers,
+    is_run_arbitrator,
+    run_reveals_peers,
+)
+from app.services.value_semantics import is_value_empty
 
 
 def _extract_block_ids(ev: ExtractionEvidence) -> list[int]:
@@ -75,6 +88,178 @@ def _resolve_status(decision: str | None) -> str:
     return "accepted"
 
 
+async def _load_run_provenance(
+    db: AsyncSession,
+    run_ids: set[UUID],
+    *,
+    caller_id: UUID,
+    resolve_names: bool = False,
+) -> dict[UUID, dict[str, Any] | None]:
+    """Fetch each run's provenance snapshot (extraction_runs.results['provenance'])
+    in one query, so suggestions can show how they were generated without an
+    N+1. Legacy runs without provenance map to None.
+
+    D8-d: ran-by identity is scrubbed AT THE SOURCE — snapshots of runs that
+    do not reveal peers to the caller lose ``ran_by_user_id`` (and never gain
+    ``ran_by_name``), so a future call site cannot forget the scrub. Reveal
+    is PER RUN via ``run_reveals_peers`` (the ``/view`` rule — lockstep, one
+    truth table): finalized -> everyone (membership was gated at the
+    endpoint), consensus -> arbitrators, otherwise ``caller_can_see_peers``.
+
+    When ``resolve_names`` is set, ``ran_by_user_id`` -> ``ran_by_name``
+    injection runs ONLY for revealed runs — no profile lookup for names that
+    would be scrubbed. Off by default: only the on-demand history path pays
+    the extra lookup; the hot ``load_suggestions`` path stays query-lean.
+    """
+    if not run_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(
+                ExtractionRun.id,
+                ExtractionRun.results,
+                ExtractionRun.stage,
+                ExtractionRun.project_id,
+                ExtractionRun.kind,
+            ).where(ExtractionRun.id.in_(run_ids))
+        )
+    ).all()
+    prov_by_run: dict[UUID, dict[str, Any] | None] = {
+        row.id: (row.results or {}).get("provenance") for row in rows
+    }
+
+    # Identity probes only when some snapshot actually carries an identity
+    # (legacy runs / provenance-less runs skip the membership queries).
+    if not any(
+        "ran_by_user_id" in leaf
+        for prov in prov_by_run.values()
+        for leaf in _provenance_leaves(prov)
+    ):
+        return prov_by_run
+
+    # One membership/setting probe per distinct (project, kind); one
+    # arbitrator probe per project that still needs it — an article's runs
+    # share both in practice, so this is ~1-3 queries total.
+    can_peers = {
+        key: await caller_can_see_peers(db, project_id=key[0], user_id=caller_id, kind=key[1])
+        for key in {(row.project_id, row.kind) for row in rows}
+    }
+    arbitrator = {
+        project_id: await is_run_arbitrator(db, project_id, caller_id)
+        for project_id in {
+            row.project_id
+            for row in rows
+            if row.stage == ExtractionRunStage.CONSENSUS.value
+            and not can_peers[(row.project_id, row.kind)]
+        }
+    }
+    revealed = {
+        row.id
+        for row in rows
+        if run_reveals_peers(
+            row.stage,
+            can_see_peers=can_peers[(row.project_id, row.kind)],
+            is_arbitrator=arbitrator.get(row.project_id, False),
+        )
+    }
+
+    # Scrub in place: the dicts are fresh per-call query results (the same
+    # payload _inject_ran_by_names edits), never ORM-attached state.
+    for run_id, prov in prov_by_run.items():
+        if run_id in revealed:
+            continue
+        for leaf in _provenance_leaves(prov):
+            leaf.pop("ran_by_user_id", None)
+            leaf.pop("ran_by_name", None)
+
+    if resolve_names and revealed:
+        await _inject_ran_by_names(db, {rid: prov_by_run[rid] for rid in revealed})
+    return prov_by_run
+
+
+# Flat-snapshot marker keys — their presence on a run's provenance means it
+# carries a legacy (or mixed-era) flat snapshot alongside any `sections` map.
+_FLAT_SNAPSHOT_KEYS = ("model", "provider", "prompt_version", "prompt_text")
+
+
+def _provenance_leaves(prov: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The snapshot dicts on a run's provenance that can carry ``ran_by_user_id``:
+    every per-section snapshot, plus the flat snapshot itself when present (legacy
+    or the flat portion of a mixed-era run)."""
+    if not prov:
+        return []
+    leaves: list[dict[str, Any]] = []
+    sections = prov.get("sections")
+    if isinstance(sections, dict):
+        leaves.extend(s for s in sections.values() if isinstance(s, dict))
+    if any(k in prov for k in _FLAT_SNAPSHOT_KEYS) or "ran_by_user_id" in prov:
+        leaves.append(prov)
+    return leaves
+
+
+def _resolve_section_provenance(
+    provenance: dict[str, Any] | None, entity_type_id: UUID | None
+) -> dict[str, Any] | None:
+    """Per-section snapshot for sectioned runs; the flat snapshot for legacy runs.
+
+    - No provenance → None.
+    - No ``sections`` map (legacy flat run) → the snapshot verbatim.
+    - Sectioned run with a snapshot for this entity type → that snapshot.
+    - Mixed-era run (flat keys + sections) with NO snapshot for this entity type
+      → the flat snapshot (minus ``sections``), so a section extracted before this
+      shipped keeps the display it had.
+    - Pure-sectioned run with no snapshot for this entity type → None (never a
+      sibling section's snapshot — that would mis-attribute provenance).
+    """
+    if not provenance:
+        return None
+    sections = provenance.get("sections")
+    if not isinstance(sections, dict):
+        return provenance
+    snap: dict[str, Any] | None = sections.get(str(entity_type_id)) if entity_type_id else None
+    if snap is not None:
+        return snap
+    if any(k in provenance for k in _FLAT_SNAPSHOT_KEYS):
+        return {k: v for k, v in provenance.items() if k != "sections"}
+    return None
+
+
+async def _inject_ran_by_names(
+    db: AsyncSession, prov_by_run: dict[UUID, dict[str, Any] | None]
+) -> None:
+    """Resolve each snapshot's ``ran_by_user_id`` to a ``ran_by_name`` in place.
+
+    Walks both flat snapshots and every per-section snapshot. One batched
+    ``profiles`` lookup for the distinct runner ids. A snapshot whose runner has
+    no profile (or a malformed id) is left untouched — the "Ran by" row stays
+    absent rather than showing a bare uuid.
+    """
+    leaves: list[dict[str, Any]] = []
+    for prov in prov_by_run.values():
+        leaves.extend(_provenance_leaves(prov))
+    uuid_by_raw: dict[str, UUID] = {}
+    for leaf in leaves:
+        raw = leaf.get("ran_by_user_id")
+        if raw is None or str(raw) in uuid_by_raw:
+            continue
+        try:
+            uuid_by_raw[str(raw)] = UUID(str(raw))
+        except (ValueError, TypeError):
+            continue
+    if not uuid_by_raw:
+        return
+    rows = (
+        await db.execute(
+            select(Profile.id, Profile.full_name).where(Profile.id.in_(list(uuid_by_raw.values())))
+        )
+    ).all()
+    name_by_id = {str(pid): full_name for pid, full_name in rows if full_name}
+    for leaf in leaves:
+        name = name_by_id.get(str(leaf.get("ran_by_user_id")))
+        if name:
+            leaf["ran_by_name"] = name
+
+
 async def load_suggestions(
     db: AsyncSession,
     instance_ids: list[UUID],
@@ -90,7 +275,10 @@ async def load_suggestions(
        optional run_id, ORDER BY created_at DESC.
        Scoped to article_id via JOIN on ExtractionInstance — instances that do not
        belong to the path article are silently dropped (cross-project IDOR guard).
-    2. Dedup: first-per-(instance_id, field_id) wins (desc order → latest wins).
+    2. Dedup per (instance_id, field_id): the latest proposal wins, EXCEPT a
+       later "no information" (null) proposal never buries an earlier real
+       value — the most recent value-bearing proposal is preferred, falling
+       back to the latest no-info only when no run found a value.
     3. Load evidence for the deduplicated proposal_ids.
     4. Load ExtractionReviewerState WHERE reviewer_id == caller_id (blind boundary)
        joined to ExtractionReviewerDecision via the composite FK for `.decision`.
@@ -124,14 +312,27 @@ async def load_suggestions(
     proposals = (await db.execute(proposal_stmt)).scalars().all()
 
     # --- Step 2: dedup to latest-per-(instance_id, field_id) ---
-    seen: set[tuple[UUID, UUID]] = set()
-    deduped: list[ExtractionProposalRecord] = []
+    # Value-vs-value recency: the newest proposal that CARRIES A VALUE wins.
+    # "Carries a value" is the shared emptiness oracle (``is_value_empty``), so a
+    # coded ``no_information`` marker (ADR-0016) counts as a genuine answer and
+    # may win by recency like any real value — only a *bare* ``{"value": null}``
+    # abstention (no marker) is buryable and must NOT overwrite an earlier
+    # resolved value. So: prefer the newest non-empty proposal (real value OR
+    # marker); fall back to the newest bare-null only when no run ever resolved
+    # the coord. The full trail stays available via get_suggestion_history.
+    # ``proposals`` is ordered newest-first, so dict insertion order keeps the
+    # latest per coord.
+    chosen: dict[tuple[UUID, UUID], ExtractionProposalRecord] = {}
     for p in proposals:
         key = (p.instance_id, p.field_id)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(p)
+        existing = chosen.get(key)
+        if existing is None:
+            chosen[key] = p
+        elif is_value_empty(existing.proposed_value) and not is_value_empty(p.proposed_value):
+            # The newer pick is a bare-null abstention; this older one resolved
+            # the coord (a real value OR a coded marker) → keep the resolved one.
+            chosen[key] = p
+    deduped = list(chosen.values())
 
     if not deduped:
         return AISuggestionsResponse(suggestions=[], count=0)
@@ -189,6 +390,19 @@ async def load_suggestions(
 
     # --- Step 5: build response items ---
     items: list[AISuggestionItem] = []
+    prov_by_run = await _load_run_provenance(db, {p.run_id for p in deduped}, caller_id=caller_id)
+    # Map each deduped proposal's instance → entity type so per-section
+    # provenance resolves to the right section snapshot.
+    et_rows = (
+        await db.execute(
+            select(ExtractionInstance.id, ExtractionInstance.entity_type_id).where(
+                ExtractionInstance.id.in_({p.instance_id for p in deduped})
+            )
+        )
+    ).all()
+    et_by_instance: dict[UUID, UUID] = {}
+    for iid, etid in et_rows:
+        et_by_instance[iid] = etid
     for p in deduped:
         evidence_list = [
             EvidenceResponse(
@@ -217,6 +431,9 @@ async def load_suggestions(
                 created_at=p.created_at,
                 evidence=evidence_list,
                 status=status,
+                provenance=_resolve_section_provenance(
+                    prov_by_run.get(p.run_id), et_by_instance.get(p.instance_id)
+                ),
             )
         )
 
@@ -229,6 +446,7 @@ async def get_suggestion_history(
     field_id: UUID,
     *,
     article_id: UUID,
+    caller_id: UUID,
     limit: int = 10,
 ) -> list[AISuggestionHistoryItem]:
     """Return AI proposals for a single (instance, field) coord, newest first.
@@ -237,6 +455,9 @@ async def get_suggestion_history(
     Scoped to article_id via JOIN on ExtractionInstance — if the instance does
     not belong to the path article, an empty list is returned (cross-project
     IDOR guard, mirrors the RLS protection the old PostgREST path had).
+    ``caller_id`` (required, fail-closed) drives the D8-d ran-by scrub: items
+    whose run does not reveal identity to the caller lose
+    ``ran_by_user_id``/``ran_by_name`` (see ``_load_run_provenance``).
     Mirrors AISuggestionService.getHistory.
     """
     proposals = (
@@ -286,6 +507,20 @@ async def get_suggestion_history(
         rows.sort(key=lambda e: (e.rank, str(e.id)))
 
     items: list[AISuggestionHistoryItem] = []
+    # History feeds the review popover (the "How this was generated" surface
+    # and the run-group "Run by" headers) — resolve the runner's display name
+    # for REVEALED runs only, so the frontend needs no profiles join and a
+    # blind caller's payload never carries the identity at all.
+    prov_by_run = await _load_run_provenance(
+        db, {p.run_id for p in proposals}, caller_id=caller_id, resolve_names=True
+    )
+    # All proposals share this coord's instance → one entity-type lookup resolves
+    # the per-section snapshot for every item.
+    entity_type_id = (
+        await db.execute(
+            select(ExtractionInstance.entity_type_id).where(ExtractionInstance.id == instance_id)
+        )
+    ).scalar_one_or_none()
     for p in proposals:
         evidence_list = [
             EvidenceResponse(
@@ -311,6 +546,7 @@ async def get_suggestion_history(
                 rationale=p.rationale,
                 created_at=p.created_at,
                 evidence=evidence_list,
+                provenance=_resolve_section_provenance(prov_by_run.get(p.run_id), entity_type_id),
             )
         )
 

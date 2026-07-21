@@ -5,6 +5,73 @@
  */
 
 import type {AISuggestion} from '@/types/ai-extraction';
+import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
+
+/**
+ * Field context needed to resolve a select/multiselect option CODE to its human
+ * label. Optional everywhere — callers without a select field omit it and the
+ * formatters fall back to the raw value (today's behaviour).
+ */
+export interface SuggestionFieldContext {
+  fieldType?: string | null;
+  allowedValues?: unknown;
+}
+
+/**
+ * Return the raw option list from an `allowed_values` payload. Tolerates both
+ * shapes the template builder emits: `{options: [...]}` or a bare `[...]`;
+ * anything else yields `[]`. Mirrors backend `normalize_options`
+ * (backend/app/llm/claim_value.py) so a new option encoding is handled once.
+ */
+function normalizeOptions(allowedValues: unknown): unknown[] {
+  if (
+    allowedValues &&
+    typeof allowedValues === 'object' &&
+    !Array.isArray(allowedValues) &&
+    'options' in allowedValues
+  ) {
+    const options = (allowedValues as {options?: unknown}).options;
+    return Array.isArray(options) ? options : [];
+  }
+  return Array.isArray(allowedValues) ? allowedValues : [];
+}
+
+/**
+ * Map each select option's stored value (code) to its human label. Options are
+ * `{value, label}` objects or plain strings; plain strings (and options without
+ * a distinct label) map to themselves. Mirrors backend `option_label_map`.
+ */
+function optionLabelMap(allowedValues: unknown): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const opt of normalizeOptions(allowedValues)) {
+    if (opt && typeof opt === 'object' && 'value' in opt) {
+      const code = String((opt as {value: unknown}).value);
+      const label = (opt as {label?: unknown}).label;
+      map.set(code, label ? String(label) : code);
+    } else if (typeof opt === 'string') {
+      map.set(opt, opt);
+    }
+  }
+  return map;
+}
+
+/**
+ * Resolve a select/multiselect coded value to human labels. Returns `undefined`
+ * for non-select fields so the caller keeps its default formatting; for a
+ * select/multiselect it always resolves (comma-joining arrays), falling back to
+ * the raw code per item — matching backend `value_str_for_claim`.
+ */
+function resolveOptionLabels(value: unknown, field?: SuggestionFieldContext): string | undefined {
+  if (!field || (field.fieldType !== 'select' && field.fieldType !== 'multiselect')) {
+    return undefined;
+  }
+  const labelMap = optionLabelMap(field.allowedValues);
+  const resolveOne = (v: unknown): string => labelMap.get(String(v)) ?? String(v);
+  if (Array.isArray(value)) {
+    return value.map(resolveOne).join(', ');
+  }
+  return resolveOne(value);
+}
 
 /**
  * Calculates formatted confidence percentage
@@ -25,7 +92,11 @@ export function calculateConfidencePercent(confidence: number): number {
  * @param maxLength - Max length (default: 40)
  * @returns Formatted string
  */
-export function formatSuggestionValue(value: any, maxLength: number = 40): string {
+export function formatSuggestionValue(
+  value: any,
+  maxLength: number = 40,
+  field?: SuggestionFieldContext,
+): string {
     // Empty string is also a valid value; show "(empty)" only for null/undefined
   if (value === null || value === undefined) {
       return '(empty)';
@@ -37,6 +108,13 @@ export function formatSuggestionValue(value: any, maxLength: number = 40): strin
 
   if (typeof value === 'boolean') {
       return value ? 'Yes' : 'No';
+  }
+
+  // Resolve a select/multiselect option CODE ("Y") to its human label ("Yes")
+  // so the card matches what the user picked. No-op for non-select fields.
+  const resolved = resolveOptionLabels(value, field);
+  if (resolved !== undefined) {
+    return resolved.length > maxLength ? `${resolved.substring(0, maxLength)}...` : resolved;
   }
 
   if (typeof value === 'number') {
@@ -62,9 +140,16 @@ export function formatSuggestionValue(value: any, maxLength: number = 40): strin
  * @param value - Value to format
  * @returns Full string of value
  */
-export function formatFullSuggestionValue(value: any): string {
+export function formatFullSuggestionValue(value: any, field?: SuggestionFieldContext): string {
   if (value === null || value === undefined) {
       return '(empty)';
+  }
+
+  // Resolve a select/multiselect option CODE to its human label (no-op for
+  // non-select fields), matching the inline card.
+  const resolved = resolveOptionLabels(value, field);
+  if (resolved !== undefined) {
+    return resolved;
   }
 
   if (typeof value === 'string') {
@@ -76,6 +161,38 @@ export function formatFullSuggestionValue(value: any): string {
   }
 
   return JSON.stringify(value);
+}
+
+/**
+ * True when a value carries a resolved `absent_reason` disposition marker — the
+ * affirmative "no information" / "not applicable" / "not evaluated" answer. Drives
+ * the quiet no-info strip / no-info card instead of a misleading "(empty) · 0%".
+ *
+ * Narrowed to the pure marker shape (ADR-0016 Phase 3, data migrated + shim
+ * removed): a bare `null` / `undefined` / `''` is **unresolved**, not an
+ * abstention, so a real value can never masquerade as one. The AI read path
+ * carries the marker as the full `{value:null, absent_reason}` envelope
+ * (`aiSuggestionService.unwrapValue`), so this recognizes it at the call sites.
+ */
+export function isAbstention(value: unknown): boolean {
+  return valueAbsentReason(value) !== null;
+}
+
+/**
+ * Count of UNRESOLVED AI proposals awaiting a human decision — the ONE shared
+ * "actionable pending" header metric for BOTH the extraction and QA screens
+ * (ADR-0016 Phase 4). An unresolved abstention (`no_information`) proposal IS
+ * actionable — it needs a human accept — so it counts like any pending proposal;
+ * what differs for an abstention is its rendering (quiet, no confidence badge)
+ * and bulk-accept handling (excluded), NOT the count. Already-resolved proposals
+ * (accepted/rejected, retained in the map with a flipped status) are excluded, so
+ * the badge reflects remaining work rather than the total ever seen.
+ */
+export function countActionableSuggestions(
+  suggestions: Record<string, AISuggestion> | AISuggestion[],
+): number {
+  const list = Array.isArray(suggestions) ? suggestions : Object.values(suggestions);
+  return list.filter(isSuggestionPending).length;
 }
 
 /**

@@ -12,6 +12,7 @@
 import {apiClient} from '@/integrations/api';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {ReviewKind} from '@/lib/comparison/permissions';
+import type {CreateDecisionRequest} from '@/hooks/runs/types';
 import type {components} from '@/types/api/schema';
 
 // ---------------------------------------------------------------------------
@@ -128,7 +129,7 @@ export function openExtractionSession(
 }
 
 // ---------------------------------------------------------------------------
-// useAutoSaveProposals: single-field proposal / decision write
+// useAutoSaveProposals: single-field decision write
 // ---------------------------------------------------------------------------
 
 export interface WriteProposalParams {
@@ -136,15 +137,27 @@ export interface WriteProposalParams {
   instanceId: string;
   fieldId: string;
   normalizedValue: unknown;
-  /** When true, writes a ReviewerDecision (extraction in 'extract'); otherwise writes a human proposal. */
-  useDecisionEndpoint: boolean;
+  /**
+   * ADR-0016: the coded `absent_reason` disposition to carry in the value
+   * envelope (`{value, absent_reason}`). Present only for a resolved "no
+   * information" marker; omitted (null/undefined) for every ordinary value so a
+   * legacy write never gains a spurious `absent_reason` key.
+   */
+  absentReason?: string | null;
+  /**
+   * D0 (consensus AI trace): the accepted/selected AI proposal this coord's
+   * value originated from, so the arbitrator can trace an edit back to its AI
+   * basis; the backend validates it references a non-human proposal on the
+   * same (instance, field).
+   */
+  proposalRecordId?: string | null;
 }
 
 /**
- * Write a single field value to the run as either a human proposal
- * (/proposals) or a reviewer decision (/decisions), determined by
- * ``useDecisionEndpoint``. Keepalive=true so the request survives route
- * changes and tab closes.
+ * Write a single field value to the run as a per-reviewer ``edit`` decision
+ * (D8: the one write path for BOTH run kinds — human /proposals writes are
+ * gone; that endpoint remains for AI/system writers only). Keepalive=true so
+ * the request survives route changes and tab closes.
  *
  * NOTE: does not return ErrorResult — the caller (performSave inside
  * useAutoSaveProposals) uses Promise.allSettled to fan out writes and
@@ -153,22 +166,31 @@ export interface WriteProposalParams {
 export async function writeRunFieldValue(
   params: WriteProposalParams,
 ): Promise<void> {
-  const {runId, instanceId, fieldId, normalizedValue, useDecisionEndpoint} = params;
-  const endpoint = useDecisionEndpoint
-    ? `/api/v1/runs/${runId}/decisions`
-    : `/api/v1/runs/${runId}/proposals`;
-  const body = useDecisionEndpoint
-    ? {
-        instance_id: instanceId,
-        field_id: fieldId,
-        decision: 'edit' as const,
-        value: {value: normalizedValue},
-      }
-    : {
-        instance_id: instanceId,
-        field_id: fieldId,
-        source: 'human' as const,
-        proposed_value: {value: normalizedValue},
-      };
-  await apiClient(endpoint, {method: 'POST', body, keepalive: true});
+  const {
+    runId,
+    instanceId,
+    fieldId,
+    normalizedValue,
+    absentReason,
+    proposalRecordId,
+  } = params;
+  // Merge the disposition sibling only when present, so an ordinary value never
+  // gains a spurious `absent_reason` key (ADR-0016 write contract).
+  const valueEnvelope = absentReason
+    ? {value: normalizedValue, absent_reason: absentReason}
+    : {value: normalizedValue};
+  // Body typed against the backend mirror so /decisions payload drift fails
+  // the typecheck instead of surfacing as a runtime 422.
+  const body: CreateDecisionRequest = {
+    instance_id: instanceId,
+    field_id: fieldId,
+    decision: 'edit' as const,
+    value: valueEnvelope,
+    ...(proposalRecordId ? {proposal_record_id: proposalRecordId} : {}),
+  };
+  await apiClient(`/api/v1/runs/${runId}/decisions`, {
+    method: 'POST',
+    body,
+    keepalive: true,
+  });
 }

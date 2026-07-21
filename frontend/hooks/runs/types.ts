@@ -11,16 +11,6 @@ export interface CreateRunRequest {
   parameters?: Record<string, unknown> | null;
 }
 
-export interface CreateProposalRequest {
-  instance_id: string;
-  field_id: string;
-  source: "ai" | "human" | "system";
-  proposed_value: Record<string, unknown>;
-  source_user_id?: string | null;
-  confidence_score?: number | null;
-  rationale?: string | null;
-}
-
 export interface CreateDecisionRequest {
   instance_id: string;
   field_id: string;
@@ -55,6 +45,8 @@ export interface MarkReadyRequest {
 export interface RunReadyStateResponse {
   ready_count: number;
   reviewer_count: number;
+  /** Blind-gated (ADR-0012): only the caller's own entry unless unblinded —
+   * enough for the self-check; the counts stay aggregate. */
   reviewers_ready: string[];
 }
 
@@ -163,6 +155,10 @@ export interface RunViewFieldResponse {
   allow_other: boolean;
   other_label: string | null;
   other_placeholder: string | null;
+  /** ADR-0016 opt-in disposition flags — gate the "Not applicable" /
+   * "Not evaluated" markers in FieldInput. */
+  allows_not_applicable: boolean;
+  allows_not_evaluated: boolean;
 }
 
 export interface RunViewEntityType {
@@ -205,7 +201,9 @@ export interface RunViewResponse extends RunDetailResponse {
   current_values: RunViewCurrentValue[];
   instances: RunViewInstanceResponse[];
   /** "N/M reviewers ready" hint (advisory; readiness gates nothing). Optional in
-   * the type only so fixtures need not construct it; backend always sends it. */
+   * the type only so fixtures need not construct it; backend always sends it.
+   * reviewers_ready is blind-gated (ADR-0012): a blind caller gets only their
+   * own entry, never peer ids. */
   ready_count?: number;
   reviewer_count?: number;
   reviewers_ready?: string[];

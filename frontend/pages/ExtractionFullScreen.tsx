@@ -22,15 +22,17 @@ import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {getRequiredUserId} from '@/services/authService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
+import {useAiLinkMaps} from '@/hooks/runs/useAiLinkMaps';
+import {isRunEditable} from '@/lib/runs/editability';
+import {firstPendingInstanceId, scrollToSectionById} from '@/lib/runs/suggestionLocate';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
 import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
 import {RunSplitShell} from '@/components/runs/RunSplitShell';
+import {RunEditabilityProvider} from '@/components/runs/RunEditabilityContext';
 import {usePdfPanel} from '@/hooks/usePdfPanel';
 import {Button} from '@/components/ui/button';
 import {Loader2} from 'lucide-react';
-import {
-  HITLStatusBadges,
-} from '@/components/runs/HITLStatusBadges';
+import {HITLPublishedBanner} from '@/components/runs/HITLStatusBadges';
 import {buildExtractionTransition} from '@/lib/extraction/stageTransition';
 import {nextArticleTarget} from '@/lib/extraction/worklistNav';
 import {setManagerReviewVisibility} from '@/services/hitlConfigService';
@@ -46,26 +48,30 @@ import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
 import {useAutoSaveProposals} from '@/hooks/runs';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
-import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
+import {countActionableSuggestions} from '@/lib/ai-extraction/suggestionUtils';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
 import {
   useAdvanceRun,
   useApproveFinalize,
   useCreateConsensus,
   useMarkReady,
+  useReopenExtraction,
   useReopenRun,
   useReviewerSummary,
   useRun,
   useRunReviewers,
 } from '@/hooks/runs';
-import {ConsensusPanel} from '@/components/runs/ConsensusPanel';
+import {ConsensusResolutionPanel} from '@/components/runs/ConsensusResolutionPanel';
 import {useConsensusReconciliation} from '@/hooks/extraction/useConsensusReconciliation';
+import {toConsensusValueEnvelope} from '@/lib/extraction/valueSemantics';
 
 // Components
 import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
 import {RunPdfContent} from '@/components/runs/RunPdfContent';
 import {ExtractionFormPanel} from '@/components/extraction/ExtractionFormPanel';
 import {AddModelDialog, RemoveModelDialog} from '@/components/extraction/hierarchy';
+import {ReopenExtractionDialog} from '@/components/extraction/dialogs/ReopenExtractionDialog';
+import {deriveCanReopenExtraction} from '@/lib/extraction/reopenExtraction';
 import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtractionProgress';
 
 // Additional hooks
@@ -104,7 +110,6 @@ export default function ExtractionFullScreen() {
   // server RunView (runDetail) below via the adapters.
   const {
     article,
-    project,
     template,
     articles,
     loading,
@@ -192,7 +197,6 @@ export default function ExtractionFullScreen() {
   );
 
   const stage = (runDetail?.run.stage ?? null) as import('@/types/ai-extraction').ExtractionRunStage | null;
-  const proposals = runDetail?.proposals;
   const isFinalized = stage === 'finalized';
 
   // Hook to manage extracted values — read path branches on stage.
@@ -206,9 +210,8 @@ export default function ExtractionFullScreen() {
   } = useExtractedValues({
     runId: activeRunId,
     stage,
-    kind: 'extraction',
-    proposals,
     currentValues: runDetail?.current_values,
+    publishedStates: runDetail?.published_states,
     currentUserId,
     enabled: !!activeRunId,
   });
@@ -226,6 +229,8 @@ export default function ExtractionFullScreen() {
   });
   const reopenMutation = useReopenRun();
   const [reopening, setReopening] = useState(false);
+  const reopenExtractionMutation = useReopenExtraction();
+  const [reopenExtractionOpen, setReopenExtractionOpen] = useState(false);
   const parentRunId =
     runDetail?.run.parameters &&
     typeof runDetail.run.parameters === 'object' &&
@@ -252,11 +257,10 @@ export default function ExtractionFullScreen() {
 
   const inConsensusStage = runDetail?.run.stage === 'consensus';
 
-  // Consensus-page derived values: coord→label map, required coords,
-  // expected reviewer count, and pre-built finalize-warning message.
+  // Consensus-page derived values: required coords, run-level completeness, expected reviewer count, finalize warning.
   const {
-    fieldLabelByCoord,
     requiredCoords,
+    requiredFieldsResolved,
     expectedReviewerCount,
     finalizeWarning,
   } = useConsensusReconciliation({
@@ -291,7 +295,7 @@ export default function ExtractionFullScreen() {
       instance_id: params.instanceId,
       field_id: params.fieldId,
       mode: 'manual_override',
-      value: { value: params.value },
+      value: toConsensusValueEnvelope(params.value),
       rationale: params.rationale,
     });
     await refetchRun();
@@ -314,11 +318,17 @@ export default function ExtractionFullScreen() {
 
   // Plain-identifier dep so the compiler can track this dep without
   // optional-chaining (optional-chained deps like `finalizedRun?.id` defeat it).
+  // Fallback to the active run: when the open run IS finalized, it is the
+  // reopen target — clicking the banner button during (or after a failure
+  // of) the separate finalized-run lookup must not silently no-op
+  // (2026-07-02 hardening finding).
   const finalizedRunId = finalizedRun?.id;
+  const stageIsFinalized = stage === 'finalized';
+  const reopenTargetId = finalizedRunId ?? (stageIsFinalized ? activeRunId : null);
   const handleReopen = async () => {
-    if (!finalizedRunId) return;
+    if (!reopenTargetId) return;
     setReopening(true);
-    await reopenMutation.mutateAsync(finalizedRunId).then(async () => {
+    await reopenMutation.mutateAsync(reopenTargetId).then(async () => {
       // The reopen endpoint creates a fresh EXTRACT-stage run linked via
       // parameters.parent_run_id. We refetch the HITL session first so
       // activeRunId points at the new child run; only then do the
@@ -336,6 +346,25 @@ export default function ExtractionFullScreen() {
     setReopening(false);
   };
 
+  // Consensus -> extract on the SAME run (arbitrator-only). The mutation discards
+  // this run's consensus work server-side; refetch the run detail (stage + cleared
+  // consensus rows) and the form values so the screen re-renders as EXTRACT.
+  const handleReopenExtraction = () => {
+    if (!activeRunId) return;
+    void reopenExtractionMutation
+      .mutateAsync(activeRunId)
+      .then(async () => {
+        await Promise.all([refreshValues(), refetchRun()]);
+        setReopenExtractionOpen(false);
+        toast.success(t('extraction', 'reopenExtractionToast'));
+      })
+      .catch((err: unknown) => {
+        toast.error(
+          err instanceof Error ? err.message : t('pages', 'extractionScreenReopenError'),
+        );
+      });
+  };
+
   // Hook to compute progress. Pass the materialized instances so optional
   // cardinality='many' entities with no instances (e.g. no prediction models
   // added) and their child sections don't strand the form below the finalize
@@ -348,12 +377,71 @@ export default function ExtractionFullScreen() {
   // extraction completes. See usePreserveScroll for the rAF dance.
   const preserveScroll = usePreserveScroll(SCROLL_CONTAINERS_TO_PRESERVE);
 
-    // Auto-save hook — writes `human` proposals during the `extract` stage
-    // and per-user ``ReviewerDecision`` rows (decision='edit') during
-    // the `consensus` stage. The stage-aware target preserves the blind-review
-    // contract for multi-reviewer runs: each reviewer's typing during
-    // `consensus` lands in their own decision stream and the run view's
-    // ``currentValues`` are resolved per reviewer_id (Layer 2 of the
+    // Permissions hook (controls comparison access + the viewer write gate) —
+    // declared before the autosave hook, whose `enabled` reads the role.
+  const permissions = useComparisonPermissions(
+    projectId || '',
+    currentUserId,
+    'extraction'
+  );
+
+    // Hook for AI suggestions with callbacks to fill/clear field. Declared
+    // BEFORE useAutoSaveProposals: autosave consumes aiLinkByKey (below),
+    // which derives from this hook's sessionAdoption.
+  const handleAISuggestionAccepted = async (instanceId: string, fieldId: string, value: any) => {
+      // Fill field automatically when suggestion is accepted.
+      // NOTE: accepting makes NO backend call here. updateValue writes the
+      // value into form state and useAutoSaveProposals persists it as this
+      // reviewer's `edit` decision — carrying proposal_record_id via
+      // linkByKey (D0) so the adoption is traceable in consensus. The
+      // suggestion's status flip is optimistic; on reload the server
+      // re-resolves status from the caller's decisions. (refreshValues is
+      // deliberately avoided; it caused a full-page reload.)
+    updateValue(instanceId, fieldId, value);
+  };
+
+  const handleAISuggestionRejected = async (instanceId: string, fieldId: string) => {
+      // Clear the field when a suggestion is rejected. Same as accept: no
+      // direct backend call — updateValue writes null into form state and
+      // autosave persists the cleared value (with the coord's AI link
+      // severed via the sessionAdoption tombstone).
+    updateValue(instanceId, fieldId, null);
+  };
+
+  const {
+    suggestions: aiSuggestions,
+    sessionAdoption,
+    suggestionsReady: aiSuggestionsReady,
+    acceptSuggestion,
+    selectSuggestion,
+    rejectSuggestion,
+    getSuggestionsHistory,
+    refresh: refreshAISuggestions,
+  } = useAISuggestions({
+    articleId: articleId || '',
+    runId: activeRunId ?? undefined,
+    // Wait for the session to resolve a run before issuing the
+    // suggestion query — otherwise the first render fires a global
+    // (no runId) lookup that immediately gets superseded by the
+    // run-scoped one. Pure waste; same UX outcome.
+    enabled: !!articleId && !!projectId && !!activeRunId,
+    onSuggestionAccepted: handleAISuggestionAccepted,
+    onSuggestionRejected: handleAISuggestionRejected
+  });
+
+  // D0: coords whose value has a traceable AI basis — see useAiLinkMaps for
+  // the layer semantics and the never-from-status invariant.
+  const { aiLinkByKey, persistedAiLinkByKey } = useAiLinkMaps({
+    decisions: runDetail?.decisions,
+    currentUserId,
+    sessionAdoption,
+  });
+
+    // Auto-save hook — in the editable `extract` stage this extraction page
+    // writes per-user ``ReviewerDecision`` rows (decision='edit'); it never
+    // writes in `consensus` or any later stage (WRITABLE_STAGES gates it).
+    // Each reviewer's typing lands in their own decision stream and the run
+    // view's ``currentValues`` are resolved per reviewer_id (Layer 2 of the
     // multi-reviewer blind fix).
     //
     // No-op until the session is open and the run is in a writable
@@ -363,23 +451,31 @@ export default function ExtractionFullScreen() {
   const { saveState, lastSavedAt, hasUnsavedChanges, saveNow } = useAutoSaveProposals({
     runId: activeRunId,
     stage,
-    // kind drives the write target in 'extract': extraction → /decisions
-    // (per-user ReviewerDecision), QA → /proposals. This is the extraction page.
-    kind: 'extraction',
     values,
     // Server-loaded values are the baseline — opening a run must not re-POST
     // them as fresh proposals (the re-record-on-mount duplication).
     baselineValues: loadedValues,
+    // D0: stamp edit decisions with the accepted/selected AI proposal id;
+    // the persisted map is the link-side baseline (same-value adoptions
+    // still write — the human selection event is append-only recorded).
+    linkByKey: aiLinkByKey,
+    baselineLinkByKey: persistedAiLinkByKey,
     // Only the editable EXTRACT stage accepts autosave writes. Past that
     // (consensus, finalized, pending) the backend rejects writes, which
     // surfaced as a spurious "Error saving data automatically" toast on
     // opening a consolidated run. Mirrors the QA full-screen gate;
     // ``!isFinalized`` alone let ``consensus`` through.
     enabled:
-      !!activeRunId && !loading && valuesInitialized && stage === 'extract',
+      !!activeRunId &&
+      !loading &&
+      valuesInitialized &&
+      isRunEditable(stage) &&
+      // Viewer writes 403 server-side; never fire them (forms render
+      // read-only via forceReadOnly, this is the flush-path belt).
+      permissions.userRole !== 'viewer',
   });
 
-    // "Mark ready" (reviewer) — flush pending autosave, set the per-reviewer
+    // "Finish extraction" (reviewer) — flush pending autosave, set the per-reviewer
     // ready flag (advisory; does NOT advance the run), then open the next article
     // in the worklist. The run stays in EXTRACT — the manager opens consensus
     // separately. Re-editing after marking ready stays possible (autosave is live
@@ -403,7 +499,7 @@ export default function ExtractionFullScreen() {
     );
   };
 
-    // "Open consensus" (manager/consensus) — flush autosave, then advance
+    // "Start consensus" (manager/consensus) — flush autosave, then advance
     // EXTRACT → CONSENSUS so the evaluate-all surface becomes reachable. A blind
     // manager is auto-revealed server-side on consensus entry (run-scoped), surfaced
     // via runDetail.peers_revealed after the refetch below.
@@ -418,13 +514,6 @@ export default function ExtractionFullScreen() {
     if (!ok) return;
     await refetchRun().catch(() => undefined);
   };
-
-    // Permissions hook (controls comparison access) — extraction screen.
-  const permissions = useComparisonPermissions(
-    projectId || '',
-    currentUserId,
-    'extraction'
-  );
 
     // Other reviewers' values for the compare view come from the shared,
     // server-blinded runDetail (reviewerSummary.decisionsByCoord) — no
@@ -452,68 +541,24 @@ export default function ExtractionFullScreen() {
       .catch((e: unknown) => toast.error(e instanceof Error ? e.message : String(e)));
   };
 
-    // Hook for AI suggestions with callbacks to fill/clear field
-  const handleAISuggestionAccepted = async (instanceId: string, fieldId: string, value: any) => {
-      // Fill field automatically when suggestion is accepted.
-      // NOTE: in this screen the hook runs `acceptStrategy: 'human-proposal'`,
-      // so accepting makes NO backend call. Persistence happens solely here:
-      // updateValue writes the value into form state, and useAutoSaveProposals
-      // records it as a fresh `human` proposal. The suggestion's own
-      // status='accepted' is local-only (not persisted), so it reappears as
-      // pending on reload — only the value survives. (refreshValues is
-      // deliberately avoided; it caused a full-page reload.)
-    updateValue(instanceId, fieldId, value);
-  };
+  // Shared actionable count (ADR-0016 Phase 4): unresolved AI proposals awaiting
+  // a human decision — an abstention ("no information") counts, resolved ones
+  // don't. Memoized: this screen re-renders on every field keystroke.
+  const aiPendingCount = useMemo(
+    () => countActionableSuggestions(aiSuggestions),
+    [aiSuggestions],
+  );
 
-  const handleAISuggestionRejected = async (instanceId: string, fieldId: string) => {
-      // Clear the field when a suggestion is rejected. Same as accept: the
-      // 'human-proposal' strategy makes NO backend call — updateValue writes
-      // null into form state, and useAutoSaveProposals persists the cleared
-      // value. The suggestion's status='rejected' flip is local-only.
-    updateValue(instanceId, fieldId, null);
-  };
-
-  const { 
-    suggestions: aiSuggestions, 
-    acceptSuggestion, 
-    rejectSuggestion, 
-    getSuggestionsHistory,
-    refresh: refreshAISuggestions,
-    isActionLoading 
-  } = useAISuggestions({
-    articleId: articleId || '',
-    projectId: projectId || '',
-    runId: activeRunId ?? undefined,
-    // Wait for the session to resolve a run before issuing the
-    // suggestion query — otherwise the first render fires a global
-    // (no runId) lookup that immediately gets superseded by the
-    // run-scoped one. Pure waste; same UX outcome.
-    enabled: !!articleId && !!projectId && !!activeRunId,
-    // On this screen accept/reject does not write to the backend directly:
-    // the value bubbles to the form pipeline and the autosave persists it as
-    // the user's own value on the `extract`-stage run, keeping one write path.
-    acceptStrategy: 'human-proposal',
-    onSuggestionAccepted: handleAISuggestionAccepted,
-    onSuggestionRejected: handleAISuggestionRejected
-  });
-
-  // Full AI extraction — mirrors HeaderMoreMenu wiring exactly.
-  // When an active run is available (in `extract` stage), ``extractForRun``
-  // reuses it (preserving human proposals). Otherwise ``extractFullAI``
-  // creates a fresh run via the legacy multi-step orchestration.
-  const { extractFullAI, loading: extractingFullAI, progress: extractionProgress } = useFullAIExtraction({
+  // AI extraction always runs on the OPEN session run (``extractForRun``
+  // reuses it, preserving human decisions). The old run-less ``extractFullAI``
+  // fallback is gone: it forked a parallel run that shadowed the reviewer's
+  // saved decisions on refresh (the silent data-loss bug). The button is gated
+  // on ``activeRunId`` (see ``canRunAI``), so a session must be open first.
+  const { extractForRun, loading: extractingAI } = useRunAIExtraction({
     onSuccess: async () => {
       await handleExtractionComplete();
     },
   });
-
-  const { extractForRun, loading: extractingForRun } = useRunAIExtraction({
-    onSuccess: async () => {
-      await handleExtractionComplete();
-    },
-  });
-
-  const extractingAI = extractingFullAI || extractingForRun;
 
   // Handler wired to RunHeader.AIActions — mirrors HeaderMoreMenu.handleFullAIExtraction.
   const onExtractWithAI = () => {
@@ -521,24 +566,17 @@ export default function ExtractionFullScreen() {
       console.warn('[ExtractionFullScreen] articleId or templateId not provided for AI extraction');
       return;
     }
-    if (activeRunId) {
-      void extractForRun({
-        projectId: projectId ?? '',
-        articleId,
-        templateId: template.id,
-        runId: activeRunId,
-      }).catch((error: unknown) => {
-        console.error('[ExtractionFullScreen] Run AI extraction error:', error);
-      });
-    } else {
-      void extractFullAI({
-        projectId: projectId ?? '',
-        articleId,
-        templateId: template.id,
-      }).catch((error: unknown) => {
-        console.error('[ExtractionFullScreen] Full AI extraction error:', error);
-      });
-    }
+    // Belt-and-suspenders: never fire a run-less extraction (the orphaning
+    // bug). The button is already disabled until the session run resolves.
+    if (!activeRunId) return;
+    void extractForRun({
+      projectId: projectId ?? '',
+      articleId,
+      templateId: template.id,
+      runId: activeRunId,
+    }).catch((error: unknown) => {
+      console.error('[ExtractionFullScreen] Run AI extraction error:', error);
+    });
   };
 
   // Partition entity types into study-level + model container + per-model
@@ -834,7 +872,15 @@ export default function ExtractionFullScreen() {
     }
     const removed = await extractionInstanceService.removeInstance(instanceId).catch((error: unknown) => {
       console.error('Error removing instance:', error);
-      toast.error(t('pages', 'extractionScreenErrorRemoveInstance'));
+      // FK 23503: the instance is pinned by published rows from a prior
+      // finalized revision (deferred FK, migration 0040) — explain, don't
+      // show the generic failure (2026-07-02 hardening finding).
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(
+        message.includes('extraction_published_states')
+          ? t('pages', 'extractionScreenInstancePinned')
+          : t('pages', 'extractionScreenErrorRemoveInstance'),
+      );
       return false;
     });
     if (removed !== false) {
@@ -1031,15 +1077,15 @@ export default function ExtractionFullScreen() {
 
   // P0 guide handler: scroll the form container to top and show a toast.
   // Jump-to-first-empty-field is a documented P1 refinement — not wired here.
-  const onGuide = () => {
+  const onGuide = (message?: string) => {
     const el = document.querySelector('[data-scroll-container="extraction-form"] [data-radix-scroll-area-viewport]');
     if (el) el.scrollTop = 0;
-    toast.info(t('extraction', 'runHeaderGateBlocked'));
+    toast.info(message ?? t('extraction', 'runHeaderGateBlocked'));
   };
 
   // Stage-driven transition for the RunHeader PrimaryAction slot.
-  // buildExtractionTransition() owns all label/gate logic (Mark ready / Open
-  // consensus / Approve & finalize). The legacy header finalize path is gone.
+  // buildExtractionTransition() owns all label/gate logic (Finish extraction /
+  // Start consensus / Approve & finalize). The legacy header finalize path is gone.
   //
   // divergencesResolved: every diverging coord carries a consensus decision (a
   // no-divergence run is trivially resolved). isReady: the caller already marked
@@ -1059,6 +1105,7 @@ export default function ExtractionFullScreen() {
     isComplete,
     completed: completedFields,
     total: totalFields,
+    consensusComplete: requiredFieldsResolved,
     divergencesResolved,
     isReady,
     onMarkReady,
@@ -1070,14 +1117,18 @@ export default function ExtractionFullScreen() {
   // Reopen is surfaced via the header Menu instead of the orphaned banner.
   const canReopen = isFinalized || (!activeRunId && !!finalizedRun);
 
+  // Backward reopen (consensus -> extract): arbitrator-only, consensus stage only.
+  // resolvedCoordKeys.size is exactly what the discard removes (drives the dialog copy).
+  const canReopenExtraction = deriveCanReopenExtraction(permissions.canResolveConflicts, stage);
+  const reopenResolvedCount = resolvedCoordKeys.size;
+
   // AI extraction progress overlay (fixed-position; DOM placement irrelevant).
   const aiProgressOverlay =
-    (extractingFullAI && extractionProgress) ||
     (aiExtractionState?.loading && aiExtractionState?.progress) ||
     isProgressMinimized ? (
       <div className="fixed bottom-6 right-6 z-[9999] w-96 max-w-[calc(100vw-3rem)]">
         <FullAIExtractionProgress
-          progress={extractionProgress ?? aiExtractionState?.progress ?? { stage: 'extracting_models' }}
+          progress={aiExtractionState?.progress ?? { stage: 'extracting_models' }}
           onClose={() => {
             setAiExtractionState(null);
             setIsProgressMinimized(false);
@@ -1089,34 +1140,47 @@ export default function ExtractionFullScreen() {
       </div>
     ) : null;
 
-  // HITL revision/finalized status badges, rendered between header and panels.
-  const extractionSubHeader =
-    parentRunId || isFinalized || (!activeRunId && finalizedRun) ? (
-      <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2 text-xs">
-        <HITLStatusBadges
-          kind="extraction"
-          finalized={isFinalized || (!activeRunId && !!finalizedRun)}
-          parentRunId={parentRunId}
-        />
-      </div>
-    ) : null;
+  // Published/revision banner between header and panels (shared component,
+  // spec 2026-07-02 D4) — the header-menu Reopen item stays.
+  const extractionSubHeader = (
+    <HITLPublishedBanner
+      kind="extraction"
+      finalized={canReopen}
+      parentRunId={parentRunId}
+      onReopen={() => void handleReopen()}
+      reopening={reopening}
+    />
+  );
 
-  // Left panel: ConsensusPanel in consensus stage; ExtractionFormPanel otherwise.
-  const extractionFormPanel =
+  const extractionFormPanelInner =
     inConsensusStage && runDetail ? (
       <div className="h-full min-h-0 overflow-y-auto" data-testid="extraction-consensus-area">
-        <ConsensusPanel
+        <ConsensusResolutionPanel
           runDetail={runDetail}
           summary={reviewerSummary}
+          entityTypes={entityTypes}
+          instances={instances}
+          ownValues={values}
           requiredCoords={requiredCoords}
           peersRevealed={!!runDetail.peers_revealed}
-          fieldLabelByCoord={fieldLabelByCoord}
           reviewerLabelById={reviewerProfiles.labelById}
-          avatarById={reviewerProfiles.avatarById}
+          reviewerAvatarById={reviewerProfiles.avatarById}
+          canResolve={permissions.canResolveConflicts}
+          // Consensus AI trace (D2): a single top-level channel, deeper history
+          // window (50) so adopted versions rarely fall outside it; a not-yet-
+          // loaded/failed suggestions map passes null so no coord mislabels.
+          // showPeerIdentity + currentUserId gate field-level peer cross-marks
+          // to self in blind review (server already strips peer rows).
+          aiTrace={{
+            articleId: articleId || '',
+            getHistory: (i, f) => getSuggestionsHistory(i, f, 50),
+            aiSuggestions: aiSuggestionsReady ? aiSuggestions : null,
+            showPeerIdentity: !!runDetail.peers_revealed || permissions.canSeeOthers,
+            currentUserId: currentUserId || null,
+          }}
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}
           onFinalize={handleApproveFinalize}
-          isComplete={isComplete}
           isResolving={consensusMutation.isPending}
           isFinalizing={advanceMutation.isPending || approveFinalize.isPending}
           showFinalize={false}
@@ -1135,9 +1199,9 @@ export default function ExtractionFullScreen() {
           updateValue,
           aiSuggestions,
           acceptSuggestion,
+          selectSuggestion,
           rejectSuggestion,
           getSuggestionsHistory,
-          isActionLoading,
           models,
           activeModelId,
           setActiveModelId,
@@ -1166,6 +1230,19 @@ export default function ExtractionFullScreen() {
       />
     );
 
+  const extractionFormPanel = (
+    // showPeerIdentity (D3): auto-revealed consensus / unblinded or manager
+    // extract callers see "Run by {name}" on popover run headers and the
+    // generation dialog's Ran-by rows; blind reviewers keep timestamp-only.
+    <RunEditabilityProvider
+      stage={stage}
+      showPeerIdentity={!!runDetail?.peers_revealed || permissions.canSeeOthers}
+      forceReadOnly={permissions.userRole === 'viewer'}
+    >
+      {extractionFormPanelInner}
+    </RunEditabilityProvider>
+  );
+
   return (
     <div className="h-full bg-background">
       {aiProgressOverlay}
@@ -1183,8 +1260,6 @@ export default function ExtractionFullScreen() {
         }
         header={
           <ExtractionHeader
-        projectId={projectId || ''}
-        projectName={project?.name || t('pages', 'extractionScreenProjectFallback')}
         articleTitle={article.title}
         onBack={handleBack}
         sidebarCollapsed={sidebarCollapsed}
@@ -1200,7 +1275,9 @@ export default function ExtractionFullScreen() {
         onTogglePDF={pdf.toggle}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        hasComparison={canCompare}
+        // D6: during consensus the resolve table is the only compare surface
+        // (viewMode is ignored there) — a live toggle would be a dead control.
+        hasComparison={canCompare && !inConsensusStage}
         userRole={permissions.userRole}
         isBlindMode={permissions.isBlindMode}
         saveState={saveState}
@@ -1228,16 +1305,25 @@ export default function ExtractionFullScreen() {
         }}
         canReveal={canReveal}
         onReveal={onReveal}
-        onJumpToDivergence={() => setViewMode('compare')}
+        // D6: inert during consensus (the consensus branch ignores viewMode) —
+        // mirror the QA guard so the status-popover jump never dead-clicks.
+        onJumpToDivergence={inConsensusStage ? undefined : () => setViewMode('compare')}
         // AI extraction seeds proposals and only works in EXTRACT; once the
         // run advances to consensus it's a one-time-done step (re-running errors).
-        canRunAI={stage === 'extract' || stage == null}
+        // Gated on an OPEN session run — extraction always targets that run, so
+        // it never forks a parallel run that would orphan the reviewer's edits.
+        canRunAI={!!activeRunId && (stage === 'extract' || stage == null)}
         onExtractionComplete={handleExtractionComplete}
         aiSuggestions={aiSuggestions}
-        aiPendingCount={Object.keys(aiSuggestions).length}
+        aiPendingCount={isFinalized ? 0 : aiPendingCount}
         onAISuggestionsClick={() => {
-          // P1: scroll to first suggestion or open panel
-          console.warn('Clicked AI badge - scrolling to first suggestion');
+          // Header "Review N pending suggestions": scroll the form to the
+          // section holding the first pending suggestion.
+          const instanceId = firstPendingInstanceId(aiSuggestions);
+          const entityTypeId = instanceId
+            ? instances.find((i) => i.id === instanceId)?.entity_type_id
+            : undefined;
+          if (entityTypeId) scrollToSectionById(entityTypeId);
         }}
         onRefreshInstances={handleRefreshInstances}
         onExtractWithAI={onExtractWithAI}
@@ -1247,6 +1333,8 @@ export default function ExtractionFullScreen() {
         canReopen={canReopen}
         onReopen={() => void handleReopen()}
         reopening={reopening}
+        canReopenExtraction={canReopenExtraction}
+        onReopenExtraction={() => setReopenExtractionOpen(true)}
       />
         }
       />
@@ -1266,6 +1354,14 @@ export default function ExtractionFullScreen() {
         extractedFieldsCount={modelToRemove?.fieldsCount || 0}
         onConfirm={handleConfirmRemoveModel}
         onCancel={() => setModelToRemove(null)}
+      />
+
+      <ReopenExtractionDialog
+        open={reopenExtractionOpen}
+        onOpenChange={setReopenExtractionOpen}
+        resolvedCount={reopenResolvedCount}
+        onConfirm={handleReopenExtraction}
+        pending={reopenExtractionMutation.isPending}
       />
     </div>
   );

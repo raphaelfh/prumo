@@ -14,9 +14,20 @@ vi.mock('@/hooks/extraction/ai/useRunAIExtraction', () => ({
 vi.mock('@/hooks/hitl/useHITLProjectTemplates', () => ({
   useHITLProjectTemplates: () => ({ globalTemplates: [], loading: false }),
 }));
+// The header now mounts NotificationCenter (via Utility), whose service import
+// graph reaches the supabase client — which throws at module load in the
+// env-less Frontend Tests CI job. Stub the client (the convention for tests
+// that pull it in); rendering makes no supabase calls here.
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: { auth: { getSession: () => Promise.resolve({ data: { session: null }, error: null }) } },
+}));
+
+// cmdk highlights the active command item via scrollIntoView, which jsdom
+// does not implement — stub it so the ⌘K palette can open under test.
+Element.prototype.scrollIntoView = vi.fn();
 
 const base = {
-  projectId: 'p', projectName: 'P', articleTitle: 'A', onBack: vi.fn(),
+  articleTitle: 'A', onBack: vi.fn(),
   articles: [{ id: 'art-1', title: 'A' }], currentArticleId: 'art-1', onNavigateToArticle: vi.fn(),
   completedFields: 0, totalFields: 0, completionPercentage: 0,
   showPDF: false, onTogglePDF: vi.fn(), viewMode: 'extract' as const, onViewModeChange: vi.fn(),
@@ -25,12 +36,16 @@ const base = {
 };
 
 describe('ExtractionHeader (post legacy-cascade)', () => {
-  it('hides the More menu entirely when it would have no items', () => {
-    // base has hasComparison:false and no canReopen, so the only two menu
-    // items are both gated off. An empty kebab is a dead affordance — it must
-    // not render at all (regression: it used to open to an empty dropdown).
+  it('folds feedback + help into the kebab at narrow header widths', async () => {
+    // The full-screen run page has no global Topbar, so notifications/feedback/
+    // help moved into the run header. Feedback + help are inline when the header
+    // is wide and fold into the kebab when narrow (Utility/useHeaderCompact). In
+    // jsdom getBoundingClientRect is zero-width, so the header reads as narrow
+    // here and the menu always renders with the folded items.
     render(<MemoryRouter><ExtractionHeader {...base} /></MemoryRouter>);
-    expect(screen.queryByRole('button', { name: /more/i })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /more/i }));
+    expect(screen.getByRole('menuitem', { name: /send feedback/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /help and shortcuts/i })).toBeInTheDocument();
   });
 
   it('renders the More menu (without an Export Data item) when it has items', async () => {
@@ -39,10 +54,22 @@ describe('ExtractionHeader (post legacy-cascade)', () => {
     expect(screen.queryByText(/Export Data/i)).not.toBeInTheDocument();
   });
 
-  // TDD: Task 9 — re-skin onto RunHeader compound
-  it('renders a StageRail navigation landmark', () => {
+  it('surfaces notifications inline (no global Topbar on the run page)', () => {
+    render(<MemoryRouter><ExtractionHeader {...base} /></MemoryRouter>);
+    expect(screen.getByRole('button', { name: /notifications/i })).toBeInTheDocument();
+  });
+
+  // The RunStatus chip is the canonical marker that the RunHeader is mounted.
+  it('renders the RunStatus chip when a stage is provided', () => {
     render(<MemoryRouter><ExtractionHeader {...base} stage="extract" /></MemoryRouter>);
-    expect(screen.getByRole('navigation', { name: 'Run stage' })).toBeInTheDocument();
+    expect(screen.getByTestId('run-stage-current')).toBeInTheDocument();
+  });
+
+  it('⌘K palette exposes "View run status" and it opens the status popover', async () => {
+    render(<MemoryRouter><ExtractionHeader {...base} stage="extract" /></MemoryRouter>);
+    await userEvent.keyboard('{Meta>}k{/Meta}');
+    await userEvent.click(await screen.findByText('View run status'));
+    expect(await screen.findByTestId('run-status-popover')).toBeInTheDocument();
   });
 
   it('primary button label has no parenthetical like "(advance to consensus)"', () => {
@@ -56,20 +83,47 @@ describe('ExtractionHeader (post legacy-cascade)', () => {
           totalFields={5}
           transition={{
             to: 'consensus',
-            label: 'Mark ready',
+            label: 'Finish extraction',
             gate: { ok: true },
             onAdvance: vi.fn(),
           }}
         />
       </MemoryRouter>,
     );
-    const btn = screen.getByRole('button', { name: /mark ready/i });
+    const btn = screen.getByRole('button', { name: /finish extraction/i });
     expect(btn.textContent).not.toMatch(/\(.*\)/);
   });
 
   it('does NOT render extraction-hitl-banner when rendered in isolation', () => {
     render(<MemoryRouter><ExtractionHeader {...base} /></MemoryRouter>);
     expect(screen.queryByTestId('extraction-hitl-banner')).not.toBeInTheDocument();
+  });
+
+  describe('reopen-extraction menu item', () => {
+    it('appears in the More menu when canReopenExtraction and fires onReopenExtraction', async () => {
+      const onReopenExtraction = vi.fn();
+      render(
+        <MemoryRouter>
+          <ExtractionHeader
+            {...base}
+            stage="consensus"
+            canReopenExtraction
+            onReopenExtraction={onReopenExtraction}
+          />
+        </MemoryRouter>,
+      );
+      await userEvent.click(screen.getByRole('button', { name: /more/i }));
+      await userEvent.click(await screen.findByRole('menuitem', { name: /reopen extraction/i }));
+      expect(onReopenExtraction).toHaveBeenCalledTimes(1);
+    });
+
+    it('is absent when canReopenExtraction is false', async () => {
+      render(<MemoryRouter><ExtractionHeader {...base} stage="consensus" /></MemoryRouter>);
+      await userEvent.click(screen.getByRole('button', { name: /more/i }));
+      expect(
+        screen.queryByRole('menuitem', { name: /reopen extraction/i }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   // TDD: Task 9 regression — article prev/next pager restored in re-skinned header

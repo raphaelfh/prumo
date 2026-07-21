@@ -34,17 +34,23 @@ import {
   deleteField as deleteFieldService,
   reorderFields as reorderFieldsService,
 } from '@/services/extractionFieldService';
+import {useTemplateRepublish} from '@/hooks/extraction/useTemplateRepublish';
 
 interface UseFieldManagementProps {
   entityTypeId: string;
   projectId: string;
+  /** Project template owning the section. When provided, every successful
+   * mutation republishes the template version so article forms see it. */
+  templateId?: string;
 }
 
 export function useFieldManagement({
   entityTypeId,
   projectId,
+  templateId,
 }: UseFieldManagementProps) {
   const { user } = useAuth();
+  const { republish } = useTemplateRepublish(projectId, templateId);
   const [fields, setFields] = useState<ExtractionField[]>([]);
   const [loading, setLoading] = useState(true);
   const [permissions, setPermissions] = useState<PermissionCheckResult>({
@@ -200,6 +206,9 @@ export function useFieldManagement({
     const createdField = result.data;
     setFields(prev => [...prev, createdField]);
     toast.success(t('extraction', 'fieldAddedSuccess').replace('{{label}}', createdField.label));
+    // Fire-and-forget: the edit itself already succeeded; publishing to
+    // article forms happens in the background (failure toasts on its own).
+    void republish();
     return createdField;
   };
 
@@ -254,6 +263,7 @@ export function useFieldManagement({
 
     const createdField = result.data;
     setFields(prev => [...prev, createdField]);
+    void republish();
     return createdField;
   };
 
@@ -295,6 +305,7 @@ export function useFieldManagement({
       prev.map(field => (field.id === fieldId ? updatedField : field))
     );
     toast.success(t('extraction', 'fieldUpdatedSuccess'));
+    void republish();
     return updatedField;
   };
 
@@ -327,6 +338,7 @@ export function useFieldManagement({
 
     setFields(prev => prev.filter(field => field.id !== fieldId));
     toast.success(t('extraction', 'fieldRemovedSuccess'));
+    void republish();
     return true;
   };
 
@@ -386,6 +398,7 @@ export function useFieldManagement({
     // Reload fields to ensure correct order
     await loadFields();
     toast.success(t('extraction', 'fieldsReorderSuccess'));
+    void republish();
     return true;
   };
 

@@ -95,6 +95,17 @@ export function useModelManagement({
     // Ref to store loadModels and avoid loops in useEffect
   const loadModelsRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
+    // Monotonic load generation. Each ``loadModels`` call claims the next
+    // number; any state write it makes AFTER an await is dropped once a
+    // newer load (pager navigation, an entity-type switch, or a flapping
+    // ``modelInstancesSig``) has superseded it. Without this guard a slow
+    // stale load's resolution overwrites the current article's models —
+    // the "Encontradas 1 → 0 → 1" flapping incident class (prod 2026-07-05).
+    // The mount-load effect has no cleanup, so the guard (not an
+    // AbortController — the awaited services take no signal) is what makes a
+    // superseded resolution a no-op.
+  const loadGenerationRef = useRef(0);
+
     // Sync ref with state
   useEffect(() => {
     activeModelIdRef.current = activeModelId;
@@ -104,8 +115,27 @@ export function useModelManagement({
   const getModelProgress = async (instanceId: string): Promise<Model['progress']> =>
     fetchModelProgress(articleId, instanceId);
 
+    // Claim the next load generation for an optimistic mutation. A local
+    // create/remove is the freshest client truth, so it must supersede any
+    // load that STARTED before it — otherwise that in-flight load's absolute
+    // ``setModels(snapshot)`` (built before the mutation) would drop a
+    // just-created model or resurrect a just-removed one when its progress
+    // fan-out resolves (its ``isStale`` check passes because a mutation,
+    // unlike a new load, never advanced the generation). A refresh started
+    // AFTER the mutation claims a higher generation and still wins.
+  const supersedeInFlightLoads = () => {
+    loadGenerationRef.current += 1;
+  };
+
     // Load existing models
   const loadModels = async () => {
+    // Claim this load's generation. ``isStale`` is true once a newer
+    // ``loadModels`` has started — used to gate every write that follows an
+    // await so a superseded resolution never commits.
+    const generation = loadGenerationRef.current + 1;
+    loadGenerationRef.current = generation;
+    const isStale = () => generation !== loadGenerationRef.current;
+
     if (!enabled || !modelParentEntityTypeId) {
       console.warn('⏭️ loadModels: Skipped (enabled:', enabled, ', modelParentEntityTypeId:', modelParentEntityTypeId, ')');
       setModels([]);
@@ -127,6 +157,10 @@ export function useModelManagement({
       instances = modelInstances;
     } else {
       const result = await loadModelInstances(articleId, modelParentEntityTypeId);
+
+      // A newer load (different article/entity-type, or a re-derived view)
+      // superseded this one while the read was in flight — drop the result.
+      if (isStale()) return;
 
       if (!result.ok) {
         console.error('Error loading models:', result.error);
@@ -153,6 +187,10 @@ export function useModelManagement({
           };
         })
       );
+
+      // The progress fan-out is a second async gap; re-check before writing
+      // so a load superseded during it cannot clobber the current models.
+      if (isStale()) return;
 
       setModels(modelsWithProgress);
 
@@ -209,7 +247,9 @@ export function useModelManagement({
       progress: { completed: 0, total: 0, percentage: 0 }
     };
 
-    // Update state
+    // Update state. Supersede any in-flight load first so its stale snapshot
+    // cannot drop the model we are about to add.
+    supersedeInFlightLoads();
     setModels(prev => [...prev, newModel]);
     setActiveModelId(newModel.instanceId);
 
@@ -237,7 +277,10 @@ export function useModelManagement({
       throw err;
     });
 
-    // Update local state - remove model and capture name for toast
+    // Update local state - remove model and capture name for toast.
+    // Supersede any in-flight load first so its stale snapshot cannot
+    // resurrect the model we are about to remove.
+    supersedeInFlightLoads();
     let removedModelName = 'Model';
     let updatedModels: Model[] = [];
 

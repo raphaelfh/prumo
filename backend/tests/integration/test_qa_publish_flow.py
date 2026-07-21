@@ -72,7 +72,12 @@ def _auth_as(profile_id: UUID) -> None:
 
 
 async def _pick_article(db: AsyncSession) -> tuple[UUID, UUID] | None:
-    row = (await db.execute(text("SELECT id, project_id FROM public.articles LIMIT 1"))).first()
+    row = (
+        await db.execute(
+            text("SELECT id, project_id FROM public.articles WHERE id = :aid"),
+            {"aid": str(SEED.primary_article)},
+        )
+    ).first()
     if row is None:
         return None
     return UUID(str(row[0])), UUID(str(row[1]))
@@ -358,16 +363,16 @@ async def _qa_run_in_consensus(
 
 
 @pytest.mark.asyncio
-async def test_qa_consensus_publish_admits_non_arbitrator_reviewer(
+async def test_qa_consensus_publish_requires_arbitrator(
     db_client: AsyncClient,
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
-    """QA 'Publish assessment' posts manual_override consensus per field and is,
-    by design, available to any reviewer (single-reviewer self-publish; see
-    frontend lib/qa/qaTransition). The kind-aware gate must NOT demand an
-    arbitrator for QA runs — a plain reviewer still publishes successfully. This
-    guards against a blunt arbitrator gate that would regress QA."""
+    """QA mirrors extraction (2026-07-09): resolving/publishing a consensus
+    value is an adjudicator action, so a plain project reviewer — NOT an
+    arbitrator — is rejected. (Previously QA allowed reviewer self-publish; the
+    staged flow moved finalize authority to the manager, see
+    frontend lib/qa/qaTransition.)"""
     setup = await _qa_run_in_consensus(db_client, db_session)
     if setup is None:
         pytest.skip("Need a seeded QA template")
@@ -381,10 +386,11 @@ async def test_qa_consensus_publish_admits_non_arbitrator_reviewer(
             "field_id": field_id,
             "mode": "manual_override",
             "value": {"value": "Y"},
-            "rationale": "reviewer self-publish",
+            "rationale": "reviewer must not self-publish",
         },
     )
-    assert res.status_code == 201, res.text
+    assert res.status_code == 403, res.text
+    assert "manager or consensus role required" in res.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -393,9 +399,9 @@ async def test_qa_consensus_publish_rejects_viewer_member(
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
-    """A read-only viewer is rejected even for QA: the kind-aware gate still
-    requires a reviewer-capable role, matching the workflow RLS (which excludes
-    viewers from writing consensus rows)."""
+    """A read-only viewer is rejected for QA — same arbitrator gate as a plain
+    reviewer, matching the workflow RLS (which excludes viewers from writing
+    consensus rows)."""
     setup = await _qa_run_in_consensus(db_client, db_session)
     if setup is None:
         pytest.skip("Need a seeded QA template")
@@ -422,7 +428,32 @@ async def test_qa_consensus_publish_rejects_viewer_member(
         },
     )
     assert res.status_code == 403, res.text
-    assert "reviewer role required" in res.json()["error"]["message"].lower()
+    assert "manager or consensus role required" in res.json()["error"]["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_qa_advance_to_finalized_requires_arbitrator(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """Finalizing is an adjudicator action (mirror extraction): a plain reviewer
+    cannot flip a QA run to FINALIZED via the /advance route, closing the
+    bypass around the arbitrator-only /approve-finalize + /consensus gates. The
+    reviewer can still reach earlier stages (advance to consensus stays
+    reviewer-level, matching extraction)."""
+    setup = await _qa_run_in_consensus(db_client, db_session)
+    if setup is None:
+        pytest.skip("Need a seeded QA template")
+    run_id, _instance_id, _field_id = setup
+
+    _auth_as(SEED.reviewer_profile)  # a project reviewer, NOT an arbitrator
+    res = await db_client.post(
+        f"/api/v1/runs/{run_id}/advance",
+        json={"target_stage": "finalized"},
+    )
+    assert res.status_code == 403, res.text
+    assert "manager or consensus role required" in res.json()["error"]["message"].lower()
 
 
 # ===================== Republish updates PublishedState.version =====================

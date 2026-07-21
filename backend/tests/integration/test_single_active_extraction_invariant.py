@@ -22,6 +22,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests.integration.conftest import SEED
+
 pytestmark = pytest.mark.asyncio
 
 
@@ -29,7 +31,12 @@ pytestmark = pytest.mark.asyncio
 
 
 async def _pick_project_with_member(db: AsyncSession) -> tuple[UUID, UUID] | None:
-    """Return (project_id, profile_id) for any project with at least one member."""
+    """Return (project_id, profile_id) for the seeded sentinel project + manager.
+
+    Pinned to the seed (vs ``LIMIT 1`` over all projects) because the caller
+    wipes every extraction template in the picked project — an unscoped pick
+    on a shared dev DB would destroy the Playwright E2E fixture graph.
+    """
     row = (
         await db.execute(
             text(
@@ -37,9 +44,11 @@ async def _pick_project_with_member(db: AsyncSession) -> tuple[UUID, UUID] | Non
                 SELECT p.id, pm.user_id
                 FROM public.projects p
                 JOIN public.project_members pm ON pm.project_id = p.id
+                WHERE p.id = :pid AND pm.user_id = :uid
                 LIMIT 1
                 """
-            )
+            ),
+            {"pid": str(SEED.primary_project), "uid": str(SEED.primary_profile)},
         )
     ).first()
     if row is None:

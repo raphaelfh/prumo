@@ -16,26 +16,20 @@
 
 import {memo, useState} from 'react';
 import {Label} from '@/components/ui/label';
-import {Input} from '@/components/ui/input';
-import {Textarea} from '@/components/ui/textarea';
-import {Badge} from '@/components/ui/badge';
-import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/components/ui/select';
-import {SelectWithOther} from '@/components/ui/SelectWithOther';
-import {MultiSelectWithOther} from '@/components/ui/MultiSelectWithOther';
-import {Switch} from '@/components/ui/switch';
-import {AlertCircle, History} from 'lucide-react';
+import {AlertCircle, Check, History} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
-import {AISuggestionDisplay} from './ai/AISuggestionDisplay';
-import {AISuggestionBadge} from './ai/AISuggestionBadge';
-import {AISuggestionHistoryPopover} from './ai/AISuggestionHistoryPopover';
-import {getRelatedUnits} from '@/lib/unitConversions';
-import {extractUnit, extractValue, isEmptyValue, isValidNumber,} from '@/lib/ai-extraction/valueParser';
+import {AISuggestionDisplay, type AISuggestionReviewBinding} from './ai/AISuggestionDisplay';
+import {AISuggestionReviewPopover} from './ai/AISuggestionReviewPopover';
+import {FieldValueEditor} from './FieldValueEditor';
+import {isEmptyValue, isValidNumber} from '@/lib/ai-extraction/valueParser';
 import {isSuggestionPending} from '@/lib/ai-extraction/suggestionUtils';
+import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
 import {useJustUpdatedValue} from '@/hooks/extraction/useJustUpdatedValue';
+import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
@@ -50,14 +44,33 @@ interface FieldInputProps {
   onAcceptAI?: () => void;
   onRejectAI?: () => void;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
-  isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
+  /**
+   * Select a specific AI version by proposal id (drilled verbatim from the
+   * hook; FieldInput binds the coord). Powers the review popover's version
+   * switching; a null value records an explicit "no information" selection.
+   */
+  selectSuggestion?: (
+    instanceId: string,
+    fieldId: string,
+    proposalRecordId: string,
+    value: unknown,
+    confidence: number,
+  ) => void | Promise<void>;
   disabled?: boolean;
+  /** Threaded to the review popover's generation dialog so it can lazily fetch
+   *  the stored markdown the LLM received. */
+  articleId?: string;
 }
 
 // =================== COMPONENT ===================
 
 export function FieldInput(props: FieldInputProps) {
-  const { field, instanceId, value, onChange, disabled, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, isActionLoading } = props;
+  const { field, instanceId, value, onChange, disabled, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, selectSuggestion, articleId } = props;
+  // Read-only run (published/consensus/pending): every input variant and the
+  // disposition buttons disable; the actionable AI chrome (badge + inline
+  // accept/reject strip) hides — the History popover stays as audit trail.
+  const { readOnly } = useRunEditability();
+  const inputDisabled = disabled || readOnly;
   const [validationError, setValidationError] = useState<string | null>(null);
   // Briefly highlights this field when its value was just updated (e.g. by an
   // AI extraction refresh) so the user sees what changed without having to
@@ -66,7 +79,6 @@ export function FieldInput(props: FieldInputProps) {
 
     // Fixed comfortable spacing
   const containerPadding = 'py-2.5';
-  const inputHeight = 'h-8';
   const gap = 'gap-x-3.5 gap-y-1';
 
     // Display value logic:
@@ -100,13 +112,20 @@ export function FieldInput(props: FieldInputProps) {
     // If no accepted suggestion, field value is considered manual
   const hasManualValue = !isEmptyValue(value) && (!hasAIAccepted || !isValueEqualToAccepted);
 
+    // A resolved disposition marker ({value:null, absent_reason}) means "no scalar
+    // value on purpose" (ADR-0016). The typed input renders empty — the marker is
+    // shown by the disposition control below; typing a real value clears it.
+  const activeReason = valueAbsentReason(value);
+
     // Value to display: prefer state value (already updated after accept)
     // If no state value but there is accepted suggestion, show suggestion value
-  const displayValue = !isEmptyValue(value)
-    ? value
-    : (hasAIAccepted && aiAcceptedValue !== null)
-      ? aiAcceptedValue
-      : '';
+  const displayValue = activeReason
+    ? ''
+    : !isEmptyValue(value)
+      ? value
+      : (hasAIAccepted && aiAcceptedValue !== null)
+        ? aiAcceptedValue
+        : '';
 
     // Basic validation
   const validateValue = (val: any): boolean => {
@@ -135,229 +154,58 @@ export function FieldInput(props: FieldInputProps) {
     onChange(newValue);
   };
 
-    // Render input by type
-  const renderInput = () => {
-    switch (field.field_type) {
-      case 'text': {
-          // Long description: use textarea (English keywords for label detection)
-        const labelLower = field.label.toLowerCase();
-          const isLongText = labelLower.includes('description') ||
-              labelLower.includes('justification') ||
-              labelLower.includes('comment') ||
-              labelLower.includes('conclusion') ||
-              labelLower.includes('conclusions') ||
-              labelLower.includes('result') ||
-              labelLower.includes('results') ||
-              labelLower.includes('method') ||
-              labelLower.includes('methods') ||
-              labelLower.includes('analysis') ||
-              labelLower.includes('analyses') ||
-              labelLower.includes('discussion') ||
-              labelLower.includes('observation') ||
-              labelLower.includes('observations');
-        
-        if (isLongText) {
-          return (
-            <Textarea
-              value={displayValue || ''}
-              onChange={(e) => handleChange(e.target.value)}
-              placeholder={t('extraction', 'fieldPlaceholderEnter').replace('{{label}}', field.label.toLowerCase())}
-              disabled={disabled}
-              className={cn(
-                  "text-sm min-h-[80px]",
-                hasAIPending && "border-ai/60 bg-ai/5",
-                validationError && "border-destructive"
-              )}
-            />
-          );
-        }
-
-        return (
-          <Input
-            value={displayValue || ''}
-            onChange={(e) => handleChange(e.target.value)}
-            placeholder={t('extraction', 'fieldPlaceholderEnter').replace('{{label}}', field.label.toLowerCase())}
-            disabled={disabled}
-              className={cn(
-                inputHeight,
-                  "text-sm",
-                hasAIPending && "border-ai/60 bg-ai/5",
-                validationError && "border-destructive"
-              )}
-          />
-        );
-      }
-
-      case 'number': {
-        // Parse valor (pode ser objeto {value, unit} ou valor simples)
-        const numValue = extractValue(displayValue);
-        const currentUnit = extractUnit(displayValue) 
-          ?? (field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit);
-
-          // Prefer custom allowed_units over automatic dictionary
-        const relatedUnits = field.allowed_units && field.allowed_units.length > 0
-            ? field.allowed_units // Use units configured by manager (first is default)
-            : (field.unit ? getRelatedUnits(field.unit) : []); // Fallback to automatic dictionary
-        
-        const hasMultipleUnits = relatedUnits.length > 0;
-
-        return (
-          <div className="flex gap-2">
-            <Input
-              type="number"
-              value={numValue || ''}
-              onChange={(e) => {
-                if (hasMultipleUnits) {
-                  handleChange({ value: e.target.value, unit: currentUnit || field.unit });
-                } else {
-                  handleChange(e.target.value);
-                }
-              }}
-              placeholder="0"
-              disabled={disabled}
-              className={cn("flex-1", inputHeight, "text-sm", validationError && "border-destructive")}
-            />
-
-              {/* Unit selector when units are available */}
-            {hasMultipleUnits ? (
-              <Select
-                value={currentUnit || ''}
-                onValueChange={(newUnit) => {
-                  handleChange({ value: numValue, unit: newUnit });
-                }}
-                disabled={disabled}
-              >
-                <SelectTrigger className="w-32 shrink-0">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                    {/* All available units (allowed_units or related) */}
-                  {relatedUnits.map((unit, index) => (
-                    <SelectItem key={unit} value={unit}>
-                      {unit}
-                      {index === 0 && field.allowed_units && field.allowed_units.length > 0 && (
-                          <span className="ml-1 text-xs text-muted-foreground">{t('extraction', 'defaultUnit')}</span>
-                      )}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit) ? (
-                // Fixed badge when there are not multiple units but one is defined
-              <Badge variant="outline" className="shrink-0 self-center">
-                {field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit}
-              </Badge>
-            ) : null}
-          </div>
-        );
-      }
-
-      case 'date':
-        return (
-          <Input
-            type="date"
-            value={value || ''}
-            onChange={(e) => handleChange(e.target.value)}
-            disabled={disabled}
-            className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
-          />
-        );
-
-      case 'select': {
-        const options = field.allowed_values as any[] || [];
-        if (field.allow_other) {
-          return (
-            <SelectWithOther
-              options={options}
-              value={value || null}
-              onChange={handleChange}
-              allowOther={true}
-              otherLabel={field.other_label || t('extraction', 'otherSpecifyDefault')}
-              otherPlaceholder={field.other_placeholder || undefined}
-              disabled={disabled}
-              placeholder={t('extraction', 'selectFieldPlaceholder').replace('{{label}}', field.label.toLowerCase())}
-              className={cn(validationError && 'border-destructive')}
-            />
-          );
-        }
-        return (
-          <Select 
-            value={value || ''} 
-            onValueChange={handleChange} 
-            disabled={disabled}
-          >
-            <SelectTrigger className={cn(inputHeight, "text-sm", validationError && "border-destructive")}>
-                <SelectValue
-                    placeholder={t('extraction', 'selectFieldPlaceholder').replace('{{label}}', field.label.toLowerCase())}/>
-            </SelectTrigger>
-            <SelectContent>
-              {options.map((option: any, index: number) => {
-                const optionValue = typeof option === 'string' ? option : option.value;
-                const optionLabel = typeof option === 'string' ? option : option.label || option.value;
-                return (
-                  <SelectItem key={index} value={optionValue}>
-                    {optionLabel}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        );
-      }
-
-      case 'multiselect': {
-        const mOptions = field.allowed_values as any[] || [];
-        if (field.allow_other) {
-          return (
-            <MultiSelectWithOther
-              options={mOptions}
-              value={value || null}
-              onChange={handleChange}
-              allowOther={true}
-              otherLabel={field.other_label || t('extraction', 'otherSpecifyDefault')}
-              otherPlaceholder={field.other_placeholder || undefined}
-              disabled={disabled}
-              placeholder={t('extraction', 'selectFieldPlaceholder').replace('{{label}}', field.label.toLowerCase())}
-            />
-          );
-        }
-        // fallback simples
-        return (
-          <Input
-            value={Array.isArray(value) ? value.join(', ') : value || ''}
-            onChange={(e) => handleChange(e.target.value.split(',').map(v => v.trim()))}
-            placeholder={t('extraction', 'valuesCommaSeparated')}
-            disabled={disabled}
-            className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
-          />
-        );
-      }
-
-      case 'boolean':
-        return (
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={value || false}
-              onCheckedChange={handleChange}
-              disabled={disabled}
-            />
-            <span className="text-sm text-muted-foreground">
-              {value ? t('extraction', 'yes') : t('extraction', 'no')}
-            </span>
-          </div>
-        );
-
-      default:
-        return (
-          <Input
-            value={value || ''}
-            onChange={(e) => handleChange(e.target.value)}
-            disabled={disabled}
-            className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
-          />
-        );
+    // ADR-0016 runtime disposition control — record a coded "no value, on purpose"
+    // answer on ANY field type. `no_information` is universal; the opt-in codes
+    // render only where the field enables them. Toggling the active one clears back
+    // to unresolved. Setting a marker clears any validation error (it is resolved).
+  const dispositions: { code: string; label: string; hint: string }[] = [
+    {
+      code: 'no_information',
+      label: t('extraction', 'dispositionNoInformation'),
+      hint: t('extraction', 'dispositionNoInformationHint'),
+    },
+    ...(field.allows_not_applicable
+      ? [
+          {
+            code: 'not_applicable',
+            label: t('extraction', 'dispositionNotApplicable'),
+            hint: t('extraction', 'dispositionNotApplicableHint'),
+          },
+        ]
+      : []),
+    ...(field.allows_not_evaluated
+      ? [
+          {
+            code: 'not_evaluated',
+            label: t('extraction', 'dispositionNotEvaluated'),
+            hint: t('extraction', 'dispositionNotEvaluatedHint'),
+          },
+        ]
+      : []),
+  ];
+  const setDisposition = (code: string) => {
+    if (activeReason === code) {
+      onChange('');
+    } else {
+      setValidationError(null);
+      onChange({ value: null, absent_reason: code });
     }
   };
+
+    // Render input by type — delegated to the shared, AI-chrome-free editor
+    // (FieldValueEditor) so the consensus override can reuse the exact same
+    // per-type inputs. This component keeps the AI badges, disposition row,
+    // validation, and read-only gating around it.
+  const renderInput = () => (
+    <FieldValueEditor
+      field={field}
+      value={displayValue}
+      onChange={handleChange}
+      disabled={inputDisabled}
+      inputClassName={cn(validationError && 'border-destructive')}
+      textAccentClassName={cn(hasAIPending && 'border-ai/60 bg-ai/5')}
+    />
+  );
 
     // Determine whether to show suggestion display below input
     // Show if:
@@ -373,6 +221,29 @@ export function FieldInput(props: FieldInputProps) {
     // Show rejected to allow revert
     aiSuggestion.status === 'rejected'
   );
+
+  // One binding for the AI review popover (its props minus `trigger`), shared by
+  // the History-icon trigger and the inline suggestion strip so the two entry
+  // points to the same coord can't drift. align='end' opens it left of the
+  // right-edge trigger, clear of the PDF/markdown viewer.
+  const reviewBinding: AISuggestionReviewBinding | undefined =
+    getSuggestionsHistory && aiSuggestion
+      ? {
+          instanceId,
+          fieldId: field.id,
+          getHistory: getSuggestionsHistory,
+          selectedProposalId: aiSuggestion.id,
+          onSelect: (proposalRecordId, selectedValue, selectedConfidence) =>
+            selectSuggestion?.(instanceId, field.id, proposalRecordId, selectedValue, selectedConfidence),
+          onClear: onRejectAI,
+          align: 'end',
+          // So the version-history popover resolves a select/multiselect CODE
+          // to its human label, same as the inline card.
+          fieldType: field.field_type,
+          allowedValues: field.allowed_values,
+          articleId,
+        }
+      : undefined;
 
   return (
       <div
@@ -411,24 +282,15 @@ export function FieldInput(props: FieldInputProps) {
           </div>
           
           <div className="flex items-center gap-1 shrink-0">
-              {/* Badge + Info always visible on the right of input (if pending or accepted suggestion) */}
-          {aiSuggestion && 
-           (aiSuggestion.status === 'pending' || aiSuggestion.status === 'accepted') && (
-            <AISuggestionBadge
-              suggestion={aiSuggestion}
-            />
-          )}
-
-              {/* History button - always visible if getHistory is provided */}
-            {getSuggestionsHistory && aiSuggestion && (
+              {/* Single AI trigger: review + select past versions, see how each
+                  was generated, locate evidence, or clear. Replaces the old
+                  split history + details popovers. */}
+            {reviewBinding && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div>
-                    <AISuggestionHistoryPopover
-                      instanceId={instanceId}
-                      fieldId={field.id}
-                      currentSuggestionId={aiSuggestion.id}
-                      getHistory={getSuggestionsHistory}
+                    <AISuggestionReviewPopover
+                      {...reviewBinding}
                       trigger={
                         <Button
                           size="icon"
@@ -437,7 +299,7 @@ export function FieldInput(props: FieldInputProps) {
                             "h-7 w-7",
                             "text-muted-foreground hover:text-foreground hover:bg-muted"
                           )}
-                          title={t('extraction', 'historySuggestionsAria')}
+                          title={t('extraction', 'reviewTitle')}
                         >
                           <History className="h-4 w-4" />
                         </Button>
@@ -446,23 +308,75 @@ export function FieldInput(props: FieldInputProps) {
                   </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                    <p>Suggestion history</p>
+                    <p>{t('extraction', 'reviewTitle')}</p>
                 </TooltipContent>
               </Tooltip>
             )}
           </div>
         </div>
 
-                  {/* Suggested value + accept/reject buttons below input - only when no manual value */}
-        {shouldShowSuggestion && (
+                  {/* Disposition control (ADR-0016): a quiet row to mark the field
+                      "No information" (any type) or the opt-in Not applicable /
+                      Not evaluated. Each button describes itself on hover; the
+                      active one gets the accepted-style success ring (matching
+                      the accept-suggestion affordance) + an explicit "recorded"
+                      hint, so a blank input is never ambiguous. Clicking the
+                      active one clears back to unresolved. */}
+        {/* Local provider: the disposition row renders on EVERY field, so its
+            tooltips must not depend on a caller-supplied provider. */}
+        <TooltipProvider delayDuration={300}>
+        <div className="flex flex-wrap items-center gap-1.5" data-disposition-control>
+          {dispositions.map((d) => {
+            const active = activeReason === d.code;
+            return (
+              <Tooltip key={d.code}>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-pressed={active}
+                    disabled={inputDisabled}
+                    onClick={() => setDisposition(d.code)}
+                    className={cn(
+                      'h-6 gap-1 px-2 text-xs',
+                      active
+                        ? 'text-success ring-1 ring-inset ring-success bg-success/10 hover:bg-success/15 hover:text-success'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {active ? <Check className="h-3 w-3" /> : null}
+                    {d.label}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{active ? t('extraction', 'dispositionActiveHint') : d.hint}</p>
+                </TooltipContent>
+              </Tooltip>
+            );
+          })}
+          {activeReason ? (
+            <span className="text-[11px] text-muted-foreground">
+              {t('extraction', 'dispositionActiveHint')}
+            </span>
+          ) : null}
+        </div>
+        </TooltipProvider>
+
+                  {/* Suggested value + accept/reject buttons below input — only
+                      when no manual value, and never on read-only runs (a
+                      published view offers no pending decisions to act on). */}
+        {!readOnly && shouldShowSuggestion && (
           <AISuggestionDisplay
             suggestion={aiSuggestion}
-            instanceId={instanceId}
-            fieldId={field.id}
             onAccept={onAcceptAI}
             onReject={onRejectAI}
-            loading={isActionLoading ? isActionLoading(instanceId, field.id) === 'accept' || isActionLoading(instanceId, field.id) === 'reject' : false}
-            getHistory={getSuggestionsHistory}
+            // Same review surface as the History icon (shared binding): clicking
+            // the inline value/confidence opens the version history + provenance.
+            review={reviewBinding}
+            // Render a select/multiselect CODE as its human label on the card.
+            fieldType={field.field_type}
+            allowedValues={field.allowed_values}
           />
         )}
 
@@ -484,20 +398,11 @@ export default memo(FieldInput, (prevProps, nextProps) => {
   const aiSuggestionChanged = prevProps.aiSuggestion?.id !== nextProps.aiSuggestion?.id ||
                                 prevProps.aiSuggestion?.status !== nextProps.aiSuggestion?.status;
 
-  // The accept/reject spinner is driven by isActionLoading(instanceId, fieldId),
-  // which is derived state — NOT a tracked prop. Omitting it means a loading
-  // transition (notably clearLoading after an accept resolves) changes no compared
-  // prop, so the memoized field keeps a stale loading=true and the spinner spins
-  // forever. Compare the resolved loading state for THIS field explicitly.
-  const prevActionLoading = prevProps.isActionLoading?.(prevProps.instanceId, prevProps.field.id) ?? null;
-  const nextActionLoading = nextProps.isActionLoading?.(nextProps.instanceId, nextProps.field.id) ?? null;
-
   return (
     prevProps.field.id === nextProps.field.id &&
     prevProps.instanceId === nextProps.instanceId &&
     prevProps.value === nextProps.value &&
     prevProps.disabled === nextProps.disabled &&
-    prevActionLoading === nextActionLoading && // Re-render when the accept/reject spinner toggles
     !aiSuggestionChanged // Re-render when suggestion changes (status or ID)
   );
 });

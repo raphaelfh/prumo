@@ -47,6 +47,18 @@
             "title": "Proposed Value",
             "type": "object"
           },
+          "provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance"
+          },
           "rationale": {
             "anyOf": [
               {
@@ -123,6 +135,18 @@
             "additionalProperties": true,
             "title": "Proposed Value",
             "type": "object"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance"
           },
           "rationale": {
             "anyOf": [
@@ -420,6 +444,54 @@
           "ok"
         ],
         "title": "ApiResponse[ApproveFinalizeResponse]",
+        "type": "object"
+      },
+      "ApiResponse_ArticleContentMarkdownResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArticleContentMarkdownResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ArticleContentMarkdownResponse]",
         "type": "object"
       },
       "ApiResponse_ArticleFileResponse_": {
@@ -1382,6 +1454,54 @@
         "title": "ApiResponse[ProposalRecordResponse]",
         "type": "object"
       },
+      "ApiResponse_RepublishTemplateVersionResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RepublishTemplateVersionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[RepublishTemplateVersionResponse]",
+        "type": "object"
+      },
       "ApiResponse_ReviewerDecisionResponse_": {
         "properties": {
           "data": {
@@ -2170,6 +2290,35 @@
         "title": "ApproveFinalizeResponse",
         "type": "object"
       },
+      "ArticleContentMarkdownResponse": {
+        "description": "The stored block-projection markdown for an article's MAIN file \u2014 the\nexact text sent to the LLM (ADR-0013), surfaced by the review popover's\n\"How this was generated\" dialog. camelCase on the wire like its siblings.",
+        "properties": {
+          "contentMarkdown": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contentmarkdown"
+          },
+          "fileName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          }
+        },
+        "title": "ArticleContentMarkdownResponse",
+        "type": "object"
+      },
       "ArticleFileListItem": {
         "description": "Item de lista de files de um article (document switcher).",
         "properties": {
@@ -2898,6 +3047,7 @@
         "type": "object"
       },
       "CreateProposalRequest": {
+        "additionalProperties": false,
         "properties": {
           "confidence_score": {
             "anyOf": [
@@ -2940,18 +3090,6 @@
             "pattern": "^(ai|human|system)$",
             "title": "Source",
             "type": "string"
-          },
-          "source_user_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source User Id"
           }
         },
         "required": [
@@ -4232,6 +4370,18 @@
             "title": "Projectid",
             "type": "string"
           },
+          "runId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runid"
+          },
           "templateId": {
             "format": "uuid",
             "title": "Templateid",
@@ -4656,6 +4806,35 @@
         "title": "PublishedStateResponse",
         "type": "object"
       },
+      "RepublishTemplateVersionResponse": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "repinned_run_count": {
+            "title": "Repinned Run Count",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_id",
+          "version",
+          "changed",
+          "repinned_run_count"
+        ],
+        "title": "RepublishTemplateVersionResponse",
+        "type": "object"
+      },
       "ReviewerDecisionResponse": {
         "properties": {
           "created_at": {
@@ -4793,7 +4972,7 @@
         "type": "object"
       },
       "RunReadyStateResponse": {
-        "description": "The \"N/M reviewers ready\" hint. Advisory only \u2014 readiness gates nothing.\n\n``reviewer_count`` is ``max(hitl_config reviewer_count, ready_count)`` so the\nhint never reads \"N of M\" with N > M (the configured count is often the inert\ndefault of 1).",
+        "description": "The \"N/M reviewers ready\" hint. Advisory only \u2014 readiness gates nothing.\n\n``reviewer_count`` is ``max(hitl_config reviewer_count, ready_count)`` so the\nhint never reads \"N of M\" with N > M (the configured count is often the inert\ndefault of 1). ``reviewers_ready`` is blind-gated (ADR-0012): it carries only\nthe caller's own entry unless the caller is unblinded \u2014 the counts stay\naggregate.",
         "properties": {
           "ready_count": {
             "title": "Ready Count",
@@ -5097,6 +5276,16 @@
               }
             ],
             "title": "Allowed Values"
+          },
+          "allows_not_applicable": {
+            "default": false,
+            "title": "Allows Not Applicable",
+            "type": "boolean"
+          },
+          "allows_not_evaluated": {
+            "default": false,
+            "title": "Allows Not Evaluated",
+            "type": "boolean"
           },
           "description": {
             "anyOf": [
@@ -6424,10 +6613,10 @@
         ]
       }
     },
-    "/api/v1/articles/{article_id}/active-run": {
+    "/api/v1/articles/{article_id}/content-markdown": {
       "get": {
-        "description": "Return the latest non-terminal extraction run for the article.\n\nReturns null (data: null) when no active run exists. 404 when the\narticle is not found; 403 when the caller is not a project member.",
-        "operationId": "get_active_run_api_v1_articles__article_id__active_run_get",
+        "description": "Return the stored block-projection markdown for the article's MAIN file\n(the exact text the LLM received \u2014 ADR-0013), for the review popover's\nprovenance dialog.\n\n404 when the article is not found OR has never been parsed; 403 when the\ncaller is not a project member. The membership gate runs BEFORE the file\nread so a non-member can't probe whether an article's markdown exists.",
+        "operationId": "get_article_content_markdown_api_v1_articles__article_id__content_markdown_get",
         "parameters": [
           {
             "in": "path",
@@ -6438,23 +6627,6 @@
               "title": "Article Id",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "template_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Template Id"
-            }
           }
         ],
         "responses": {
@@ -6462,7 +6634,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Union_RunSummaryResponse__NoneType__"
+                  "$ref": "#/components/schemas/ApiResponse_ArticleContentMarkdownResponse_"
                 }
               }
             },
@@ -6484,7 +6656,7 @@
             "Supabase JWT": []
           }
         ],
-        "summary": "Get Active Run",
+        "summary": "Get Article Content Markdown",
         "tags": [
           "articles"
         ]
@@ -8016,6 +8188,65 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/templates/{template_id}/republish-version": {
+      "post": {
+        "description": "Publish the live template structure as a new active version.\n\nIdempotent when nothing changed (returns the current active version\nwithout spawning rows). Runs still in an editable stage\n(``pending``/``extract``) are re-pinned to the new version so open\narticle forms render the edit; runs from ``consensus`` on keep the\nversion they were assessed under. Manager-gated like the sibling\nendpoints \u2014 section/field editing is project-wide configuration.",
+        "operationId": "republish_template_version_api_v1_projects__project_id__templates__template_id__republish_version_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RepublishTemplateVersionResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Republish Template Version",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
     "/api/v1/runs": {
       "post": {
         "operationId": "create_run_api_v1_runs_post",
@@ -8170,7 +8401,7 @@
     },
     "/api/v1/runs/{run_id}/approve-finalize": {
       "post": {
-        "description": "One-action consensus \u2192 finalized for extraction runs.\n\nPublishes the agreed value for every existing-instance \u00d7 field coord that is not\nyet published (reusing the per-coord consensus path), then advances to FINALIZED \u2014\natomically, in one transaction/commit. This makes the finalize gates (EmptyFinalize/\nIncompleteFinalize) satisfiable naturally for a complete run, retiring the\nno-divergence dead-end. Rejects when a field still diverges unresolved.\n\nManager / consensus only \u2014 this publishes canonical values and finalizes; the\ngate lives at the API layer because the service-role session bypasses RLS.",
+        "description": "One-action consensus \u2192 finalized for extraction and QA runs.\n\nPublishes the agreed value for every existing-instance \u00d7 field coord that is not\nyet published (reusing the per-coord consensus path), then advances to FINALIZED \u2014\natomically, in one transaction/commit. This makes the finalize gates (EmptyFinalize/\nIncompleteFinalize) satisfiable naturally for a complete run, retiring the\nno-divergence dead-end. Rejects when a field still diverges unresolved.\n\nManager / consensus only \u2014 this publishes canonical values and finalizes; the\ngate lives at the API layer because the service-role session bypasses RLS.",
         "operationId": "approve_and_finalize_run_api_v1_runs__run_id__approve_finalize_post",
         "parameters": [
           {
@@ -8393,7 +8624,7 @@
     },
     "/api/v1/runs/{run_id}/ready": {
       "post": {
-        "description": "Toggle the caller's per-reviewer \"ready\" signal for a run.\n\nAdvisory only \u2014 it never advances the run (the manager opens consensus\nmanually). Membership-gated AND reviewer-role-gated (a read-only viewer\ncannot mark ready). Returns the \"N/M reviewers ready\" hint.",
+        "description": "Toggle the caller's per-reviewer \"ready\" signal for a run.\n\nAdvisory only \u2014 it never advances the run (the manager opens consensus\nmanually). Membership-gated AND reviewer-role-gated (a read-only viewer\ncannot mark ready). Returns the \"N/M reviewers ready\" hint with\n``reviewers_ready`` scoped to the caller's own entry (this response is the\ncaller's toggle echo; an unblinded caller reads the full list via /view).",
         "operationId": "mark_run_ready_api_v1_runs__run_id__ready_post",
         "parameters": [
           {
@@ -8494,6 +8725,55 @@
           }
         ],
         "summary": "Reopen Run",
+        "tags": [
+          "extraction-runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/reopen-extraction": {
+      "post": {
+        "description": "Return a consensus-stage extraction run to extract, discarding consensus work.\n\nArbitrator-only (manager/consensus): this hard-deletes the run's consensus\ndecisions + published values so reviewers can edit again. The gate lives at the\nAPI layer because the service-role session bypasses RLS. See ADR-0017.",
+        "operationId": "reopen_run_to_extract_api_v1_runs__run_id__reopen_extraction_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RunSummaryResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Reopen Run To Extract",
         "tags": [
           "extraction-runs"
         ]

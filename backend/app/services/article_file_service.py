@@ -41,6 +41,12 @@ class ArticleFileService:
         """List an article's files MAIN-first (document-switcher data source)."""
         return await self._repo.list_for_article_ordered(article_id)
 
+    async def get_content_markdown(self, article_id: UUID) -> ArticleFile | None:
+        """The article's latest MAIN PDF (carries the stored ``content_markdown``),
+        or None when the article has never been parsed. Reused by the review
+        popover's provenance dialog to show the exact text the LLM received."""
+        return await self._repo.get_latest_pdf(article_id)
+
     async def register_uploaded_file(
         self,
         *,

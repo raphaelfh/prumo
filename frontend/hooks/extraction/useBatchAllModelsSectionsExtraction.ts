@@ -40,6 +40,8 @@ export interface UseBatchAllModelsSectionsExtractionReturn {
     articleId: string;
     templateId: string;
     models: Array<{ instanceId: string; modelName: string }>;
+    /** Active session run to extract into — reused so decisions aren't orphaned. */
+    runId?: string;
   }) => Promise<void>;
   loading: boolean;
   error: string | null;
@@ -88,6 +90,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
       articleId: string;
       templateId: string;
       models: Array<{ instanceId: string; modelName: string }>;
+      runId?: string;
     }) => {
         console.warn('[useBatchAllModelsSectionsExtraction] Starting extraction of sections for all models', {
         totalModels: params.models.length,
@@ -97,7 +100,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
       setProgress(null);
 
       const doExtract = async () => {
-        const { projectId, articleId, templateId, models } = params;
+        const { projectId, articleId, templateId, models, runId } = params;
 
         if (models.length === 0) {
             toast.warning(t('extraction', 'noModelsFoundTitle'), {
@@ -155,6 +158,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
                 articleId,
                 templateId,
                 parentInstanceId: model.instanceId,
+                runId,
                 extractAllSections: true,
               },
               chunkSize,
@@ -244,7 +248,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
         setProgress(null);
       };
 
-      doExtract()
+      return doExtract()
         .catch((err: unknown) => {
           console.error('[useBatchAllModelsSectionsExtraction] Caught error', {
             error: err instanceof Error ? err.message : String(err),

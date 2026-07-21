@@ -4,16 +4,7 @@ vi.mock('@/integrations/api', () => ({
   apiClient: vi.fn(),
 }));
 
-vi.mock('@/services/extractionValueService', () => ({
-  ExtractionValueService: {
-    findActiveRun: vi.fn(),
-    acceptProposal: vi.fn(async () => undefined),
-    rejectValue: vi.fn(async () => undefined),
-  },
-}));
-
 import { AISuggestionService } from '@/services/aiSuggestionService';
-import { ExtractionValueService } from '@/services/extractionValueService';
 import { apiClient } from '@/integrations/api';
 
 // ---------------------------------------------------------------------------
@@ -39,102 +30,6 @@ function makeItem(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-});
-
-// ---------------------------------------------------------------------------
-// acceptSuggestion / rejectSuggestion — delegate to ExtractionValueService
-// ---------------------------------------------------------------------------
-
-describe('AISuggestionService.acceptSuggestion', () => {
-  it('uses the provided runId without calling findActiveRun', async () => {
-    await AISuggestionService.acceptSuggestion({
-      suggestionId: 'proposal-1',
-      projectId: 'proj-1',
-      articleId: 'art-1',
-      instanceId: 'inst-1',
-      fieldId: 'field-1',
-      value: 'X',
-      confidence: 0.9,
-      reviewerId: 'user-1',
-      runId: 'run-explicit',
-    });
-    expect(ExtractionValueService.findActiveRun).not.toHaveBeenCalled();
-    expect(ExtractionValueService.acceptProposal).toHaveBeenCalledWith(
-      'run-explicit',
-      'inst-1',
-      'field-1',
-      'proposal-1',
-    );
-  });
-
-  it('falls back to findActiveRun when no runId is supplied', async () => {
-    (ExtractionValueService.findActiveRun as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      id: 'run-fallback',
-      stage: 'extract',
-      status: 'running',
-      template_id: 'tpl-1',
-    });
-    await AISuggestionService.acceptSuggestion({
-      suggestionId: 'proposal-1',
-      projectId: 'proj-1',
-      articleId: 'art-1',
-      instanceId: 'inst-1',
-      fieldId: 'field-1',
-      value: 'X',
-      confidence: 0.9,
-      reviewerId: 'user-1',
-    });
-    expect(ExtractionValueService.findActiveRun).toHaveBeenCalledWith('art-1', null);
-    expect(ExtractionValueService.acceptProposal).toHaveBeenCalledWith(
-      'run-fallback',
-      'inst-1',
-      'field-1',
-      'proposal-1',
-    );
-  });
-});
-
-describe('AISuggestionService.rejectSuggestion', () => {
-  it('uses the provided runId without calling findActiveRun', async () => {
-    await AISuggestionService.rejectSuggestion({
-      suggestionId: 'proposal-1',
-      reviewerId: 'user-1',
-      instanceId: 'inst-1',
-      fieldId: 'field-1',
-      projectId: 'proj-1',
-      articleId: 'art-1',
-      runId: 'run-explicit',
-    });
-    expect(ExtractionValueService.findActiveRun).not.toHaveBeenCalled();
-    expect(ExtractionValueService.rejectValue).toHaveBeenCalledWith(
-      'run-explicit',
-      'inst-1',
-      'field-1',
-    );
-  });
-
-  it('falls back to findActiveRun when no runId is supplied', async () => {
-    (ExtractionValueService.findActiveRun as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      id: 'run-fallback',
-      stage: 'extract',
-      status: 'running',
-      template_id: 'tpl-1',
-    });
-    await AISuggestionService.rejectSuggestion({
-      suggestionId: 'proposal-1',
-      reviewerId: 'user-1',
-      instanceId: 'inst-1',
-      fieldId: 'field-1',
-      projectId: 'proj-1',
-      articleId: 'art-1',
-    });
-    expect(ExtractionValueService.findActiveRun).toHaveBeenCalledWith('art-1', null);
-    expect(ExtractionValueService.rejectValue).toHaveBeenCalledWith(
-      'run-fallback',
-      'inst-1',
-      'field-1',
-    );
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -198,6 +93,33 @@ describe('AISuggestionService.loadSuggestions', () => {
     expect(sug.status).toBe('pending');
     expect(sug.timestamp).toBeInstanceOf(Date);
     expect(sug.evidence).toBeUndefined(); // evidence=null → undefined
+  });
+
+  it('unwraps a no-information proposal {value:null} to the empty abstention shape', async () => {
+    // Routing unwrapValue through the shared envelope oracle must keep the
+    // null→'' collapse the abstention rendering relies on (isAbstention('') → true).
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [makeItem({ proposed_value: { value: null } })],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].value).toBe('');
+  });
+
+  it('preserves a resolved no_information marker as the full envelope (ADR-0016 P3)', async () => {
+    // A coded abstention must round-trip so the NARROWED isAbstention still
+    // recognizes it at the call sites (GAP4). A bare {value:null} stays '' above.
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({ proposed_value: { value: null, absent_reason: 'no_information' } }),
+      ],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].value).toEqual({
+      value: null,
+      absent_reason: 'no_information',
+    });
   });
 
   it('maps evidence list when present (single item)', async () => {
@@ -375,6 +297,180 @@ describe('AISuggestionService.getHistory', () => {
     expect(result[0].runId).toBe('run-A');
     // History items have no server status — default to 'pending'
     expect(result[0].status).toBe('pending');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// provenance flattening (snake_case server → camelCase RunProvenance)
+// ---------------------------------------------------------------------------
+
+describe('provenance mapping', () => {
+  const serverProvenance = {
+    ran_by_user_id: 'user-9',
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    strategy: 'section_extraction',
+    prompt_version: 'v4',
+    prompt_text: 'You are appraising…',
+    params: { temperature: 0.1, output_retries: 2, timeout_seconds: 120 },
+    tokens: { prompt: 1000, completion: 200, total: 1200 },
+  };
+
+  it('flattens nested params/tokens to camelCase on loadSuggestions items', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [makeItem({ provenance: serverProvenance })],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].provenance).toEqual({
+      ranByUserId: 'user-9',
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      strategy: 'section_extraction',
+      promptVersion: 'v4',
+      promptText: 'You are appraising…',
+      temperature: 0.1,
+      outputRetries: 2,
+      timeoutSeconds: 120,
+      tokensPrompt: 1000,
+      tokensCompletion: 200,
+      tokensTotal: 1200,
+    });
+  });
+
+  it('maps the minimal plan example (model + params.temperature + tokens.total)', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({ provenance: { model: 'x', params: { temperature: 0.1 }, tokens: { total: 10 } } }),
+      ],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].provenance).toEqual({
+      model: 'x',
+      temperature: 0.1,
+      tokensTotal: 10,
+    });
+  });
+
+  it('leaves provenance undefined when the server omits it (null)', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [makeItem({ provenance: null })],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].provenance).toBeUndefined();
+  });
+
+  it('preserves unknown top-level keys for forward-compat (rendered generically by the disclosure)', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [makeItem({ provenance: { model: 'x', futureKnob: 'xyz' } })],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].provenance).toMatchObject({
+      model: 'x',
+      futureKnob: 'xyz',
+    });
+  });
+
+  it('maps the backend-resolved ran_by_name to camelCase ranByName', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      {
+        id: 'p-1',
+        run_id: 'run-A',
+        instance_id: 'inst-1',
+        field_id: 'f-1',
+        proposed_value: { value: 'V' },
+        confidence_score: 0.8,
+        rationale: null,
+        created_at: '2026-04-28T10:00:00Z',
+        evidence: [],
+        provenance: { ...serverProvenance, ran_by_name: 'Raphael F.' },
+      },
+    ]);
+    const result = await AISuggestionService.getHistory('art-1', 'inst-1', 'f-1');
+    expect(result[0].provenance).toMatchObject({
+      ranByUserId: 'user-9',
+      ranByName: 'Raphael F.',
+    });
+    // never leaks the raw snake_case key into the flattened shape
+    expect(result[0].provenance).not.toHaveProperty('ran_by_name');
+  });
+
+  it('flattens provenance on getHistory items too', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      {
+        id: 'p-1',
+        run_id: 'run-A',
+        instance_id: 'inst-1',
+        field_id: 'f-1',
+        proposed_value: { value: 'V' },
+        confidence_score: 0.8,
+        rationale: null,
+        created_at: '2026-04-28T10:00:00Z',
+        evidence: [],
+        provenance: serverProvenance,
+      },
+    ]);
+    const result = await AISuggestionService.getHistory('art-1', 'inst-1', 'f-1');
+    expect(result[0].provenance).toMatchObject({
+      model: 'claude-sonnet-4-6',
+      temperature: 0.1,
+      tokensTotal: 1200,
+    });
+  });
+
+  it('flattens the structured prompt_composition to camelCase promptComposition', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({
+          provenance: {
+            model: 'x',
+            prompt_composition: {
+              section_name: 'Source of Data',
+              system_prompt: 'You are an expert…',
+              section_instruction: 'Extract…\nArticle text:\n[[ARTICLE_MARKDOWN]]',
+              article_ref: {
+                file_id: 'file-1',
+                file_name: 'teste3.pdf',
+                truncated: false,
+                est_tokens: 23710,
+              },
+              fields_requested: ['data_source'],
+              llm_calls: 2,
+            },
+          },
+        }),
+      ],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    const prov = result.suggestions['inst-1_f-1'].provenance;
+    // The raw snake_case key never leaks through as a generic passthrough row.
+    expect(prov).not.toHaveProperty('prompt_composition');
+    expect(prov?.promptComposition).toEqual({
+      sectionName: 'Source of Data',
+      systemPrompt: 'You are an expert…',
+      sectionInstruction: 'Extract…\nArticle text:\n[[ARTICLE_MARKDOWN]]',
+      articleRef: {
+        fileId: 'file-1',
+        fileName: 'teste3.pdf',
+        truncated: false,
+        estTokens: 23710,
+      },
+      fieldsRequested: ['data_source'],
+      llmCalls: 2,
+    });
+  });
+
+  it('leaves promptComposition undefined for legacy runs without it', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [makeItem({ provenance: { model: 'x', prompt_text: 'SYS' } })],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].provenance?.promptComposition).toBeUndefined();
   });
 });
 

@@ -62,14 +62,17 @@ interface QASectionAccordionProps {
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void> | void;
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void> | void;
+  selectSuggestion?: (
+    instanceId: string,
+    fieldId: string,
+    proposalRecordId: string,
+    value: unknown,
+    confidence: number,
+  ) => Promise<void> | void;
   getSuggestionsHistory?: (
     instanceId: string,
     fieldId: string,
   ) => Promise<AISuggestionHistoryItem[]>;
-  isAIActionLoading?: (
-    instanceId: string,
-    fieldId: string,
-  ) => "accept" | "reject" | null;
   /**
    * Display profiles + activity per (instance, field) within this
    * domain. When provided, the accordion header surfaces a stacked
@@ -107,8 +110,8 @@ export function QASectionAccordion({
   aiSuggestions,
   onAcceptAI,
   onRejectAI,
+  selectSuggestion,
   getSuggestionsHistory,
-  isAIActionLoading,
 }: QASectionAccordionProps) {
   const { entityType, fields } = domain;
   const signaling = fields.filter((f) => !SUMMARY_FIELD_NAMES.has(f.name));
@@ -167,6 +170,7 @@ export function QASectionAccordion({
       collapsible
       defaultValue={defaultOpen ? itemValue : undefined}
       data-testid={`qa-domain-${entityType.name}`}
+      data-section-id={entityType.id}
     >
       <AccordionItem
         value={itemValue}
@@ -241,12 +245,9 @@ export function QASectionAccordion({
                           ? () => onRejectAI(instanceId, field.id)
                           : undefined
                       }
+                      selectSuggestion={selectSuggestion}
                       getSuggestionsHistory={getSuggestionsHistory}
-                      isActionLoading={
-                        isAIActionLoading
-                          ? () => isAIActionLoading(instanceId, field.id)
-                          : undefined
-                      }
+                      articleId={articleId}
                     />
                     {stack.length > 0 ? (
                       <div className="mt-1 flex justify-end">
@@ -295,12 +296,9 @@ export function QASectionAccordion({
                             ? () => onRejectAI(instanceId, field.id)
                             : undefined
                         }
+                        selectSuggestion={selectSuggestion}
                         getSuggestionsHistory={getSuggestionsHistory}
-                        isActionLoading={
-                          isAIActionLoading
-                            ? () => isAIActionLoading(instanceId, field.id)
-                            : undefined
-                        }
+                        articleId={articleId}
                       />
                       {stack.length > 0 ? (
                         <div className="mt-1 flex justify-end">

@@ -238,4 +238,48 @@ class TestRunFromRequestAllSections:
             section_ids=None,
             pdf_text=None,
             model=payload.model,
+            run_id=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_batch_with_run_id_routes_to_all_sections_not_for_run(self, service):
+        """A batch request that carries the session ``run_id`` (to REUSE it,
+        not fork a shadow run) must route to ``extract_all_sections`` with that
+        run_id — NOT to ``extract_for_run`` (the full-run sweep, which has no
+        parent_instance_id). The parent_instance_id branch is checked first."""
+        project_id = uuid4()
+        article_id = uuid4()
+        template_id = uuid4()
+        parent_instance_id = uuid4()
+        session_run_id = uuid4()
+        expected = _make_batch_result(str(session_run_id))
+
+        service.extract_section = AsyncMock(
+            side_effect=AssertionError("extract_section must NOT be called")
+        )
+        service.extract_for_run = AsyncMock(
+            side_effect=AssertionError("extract_for_run must NOT be called")
+        )
+        service.extract_all_sections = AsyncMock(return_value=expected)
+
+        payload = SectionExtractionRequest(
+            projectId=str(project_id),
+            articleId=str(article_id),
+            templateId=str(template_id),
+            parentInstanceId=str(parent_instance_id),
+            extractAllSections=True,
+            runId=str(session_run_id),
+        )
+        result = await service.run_from_request(payload)
+
+        assert result is expected
+        service.extract_all_sections.assert_awaited_once_with(
+            project_id=project_id,
+            article_id=article_id,
+            template_id=template_id,
+            parent_instance_id=parent_instance_id,
+            section_ids=None,
+            pdf_text=None,
+            model=payload.model,
+            run_id=session_run_id,
         )

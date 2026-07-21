@@ -1,24 +1,29 @@
 /**
- * AI suggestions service — reads AI proposals via the typed API client,
- * persists accept/reject as ReviewerDecisions on the active extraction run.
+ * AI suggestions service — reads AI proposals via the typed API client.
+ * Read-only: accept/select/reject persistence happens through the screens'
+ * autosave (`writeRunFieldValue` with a D0 AI link), not from here — the old
+ * direct accept/reject writers were removed with the dead `acceptStrategy`
+ * chain (2026-07-05 verify-then-prune).
  *
  * The backend endpoints (/api/v1/articles/{id}/suggestions, /history,
  * /instance-ids) replaced the former direct PostgREST reads from
  * `extraction_proposal_records`, `extraction_evidence`,
  * `extraction_reviewer_states`, and the auth-user reads.
- * Caller-scoped status (accepted/rejected/pending) is now resolved
- * server-side and returned in each AISuggestionItem.
+ * Caller-scoped status (accepted/rejected/pending) is resolved server-side
+ * and returned in each AISuggestionItem — note it marks ANY non-reject
+ * caller decision 'accepted', so it must never seed AI-link derivation.
  */
 import { apiClient } from '@/integrations/api';
-import { ExtractionValueService } from '@/services/extractionValueService';
 import type {
   AISuggestion,
   AISuggestionHistoryItem,
   EvidenceCitation,
   LoadSuggestionsResult,
+  PromptComposition,
+  RunProvenance,
 } from '@/types/ai-extraction';
 import { getSuggestionKey } from '@/types/ai-extraction';
-import { APIError } from '@/lib/ai-extraction/errors';
+import { unwrapValueEnvelope, valueAbsentReason } from '@/lib/extraction/valueSemantics';
 import type { components } from '@/types/api/schema';
 
 type AISuggestionItem = components['schemas']['AISuggestionItem'];
@@ -43,8 +48,82 @@ function mapEvidenceList(
 
 function unwrapValue(raw: { [key: string]: unknown } | null | undefined): unknown {
   if (raw === null || raw === undefined) return '';
-  if ('value' in raw) return raw['value'] ?? '';
-  return raw;
+  // ADR-0016 Phase 3: preserve a resolved disposition as the full marker
+  // envelope so the narrowed `isAbstention` still recognizes it (the quiet
+  // no-info strip / no-info card) AND the accept/select path propagates the
+  // marker to the form value — consistent with how FieldInput writes it. A real
+  // value collapses to its scalar as before.
+  const reason = valueAbsentReason(raw);
+  if (reason !== null) return { value: null, absent_reason: reason };
+  return unwrapValueEnvelope(raw) ?? '';
+}
+
+/**
+ * Flatten the run-level provenance snapshot (snake_case, with nested
+ * `params`/`tokens`) into the camelCase `RunProvenance` the disclosure renders.
+ * Unknown top-level keys pass through verbatim so a future backend field shows
+ * up as a generic row without a frontend change; the nested `params`/`tokens`
+ * containers are dropped (their scalars are promoted to top level).
+ */
+function mapProvenance(
+  raw: { [key: string]: unknown } | null | undefined,
+): RunProvenance | undefined {
+  if (raw === null || raw === undefined || typeof raw !== 'object') return undefined;
+  const {
+    params,
+    tokens,
+    ran_by_user_id,
+    ran_by_name,
+    prompt_version,
+    prompt_text,
+    prompt_composition,
+    ...rest
+  } = raw as Record<string, unknown>;
+  const p = (params ?? {}) as Record<string, unknown>;
+  const tk = (tokens ?? {}) as Record<string, unknown>;
+  const out: RunProvenance = { ...rest };
+  const assign = (key: keyof RunProvenance, value: unknown) => {
+    if (value !== undefined) out[key] = value;
+  };
+  assign('ranByUserId', ran_by_user_id);
+  // The backend resolves `ran_by_name` from the runner's profile on the history
+  // path; map it to camelCase so the disclosure's "Ran by" row picks it up
+  // (instead of falling through `...rest` as a raw `ran_by_name` generic row).
+  assign('ranByName', ran_by_name);
+  assign('promptVersion', prompt_version);
+  assign('promptText', prompt_text);
+  assign('temperature', p['temperature']);
+  assign('outputRetries', p['output_retries']);
+  assign('timeoutSeconds', p['timeout_seconds']);
+  assign('tokensPrompt', tk['prompt']);
+  assign('tokensCompletion', tk['completion']);
+  assign('tokensTotal', tk['total']);
+  const composition = mapPromptComposition(prompt_composition);
+  if (composition !== undefined) out.promptComposition = composition;
+  return out;
+}
+
+/**
+ * Flatten the structured `prompt_composition` snapshot (snake_case, nested
+ * `article_ref`) into the camelCase {@link PromptComposition} the dialog renders.
+ */
+function mapPromptComposition(raw: unknown): PromptComposition | undefined {
+  if (raw === null || raw === undefined || typeof raw !== 'object') return undefined;
+  const pc = raw as Record<string, unknown>;
+  const ar = (pc['article_ref'] ?? {}) as Record<string, unknown>;
+  return {
+    sectionName: pc['section_name'] as string | undefined,
+    systemPrompt: pc['system_prompt'] as string | undefined,
+    sectionInstruction: pc['section_instruction'] as string | undefined,
+    articleRef: {
+      fileId: ar['file_id'] as string | null | undefined,
+      fileName: ar['file_name'] as string | null | undefined,
+      truncated: ar['truncated'] as boolean | undefined,
+      estTokens: ar['est_tokens'] as number | null | undefined,
+    },
+    fieldsRequested: pc['fields_requested'] as string[] | undefined,
+    llmCalls: pc['llm_calls'] as number | undefined,
+  };
 }
 
 function mapItemToSuggestion(item: AISuggestionItem): AISuggestion {
@@ -57,6 +136,7 @@ function mapItemToSuggestion(item: AISuggestionItem): AISuggestion {
     status: (item.status ?? 'pending') as AISuggestion['status'],
     timestamp: new Date(item.created_at),
     evidence: mapEvidenceList(item.evidence),
+    provenance: mapProvenance(item.provenance as { [key: string]: unknown } | null),
   };
 }
 
@@ -73,6 +153,7 @@ function mapHistoryItemToSuggestion(
     status: 'pending',
     timestamp: new Date(item.created_at),
     evidence: mapEvidenceList(item.evidence),
+    provenance: mapProvenance(item.provenance as { [key: string]: unknown } | null),
   };
 }
 
@@ -131,75 +212,6 @@ export class AISuggestionService {
     );
 
     return (items ?? []).map(mapHistoryItemToSuggestion);
-  }
-
-  /**
-   * Accept an AI proposal: post a ReviewerDecision with
-   * `decision='accept_proposal'`. The proposal id (which is now the
-   * `suggestionId`) is the `proposal_record_id`.
-   *
-   * Callers should pass ``runId`` — the run the surface is editing.
-   * Without it the service falls back to the latest non-terminal
-   * extraction-kind run on the article, which can resolve to a stale
-   * PENDING/PROPOSAL run when the article carries multiple runs (batch
-   * extraction, reopens, contract-test pollution) and silently 400 on
-   * the decisions endpoint.
-   */
-  static async acceptSuggestion(params: {
-    suggestionId: string;
-    projectId: string;
-    articleId: string;
-    instanceId: string;
-    fieldId: string;
-    value: unknown;
-    confidence: number;
-    reviewerId: string;
-    runId?: string;
-  }): Promise<void> {
-    const { suggestionId, articleId, instanceId, fieldId, runId } = params;
-    const targetRunId = runId ?? (await this.resolveActiveRunId(articleId));
-    if (!targetRunId) {
-      throw new APIError(
-        'No active extraction run for this article — cannot accept proposal.',
-      );
-    }
-    await ExtractionValueService.acceptProposal(
-      targetRunId,
-      instanceId,
-      fieldId,
-      suggestionId,
-    );
-  }
-
-  /**
-   * Reject an AI proposal: post a ReviewerDecision with
-   * `decision='reject'`. The historical proposal stays in
-   * `extraction_proposal_records` for audit.
-   *
-   * Same ``runId`` plumbing rationale as ``acceptSuggestion``.
-   */
-  static async rejectSuggestion(params: {
-    suggestionId: string;
-    reviewerId: string;
-    wasAccepted?: boolean;
-    instanceId?: string;
-    fieldId?: string;
-    projectId?: string;
-    articleId?: string;
-    runId?: string;
-  }): Promise<void> {
-    const { instanceId, fieldId, articleId, runId } = params;
-    if (!instanceId || !fieldId || !articleId) return;
-    const targetRunId = runId ?? (await this.resolveActiveRunId(articleId));
-    if (!targetRunId) return;
-    await ExtractionValueService.rejectValue(targetRunId, instanceId, fieldId);
-  }
-
-  private static async resolveActiveRunId(
-    articleId: string,
-  ): Promise<string | null> {
-    const run = await ExtractionValueService.findActiveRun(articleId, null);
-    return run?.id ?? null;
   }
 
   static async getArticleInstanceIds(articleId: string): Promise<string[]> {

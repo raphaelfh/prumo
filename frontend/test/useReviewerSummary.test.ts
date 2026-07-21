@@ -204,6 +204,60 @@ describe("useReviewerSummary", () => {
     expect(result.current.divergentCoords.has("i1::f2")).toBe(false);
   });
 
+  it("keys marker agreement/divergence on the absent_reason code (regression guard)", () => {
+    // ADR-0016 Phase 4: agreement compares the full envelope, so two reviewers on
+    // the SAME absent_reason code agree, DIFFERENT codes diverge, and a marker vs
+    // a substantive value diverge. Guards against a future "peel then compare"
+    // regression that would collapse distinct codes to the same null.
+    const { result } = renderHook(() =>
+      useReviewerSummary(
+        runDetail({
+          decisions: [
+            decision({
+              reviewer_id: "user-a",
+              instance_id: "i1",
+              field_id: "same",
+              value: { value: null, absent_reason: "no_information" },
+            }),
+            decision({
+              reviewer_id: "user-b",
+              instance_id: "i1",
+              field_id: "same",
+              value: { value: null, absent_reason: "no_information" },
+            }),
+            decision({
+              reviewer_id: "user-a",
+              instance_id: "i1",
+              field_id: "diff",
+              value: { value: null, absent_reason: "no_information" },
+            }),
+            decision({
+              reviewer_id: "user-b",
+              instance_id: "i1",
+              field_id: "diff",
+              value: { value: null, absent_reason: "not_applicable" },
+            }),
+            decision({
+              reviewer_id: "user-a",
+              instance_id: "i1",
+              field_id: "mv",
+              value: { value: null, absent_reason: "no_information" },
+            }),
+            decision({
+              reviewer_id: "user-b",
+              instance_id: "i1",
+              field_id: "mv",
+              value: { value: "Yes" },
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(result.current.divergentCoords.has("i1::same")).toBe(false);
+    expect(result.current.divergentCoords.has("i1::diff")).toBe(true);
+    expect(result.current.divergentCoords.has("i1::mv")).toBe(true);
+  });
+
   it("production-fidelity: real double-wrapped form shape diverges on unit, agrees when identical", () => {
     // The form stores unit values double-wrapped: useAutoSaveProposals builds
     // {value, unit}, then writeRunFieldValue wraps again → decision.value =

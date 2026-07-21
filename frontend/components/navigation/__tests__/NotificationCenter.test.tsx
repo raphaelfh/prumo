@@ -12,7 +12,7 @@
  */
 
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {render, screen, act} from "@testing-library/react";
+import {render, screen, act, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router-dom";
 
@@ -48,7 +48,9 @@ function completedExportJob(id: string) {
 
 beforeEach(() => {
     act(() => {
-        useBackgroundJobs.setState({jobs: []});
+        // Fresh slate: no jobs, and lastReadAt=now so nothing reads as unread
+        // until a test arranges it.
+        useBackgroundJobs.setState({jobs: [], lastReadAt: Date.now()});
     });
 });
 
@@ -72,5 +74,38 @@ describe("NotificationCenter", () => {
         // The bell must reflect it immediately (not only after a reload).
         expect(await screen.findByText("Export extraction data")).toBeInTheDocument();
         expect(screen.queryByText(/No notifications/i)).not.toBeInTheDocument();
+    });
+
+    it("announces the unread count, badges it non-destructively, and clears it on open", async () => {
+        const user = userEvent.setup();
+        // lastReadAt=0 → both finished jobs are unread.
+        act(() => {
+            useBackgroundJobs.setState({
+                lastReadAt: 0,
+                jobs: [completedExportJob("job-1"), completedExportJob("job-2")],
+            });
+        });
+        render(
+            <MemoryRouter>
+                <NotificationCenter />
+            </MemoryRouter>,
+        );
+
+        // The count is announced via the trigger's accessible name…
+        const bell = screen.getByRole("button", {name: /2 unread/i});
+        // …and shown as a NON-destructive (primary) badge that is aria-hidden so
+        // it isn't read twice.
+        const badge = screen.getByText("2");
+        expect(badge).toHaveClass("bg-primary");
+        expect(badge).not.toHaveClass("bg-destructive");
+        expect(badge).toHaveAttribute("aria-hidden", "true");
+
+        // Opening the bell marks everything read → badge clears.
+        await user.click(bell);
+        await waitFor(() =>
+            expect(useBackgroundJobs.getState().lastReadAt).toBeGreaterThan(0),
+        );
+        expect(screen.queryByText("2")).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", {name: /unread/i})).toBeNull();
     });
 });

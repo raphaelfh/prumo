@@ -36,6 +36,7 @@ from app.models.extraction_workflow import (
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.run_lifecycle_service import RunLifecycleService
+from tests.integration.conftest import SEED
 
 # Sentinel id for an in-test second reviewer (rolled back with the SAVEPOINT).
 SECOND_REVIEWER_ID = UUID("ffffffff-9999-0000-0000-0000000000aa")
@@ -52,7 +53,11 @@ async def _build_two_reviewer_review_run(
     """
     project_id = (
         await db.execute(
-            text("SELECT project_id FROM public.project_members WHERE role = 'reviewer' LIMIT 1")
+            text(
+                "SELECT project_id FROM public.project_members "
+                "WHERE project_id = :pid AND role = 'reviewer' LIMIT 1"
+            ),
+            {"pid": str(SEED.primary_project)},
         )
     ).scalar()
     if project_id is None:

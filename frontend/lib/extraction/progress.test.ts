@@ -56,6 +56,25 @@ describe('computeRequiredFieldProgress', () => {
     expect(r.completedFields).toBe(0);
   });
 
+  it('a unit-bearing but empty required number field is EMPTY on the header (realigned with the finalize gate)', () => {
+    // {value:'', unit} / {value:null, unit} used to slip through the header's
+    // inline object check as "filled" while the backend gate treated it as empty
+    // — the form could read complete yet fail to finalize. The shared oracle peels
+    // the envelope, so header and gate now agree. A real unit value still counts.
+    const entityTypes = [et('e1', [field('n', true)])];
+    expect(
+      computeRequiredFieldProgress({ i1_n: { value: '', unit: 'mg' } }, entityTypes).completedFields,
+    ).toBe(0);
+    expect(
+      computeRequiredFieldProgress({ i1_n: { value: null, unit: 'mg' } }, entityTypes)
+        .completedFields,
+    ).toBe(0);
+    expect(
+      computeRequiredFieldProgress({ i1_n: { value: '5', unit: 'mg' } }, entityTypes)
+        .completedFields,
+    ).toBe(1);
+  });
+
   it('optional fields are ignored in numerator and denominator', () => {
     const entityTypes = [et('e1', [field('req', true), field('opt', false)])];
     const r = computeRequiredFieldProgress({ i1_req: 'x', i1_opt: 'y' }, entityTypes);
@@ -194,6 +213,30 @@ describe('computeRowProgress (article/row level — shared by both list tables)'
     expect(
       computeRowProgress([inst('i1', 'e1')], [val('i1', 'f1', { value: '' })], entityTypes),
     ).toBe(0);
+  });
+
+  it('double-wrapped unit envelope {value:{value,unit}} counts as filled (peel-in-predicate)', () => {
+    // The row path no longer pre-unwraps; the shared oracle peels one level, so a
+    // unit value stays filled — mirrors the backend `double-wrapped-unit` vector.
+    expect(
+      computeRowProgress(
+        [inst('i1', 'e1')],
+        [val('i1', 'f1', { value: { value: 'x', unit: 'mg' } })],
+        entityTypes,
+      ),
+    ).toBe(50);
+  });
+
+  it('a resolved absent_reason marker counts a required field as filled', () => {
+    // A silent numeric resolved to "no information" — value stays null, but the
+    // marker resolves the coordinate, so the row progresses (the numeric/date gap).
+    expect(
+      computeRowProgress(
+        [inst('i1', 'e1')],
+        [val('i1', 'f1', { value: null, absent_reason: 'no_information' })],
+        entityTypes,
+      ),
+    ).toBe(50);
   });
 
   it('no instances => 0%', () => {

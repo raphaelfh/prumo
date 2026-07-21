@@ -370,6 +370,17 @@ class ExtractionField(BaseModel):
     other_label: Mapped[str | None] = mapped_column(String, nullable=True)
     other_placeholder: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # Opt-in "no value, on purpose" dispositions (ADR-0016). ``no_information`` is
+    # universal (any source can be silent) so it needs no flag; these two are
+    # per-field opt-ins for signaling-question style fields (PROBAST/CHARMS) and
+    # drive the runtime FieldInput affordance + the frozen version snapshot.
+    allows_not_applicable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    allows_not_evaluated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
     # Relationships
     entity_type: Mapped["ExtractionEntityType"] = relationship(
         "ExtractionEntityType",
@@ -497,19 +508,22 @@ class ExtractionEvidence(BaseModel):
         ForeignKey("public.extraction_runs.id", ondelete="CASCADE"),
         nullable=True,
     )
+    # CASCADE, not SET NULL: evidence points at exactly one workflow target,
+    # so nulling it can never satisfy the workflow_target_present CHECK —
+    # the row follows its target (migration 0044).
     proposal_record_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_proposal_records.id", ondelete="SET NULL"),
+        ForeignKey("public.extraction_proposal_records.id", ondelete="CASCADE"),
         nullable=True,
     )
     reviewer_decision_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_reviewer_decisions.id", ondelete="SET NULL"),
+        ForeignKey("public.extraction_reviewer_decisions.id", ondelete="CASCADE"),
         nullable=True,
     )
     consensus_decision_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_consensus_decisions.id", ondelete="SET NULL"),
+        ForeignKey("public.extraction_consensus_decisions.id", ondelete="CASCADE"),
         nullable=True,
     )
 
@@ -644,6 +658,24 @@ class ExtractionRun(Base, UUIDMixin):
         # Indices GIN for JSONB
         Index("idx_extraction_runs_parameters_gin", "parameters", postgresql_using="gin"),
         Index("idx_extraction_runs_results_gin", "results", postgresql_using="gin"),
+        # One-live-run invariant (migration 0045): at most ONE non-terminal
+        # (pending/extract/consensus) run per (project, article, template,
+        # kind). A second live run silently shadows the first one's reviewer
+        # decisions on session open — the run-orphaning data-loss bug. Writers
+        # go through RunLifecycleService.resolve_or_create_extract_run (or the
+        # session opener), which reuses the live run under the (article,
+        # template) advisory lock; this index is the DB-level backstop.
+        # ``kind`` is implied by template_id (composite FK below) — included
+        # for intent + planner support.
+        Index(
+            "uq_one_live_extraction_run_per_coord",
+            "project_id",
+            "article_id",
+            "template_id",
+            "kind",
+            unique=True,
+            postgresql_where=text("stage IN ('pending', 'extract', 'consensus')"),
+        ),
         ForeignKeyConstraint(
             ["template_id", "kind"],
             [

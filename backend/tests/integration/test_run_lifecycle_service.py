@@ -1,6 +1,7 @@
 """Integration tests for RunLifecycleService."""
 
-from uuid import UUID
+import json
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -957,4 +958,390 @@ async def test_approve_and_finalize_real_form_double_wrapped_unit_diverges(
         )
     ).scalar()
     assert published == 0
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_approve_and_finalize_qa_publishes_agreed_and_finalizes(
+    db_session: AsyncSession,
+) -> None:
+    """QA runs finalize through the SAME approve-finalize as extraction (staged
+    HITL flow parity): agreed reviewer decisions publish automatically, then
+    the run advances CONSENSUS → FINALIZED. Regression guard: the service used
+    to reject kind='quality_assessment' because the frontend drove a one-shot
+    extract→consensus→finalized publish that skipped the consensus stage.
+
+    The agreed value here is an ADR-0016 absent_reason marker so the test also
+    pins that approve-finalize publishes marker envelopes VERBATIM for the QA
+    kind ({value: null, absent_reason} — never double-wrapped)."""
+    from app.services.extraction_review_service import ExtractionReviewService
+    from tests.integration.test_extraction_proposal_service import (
+        _setup_qa_run_with_instance_field,
+    )
+
+    built = await _setup_qa_run_with_instance_field(db_session)
+    if built is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, profile_id = built
+
+    marker = {"value": None, "absent_reason": "no_information"}
+    await ExtractionReviewService(db_session).record_decision(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        reviewer_id=profile_id,
+        decision="edit",
+        value=marker,
+    )
+    svc = RunLifecycleService(db_session)
+    await svc.advance_stage(run_id=run_id, target_stage="consensus", user_id=profile_id)
+
+    finalized, published_count = await svc.approve_and_finalize(run_id=run_id, user_id=profile_id)
+    assert finalized.stage == ExtractionRunStage.FINALIZED.value
+    assert published_count == 1
+
+    published = (
+        (
+            await db_session.execute(
+                text("SELECT value FROM public.extraction_published_states WHERE run_id = :r"),
+                {"r": str(run_id)},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert published == [marker]
+    await db_session.rollback()
+
+
+# ---------------------------------------------------------------------------
+# D8-c: QA decision materialization at extract -> consensus
+# ---------------------------------------------------------------------------
+
+
+async def _insert_legacy_human_proposal(
+    db: AsyncSession,
+    *,
+    run_id: UUID,
+    instance_id: UUID,
+    field_id: UUID,
+    profile_id: UUID,
+    value: str,
+    backdate_minutes: int = 0,
+) -> UUID:
+    """Raw-INSERT a pre-D8 human proposal (the service now rejects them).
+
+    Legacy rows only exist as stored data, so tests seed them the way they
+    actually exist: straight into the table. ``backdate_minutes`` matters
+    because created_at's server_default now() is TRANSACTION-scoped in PG —
+    two rows in one test transaction would tie, making newest-per-coord
+    nondeterministic (in production each autosave POST was its own
+    transaction, so timestamps are naturally distinct).
+    """
+    proposal_id = uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO public.extraction_proposal_records "
+            "(id, run_id, instance_id, field_id, source, source_user_id, "
+            " proposed_value, created_at) "
+            "VALUES (:id, :r, :i, :f, 'human', :u, CAST(:v AS jsonb), "
+            "        now() - make_interval(mins => :backdate))"
+        ),
+        {
+            "id": str(proposal_id),
+            "r": str(run_id),
+            "i": str(instance_id),
+            "f": str(field_id),
+            "u": str(profile_id),
+            "v": json.dumps({"value": value}),
+            "backdate": backdate_minutes,
+        },
+    )
+    return proposal_id
+
+
+async def _qa_run_with_human_proposal(
+    db: AsyncSession,
+) -> tuple[UUID, UUID, UUID, UUID, UUID] | None:
+    """QA run in extract + ONE human proposal (newest of two) on the coord.
+
+    Returns (run_id, instance_id, field_id, profile_id, newest_proposal_id).
+    """
+    from tests.integration.test_extraction_proposal_service import (
+        _setup_qa_run_with_instance_field,
+    )
+
+    built = await _setup_qa_run_with_instance_field(db)
+    if built is None:
+        return None
+    run_id, instance_id, field_id, profile_id = built
+
+    await _insert_legacy_human_proposal(
+        db,
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        profile_id=profile_id,
+        value="first answer",
+        backdate_minutes=1,
+    )
+    newest_id = await _insert_legacy_human_proposal(
+        db,
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        profile_id=profile_id,
+        value="final answer",
+    )
+    return run_id, instance_id, field_id, profile_id, newest_id
+
+
+@pytest.mark.asyncio
+async def test_qa_advance_materializes_edit_decisions(db_session: AsyncSession) -> None:
+    built = await _qa_run_with_human_proposal(db_session)
+    if built is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, profile_id, newest_id = built
+
+    svc = RunLifecycleService(db_session)
+    advanced = await svc.advance_stage(
+        run_id=run_id, target_stage=ExtractionRunStage.CONSENSUS, user_id=profile_id
+    )
+    assert advanced.stage == ExtractionRunStage.CONSENSUS.value
+
+    rows = (
+        await db_session.execute(
+            text(
+                "SELECT decision, value, proposal_record_id, rationale "
+                "FROM public.extraction_reviewer_decisions "
+                "WHERE run_id = :r AND reviewer_id = :u AND instance_id = :i AND field_id = :f"
+            ),
+            {
+                "r": str(run_id),
+                "u": str(profile_id),
+                "i": str(instance_id),
+                "f": str(field_id),
+            },
+        )
+    ).all()
+    assert len(rows) == 1, "exactly one decision per (reviewer, coord) materialized"
+    decision, value, proposal_record_id, rationale = rows[0]
+    assert decision == "edit"
+    assert value == {"value": "final answer"}, "the NEWEST human proposal's value is copied"
+    assert proposal_record_id is None, "a human proposal is not an AI basis"
+    assert rationale is not None and rationale.startswith("Materialized from human proposal")
+    assert str(newest_id) in rationale
+
+    state = (
+        await db_session.execute(
+            text(
+                "SELECT current_decision_id FROM public.extraction_reviewer_states "
+                "WHERE run_id = :r AND reviewer_id = :u AND instance_id = :i AND field_id = :f"
+            ),
+            {
+                "r": str(run_id),
+                "u": str(profile_id),
+                "i": str(instance_id),
+                "f": str(field_id),
+            },
+        )
+    ).scalar()
+    assert state is not None, "ExtractionReviewerState pointer upserted"
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_qa_materialization_skips_coords_with_existing_decision(
+    db_session: AsyncSession,
+) -> None:
+    from app.services.extraction_review_service import ExtractionReviewService
+
+    built = await _qa_run_with_human_proposal(db_session)
+    if built is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, profile_id, _ = built
+
+    # The reviewer made a REAL decision with a different value — it wins.
+    review = ExtractionReviewService(db_session)
+    await review.record_decision(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        reviewer_id=profile_id,
+        decision="edit",
+        value={"value": "deliberate answer"},
+    )
+
+    svc = RunLifecycleService(db_session)
+    await svc.advance_stage(
+        run_id=run_id, target_stage=ExtractionRunStage.CONSENSUS, user_id=profile_id
+    )
+
+    rows = (
+        await db_session.execute(
+            text(
+                "SELECT value FROM public.extraction_reviewer_decisions "
+                "WHERE run_id = :r AND reviewer_id = :u AND instance_id = :i AND field_id = :f"
+            ),
+            {
+                "r": str(run_id),
+                "u": str(profile_id),
+                "i": str(instance_id),
+                "f": str(field_id),
+            },
+        )
+    ).all()
+    assert len(rows) == 1, "coords with ANY existing decision are skipped, never overwritten"
+    assert rows[0][0] == {"value": "deliberate answer"}
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_qa_materialization_replay_is_noop(db_session: AsyncSession) -> None:
+    from app.models.extraction import ExtractionRun
+
+    built = await _qa_run_with_human_proposal(db_session)
+    if built is None:
+        pytest.skip("Missing fixtures.")
+    run_id, _instance_id, _field_id, _profile_id, _ = built
+
+    from app.services.extraction_review_service import ExtractionReviewService
+
+    run = await db_session.get(ExtractionRun, run_id)
+    assert run is not None
+
+    review = ExtractionReviewService(db_session)
+    first = await review.materialize_qa_decisions(run)
+    second = await review.materialize_qa_decisions(run)
+    assert first == 1
+    assert second == 0, "replaying the materialization is a no-op"
+
+    count = (
+        await db_session.execute(
+            text("SELECT count(*) FROM public.extraction_reviewer_decisions WHERE run_id = :r"),
+            {"r": str(run_id)},
+        )
+    ).scalar()
+    assert count == 1
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_extraction_advance_does_not_materialize(db_session: AsyncSession) -> None:
+    from tests.integration.test_extraction_proposal_service import (
+        _setup_run_with_instance_field,
+    )
+
+    built = await _setup_run_with_instance_field(db_session)
+    if built is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, profile_id = built
+
+    # A stray human proposal on an EXTRACTION run (raw insert — the proposal
+    # service's gate blocks human proposals for both kinds).
+    await _insert_legacy_human_proposal(
+        db_session,
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        profile_id=profile_id,
+        value="stray",
+    )
+
+    svc = RunLifecycleService(db_session)
+    await svc.advance_stage(
+        run_id=run_id, target_stage=ExtractionRunStage.CONSENSUS, user_id=profile_id
+    )
+
+    count = (
+        await db_session.execute(
+            text("SELECT count(*) FROM public.extraction_reviewer_decisions WHERE run_id = :r"),
+            {"r": str(run_id)},
+        )
+    ).scalar()
+    assert count == 0, "materialization is QA-only"
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_qa_select_existing_succeeds_against_materialized_row(
+    db_session: AsyncSession,
+) -> None:
+    from app.services.extraction_consensus_service import ExtractionConsensusService
+
+    built = await _qa_run_with_human_proposal(db_session)
+    if built is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, profile_id, _ = built
+
+    svc = RunLifecycleService(db_session)
+    await svc.advance_stage(
+        run_id=run_id, target_stage=ExtractionRunStage.CONSENSUS, user_id=profile_id
+    )
+    materialized_id = (
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.extraction_reviewer_decisions "
+                "WHERE run_id = :r AND instance_id = :i AND field_id = :f"
+            ),
+            {"r": str(run_id), "i": str(instance_id), "f": str(field_id)},
+        )
+    ).scalar()
+    assert materialized_id is not None
+
+    consensus = ExtractionConsensusService(db_session)
+    decision, published = await consensus.record_consensus(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        consensus_user_id=profile_id,
+        mode="select_existing",
+        selected_decision_id=materialized_id,
+    )
+    assert decision.selected_decision_id == materialized_id
+    assert published.value == {"value": "final answer"}
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_qa_single_user_export_not_blank_after_advance(
+    db_session: AsyncSession,
+) -> None:
+
+    from app.models.extraction import ExtractionFieldType
+    from app.services.extraction_export_service import (
+        ExtractionExportService,
+        FieldDescriptor,
+    )
+
+    built = await _qa_run_with_human_proposal(db_session)
+    if built is None:
+        pytest.skip("Missing fixtures.")
+    run_id, _instance_id, field_id, profile_id, _ = built
+
+    svc = RunLifecycleService(db_session)
+    await svc.advance_stage(
+        run_id=run_id, target_stage=ExtractionRunStage.CONSENSUS, user_id=profile_id
+    )
+
+    export = ExtractionExportService(
+        db=db_session,
+        user_id=str(profile_id),
+        storage=None,  # type: ignore[arg-type]
+    )
+    value_map = await export._build_single_user_value_map(
+        run_ids=[run_id],
+        reviewer_id=profile_id,
+        fields_by_id={
+            field_id: FieldDescriptor(
+                field_id=field_id,
+                label="QA Field",
+                type=ExtractionFieldType.SELECT,
+                allowed_values=(),
+                parent_section_id=uuid4(),
+            )
+        },
+    )
+    assert value_map, "single-user QA export must not be blank after materialization"
+    assert "final answer" in " ".join(str(v) for v in value_map.values())
     await db_session.rollback()

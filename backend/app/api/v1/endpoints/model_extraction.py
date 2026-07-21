@@ -12,6 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps.security import ensure_project_member, get_current_user_sub
+from app.api.v1.endpoints._integrity import (
+    ONE_LIVE_RUN_CONFLICT_DETAIL,
+    is_one_live_run_conflict,
+)
 from app.core.config import settings
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
@@ -174,6 +178,7 @@ async def extract_models(
             article_id=payload.article_id,
             template_id=payload.template_id,
             model=payload.model or settings.LLM_DEFAULT_MODEL,
+            run_id=payload.run_id,
         )
 
         db_commit_start = perf_counter()
@@ -253,6 +258,22 @@ async def extract_models(
         rollback_start = perf_counter()
         await db.rollback()
         rollback_duration_ms = (perf_counter() - rollback_start) * 1000
+        if is_one_live_run_conflict(e):
+            # One-live-run backstop (uq_one_live_extraction_run_per_coord,
+            # 0045): the resolve-or-create gate normally reuses the coordinate's
+            # live run under the advisory lock, but the index can still fire.
+            # A live-run conflict is a 409 (matching the raw create endpoint),
+            # not the FK-shaped 422 below.
+            logger.warning(
+                "model_extraction_conflict_live_run",
+                trace_id=trace_id,
+                error=str(e.orig),
+                rollback_duration_ms=rollback_duration_ms,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=ONE_LIVE_RUN_CONFLICT_DETAIL,
+            ) from e
         logger.warning(
             "model_extraction_integrity_error",
             trace_id=trace_id,
@@ -260,7 +281,7 @@ async def extract_models(
             rollback_duration_ms=rollback_duration_ms,
         )
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Referenced project, article or template does not exist.",
         ) from e
     except FileNotFoundError as e:

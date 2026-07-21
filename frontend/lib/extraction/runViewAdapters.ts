@@ -47,6 +47,8 @@ function fieldFromRunView(
     allow_other: f.allow_other,
     other_label: f.other_label,
     other_placeholder: f.other_placeholder,
+    allows_not_applicable: f.allows_not_applicable,
+    allows_not_evaluated: f.allows_not_evaluated,
   };
 }
 

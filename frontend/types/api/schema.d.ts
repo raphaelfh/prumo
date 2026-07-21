@@ -165,7 +165,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/articles/{article_id}/active-run": {
+    "/api/v1/articles/{article_id}/content-markdown": {
         parameters: {
             query?: never;
             header?: never;
@@ -173,13 +173,16 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Active Run
-         * @description Return the latest non-terminal extraction run for the article.
+         * Get Article Content Markdown
+         * @description Return the stored block-projection markdown for the article's MAIN file
+         *     (the exact text the LLM received — ADR-0013), for the review popover's
+         *     provenance dialog.
          *
-         *     Returns null (data: null) when no active run exists. 404 when the
-         *     article is not found; 403 when the caller is not a project member.
+         *     404 when the article is not found OR has never been parsed; 403 when the
+         *     caller is not a project member. The membership gate runs BEFORE the file
+         *     read so a non-member can't probe whether an article's markdown exists.
          */
-        get: operations["get_active_run_api_v1_articles__article_id__active_run_get"];
+        get: operations["get_article_content_markdown_api_v1_articles__article_id__content_markdown_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -664,6 +667,33 @@ export interface paths {
         patch: operations["update_project_template_active_api_v1_projects__project_id__templates__template_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates/{template_id}/republish-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Republish Template Version
+         * @description Publish the live template structure as a new active version.
+         *
+         *     Idempotent when nothing changed (returns the current active version
+         *     without spawning rows). Runs still in an editable stage
+         *     (``pending``/``extract``) are re-pinned to the new version so open
+         *     article forms render the edit; runs from ``consensus`` on keep the
+         *     version they were assessed under. Manager-gated like the sibling
+         *     endpoints — section/field editing is project-wide configuration.
+         */
+        post: operations["republish_template_version_api_v1_projects__project_id__templates__template_id__republish_version_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs": {
         parameters: {
             query?: never;
@@ -726,7 +756,7 @@ export interface paths {
         put?: never;
         /**
          * Approve And Finalize Run
-         * @description One-action consensus → finalized for extraction runs.
+         * @description One-action consensus → finalized for extraction and QA runs.
          *
          *     Publishes the agreed value for every existing-instance × field coord that is not
          *     yet published (reusing the per-coord consensus path), then advances to FINALIZED —
@@ -810,7 +840,9 @@ export interface paths {
          *
          *     Advisory only — it never advances the run (the manager opens consensus
          *     manually). Membership-gated AND reviewer-role-gated (a read-only viewer
-         *     cannot mark ready). Returns the "N/M reviewers ready" hint.
+         *     cannot mark ready). Returns the "N/M reviewers ready" hint with
+         *     ``reviewers_ready`` scoped to the caller's own entry (this response is the
+         *     caller's toggle echo; an unblinded caller reads the full list via /view).
          */
         post: operations["mark_run_ready_api_v1_runs__run_id__ready_post"];
         delete?: never;
@@ -838,6 +870,30 @@ export interface paths {
          *     one left off. Old Run is untouched (audit trail).
          */
         post: operations["reopen_run_api_v1_runs__run_id__reopen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/reopen-extraction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen Run To Extract
+         * @description Return a consensus-stage extraction run to extract, discarding consensus work.
+         *
+         *     Arbitrator-only (manager/consensus): this hard-deletes the run's consensus
+         *     decisions + published values so reviewers can edit again. The gate lives at the
+         *     API layer because the service-role session bypasses RLS. See ADR-0017.
+         */
+        post: operations["reopen_run_to_extract_api_v1_runs__run_id__reopen_extraction_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1061,6 +1117,10 @@ export interface components {
             proposed_value: {
                 [key: string]: unknown;
             };
+            /** Provenance */
+            provenance?: {
+                [key: string]: unknown;
+            } | null;
             /** Rationale */
             rationale: string | null;
             /**
@@ -1102,6 +1162,10 @@ export interface components {
             proposed_value: {
                 [key: string]: unknown;
             };
+            /** Provenance */
+            provenance?: {
+                [key: string]: unknown;
+            } | null;
             /** Rationale */
             rationale: string | null;
             /**
@@ -1200,6 +1264,23 @@ export interface components {
         ApiResponse_ApproveFinalizeResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ApproveFinalizeResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ArticleContentMarkdownResponse] */
+        ApiResponse_ArticleContentMarkdownResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ArticleContentMarkdownResponse"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -1553,6 +1634,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[RepublishTemplateVersionResponse] */
+        ApiResponse_RepublishTemplateVersionResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["RepublishTemplateVersionResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[ReviewerDecisionResponse] */
         ApiResponse_ReviewerDecisionResponse_: {
             /** @description Dados da resposta */
@@ -1837,6 +1935,18 @@ export interface components {
             /** Published Count */
             published_count: number;
             run: components["schemas"]["RunSummaryResponse"];
+        };
+        /**
+         * ArticleContentMarkdownResponse
+         * @description The stored block-projection markdown for an article's MAIN file — the
+         *     exact text sent to the LLM (ADR-0013), surfaced by the review popover's
+         *     "How this was generated" dialog. camelCase on the wire like its siblings.
+         */
+        ArticleContentMarkdownResponse: {
+            /** Contentmarkdown */
+            contentMarkdown?: string | null;
+            /** Filename */
+            fileName?: string | null;
         };
         /**
          * ArticleFileListItem
@@ -2212,8 +2322,6 @@ export interface components {
             rationale?: string | null;
             /** Source */
             source: string;
-            /** Source User Id */
-            source_user_id?: string | null;
         };
         /** CreateRunRequest */
         CreateRunRequest: {
@@ -2811,6 +2919,8 @@ export interface components {
              * Format: uuid
              */
             projectId: string;
+            /** Runid */
+            runId?: string | null;
             /**
              * Templateid
              * Format: uuid
@@ -3025,6 +3135,20 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** RepublishTemplateVersionResponse */
+        RepublishTemplateVersionResponse: {
+            /** Changed */
+            changed: boolean;
+            /** Repinned Run Count */
+            repinned_run_count: number;
+            /** Version */
+            version: number;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+        };
         /** ReviewerDecisionResponse */
         ReviewerDecisionResponse: {
             /**
@@ -3091,7 +3215,9 @@ export interface components {
          *
          *     ``reviewer_count`` is ``max(hitl_config reviewer_count, ready_count)`` so the
          *     hint never reads "N of M" with N > M (the configured count is often the inert
-         *     default of 1).
+         *     default of 1). ``reviewers_ready`` is blind-gated (ADR-0012): it carries only
+         *     the caller's own entry unless the caller is unblinded — the counts stay
+         *     aggregate.
          */
         RunReadyStateResponse: {
             /** Ready Count */
@@ -3258,6 +3384,16 @@ export interface components {
             allowed_units?: unknown | null;
             /** Allowed Values */
             allowed_values?: unknown | null;
+            /**
+             * Allows Not Applicable
+             * @default false
+             */
+            allows_not_applicable: boolean;
+            /**
+             * Allows Not Evaluated
+             * @default false
+             */
+            allows_not_evaluated: boolean;
             /** Description */
             description?: string | null;
             /** Field Type */
@@ -3914,11 +4050,9 @@ export interface operations {
             };
         };
     };
-    get_active_run_api_v1_articles__article_id__active_run_get: {
+    get_article_content_markdown_api_v1_articles__article_id__content_markdown_get: {
         parameters: {
-            query?: {
-                template_id?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 article_id: string;
@@ -3933,7 +4067,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponse_Union_RunSummaryResponse__NoneType__"];
+                    "application/json": components["schemas"]["ApiResponse_ArticleContentMarkdownResponse_"];
                 };
             };
             /** @description Validation Error */
@@ -4844,6 +4978,38 @@ export interface operations {
             };
         };
     };
+    republish_template_version_api_v1_projects__project_id__templates__template_id__republish_version_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RepublishTemplateVersionResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_run_api_v1_runs_post: {
         parameters: {
             query?: never;
@@ -5127,6 +5293,37 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RunSummaryResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reopen_run_to_extract_api_v1_runs__run_id__reopen_extraction_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

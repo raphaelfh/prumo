@@ -1,17 +1,18 @@
 /**
  * Action buttons for AI suggestions (Accept/Reject) used in extraction flows.
+ * Accept/reject are instant local state updates (no backend write from the
+ * suggestion surface — autosave persists), so there is no loading state.
  */
 
 import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
-import {Check, Loader2, X} from 'lucide-react';
+import {Check, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 
 interface AISuggestionActionsProps {
   onAccept?: () => void;
   onReject?: () => void;
-  loading?: boolean;
   className?: string;
   isAccepted?: boolean;
   isRejected?: boolean;
@@ -20,7 +21,6 @@ interface AISuggestionActionsProps {
 export function AISuggestionActions({
   onAccept,
   onReject,
-  loading = false,
   className,
   isAccepted = false,
   isRejected = false,
@@ -34,19 +34,14 @@ export function AISuggestionActions({
               size="icon"
               variant="ghost"
               onClick={onAccept}
-              disabled={loading}
+              aria-label={isAccepted ? t('shared', 'suggestionAccepted') : t('shared', 'acceptSuggestion')}
               className={cn(
                 "h-7 w-7 rounded-full",
                 isAccepted && "ring-1 ring-success bg-success/10",
-                "text-success hover:text-success hover:bg-success/10",
-                loading && "opacity-50 cursor-not-allowed"
+                "text-success hover:text-success hover:bg-success/10"
               )}
             >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Check className="h-4 w-4" />
-              )}
+              <Check className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
@@ -62,12 +57,11 @@ export function AISuggestionActions({
               size="icon"
               variant="ghost"
               onClick={onReject}
-              disabled={loading}
+              aria-label={isRejected ? t('shared', 'suggestionRejected') : t('shared', 'rejectSuggestion')}
               className={cn(
                 "h-7 w-7 rounded-full",
                 isRejected && "ring-1 ring-destructive bg-destructive/10",
-                "text-destructive hover:text-destructive hover:bg-destructive/10",
-                loading && "opacity-50 cursor-not-allowed"
+                "text-destructive hover:text-destructive hover:bg-destructive/10"
               )}
             >
               <X className="h-4 w-4" />

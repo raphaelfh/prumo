@@ -18,6 +18,13 @@ export interface UseExtractionFormAIActionsProps {
   projectId: string;
   articleId: string;
   templateId: string;
+  /**
+   * Active HITL session run. Threaded into every AI extraction so models +
+   * sections land on the SESSION run rather than forking a parallel run that
+   * would shadow the reviewer's saved decisions (the orphaning bug). Null/absent
+   * only before the session resolves — the buttons are gated on it upstream.
+   */
+  runId?: string | null;
   activeModelId: string | null;
   models: Array<{instanceId: string; modelName: string}>;
   onRefreshModels: () => Promise<void>;
@@ -30,6 +37,7 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
     projectId,
     articleId,
     templateId,
+    runId,
     activeModelId,
     models,
     onRefreshModels,
@@ -37,10 +45,30 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
     onExtractionComplete,
   } = props;
 
+  // Normalise null → undefined once: the request types carry `runId?: string`,
+  // so every handler feeds the extraction on the session run (never a fork).
+  const sessionRunId = runId ?? undefined;
+
   const {extractModels, loading: extractingModels} = useModelExtraction({
-    onSuccess: async () => {
+    onSuccess: async (_runId, _modelsCreated, createdModels) => {
+      // Refresh so the new models appear immediately, then extract every
+      // created model's sections — a bare model with empty fields is not
+      // a finished extraction from the user's point of view. The batch
+      // hook's own onSuccess re-refreshes and fires onExtractionComplete.
       onRefreshModels()
         .then(() => onRefreshInstances())
+        .then(() => {
+          if (createdModels.length === 0) return undefined;
+          return extractAllSectionsForAllModels({
+            projectId,
+            articleId,
+            templateId,
+            models: createdModels,
+            // Chained sections land on the SAME session run as the models —
+            // omitting this would fork a shadow run (the orphaning bug).
+            runId: sessionRunId,
+          });
+        })
         .catch((error: unknown) => {
           console.error('[useExtractionFormAIActions] refresh after model extraction failed:', error);
         });
@@ -76,9 +104,11 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
   });
 
   const handleExtractModels = async () => {
-    extractModels({projectId, articleId, templateId}).catch((error: unknown) => {
-      console.error('[useExtractionFormAIActions] extractModels failed:', error);
-    });
+    extractModels({projectId, articleId, templateId, runId: sessionRunId}).catch(
+      (error: unknown) => {
+        console.error('[useExtractionFormAIActions] extractModels failed:', error);
+      },
+    );
   };
 
   const handleExtractAllSections = async () => {
@@ -91,6 +121,7 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
       articleId,
       templateId,
       parentInstanceId: activeModelId,
+      runId: sessionRunId,
       extractAllSections: true,
     }).catch((error: unknown) => {
       console.error('[useExtractionFormAIActions] extractAllSections failed:', error);
@@ -107,6 +138,7 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
       articleId,
       templateId,
       models: models.map(m => ({instanceId: m.instanceId, modelName: m.modelName})),
+      runId: sessionRunId,
     }).catch((error: unknown) => {
       console.error('[useExtractionFormAIActions] extractAllSectionsForAllModels failed:', error);
     });

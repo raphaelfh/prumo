@@ -38,6 +38,61 @@ export interface EvidenceCitation {
 }
 
 /**
+ * Where the article text in a section's prompt came from, and whether the token
+ * budget dropped any of it (a marker stands in for the full text). Part of
+ * {@link PromptComposition}.
+ */
+export interface PromptCompositionArticleRef {
+  fileId?: string | null;
+  fileName?: string | null;
+  truncated?: boolean;
+  estTokens?: number | null;
+}
+
+/**
+ * How one section's LLM prompt was assembled — the recipe the review dialog
+ * renders instead of dumping raw prompt text. `sectionInstruction` carries the
+ * rendered user template with the article replaced by a marker.
+ */
+export interface PromptComposition {
+  sectionName?: string;
+  systemPrompt?: string;
+  sectionInstruction?: string;
+  articleRef?: PromptCompositionArticleRef;
+  fieldsRequested?: string[];
+  llmCalls?: number;
+}
+
+/**
+ * How a run's suggestions were generated — a per-section provenance snapshot
+ * (`extraction_runs.results['provenance']['sections'][entityTypeId]`, resolved
+ * server-side) surfaced for transparency + traceability. The server payload is
+ * snake_case with nested `params`/`tokens`/`prompt_composition`;
+ * `aiSuggestionService` flattens it to this camelCase shape. The open index
+ * signature keeps the disclosure forward-compatible: a new backend field shows
+ * up as a generic row without a frontend change.
+ */
+export interface RunProvenance {
+  ranByUserId?: string;
+  ranByName?: string;
+  provider?: string;
+  model?: string;
+  strategy?: string;
+  promptVersion?: string;
+  promptText?: string;
+  temperature?: number;
+  outputRetries?: number;
+  timeoutSeconds?: number;
+  tokensPrompt?: number;
+  tokensCompletion?: number;
+  tokensTotal?: number;
+  reasoning?: string;
+  /** Structured prompt recipe. Absent on legacy runs (pre-composition capture). */
+  promptComposition?: PromptComposition;
+  [key: string]: unknown;
+}
+
+/**
  * Presentation shape an extraction-UI consumer renders. There's no longer
  * a backing `ai_suggestions` table — the equivalent rows live in
  * `extraction_proposal_records` (filtered by `source='ai'`) and are
@@ -53,6 +108,9 @@ export interface AISuggestion {
   timestamp: Date; // proposal created_at parsed
   /** Ordered by rank (0 = primary). Empty array when no evidence. */
   evidence?: EvidenceCitation[];
+  /** How this suggestion's run was generated. Undefined for legacy runs that
+   *  predate provenance capture. */
+  provenance?: RunProvenance;
 }
 
 /**
@@ -122,6 +180,13 @@ export interface ModelExtractionRequest {
   projectId: string;
   articleId: string;
   templateId: string;
+  /**
+   * Active HITL session run to append the extracted models to. When set (the
+   * extraction surface), the backend REUSES that run instead of forking a
+   * parallel one that would shadow the reviewer's saved decisions. Omit for
+   * standalone (e.g. bulk table) extraction where no session run exists.
+   */
+  runId?: string;
   options?: {
     model?: SupportedAIModel;
   };
@@ -144,6 +209,7 @@ export interface BatchSectionExtractionRequest {
   articleId: string;
   templateId: string;
   parentInstanceId: string; // Model instance (required)
+  runId?: string; // Active session run to reuse (avoids orphaning decisions)
   extractAllSections: true; // Flag for batch extraction
   sectionIds?: string[]; // Filter specific sections (for chunking)
   pdfText?: string; // Pre-processed PDF text (avoids reprocessing)
@@ -220,26 +286,10 @@ export interface ModelExtractionResponse {
 // =================== HOOK PROPS ===================
 
 /**
- * How "accept this AI suggestion" is persisted on the backend.
- *
- * - ``reviewer-decision`` (default, used by Data Extraction): the hook
- *   calls ``/runs/{id}/decisions`` with ``decision='accept_proposal'``.
- *   Requires the run to be in REVIEW stage.
- * - ``human-proposal`` (used by Quality Assessment): the hook does NOT
- *   write a decision. It just bubbles ``onSuggestionAccepted`` so the
- *   page records a fresh ``human`` proposal via its own flow. QA stays
- *   in PROPOSAL until the user clicks Publish.
- */
-export type AISuggestionAcceptStrategy =
-  | 'reviewer-decision'
-  | 'human-proposal';
-
-/**
  * Props for the useAISuggestions hook
  */
 export interface UseAISuggestionsProps {
   articleId: string;
-  projectId: string;
   enabled?: boolean;
   /**
    * Scope suggestions to a specific Run. When omitted the hook falls
@@ -254,13 +304,6 @@ export interface UseAISuggestionsProps {
    * article. QA already has these from the HITL session response.
    */
   instanceIds?: string[];
-  /**
-   * Default ``'reviewer-decision'``. Set to ``'human-proposal'`` to
-   * have accept/reject only update local state and rely on the
-   * consumer's ``onSuggestion*`` callbacks to persist the value via the
-   * caller's own proposal pipeline.
-   */
-  acceptStrategy?: AISuggestionAcceptStrategy;
   onSuggestionAccepted?: (instanceId: string, fieldId: string, value: any) => void;
   onSuggestionRejected?: (instanceId: string, fieldId: string) => void;
 }
@@ -271,13 +314,43 @@ export interface UseAISuggestionsProps {
 export interface UseAISuggestionsReturn {
   suggestions: Record<string, AISuggestion>; // key: `${instanceId}_${fieldId}`
   loading: boolean;
+  /**
+   * D0: this session's real adoption events — accept/select set the chosen
+   * proposal id, reject tombstones with null. Starts empty every mount and is
+   * never hydrated from the read endpoint (whose `status` marks any non-reject
+   * decision 'accepted' and would fabricate AI provenance). Feeds
+   * `deriveAiLinkByKey` together with the caller's persisted decision links.
+   */
+  sessionAdoption: Record<string, string | null>;
+  /**
+   * True only after a successful suggestions load; false while loading and
+   * after a load error. Distinguishes "no AI suggestion exists" from "the
+   * AI-existence signal is unavailable" (consensus Manual-chip gating).
+   */
+  suggestionsReady: boolean;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
+  /**
+   * Accept a SPECIFIC historical version by its proposal id (not just the
+   * latest pending). Powers the review popover's version switching. `value`
+   * may be null (an explicit "no information" selection); `confidence` is that
+   * chosen version's own confidence.
+   */
+  selectSuggestion: (
+    instanceId: string,
+    fieldId: string,
+    proposalRecordId: string,
+    value: unknown,
+    confidence: number,
+  ) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   batchAccept: (threshold?: number) => Promise<void>;
-  getSuggestionsHistory: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
+  getSuggestionsHistory: (
+    instanceId: string,
+    fieldId: string,
+    limit?: number,
+  ) => Promise<AISuggestionHistoryItem[]>;
   getLatestSuggestion: (instanceId: string, fieldId: string) => AISuggestion | undefined;
   refresh: () => Promise<LoadSuggestionsResult>; // Returns result directly for efficient polling
-  isActionLoading: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null; // Whether action is loading
 }
 
 export interface LoadSuggestionsResult {

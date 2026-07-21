@@ -138,6 +138,10 @@ export const project = {
     teamConfirmRemoveMember: 'Are you sure you want to remove this member?',
     teamMemberRemoved: 'Member removed',
     teamErrorRemovingMember: 'Error removing member',
+    // Shown both as the tooltip on a sole manager's disabled Remove button /
+    // non-manager role options, and as the toast when the DB min-one-manager
+    // guard (PM001) rejects a remove/demote that slipped past the UI.
+    teamLastManagerGuard: 'A project must keep at least one manager',
 
     // AdvancedSettingsSection
     advancedSectionTitle: 'Advanced settings',

@@ -52,6 +52,13 @@ class CloneTemplateResponse(BaseModel):
     created: bool
 
 
+class RepublishTemplateVersionResponse(BaseModel):
+    version_id: UUID
+    version: int
+    changed: bool
+    repinned_run_count: int
+
+
 class UpdateTemplateActiveRequest(BaseModel):
     is_active: bool
 

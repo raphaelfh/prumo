@@ -3,9 +3,10 @@
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionRunStage
+from app.models.extraction import ExtractionField, ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,
@@ -15,6 +16,7 @@ from app.repositories.extraction_proposal_repository import (
 )
 from app.services._extraction_run_lock import load_run_for_update
 from app.services.coordinate_coherence import assert_coords_coherent
+from app.services.value_semantics import disposition_to_marker, is_disposition_candidate
 
 
 class InvalidProposalError(Exception):
@@ -45,34 +47,33 @@ class ExtractionProposalService:
             raise InvalidProposalError(f"Run {run_id} not found")
 
         source_value = source.value if isinstance(source, ExtractionProposalSource) else source
-        # Stage gate is source-specific AND kind-aware in the collapsed
-        # ``extract`` lifecycle (pending -> extract -> consensus -> finalized):
+        # Stage gate is source-specific in the collapsed ``extract``
+        # lifecycle (pending -> extract -> consensus -> finalized):
         #
         # * ``ai`` / ``system`` proposals are produced during ``extract`` —
         #   the AI phase and any system seeding both live in that single
         #   stage now that ``proposal``/``review`` are unified.
-        # * ``human`` proposals are kind-gated (Layer 1b of the
-        #   multi-reviewer blind fix):
-        #     - kind='extraction': REJECTED outright. A reviewer's
-        #       extraction values must land as per-user ``ReviewerDecision``
-        #       rows so the blind-review contract holds (``loadValuesForUser``
-        #       filters by reviewer_id). A shared ``human`` proposal here
-        #       opens the leak Layer 1 patched on the read side; this gate
-        #       closes it on the write side so a frontend bypass (curl,
-        #       agent client) cannot resurrect the bug — humans write via
-        #       /decisions.
-        #     - kind='quality_assessment': allowed in ``extract``. QA has no
-        #       per-reviewer blind contract, so its human writes stay on the
-        #       shared proposal track.
+        # * ``human`` proposals are REJECTED outright for BOTH kinds —
+        #   humans write via /decisions:
+        #     - kind='extraction' (Layer 1b of the multi-reviewer blind
+        #       fix): a reviewer's values must land as per-user
+        #       ``ReviewerDecision`` rows so the blind-review contract holds
+        #       (``loadValuesForUser`` filters by reviewer_id). A shared
+        #       ``human`` proposal here opens the leak Layer 1 patched on
+        #       the read side; this gate closes it on the write side so a
+        #       frontend bypass (curl, agent client) cannot resurrect it.
+        #     - kind='quality_assessment': the QA form writes /decisions
+        #       since D8 unified the write path. Without this gate any API
+        #       client could still leave bare human proposals that
+        #       ``materialize_qa_decisions`` would have to reconcile at
+        #       every extract->consensus advance, forever; rejecting them
+        #       bounds that materializer to pre-D8 rows already stored.
         if source_value in ("ai", "system"):
             allowed_stages = {ExtractionRunStage.EXTRACT.value}
-        elif run.kind == "extraction":
-            raise InvalidProposalError(
-                "For kind='extraction', human writes must go through "
-                "/decisions (ReviewerDecision), not /proposals."
-            )
         else:
-            allowed_stages = {ExtractionRunStage.EXTRACT.value}
+            raise InvalidProposalError(
+                "Human writes must go through /decisions (ReviewerDecision), not /proposals."
+            )
         if run.stage not in allowed_stages:
             raise InvalidProposalError(
                 f"Cannot record proposal: kind={run.kind} run stage is "
@@ -86,8 +87,18 @@ class ExtractionProposalService:
             field_id=field_id,
         )
 
-        if source_value == "human" and source_user_id is None:
-            raise InvalidProposalError("source='human' requires source_user_id")
+        # ADR-0016: normalize a legacy in-band disposition string — a picked
+        # dropdown option or an AI ``found``-disposition on an existing run whose
+        # frozen domain still carries it — into the coded ``absent_reason`` marker.
+        # Scoped by the field's live domain so a coincidental value is untouched;
+        # the candidacy pre-check skips the lookup for real values / markers.
+        if is_disposition_candidate(proposed_value):
+            allowed = (
+                await self.db.execute(
+                    select(ExtractionField.allowed_values).where(ExtractionField.id == field_id)
+                )
+            ).scalar_one_or_none()
+            proposed_value = disposition_to_marker(proposed_value, allowed)
 
         # Idempotent re-record: a client replaying an unchanged value (form
         # remount, debounce double-fire, retry) must not append a duplicate

@@ -25,6 +25,113 @@ export interface ReconciliationBuckets {
   agreements: string[];
 }
 
+/**
+ * Per-coord consensus status, resolution wins over any bucket.
+ */
+export type CoordStatus =
+  | 'conflict'
+  | 'required_gap'
+  | 'single_filler'
+  | 'agreed'
+  | 'resolved';
+
+/**
+ * Structural shape of a consensus decision — satisfied by
+ * `ConsensusDecisionResponse` without importing hook types into lib/
+ * (keeps the layering one-way: lib never depends on hooks/components).
+ */
+export interface ResolvedConsensusLike {
+  instance_id: string;
+  field_id: string;
+  created_at: string;
+  mode: string;
+  selected_decision_id?: string | null;
+  value: unknown;
+  rationale?: string | null;
+}
+
+export interface ConsensusResolutionView<C extends ResolvedConsensusLike> {
+  /** Newest consensus decision per coord (append-only aggregate ⇒ max created_at). */
+  resolvedByCoord: Map<string, C>;
+  buckets: ReconciliationBuckets;
+  statusByCoord: Map<string, CoordStatus>;
+  needsAttentionCount: number;
+  resolvedCount: number;
+  canFinalize: boolean;
+}
+
+/**
+ * Pure derivation of consensus resolution state from the run aggregate: the
+ * newest decision per coord, the reconciliation buckets, a per-coord status
+ * (resolution wins), the needs-attention/resolved counts, and the finalize
+ * gate. Extracted from the former ConsensusPanel so both the extraction and QA
+ * screens compute it identically. No fetching.
+ */
+export function deriveConsensusResolution<C extends ResolvedConsensusLike>(p: {
+  consensusDecisions: readonly C[];
+  publishedCoords: ReadonlySet<string>;
+  divergentCoords: ReadonlySet<string>;
+  decisionCountByCoord: ReadonlyMap<string, number>;
+  participantCount: number;
+  requiredCoords: readonly string[];
+}): ConsensusResolutionView<C> {
+  // Newest consensus decision wins per coord (the aggregate can carry more than
+  // one if an arbitrator re-resolved a field).
+  const resolvedByCoord = new Map<string, C>();
+  for (const c of p.consensusDecisions) {
+    const key = `${c.instance_id}::${c.field_id}`;
+    const prev = resolvedByCoord.get(key);
+    if (!prev || prev.created_at < c.created_at) resolvedByCoord.set(key, c);
+  }
+
+  const buckets = classifyReconciliation({
+    divergentCoords: p.divergentCoords,
+    decisionCountByCoord: p.decisionCountByCoord,
+    participantCount: p.participantCount,
+    requiredCoords: p.requiredCoords,
+    publishedCoords: p.publishedCoords,
+  });
+
+  // Status precedence mirrors the bucket precedence, with resolved on top:
+  // agreed < single_filler < required_gap < conflict < resolved.
+  const statusByCoord = new Map<string, CoordStatus>();
+  for (const c of buckets.agreements) statusByCoord.set(c, 'agreed');
+  for (const c of buckets.singleFiller) statusByCoord.set(c, 'single_filler');
+  for (const c of buckets.requiredGaps) statusByCoord.set(c, 'required_gap');
+  for (const c of buckets.conflicts) statusByCoord.set(c, 'conflict');
+  for (const c of resolvedByCoord.keys()) statusByCoord.set(c, 'resolved');
+
+  let needsAttentionCount = 0;
+  for (const s of statusByCoord.values()) {
+    if (s === 'conflict' || s === 'required_gap' || s === 'single_filler') {
+      needsAttentionCount += 1;
+    }
+  }
+
+  // Completeness is measured at the RUN level: `requiredGaps` already flags any
+  // required coord with no reviewer decision and no published value (a published
+  // state is written for every consensus decision, so adopted-peer resolutions
+  // count as filled). This deliberately does NOT consult a caller-scoped
+  // "isComplete" — an arbitrator who resolves a required field by adopting a
+  // peer's value has nothing in their own decision stream, yet the run is
+  // complete. Mirrors the backend gate (`_filled_coords`: published ∪ every
+  // reviewer's decision), so the button state matches what finalize will accept.
+  const conflictsResolved = buckets.conflicts.every((c) => resolvedByCoord.has(c));
+  const canFinalize =
+    conflictsResolved &&
+    buckets.requiredGaps.length === 0 &&
+    p.consensusDecisions.length > 0;
+
+  return {
+    resolvedByCoord,
+    buckets,
+    statusByCoord,
+    needsAttentionCount,
+    resolvedCount: resolvedByCoord.size,
+    canFinalize,
+  };
+}
+
 export function classifyReconciliation(p: ClassifyParams): ReconciliationBuckets {
   const conflicts: string[] = [];
   const requiredGaps: string[] = [];

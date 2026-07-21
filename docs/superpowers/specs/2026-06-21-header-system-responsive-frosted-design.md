@@ -9,6 +9,13 @@ owner: '@raphaelfh'
 
 # Design: Unified header system — responsive + restrained frosted glass
 
+> **Superseded (visual sections) 2026-07-02** by
+> [`2026-07-02-run-header-declutter-design.md`](2026-07-02-run-header-declutter-design.md):
+> the StageRail/Reviewers/RoleChip leaves and the multi-threshold drop
+> cascade described here were replaced by the unified `RunHeader.RunStatus`
+> cluster + status popover. The HeaderShell frosted chrome and h-12 language
+> remain authoritative here.
+
 **Date:** 2026-06-21
 
 ## 1. Context

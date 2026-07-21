@@ -20,7 +20,7 @@ const articles = [
 describe('RunHeader.Worklist', () => {
   it('renders "2 / 3" trigger when current is middle article', () => {
     render(<Worklist articles={articles} currentId="a2" onNavigate={vi.fn()} />);
-    expect(screen.getByRole('button', { name: '2 / 3' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'worklistPositionLabel' })).toHaveTextContent('2 / 3');
   });
 
   it('calls onNavigate with first article id when prev is clicked', async () => {
@@ -51,7 +51,7 @@ describe('RunHeader.Worklist', () => {
 
   it('opens popover and lists all article titles on trigger click', async () => {
     render(<Worklist articles={articles} currentId="a2" onNavigate={vi.fn()} />);
-    await userEvent.click(screen.getByRole('button', { name: '2 / 3' }));
+    await userEvent.click(screen.getByRole('button', { name: 'worklistPositionLabel' }));
     expect(screen.getByText('Article One')).toBeInTheDocument();
     expect(screen.getByText('Article Two')).toBeInTheDocument();
     expect(screen.getByText('Article Three')).toBeInTheDocument();
@@ -60,7 +60,7 @@ describe('RunHeader.Worklist', () => {
   it('calls onNavigate with article id when a row in the popover is clicked', async () => {
     const onNavigate = vi.fn();
     render(<Worklist articles={articles} currentId="a2" onNavigate={onNavigate} />);
-    await userEvent.click(screen.getByRole('button', { name: '2 / 3' }));
+    await userEvent.click(screen.getByRole('button', { name: 'worklistPositionLabel' }));
     await userEvent.click(screen.getByText('Article One'));
     expect(onNavigate).toHaveBeenCalledWith('a1');
   });

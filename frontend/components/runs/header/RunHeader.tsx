@@ -3,37 +3,55 @@ import { cn } from '@/lib/utils';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { HeaderShell } from '@/components/layout/HeaderShell';
 import { RunHeaderProvider, type RunHeaderValue } from './RunHeaderContext';
-import { StageRail } from './StageRail';
+import { RunStatus } from './RunStatus';
 import { PrimaryAction } from './PrimaryAction';
 import { PanelToggle } from './PanelToggle';
 import { SidebarToggle } from './SidebarToggle';
 import { MobileNav } from './MobileNav';
 import { Help } from './Help';
-import { RoleChip } from './RoleChip';
-import { Reviewers } from './Reviewers';
 import { SaveSlot } from './SaveSlot';
 import { AIActions } from './AIActions';
 import { Breadcrumb } from './Breadcrumb';
+import { CompareToggle } from './CompareToggle';
 import { Menu, MenuItem } from './Menu';
 import { Worklist } from './Worklist';
 import { CommandPalette } from './CommandPalette';
 
+/**
+ * RESPONSIVE CASCADE (3 rules — the RunStatus popover absorbed the old
+ * stage-rail / reviewers / role-chip fold ladder):
+ *
+ *   1. The article title truncates (pure flex-shrink) — never drops.
+ *   2. Reviewer avatars drop <64rem (RunStatus.tsx — they can only hide,
+ *      never shrink, so they fold first in the packed consensus config).
+ *   3. Back arrow drops <42rem (Breadcrumb.tsx); the stage chip folds to its
+ *      dot <58rem but NEVER drops — it is the status anchor.
+ *
+ * The ‹N/M› pager keeps its own protected shrink-0 slot; Left/Center keep
+ * overflow-hidden purely as an anti-overlap backstop for whitespace-nowrap
+ * leaves.
+ */
 function Left({ children }: { children: ReactNode }) {
-  // overflow-hidden is the backstop: even after the shrinkable children
-  // (Breadcrumb truncates, StageRail clips) compress, content can never paint
-  // out of this track onto the Center slot — the narrow-width overlap bug.
-  return <div className={cn('flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden @[48rem]/headerbar:gap-3')}>{children}</div>;
+  // Identity track. It SHRINKS (the breadcrumb title truncates) and keeps
+  // `overflow-hidden` ONLY as an anti-overlap backstop: its leaves are
+  // `whitespace-nowrap`, so without it a shrunk track would paint its text on
+  // top of the next slot. The ‹N/M› pager lives OUT in its own protected slot
+  // (see RunHeader.Worklist placement), so a clip can never bite it. The
+  // article title is the flex cushion; the back arrow drops via @container.
+  return <div className={cn('flex min-w-0 shrink items-center gap-1.5 overflow-hidden @[48rem]/headerbar:gap-3')}>{children}</div>;
 }
 function Center({ children }: { children: ReactNode }) {
-  // Mid-priority (reviewers + role chip). Allowed to shrink/clip so it yields
-  // room to Left instead of forcing overflow; its leaves collapse their labels
-  // via @container queries before any clipping engages.
-  return <div className={cn('flex min-w-0 shrink items-center gap-2 overflow-hidden')}>{children}</div>;
+  // Status track (RunStatus cluster). shrink-0 — NEVER flex-clipped: its
+  // content already folds internally (avatars drop <64rem, the chip label
+  // folds to the dot <58rem), so squeezing this track would only clip the
+  // chip mid-word while the title still has room to truncate.
+  return <div className={cn('flex shrink-0 items-center gap-2')}>{children}</div>;
 }
 function Right({ children }: { children: ReactNode }) {
-  // Stays shrink-0 so the PrimaryAction is never clipped; only the inter-item
-  // gap tightens at narrow widths.
-  return <div className={cn('flex shrink-0 items-center gap-1 @[48rem]/headerbar:gap-2')}>{children}</div>;
+  // `ml-auto` makes this cluster absorb all free space and pin right (the job
+  // Left's `flex-1` used to do, minus the starvation). `shrink-0` so the
+  // PrimaryAction is never clipped; only the inter-item gap tightens.
+  return <div className={cn('ml-auto flex shrink-0 items-center gap-1 @[48rem]/headerbar:gap-2')}>{children}</div>;
 }
 
 function RunHeaderRoot({
@@ -58,4 +76,4 @@ function RunHeaderRoot({
   );
 }
 
-export const RunHeader = Object.assign(RunHeaderRoot, { Left, Center, Right, StageRail, PrimaryAction, PanelToggle, SidebarToggle, MobileNav, Help, RoleChip, Reviewers, Save: SaveSlot, AIActions, Breadcrumb, Menu, MenuItem, Worklist, CommandPalette });
+export const RunHeader = Object.assign(RunHeaderRoot, { Left, Center, Right, RunStatus, PrimaryAction, PanelToggle, SidebarToggle, MobileNav, Help, Save: SaveSlot, AIActions, Breadcrumb, CompareToggle, Menu, MenuItem, Worklist, CommandPalette });

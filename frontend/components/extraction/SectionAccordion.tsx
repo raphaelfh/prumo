@@ -17,6 +17,7 @@ import {t} from '@/lib/copy';
 import {useRef} from 'react';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import {InstanceCard} from './InstanceCard';
+import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {SectionAIExtractButton} from '@/components/extraction/ai/shared/SectionAIExtractButton';
 import type {ExtractionEntityType, ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
@@ -42,8 +43,8 @@ interface SectionAccordionProps {
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void>;
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
+  selectSuggestion?: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown, confidence: number) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
-  isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   onAddInstance?: () => void;
   onRemoveInstance?: (instanceId: string) => void;
     onExtractionComplete?: (runId?: string) => void | Promise<void>; // Callback to refresh suggestions after extraction
@@ -64,6 +65,8 @@ export function SectionAccordion(props: SectionAccordionProps) {
   } = props;
 
   const isMultiple = entityType.cardinality === 'many';
+  // Read-only run: instance add/remove affordances hide (published view).
+  const { readOnly } = useRunEditability();
 
     // Calculate progress for this section
   const requiredFields = fields.filter(f => f.is_required);
@@ -162,7 +165,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
             {instances.length === 0 ? (
               <div className="text-center py-8">
                   <p className="text-muted-foreground mb-4">{t('extraction', 'sectionNoInstances')}</p>
-                {isMultiple && props.onAddInstance && (
+                {isMultiple && !readOnly && props.onAddInstance && (
                   <Button
                     variant="outline"
                     onClick={props.onAddInstance}
@@ -191,13 +194,14 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       aiSuggestions={props.aiSuggestions}
                       onAcceptAI={props.onAcceptAI}
                       onRejectAI={props.onRejectAI}
+                      selectSuggestion={props.selectSuggestion}
                       getSuggestionsHistory={props.getSuggestionsHistory}
-                      isActionLoading={props.isActionLoading}
+                      articleId={articleId}
                     />
                   </div>
                 ))}
 
-                {props.onAddInstance && (
+                {!readOnly && props.onAddInstance && (
                   <div className="mt-2">
                     <Button
                       variant="outline"
@@ -229,8 +233,8 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       aiSuggestion={props.aiSuggestions?.[key]}
                       onAcceptAI={() => props.onAcceptAI?.(instances[0].id, field.id)}
                       onRejectAI={() => props.onRejectAI?.(instances[0].id, field.id)}
+                      selectSuggestion={props.selectSuggestion}
                       getSuggestionsHistory={props.getSuggestionsHistory}
-                      isActionLoading={props.isActionLoading}
                     />
                   );
                 })}

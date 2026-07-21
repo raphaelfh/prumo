@@ -14,6 +14,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.extraction import ExtractionRunStatus
 from app.repositories.extraction_run_repository import ExtractionRunRepository
 
 
@@ -83,3 +84,59 @@ class TestRollbackAndFail:
         assert logger.warning.call_args.args[0] == "section_extraction_rollback_failed"
         # fail_run is still attempted after a failed rollback.
         repo.fail_run.assert_awaited_once()
+
+
+class TestCompleteRunMerge:
+    """``complete_run`` MERGES results into the run's existing ``results`` JSONB
+    (not REPLACE), so the provenance written at the proposal choke-point
+    (``_create_suggestions`` → ``merge_results``) survives completion. A REPLACE
+    would clobber it — the bug class this guards against.
+    """
+
+    @pytest.mark.asyncio
+    async def test_merges_into_existing_results_preserving_prior_keys(self, repo) -> None:
+        run_id = uuid4()
+        existing = MagicMock()
+        existing.results = {"provenance": {"model": "gpt"}}
+        repo.get_by_id = AsyncMock(return_value=existing)
+
+        out = await repo.complete_run(run_id, {"suggestions_created": 2})
+
+        assert out is existing
+        # Prior provenance preserved; the completion summary merged on top.
+        assert existing.results == {"provenance": {"model": "gpt"}, "suggestions_created": 2}
+        assert existing.status == ExtractionRunStatus.COMPLETED.value
+        assert existing.completed_at is not None
+        repo.db.flush.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_treats_empty_results_like_replace(self, repo) -> None:
+        # A fresh run (results == {}) merging is equivalent to a replace, so the
+        # non-proposal callers (model_extraction, batch primary run) are unaffected.
+        existing = MagicMock()
+        existing.results = {}
+        repo.get_by_id = AsyncMock(return_value=existing)
+
+        await repo.complete_run(uuid4(), {"models_count": 3})
+
+        assert existing.results == {"models_count": 3}
+
+    @pytest.mark.asyncio
+    async def test_patch_key_overwrites_on_conflict(self, repo) -> None:
+        # Shallow top-level merge: a patch key replaces the same key.
+        existing = MagicMock()
+        existing.results = {"tokens_total": 1, "provenance": {"a": 1}}
+        repo.get_by_id = AsyncMock(return_value=existing)
+
+        await repo.complete_run(uuid4(), {"tokens_total": 5})
+
+        assert existing.results == {"tokens_total": 5, "provenance": {"a": 1}}
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_run_missing(self, repo) -> None:
+        repo.get_by_id = AsyncMock(return_value=None)
+
+        out = await repo.complete_run(uuid4(), {"x": 1})
+
+        assert out is None
+        repo.db.flush.assert_not_awaited()

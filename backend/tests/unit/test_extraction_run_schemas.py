@@ -92,18 +92,19 @@ class TestCreateProposalRequest:
 
     def test_optional_defaults(self) -> None:
         req = CreateProposalRequest(**self._kwargs())
-        assert req.source_user_id is None
         assert req.confidence_score is None
         assert req.rationale is None
 
     def test_all_optionals_populated(self) -> None:
-        uid = uuid4()
-        req = CreateProposalRequest(
-            **self._kwargs(source_user_id=uid, confidence_score=0.9, rationale="why")
-        )
-        assert req.source_user_id == uid
+        req = CreateProposalRequest(**self._kwargs(confidence_score=0.9, rationale="why"))
         assert req.confidence_score == 0.9
         assert req.rationale == "why"
+
+    def test_client_attribution_rejected(self) -> None:
+        """Attribution is server-side: a client-supplied ``source_user_id``
+        is an unknown field under ``extra='forbid'``, not silently dropped."""
+        with pytest.raises(ValidationError):
+            CreateProposalRequest(**self._kwargs(source_user_id=uuid4()))
 
     def test_missing_proposed_value_rejected(self) -> None:
         kwargs = self._kwargs()

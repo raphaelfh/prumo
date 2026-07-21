@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
 from app.models.article import Article, ArticleFile
+from tests.integration.conftest import SEED
 
 
 @pytest_asyncio.fixture
@@ -22,7 +23,11 @@ async def member_article(
     """Yield (project_id, member_user_id, article_id); JWT override = member."""
     row = (
         await db_session.execute(
-            text("SELECT pm.project_id, pm.user_id FROM public.project_members pm LIMIT 1")
+            text(
+                "SELECT project_id, user_id FROM public.project_members "
+                "WHERE project_id = :pid AND user_id = :uid"
+            ),
+            {"pid": str(SEED.primary_project), "uid": str(SEED.primary_profile)},
         )
     ).first()
     if row is None:

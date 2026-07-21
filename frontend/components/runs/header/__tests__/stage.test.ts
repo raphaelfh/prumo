@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stageNodeStates } from '@/components/runs/header/stage';
+import { chipState, stageNodeStates } from '@/components/runs/header/stage';
 
 describe('stageNodeStates (3-node user-facing model)', () => {
   it('maps extract to the current Extract node', () => {
@@ -22,18 +22,27 @@ describe('stageNodeStates (3-node user-facing model)', () => {
       'done', 'done', 'current',
     ]);
   });
-  it('treats pending/null as Extract current', () => {
-    expect(stageNodeStates('pending').map((n) => n.state)).toEqual([
-      'current', 'future', 'future',
-    ]);
-    expect(stageNodeStates(null).map((n) => n.state)).toEqual([
-      'current', 'future', 'future',
-    ]);
+  it('renders no current node for pending/null — the run is not editable yet', () => {
+    for (const s of ['pending', null] as const) {
+      const nodes = stageNodeStates(s);
+      expect(nodes.every((n) => n.state === 'future')).toBe(true);
+    }
   });
   it('marks every node cancelled when the run is cancelled', () => {
     expect(stageNodeStates('cancelled').every((n) => n.state === 'cancelled')).toBe(true);
     expect(stageNodeStates('cancelled').map((n) => n.key)).toEqual([
       'extract', 'consensus', 'finalized',
     ]);
+  });
+});
+
+describe('chipState', () => {
+  it('maps stages to chip states, pending-truthful', () => {
+    expect(chipState(null)).toBe('pending');
+    expect(chipState('pending')).toBe('pending');
+    expect(chipState('extract')).toBe('extract');
+    expect(chipState('consensus')).toBe('consensus');
+    expect(chipState('finalized')).toBe('finalized');
+    expect(chipState('cancelled')).toBe('cancelled');
   });
 });

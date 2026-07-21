@@ -24,6 +24,7 @@ import {t} from '@/lib/copy';
 import {FieldsManager} from './FieldsManager';
 import {AddSectionDialog, ImportTemplateDialog, RemoveSectionDialog} from './dialogs';
 import {ExtractionEntityType} from '@/types/extraction';
+import {useTemplateRepublish} from '@/hooks/extraction/useTemplateRepublish';
 
 interface TemplateConfigEditorProps {
   projectId: string;
@@ -39,6 +40,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   const [removingSectionId, setRemovingSectionId] = useState<string | null>(null);
   const [removingSectionName, setRemovingSectionName] = useState('');
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const { republish } = useTemplateRepublish(projectId, templateId);
 
   const loadEntityTypes = async () => {
     setLoading(true);
@@ -80,6 +82,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     }
     toast.success(t('extraction', 'labelUpdatedSuccess'));
     setEditingId(null);
+    void republish();
     await loadEntityTypes();
   };
 
@@ -95,12 +98,14 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
 
   const handleSectionAdded = () => {
     setShowAddSectionDialog(false);
+    void republish();
     loadEntityTypes();
   };
 
   const handleSectionRemoved = () => {
     setRemovingSectionId(null);
     setRemovingSectionName('');
+    void republish();
     loadEntityTypes();
   };
 
@@ -264,9 +269,10 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
 
                     {/* Campos deste entity type */}
                     <div className="border-t pt-4">
-                      <FieldsManager 
+                      <FieldsManager
                         entityTypeId={entityType.id}
                         sectionName={entityType.label}
+                        templateId={templateId}
                       />
                     </div>
 
@@ -294,9 +300,10 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                                 </div>
                               </CardHeader>
                               <CardContent>
-                                <FieldsManager 
+                                <FieldsManager
                                   entityTypeId={child.id}
                                   sectionName={child.label}
+                                  templateId={templateId}
                                 />
                               </CardContent>
                             </Card>
@@ -385,6 +392,10 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         onOpenChange={setShowImportDialog}
         onTemplateImported={() => {
           setShowImportDialog(false);
+          // Import may have healed/rewritten structure — republish is a
+          // server-side no-op when current, but re-pins stale runs and
+          // invalidates the form caches either way.
+          void republish();
           loadEntityTypes();
         }}
       />

@@ -10,6 +10,7 @@ the ones that drive consensus + publish later.
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps.security import (
@@ -17,6 +18,10 @@ from app.api.deps.security import (
     ensure_project_member,
     ensure_project_reviewer,
     get_current_user_sub,
+)
+from app.api.v1.endpoints._integrity import (
+    ONE_LIVE_RUN_CONFLICT_DETAIL,
+    is_one_live_run_conflict,
 )
 from app.core.deps import DbSession
 from app.core.logging import get_logger
@@ -65,6 +70,7 @@ from app.services.extraction_run_read_service import (
     get_run_with_workflow_history,
     is_run_arbitrator,
     list_run_participants,
+    scrub_results_ranby,
 )
 from app.services.run_lifecycle_service import (
     CannotReopenRunError,
@@ -110,6 +116,9 @@ async def create_run(
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
     await ensure_project_member(db, body.project_id, current_user_sub)
+    # Creating a run is a write — read-only viewers 403 (mirrors the other
+    # run write endpoints).
+    await ensure_project_reviewer(db, body.project_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:
@@ -138,6 +147,38 @@ async def create_run(
             error=str(e),
         )
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except IntegrityError as e:
+        if is_one_live_run_conflict(e):
+            # One-live-run invariant (uq_one_live_extraction_run_per_coord,
+            # 0045): a non-terminal run already exists for this (article,
+            # template). The HITL surfaces resume it via POST /hitl/sessions;
+            # this raw-create endpoint surfaces the conflict instead of forking
+            # a shadow run.
+            logger.warning(
+                "hitl_run_create_conflict_live_run",
+                trace_id=trace_id,
+                project_template_id=str(body.project_template_id),
+                article_id=str(body.article_id),
+                error=str(e.orig),
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=ONE_LIVE_RUN_CONFLICT_DETAIL,
+            ) from e
+        # Any OTHER integrity error is not "run already in progress": article,
+        # template and project are pre-validated and version_id/created_by/kind
+        # are coherent by construction, so this is a genuinely unexpected
+        # violation. Re-raise it to the app-wide handler (→ 500) rather than
+        # mislabel it as a live-run conflict.
+        logger.error(
+            "hitl_run_create_unexpected_integrity_error",
+            trace_id=trace_id,
+            project_template_id=str(body.project_template_id),
+            article_id=str(body.article_id),
+            error=str(e.orig),
+            exc_info=True,
+        )
+        raise
     await db.commit()
     logger.info(
         "hitl_run_created",
@@ -211,14 +252,27 @@ async def create_proposal(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ProposalRecordResponse]:
-    await _load_run_and_check_member(db, run_id, current_user_sub)
+    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    # Writes are reviewer-role-gated (mirrors mark_ready): a read-only viewer
+    # is a member but must not author proposals.
+    await ensure_project_reviewer(db, run.project_id, current_user_sub)
+    # 'system' proposals are server-generated (reopen seeding) and — for QA
+    # runs — hydrate into EVERY caller's form baseline via current_values
+    # Layer-1. Accepting them from an authenticated member would let one
+    # reviewer plant unattributed values into peers' forms.
+    if body.source == "system":
+        raise HTTPException(
+            status_code=400,
+            detail="source='system' proposals are server-generated and cannot be created via the API",
+        )
     service = ExtractionProposalService(db)
     trace_id = _trace(request)
-    # source='human' requires a user attribution. Default to the
-    # authenticated caller so clients don't have to thread it through.
-    source_user_id = body.source_user_id
-    if body.source == "human" and source_user_id is None:
-        source_user_id = current_user_sub
+    # source='human' is attributed server-side to the authenticated caller;
+    # the request schema carries no attribution field, so forged attribution
+    # is unrepresentable at the API boundary. (D8-c materialization reads this
+    # persisted source_user_id as decision attribution at consensus entry —
+    # now always the caller for human rows; ai/system carry no attribution.)
+    source_user_id = current_user_sub if body.source == "human" else None
     try:
         record = await service.record_proposal(
             run_id=run_id,
@@ -266,7 +320,11 @@ async def create_decision(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ReviewerDecisionResponse]:
-    await _load_run_and_check_member(db, run_id, current_user_sub)
+    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    # Writes are reviewer-role-gated (mirrors mark_ready): a read-only viewer
+    # is a member but must not author decisions — these rows are the
+    # append-only audit trail the consensus trace renders.
+    await ensure_project_reviewer(db, run.project_id, current_user_sub)
     service = ExtractionReviewService(db)
     trace_id = _trace(request)
     try:
@@ -320,14 +378,18 @@ async def mark_run_ready(
 
     Advisory only — it never advances the run (the manager opens consensus
     manually). Membership-gated AND reviewer-role-gated (a read-only viewer
-    cannot mark ready). Returns the "N/M reviewers ready" hint.
+    cannot mark ready). Returns the "N/M reviewers ready" hint with
+    ``reviewers_ready`` scoped to the caller's own entry (this response is the
+    caller's toggle echo; an unblinded caller reads the full list via /view).
     """
     run = await _load_run_and_check_member(db, run_id, current_user_sub)
     await ensure_project_reviewer(db, run.project_id, current_user_sub)
     service = ExtractionReviewerReadyService(db)
     await service.mark_ready(run_id=run_id, reviewer_id=current_user_sub, is_ready=body.ready)
     summary = await service.ready_summary_from(
-        run_id=run_id, hitl_config_snapshot=run.hitl_config_snapshot
+        run_id=run_id,
+        hitl_config_snapshot=run.hitl_config_snapshot,
+        caller_id=current_user_sub,
     )
     await db.commit()
     return ApiResponse.success(RunReadyStateResponse(**summary), trace_id=_trace(request))
@@ -342,24 +404,15 @@ async def create_consensus(
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ConsensusResultResponse]:
     # Publishing a consensus decision (and its canonical PublishedState) is a
-    # privileged write. The gate lives at the API layer because the service-role
-    # session bypasses RLS (which already excludes viewers via is_project_reviewer);
-    # without it any project member — including a read-only viewer — could publish
-    # consensus + canonical values.
-    #
-    # The gate is kind-aware because this endpoint backs two flows:
-    #   · extraction → arbitrator-only (manager / consensus), matching ADR-0015 and
-    #     approve-finalize: resolving divergence / publishing values is an adjudicator
-    #     action, not a reviewer one.
-    #   · quality_assessment → reviewer-level: QA "Publish assessment" routes through
-    #     here per filled field and is, by design, available to any reviewer
-    #     (single-reviewer self-publish; see frontend lib/qa/qaTransition). Gating at
-    #     reviewer level keeps that flow working while still excluding viewers.
+    # privileged adjudicator write for BOTH kinds. QA mirrors extraction as of
+    # 2026-07-09: resolving divergence / publishing canonical values is a
+    # manager (arbitrator) action, not a reviewer one — the QA staged flow moved
+    # finalize authority to the manager (see frontend lib/qa/qaTransition). The
+    # gate lives at the API layer because the service-role session bypasses RLS;
+    # without it any project member — including a read-only viewer — could
+    # publish consensus + canonical values.
     run_summary = await _load_run_and_check_member(db, run_id, current_user_sub)
-    if run_summary.kind == "extraction":
-        await ensure_project_arbitrator(db, run_summary.project_id, current_user_sub)
-    else:
-        await ensure_project_reviewer(db, run_summary.project_id, current_user_sub)
+    await ensure_project_arbitrator(db, run_summary.project_id, current_user_sub)
     service = ExtractionConsensusService(db)
     trace_id = _trace(request)
     try:
@@ -429,7 +482,20 @@ async def advance_run(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
-    await _load_run_and_check_member(db, run_id, current_user_sub)
+    member_run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    # Reviewer-role gate (mirrors the write endpoints): a stage transition is
+    # a write — and since D8-c a QA extract->consensus advance also
+    # materializes reviewer decision rows. Viewers 403; manager/reviewer/
+    # consensus roles all pass.
+    await ensure_project_reviewer(db, member_run.project_id, current_user_sub)
+    # Finalizing publishes canonical state — an adjudicator action for both
+    # kinds (mirrors /consensus + /approve-finalize). Reviewers drive the
+    # earlier transitions but must not flip a run to FINALIZED, so the direct
+    # /advance route cannot bypass the arbitrator-only finalize authority.
+    # Literal "finalized" (not the model enum) keeps the api→models layering —
+    # the request schema already validates target_stage against the stage set.
+    if body.target_stage == "finalized":
+        await ensure_project_arbitrator(db, member_run.project_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:
@@ -463,8 +529,13 @@ async def advance_run(
         new_stage=run.stage,
         new_status=run.status,
     )
+    summary = RunSummaryResponse.model_validate(run)
+    # The advancing caller may be a blind reviewer: scrub ran-by identity
+    # from results.provenance unconditionally — unblinded callers read the
+    # properly-revealed payload from /view (D8-d).
+    summary = summary.model_copy(update={"results": scrub_results_ranby(summary.results)})
     return ApiResponse.success(
-        RunSummaryResponse.model_validate(run),
+        summary,
         trace_id=getattr(request.state, "trace_id", None),
     )
 
@@ -476,7 +547,7 @@ async def approve_and_finalize_run(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ApproveFinalizeResponse]:
-    """One-action consensus → finalized for extraction runs.
+    """One-action consensus → finalized for extraction and QA runs.
 
     Publishes the agreed value for every existing-instance × field coord that is not
     yet published (reusing the per-coord consensus path), then advances to FINALIZED —
@@ -568,7 +639,10 @@ async def reopen_run(
     new Run lands in stage=EXTRACT so the form picks up where the old
     one left off. Old Run is untouched (audit trail).
     """
-    await _load_run_and_check_member(db, run_id, current_user_sub)
+    source_run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    # Reopening forks a new extract-stage run with seeded proposals — a
+    # write; read-only viewers 403.
+    await ensure_project_reviewer(db, source_run.project_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:
@@ -606,3 +680,58 @@ async def reopen_run(
         RunSummaryResponse.model_validate(new_run),
         trace_id=trace_id,
     )
+
+
+@router.post("/{run_id}/reopen-extraction")
+async def reopen_run_to_extract(
+    run_id: UUID,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse[RunSummaryResponse]:
+    """Return a consensus-stage extraction run to extract, discarding consensus work.
+
+    Arbitrator-only (manager/consensus): this hard-deletes the run's consensus
+    decisions + published values so reviewers can edit again. The gate lives at the
+    API layer because the service-role session bypasses RLS. See ADR-0017.
+    """
+    member_run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    await ensure_project_arbitrator(db, member_run.project_id, current_user_sub)
+    service = RunLifecycleService(db)
+    trace_id = _trace(request)
+    try:
+        run, discarded_consensus, discarded_published = await service.reopen_to_extract(
+            run_id=run_id, user_id=current_user_sub
+        )
+    except InvalidStageTransitionError as e:
+        logger.warning(
+            "hitl_reopen_to_extract_rejected",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            error=str(e),
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError as e:
+        logger.warning(
+            "hitl_reopen_to_extract_run_not_found",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            error=str(e),
+        )
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    await db.commit()
+    # Self-contained forensic line (the sole DB-external record of a destructive
+    # discard) — include project + article for SRE scoping. See ADR-0017.
+    logger.info(
+        "hitl_run_reopened_to_extract",
+        trace_id=trace_id,
+        run_id=str(run.id),
+        project_id=str(run.project_id),
+        article_id=str(run.article_id),
+        discarded_consensus_count=discarded_consensus,
+        discarded_published_count=discarded_published,
+        by=str(current_user_sub),
+    )
+    summary = RunSummaryResponse.model_validate(run)
+    summary = summary.model_copy(update={"results": scrub_results_ranby(summary.results)})
+    return ApiResponse.success(summary, trace_id=trace_id)

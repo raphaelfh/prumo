@@ -130,6 +130,9 @@ export interface ExtractionField {
   allow_other?: boolean;
   other_label?: string | null;
   other_placeholder?: string | null;
+    // ADR-0016 opt-in dispositions (no_information is universal, needs no flag)
+  allows_not_applicable?: boolean;
+  allows_not_evaluated?: boolean;
 }
 
 // =================== INSTANCES AND VALUES ===================
@@ -390,7 +393,11 @@ export const ExtractionFieldSchema = z.object({
       .max(200, 'Placeholder must be at most 200 characters')
     .optional()
     .nullable(),
-  
+
+  // ADR-0016 opt-in disposition flags (no_information is universal, needs none)
+  allows_not_applicable: z.boolean().default(false).optional(),
+  allows_not_evaluated: z.boolean().default(false).optional(),
+
   validation_schema: z.record(z.any())
     .optional()
     .nullable(),

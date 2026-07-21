@@ -1,0 +1,520 @@
+/**
+ * AISuggestionReviewPopover — one surface to review + select AI versions.
+ *
+ * Replaces the split history + details popovers. Loads the proposal history for
+ * a single (instance, field) coord, groups it by run (newest first), and lets
+ * the reviewer SELECT any version to set the field (pure-selection model: one
+ * version is "Selected"; the rest offer "Use this version"). The selected
+ * version expands to a one-line provenance summary that opens the full
+ * generation-details dialog (GenerationDetailsDialog), plus its
+ * cited evidence (with reader-locate). A "no information" version renders as a
+ * clean card rather than an empty value. A pinned footer keeps Clear reachable
+ * no matter how long the list grows (AIPopoverShell footer slot).
+ *
+ * "Selected" is seeded from `selectedProposalId` (the coord's active version id,
+ * which the hook updates on each selection) and tracked optimistically while
+ * open; it falls back to the newest version when no selection is known.
+ */
+
+import {lazy, Suspense, useEffect, useState} from 'react';
+import {ArrowUpRight, Check, ChevronDown, ChevronRight, Sparkles} from 'lucide-react';
+import {Popover, PopoverTrigger} from '@/components/ui/popover';
+import {Badge} from '@/components/ui/badge';
+import {Button} from '@/components/ui/button';
+import {Separator} from '@/components/ui/separator';
+import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
+import type {AISuggestionHistoryItem, EvidenceCitation, RunProvenance} from '@/types/ai-extraction';
+import {formatFullSuggestionValue, isAbstention} from '@/lib/ai-extraction/suggestionUtils';
+import {adoptionWording, type PeerAdoptionMark} from '@/lib/runs/adoption';
+import {initials} from '@/components/runs/ReviewerAvatarStack';
+import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
+import {useRunEditability} from '@/components/runs/RunEditabilityContext';
+import {AIPopoverShell} from './shared/AIPopoverShell';
+import {AISuggestionEvidence} from './AISuggestionEvidence';
+
+// Lazy-loaded: the generation dialog pulls the article-content service → the
+// shared apiClient (which imports the Supabase client at module scope). Loading
+// it dynamically keeps that chain out of every consumer's static module graph
+// (a heavy, rarely-opened surface — code-splitting it is a win either way).
+const GenerationDetailsDialog = lazy(() =>
+  import('./shared/GenerationDetailsDialog').then((m) => ({default: m.GenerationDetailsDialog})),
+);
+
+const LOW_CONFIDENCE = 0.5;
+
+function formatTimestamp(date: Date | string): string {
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return t('extraction', 'historyInvalidDate');
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d);
+}
+
+// -----------------------------------------------------------------------------
+// Evidence — owns the reader-locate wiring (folded in from the details popover).
+// -----------------------------------------------------------------------------
+
+interface EvidenceSectionProps {
+  evidence: EvidenceCitation[];
+}
+
+function EvidenceSection({evidence}: EvidenceSectionProps) {
+  const {locate, isAvailable} = useReaderLocate();
+  const [activeRank, setActiveRank] = useState<number | null>(null);
+
+  const onLocate = isAvailable
+    ? (rank: number) => {
+        const citation = evidence.find((e) => e.rank === rank) ?? evidence[0];
+        setActiveRank(rank);
+        locate(citation.text, citation.pageNumber ?? null, citation.blockIds ?? []);
+      }
+    : undefined;
+
+  return (
+    <section aria-label={t('extraction', 'evidenceCitedAria')}>
+      <AISuggestionEvidence evidence={evidence} onLocate={onLocate} activeRank={activeRank} />
+    </section>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// One version row
+// -----------------------------------------------------------------------------
+
+/**
+ * The one-line provenance summary inside a version row: `model · N tokens` plus
+ * a button that opens the full "How this was generated" dialog. Replaces the
+ * old inline disclosure so the popover stays decision-focused (no nested scroll).
+ */
+function ProvenanceSummaryRow({
+  provenance,
+  onOpenDetails,
+}: {
+  provenance: RunProvenance;
+  onOpenDetails: () => void;
+}) {
+  const parts: string[] = [];
+  if (provenance.model) parts.push(String(provenance.model));
+  if (provenance.tokensTotal != null) {
+    parts.push(
+      t('extraction', 'provenanceTokensSummary').replace(
+        '{{n}}',
+        Number(provenance.tokensTotal).toLocaleString(),
+      ),
+    );
+  }
+  const summary = parts.join(' · ');
+
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-md border bg-background/40 px-2.5 py-1.5">
+      <span className="min-w-0 truncate text-[11px] text-muted-foreground" title={summary}>
+        {summary}
+      </span>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-6 shrink-0 gap-1 px-1.5 text-[11px] font-medium text-ai hover:text-ai"
+        onClick={onOpenDetails}
+      >
+        {t('extraction', 'provenanceToggle')}
+        <ArrowUpRight className="h-3 w-3" />
+      </Button>
+    </div>
+  );
+}
+
+interface VersionRowProps {
+  version: AISuggestionHistoryItem;
+  isSelected: boolean;
+  /** Replaces the "Selected" chip text (consensus: "Adopted/Edited by {name}"). */
+  selectedChipLabel?: string;
+  /** Reviewers whose CURRENT decision links to THIS version (D6). The Adopted-
+   *  vs-Edited split is computed here against the now-loaded `version.value`;
+   *  existence was already decided by the caller keying on the append-only link. */
+  marks?: PeerAdoptionMark[];
+  onUse: () => void;
+  onOpenDetails: (provenance: RunProvenance) => void;
+  /** Read-only run: the row is audit-only — no "Use this version" action. */
+  readOnly?: boolean;
+  fieldType?: string | null;
+  allowedValues?: unknown;
+}
+
+function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpenDetails, readOnly, fieldType, allowedValues}: VersionRowProps) {
+  const fieldContext = {fieldType, allowedValues};
+  const [expanded, setExpanded] = useState(false);
+  const showDetails = isSelected || expanded;
+
+  // Honest peer cross-marks: partition into Adopted vs Edited against the
+  // loaded version value in one pass. Value comparison only refines wording —
+  // it never created these marks (the caller keyed them on the link).
+  const adoptedNames: string[] = [];
+  const editedNames: string[] = [];
+  for (const m of marks ?? []) {
+    const bucket =
+      adoptionWording(m.decisionKind, m.decisionValue, version) === 'adopted'
+        ? adoptedNames
+        : editedNames;
+    bucket.push(m.reviewerLabel);
+  }
+
+  const noInfo = isAbstention(version.value);
+  const hasReasoning = !!version.reasoning?.trim();
+  const evidence = version.evidence ?? [];
+  const hasEvidence = evidence.length > 0 && !!evidence[0]?.text?.trim();
+  const hasDetails = !!version.provenance || hasReasoning || hasEvidence;
+  const confidencePercent = Math.round(version.confidence * 100);
+  const isLow = version.confidence < LOW_CONFIDENCE;
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border p-2.5 transition-colors duration-75',
+        isSelected ? 'border-ai/30 bg-ai/10' : 'border-border/60 bg-background hover:bg-muted/40',
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          {noInfo ? (
+            <div>
+              <p className="text-sm font-medium text-foreground/90">
+                {t('extraction', 'reviewNoInformation')}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('extraction', 'reviewNoInformationDesc')}
+              </p>
+            </div>
+          ) : (
+            <p
+              className="line-clamp-3 break-words text-sm font-medium"
+              title={formatFullSuggestionValue(version.value, fieldContext)}
+            >
+              {formatFullSuggestionValue(version.value, fieldContext)}
+            </p>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {/* A no-info card never shows a confidence % (a not_found 0% reads as
+              misleading). Real values show their confidence + a low flag. */}
+          {!noInfo && (
+            <Badge variant="outline" className="bg-ai/10 text-xs text-ai border-ai/30">
+              {confidencePercent}%{isLow ? ` · ${t('extraction', 'reviewLowConfidence')}` : ''}
+            </Badge>
+          )}
+          {adoptedNames.length > 0 && (
+            <span className="inline-flex items-center rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              {t('extraction', 'reviewAdoptedBy').replace('{{name}}', adoptedNames.join(', '))}
+            </span>
+          )}
+          {editedNames.length > 0 && (
+            <span className="inline-flex items-center rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              {t('extraction', 'reviewEditedBy').replace('{{name}}', editedNames.join(', '))}
+            </span>
+          )}
+          {isSelected ? (
+            <span className="inline-flex items-center gap-1 rounded border border-success/30 bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success">
+              <Check className="h-3 w-3" />
+              {selectedChipLabel ?? t('extraction', 'reviewSelected')}
+            </span>
+          ) : readOnly ? null : (
+            <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={onUse}>
+              {t('extraction', 'reviewUseThisVersion')}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Progressive disclosure: the selected version is expanded; others offer
+          a Details toggle. */}
+      {hasDetails && !isSelected && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="mt-1.5 h-6 gap-1 px-1 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          {t('extraction', 'reviewDetails')}
+        </Button>
+      )}
+
+      {showDetails && hasDetails && (
+        <div className="mt-2 space-y-2">
+          {version.provenance && (
+            <ProvenanceSummaryRow
+              provenance={version.provenance}
+              onOpenDetails={() => onOpenDetails(version.provenance!)}
+            />
+          )}
+          {hasReasoning && (
+            <div className="space-y-1">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t('extraction', 'aiRationaleLabel')}
+              </div>
+              <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
+                {version.reasoning}
+              </p>
+            </div>
+          )}
+          {hasEvidence && <EvidenceSection evidence={evidence} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Popover
+// -----------------------------------------------------------------------------
+
+interface AISuggestionReviewPopoverProps {
+  instanceId: string;
+  fieldId: string;
+  getHistory: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
+  /** The currently-selected version id; falls back to the newest when absent. */
+  selectedProposalId?: string;
+  /** Absent → read-only surface: no "Use this version" anywhere (the
+   *  consensus trace mounts the popover as pure audit — D2). */
+  onSelect?: (proposalRecordId: string, value: unknown, confidence: number) => void;
+  onClear?: () => void;
+  /** Header title override (consensus trace: "AI used by {reviewer}" — D3). */
+  title?: string;
+  /** Consensus trace: relate the pinned version to the reviewer's decision.
+   *  The pinned row's chip reads "Adopted by {name}" when the decision kept
+   *  the AI value (or is an accept_proposal, whose value is null by
+   *  contract), "Edited by {name}" when it differs — D3. */
+  adoption?: PeerAdoptionMark;
+  /** proposal id → the reviewers whose current decision LINKS to that version;
+   *  matching version rows get honest "Adopted by / Edited by {names}" tags
+   *  (existence keyed on the link, wording refined per loaded value — D6). */
+  adoptionByProposalId?: Record<string, PeerAdoptionMark[]>;
+  /** When no explicit selection is known, fall back to painting the newest
+   *  version as "Selected". True for the write path (the newest suggestion is
+   *  effectively active); pass false on a pure-audit surface (per-field trace)
+   *  so a value nobody chose is never mislabeled as chosen — D8. */
+  pinNewestWhenNoSelection?: boolean;
+  trigger: React.ReactNode;
+  align?: 'start' | 'center' | 'end';
+  /** Field type + allowed_values so each version resolves a select/multiselect
+   *  CODE to its human label, same as the inline card. */
+  fieldType?: string | null;
+  allowedValues?: unknown;
+  /** Threaded to the generation dialog so it can lazily fetch the stored
+   *  markdown the LLM received. Omit to hide the "view text sent" expand. */
+  articleId?: string;
+}
+
+export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps) {
+  const {instanceId, fieldId, getHistory, selectedProposalId, onSelect, onClear, trigger, align, fieldType, allowedValues, articleId, title, adoption, adoptionByProposalId, pinNewestWhenNoSelection = true} = props;
+
+  // Read-only run: the popover stays available as audit trail, but the
+  // write actions (Use this version / Clear) hide. An absent onSelect makes
+  // the surface read-only regardless of stage (consensus trace — D2).
+  // showPeerIdentity gates the ran-by run headers (D3, fail-closed).
+  const {readOnly, showPeerIdentity} = useRunEditability();
+  const readOnlyEffective = readOnly || !onSelect;
+  const [open, setOpen] = useState(false);
+  const [history, setHistory] = useState<AISuggestionHistoryItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  // A failed/throttled fetch must not read as a definitive "No versions" on
+  // an audit surface — it gets its own inline state.
+  const [historyError, setHistoryError] = useState(false);
+  // Optimistic local selection so the highlight follows clicks within a session;
+  // seeded from the prop (the active accept_proposal decision / newest).
+  const [localSelected, setLocalSelected] = useState<string | undefined>(undefined);
+  // The provenance whose "How this was generated" dialog is open. Opening it
+  // closes the popover (a portal'd dialog would dismiss it anyway — deliberate).
+  const [detailsProvenance, setDetailsProvenance] = useState<RunProvenance | null>(null);
+
+  const handleOpenDetails = (provenance: RunProvenance) => {
+    setOpen(false);
+    setDetailsProvenance(provenance);
+  };
+
+  // Reset transient state on close so the next open starts fresh.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) {
+      setHistory([]);
+      setLocalSelected(undefined);
+    }
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    // setState lives in the microtask (not the effect body) to avoid the
+    // synchronous-setState-in-effect cascade lint; mirrors the old popover.
+    queueMicrotask(() => {
+      setLoading(true);
+      setHistoryError(false);
+      void getHistory(instanceId, fieldId)
+        .then((data) => setHistory(data))
+        .catch((err: unknown) => {
+          console.error('[AISuggestionReviewPopover] Error loading history:', err);
+          setHistory([]);
+          setHistoryError(true);
+        })
+        .finally(() => setLoading(false));
+    });
+  }, [open, instanceId, fieldId, getHistory]);
+
+  const effectiveSelected =
+    localSelected ?? selectedProposalId ?? (pinNewestWhenNoSelection ? history[0]?.id : undefined);
+
+  // D5: the pinned version can be older than the loaded history window. Say
+  // so explicitly — silently dropping the pin would erase the attribution.
+  const pinMissing =
+    !loading &&
+    history.length > 0 &&
+    !!selectedProposalId &&
+    !history.some((h) => h.id === selectedProposalId);
+
+  // Group by run id, preserving the (newest-first) order the server returns.
+  const runOrder: string[] = [];
+  const groupedByRun: Record<string, AISuggestionHistoryItem[]> = {};
+  for (const item of history) {
+    const runId = item.runId || 'unknown';
+    if (!groupedByRun[runId]) {
+      groupedByRun[runId] = [];
+      runOrder.push(runId);
+    }
+    groupedByRun[runId].push(item);
+  }
+
+  const handleUse = (version: AISuggestionHistoryItem) => {
+    setLocalSelected(version.id);
+    onSelect?.(version.id, version.value, version.confidence);
+  };
+
+  // D3 adoption chip: name the reviewer on the pinned row and say honestly
+  // whether they kept the AI value or edited it afterwards. Fails closed to
+  // "Adopted by" for accept_proposal (value=null by contract) and for a pin
+  // that fell outside the loaded window (`pinnedVersion` undefined) — never a
+  // fabricated "Edited by" from comparing against an absent value (D5).
+  const pinnedVersion = history.find((h) => h.id === effectiveSelected);
+  const adoptionChipLabel = adoption
+    ? t(
+        'extraction',
+        adoptionWording(adoption.decisionKind, adoption.decisionValue, pinnedVersion) === 'adopted'
+          ? 'reviewAdoptedBy'
+          : 'reviewEditedBy',
+      ).replace('{{name}}', adoption.reviewerLabel)
+    : undefined;
+
+  const handleClear = () => {
+    setOpen(false);
+    onClear?.();
+  };
+
+  const countLabel = loading
+    ? undefined
+    : t('extraction', 'reviewVersionsCount').replace('{{n}}', String(history.length));
+
+  return (
+    <>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <AIPopoverShell
+        icon={<Sparkles className="h-4 w-4" />}
+        title={title ?? t('extraction', 'reviewTitle')}
+        count={countLabel}
+        align={align}
+        footer={
+          onClear && !readOnlyEffective ? (
+            <div className="flex items-center justify-between gap-2 px-3 py-2">
+              <span className="min-w-0 truncate text-[11px] text-muted-foreground" title={t('extraction', 'reviewClearHint')}>
+                {t('extraction', 'reviewClearHint')}
+              </span>
+              <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-xs" onClick={handleClear}>
+                {t('extraction', 'reviewClear')}
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
+        {loading ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">…</div>
+        ) : historyError ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            {t('extraction', 'reviewHistoryError')}
+          </div>
+        ) : history.length === 0 ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            {t('extraction', 'reviewNoVersions')}
+          </div>
+        ) : (
+          <div className="space-y-3 p-2.5">
+            {pinMissing && (
+              <p className="rounded border border-border/60 bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
+                {t('extraction', 'reviewPinNotInHistory')}
+              </p>
+            )}
+            {runOrder.map((runId, runIndex) => {
+              const ranByName = showPeerIdentity
+                ? groupedByRun[runId][0].provenance?.ranByName
+                : undefined;
+              return (
+              <div key={runId} className="space-y-2">
+                <div className="flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs font-medium text-muted-foreground">
+                  {ranByName ? (
+                    <>
+                      <span
+                        aria-hidden
+                        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-muted-foreground/15 text-[9px] font-semibold uppercase"
+                      >
+                        {initials(ranByName)}
+                      </span>
+                      <span className="min-w-0 truncate">
+                        {t('extraction', 'reviewRunBy').replace('{{name}}', ranByName)}
+                        {' · '}
+                        {formatTimestamp(groupedByRun[runId][0].timestamp)}
+                      </span>
+                    </>
+                  ) : (
+                    formatTimestamp(groupedByRun[runId][0].timestamp)
+                  )}
+                </div>
+                {groupedByRun[runId].map((version) => (
+                  <VersionRow
+                    key={version.id}
+                    version={version}
+                    isSelected={version.id === effectiveSelected}
+                    selectedChipLabel={adoptionChipLabel}
+                    marks={adoptionByProposalId?.[version.id]}
+                    onUse={() => handleUse(version)}
+                    onOpenDetails={handleOpenDetails}
+                    readOnly={readOnlyEffective}
+                    fieldType={fieldType}
+                    allowedValues={allowedValues}
+                  />
+                ))}
+                {runIndex < runOrder.length - 1 && <Separator />}
+              </div>
+              );
+            })}
+          </div>
+        )}
+      </AIPopoverShell>
+    </Popover>
+    {detailsProvenance && (
+      <Suspense fallback={null}>
+        <GenerationDetailsDialog
+          provenance={detailsProvenance}
+          articleId={articleId}
+          open={detailsProvenance !== null}
+          onOpenChange={(next) => {
+            if (!next) setDetailsProvenance(null);
+          }}
+        />
+      </Suspense>
+    )}
+    </>
+  );
+}

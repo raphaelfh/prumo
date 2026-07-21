@@ -241,6 +241,10 @@ class ModelExtractionRequest(BaseModel):
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
     template_id: UUID = Field(..., alias="templateId")
+    # The active HITL session run to append to. When set (the extraction
+    # surface), model extraction REUSES that run instead of forking a parallel
+    # one that would shadow the reviewer's decisions. None = standalone run.
+    run_id: UUID | None = Field(default=None, alias="runId")
 
     # Opcoes de extraction
     model: str | None = Field(
@@ -319,6 +323,9 @@ class ExtractionFieldSchema(BaseModel):
     allowed_units: list[str] | None = Field(default=None, alias="allowedUnits")
     llm_description: str | None = Field(default=None, alias="llmDescription")
     sort_order: int = Field(default=0, alias="sortOrder")
+    # ADR-0016 opt-in disposition flags (no_information is universal, needs none).
+    allows_not_applicable: bool = Field(default=False, alias="allowsNotApplicable")
+    allows_not_evaluated: bool = Field(default=False, alias="allowsNotEvaluated")
 
     model_config = ConfigDict(populate_by_name=True)
 

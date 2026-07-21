@@ -8,7 +8,9 @@ adr_number: '0015'
 # Finalize via approve-and-publish; per-reviewer ready flag; consensus auto-reveal
 
 > **Status:** Accepted · Date: 2026-06-21 · Deciders: @raphaelfh
-> **Supersedes:** the no-divergence dead-end of 0009 · **Superseded by:** N/A
+> **Supersedes:** the no-divergence dead-end of 0009 · **Superseded by:** 0018
+> (the QA carve-outs only — `approve_and_finalize` is no longer extraction-only
+> and QA consensus/finalize is now arbitrator-level, mirroring extraction)
 
 ## Context and Problem Statement
 
@@ -73,6 +75,10 @@ divergence resolved). This resolves the two-Finalize-button split (I6); the
 `handleFinalize` is unwired (Phase 2 stops writing `instance.status`; fully deleted
 in Phase 3 — see Consequences).
 
+> Update (2026-07-05): the consensus surface is now the resolve-mode compare
+> table (`ConsensusPanel` deleted, #483); the finalize/ready/auto-reveal
+> decisions here are unchanged.
+
 **Per-coordinate consensus writes are role-gated at the API layer (kind-aware).**
 The standalone `POST /api/v1/runs/{id}/consensus` (`record_consensus`) — the
 per-coordinate path behind both the extraction `ConsensusPanel` divergence resolver
@@ -136,3 +142,6 @@ whole-branch review missed — `approve-finalize` was gated, but the older
   builds on [ADR-0014](0014-collapse-extract-stage.md) and
   [ADR-0012](0012-manager-blind-review-and-reveal.md).
 - [Extraction + HITL architecture](../reference/extraction-hitl-architecture.md)
+- Header labels renamed 2026-07-02 — "Finish extraction" (was Mark ready) /
+  "Start consensus" (was Open consensus); presentation only, semantics
+  unchanged. See `docs/superpowers/specs/2026-07-02-run-header-declutter-design.md`.

@@ -25,12 +25,12 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
-from app.models.extraction import ExtractionEvidence, ExtractionRunStage
+from app.models.extraction import ExtractionEvidence, ExtractionInstance, ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionProposalSource,
     ExtractionReviewerDecisionType,
@@ -304,6 +304,302 @@ async def test_load_suggestions_returns_ai_proposals(
 
 
 @pytest.mark.asyncio
+async def test_load_suggestions_includes_run_provenance(
+    db_session: AsyncSession,
+) -> None:
+    """A suggestion carries its run's provenance snapshot (how it was generated)."""
+    import json
+
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, reviewer_a, _reviewer_b = built
+
+    prov = {
+        "model": "gpt-4o-mini",
+        "strategy": "section_extraction",
+        "ran_by_user_id": str(SEED.primary_profile),
+        "params": {"temperature": 0.1, "output_retries": 2},
+        "tokens": {"total": 1240},
+    }
+    await db_session.execute(
+        text(
+            "UPDATE extraction_runs "
+            "SET results = jsonb_set(coalesce(results, '{}'::jsonb), "
+            "'{provenance}', cast(:p as jsonb)) WHERE id = :id"
+        ),
+        {"p": json.dumps(prov), "id": str(run_id)},
+    )
+    await db_session.flush()
+    # Revealed path (D8-d): ran-by identity ships only to callers who may see
+    # peers — pin the full-snapshot passthrough with an unblinded manager.
+    await _reveal_managers(db_session)
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+        run_id=run_id,
+    )
+    # The hot load path returns the raw snapshot verbatim (no profiles join).
+    assert result.suggestions[0].provenance == prov
+
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+    )
+    # The history (popover) path resolves the runner's display name on top of
+    # the raw snapshot — assert every raw key survives unchanged.
+    hist_prov = history[0].provenance
+    assert hist_prov is not None
+    for key, value in prov.items():
+        assert hist_prov[key] == value
+
+
+@pytest.mark.asyncio
+async def test_get_suggestion_history_resolves_ran_by_name(
+    db_session: AsyncSession,
+) -> None:
+    """The history path resolves ran_by_user_id → ran_by_name from the runner's
+    profile; the hot load path leaves the raw snapshot untouched."""
+    import json
+
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, reviewer_a, reviewer_b = built
+
+    # Pin the runner's profile name deterministically (the shared dev DB may
+    # carry a pre-existing reviewer_b row whose full_name the builder's
+    # ON CONFLICT DO UPDATE leaves untouched).
+    await db_session.execute(
+        text("UPDATE public.profiles SET full_name = :n WHERE id = :id"),
+        {"n": "Integration Reviewer B (Suggest)", "id": str(reviewer_b)},
+    )
+    prov = {
+        "model": "gpt-4o-mini",
+        "ran_by_user_id": str(reviewer_b),
+    }
+    await db_session.execute(
+        text(
+            "UPDATE extraction_runs "
+            "SET results = jsonb_set(coalesce(results, '{}'::jsonb), "
+            "'{provenance}', cast(:p as jsonb)) WHERE id = :id"
+        ),
+        {"p": json.dumps(prov), "id": str(run_id)},
+    )
+    await db_session.flush()
+
+    await _reveal_managers(db_session)
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+    )
+    assert history[0].provenance is not None
+    assert history[0].provenance["ran_by_name"] == "Integration Reviewer B (Suggest)"
+
+    # Hot load path must NOT inject the name (stays a single query).
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=reviewer_a,
+        run_id=run_id,
+    )
+    assert result.suggestions[0].provenance is not None
+    assert "ran_by_name" not in result.suggestions[0].provenance
+
+
+async def _seed_run_provenance(db: AsyncSession, run_id: UUID, prov: dict) -> None:
+    import json
+
+    await db.execute(
+        text(
+            "UPDATE extraction_runs "
+            "SET results = jsonb_set(coalesce(results, '{}'::jsonb), "
+            "'{provenance}', cast(:p as jsonb)) WHERE id = :id"
+        ),
+        {"p": json.dumps(prov), "id": str(run_id)},
+    )
+    await db.flush()
+
+
+async def _instance_entity_type(db: AsyncSession, instance_id: UUID) -> UUID:
+    return (
+        await db.execute(
+            select(ExtractionInstance.entity_type_id).where(ExtractionInstance.id == instance_id)
+        )
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_history_resolves_section_scoped_provenance(db_session: AsyncSession) -> None:
+    """A sectioned run resolves the item's provenance to ITS section snapshot and
+    never leaks the raw ``sections`` map to the client."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, _reviewer_a, _reviewer_b = built
+    et_id = await _instance_entity_type(db_session, instance_id)
+
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {
+            "sections": {
+                str(et_id): {"model": "m-a", "prompt_composition": {"section_name": "A"}},
+                str(uuid4()): {"model": "other-section"},
+            }
+        },
+    )
+
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+    )
+    prov = history[0].provenance
+    assert prov is not None
+    assert prov["model"] == "m-a"
+    assert prov["prompt_composition"]["section_name"] == "A"
+    assert "sections" not in prov  # never expose the whole map
+
+
+@pytest.mark.asyncio
+async def test_mixed_era_run_falls_back_to_flat_for_presection_suggestions(
+    db_session: AsyncSession,
+) -> None:
+    """A run with flat legacy keys AND a sections map (one section extracted
+    after this shipped) still shows the flat snapshot for a section that
+    predates the sections map — never None."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, _reviewer_a, _reviewer_b = built
+
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {
+            "model": "legacy",
+            "prompt_text": "SYS",
+            "sections": {str(uuid4()): {"model": "some-other-section"}},
+        },
+    )
+
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+    )
+    prov = history[0].provenance
+    assert prov is not None
+    assert prov["model"] == "legacy"
+    assert prov["prompt_text"] == "SYS"
+    assert "sections" not in prov  # the sibling section's map is stripped
+
+
+@pytest.mark.asyncio
+async def test_pure_sectioned_run_missing_section_yields_none(
+    db_session: AsyncSession,
+) -> None:
+    """A pure-sectioned run (no flat keys) with no snapshot for this entity type
+    yields None — never a sibling section's snapshot (mis-attribution guard)."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, _reviewer_a, _reviewer_b = built
+
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {"sections": {str(uuid4()): {"model": "some-other-section"}}},
+    )
+
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+    )
+    assert history[0].provenance is None
+
+
+@pytest.mark.asyncio
+async def test_ran_by_name_resolved_inside_sections(db_session: AsyncSession) -> None:
+    """The runner name is resolved INSIDE a per-section snapshot, not just flat."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, _reviewer_a, reviewer_b = built
+    et_id = await _instance_entity_type(db_session, instance_id)
+
+    await db_session.execute(
+        text("UPDATE public.profiles SET full_name = :n WHERE id = :id"),
+        {"n": "Integration Reviewer B (Suggest)", "id": str(reviewer_b)},
+    )
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {"sections": {str(et_id): {"model": "m", "ran_by_user_id": str(reviewer_b)}}},
+    )
+
+    await _reveal_managers(db_session)
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+    )
+    assert history[0].provenance is not None
+    assert history[0].provenance["ran_by_name"] == "Integration Reviewer B (Suggest)"
+
+
+@pytest.mark.asyncio
+async def test_load_suggestions_resolves_sections_via_instance_map(
+    db_session: AsyncSession,
+) -> None:
+    """The hot load path resolves per-section provenance via the instance→entity
+    type map, same as the history path."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, _field_id, reviewer_a, _reviewer_b = built
+    et_id = await _instance_entity_type(db_session, instance_id)
+
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {"sections": {str(et_id): {"model": "m-load"}}},
+    )
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=reviewer_a,
+        run_id=run_id,
+    )
+    prov = result.suggestions[0].provenance
+    assert prov is not None
+    assert prov["model"] == "m-load"
+    assert "sections" not in prov
+
+
+@pytest.mark.asyncio
 async def test_load_suggestions_reviewer_a_status_is_accepted(
     db_session: AsyncSession,
 ) -> None:
@@ -481,6 +777,258 @@ async def test_load_suggestions_dedup_latest_per_coord(
 
 
 @pytest.mark.asyncio
+async def test_load_suggestions_latest_no_info_keeps_earlier_real_value(
+    db_session: AsyncSession,
+) -> None:
+    """A later 'no information' run must not bury an earlier run's real value.
+
+    Since #443 an AI run that abstains records a real proposal with
+    proposed_value={"value": None}. The inline strip dedups to latest-per-coord;
+    without the no-info guard, re-running extraction (which often abstains on a
+    field the first run found) would surface the null proposal and blank the
+    suggestion. The dedup must fall back to the most recent proposal that
+    actually carries a value — the abstention stays in get_suggestion_history.
+    Regression test for the "suggestion disappears after a 2nd AI extraction" bug.
+    """
+    project_id = SEED.primary_project
+    article_id = SEED.primary_article
+    template_id = SEED.primary_template
+    instance_id = SEED.primary_instance
+    field_id = SEED.primary_field
+    manager_id = SEED.primary_profile
+
+    lifecycle = RunLifecycleService(db_session)
+    run = await lifecycle.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+
+    proposal_svc = ExtractionProposalService(db_session)
+    # Older run found a value; the latest run abstained (no information).
+    older = await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": "REAL-VALUE"},
+    )
+    await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": None},  # no information
+    )
+    await db_session.flush()
+    # Back-date the OLDER (real-value) row so created_at ordering is unambiguous.
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_proposal_records "
+            "SET created_at = created_at - interval '1 second' "
+            "WHERE id = :id"
+        ),
+        {"id": str(older.id)},
+    )
+    await db_session.flush()
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=manager_id,
+        run_id=run.id,
+    )
+
+    assert result.count == 1
+    assert result.suggestions[0].proposed_value == {"value": "REAL-VALUE"}, (
+        "A later no-information proposal buried the earlier real value in the "
+        "inline strip — the dedup should prefer the latest proposal WITH a value."
+    )
+
+
+@pytest.mark.asyncio
+async def test_load_suggestions_newer_marker_wins_over_older_value(
+    db_session: AsyncSession,
+) -> None:
+    """ADR-0016: a coded ``no_information`` marker is a GENUINE answer, so unlike
+    a bare-null abstention it MAY win by recency over an older real value. The
+    dedup delegates emptiness to ``is_value_empty``, which treats a marker as
+    filled — so the newest non-empty proposal (here the marker) wins. Contrast
+    with the bare-null case above, where the older real value is preserved."""
+    marker = {"value": None, "absent_reason": "no_information"}
+    instance_id = SEED.primary_instance
+    field_id = SEED.primary_field
+    manager_id = SEED.primary_profile
+
+    lifecycle = RunLifecycleService(db_session)
+    run = await lifecycle.create_run(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        project_template_id=SEED.primary_template,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+
+    proposal_svc = ExtractionProposalService(db_session)
+    older = await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": "REAL-VALUE"},
+    )
+    await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value=marker,  # the AI re-ran and now says "no information"
+    )
+    await db_session.flush()
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_proposal_records "
+            "SET created_at = created_at - interval '1 second' WHERE id = :id"
+        ),
+        {"id": str(older.id)},
+    )
+    await db_session.flush()
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=manager_id,
+        run_id=run.id,
+    )
+    assert result.count == 1
+    assert result.suggestions[0].proposed_value == marker, (
+        "A newer coded marker is a genuine answer and should win by recency — "
+        "only a bare {'value': null} is buryable."
+    )
+
+
+@pytest.mark.asyncio
+async def test_load_suggestions_newer_bare_null_does_not_bury_marker(
+    db_session: AsyncSession,
+) -> None:
+    """The mirror of the above: an earlier resolved ``no_information`` marker is
+    a genuine value, so a later *bare-null* abstention (no marker) must NOT bury
+    it — the marker is preferred exactly like a real value would be."""
+    marker = {"value": None, "absent_reason": "no_information"}
+    instance_id = SEED.primary_instance
+    field_id = SEED.primary_field
+    manager_id = SEED.primary_profile
+
+    lifecycle = RunLifecycleService(db_session)
+    run = await lifecycle.create_run(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        project_template_id=SEED.primary_template,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+
+    proposal_svc = ExtractionProposalService(db_session)
+    older = await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value=marker,
+    )
+    await proposal_svc.record_proposal(
+        run_id=run.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": None},  # bare-null abstention, no marker
+    )
+    await db_session.flush()
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_proposal_records "
+            "SET created_at = created_at - interval '1 second' WHERE id = :id"
+        ),
+        {"id": str(older.id)},
+    )
+    await db_session.flush()
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=manager_id,
+        run_id=run.id,
+    )
+    assert result.count == 1
+    assert result.suggestions[0].proposed_value == marker, (
+        "A later bare-null abstention buried an earlier resolved marker — the "
+        "marker is a genuine value and must be preferred."
+    )
+
+
+@pytest.mark.asyncio
+async def test_load_suggestions_all_no_info_returns_no_info(
+    db_session: AsyncSession,
+) -> None:
+    """When every run abstained, the coord still surfaces a (no-info) proposal.
+
+    The latest-with-value preference only kicks in when a real value exists;
+    if all proposals are no-info, the coord still appears (so the quiet
+    "no information" indicator and its provenance remain reachable).
+    """
+    project_id = SEED.primary_project
+    article_id = SEED.primary_article
+    template_id = SEED.primary_template
+    instance_id = SEED.primary_instance
+    field_id = SEED.primary_field
+    manager_id = SEED.primary_profile
+
+    lifecycle = RunLifecycleService(db_session)
+    run = await lifecycle.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=manager_id,
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
+    )
+
+    proposal_svc = ExtractionProposalService(db_session)
+    for _ in range(2):
+        await proposal_svc.record_proposal(
+            run_id=run.id,
+            instance_id=instance_id,
+            field_id=field_id,
+            source=ExtractionProposalSource.AI,
+            proposed_value={"value": None},
+        )
+    await db_session.flush()
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=manager_id,
+        run_id=run.id,
+    )
+
+    assert result.count == 1
+    assert result.suggestions[0].proposed_value == {"value": None}
+
+
+@pytest.mark.asyncio
 async def test_load_suggestions_empty_instance_ids(
     db_session: AsyncSession,
 ) -> None:
@@ -506,7 +1054,11 @@ async def test_get_suggestion_history_no_status(
     run_id, instance_id, field_id, _reviewer_a, _reviewer_b = built  # noqa: F841
 
     history = await get_suggestion_history(
-        db_session, instance_id, field_id, article_id=SEED.primary_article
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
     )
 
     assert len(history) >= 1
@@ -552,7 +1104,12 @@ async def test_get_suggestion_history_limit(
     await db_session.flush()
 
     history = await get_suggestion_history(
-        db_session, instance_id, field_id, article_id=SEED.primary_article, limit=2
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+        limit=2,
     )
     assert len(history) <= 2
 
@@ -752,6 +1309,7 @@ async def test_get_suggestion_history_excludes_foreign_article_instance(
         instance_id,
         field_id,
         article_id=foreign_article_id,
+        caller_id=SEED.primary_profile,
     )
 
     assert history == [], (
@@ -914,7 +1472,9 @@ async def test_get_suggestion_history_evidence_block_ids_populated(
     )
     await db_session.flush()
 
-    history = await get_suggestion_history(db_session, instance_id, field_id, article_id=article_id)
+    history = await get_suggestion_history(
+        db_session, instance_id, field_id, article_id=article_id, caller_id=SEED.primary_profile
+    )
 
     matched = next(
         (h for h in history if h.proposed_value == {"value": "BLOCK-ID-HISTORY-TEST"}),
@@ -1186,3 +1746,287 @@ async def test_load_suggestions_evidence_legacy_length_one(
     )
     assert suggestion.evidence[0].rank == 0
     assert suggestion.evidence[0].attribution_label is None
+
+
+# ---------------------------------------------------------------------------
+# D8-d: server-side ran-by identity scrub — per-run reveal mirroring /view
+# (finalized -> everyone; consensus -> arbitrator; else caller_can_see_peers)
+# ---------------------------------------------------------------------------
+
+
+async def _reveal_managers(db: AsyncSession) -> None:
+    """Turn on the per-kind manager unblinding for the seed project."""
+    await db.execute(
+        text(
+            "UPDATE public.projects SET settings = jsonb_set("
+            "coalesce(settings, '{}'::jsonb), '{managers_see_reviewers}', "
+            "'{\"extraction\": true}'::jsonb) WHERE id = :pid"
+        ),
+        {"pid": str(SEED.primary_project)},
+    )
+    await db.flush()
+
+
+@pytest.mark.asyncio
+async def test_history_scrubs_ranby_for_blind_reviewer_in_extract(
+    db_session: AsyncSession,
+) -> None:
+    """A plain reviewer on an extract-stage run gets NO ran-by identity —
+    the payload used to ship ran_by_user_id + ran_by_name to any member."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, reviewer_a, reviewer_b = built
+
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {"model": "gpt-4o-mini", "ran_by_user_id": str(reviewer_b)},
+    )
+
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=reviewer_a,
+    )
+    prov = history[0].provenance
+    assert prov is not None
+    assert "ran_by_user_id" not in prov
+    assert "ran_by_name" not in prov
+    assert prov["model"] == "gpt-4o-mini", "non-identity keys survive the scrub"
+
+
+@pytest.mark.asyncio
+async def test_history_reveals_ranby_for_arbitrator_in_consensus(
+    db_session: AsyncSession,
+) -> None:
+    """The consensus trace's run-group headers depend on this: a manager who
+    is the arbitrator (managers_see_reviewers OFF) is auto-revealed on a
+    consensus-stage run's items."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, _reviewer_a, reviewer_b = built
+
+    await db_session.execute(
+        text("UPDATE public.profiles SET full_name = :n WHERE id = :id"),
+        {"n": "Integration Reviewer B (Suggest)", "id": str(reviewer_b)},
+    )
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {"model": "gpt-4o-mini", "ran_by_user_id": str(reviewer_b)},
+    )
+    lifecycle = RunLifecycleService(db_session)
+    await lifecycle.advance_stage(
+        run_id=run_id,
+        target_stage=ExtractionRunStage.CONSENSUS,
+        user_id=SEED.primary_profile,
+    )
+
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+    )
+    prov = history[0].provenance
+    assert prov is not None
+    assert prov["ran_by_name"] == "Integration Reviewer B (Suggest)"
+
+
+@pytest.mark.asyncio
+async def test_history_mixed_stages_scrub_is_per_run(
+    db_session: AsyncSession,
+) -> None:
+    """Reveal is keyed by each item's OWN run: a finalized run's items reveal
+    to a blind reviewer (finalized unblinds everyone), while an extract-stage
+    run's items on the same article stay scrubbed."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run1_id, instance_id, field_id, reviewer_a, reviewer_b = built
+
+    await db_session.execute(
+        text("UPDATE public.profiles SET full_name = :n WHERE id = :id"),
+        {"n": "Integration Reviewer B (Suggest)", "id": str(reviewer_b)},
+    )
+    await _seed_run_provenance(
+        db_session,
+        run1_id,
+        {"model": "m-finalized", "ran_by_user_id": str(reviewer_b)},
+    )
+
+    # Stage run1 as finalized directly (the read path is under test, not the
+    # finalize gates). Must happen BEFORE creating run2: the one-live-run
+    # invariant (0045 partial unique index) allows a sibling only once run1
+    # is terminal — and run1's reviewer decisions survive the stage flip.
+    await db_session.execute(
+        text("UPDATE public.extraction_runs SET stage = 'finalized' WHERE id = :r"),
+        {"r": str(run1_id)},
+    )
+
+    # Second run on the same coord, staying in extract.
+    lifecycle = RunLifecycleService(db_session)
+    run2 = await lifecycle.create_run(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        project_template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+    )
+    await lifecycle.advance_stage(
+        run_id=run2.id,
+        target_stage=ExtractionRunStage.EXTRACT,
+        user_id=SEED.primary_profile,
+    )
+    proposal_svc = ExtractionProposalService(db_session)
+    await proposal_svc.record_proposal(
+        run_id=run2.id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": "AI-RUN-2"},
+        confidence_score=0.5,
+    )
+    await _seed_run_provenance(
+        db_session,
+        run2.id,
+        {"model": "m-extract", "ran_by_user_id": str(reviewer_b)},
+    )
+    await db_session.flush()
+
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=reviewer_a,
+    )
+    by_run = {item.run_id: item.provenance for item in history}
+    assert by_run[run1_id] is not None
+    assert by_run[run1_id]["ran_by_name"] == "Integration Reviewer B (Suggest)"
+    assert by_run[run2.id] is not None
+    assert "ran_by_user_id" not in by_run[run2.id]
+    assert "ran_by_name" not in by_run[run2.id]
+
+
+@pytest.mark.asyncio
+async def test_history_reveals_for_unblinded_manager(
+    db_session: AsyncSession,
+) -> None:
+    """managers_see_reviewers[kind]=true reveals extract-stage items to a
+    manager via caller_can_see_peers."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, _reviewer_a, reviewer_b = built
+
+    await db_session.execute(
+        text("UPDATE public.profiles SET full_name = :n WHERE id = :id"),
+        {"n": "Integration Reviewer B (Suggest)", "id": str(reviewer_b)},
+    )
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {"model": "gpt-4o-mini", "ran_by_user_id": str(reviewer_b)},
+    )
+    await _reveal_managers(db_session)
+
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+    )
+    prov = history[0].provenance
+    assert prov is not None
+    assert prov["ran_by_name"] == "Integration Reviewer B (Suggest)"
+
+
+@pytest.mark.asyncio
+async def test_load_suggestions_scrubs_ran_by_user_id(
+    db_session: AsyncSession,
+) -> None:
+    """The hot load path never resolved names, but it shipped the raw
+    ran_by_user_id — same per-run scrub applies."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, reviewer_a, reviewer_b = built
+
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {"model": "gpt-4o-mini", "ran_by_user_id": str(reviewer_b)},
+    )
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=reviewer_a,
+        run_id=run_id,
+    )
+    prov = result.suggestions[0].provenance
+    assert prov is not None
+    assert "ran_by_user_id" not in prov
+    assert prov["model"] == "gpt-4o-mini"
+
+
+@pytest.mark.asyncio
+async def test_run_results_scrub_ranby_on_run_detail(db_session: AsyncSession) -> None:
+    """D8-d applies to the run payload itself: RunSummaryResponse.results
+    serializes verbatim on /runs/{id} and /view, so an unrevealed caller must
+    not receive ran-by identity there either (flat + per-section leaves)."""
+    from app.services.extraction_run_read_service import get_run_with_workflow_history
+
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, _field_id, reviewer_a, reviewer_b = built
+    et_id = await _instance_entity_type(db_session, instance_id)
+
+    await _seed_run_provenance(
+        db_session,
+        run_id,
+        {
+            "model": "flat-m",
+            "ran_by_user_id": str(reviewer_b),
+            "sections": {str(et_id): {"model": "sec-m", "ran_by_user_id": str(reviewer_b)}},
+        },
+    )
+
+    blind = await get_run_with_workflow_history(
+        db_session,
+        run_id,
+        caller_id=reviewer_a,
+        can_see_peers=False,
+        caller_is_arbitrator=False,
+    )
+    prov = blind.run.results["provenance"]
+    assert "ran_by_user_id" not in prov
+    assert all("ran_by_user_id" not in sec for sec in prov["sections"].values())
+    assert prov["model"] == "flat-m", "non-identity keys survive"
+
+    revealed = await get_run_with_workflow_history(
+        db_session,
+        run_id,
+        caller_id=SEED.primary_profile,
+        can_see_peers=True,
+        caller_is_arbitrator=False,
+    )
+    assert revealed.run.results["provenance"]["ran_by_user_id"] == str(reviewer_b)
+    # Copy-on-scrub: the stored payload is untouched by the blind read.
+    stored = (
+        await db_session.execute(
+            text(
+                "SELECT results->'provenance'->>'ran_by_user_id' FROM public.extraction_runs WHERE id = :r"
+            ),
+            {"r": str(run_id)},
+        )
+    ).scalar()
+    assert stored == str(reviewer_b)

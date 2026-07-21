@@ -5,6 +5,8 @@
  * (object {value, unit}, raw value, etc.)
  */
 
+import { isValueEmpty, unwrapValueEnvelope } from '@/lib/extraction/valueSemantics';
+
 /**
  * Extracts the value from a {value, unit} object or returns the raw value
  *
@@ -15,14 +17,9 @@ export function extractValue(value: any): any {
   if (value === null || value === undefined) {
     return null;
   }
-
-    // If object with 'value' property, extract it
-  if (typeof value === 'object' && 'value' in value) {
-    return value.value;
-  }
-
-    // Otherwise return raw value
-  return value;
+  // Peel one {value} envelope via the shared oracle; a bare scalar / non-envelope
+  // dict is returned untouched.
+  return unwrapValueEnvelope(value);
 }
 
 /**
@@ -44,14 +41,15 @@ export function extractUnit(value: any): string | null {
 }
 
 /**
- * Checks if a value is empty (null, undefined or empty string)
+ * Checks if a value is empty (null, undefined or empty string) — delegates to
+ * the shared emptiness oracle so a resolved `absent_reason` marker counts as
+ * filled and the FE/BE rule can no longer drift.
  *
  * @param value - Value to check
  * @returns true if value is empty
  */
 export function isEmptyValue(value: any): boolean {
-  const extracted = extractValue(value);
-  return extracted === null || extracted === undefined || extracted === '';
+  return isValueEmpty(value);
 }
 
 /**

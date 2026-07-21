@@ -114,6 +114,48 @@ async def test_mark_ready_admits_non_manager_reviewer(
 
 
 @pytest.mark.asyncio
+async def test_blind_reviewer_payload_has_no_peer_ready_ids(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_manager: UUID,
+) -> None:
+    """Blind contract (ADR-0012): WHO marked ready is peer-attributable
+    participation metadata. A blind reviewer's /view and /ready payloads must
+    carry only their own id in reviewers_ready; the aggregate ready_count
+    stays intact."""
+    if not await _seeded(db_session):
+        pytest.skip("Missing fixtures.")
+    run_id = await _create_run(db_client)
+    adv = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": "extract"})
+    assert adv.status_code == 200, adv.text
+
+    # The manager marks ready first (a peer participation the reviewer must not see).
+    res = await db_client.post(f"/api/v1/runs/{run_id}/ready", json={"ready": True})
+    assert res.status_code == 200, res.text
+
+    _auth_as(SEED.reviewer_profile)  # a plain (blind) project reviewer
+
+    # The blind reviewer's own mark-ready echo: aggregate counts, own id only.
+    res = await db_client.post(f"/api/v1/runs/{run_id}/ready", json={"ready": True})
+    assert res.status_code == 200, res.text
+    data = res.json()["data"]
+    assert data["ready_count"] == 2
+    assert data["reviewers_ready"] == [str(SEED.reviewer_profile)], (
+        "blind leak: POST /ready returned a peer's id to a blind reviewer"
+    )
+
+    # The run-view payload: same scrub, same intact aggregate.
+    view = await db_client.get(f"/api/v1/runs/{run_id}/view")
+    assert view.status_code == 200, view.text
+    vdata = view.json()["data"]
+    assert vdata["ready_count"] == 2
+    assert vdata["reviewers_ready"] == [str(SEED.reviewer_profile)], (
+        "blind leak: /view returned a peer's id in reviewers_ready to a blind reviewer"
+    )
+    assert str(auth_as_manager) not in vdata["reviewers_ready"]
+
+
+@pytest.mark.asyncio
 async def test_mark_ready_rejects_non_member(
     db_client: AsyncClient,
     db_session: AsyncSession,

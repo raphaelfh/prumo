@@ -11,15 +11,22 @@ interface AISuggestionValueProps {
   suggestion: AISuggestion;
   maxLength?: number;
   className?: string;
+  /** Field type + allowed_values so a select/multiselect CODE renders as its
+   *  human label ("Y" → "Yes"). Omit for non-select fields. */
+  fieldType?: string | null;
+  allowedValues?: unknown;
 }
 
 export function AISuggestionValue({
   suggestion,
   maxLength = 150,
   className = "",
+  fieldType,
+  allowedValues,
 }: AISuggestionValueProps) {
-  const displayValue = formatSuggestionValue(suggestion.value, maxLength);
-  const fullValue = formatFullSuggestionValue(suggestion.value);
+  const fieldContext = {fieldType, allowedValues};
+  const displayValue = formatSuggestionValue(suggestion.value, maxLength, fieldContext);
+  const fullValue = formatFullSuggestionValue(suggestion.value, fieldContext);
   const isTruncated = displayValue !== fullValue || fullValue.length > maxLength;
 
   const valueElement = (

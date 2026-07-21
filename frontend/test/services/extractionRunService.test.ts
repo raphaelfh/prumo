@@ -18,7 +18,11 @@ vi.mock('@/integrations/api', () => ({
   apiClient: apiClientMock,
 }));
 
-import {extractForRun, getExtractionJobStatus} from '@/services/extractionRunService';
+import {
+  extractForRun,
+  getExtractionJobStatus,
+  writeRunFieldValue,
+} from '@/services/extractionRunService';
 
 const BASE_PARAMS = {
   projectId: 'proj-1',
@@ -141,5 +145,79 @@ describe('getExtractionJobStatus', () => {
     apiClientMock.mockRejectedValueOnce(new Error('timeout'));
     const result = await getExtractionJobStatus('job-1');
     expect(result.ok).toBe(false);
+  });
+});
+
+// D8 write contract: writeRunFieldValue has ONE target — an `edit` decision on
+// /runs/{id}/decisions — for both run kinds. ADR-0016 Phase 1: the
+// absent_reason disposition merges into the value envelope only when a code is
+// present; a legacy write must never gain a spurious `absent_reason` key.
+describe('writeRunFieldValue — decision write contract', () => {
+  beforeEach(() => {
+    apiClientMock.mockReset();
+    apiClientMock.mockResolvedValue(undefined);
+  });
+
+  const lastBody = (): Record<string, unknown> =>
+    apiClientMock.mock.calls.at(-1)![1].body;
+
+  it('always posts an edit decision to /decisions', async () => {
+    await writeRunFieldValue({
+      runId: 'r1',
+      instanceId: 'i1',
+      fieldId: 'f1',
+      normalizedValue: 'a value',
+    });
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/r1/decisions',
+      expect.objectContaining({method: 'POST'}),
+    );
+    expect(lastBody().decision).toBe('edit');
+  });
+
+  it('merges absent_reason into the decision value envelope', async () => {
+    await writeRunFieldValue({
+      runId: 'r1',
+      instanceId: 'i1',
+      fieldId: 'f1',
+      normalizedValue: null,
+      absentReason: 'no_information',
+    });
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/r1/decisions',
+      expect.anything(),
+    );
+    expect(lastBody().value).toEqual({value: null, absent_reason: 'no_information'});
+  });
+
+  it('omits absent_reason entirely for a legacy decision write (no key)', async () => {
+    await writeRunFieldValue({
+      runId: 'r1',
+      instanceId: 'i1',
+      fieldId: 'f1',
+      normalizedValue: 'a value',
+    });
+    expect(lastBody().value).toEqual({value: 'a value'});
+    expect(lastBody().value).not.toHaveProperty('absent_reason');
+  });
+
+  it('threads proposalRecordId into the decision body when set, omits it when null', async () => {
+    await writeRunFieldValue({
+      runId: 'r1',
+      instanceId: 'i1',
+      fieldId: 'f1',
+      normalizedValue: 'ai text',
+      proposalRecordId: 'prop-9',
+    });
+    expect(lastBody().proposal_record_id).toBe('prop-9');
+
+    await writeRunFieldValue({
+      runId: 'r1',
+      instanceId: 'i1',
+      fieldId: 'f1',
+      normalizedValue: 'typed',
+      proposalRecordId: null,
+    });
+    expect(lastBody()).not.toHaveProperty('proposal_record_id');
   });
 });

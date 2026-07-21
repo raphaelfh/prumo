@@ -30,6 +30,13 @@ OutputT = TypeVar("OutputT", bound=BaseModel)
 # wall-clock for one call is ~ request_limit × LLM_TIMEOUT_SECONDS.
 DEFAULT_USAGE_LIMITS = UsageLimits(request_limit=5)
 
+# Generation params — single source of truth so run provenance records the
+# exact settings used (extraction_runs.results["provenance"].params). Keep these
+# the ONLY definition; both the Agent config below and the provenance snapshot
+# import them, so the recorded params can never drift from what was sent.
+LLM_TEMPERATURE = 0.1
+OUTPUT_RETRIES_DEFAULT = 2
+
 
 @dataclass
 class LlmUsage:
@@ -72,7 +79,7 @@ async def extract_structured(
     prompt_name: str,
     prompt_version: str,
     validators: Sequence[Callable[..., Any]] = (),
-    output_retries: int = 2,
+    output_retries: int = OUTPUT_RETRIES_DEFAULT,
     usage_limits: UsageLimits | None = None,
 ) -> tuple[OutputT, LlmUsage]:
     agent: Agent[None, OutputT] = Agent(
@@ -80,7 +87,10 @@ async def extract_structured(
         output_type=_output_for(model, output_model),
         instructions=system_prompt,
         retries={"output": output_retries},
-        model_settings={"temperature": 0.1, "timeout": settings.LLM_TIMEOUT_SECONDS},
+        model_settings={
+            "temperature": LLM_TEMPERATURE,
+            "timeout": settings.LLM_TIMEOUT_SECONDS,
+        },
     )
     for validator in validators:
         agent.output_validator(validator)

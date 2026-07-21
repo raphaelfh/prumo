@@ -25,6 +25,7 @@ from app.llm.provider import build_model
 from app.models.extraction import (
     ExtractionEntityRole,
     ExtractionInstance,
+    ExtractionRun,
     ExtractionRunStage,
 )
 from app.repositories import (
@@ -103,6 +104,7 @@ class ModelExtractionService(LoggerMixin):
         article_id: UUID,
         template_id: UUID,
         model: str = settings.LLM_DEFAULT_MODEL,
+        run_id: UUID | None = None,
     ) -> ModelExtractionResult:
         """
         Extract prediction models from an article.
@@ -112,6 +114,12 @@ class ModelExtractionService(LoggerMixin):
             article_id: Article ID.
             template_id: Template ID.
             model: OpenAI model to use.
+            run_id: Existing run to append the model instances/proposals to.
+                When provided (the extraction surface, via the HITL session),
+                the run is REUSED instead of creating a fresh one — so the
+                session's run stays the single source of truth and a reviewer's
+                saved decisions are never orphaned onto a shadow run. Mirrors
+                ``SectionExtractionService.extract_section``'s ``run_id`` reuse.
 
         Returns:
             ModelExtractionResult with extraction_run_id, models and tokens.
@@ -119,26 +127,39 @@ class ModelExtractionService(LoggerMixin):
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
 
-        # 1. Create extraction_run via the unified lifecycle service so the new
-        # NOT NULL columns (version_id, hitl_config_snapshot) and the kind
-        # discriminator are populated correctly. Then advance pending → extract.
-        run = await self._lifecycle.create_run(
-            project_id=project_id,
-            article_id=article_id,
-            project_template_id=template_id,
-            user_id=UUID(self.user_id),
-            parameters={
-                "model": model,
-                "extraction_type": "model_identification",
-            },
-        )
-        run = await self._lifecycle.advance_stage(
-            run_id=run.id,
-            target_stage=ExtractionRunStage.EXTRACT,
-            user_id=UUID(self.user_id),
-        )
-
-        await self._runs.start_run(run.id)
+        # 1. Resolve the run. When ``run_id`` is passed (extraction surface),
+        # REUSE that session-owned run and leave its lifecycle to the HITL
+        # session — creating a fresh run here would fork a parallel run that
+        # shadows the reviewer's decisions (the orphaning bug). Without a
+        # ``run_id`` the resolve-or-create gate applies: the coordinate's live
+        # run is reused when one exists (one-live-run invariant, index 0045 —
+        # an unconditional create would 23505), and only a truly fresh
+        # coordinate creates + owns its run. ``manage_lifecycle`` therefore
+        # follows CREATION, not the run_id parameter: reused runs are never
+        # started/completed/failed here. Mirrors ``extract_section``.
+        if run_id is not None:
+            existing_run = await self.db.get(ExtractionRun, run_id)
+            if existing_run is None:
+                raise ValueError(f"Run {run_id} not found")
+            if existing_run.stage != ExtractionRunStage.EXTRACT.value:
+                raise ValueError(
+                    f"Run {run_id} stage is {existing_run.stage}; model extraction requires EXTRACT"
+                )
+            run = existing_run
+            manage_lifecycle = False
+        else:
+            run, manage_lifecycle = await self._lifecycle.resolve_or_create_extract_run(
+                project_id=project_id,
+                article_id=article_id,
+                project_template_id=template_id,
+                user_id=UUID(self.user_id),
+                parameters={
+                    "model": model,
+                    "extraction_type": "model_identification",
+                },
+            )
+            if manage_lifecycle:
+                await self._runs.start_run(run.id)
 
         self.logger.info(
             "model_extraction_start",
@@ -151,7 +172,7 @@ class ModelExtractionService(LoggerMixin):
         try:
             # 2-3. Assemble budgeted block-markdown prompt input (on-demand parse inside).
             phase_start = perf_counter()
-            pdf_text, _, _ = await build_prompt_input(
+            pdf_text, _ = await build_prompt_input(
                 db=self.db,
                 article_files=self._article_files,
                 storage=self.storage,
@@ -190,22 +211,27 @@ class ModelExtractionService(LoggerMixin):
 
             duration = (perf_counter() - start_time) * 1000
 
-            # 7. Completar run with resultados
-            phase_start = perf_counter()
-            await self._runs.complete_run(
-                run_id=run.id,
-                results={
-                    "models_count": len(created_models),
-                    "children_count": total_children,
-                    "models_identified": len(models),
-                    "tokens_prompt": llm_usage.prompt_tokens,
-                    "tokens_completion": llm_usage.completion_tokens,
-                    "tokens_total": llm_usage.total_tokens,
-                    "duration_ms": duration,
-                    "phase_durations_ms": phase_durations_ms,
-                },
-            )
-            phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
+            # 7. Complete the run with results — standalone path only. In the
+            # session-run (reuse) path the HITL session owns the lifecycle, so
+            # completing here would close the run after model extraction and
+            # break subsequent AI clicks + form editing on the same run. The
+            # model instances/proposals were already persisted above.
+            if manage_lifecycle:
+                phase_start = perf_counter()
+                await self._runs.complete_run(
+                    run_id=run.id,
+                    results={
+                        "models_count": len(created_models),
+                        "children_count": total_children,
+                        "models_identified": len(models),
+                        "tokens_prompt": llm_usage.prompt_tokens,
+                        "tokens_completion": llm_usage.completion_tokens,
+                        "tokens_total": llm_usage.total_tokens,
+                        "duration_ms": duration,
+                        "phase_durations_ms": phase_durations_ms,
+                    },
+                )
+                phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
 
             self.logger.info(
                 "model_extraction_complete",
@@ -241,17 +267,22 @@ class ModelExtractionService(LoggerMixin):
             )
 
         except Exception as e:
+            # Only mark the run failed in the standalone path. In the session-run
+            # (reuse) path the HITL session owns the lifecycle — failing it here
+            # would break subsequent extractions + form editing on the same run;
+            # the error propagates for the caller (session) to handle.
             # Issue #21: a DB-level error during instance creation aborts the
             # session, so roll back before marking the run failed (otherwise
             # fail_run hits InFailedSQLTransactionError and leaves an orphaned
             # status='running' row). Shared with SectionExtractionService.
-            await self._runs.rollback_and_fail(
-                run.id,
-                str(e),
-                logger=self.logger,
-                trace_id=self.trace_id,
-                log_prefix="model_extraction",
-            )
+            if manage_lifecycle:
+                await self._runs.rollback_and_fail(
+                    run.id,
+                    str(e),
+                    logger=self.logger,
+                    trace_id=self.trace_id,
+                    log_prefix="model_extraction",
+                )
             self.logger.error(
                 "model_extraction_failed",
                 trace_id=self.trace_id,

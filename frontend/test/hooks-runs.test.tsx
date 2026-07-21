@@ -16,7 +16,6 @@ import {
   useAdvanceRun,
   useApproveFinalize,
   useCreateConsensus,
-  useCreateDecision,
   useCreateRun,
   useMarkReady,
   useRun,
@@ -141,44 +140,6 @@ describe("useCreateRun", () => {
     });
     expect(mutationResult?.id).toBe("run-2");
     await waitFor(() => expect(result.current.data?.id).toBe("run-2"));
-  });
-});
-
-describe("useCreateDecision", () => {
-  it("POSTs /api/v1/runs/{runId}/decisions with the request body", async () => {
-    apiClientMock.mockResolvedValueOnce({
-      id: "decision-1",
-      run_id: "run-4",
-      instance_id: "instance-1",
-      field_id: "field-1",
-      reviewer_id: "user-1",
-      decision: "accept_proposal",
-      proposal_record_id: "proposal-1",
-      value: null,
-      rationale: null,
-      created_at: "2026-04-26T12:00:00Z",
-    });
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useCreateDecision("run-4"), { wrapper });
-
-    const body = {
-      instance_id: "instance-1",
-      field_id: "field-1",
-      decision: "accept_proposal" as const,
-      proposal_record_id: "proposal-1",
-    };
-
-    let mutationResult: Awaited<ReturnType<typeof result.current.mutateAsync>> | undefined;
-    await act(async () => {
-      mutationResult = await result.current.mutateAsync(body);
-    });
-
-    expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs/run-4/decisions", {
-      method: "POST",
-      body,
-    });
-    expect(mutationResult?.id).toBe("decision-1");
   });
 });
 
@@ -408,30 +369,24 @@ describe("useRunReviewers", () => {
 });
 
 describe("mutation cache invalidation", () => {
+  // Pins the convention that every runs mutation invalidates its owning key
+  // family (stale-cache bugs are a recurring incident class). Vehicle:
+  // useAdvanceRun — the former vehicle (useCreateDecision) was deleted with
+  // the dead accept chain.
   it("invalidates ['runs', runId] after a successful mutation", async () => {
     apiClientMock.mockResolvedValueOnce({
-      id: "decision-cache",
-      run_id: "run-cache",
-      instance_id: "instance-cache",
-      field_id: "field-cache",
-      reviewer_id: "user-1",
-      decision: "reject",
-      proposal_record_id: null,
-      value: null,
-      rationale: null,
-      created_at: "2026-04-26T12:00:00Z",
+      id: "run-cache",
+      stage: "consensus",
+      status: "running",
+      template_id: "tpl-1",
     });
 
     const { wrapper, queryClient } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-    const { result } = renderHook(() => useCreateDecision("run-cache"), { wrapper });
+    const { result } = renderHook(() => useAdvanceRun("run-cache"), { wrapper });
 
     await act(async () => {
-      await result.current.mutateAsync({
-        instance_id: "instance-cache",
-        field_id: "field-cache",
-        decision: "reject",
-      });
+      await result.current.mutateAsync({ target_stage: "consensus" });
     });
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-cache") });

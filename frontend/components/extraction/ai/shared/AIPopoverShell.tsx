@@ -15,6 +15,9 @@ interface AIPopoverShellProps {
   align?: 'start' | 'center' | 'end';
   className?: string;
   children: React.ReactNode;
+  /** Optional strip pinned BELOW the scrollable body (e.g. Clear + a
+   *  traceability note). Stays reachable no matter how long the body grows. */
+  footer?: React.ReactNode;
 }
 
 export function AIPopoverShell({
@@ -24,14 +27,21 @@ export function AIPopoverShell({
   align = 'start',
   className,
   children,
+  footer,
 }: AIPopoverShellProps) {
   return (
     <PopoverContent
       align={align}
       side="bottom"
-      className={cn('w-[min(380px,calc(100vw-1.5rem))] overflow-hidden p-0', className)}
+      className={cn(
+        // Bounded by the space Radix reports below/above the trigger (capped at
+        // 34rem) so the popover never grows past the viewport and clips. A flex
+        // column with a single scrollable body absorbs any content growth.
+        'flex max-h-[min(var(--radix-popover-content-available-height),34rem)] w-[min(380px,calc(100vw-1.5rem))] flex-col overflow-hidden p-0',
+        className,
+      )}
     >
-      <div className="flex items-center gap-2 border-b px-4 py-3">
+      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3">
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-ai">
           {icon}
         </span>
@@ -42,7 +52,8 @@ export function AIPopoverShell({
           )}
         </div>
       </div>
-      <div className="max-h-[min(70vh,32rem)] overflow-y-auto">{children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      {footer != null && <div className="shrink-0 border-t">{footer}</div>}
     </PopoverContent>
   );
 }

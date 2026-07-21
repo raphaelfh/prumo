@@ -54,6 +54,34 @@ describe('RunReviewerComparison', () => {
     expect(screen.getAllByText('Retrospective cohort').length).toBeGreaterThan(0);
   });
 
+  it('renders coded disposition markers as their labels, not "null"', () => {
+    // ADR-0016 Phase 4: different absent_reason codes (and a marker vs a real
+    // value) must read as distinct, legible dispositions in the comparison cells.
+    const decisionsByCoord = new Map([
+      [
+        'i1::f1',
+        [
+          decision({ reviewer_id: 'rA', value: { value: null, absent_reason: 'no_information' } }),
+          decision({ reviewer_id: 'rB', value: { value: null, absent_reason: 'not_applicable' } }),
+        ],
+      ],
+    ]);
+    render(
+      <RunReviewerComparison
+        decisionsByCoord={decisionsByCoord}
+        entityTypes={entityTypes}
+        instances={instances}
+        ownValues={{ i1_f1: { value: 'Retrospective cohort' } }}
+        reviewerLabelById={{ rA: 'Alice', rB: 'Bob' }}
+        reviewerAvatarById={{}}
+      />,
+    );
+    expect(screen.getByText('No information')).toBeInTheDocument();
+    expect(screen.getByText('Not applicable')).toBeInTheDocument();
+    expect(screen.getByText('Retrospective cohort')).toBeInTheDocument();
+    expect(screen.queryByText('null')).not.toBeInTheDocument();
+  });
+
   it('renders a reject decision as a muted "rejected" cell', () => {
     const decisionsByCoord = new Map([
       ['i1::f1', [decision({ reviewer_id: 'rA', decision: 'reject', value: null })]],

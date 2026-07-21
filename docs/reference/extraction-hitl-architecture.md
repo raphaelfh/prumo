@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-06-28
+last_reviewed: 2026-07-09
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-06-28 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-07-08 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -33,9 +33,23 @@ through five stages, in this order — no skipping:
 
 ```text
 pending → extract → consensus → finalized
-                              ↓
-                         cancelled (terminal at any non-terminal stage)
+             ↑__________|    ↓
+      (reopen_to_extract)  cancelled (terminal at any non-terminal stage)
 ```
+
+The `consensus → extract` **back-edge** is arbitrator-only and destructive:
+`RunLifecycleService.reopen_to_extract`
+(`POST /api/v1/runs/{id}/reopen-extraction`, `ensure_project_arbitrator`) sends a
+consensus-stage extraction run back to `extract` **in place** (same run), hard-
+deleting that run's `ExtractionConsensusDecision` + `ExtractionPublishedState`
+rows (consensus-attached evidence cascades) while preserving reviewer
+decisions/states/proposals and `reviewers_ready`. It sets `stage` directly and is
+**deliberately absent from `_ALLOWED_TRANSITIONS`** so the reviewer-gated
+`/advance` cannot reach it and `advance_stage` stays forward-only. Extraction
+only. The discard is deliberate (constitution §IX reconciliation) and confirmed in
+the UI — see [ADR-0017](../adr/0017-reopen-consensus-to-extract.md). Distinct from
+the `finalized` reopen (`reopen_run` / `POST /runs/{id}/reopen`), which forks a
+*new* child run.
 
 `stage` is the lifecycle position; `status` is the execution condition
 (`pending` / `running` / `completed` / `failed`). They are orthogonal —
@@ -45,8 +59,16 @@ extracting.
 When a Run is created it captures two immutable snapshots: `version_id`
 (an `ExtractionTemplateVersion` row freezing the entity_types + fields
 tree) and `hitl_config_snapshot` (a JSONB copy of the resolved
-`reviewer_count` / `consensus_rule` / `arbitrator_id`). Editing the
-template afterwards never affects existing runs.
+`reviewer_count` / `consensus_rule` / `arbitrator_id`). Version rows are
+immutable, but the *pin* is stage-aware: template configuration edits
+republish the live structure as a new active version
+(`TemplateVersionService.republish`, called by the config UI after every
+section/field mutation via
+`POST /projects/{id}/templates/{tid}/republish-version`), and the
+republish re-pins runs still in an **editable** stage
+(`pending`/`extract`) to the new version so open extraction/QA forms
+render the edit. Runs in `consensus`/`finalized` keep the version they
+were assessed under — editing the template never affects them.
 
 ### 2.1 User-facing vocabulary (do not leak "Run")
 
@@ -89,13 +111,20 @@ are the **internal lifecycle**, NOT the model end users see. The UI presents
 their values **directly as per-user `ReviewerDecision`s** there (a `/proposals`
 human write on an extraction run is rejected — blind-review write defense); there
 is no `proposal → review` auto-advance and no boundary materialization. The
-shared RunHeader maps `extract` to a single **Extract** node, so the rail reads
-Extract → Consensus → Finalized.
-The primary action is one role/phase-aware control (ADR-0015):
-**"Mark ready"** for a reviewer in Extract (sets the advisory per-reviewer ready
-flag via `POST /runs/{id}/ready` — it does **not** advance the run),
-**"Open consensus"** for a manager/consensus in Extract (advances `extract →
-consensus`), and **"Approve & finalize"** for a manager/consensus in Consensus
+shared RunHeader maps `extract` to a single node labelled **Extraction**
+(extraction runs) or **Assessment** (QA runs), presented as one current-stage
+chip (`RunHeader.RunStatus`) whose popover holds the 3-node timeline —
+Extraction/Assessment → Consensus → Finalized — plus reviewer/divergence/role
+status (design:
+`docs/superpowers/specs/2026-07-02-run-header-declutter-design.md`).
+The primary action is one role/phase-aware control (ADR-0015; labels renamed
+2026-07-02, semantics unchanged):
+**"Finish extraction"** for a reviewer in Extract (sets the advisory
+per-reviewer ready flag via `POST /runs/{id}/ready` — it does **not**
+advance the run),
+**"Start consensus"** for a manager/consensus in Extract (advances
+`extract → consensus`), and **"Approve & finalize"** for a
+manager/consensus in Consensus
 (`POST /runs/{id}/approve-finalize` — publishes every agreed coord then advances,
 enabled only when complete and every divergence is resolved). The legacy header
 `instance.status` finalize path is gone — its `extraction_instances.status` column
@@ -106,9 +135,42 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0037_block_type_figure` (post-squash numbering; run
+`0045_one_live_run_guard` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
+
+**One-live-run invariant (0045).** At most ONE non-terminal run (stage in
+`pending` / `extract` / `consensus`) exists per `(project_id, article_id,
+template_id, kind)` — enforced by the partial unique index
+`uq_one_live_extraction_run_per_coord`. "The atomic HITL session for one
+(article × project_template × kind)" is therefore a DB guarantee, not
+service-layer folklore: a second live run used to silently shadow the first
+one's reviewer decisions on session open (the run-orphaning data-loss bug).
+Standalone AI-extraction creators go through
+`RunLifecycleService.resolve_or_create_extract_run` (reuse-the-live-run gate,
+serialized by the `(article, template)` advisory lock); the session opener
+ranks by human-work recency (`last_human_activity_order`) as
+defense-in-depth. The 0045 heal cancelled pre-existing duplicate live runs
+non-destructively (canonical = most recent human work; shadows flipped to
+`cancelled`/`failed`, all workflow rows kept).
+
+### Value envelope & `absent_reason` marker (ADR-0016)
+
+Every workflow value column (`proposed_value`, decision `value`, published
+`value`) is a JSONB envelope
+`{"value": <typed | null>, "unit"?: <str>, "absent_reason"?: "no_information" | "not_applicable" | "not_evaluated"}`.
+The value stays **type-correct** — `null` when absent, never a string sentinel.
+A coded `absent_reason` sibling marks a **resolved** "no value, on purpose"
+answer (the source is silent / not applicable / not evaluated) and counts as
+**filled** for the finalize gate; a bare `{"value": null}` (no marker) stays
+**unresolved**. `backend/app/services/value_semantics.py` is the single
+emptiness oracle (enum, labels, write-time normalizer), mirrored 1:1 by
+`frontend/lib/extraction/valueSemantics.ts` via a shared cross-checked test
+vector. `no_information` is available on every field; `not_applicable` /
+`not_evaluated` are opt-in per field. Historical in-band disposition strings
+(`"No information"`, PROBAST `NI`/`NA`) were rewritten to the marker by
+migration `0039_absent_reason_backfill`. Decision record:
+[ADR-0016](../adr/0016-typed-absent-reason-marker.md).
 
 ### Core HITL tables (introduced pre-squash 0010 → 0012; evolving — see migration head above)
 
@@ -130,7 +192,8 @@ in any PR that adds an `extraction_*` migration).
 | `extraction_templates_global` | + `kind` column, unique `(id, kind)` | 0011 |
 | `project_extraction_templates` | + `kind`, unique `(id, kind)` | 0011 |
 | `extraction_runs` | + `kind`, `version_id` FK, `hitl_config_snapshot`; composite FK `(template_id, kind)` enforces template-run kind coherence; stage enum reconstructed | 0011 + 0014 |
-| `extraction_evidence` | + `run_id`, `proposal_record_id`, `reviewer_decision_id`, `consensus_decision_id`. Legacy `target_type`/`target_id` columns dropped in 0017; CHECK now requires the workflow path. | 0013 + 0017 |
+| `extraction_evidence` | + `run_id`, `proposal_record_id`, `reviewer_decision_id`, `consensus_decision_id`. Legacy `target_type`/`target_id` columns dropped in 0017; CHECK now requires the workflow path. Target FKs are `ON DELETE CASCADE` — evidence follows its sole workflow target (0044; SET NULL could never satisfy the CHECK). | 0013 + 0017 + 0044 |
+| `extraction_fields` | + `allows_not_applicable`, `allows_not_evaluated` opt-in disposition flags (ADR-0016; copied into `version.schema_` by the snapshot builder) | 0038 |
 
 ### Legacy tables — fully removed
 
@@ -321,7 +384,7 @@ The extraction **Import template** dialog reads `extraction_templates_global` th
 | ------ | ---------------- |
 | **UI** | Calls `POST /api/v1/projects/{project_id}/templates/clone` with `global_template_id` and `kind=extraction` (JWT via `apiClient`). The UI may still load the global row first to validate that the id exists in the catalogue. |
 | **Service** | `TemplateCloneService.clone` is **idempotent** on `(project_id, global_template_id)`: first call creates the project row, `extraction_entity_types`, `extraction_fields`, and exactly one active version; later calls return the existing clone and current counts. |
-| **Heal** | If a clone row exists but has zero entity types or fields (partial/legacy data), the service rebuilds structure from the global template and updates the active version snapshot. |
+| **Heal** | Drift is measured against the **active version snapshot**, never the global template. Zero-state clones (empty live structure) rebuild from the global. Non-empty drift (e.g. an edit whose republish call was lost) **self-heals by publishing the live structure** as a new version (`TemplateVersionService.republish`) — never wipe-and-rebuild: with user-editable templates a count mismatch is indistinguishable from a deliberate edit, and the historical wipe destroyed customizations. Factory recovery = delete the template and re-import. |
 
 Configuration flows for QA tools may call the same clone endpoint before sessions; session lifecycle for QA vs extraction is in §5.
 
@@ -339,7 +402,9 @@ QUADAS-2 are seeded as `extraction_templates_global` rows with
 - **Domain** = an `EntityType` (Participants, Predictors, Outcome,
   Analysis, Overall), all `cardinality='one'`.
 - **Signaling question** = a `Field` of type `select`, with
-  `allowed_values=['Y','PY','PN','N','NI','NA']` (PROBAST) or
+  `allowed_values=['Y','PY','PN','N']` (PROBAST; the historical `NI`/`NA`
+  options are now coded dispositions — `no_information` is universal and
+  `not_applicable` is the per-field opt-in flag, ADR-0016) or
   `['Y','N','Unclear']` (QUADAS-2).
 - **Risk of Bias / Applicability concerns** = two summary `select`
   fields per domain, `allowed_values=['Low','High','Unclear']`. Manual in
@@ -358,9 +423,15 @@ Both flows open a session through the unified
   or resumes a Run on the existing project template.
 
 Every field change becomes a `human` ProposalRecord (QA keeps the shared
-proposal track); "Publish assessment" advances `extract → consensus`, posts a
-`manual_override` consensus per filled field (which materializes PublishedState
-rows), and advances to `finalized`.
+proposal track). As of 2026-07-09 (ADR-0018) QA mirrors the extraction stage
+flow instead of a one-shot publish: reviewers signal readiness ("Finish
+assessment"), an **arbitrator** opens consensus (`extract → consensus`, which
+materializes reviewer decisions), resolves any divergence in the consensus
+panel, and **Approve & finalize** publishes every agreed value then advances to
+`finalized`. Resolving/publishing consensus (`POST /runs/{id}/consensus`) and
+flipping a run to `finalized` (via `approve-finalize` or `advance`) are
+arbitrator-only for **both** kinds; the earlier reviewer-level, single-click QA
+"Publish assessment" is retired.
 
 ### QA / Data-extraction code reuse boundary
 
@@ -407,6 +478,10 @@ publish, AI), keep it in the page-specific component.
 
 ### HITL lifecycle
 
+- **Consensus surface** — The resolve-mode compare table
+  (`RunReviewerComparison` inside `ConsensusResolutionPanel`) rendered by
+  both run screens during the consensus stage; adopt-or-override per
+  coordinate. The earlier `ConsensusPanel` card list was deleted in #483.
 - **Run** — *Atomic unit of HITL work* (see §2).
 - **stage / status** — orthogonal axes (see §2).
 - **ProposalRecord** — Append-only proposed value. `source=human`
@@ -446,6 +521,13 @@ publish, AI), keep it in the page-specific component.
   (`extraction_reviewer_ready`, ADR-0015). Toggled via `POST /runs/{id}/ready`
   (membership + reviewer-role gated); does **not** gate any transition. The run
   view exposes an `N/M reviewers ready` hint (`M = max(reviewer_count, N)`).
+  WHO marked ready is peer-attributable participation metadata (ADR-0012): the
+  API scrubs `reviewers_ready` to the caller's own entry unless the caller is
+  unblinded (`peers_revealed`); the counts stay aggregate. Single home of the
+  scrub: `ExtractionReviewerReadyService.ready_summary_from`. The RLS SELECT
+  (`0041`, superseding 0029's member-wide read) self-scopes with the 0025
+  carve-outs (own row OR arbitrator OR finalized), so both read paths encode
+  the reviewer↔reviewer boundary in lockstep.
 - **managers_see_reviewers** — Per-kind manager blind-review policy on
   `projects.settings` (`{extraction, quality_assessment}`, both default
   `false` = managers blind). Read **live** by the API read path
@@ -481,9 +563,10 @@ publish, AI), keep it in the page-specific component.
   in `EXTRACT`; there is **no** `proposal → review` auto-advance and **no**
   boundary materialization (both removed in ADR-0014, which superseded ADR-0010).
   AI proposals remain suggestions to accept. A manager/consensus advances
-  `EXTRACT → CONSENSUS` explicitly via **"Open consensus"** (ADR-0015); reviewers
-  signal completion with the advisory **"Mark ready"** flag (which does not
-  advance). `CONSENSUS → FINALIZED` is the one-action **"Approve & finalize"**
+  `EXTRACT → CONSENSUS` explicitly via **"Start consensus"** (ADR-0015; label
+  renamed 2026-07-02); reviewers signal completion with the advisory
+  **"Finish extraction"** flag (which does not advance).
+  `CONSENSUS → FINALIZED` is the one-action **"Approve & finalize"**
   (`approve_and_finalize`: publish every agreed coord, then advance). "Run AI" is
   disabled once a run leaves `EXTRACT`.
 
@@ -507,6 +590,11 @@ publish, AI), keep it in the page-specific component.
     global → project clone (idempotent on
     `(project_id, global_template_id)`). Validates the global template's
     `kind` matches what the caller asked for.
+  - `app/services/template_version_service.py` — `republish`: freezes the
+    live structure into a new active `ExtractionTemplateVersion` (v+1;
+    prior rows untouched) and re-pins `pending`/`extract` runs to it.
+    Surface for `POST /projects/{id}/templates/{tid}/republish-version`,
+    called by the config UI after every section/field edit.
   - `app/services/hitl_session_service.py` — one-shot HITL setup for
     both kinds: clones (QA only) + seeds top-level instances + opens
     or resumes a Run + advances to EXTRACT. Surface for

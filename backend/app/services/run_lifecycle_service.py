@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,9 +30,12 @@ from app.models.extraction_workflow import (
     ExtractionReviewerState,
 )
 from app.services._extraction_run_lock import load_run_for_update
+from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.extraction_consensus_service import ExtractionConsensusService
+from app.services.extraction_review_service import ExtractionReviewService
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_config_service import HitlConfigService
+from app.services.value_semantics import is_value_filled
 
 
 class InvalidStageTransitionError(Exception):
@@ -53,6 +56,11 @@ class CannotReopenRunError(Exception):
 
 class CreateRunInputError(Exception):
     """Raised when create_run receives cross-project or otherwise invalid ids."""
+
+
+class RunBusyError(Exception):
+    """Raised when the coordinate's live run cannot accept the requested work
+    (e.g. AI extraction against a run already advanced to CONSENSUS)."""
 
 
 class EmptyFinalizeError(InvalidStageTransitionError):
@@ -80,6 +88,47 @@ class IncompleteFinalizeError(InvalidStageTransitionError):
     """
 
 
+# Stages during which a run is "live": the one-live-run invariant (partial
+# unique index ``uq_one_live_extraction_run_per_coord``, migration 0045)
+# allows at most ONE run in these stages per (project, article, template,
+# kind) coordinate. finalized / cancelled are terminal and unconstrained.
+NON_TERMINAL_STAGES: tuple[str, ...] = (
+    ExtractionRunStage.PENDING.value,
+    ExtractionRunStage.EXTRACT.value,
+    ExtractionRunStage.CONSENSUS.value,
+)
+
+
+def last_human_activity_order() -> Any:
+    """Correlated ORDER BY expression: a run's most recent HUMAN activity.
+
+    ``greatest`` of the newest reviewer decision, consensus decision, and
+    human proposal on the run (NULL when the run carries none). The single
+    source of "which live run holds the human work" — used by the session
+    opener's run resolution AND by ``resolve_or_create_extract_run`` so the
+    two can never disagree about the canonical run. Callers order by
+    ``last_human_activity_order().desc().nulls_last()`` with a
+    ``created_at desc`` tie-break.
+    """
+
+    def _run_max_created_at(model: Any, *extra_where: Any) -> Any:
+        return (
+            select(func.max(model.created_at))
+            .where(model.run_id == ExtractionRun.id, *extra_where)
+            .correlate(ExtractionRun)
+            .scalar_subquery()
+        )
+
+    return func.greatest(
+        _run_max_created_at(ExtractionReviewerDecision),
+        _run_max_created_at(ExtractionConsensusDecision),
+        _run_max_created_at(
+            ExtractionProposalRecord,
+            ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
+        ),
+    )
+
+
 # Allowed transitions: from -> set of valid target stages
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     ExtractionRunStage.PENDING.value: {
@@ -97,30 +146,6 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     ExtractionRunStage.FINALIZED.value: set(),  # terminal
     ExtractionRunStage.CANCELLED.value: set(),  # terminal
 }
-
-
-def _unwrap_value(raw: Any) -> Any:
-    """Peel a single ``{"value": X}`` envelope, matching the frontend's
-    one-level unwrap in ``progress.ts`` / ``useReviewerSummary``. A bare
-    scalar (or any dict without a ``value`` key) is returned untouched.
-    """
-    if isinstance(raw, dict) and "value" in raw:
-        return raw["value"]
-    return raw
-
-
-def _is_value_filled(raw: Any) -> bool:
-    """True when a stored value counts as "filled" for completeness.
-
-    Mirrors the frontend predicate (``value === null | undefined | ''``):
-    only ``None`` and the empty string are empty. Whitespace, ``0``,
-    ``False``, ``[]`` and non-``value`` dicts all count as filled so the
-    backend gate is never stricter than the form the user just saw.
-    """
-    value = _unwrap_value(raw)
-    if value is None:
-        return False
-    return not (isinstance(value, str) and value == "")
 
 
 class RunLifecycleService:
@@ -149,8 +174,19 @@ class RunLifecycleService:
                 f"article {article_id} does not belong to project {project_id}"
             )
 
-        # Resolve template (for kind) — must exist and belong to the same project
-        template = await self.db.get(ProjectExtractionTemplate, project_template_id)
+        # Resolve template (for kind) — must exist and belong to the same
+        # project. FOR SHARE so the active-version resolution below
+        # serializes with TemplateVersionService.republish (FOR UPDATE on
+        # the same row): without it a run created concurrently with a
+        # republish could pin the just-deactivated version and miss the
+        # re-pin UPDATE (which only sees committed runs).
+        template = (
+            await self.db.execute(
+                select(ProjectExtractionTemplate)
+                .where(ProjectExtractionTemplate.id == project_template_id)
+                .with_for_update(read=True)
+            )
+        ).scalar_one_or_none()
         if template is None or template.project_id != project_id:
             raise TemplateNotFoundError(f"Template {project_template_id} not found")
 
@@ -188,6 +224,79 @@ class RunLifecycleService:
         await self.db.refresh(run)
         return run
 
+    async def resolve_or_create_extract_run(
+        self,
+        *,
+        project_id: UUID,
+        article_id: UUID,
+        project_template_id: UUID,
+        user_id: UUID,
+        parameters: dict[str, Any] | None = None,
+    ) -> tuple[ExtractionRun, bool]:
+        """Resolve the coordinate's live run in EXTRACT, creating one only if
+        none exists — the collision gate for every standalone AI-extraction
+        path. Under the one-live-run invariant (partial unique index, 0045) an
+        unconditional ``create_run`` raises 23505 whenever a session run is
+        already open; this gate reuses it instead, so AI work lands on the run
+        the reviewer is editing rather than forking a shadow run (the pre-0045
+        data-loss bug). A live run already in CONSENSUS raises ``RunBusyError``
+        — adjudication-in-progress accepts no new AI proposals.
+
+        Returns ``(run, created)``: ``created=True`` → the caller owns the
+        run's lifecycle (start/complete/fail, the standalone semantics);
+        ``created=False`` → session-owned, hands off (the ``run_id``-reuse
+        contract of ``extract_section``). Serialized against the session
+        opener and concurrent gate callers by the same (article, template)
+        advisory lock ``ensure_instances`` takes, so the SELECT-then-INSERT
+        cannot race; the index backstops any path that skips the lock.
+        """
+        await take_advisory_xact_lock(self.db, article_id, project_template_id)
+
+        # At most one row exists once the 0045 index is in place; the
+        # human-work ordering matters only in the pre-heal window and
+        # keeps this resolution identical to the session opener's.
+        result = await self.db.execute(
+            select(ExtractionRun)
+            .where(
+                ExtractionRun.project_id == project_id,
+                ExtractionRun.article_id == article_id,
+                ExtractionRun.template_id == project_template_id,
+                ExtractionRun.stage.in_(NON_TERMINAL_STAGES),
+            )
+            .order_by(
+                last_human_activity_order().desc().nulls_last(),
+                ExtractionRun.created_at.desc(),
+            )
+        )
+        existing = result.scalars().first()
+        if existing is not None:
+            if existing.stage == ExtractionRunStage.CONSENSUS.value:
+                raise RunBusyError(
+                    f"Run {existing.id} is in consensus; AI extraction can only "
+                    "target a run in the extract stage"
+                )
+            if existing.stage == ExtractionRunStage.PENDING.value:
+                existing = await self.advance_stage(
+                    run_id=existing.id,
+                    target_stage=ExtractionRunStage.EXTRACT,
+                    user_id=user_id,
+                )
+            return existing, False
+
+        run = await self.create_run(
+            project_id=project_id,
+            article_id=article_id,
+            project_template_id=project_template_id,
+            user_id=user_id,
+            parameters=parameters,
+        )
+        run = await self.advance_stage(
+            run_id=run.id,
+            target_stage=ExtractionRunStage.EXTRACT,
+            user_id=user_id,
+        )
+        return run, True
+
     async def advance_stage(
         self,
         *,
@@ -211,6 +320,18 @@ class RunLifecycleService:
         allowed = _ALLOWED_TRANSITIONS.get(run.stage, set())
         if target not in allowed:
             raise InvalidStageTransitionError(f"Cannot transition from {run.stage} to {target}")
+        if (
+            target == ExtractionRunStage.CONSENSUS.value
+            and run.kind == TemplateKind.QUALITY_ASSESSMENT.value
+        ):
+            # D8-c: QA extract wrote human proposals until this cycle; the
+            # compare table, select_existing, and single-user exports read
+            # decisions. Materialize each reviewer's newest human proposal as
+            # an 'edit' decision before the stage flips (record_decision's
+            # stage gate requires 'extract'). Covers runs mid-flight at
+            # deploy; post-D8 runs whose reviewers autosaved decisions have
+            # nothing left to materialize.
+            await ExtractionReviewService(self.db).materialize_qa_decisions(run)
         if target == ExtractionRunStage.FINALIZED.value:
             # Invariant: a FINALIZED run must carry at least one published
             # value, which in turn requires at least one ConsensusDecision
@@ -258,25 +379,22 @@ class RunLifecycleService:
     ) -> tuple[ExtractionRun, int]:
         """Atomically publish every agreed-but-unpublished coord, then finalize.
 
-        The single-action "Approve & finalize" for extraction: each existing-instance
-        × field coord that has a single unambiguous resolved reviewer value and no
-        ``PublishedState`` yet is published via
+        The single-action "Approve & finalize" for both run kinds: each
+        existing-instance × field coord that has a single unambiguous resolved
+        reviewer value and no ``PublishedState`` yet is published via
         ``ExtractionConsensusService.record_consensus`` (a ``manual_override``), then the
         run advances CONSENSUS → FINALIZED. Because the publishes and the finalize gates
         run in the SAME transaction, ``EmptyFinalizeError`` and ``IncompleteFinalizeError``
         become satisfiable naturally (the no-divergence dead-end is gone). Coords whose
         reviewers still diverge unresolved are rejected so the manager resolves them
-        first via the per-coord consensus endpoint. Extraction-only — QA publishes via
-        its own flow.
+        first via the per-coord consensus endpoint. QA runs qualify since D8
+        materializes reviewer decisions at consensus entry — their staged flow
+        (mark ready → start consensus → approve) mirrors extraction; only the
+        required-field completeness gate stays extraction-only (ADR-0009).
         """
         run = await load_run_for_update(self.db, run_id)
         if run is None:
             raise ValueError(f"Run {run_id} not found")
-        if run.kind != TemplateKind.EXTRACTION.value:
-            raise InvalidStageTransitionError(
-                "approve_and_finalize applies to extraction runs only; "
-                "quality-assessment runs publish via their own flow."
-            )
         if run.stage != ExtractionRunStage.CONSENSUS.value:
             raise InvalidStageTransitionError(
                 f"approve_and_finalize requires stage 'consensus', got '{run.stage}'."
@@ -413,7 +531,7 @@ class RunLifecycleService:
             )
         ).all()
         for instance_id, field_id, value in published_rows:
-            if _is_value_filled(value):
+            if is_value_filled(value):
                 filled.add((instance_id, field_id))
 
         for instance_id, field_id, _resolved in await self._resolved_reviewer_values(run_id):
@@ -471,9 +589,59 @@ class RunLifecycleService:
             resolved = value
             if resolved is None and proposal_record_id is not None:
                 resolved = proposal_values.get(proposal_record_id)
-            if _is_value_filled(resolved):
+            if is_value_filled(resolved):
                 resolved_values.append((instance_id, field_id, resolved))
         return resolved_values
+
+    async def reopen_to_extract(
+        self,
+        *,
+        run_id: UUID,
+        user_id: UUID,  # noqa: ARG002 — parity with sibling transitions; endpoint owns the audit log
+    ) -> tuple[ExtractionRun, int, int]:
+        """Return a CONSENSUS extraction run to EXTRACT, discarding consensus work.
+
+        The arbitrator-only escape hatch for "opened consensus too early". Hard-deletes
+        the run's ``ExtractionConsensusDecision`` + ``ExtractionPublishedState`` rows so
+        the slate is clean on BOTH sides: the frontend derives "resolved" from consensus
+        decisions, and the backend approve-all / finalize gates key off published states.
+        Consensus-attached evidence cascades (FK ``ON DELETE CASCADE``, migration 0044);
+        reviewer decisions/states/proposals and ``reviewers_ready`` are preserved. The
+        discard is deliberate and confirmed in the UI — see ADR-0017.
+
+        Sets ``stage`` directly (NOT via ``advance_stage``, and ``consensus -> extract``
+        is deliberately absent from ``_ALLOWED_TRANSITIONS``) so the forward-only
+        transition map and the reviewer-gated ``/advance`` endpoint cannot reach the
+        backward move. Extraction-only. ``user_id`` is captured for the endpoint's audit
+        log. Returns ``(run, discarded_consensus, discarded_published)``.
+        """
+        run = await load_run_for_update(self.db, run_id)
+        if run is None:
+            raise ValueError(f"Run {run_id} not found")
+        if run.kind != TemplateKind.EXTRACTION.value:
+            raise InvalidStageTransitionError(
+                "reopen_to_extract applies to extraction runs only; "
+                "quality-assessment runs publish via their own flow."
+            )
+        if run.stage != ExtractionRunStage.CONSENSUS.value:
+            raise InvalidStageTransitionError(
+                f"reopen_to_extract requires stage 'consensus', got '{run.stage}'."
+            )
+        # ConsensusDecision first: its evidence cascades (FK ON DELETE CASCADE, 0044).
+        # rowcount gives the discarded counts with no extra SELECT; the shared
+        # FOR UPDATE lock makes them exact.
+        consensus_res = await self.db.execute(
+            delete(ExtractionConsensusDecision).where(ExtractionConsensusDecision.run_id == run_id)
+        )
+        published_res = await self.db.execute(
+            delete(ExtractionPublishedState).where(ExtractionPublishedState.run_id == run_id)
+        )
+        discarded_consensus = consensus_res.rowcount or 0
+        discarded_published = published_res.rowcount or 0
+        run.stage = ExtractionRunStage.EXTRACT.value  # status untouched (mirrors advance_stage)
+        await self.db.flush()
+        await self.db.refresh(run)
+        return run, discarded_consensus, discarded_published
 
     async def reopen_run(
         self,
@@ -549,7 +717,14 @@ class RunLifecycleService:
             return existing_child, False
 
         # 1. Resolve the active version (lazy-create if the template was
-        #    born outside the backfill path).
+        #    born outside the backfill path). FOR SHARE on the template row
+        #    first, so this serializes with TemplateVersionService.republish
+        #    — same rationale as create_run.
+        await self.db.execute(
+            select(ProjectExtractionTemplate.id)
+            .where(ProjectExtractionTemplate.id == old_run.template_id)
+            .with_for_update(read=True)
+        )
         version_stmt = select(ExtractionTemplateVersion).where(
             ExtractionTemplateVersion.project_template_id == old_run.template_id,
             ExtractionTemplateVersion.is_active.is_(True),

@@ -62,6 +62,8 @@ function makeRunViewResponse(
           allow_other: false,
           other_label: null,
           other_placeholder: null,
+          allows_not_applicable: false,
+          allows_not_evaluated: false,
         },
       ],
     },
@@ -147,6 +149,22 @@ describe('entityTypesFromRunView', () => {
     expect(f.allow_other).toBe(false);
     expect(f.other_label).toBeNull();
     expect(f.other_placeholder).toBeNull();
+  });
+
+  it('carries the ADR-0016 disposition flags through to the form field', () => {
+    // Regression: fieldFromRunView dropped allows_not_applicable /
+    // allows_not_evaluated, so FieldInput never rendered the "Not
+    // applicable" / "Not evaluated" markers on the extraction page even
+    // when the template opted in.
+    const view = makeRunViewResponse();
+    view.entity_types[0].fields[0] = {
+      ...view.entity_types[0].fields[0],
+      allows_not_applicable: true,
+      allows_not_evaluated: true,
+    };
+    const [et] = entityTypesFromRunView(view);
+    expect(et.fields[0].allows_not_applicable).toBe(true);
+    expect(et.fields[0].allows_not_evaluated).toBe(true);
   });
 
   it('sets created_at placeholder from run.created_at on entity type', () => {

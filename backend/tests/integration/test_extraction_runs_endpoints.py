@@ -1205,3 +1205,205 @@ async def test_create_run_rejects_template_from_another_project(
             {"pid": str(foreign_project_id)},
         )
         await db_session.commit()
+
+
+# =================== finalized-run write guards (spec 2026-07-02 D5.2) ===================
+
+
+async def _force_finalize(db_session: AsyncSession, run_id: UUID) -> None:
+    """Force stage=finalized via SQL (bypasses the publish invariant — guard
+    tests only need the stage). ``expire_all()`` deterministically invalidates
+    the identity-map instance loaded by earlier requests: ``db_client`` SHARES
+    this session (conftest dependency override) and ``load_run_for_update``'s
+    plain ``select().with_for_update()`` does NOT repopulate a cached
+    instance, so without the expire the guards can read the stale 'extract'
+    stage (GC-timing dependent — see test_run_lifecycle_service.py's
+    refresh-after-raw-UPDATE note)."""
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_runs "
+            "SET stage = 'finalized', status = 'completed' WHERE id = :rid"
+        ),
+        {"rid": str(run_id)},
+    )
+    await db_session.flush()
+    db_session.expire_all()
+
+
+@pytest.mark.asyncio
+async def test_proposal_on_finalized_run_returns_400(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    fx = await _resolve_fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, _profile_id, instance_id, field_id = fx
+
+    run = await _create_run_via_api(
+        db_client,
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+    )
+    run_id = UUID(run["id"])
+    await _advance(db_client, run_id, "extract")
+    await _force_finalize(db_session, run_id)
+
+    resp = await db_client.post(
+        f"{API_PREFIX}/{run_id}/proposals",
+        json={
+            "instance_id": str(instance_id),
+            "field_id": str(field_id),
+            "source": "ai",
+            "proposed_value": {"value": "late write"},
+        },
+    )
+    assert resp.status_code == 400, resp.text
+    assert "stage" in resp.json()["error"]["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_decision_on_finalized_run_returns_400(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    fx = await _resolve_fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, _profile_id, instance_id, field_id = fx
+
+    run = await _create_run_via_api(
+        db_client,
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+    )
+    run_id = UUID(run["id"])
+    await _advance(db_client, run_id, "extract")
+    await _force_finalize(db_session, run_id)
+
+    resp = await db_client.post(
+        f"{API_PREFIX}/{run_id}/decisions",
+        json={
+            "instance_id": str(instance_id),
+            "field_id": str(field_id),
+            "decision": "edit",
+            "value": {"value": "late edit"},
+        },
+    )
+    assert resp.status_code == 400, resp.text
+    assert "stage" in resp.json()["error"]["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_consensus_on_finalized_run_returns_400(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    fx = await _resolve_fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, _profile_id, instance_id, field_id = fx
+
+    run = await _create_run_via_api(
+        db_client,
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+    )
+    run_id = UUID(run["id"])
+    await _advance(db_client, run_id, "extract")
+    await _force_finalize(db_session, run_id)
+
+    resp = await db_client.post(
+        f"{API_PREFIX}/{run_id}/consensus",
+        json={
+            "instance_id": str(instance_id),
+            "field_id": str(field_id),
+            "mode": "manual_override",
+            "value": {"value": "late consensus"},
+            "rationale": "should be rejected",
+        },
+    )
+    assert resp.status_code == 400, resp.text
+    assert "not 'consensus'" in resp.json()["error"]["message"].lower()
+
+
+# =================== POST /runs/{id}/reopen-extraction ===================
+
+
+@pytest.mark.asyncio
+async def test_reopen_extraction_manager_ok(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001 — default caller is the seed manager (arbitrator)
+) -> None:
+    run_id, *_ = await _setup_consensus_run(db_client, db_session)
+    resp = await db_client.post(f"{API_PREFIX}/{run_id}/reopen-extraction")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["stage"] == "extract"
+
+
+@pytest.mark.asyncio
+async def test_reopen_extraction_rejects_reviewer(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    run_id, *_ = await _setup_consensus_run(db_client, db_session)
+    _auth_as(SEED.reviewer_profile)
+    resp = await db_client.post(f"{API_PREFIX}/{run_id}/reopen-extraction")
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reopen_extraction_rejects_viewer(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    run_id, *_ = await _setup_consensus_run(db_client, db_session)
+    await db_session.execute(
+        text(
+            "INSERT INTO public.project_members (project_id, user_id, role) "
+            "VALUES (:pid, :uid, 'viewer')"
+        ),
+        {"pid": str(SEED.primary_project), "uid": str(SEED.outsider_profile)},
+    )
+    await db_session.flush()
+    _auth_as(SEED.outsider_profile)
+    resp = await db_client.post(f"{API_PREFIX}/{run_id}/reopen-extraction")
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reopen_extraction_wrong_stage_returns_400(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    run_id, *_ = await _setup_review_run(db_client, db_session)  # pre-consensus
+    resp = await db_client.post(f"{API_PREFIX}/{run_id}/reopen-extraction")
+    assert resp.status_code == 400, resp.text
+    assert "consensus" in resp.json()["error"]["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_reopen_extraction_qa_kind_returns_400(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001 — manager caller reaches the service kind-check
+) -> None:
+    from tests.integration.test_qa_publish_flow import _qa_run_in_consensus
+
+    fx = await _qa_run_in_consensus(db_client, db_session)
+    if fx is None:
+        pytest.skip("QA template seed unavailable")
+    run_id, *_ = fx
+    resp = await db_client.post(f"{API_PREFIX}/{run_id}/reopen-extraction")
+    assert resp.status_code == 400, resp.text
+    assert "extraction runs only" in resp.json()["error"]["message"].lower()

@@ -54,6 +54,23 @@ export async function adminSelect<T extends Record<string, unknown>>(
   return (await response.json()) as T[];
 }
 
+export async function adminUpdate(
+  table: string,
+  query: string,
+  patch: Record<string, unknown>
+): Promise<void> {
+  const { url, key } = admin();
+  const response = await fetch(`${url}/rest/v1/${table}?${query}`, {
+    method: "PATCH",
+    headers: adminHeaders(key),
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`adminUpdate(${table}) failed: ${response.status} ${body}`);
+  }
+}
+
 export async function adminDelete(table: string, query: string): Promise<void> {
   const { url, key } = admin();
   const response = await fetch(`${url}/rest/v1/${table}?${query}`, {

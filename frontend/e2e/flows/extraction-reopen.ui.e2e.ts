@@ -157,7 +157,7 @@ test.describe("Extraction reopen UI flow", () => {
       articleId: env.articleId!,
     });
 
-    // Visit the extraction page. The StageRail in RunHeader should show
+    // Visit the extraction page. The RunStatus chip in RunHeader should show
     // the Finalized node as current once the finalized run loads.
     await page.goto(
       `${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`,
@@ -181,11 +181,11 @@ test.describe("Extraction reopen UI flow", () => {
     await expect(reopenItem).toBeVisible();
     await reopenItem.click();
 
-    // After reopen the StageRail shows a "Revision" tag inside
-    // nav[aria-label="Run stage"] once the new run loads.
-    await expect(
-      page.getByRole("navigation", { name: /run stage/i }),
-    ).toContainText(/revision/i, { timeout: 20000 });
+    // After reopen the sub-header banner shows the Revision badge
+    // (HITLPublishedBanner) once the new run loads.
+    await expect(page.getByTestId("extraction-revision-badge")).toBeVisible({
+      timeout: 20000,
+    });
 
     // Sanity via API: the latest non-terminal run for this triple has
     // parent_run_id pointing at the original.

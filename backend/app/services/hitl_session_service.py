@@ -15,7 +15,7 @@ UI can immediately record decisions.
 
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article
@@ -28,25 +28,16 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
     TemplateKind,
 )
-from app.services.run_lifecycle_service import RunLifecycleService
+from app.services.advisory_locks import take_advisory_xact_lock
+from app.services.run_lifecycle_service import (
+    NON_TERMINAL_STAGES,
+    RunLifecycleService,
+    last_human_activity_order,
+)
 from app.services.template_clone_service import (
     TemplateCloneService,
     TemplateNotFoundError,
 )
-
-
-async def _take_advisory_xact_lock(db: AsyncSession, left: UUID, right: UUID) -> None:
-    """Take a transaction-scoped advisory lock keyed by (left, right).
-
-    Uses Postgres' built-in ``hashtextextended`` to derive a bigint
-    fingerprint from the UUID pair — Postgres treats the result as a
-    signed bigint, which is exactly what ``pg_advisory_xact_lock(bigint)``
-    wants. The lock is released automatically on commit/rollback.
-    """
-    await db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
-        {"key": f"{left}:{right}"},
-    )
 
 
 class HITLSessionInputError(Exception):
@@ -113,7 +104,7 @@ class HITLSessionService:
         )
 
         entity_types = await self._project_entity_types(project_template_id)
-        instances = await self._ensure_instances(
+        instances = await self.ensure_instances(
             project_id=project_id,
             article_id=article_id,
             project_template_id=project_template_id,
@@ -196,7 +187,7 @@ class HITLSessionService:
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
-    async def _ensure_instances(
+    async def ensure_instances(
         self,
         *,
         project_id: UUID,
@@ -211,7 +202,7 @@ class HITLSessionService:
         # transaction-scoped, so it is released on commit / rollback and
         # does not require explicit cleanup. The same lock also protects
         # the active-run lookup in ``_reuse_or_create_run`` (issue #70).
-        await _take_advisory_xact_lock(self.db, article_id, project_template_id)
+        await take_advisory_xact_lock(self.db, article_id, project_template_id)
 
         existing_stmt = select(ExtractionInstance).where(
             ExtractionInstance.article_id == article_id,
@@ -284,7 +275,7 @@ class HITLSessionService:
 
         Maintains the invariant: for every parent instance, every
         cardinality='one' child entity type has exactly one matching
-        instance under it. The original ``_ensure_instances`` only seeded
+        instance under it. The original ``ensure_instances`` only seeded
         top-level singletons; it never touched children. That left a gap:
 
         * A manager adds a new sub-section under ``prediction_models`` in
@@ -378,24 +369,33 @@ class HITLSessionService:
 
         Concurrency note (issue #70): callers always go through
         ``open_or_resume`` so the (article, template) advisory lock taken
-        in ``_ensure_instances`` is already held for this transaction;
+        in ``ensure_instances`` is already held for this transaction;
         the active-run SELECT below cannot race with itself.
         """
+
+        # Prefer the non-terminal run that HOLDS HUMAN WORK — the one whose most
+        # recent human activity (reviewer decision, consensus decision, or
+        # human proposal) is latest — falling back to the newest by created_at
+        # when no run carries any. Ordering by created_at alone silently
+        # orphans saved work the moment a newer (e.g. AI/model-extraction) run
+        # appears for the same coordinate: the opener would resume the newer
+        # empty run and the earlier run's work would vanish on refresh.
+        # ``last_human_activity_order`` is the shared ranking (also used by the
+        # standalone-extraction gate) — see run_lifecycle_service for the
+        # NULLS-LAST semantics. Under the one-live-run index (0045) at most one
+        # row matches; the ranking is the pre-heal / defense-in-depth ordering.
         active_stmt = (
             select(ExtractionRun)
             .where(
                 ExtractionRun.project_id == project_id,
                 ExtractionRun.article_id == article_id,
                 ExtractionRun.template_id == project_template_id,
-                ExtractionRun.stage.in_(
-                    [
-                        ExtractionRunStage.PENDING.value,
-                        ExtractionRunStage.EXTRACT.value,
-                        ExtractionRunStage.CONSENSUS.value,
-                    ]
-                ),
+                ExtractionRun.stage.in_(NON_TERMINAL_STAGES),
             )
-            .order_by(ExtractionRun.created_at.desc())
+            .order_by(
+                last_human_activity_order().desc().nulls_last(),
+                ExtractionRun.created_at.desc(),
+            )
         )
         run = (await self.db.execute(active_stmt)).scalars().first()
         created = False

@@ -14,17 +14,22 @@ from time import perf_counter
 from typing import Any
 from uuid import UUID
 
-from pydantic_ai.exceptions import AgentRunError
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
+from app.llm.claim_value import value_str_for_claim
 from app.llm.entailment import GateSpec, run_entailment_gate
-from app.llm.extractor import LlmUsage, extract_structured
+from app.llm.extractor import (
+    LLM_TEMPERATURE,
+    OUTPUT_RETRIES_DEFAULT,
+    LlmUsage,
+    extract_structured,
+)
 from app.llm.prompts import quality_assessment, section_extraction
-from app.llm.provider import MissingLLMKeyError, build_model
+from app.llm.provider import build_model
 from app.llm.schema import build_output_models, dump_extraction
 from app.llm.validators import evidence_is_plausible
 from app.models.extraction import (
@@ -49,13 +54,20 @@ from app.repositories import (
     ExtractionRunRepository,
 )
 from app.schemas.extraction import SectionExtractionRequest
+from app.schemas.prompt_composition import PromptComposition, PromptCompositionArticleRef
 from app.services.evidence_anchor_service import build_anchor
-from app.services.extraction_prompt_input import build_prompt_input
+from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.run_lifecycle_service import RunLifecycleService
+from app.services.value_semantics import AbsentReason
 
 # Maximum number of evidence rows written per extracted field.
 EVIDENCE_CAP = 3
+
+# Stands in for the full article text inside the persisted section_instruction,
+# so the composition is byte-faithful to the run's template without duplicating
+# the (multi-thousand-token) article per section.
+ARTICLE_MARKDOWN_MARKER = "[[ARTICLE_MARKDOWN]]"
 
 
 @dataclass
@@ -138,10 +150,52 @@ class SectionExtractionService(LoggerMixin):
         # reused by _create_suggestions for evidence anchoring (no second fetch).
         self._run_anchor_blocks: list = []
         self._run_anchor_file_id: UUID | None = None
+        # Assembly info from the last prompt build (truncation, token estimate,
+        # source file) — feeds the per-section prompt_composition provenance.
+        self._prompt_input_info: PromptInputInfo | None = None
+        # Run provenance snapshot, set by _extract_with_llm and merged into the
+        # run's results at completion (how the suggestions were generated).
+        self._run_provenance: dict[str, Any] | None = None
+
+    def _build_run_provenance(
+        self,
+        *,
+        model: str,
+        prompt_name: str,
+        prompt_version: str,
+        usage: LlmUsage | None = None,
+        prompt_composition: PromptComposition | None = None,
+    ) -> dict[str, Any]:
+        """Per-section snapshot of how a section's suggestions were generated,
+        for transparency/traceability. Params come from the single-source
+        extractor constants so they can't drift from what was actually sent.
+        Includes this section's token usage and the structured prompt
+        composition (the recipe the review UI renders)."""
+        snapshot: dict[str, Any] = {
+            "ran_by_user_id": self.user_id,
+            "provider": settings.LLM_PROVIDER,
+            "model": model,
+            "strategy": prompt_name,
+            "prompt_version": prompt_version,
+            "params": {
+                "temperature": LLM_TEMPERATURE,
+                "output_retries": OUTPUT_RETRIES_DEFAULT,
+                "timeout_seconds": settings.LLM_TIMEOUT_SECONDS,
+            },
+        }
+        if usage is not None:
+            snapshot["tokens"] = {
+                "prompt": usage.prompt_tokens,
+                "completion": usage.completion_tokens,
+                "total": usage.total_tokens,
+            }
+        if prompt_composition is not None:
+            snapshot["prompt_composition"] = prompt_composition.model_dump()
+        return snapshot
 
     async def _assemble_prompt_text(self, article_id: UUID, model: str) -> str:
-        """Budgeted block-markdown prompt input; stashes run anchor blocks on self."""
-        text, self._run_anchor_blocks, self._run_anchor_file_id = await build_prompt_input(
+        """Budgeted block-markdown prompt input; stashes assembly info on self."""
+        text, info = await build_prompt_input(
             db=self.db,
             article_files=self._article_files,
             storage=self.storage,
@@ -151,6 +205,9 @@ class SectionExtractionService(LoggerMixin):
             user_id=self.user_id,
             trace_id=self.trace_id,
         )
+        self._prompt_input_info = info
+        self._run_anchor_blocks = info.anchor_blocks
+        self._run_anchor_file_id = info.anchor_file_id
         return text
 
     async def extract_section(
@@ -192,9 +249,11 @@ class SectionExtractionService(LoggerMixin):
         # owns ``start_run`` / ``complete_run`` / ``fail_run`` and the
         # stage advance — calling them here would close the run after one
         # section, breaking subsequent section-by-section AI clicks.
-        manage_lifecycle = run_id is None
-
-        if not manage_lifecycle:
+        # Without a ``run_id`` the resolve-or-create gate applies (one-live-run
+        # invariant, index 0045): the coordinate's live run is reused when one
+        # exists — an unconditional create would 23505 — so ``manage_lifecycle``
+        # follows CREATION, not the run_id parameter.
+        if run_id is not None:
             existing_run = await self.db.get(ExtractionRun, run_id)
             if existing_run is None:
                 raise ValueError(f"Run {run_id} not found")
@@ -203,8 +262,9 @@ class SectionExtractionService(LoggerMixin):
                     f"Run {run_id} stage is {existing_run.stage}; AI extraction requires EXTRACT",
                 )
             run = existing_run
+            manage_lifecycle = False
         else:
-            run = await self._lifecycle.create_run(
+            run, manage_lifecycle = await self._lifecycle.resolve_or_create_extract_run(
                 project_id=project_id,
                 article_id=article_id,
                 project_template_id=template_id,
@@ -215,12 +275,8 @@ class SectionExtractionService(LoggerMixin):
                     "parent_instance_id": (str(parent_instance_id) if parent_instance_id else None),
                 },
             )
-            run = await self._lifecycle.advance_stage(
-                run_id=run.id,
-                target_stage=ExtractionRunStage.EXTRACT,
-                user_id=UUID(self.user_id),
-            )
-            await self._runs.start_run(run.id)
+            if manage_lifecycle:
+                await self._runs.start_run(run.id)
 
         self.logger.info(
             "section_extraction_start",
@@ -268,7 +324,7 @@ class SectionExtractionService(LoggerMixin):
             # open (most-recent non-terminal), so ``useExtractedValues``
             # hydrates from ``runDetail.proposals`` and the AI values
             # show in the form immediately. The user advances to CONSENSUS
-            # explicitly via "Open consensus" — auto-advancing here would
+            # explicitly via "Start consensus" — auto-advancing here would
             # skip the extract-stage hydration and leave the form empty
             # (#bug: AI extraction values not appearing).
 
@@ -292,6 +348,11 @@ class SectionExtractionService(LoggerMixin):
                     },
                 )
                 phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
+            # Session-run path: the HITL session owns the run lifecycle, so we
+            # must NOT complete it (that would close the run after one section
+            # and break further section-by-section AI clicks). The run's
+            # provenance was already persisted by ``_create_suggestions`` (the
+            # proposal choke-point), so nothing else to do here.
 
             self.logger.info(
                 "section_extraction_complete",
@@ -456,6 +517,11 @@ class SectionExtractionService(LoggerMixin):
 
             duration_ms = (perf_counter() - start_time) * 1000
 
+            # Provenance is written per-section at the proposal choke-point
+            # (``_create_suggestions`` → ``merge_provenance_section``); do NOT
+            # write a run-aggregate ``provenance`` here — ``complete_run``
+            # shallow-merges, so it would clobber the per-section ``sections`` map
+            # with the last section's snapshot.
             await self._runs.complete_run(
                 run_id=run.id,
                 results={
@@ -523,6 +589,11 @@ class SectionExtractionService(LoggerMixin):
             entity_type_id=entity_type.id,
         )
 
+        # Filter via an override, never by mutating ``full_entity_type.fields``:
+        # that relationship is ``cascade="all, delete-orphan"``, so dropping the
+        # skipped (human-settled) fields would DELETE them on the next flush and
+        # hit the ondelete=RESTRICT FK from their proposal (ForeignKeyViolationError).
+        fields_override: list[Any] | None = None
         original_fields = list(full_entity_type.fields or [])
         if skip_fields_with_human_proposals and instance is not None and original_fields:
             field_ids = [f.id for f in original_fields]
@@ -546,33 +617,30 @@ class SectionExtractionService(LoggerMixin):
             filtered = [f for f in original_fields if f.id not in human_fields]
             if not filtered:
                 return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
-            full_entity_type.fields = filtered  # type: ignore[attr-defined]
+            fields_override = filtered
 
-        try:
-            extracted_data, llm_usage = await self._extract_with_llm(
-                pdf_text=pdf_text,
-                entity_type=full_entity_type,
-                model=model,
-                kind=kind,
-                framework=framework,
-            )
-            suggestions_created = await self._create_suggestions(
-                project_id=run.project_id,
-                article_id=run.article_id,
-                entity_type_id=entity_type.id,
-                parent_instance_id=None,
-                extracted_data=extracted_data,
-                run=run,
-                model=model,
-            )
-            return {
-                "suggestions_created": suggestions_created,
-                "tokens_total": llm_usage.total_tokens,
-            }
-        finally:
-            # Restore the unfiltered field list so callers that rely on
-            # the cached entity_type don't see a mutated tree.
-            full_entity_type.fields = original_fields  # type: ignore[attr-defined]
+        extracted_data, llm_usage = await self._extract_with_llm(
+            pdf_text=pdf_text,
+            entity_type=full_entity_type,
+            model=model,
+            kind=kind,
+            framework=framework,
+            fields_override=fields_override,
+        )
+        suggestions_created = await self._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=entity_type.id,
+            parent_instance_id=None,
+            extracted_data=extracted_data,
+            run=run,
+            model=model,
+        )
+        return {
+            "suggestions_created": suggestions_created,
+            "tokens_total": llm_usage.total_tokens,
+            "usage": llm_usage,
+        }
 
     async def _top_level_entity_types_for_template(
         self,
@@ -701,6 +769,7 @@ class SectionExtractionService(LoggerMixin):
         section_ids: list[UUID] | None = None,
         pdf_text: str | None = None,
         model: str = settings.LLM_DEFAULT_MODEL,
+        run_id: UUID | None = None,
     ) -> BatchExtractionResult:
         """
         Extract all child sections from a model with summarized memory.
@@ -718,6 +787,10 @@ class SectionExtractionService(LoggerMixin):
             section_ids: Specific IDs to extract (optional).
             pdf_text: Preprocessed PDF text (optional).
             model: Modelo OpenAI.
+            run_id: Existing run to append to. When set (the extraction surface),
+                the run is REUSED and its lifecycle left to the HITL session, so
+                a reviewer's decisions are never orphaned onto a forked run.
+                Mirrors ``extract_section``'s ``manage_lifecycle`` pattern.
 
         Returns:
             BatchExtractionResult with extraction statistics.
@@ -725,26 +798,40 @@ class SectionExtractionService(LoggerMixin):
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
 
-        # Create primary run for batch extraction via lifecycle service.
-        run = await self._lifecycle.create_run(
-            project_id=project_id,
-            article_id=article_id,
-            project_template_id=template_id,
-            user_id=UUID(self.user_id),
-            parameters={
-                "model": model,
-                "batch_extraction": True,
-                "parent_instance_id": str(parent_instance_id),
-                "section_ids": [str(sid) for sid in section_ids] if section_ids else None,
-            },
-        )
-        run = await self._lifecycle.advance_stage(
-            run_id=run.id,
-            target_stage=ExtractionRunStage.EXTRACT,
-            user_id=UUID(self.user_id),
-        )
-
-        await self._runs.start_run(run.id)
+        # Resolve the run. When a ``run_id`` is passed, REUSE the session-owned
+        # run (append child-section proposals) and leave its lifecycle to the
+        # HITL session — forking here would shadow the reviewer's decisions.
+        # Without a ``run_id`` the resolve-or-create gate applies (one-live-run
+        # invariant, index 0045): the coordinate's live run is reused when one
+        # exists — this is also what lets the FE's CHUNKED batch calls share
+        # one run instead of 23505-ing on the second chunk. ``manage_lifecycle``
+        # follows CREATION, not the run_id parameter.
+        if run_id is not None:
+            existing_run = await self.db.get(ExtractionRun, run_id)
+            if existing_run is None:
+                raise ValueError(f"Run {run_id} not found")
+            if existing_run.stage != ExtractionRunStage.EXTRACT.value:
+                raise ValueError(
+                    f"Run {run_id} stage is {existing_run.stage}; "
+                    "batch section extraction requires EXTRACT"
+                )
+            run = existing_run
+            manage_lifecycle = False
+        else:
+            run, manage_lifecycle = await self._lifecycle.resolve_or_create_extract_run(
+                project_id=project_id,
+                article_id=article_id,
+                project_template_id=template_id,
+                user_id=UUID(self.user_id),
+                parameters={
+                    "model": model,
+                    "batch_extraction": True,
+                    "parent_instance_id": str(parent_instance_id),
+                    "section_ids": [str(sid) for sid in section_ids] if section_ids else None,
+                },
+            )
+            if manage_lifecycle:
+                await self._runs.start_run(run.id)
 
         self.logger.info(
             "batch_extraction_start",
@@ -783,13 +870,12 @@ class SectionExtractionService(LoggerMixin):
             failed = 0
             total_suggestions = 0
 
-            # 3. Extract each section sequentially with memory
+            # 3. Extract each section sequentially with memory — every section
+            # appends to THE batch run (no more one-run-per-section pollution).
             for entity_type in child_types:
                 try:
                     result = await self._extract_section_with_memory(
-                        project_id=project_id,
-                        article_id=article_id,
-                        template_id=template_id,
+                        run=run,
                         entity_type=entity_type,
                         parent_instance_id=parent_instance_id,
                         pdf_text=pdf_text,
@@ -838,7 +924,7 @@ class SectionExtractionService(LoggerMixin):
                     )
 
             # Run stays in EXTRACT — see ``extract_section`` for the
-            # rationale. The user advances to CONSENSUS via "Open consensus"
+            # rationale. The user advances to CONSENSUS via "Start consensus"
             # after inspecting the AI-proposed values.
 
             if total_sections and successful == 0:
@@ -846,21 +932,24 @@ class SectionExtractionService(LoggerMixin):
 
             duration = (perf_counter() - start_time) * 1000
 
-            # 4. Complete primary run
-            phase_start = perf_counter()
-            await self._runs.complete_run(
-                run_id=run.id,
-                results={
-                    "total_sections": total_sections,
-                    "successful_sections": successful,
-                    "failed_sections": failed,
-                    "total_suggestions_created": total_suggestions,
-                    "total_tokens_used": total_tokens,
-                    "duration_ms": duration,
-                    "phase_durations_ms": phase_durations_ms,
-                },
-            )
-            phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
+            # 4. Complete primary run — standalone path only. In the session-run
+            # (reuse) path the HITL session owns the lifecycle, so completing here
+            # would close the run and break further edits on it.
+            if manage_lifecycle:
+                phase_start = perf_counter()
+                await self._runs.complete_run(
+                    run_id=run.id,
+                    results={
+                        "total_sections": total_sections,
+                        "successful_sections": successful,
+                        "failed_sections": failed,
+                        "total_suggestions_created": total_suggestions,
+                        "total_tokens_used": total_tokens,
+                        "duration_ms": duration,
+                        "phase_durations_ms": phase_durations_ms,
+                    },
+                )
+                phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
 
             self.logger.info(
                 "batch_extraction_complete",
@@ -887,20 +976,21 @@ class SectionExtractionService(LoggerMixin):
             )
 
         except Exception as e:
-            await self._runs.rollback_and_fail(
-                run.id,
-                str(e),
-                logger=self.logger,
-                trace_id=self.trace_id,
-                log_prefix="section_extraction",
-            )
+            # Only fail the run in the standalone path — the session owns the
+            # lifecycle in the reuse path; the error propagates for it to handle.
+            if manage_lifecycle:
+                await self._runs.rollback_and_fail(
+                    run.id,
+                    str(e),
+                    logger=self.logger,
+                    trace_id=self.trace_id,
+                    log_prefix="section_extraction",
+                )
             raise
 
     async def _extract_section_with_memory(
         self,
-        project_id: UUID,
-        article_id: UUID,
-        template_id: UUID,
+        run: ExtractionRun,
         entity_type: Any,
         parent_instance_id: UUID,
         pdf_text: str,
@@ -908,12 +998,21 @@ class SectionExtractionService(LoggerMixin):
         model: str,
     ) -> dict[str, Any]:
         """
-        Extract one section with summarized memory context.
+        Extract one section with summarized memory context onto the batch run.
+
+        The section appends its proposals to the SHARED batch run — it never
+        creates or completes a run of its own. The old one-run-per-section
+        design scattered a batch's proposals across N EXTRACT-stage runs that
+        nothing ever closed: the session opener resolved only the newest, the
+        rest were invisible pollution, and under the one-live-run invariant
+        (index 0045) the second section's create would fail outright. Per-
+        section provenance still flows through the ``_create_suggestions``
+        choke point; lifecycle and failure accounting belong to the caller
+        (``extract_all_sections``), whose loop counts this section's raised
+        exception as a failed section.
 
         Args:
-            project_id: Project ID.
-            article_id: Article ID.
-            template_id: Template ID.
+            run: The batch run (session-owned or batch-created) to append to.
             entity_type: Entity type to extract.
             parent_instance_id: Parent instance ID.
             pdf_text: PDF text.
@@ -923,103 +1022,40 @@ class SectionExtractionService(LoggerMixin):
         Returns:
             Dict with suggestions_created, tokens_total, and summary.
         """
-        section_start = perf_counter()
         section_phase_durations_ms: dict[str, float] = {}
 
-        # Create run for this specific section via lifecycle service.
-        run = await self._lifecycle.create_run(
-            project_id=project_id,
-            article_id=article_id,
-            project_template_id=template_id,
-            user_id=UUID(self.user_id),
-            parameters={
-                "model": model,
-                "entity_type_id": str(entity_type.id),
-                "parent_instance_id": str(parent_instance_id),
-                "batch_section": True,
-                "memory_context_size": len(memory_history),
-            },
+        # Run extraction with memory context
+        phase_start = perf_counter()
+        extracted_data, llm_usage = await self._extract_with_llm(
+            pdf_text=pdf_text,
+            entity_type=entity_type,
+            model=model,
+            memory_context=memory_history,
         )
-        run = await self._lifecycle.advance_stage(
-            run_id=run.id,
-            target_stage=ExtractionRunStage.EXTRACT,
-            user_id=UUID(self.user_id),
+        section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
+
+        # Create suggestions
+        phase_start = perf_counter()
+        suggestions_created = await self._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=entity_type.id,
+            parent_instance_id=parent_instance_id,
+            extracted_data=extracted_data,
+            run=run,
+            model=model,
         )
+        section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
-        await self._runs.start_run(run.id)
+        # Generate memory summary (max 200 chars)
+        summary = self._generate_extraction_summary(entity_type, extracted_data)
 
-        try:
-            # Run extraction with memory context
-            phase_start = perf_counter()
-            extracted_data, llm_usage = await self._extract_with_llm(
-                pdf_text=pdf_text,
-                entity_type=entity_type,
-                model=model,
-                memory_context=memory_history,
-            )
-            section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
-
-            # Create suggestions
-            phase_start = perf_counter()
-            suggestions_created = await self._create_suggestions(
-                project_id=project_id,
-                article_id=article_id,
-                entity_type_id=entity_type.id,
-                parent_instance_id=parent_instance_id,
-                extracted_data=extracted_data,
-                run=run,
-                model=model,
-            )
-            section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
-
-            # Generate memory summary (max 200 chars)
-            summary = self._generate_extraction_summary(entity_type, extracted_data)
-
-            # Run stays in EXTRACT — see ``extract_section`` for the
-            # rationale. The user advances to CONSENSUS via "Open consensus"
-            # after inspecting the AI-proposed values.
-
-            # Complete run
-            phase_start = perf_counter()
-            await self._runs.complete_run(
-                run_id=run.id,
-                results={
-                    "suggestions_created": suggestions_created,
-                    "tokens_prompt": llm_usage.prompt_tokens,
-                    "tokens_completion": llm_usage.completion_tokens,
-                    "tokens_total": llm_usage.total_tokens,
-                    "summary": summary,
-                    "duration_ms": (perf_counter() - section_start) * 1000,
-                    "phase_durations_ms": section_phase_durations_ms,
-                },
-            )
-            section_phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
-
-            return {
-                "suggestions_created": suggestions_created,
-                "tokens_total": llm_usage.total_tokens,
-                "summary": summary,
-                "phase_durations_ms": section_phase_durations_ms,
-            }
-
-        except (AgentRunError, MissingLLMKeyError) as e:
-            # LLM-semantic failure (reask exhausted, usage ceiling, missing
-            # key): the DB session is healthy. Fail ONLY this section's run —
-            # rollback_and_fail would discard the whole uncommitted batch
-            # transaction (sibling sections + the parent batch run).
-            await self._runs.fail_run(run.id, str(e))
-            raise
-        except Exception as e:
-            # DB-layer failure: the transaction may be poisoned
-            # (InFailedSQLTransactionError) — rollback before failing.
-            await self._runs.rollback_and_fail(
-                run.id,
-                str(e),
-                logger=self.logger,
-                trace_id=self.trace_id,
-                log_prefix="section_extraction",
-            )
-            raise
+        return {
+            "suggestions_created": suggestions_created,
+            "tokens_total": llm_usage.total_tokens,
+            "summary": summary,
+            "phase_durations_ms": section_phase_durations_ms,
+        }
 
     def _generate_extraction_summary(
         self,
@@ -1140,6 +1176,7 @@ class SectionExtractionService(LoggerMixin):
         memory_context: list[dict[str, str]] | None = None,
         kind: str = "extraction",
         framework: str | None = None,
+        fields_override: list[Any] | None = None,
     ) -> tuple[dict[str, Any], LlmUsage]:
         """
         Run extraction using the typed LLM call layer.
@@ -1154,6 +1191,8 @@ class SectionExtractionService(LoggerMixin):
                 downstream proposal writes are unchanged.
             framework: When kind=='quality_assessment', the assessment
                 framework (PROBAST / QUADAS-2) the prompts ground in.
+            fields_override: Exact field list for the LLM (e.g. human-settled
+                fields removed); avoids mutating ``entity_type.fields``.
 
         Returns:
             Tuple of extracted data ({field_name: {value, confidence,
@@ -1184,7 +1223,7 @@ class SectionExtractionService(LoggerMixin):
                 memory_context=memory_context,
             )
 
-        output_models = build_output_models(entity_type)
+        output_models = build_output_models(entity_type, fields=fields_override)
         if not output_models:
             self.logger.info(
                 "extraction_skipped_no_fields",
@@ -1210,6 +1249,52 @@ class SectionExtractionService(LoggerMixin):
             extracted_data.update(dump_extraction(output))
             usage = usage + call_usage
 
+        # Re-render the user template with the article replaced by a marker, so
+        # the persisted composition is byte-faithful to what was sent (minus the
+        # duplicated article text). Same prompt pair the calls above used.
+        if kind == "quality_assessment":
+            section_instruction = quality_assessment.render(
+                entity_name=entity_name,
+                entity_description=entity_description,
+                article_text=ARTICLE_MARKDOWN_MARKER,
+                framework=framework,
+                memory_context=memory_context,
+            )
+        else:
+            section_instruction = section_extraction.render(
+                entity_name=entity_name,
+                entity_description=entity_description,
+                article_text=ARTICLE_MARKDOWN_MARKER,
+                memory_context=memory_context,
+            )
+        info = self._prompt_input_info
+        # The fields actually sent to the LLM: the human-settled override when the
+        # QA re-run filtered some out (#481), else the entity type's full set.
+        effective_fields = (
+            fields_override
+            if fields_override is not None
+            else (getattr(entity_type, "fields", None) or [])
+        )
+        composition = PromptComposition(
+            section_name=entity_name,
+            system_prompt=system_prompt,
+            section_instruction=section_instruction,
+            article_ref=PromptCompositionArticleRef(
+                file_id=str(info.anchor_file_id) if info and info.anchor_file_id else None,
+                file_name=info.file_name if info else None,
+                truncated=info.truncated if info else False,
+                est_tokens=info.est_tokens if info else None,
+            ),
+            fields_requested=[str(f.name) for f in effective_fields],
+            llm_calls=len(output_models),
+        )
+        self._run_provenance = self._build_run_provenance(
+            model=model,
+            prompt_name=prompt_module.NAME,
+            prompt_version=prompt_module.VERSION,
+            usage=usage,
+            prompt_composition=composition,
+        )
         return extracted_data, usage
 
     async def _create_suggestions(
@@ -1226,12 +1311,15 @@ class SectionExtractionService(LoggerMixin):
         Create extraction suggestions in database via repository.
 
         Automatically create an instance when missing.
-        Link suggestions to extraction_run_id for traceability.
+        Link suggestions to extraction_run_id for traceability. As the single
+        choke-point for AI proposals, this also persists the per-section
+        ``provenance`` snapshot (built in ``_extract_with_llm``, tokens +
+        prompt composition included) keyed by ``entity_type_id`` (see below).
 
         Args:
             project_id: Project ID.
             article_id: Article ID.
-            entity_type_id: entity type.
+            entity_type_id: entity type — also the provenance section key.
             parent_instance_id: Parent instance ID.
             extracted_data: Extracted data.
             run: ExtractionRun used to link suggestions.
@@ -1260,14 +1348,18 @@ class SectionExtractionService(LoggerMixin):
             )
             return 0
 
-        # Build field_name -> field_id map
+        # Build field_name -> field_id / label / field maps. The field object is
+        # kept so the entailment gate can resolve a select/boolean CODE to its
+        # human label before building the judge claim (see value_str_for_claim).
         field_map: dict[str, UUID] = {}
         field_label_map: dict[str, str] = {}
+        field_by_name: dict[str, Any] = {}
         for field in entity_type.fields or []:
             field_map[field.name] = field.id
             field_label_map[field.name] = (
                 field.label if hasattr(field, "label") and field.label else field.name
             )
+            field_by_name[field.name] = field
 
         # Fetch existing instance
         instances = await self._instances.get_by_article(article_id, entity_type_id)
@@ -1331,13 +1423,6 @@ class SectionExtractionService(LoggerMixin):
         # the LLM is stored as a real extraction_evidence row linked to
         # the proposal via proposal_record_id.
         for field_name, value in extracted_data.items():
-            if value is None:
-                continue
-
-            # Abstention: skip fields the LLM could not resolve.
-            if isinstance(value, dict) and value.get("status") in ("not_found", "ambiguous"):
-                continue
-
             field_id = field_map.get(field_name)
             if not field_id:
                 self.logger.warning(
@@ -1347,6 +1432,18 @@ class SectionExtractionService(LoggerMixin):
                     available_fields=list(field_map.keys()),
                 )
                 continue
+
+            # "No information found": a bare None or a structured not_found
+            # abstention. Record it as a first-class proposal carrying the coded
+            # no-information marker (built below) so the run's outcome is
+            # traceable to the reviewer, instead of silently dropping the field.
+            # ``ambiguous`` ("present but conflicting") is deliberately excluded
+            # (ADR-0016 Phase 1): it is not "absent", so it stays a
+            # needs-attention proposal with a value and no marker — still
+            # blocking the finalize gate.
+            is_no_info = value is None or (
+                isinstance(value, dict) and value.get("status") == "not_found"
+            )
 
             confidence_score: float | None = None
             reasoning: str | None = None
@@ -1359,6 +1456,15 @@ class SectionExtractionService(LoggerMixin):
             else:
                 raw_evidence = None
                 inner_value = value
+
+            if is_no_info:
+                # The no-info value is null — never wrap the status dict. Drop
+                # the abstention confidence (a not_found 0.0 reads as a
+                # misleading 0% on the card) and there is no evidence; keep the
+                # "why not found" reasoning.
+                inner_value = None
+                raw_evidence = None
+                confidence_score = None
 
             # Build evidence_items list (cap at EVIDENCE_CAP).
             # Supports both the new list shape (P1) and the legacy single-dict
@@ -1386,7 +1492,13 @@ class SectionExtractionService(LoggerMixin):
             # JSONB column on proposed_value is dict-typed; always wrap so
             # scalars/lists round-trip predictably and the frontend can read
             # `proposed_value.value` uniformly.
-            proposed_value = {"value": inner_value}
+            proposed_value: dict[str, Any] = {"value": inner_value}
+            if is_no_info:
+                # A resolved "no information" disposition: the typed value stays
+                # null and the coded ``absent_reason`` sibling marks it as an
+                # affirmative "the source is silent" answer (ADR-0016), so the
+                # coordinate counts as filled once a reviewer accepts it.
+                proposed_value["absent_reason"] = AbsentReason.NO_INFORMATION.value
 
             proposal = await self._proposals.record_proposal(
                 run_id=run.id,
@@ -1424,10 +1536,18 @@ class SectionExtractionService(LoggerMixin):
                 # Queue for entailment gate: found fields with ANCHORED evidence only.
                 if isinstance(value, dict) and value.get("status") == "found" and quote:
                     if pos is not None:
+                        _gate_field = field_by_name.get(field_name)
                         _gate_specs.append(
                             GateSpec(
                                 field_label=field_label_map.get(field_name, field_name),
-                                value_str=str(inner_value),
+                                # Resolve a select/boolean CODE ("Y") to its human
+                                # label ("Yes") so the judge claim is interpretable;
+                                # numeric/date/text pass through unchanged.
+                                value_str=value_str_for_claim(
+                                    field_type=getattr(_gate_field, "field_type", None),
+                                    allowed_values=getattr(_gate_field, "allowed_values", None),
+                                    value=inner_value,
+                                ),
                                 quote=quote,
                                 pos=pos,
                                 anchor_blocks=_anchor_blocks,
@@ -1460,6 +1580,15 @@ class SectionExtractionService(LoggerMixin):
             run_id=str(run.id),
         )
 
+        # Single choke-point for per-section provenance: persist HOW this
+        # section's suggestions were generated, keyed by entity_type_id, wherever
+        # proposals are recorded — so no extraction path can silently omit it and
+        # concurrent sections on one run don't clobber each other. The snapshot
+        # (tokens + prompt composition) was built section-scoped in
+        # _extract_with_llm. Skipped when no LLM ran (``_run_provenance`` None).
+        if count and self._run_provenance is not None:
+            await self._runs.merge_provenance_section(run.id, entity_type_id, self._run_provenance)
+
         return count
 
     async def run_from_request(
@@ -1477,10 +1606,15 @@ class SectionExtractionService(LoggerMixin):
         1. ``entity_type_id`` present → single-section path via
            ``extract_section``. Handles both standalone and existing-run
            (``run_id`` set) callers; the service routes internally.
-        2. ``run_id`` set (no ``entity_type_id``) → ``extract_for_run`` iterates
-           every top-level entity_type of that run's template (QA surface).
-        3. ``extract_all_sections`` → batch sweep of child sections under
-           ``parent_instance_id`` (per-model CHARMS batch).
+        2. ``parent_instance_id`` present (no ``entity_type_id``) →
+           ``extract_all_sections`` batch sweep of child sections under that
+           model instance. Checked BEFORE the ``run_id`` branch so a batch
+           request that now carries the session ``run_id`` (to REUSE it, not
+           fork a shadow run) still routes here — the full-run sweep below has
+           no ``parent_instance_id``.
+        3. ``run_id`` set (no ``entity_type_id``/``parent_instance_id``) →
+           ``extract_for_run`` iterates every top-level entity_type of that
+           run's template (QA / full-run surface).
         """
         model = payload.model or settings.LLM_DEFAULT_MODEL
 
@@ -1495,6 +1629,18 @@ class SectionExtractionService(LoggerMixin):
                 run_id=payload.run_id,
             )
 
+        if payload.parent_instance_id is not None:
+            return await self.extract_all_sections(
+                project_id=payload.project_id,
+                article_id=payload.article_id,
+                template_id=payload.template_id,
+                parent_instance_id=payload.parent_instance_id,
+                section_ids=payload.section_ids,
+                pdf_text=payload.pdf_text,
+                model=model,
+                run_id=payload.run_id,
+            )
+
         if payload.run_id is not None:
             return await self.extract_for_run(
                 run_id=payload.run_id,
@@ -1503,13 +1649,9 @@ class SectionExtractionService(LoggerMixin):
                 model=model,
             )
 
-        # Branch 3: extract_all_sections (validator guarantees parent_instance_id).
-        return await self.extract_all_sections(
-            project_id=payload.project_id,
-            article_id=payload.article_id,
-            template_id=payload.template_id,
-            parent_instance_id=payload.parent_instance_id,  # type: ignore[arg-type]
-            section_ids=payload.section_ids,
-            pdf_text=payload.pdf_text,
-            model=model,
+        # The request validator requires one of entity_type_id / parent_instance_id
+        # / run_id, so this is unreachable — kept as a defensive guard.
+        raise ValueError(
+            "SectionExtractionRequest matched no dispatch branch "
+            "(need entity_type_id, parent_instance_id, or run_id)"
         )

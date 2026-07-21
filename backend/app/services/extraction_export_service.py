@@ -54,6 +54,7 @@ from app.services.exports.extraction_snapshot_reader import (
     load_export_sections,
 )
 from app.services.exports.value_envelope import resolve_value
+from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
 # ----------------------------------------------------------------------
 # Enums
@@ -1824,9 +1825,17 @@ class ExtractionExportService(LoggerMixin):
 # ----------------------------------------------------------------------
 
 
+# ADR-0016 Phase 4: one legend row per coded disposition, its LABEL sourced from
+# ABSENT_REASON_LABELS (the same map resolve_value emits into a cell) so cell and
+# legend can never drift; only the frozen descriptions live here.
+_ABSENT_REASON_DESCRIPTIONS: dict[str, str] = {
+    AbsentReason.NO_INFORMATION.value: "The source does not state this item.",
+    AbsentReason.NOT_APPLICABLE.value: "The item does not apply to this study.",
+    AbsentReason.NOT_EVALUATED.value: "The item was not assessed.",
+}
 _FRONT_MATTER_LEGEND: tuple[tuple[str, str], ...] = (
     ("(blank)", "No value recorded, or the reviewer rejected the AI proposal."),
-    ("No information", "The source reported that the item was not stated."),
+    *((ABSENT_REASON_LABELS[c.value], _ABSENT_REASON_DESCRIPTIONS[c.value]) for c in AbsentReason),
     ("Yes / No", "Boolean field rendered from its true/false value."),
     ("; ", "Separator between multiple selected options."),
 )

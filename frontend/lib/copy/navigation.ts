@@ -5,6 +5,7 @@ export const navigation = {
     notifications: 'Notifications',
     notificationsAriaBackgroundActive:
         'Notifications — background activity in progress',
+    notificationsAriaUnread: 'Notifications, {{count}} unread',
     notificationsCleared: 'Notifications cleared',
     viewProject: 'View project',
     errorPrefix: 'Error',

@@ -51,12 +51,12 @@ export interface ModelSectionProps {
   /** AI suggestion metadata, also shared with study-level. */
   aiSuggestions: Record<string, AISuggestion>;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
+  selectSuggestion: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown, confidence: number) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   getSuggestionsHistory?: (
     instanceId: string,
     fieldId: string,
   ) => Promise<AISuggestionHistoryItem[]>;
-  isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
 
   /** Instance mutations (add/remove repeatable sub-instances). */
   getInstancesForModel: (entityTypeId: string, modelId: string) => ExtractionInstance[];
@@ -107,9 +107,9 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
     updateValue,
     aiSuggestions,
     acceptSuggestion,
+    selectSuggestion,
     rejectSuggestion,
     getSuggestionsHistory,
-    isActionLoading,
     getInstancesForModel,
     handleAddInstance,
     handleRemoveInstance,
@@ -190,8 +190,8 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
               aiSuggestions={aiSuggestions}
               onAcceptAI={acceptSuggestion}
               onRejectAI={rejectSuggestion}
+              selectSuggestion={selectSuggestion}
               getSuggestionsHistory={getSuggestionsHistory}
-              isActionLoading={isActionLoading}
               onAddInstance={() => handleAddInstance(modelContainer.id)}
               onRemoveInstance={handleRemoveInstance}
               onExtractionComplete={onExtractionComplete}
@@ -219,9 +219,9 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
                 aiSuggestions={aiSuggestions}
                 onAcceptAI={acceptSuggestion}
                 onRejectAI={rejectSuggestion}
+                selectSuggestion={selectSuggestion}
                 getSuggestionsHistory={getSuggestionsHistory}
-                isActionLoading={isActionLoading}
-                onAddInstance={() => handleAddInstance(entityType.id)}
+                  onAddInstance={() => handleAddInstance(entityType.id)}
                 onRemoveInstance={handleRemoveInstance}
                 onExtractionComplete={onExtractionComplete}
               />

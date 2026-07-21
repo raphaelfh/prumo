@@ -5,9 +5,17 @@ import type { StageTransition } from '@/components/runs/header/RunHeaderContext'
 export interface BuildTransitionArgs {
   stage: ExtractionRunStage | null;
   canResolveConflicts: boolean;
+  /** Caller-scoped form completeness — drives the EXTRACT-stage reviewer gate. */
   isComplete: boolean;
   completed: number;
   total: number;
+  /**
+   * Run-level required-field completeness (published ∪ every reviewer's
+   * decision) — drives the CONSENSUS finalize gate. Distinct from `isComplete`:
+   * an arbitrator who resolved required fields by adopting peers has an
+   * incomplete personal form yet a complete run. Mirrors the backend gate.
+   */
+  consensusComplete: boolean;
   /** Every diverging coord has a consensus decision (reviewerSummary-derived). */
   divergencesResolved: boolean;
   /** The caller is in reviewers_ready (reflects the Mark-ready button label). */
@@ -18,7 +26,12 @@ export interface BuildTransitionArgs {
   onOpenConsensus: () => void | Promise<void>;
   /** Consensus, manager/consensus: publish-all then finalize (one action). */
   onApproveFinalize: () => void | Promise<void>;
-  onGuide: () => void;
+  /**
+   * Blocked-click affordance. The optional message lets each gate surface the
+   * copy that matches its own tooltip (extract vs consensus), so the toast never
+   * contradicts the reason shown on hover.
+   */
+  onGuide: (message?: string) => void;
 }
 
 function makeTransition(
@@ -29,7 +42,7 @@ function makeTransition(
   completed: number,
   total: number,
   advance: () => void | Promise<void>,
-  onGuide: () => void,
+  onGuide: (message?: string) => void,
 ): StageTransition {
   if (isComplete) {
     return { to, label, tooltip, gate: { ok: true }, onAdvance: advance };
@@ -54,6 +67,7 @@ export function buildExtractionTransition(args: BuildTransitionArgs): StageTrans
     isComplete,
     completed,
     total,
+    consensusComplete,
     divergencesResolved,
     isReady,
     onMarkReady,
@@ -68,8 +82,8 @@ export function buildExtractionTransition(args: BuildTransitionArgs): StageTrans
     if (canResolveConflicts) {
       return {
         to: 'consensus',
-        label: t('extraction', 'runHeaderOpenConsensus'),
-        tooltip: t('extraction', 'runHeaderOpenConsensusTooltip'),
+        label: t('extraction', 'runHeaderStartConsensus'),
+        tooltip: t('extraction', 'runHeaderStartConsensusTooltip'),
         gate: { ok: true },
         onAdvance: onOpenConsensus,
       };
@@ -78,8 +92,8 @@ export function buildExtractionTransition(args: BuildTransitionArgs): StageTrans
     // reviewer's own completeness. The label reflects the current ready state.
     return makeTransition(
       'consensus', // display target node only; onMarkReady does not advance
-      isReady ? t('extraction', 'runHeaderMarkedReady') : t('extraction', 'runHeaderMarkReady'),
-      t('extraction', 'runHeaderMarkReadyTooltip'),
+      isReady ? t('extraction', 'runHeaderExtractionFinished') : t('extraction', 'runHeaderFinishExtraction'),
+      t('extraction', 'runHeaderFinishExtractionTooltip'),
       isComplete,
       completed,
       total,
@@ -96,19 +110,25 @@ export function buildExtractionTransition(args: BuildTransitionArgs): StageTrans
   if (stage === 'consensus' && canResolveConflicts) {
     const label = t('extraction', 'runHeaderApproveFinalize');
     const tooltip = t('extraction', 'runHeaderApproveFinalizeTooltip');
-    if (isComplete && divergencesResolved) {
+    // Run-level completeness (consensusComplete), NOT the caller-scoped
+    // isComplete: the run is finalizable once every required coord is resolved
+    // run-wide, even if this arbitrator's own form is sparse.
+    if (consensusComplete && divergencesResolved) {
       return { to: 'finalized', label, tooltip, gate: { ok: true }, onAdvance: onApproveFinalize };
     }
+    const reason = t('extraction', 'runHeaderApproveBlocked');
     return {
       to: 'finalized',
       label,
       tooltip,
       gate: {
         ok: false,
-        reason: t('extraction', 'runHeaderApproveBlocked'),
+        reason,
         remaining: Math.max(0, total - completed),
       },
-      onAdvance: onGuide,
+      // Toast the gate's own reason so it matches the tooltip (the shared
+      // onGuide default copy is the extract-stage message).
+      onAdvance: () => onGuide(reason),
     };
   }
 

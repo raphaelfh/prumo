@@ -230,6 +230,8 @@ export type Database = {
         Row: {
           article_id: string
           bytes: number | null
+          content_markdown: string | null
+          content_version: number
           created_at: string
           extracted_at: string | null
           extraction_error: string | null
@@ -241,13 +243,13 @@ export type Database = {
           original_filename: string | null
           project_id: string
           storage_key: string
-          text_html: string | null
-          text_raw: string | null
           updated_at: string
         }
         Insert: {
           article_id: string
           bytes?: number | null
+          content_markdown?: string | null
+          content_version?: number
           created_at?: string
           extracted_at?: string | null
           extraction_error?: string | null
@@ -259,13 +261,13 @@ export type Database = {
           original_filename?: string | null
           project_id: string
           storage_key: string
-          text_html?: string | null
-          text_raw?: string | null
           updated_at?: string
         }
         Update: {
           article_id?: string
           bytes?: number | null
+          content_markdown?: string | null
+          content_version?: number
           created_at?: string
           extracted_at?: string | null
           extraction_error?: string | null
@@ -277,8 +279,6 @@ export type Database = {
           original_filename?: string | null
           project_id?: string
           storage_key?: string
-          text_html?: string | null
-          text_raw?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -498,9 +498,14 @@ export type Database = {
           block_type: string
           char_end: number
           char_start: number
+          col_index: number | null
+          col_span: number | null
           created_at: string
           id: string
+          is_header: boolean | null
           page_number: number
+          row_index: number | null
+          row_span: number | null
           text: string
           updated_at: string
         }
@@ -511,9 +516,14 @@ export type Database = {
           block_type: string
           char_end: number
           char_start: number
+          col_index?: number | null
+          col_span?: number | null
           created_at?: string
           id?: string
+          is_header?: boolean | null
           page_number: number
+          row_index?: number | null
+          row_span?: number | null
           text: string
           updated_at?: string
         }
@@ -524,9 +534,14 @@ export type Database = {
           block_type?: string
           char_end?: number
           char_start?: number
+          col_index?: number | null
+          col_span?: number | null
           created_at?: string
           id?: string
+          is_header?: boolean | null
           page_number?: number
+          row_index?: number | null
+          row_span?: number | null
           text?: string
           updated_at?: string
         }
@@ -566,7 +581,6 @@ export type Database = {
           mesh_terms: string[] | null
           open_access: boolean | null
           pages: string | null
-          pdf_extracted_text: string | null
           pii: string | null
           pmcid: string | null
           pmid: string | null
@@ -578,8 +592,6 @@ export type Database = {
           registration: Json | null
           removed_at_source_at: string | null
           row_version: number
-          semantic_abstract_text: string | null
-          semantic_fulltext_text: string | null
           source_lineage: string | null
           source_payload: Json | null
           study_design: string | null
@@ -619,7 +631,6 @@ export type Database = {
           mesh_terms?: string[] | null
           open_access?: boolean | null
           pages?: string | null
-          pdf_extracted_text?: string | null
           pii?: string | null
           pmcid?: string | null
           pmid?: string | null
@@ -631,8 +642,6 @@ export type Database = {
           registration?: Json | null
           removed_at_source_at?: string | null
           row_version?: number
-          semantic_abstract_text?: string | null
-          semantic_fulltext_text?: string | null
           source_lineage?: string | null
           source_payload?: Json | null
           study_design?: string | null
@@ -672,7 +681,6 @@ export type Database = {
           mesh_terms?: string[] | null
           open_access?: boolean | null
           pages?: string | null
-          pdf_extracted_text?: string | null
           pii?: string | null
           pmcid?: string | null
           pmid?: string | null
@@ -684,8 +692,6 @@ export type Database = {
           registration?: Json | null
           removed_at_source_at?: string | null
           row_version?: number
-          semantic_abstract_text?: string | null
-          semantic_fulltext_text?: string | null
           source_lineage?: string | null
           source_payload?: Json | null
           study_design?: string | null
@@ -862,6 +868,7 @@ export type Database = {
         Row: {
           article_file_id: string | null
           article_id: string
+          attribution_label: string | null
           consensus_decision_id: string | null
           created_at: string
           created_by: string
@@ -870,6 +877,7 @@ export type Database = {
           position: Json | null
           project_id: string
           proposal_record_id: string | null
+          rank: number
           reviewer_decision_id: string | null
           run_id: string | null
           text_content: string | null
@@ -878,6 +886,7 @@ export type Database = {
         Insert: {
           article_file_id?: string | null
           article_id: string
+          attribution_label?: string | null
           consensus_decision_id?: string | null
           created_at?: string
           created_by: string
@@ -886,6 +895,7 @@ export type Database = {
           position?: Json | null
           project_id: string
           proposal_record_id?: string | null
+          rank?: number
           reviewer_decision_id?: string | null
           run_id?: string | null
           text_content?: string | null
@@ -894,6 +904,7 @@ export type Database = {
         Update: {
           article_file_id?: string | null
           article_id?: string
+          attribution_label?: string | null
           consensus_decision_id?: string | null
           created_at?: string
           created_by?: string
@@ -902,6 +913,7 @@ export type Database = {
           position?: Json | null
           project_id?: string
           proposal_record_id?: string | null
+          rank?: number
           reviewer_decision_id?: string | null
           run_id?: string | null
           text_content?: string | null
@@ -971,6 +983,8 @@ export type Database = {
           allow_other: boolean
           allowed_units: Json | null
           allowed_values: Json | null
+          allows_not_applicable: boolean
+          allows_not_evaluated: boolean
           created_at: string
           description: string | null
           entity_type_id: string
@@ -991,6 +1005,8 @@ export type Database = {
           allow_other?: boolean
           allowed_units?: Json | null
           allowed_values?: Json | null
+          allows_not_applicable?: boolean
+          allows_not_evaluated?: boolean
           created_at?: string
           description?: string | null
           entity_type_id: string
@@ -1011,6 +1027,8 @@ export type Database = {
           allow_other?: boolean
           allowed_units?: Json | null
           allowed_values?: Json | null
+          allows_not_applicable?: boolean
+          allows_not_evaluated?: boolean
           created_at?: string
           description?: string | null
           entity_type_id?: string

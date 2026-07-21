@@ -1,21 +1,28 @@
 """Integration tests for ``TemplateCloneService``.
 
-Specifically covers the heal path: when a project_extraction_templates
-row exists but its live structure (entity_types + fields) drifts from
-the immutable snapshot in ``extraction_template_versions.schema``,
-re-invoking ``clone`` rebuilds the structure to match.
+Covers the heal path for existing clones. The contract (revised when
+templates became user-editable):
 
-The current heal trigger only fires when live count = 0 ("clone was
-born empty"). This file pins down the broader contract: any drift
-between snapshot and live, including partial state (some entity_types
-present but fewer than the snapshot), triggers heal. The repro is the
-production CHARMS project ``bc055915`` whose clone has 1 entity_type
-live but 14 in the snapshot — pre-fix, the heal stays silent.
+* **Zero-state** (live structure empty) → rebuild from the global
+  template. A clone born empty is unusable; factory state is strictly
+  better.
+* **Non-empty drift** (live counts != active snapshot counts) → publish
+  the LIVE structure as a new active version (self-heal the snapshot).
+  Never wipe: with editable templates, a count mismatch is
+  indistinguishable from a deliberate edit whose republish failed, and
+  the old wipe-and-rebuild-from-global path destroyed user
+  customizations (and 500'd on the RESTRICT FK whenever instances
+  existed). Live is authoritative.
+
+The production CHARMS project ``bc055915`` (live=1 vs snapshot=14 after
+an out-of-band loss) now self-heals the *snapshot* to match live rather
+than resurrecting factory structure; true structure recovery is an
+explicit re-import after deleting the template.
 """
 
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select, text
@@ -73,15 +80,15 @@ async def test_clone_creates_full_structure_when_fresh(db_session: AsyncSession)
 
 
 @pytest.mark.asyncio
-async def test_clone_heals_partial_structure_drift_against_snapshot(
+async def test_clone_selfheals_snapshot_from_live_on_drift(
     db_session: AsyncSession,
 ) -> None:
-    """H3 — Invariant I-3: a clone whose live entity_type count drifts
-    from its active version snapshot triggers heal on re-clone.
+    """Non-empty drift publishes LIVE as the new snapshot — never wipes.
 
-    Repros production bug (project bc055915): the clone has 14 entity
-    types in the snapshot but only 1 in the live tables. The current
-    heal only fires on zero-state, so the drift goes undetected.
+    bc055915-shaped state: 14 entity types in the snapshot but only 1
+    live. Re-cloning must keep the 1 live entity type (a count mismatch
+    is indistinguishable from a deliberate edit whose republish failed)
+    and roll the active snapshot forward to match live.
     """
     if (
         await db_session.execute(
@@ -96,7 +103,6 @@ async def test_clone_heals_partial_structure_drift_against_snapshot(
     await _clean_project_clones(db_session, project_id)
     service = TemplateCloneService(db_session)
 
-    # 1. Initial healthy clone.
     initial = await service.clone(
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
@@ -104,13 +110,10 @@ async def test_clone_heals_partial_structure_drift_against_snapshot(
         kind=TemplateKind.EXTRACTION,
     )
     project_template_id = initial.project_template_id
-    snapshot_et_count = initial.entity_type_count
-    snapshot_field_count = initial.field_count
-    assert snapshot_et_count == 14
+    assert initial.entity_type_count == 14
 
-    # 2. Simulate the production drift: delete all but one entity_type
-    #    (and its fields) from the live tables, leaving the snapshot
-    #    intact. Mirrors the bc055915 state (snapshot=14, live=1).
+    # Simulate the drift: delete all but one entity_type from the live
+    # tables, leaving the snapshot intact (snapshot=14, live=1).
     keep_et_id = (
         await db_session.execute(
             select(ExtractionEntityType.id)
@@ -128,23 +131,6 @@ async def test_clone_heals_partial_structure_drift_against_snapshot(
     )
     await db_session.flush()
 
-    live_et_count = (
-        (
-            await db_session.execute(
-                select(ExtractionEntityType).where(
-                    ExtractionEntityType.project_template_id == project_template_id
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert len(live_et_count) == 1, "drift simulation expected exactly 1 live entity_type"
-
-    # 3. Re-clone with the same (project, global_template_id). Heal must
-    #    detect the drift and rebuild the live structure to match the
-    #    snapshot. Without the H3 fix, this is a no-op and the drift
-    #    persists.
     healed = await service.clone(
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
@@ -155,13 +141,11 @@ async def test_clone_heals_partial_structure_drift_against_snapshot(
     assert healed.project_template_id == project_template_id, (
         "Heal must reuse the existing clone, not fork a new one."
     )
-    assert healed.entity_type_count == snapshot_et_count, (
-        f"After heal, live entity_type count ({healed.entity_type_count}) "
-        f"must match snapshot ({snapshot_et_count}). Drift not detected."
+    assert healed.entity_type_count == 1, (
+        "Non-empty drift must NOT resurrect factory structure — live is "
+        "authoritative once templates are user-editable."
     )
-    assert healed.field_count == snapshot_field_count
 
-    # Defence-in-depth: the live table count must also match the report.
     live_after = (
         (
             await db_session.execute(
@@ -173,7 +157,102 @@ async def test_clone_heals_partial_structure_drift_against_snapshot(
         .scalars()
         .all()
     )
-    assert len(live_after) == snapshot_et_count
+    assert len(live_after) == 1, "re-clone must not wipe or rebuild live structure"
+
+    active = (
+        await db_session.execute(
+            select(ExtractionTemplateVersion).where(
+                ExtractionTemplateVersion.project_template_id == project_template_id,
+                ExtractionTemplateVersion.is_active.is_(True),
+            )
+        )
+    ).scalar_one()
+    snapshot_ets = (active.schema_ or {}).get("entity_types", [])
+    assert len(snapshot_ets) == 1, "active snapshot must be re-published from live"
+    assert active.version == 2, "self-heal publishes a NEW version, never mutates v1"
+    assert active.id == healed.version_id
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_reclone_selfheals_unsnapshotted_edit_without_wiping(
+    db_session: AsyncSession,
+) -> None:
+    """A live edit whose republish call was lost (e.g. network blip after
+    the PostgREST write) must survive a re-import: the heal publishes the
+    live structure instead of treating the mismatch as corruption."""
+    if (
+        await db_session.execute(
+            text("SELECT 1 FROM public.profiles WHERE id = :id"),
+            {"id": str(SEED.primary_profile)},
+        )
+    ).scalar() is None:
+        pytest.skip("Missing fixtures.")
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+
+    await _clean_project_clones(db_session, project_id)
+    service = TemplateCloneService(db_session)
+
+    initial = await service.clone(
+        project_id=project_id,
+        global_template_id=CHARMS_GLOBAL_ID,
+        user_id=user_id,
+        kind=TemplateKind.EXTRACTION,
+    )
+
+    et_id = (
+        await db_session.execute(
+            select(ExtractionEntityType.id)
+            .where(ExtractionEntityType.project_template_id == initial.project_template_id)
+            .order_by(ExtractionEntityType.sort_order)
+            .limit(1)
+        )
+    ).scalar_one()
+    field_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_fields "
+            "(id, entity_type_id, name, label, field_type, is_required, sort_order) "
+            "VALUES (:id, :et, 'orphan_edit', 'Orphan edit', 'text', false, 999)"
+        ),
+        {"id": str(field_id), "et": str(et_id)},
+    )
+    await db_session.flush()
+
+    recloned = await service.clone(
+        project_id=project_id,
+        global_template_id=CHARMS_GLOBAL_ID,
+        user_id=user_id,
+        kind=TemplateKind.EXTRACTION,
+    )
+    assert recloned.project_template_id == initial.project_template_id
+
+    survived = (
+        await db_session.execute(
+            text("SELECT 1 FROM public.extraction_fields WHERE id = :id"),
+            {"id": str(field_id)},
+        )
+    ).scalar()
+    assert survived == 1, "unsnapshotted edit was wiped by the heal"
+
+    active = (
+        await db_session.execute(
+            select(ExtractionTemplateVersion).where(
+                ExtractionTemplateVersion.project_template_id == initial.project_template_id,
+                ExtractionTemplateVersion.is_active.is_(True),
+            )
+        )
+    ).scalar_one()
+    snapshot_field_names = {
+        f["name"]
+        for et in (active.schema_ or {}).get("entity_types", [])
+        for f in et.get("fields", [])
+    }
+    assert "orphan_edit" in snapshot_field_names, (
+        "heal must publish the live structure so the drift is repaired"
+    )
 
     await db_session.rollback()
 

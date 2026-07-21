@@ -1,11 +1,12 @@
 /**
- * Hook to manage AI suggestions
+ * Hook to manage AI suggestions.
  *
- * Features:
- * - Load pending suggestions
- * - Accept suggestion (create extracted_value)
- * - Reject suggestion
- * - Batch accept by threshold
+ * Accepting/selecting/rejecting never writes to the backend from here: the
+ * value bubbles up via the ``onSuggestion*`` callbacks into the screen's form
+ * state, and the screen's autosave persists it (extraction: an ``edit``
+ * decision carrying ``proposal_record_id`` via linkByKey — D0). ADR-0014
+ * collapsed the stage model; the old PROPOSAL/REVIEW split this hook once
+ * branched on (``acceptStrategy``) no longer exists.
  *
  * @hook
  */
@@ -22,9 +23,8 @@ import type {
 } from '@/types/ai-extraction';
 import {getSuggestionKey} from '@/types/ai-extraction';
 import {AISuggestionService} from '@/services/aiSuggestionService';
-import {filterSuggestionsByConfidence} from '@/lib/ai-extraction/suggestionUtils';
+import {filterSuggestionsByConfidence, isAbstention} from '@/lib/ai-extraction/suggestionUtils';
 import {getErrorMessage} from '@/lib/ai-extraction/errors';
-import {getRequiredUserId} from '@/services/authService';
 
 // =================== HOOK ===================
 
@@ -34,19 +34,25 @@ export type { AISuggestion, AISuggestionHistoryItem } from '@/types/ai-extractio
 export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestionsReturn {
   const {
     articleId,
-    projectId,
     enabled = true,
     runId,
     instanceIds: providedInstanceIds,
-    acceptStrategy = 'reviewer-decision',
     onSuggestionAccepted,
     onSuggestionRejected,
   } = props;
 
   const [suggestions, setSuggestions] = useState<Record<string, AISuggestion>>({});
   const [loading, setLoading] = useState(false);
-    // Loading state per suggestion for immediate visual feedback
-  const [actionLoading, setActionLoading] = useState<Record<string, 'accept' | 'reject' | null>>({});
+  // D0 (consensus AI trace): this session's real adoption events only —
+  // accept/select set the chosen proposal id, reject tombstones with null.
+  // NEVER hydrated from the read endpoint: the server marks any non-reject
+  // caller decision 'accepted' (including plain manual edits), so hydrated
+  // status would fabricate AI provenance for manually-typed values.
+  const [sessionAdoption, setSessionAdoption] = useState<Record<string, string | null>>({});
+  // True only after a successful load — consumers use it to tell "no AI
+  // suggestion exists" apart from "the AI-existence signal is unavailable"
+  // (a failed load must not mislabel decisions as Manual in consensus).
+  const [suggestionsReady, setSuggestionsReady] = useState(false);
 
   // Stable, content-derived key for the caller-provided instance ids. The
   // loader reads ONLY this primitive (never the `providedInstanceIds` array
@@ -59,6 +65,9 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     // Declare loadSuggestions BEFORE useEffect to avoid init error
   const loadSuggestions = (): Promise<LoadSuggestionsResult> => {
     setLoading(true);
+    // Not ready while ANY load is in flight — consumers (the consensus
+    // Manual chip) must see null, not a stale previous map, mid-refresh.
+    setSuggestionsReady(false);
 
     // Prefer caller-provided instance ids when available (QA gets these
     // straight from the HITL session response). Fall back to the
@@ -84,6 +93,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         return AISuggestionService.loadSuggestions(articleId, instanceIds, runId);
       })
       .then((result) => {
+        setSuggestionsReady(true);
         // CRITICAL: setSuggestions updates state asynchronously
         // Use updater function so previous state is considered
         setSuggestions(() => {
@@ -103,6 +113,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         console.error('Error loading suggestions:', err);
         const message = getErrorMessage(err);
         toast.error(`${t('extraction', 'errors_loadSuggestions')}: ${message}`);
+        setSuggestionsReady(false);
         setSuggestions({});
         return { suggestions: {}, count: 0 } as LoadSuggestionsResult;
       })
@@ -116,83 +127,68 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     queueMicrotask(() => void loadSuggestions());
   }, [articleId, enabled, loadSuggestions]);
 
+  // Shared accept body, keyed by an EXPLICIT proposal id + value. Both the
+  // quick-accept (latest pending) and the review-popover version selection
+  // funnel through here, so accept-by-id and accept-latest stay one code path.
+  // Accepting never writes to the backend from here: the value bubbles up via
+  // onSuggestionAccepted into the screen's form state, and the screen's
+  // autosave persists it (extraction: an `edit` decision carrying
+  // proposal_record_id via linkByKey — D0). Purely local state updates — the
+  // async wrapper/error path that guarded the old service writes was removed
+  // with them (2026-07-05 review).
+  const selectProposalCore = async (
+    instanceId: string,
+    fieldId: string,
+    proposalRecordId: string,
+    value: unknown,
+    confidence: number,
+    silent: boolean,
+  ): Promise<boolean> => {
+    const key = getSuggestionKey(instanceId, fieldId);
+
+      // Update status in local state to 'accepted' (do not remove!)
+      // IMPORTANT: Create new object to ensure re-render
+    setSuggestions(prev => {
+      if (!prev[key]) {
+          console.warn(`⚠️ Suggestion ${key} not found in state when accepting`);
+        return prev;
+      }
+      const next = { ...prev };
+      next[key] = {
+        ...next[key],
+        // Reflect the CHOSEN version on the coord so the review popover
+        // highlights it (and the field shows its value/confidence) across
+        // close+reopen — accept-latest passes the same id/value/confidence,
+        // so this is a no-op there.
+        id: proposalRecordId,
+        value,
+        confidence,
+        status: 'accepted' as const,
+      };
+      return {...next}; // New reference to ensure re-render
+    });
+
+    // D0: record the real adoption event for autosave's linkByKey.
+    setSessionAdoption(prev => ({ ...prev, [key]: proposalRecordId }));
+
+      // Callback to fill input automatically (non-blocking)
+    if (onSuggestionAccepted) {
+        // Run in background so UI is not blocked
+      Promise.resolve(onSuggestionAccepted(instanceId, fieldId, value)).catch(err => {
+        console.error('Error in onSuggestionAccepted callback:', err);
+      });
+    }
+
+    if (!silent) toast.success(t('extraction', 'toastSuggestionAcceptedSuccess'));
+    return true;
+  };
+
   const acceptSuggestionCore = async (instanceId: string, fieldId: string, silent: boolean): Promise<boolean> => {
     const key = getSuggestionKey(instanceId, fieldId);
     const suggestion = suggestions[key];
     if (!suggestion) return false;
-
-    // Feedback visual imediato
-    setActionLoading(prev => ({ ...prev, [key]: 'accept' }));
-
-    const clearLoading = () =>
-      setActionLoading(prev => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-
-    const doAccept = async (): Promise<boolean> => {
-      if (acceptStrategy === 'human-proposal') {
-        // Quality-Assessment path: the run lives in PROPOSAL until
-        // Publish, so a ReviewerDecision (which requires REVIEW) would
-        // be rejected by the backend. Instead, just bubble the value
-        // up via ``onSuggestionAccepted`` — the consumer records it as
-        // a ``human`` proposal through its existing form pipeline.
-      } else {
-        const userResult = await getRequiredUserId();
-        if (!userResult.ok) throw userResult.error;
-
-        // Accept suggestion using the service (writes ReviewerDecision
-        // with decision='accept_proposal' on a REVIEW-stage run).
-        await AISuggestionService.acceptSuggestion({
-          suggestionId: suggestion.id,
-          projectId,
-          articleId,
-          instanceId,
-          fieldId,
-          value: suggestion.value,
-          confidence: suggestion.confidence,
-          reviewerId: userResult.data,
-          runId,
-        });
-      }
-
-        // Update status in local state to 'accepted' (do not remove!)
-        // IMPORTANT: Create new object to ensure re-render
-      setSuggestions(prev => {
-        if (!prev[key]) {
-            console.warn(`⚠️ Suggestion ${key} not found in state when accepting`);
-          return prev;
-        }
-        const next = { ...prev };
-        next[key] = {
-          ...next[key],
-          status: 'accepted' as const,
-        };
-          console.warn(`✅ Suggestion ${key} accepted - state updated to 'accepted'`);
-          return {...next}; // New reference to ensure re-render
-      });
-
-        // Callback to fill input automatically (non-blocking)
-      if (onSuggestionAccepted) {
-          // Run in background so UI is not blocked
-        Promise.resolve(onSuggestionAccepted(instanceId, fieldId, suggestion.value)).catch(err => {
-          console.error('Erro no callback onSuggestionAccepted:', err);
-        });
-      }
-
-        if (!silent) toast.success(t('extraction', 'toastSuggestionAcceptedSuccess'));
-        return true;
-    };
-
-    return doAccept()
-      .catch((err: unknown) => {
-        console.error('Error accepting suggestion:', err);
-        const message = getErrorMessage(err);
-        if (!silent) toast.error(`${t('extraction', 'errors_acceptSuggestion')}: ${message}`);
-        return false;
-      })
-      .finally(clearLoading);
+    // Quick-accept = select the latest pending proposal for this coord.
+    return selectProposalCore(instanceId, fieldId, suggestion.id, suggestion.value, suggestion.confidence, silent);
   };
 
   // Public accept: surfaces its own toasts (silent=false) and keeps the
@@ -201,78 +197,56 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     await acceptSuggestionCore(instanceId, fieldId, false);
   };
 
+  // Select a SPECIFIC historical version (by proposal id) and set the field to
+  // its value. Drives the review popover's "Use this version". A null value is
+  // valid — it records an explicit "no information" acknowledgement.
+  const selectSuggestion = async (
+    instanceId: string,
+    fieldId: string,
+    proposalRecordId: string,
+    value: unknown,
+    confidence: number,
+  ): Promise<void> => {
+    // The chosen version's own confidence is carried by the caller (the review
+    // popover has it per row) — don't reconstruct it from the latest coord.
+    await selectProposalCore(instanceId, fieldId, proposalRecordId, value, confidence, /* silent */ false);
+  };
+
+  // Rejecting never writes to the backend from here — same contract as
+  // accept: the cleared value bubbles via onSuggestionRejected and the
+  // screen's autosave persists it (link severed by the tombstone below).
   const rejectSuggestion = async (instanceId: string, fieldId: string) => {
     const key = getSuggestionKey(instanceId, fieldId);
     const suggestion = suggestions[key];
     if (!suggestion) return;
 
-    // Feedback visual imediato
-    setActionLoading(prev => ({ ...prev, [key]: 'reject' }));
-
-    const clearLoading = () =>
-      setActionLoading(prev => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-
-    const doReject = async (): Promise<void> => {
-      if (acceptStrategy === 'human-proposal') {
-        // QA path: same logic as accept — no ReviewerDecision write.
-        // Local state flip + onSuggestionRejected callback are enough.
-      } else {
-        const userResult = await getRequiredUserId();
-        if (!userResult.ok) throw userResult.error;
-
-          // Check if was accepted before (need to remove extracted_value)
-        const wasAccepted = suggestion.status === 'accepted';
-
-          // Reject suggestion using the service
-        await AISuggestionService.rejectSuggestion({
-          suggestionId: suggestion.id,
-          reviewerId: userResult.data,
-            wasAccepted, // Pass flag to remove extracted_value if needed
-          instanceId,
-          fieldId,
-          projectId,
-          articleId,
-          runId,
-        });
+      // Update status in local state to 'rejected' (do not remove!)
+      // IMPORTANT: Create new object to ensure re-render
+    setSuggestions(prev => {
+      if (!prev[key]) {
+          console.warn(`⚠️ Suggestion ${key} not found in state when rejecting`);
+        return prev;
       }
+      const next = { ...prev };
+      next[key] = {
+        ...next[key],
+        status: 'rejected' as const,
+      };
+      return {...next}; // New reference to ensure re-render
+    });
 
-        // Update status in local state to 'rejected' (do not remove!)
-        // IMPORTANT: Create new object to ensure re-render e mostrar indicador visual
-      setSuggestions(prev => {
-        if (!prev[key]) {
-            console.warn(`⚠️ Suggestion ${key} not found in state when rejecting`);
-          return prev;
-        }
-        const next = { ...prev };
-        next[key] = {
-          ...next[key],
-          status: 'rejected' as const,
-        };
-          console.warn(`✅ Suggestion ${key} rejected - state updated to 'rejected'`);
-          return {...next}; // New reference to ensure re-render
+    // D0: a reject severs any AI link for the coord (tombstone overrides
+    // the caller's persisted decision link in deriveAiLinkByKey).
+    setSessionAdoption(prev => ({ ...prev, [key]: null }));
+
+      // Callback to clear field when rejecting
+    if (onSuggestionRejected) {
+      Promise.resolve(onSuggestionRejected(instanceId, fieldId)).catch(err => {
+        console.error('Error in onSuggestionRejected callback:', err);
       });
+    }
 
-        // Callback to clear field when rejecting
-      if (onSuggestionRejected) {
-        Promise.resolve(onSuggestionRejected(instanceId, fieldId)).catch(err => {
-          console.error('Erro no callback onSuggestionRejected:', err);
-        });
-      }
-
-        toast.success(t('extraction', 'toastSuggestionRejectedSuccess'));
-    };
-
-    doReject()
-      .catch((err: unknown) => {
-        console.error('Error rejecting suggestion:', err);
-        const message = getErrorMessage(err);
-        toast.error(`${t('extraction', 'errors_rejectSuggestion')}: ${message}`);
-      })
-      .finally(clearLoading);
+    toast.success(t('extraction', 'toastSuggestionRejectedSuccess'));
   };
 
   const batchAccept = async (threshold = 0.8) => {
@@ -283,11 +257,21 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       return;
     }
 
+    // ADR-0016 decision #3: an AI abstention ("no information") must never be
+    // silently bulk-accepted — a reviewer accepts it deliberately, one at a time.
+    // Exclude markers so no confidence threshold can sweep them into accept-all
+    // (an abstention normally has ~0 confidence, but this holds even if it didn't).
+    const actionable = filtered.filter(([, suggestion]) => !isAbstention(suggestion.value));
+    if (actionable.length === 0) {
+        toast.info(t('extraction', 'noSuggestionConfidenceToast').replace('{{pct}}', String(Math.round(threshold * 100))));
+      return;
+    }
+
     // Accept each in silent mode so we fire ONE batch toast instead of N+1,
     // and count real successes so the batch toast can't claim success when
     // every accept actually failed (#160).
     const results = await Promise.all(
-      filtered.map(([key]) => {
+      actionable.map(([key]) => {
         // key format: `${instanceId}_${fieldId}`
         const [instanceId, ...fieldIdParts] = key.split('_');
         const fieldId = fieldIdParts.join('_'); // Caso field_id tenha underscores
@@ -304,18 +288,21 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
   };
 
   /**
-   * Fetches full suggestion history for a specific field
+   * Fetches full suggestion history for a specific field. `limit` defaults to
+   * the form-popover depth; the consensus trace passes 50 so an adopted
+   * version is less likely to fall outside the loaded window (the popover
+   * shows an explicit notice when it still does — D5). Backend caps at 100.
+   *
+   * Failures propagate: the review popover owns the error surface (an inline
+   * "couldn't load" state) — swallowing to [] here would render a definitive
+   * "No versions" on an audit surface after a throttled/failed fetch.
    */
-  const getSuggestionsHistory = async (
+  const getSuggestionsHistory = (
     instanceId: string,
-    fieldId: string
+    fieldId: string,
+    limit = 10,
   ): Promise<AISuggestionHistoryItem[]> =>
-    AISuggestionService.getHistory(articleId, instanceId, fieldId, 10).catch((err: unknown) => {
-      console.error('Error loading suggestion history:', err);
-      const message = getErrorMessage(err);
-      toast.error(`${t('extraction', 'errors_loadSuggestionsHistory')}: ${message}`);
-      return [] as AISuggestionHistoryItem[];
-    });
+    AISuggestionService.getHistory(articleId, instanceId, fieldId, limit);
 
   /**
    * Returns the latest suggestion for a field (if present in local state)
@@ -328,22 +315,18 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     return suggestions[key];
   };
 
-    // Helper to check if a suggestion is loading
-  const isActionLoading = (instanceId: string, fieldId: string): 'accept' | 'reject' | null => {
-    const key = getSuggestionKey(instanceId, fieldId);
-    return actionLoading[key] || null;
-  };
-
   return {
     suggestions,
     loading,
+    sessionAdoption,
+    suggestionsReady,
     acceptSuggestion,
+    selectSuggestion,
     rejectSuggestion,
     batchAccept,
     getSuggestionsHistory,
     getLatestSuggestion,
     refresh: loadSuggestions,
-    isActionLoading,
   };
 }
 

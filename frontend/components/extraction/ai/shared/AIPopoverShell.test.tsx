@@ -20,4 +20,52 @@ describe('AIPopoverShell', () => {
     expect(popover.textContent).toContain('3 found');
     expect(popover.textContent).toContain('body content');
   });
+
+  it('bounds the popover to the viewport with a single scroll region', () => {
+    render(
+      <Popover defaultOpen>
+        <PopoverTrigger>open</PopoverTrigger>
+        <AIPopoverShell icon={<span>i</span>} title="Review">
+          <div data-testid="body">body content</div>
+        </AIPopoverShell>
+      </Popover>,
+    );
+    const popover = document.querySelector('.bg-popover') as HTMLElement;
+    // Height is bounded by the space Radix reports below/above the trigger, so
+    // the popover can never grow past the viewport and get clipped.
+    expect(popover.className).toContain(
+      'max-h-[min(var(--radix-popover-content-available-height),34rem)]',
+    );
+    expect(popover.className).toContain('flex-col');
+    // The body is the ONLY scroll region and absorbs content growth.
+    const body = document.querySelector('[data-testid="body"]') as HTMLElement;
+    const scroll = body.parentElement as HTMLElement;
+    expect(scroll.className).toContain('overflow-y-auto');
+    expect(scroll.className).toContain('min-h-0');
+    expect(scroll.className).toContain('flex-1');
+  });
+
+  it('renders a pinned footer OUTSIDE the scrollable body', () => {
+    render(
+      <Popover defaultOpen>
+        <PopoverTrigger>open</PopoverTrigger>
+        <AIPopoverShell
+          icon={<span>i</span>}
+          title="Review"
+          footer={<div data-testid="ftr">Clear</div>}
+        >
+          <div data-testid="body">body</div>
+        </AIPopoverShell>
+      </Popover>,
+    );
+    const ftr = document.querySelector('[data-testid="ftr"]') as HTMLElement;
+    const scroll = (
+      document.querySelector('[data-testid="body"]') as HTMLElement
+    ).closest('.overflow-y-auto');
+    expect(ftr).not.toBeNull();
+    expect(scroll).not.toBeNull();
+    // footer is pinned (not inside the scroll region) so it stays reachable
+    // no matter how long the body list grows.
+    expect(scroll?.contains(ftr)).toBe(false);
+  });
 });
