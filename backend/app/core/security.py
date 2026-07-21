@@ -13,9 +13,9 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
 from pydantic import BaseModel
 
 from app.core.config import settings
@@ -35,6 +35,11 @@ security = HTTPBearer(
 SUPABASE_LOCAL_JWT_SECRET = "super-secret-jwt-token-with-at-least-32-characters-long"
 LOCAL_JWT_ALGS = {"HS256"}
 JWKS_JWT_ALGS = {"RS256", "ES256"}
+
+# Clock-skew tolerance for iat/exp/nbf. PyJWT validates a future iat
+# (python-jose never did) with zero default leeway, so a backend clock
+# lagging Supabase Auth by even ~1s would 401 freshly minted tokens.
+JWT_LEEWAY_SECONDS = 10
 
 
 class TokenPayload(BaseModel):
@@ -131,13 +136,13 @@ async def _decode_with_jwks(
     """Decodifica JWT usando JWKS do Supabase."""
     jwks = await get_jwks()
 
-    rsa_key: dict[str, Any] | None = None
+    signing_jwk: dict[str, Any] | None = None
     for key in jwks.get("keys", []):
         if kid and key.get("kid") == kid:
-            rsa_key = key
+            signing_jwk = key
             break
 
-    if not rsa_key:
+    if not signing_jwk:
         if not jwks.get("keys"):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -153,10 +158,11 @@ async def _decode_with_jwks(
 
     return jwt.decode(
         token,
-        rsa_key,
+        jwt.PyJWK(signing_jwk, algorithm=alg).key,
         algorithms=[alg],
         audience="authenticated",
         issuer=expected_issuer,
+        leeway=JWT_LEEWAY_SECONDS,
     )
 
 
@@ -214,8 +220,9 @@ async def verify_supabase_jwt(
                         algorithms=["HS256"],
                         audience="authenticated",
                         issuer=expected_issuer,
+                        leeway=JWT_LEEWAY_SECONDS,
                     )
-                except JWTError as e:
+                except jwt.PyJWTError as e:
                     logger.warning(
                         "jwt_validation_local_strict_failed_retrying_flexible",
                         error=str(e),
@@ -226,6 +233,7 @@ async def verify_supabase_jwt(
                         jwt_secret,
                         algorithms=["HS256"],
                         options={"verify_aud": False, "verify_iss": False},
+                        leeway=JWT_LEEWAY_SECONDS,
                     )
             elif alg in JWKS_JWT_ALGS:
                 logger.debug(
@@ -285,7 +293,11 @@ async def verify_supabase_jwt(
 
         return TokenPayload(**payload)
 
-    except JWTError as e:
+    except HTTPException:
+        # Deliberate 401/403s raised above (missing key, alg/issuer mismatch)
+        # must surface their specific detail, not be re-wrapped as generic.
+        raise
+    except jwt.PyJWTError as e:
         logger.warning(
             "jwt_validation_error",
             error=str(e),
