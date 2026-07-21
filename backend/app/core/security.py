@@ -13,9 +13,9 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
 from pydantic import BaseModel
 
 from app.core.config import settings
@@ -131,13 +131,13 @@ async def _decode_with_jwks(
     """Decodifica JWT usando JWKS do Supabase."""
     jwks = await get_jwks()
 
-    rsa_key: dict[str, Any] | None = None
+    signing_jwk: dict[str, Any] | None = None
     for key in jwks.get("keys", []):
         if kid and key.get("kid") == kid:
-            rsa_key = key
+            signing_jwk = key
             break
 
-    if not rsa_key:
+    if not signing_jwk:
         if not jwks.get("keys"):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -153,7 +153,7 @@ async def _decode_with_jwks(
 
     return jwt.decode(
         token,
-        rsa_key,
+        jwt.PyJWK(signing_jwk, algorithm=alg).key,
         algorithms=[alg],
         audience="authenticated",
         issuer=expected_issuer,
@@ -215,7 +215,7 @@ async def verify_supabase_jwt(
                         audience="authenticated",
                         issuer=expected_issuer,
                     )
-                except JWTError as e:
+                except jwt.PyJWTError as e:
                     logger.warning(
                         "jwt_validation_local_strict_failed_retrying_flexible",
                         error=str(e),
@@ -285,7 +285,11 @@ async def verify_supabase_jwt(
 
         return TokenPayload(**payload)
 
-    except JWTError as e:
+    except HTTPException:
+        # Deliberate 401/403s raised above (missing key, alg/issuer mismatch)
+        # must surface their specific detail, not be re-wrapped as generic.
+        raise
+    except jwt.PyJWTError as e:
         logger.warning(
             "jwt_validation_error",
             error=str(e),
