@@ -56,13 +56,13 @@ export function RunSplitShell({
   const pdf = pdfState ?? internalPdf;
 
   const panels = (
-    <ResizablePanelGroup direction="horizontal" className="h-full">
+    <ResizablePanelGroup orientation="horizontal" className="h-full">
+      {/* v4 stamps data-testid={id} on panels (overriding any explicit
+          data-testid prop), so the ids ARE the DOM test contract. */}
       <ResizablePanel
-        id="run-split-form"
-        order={1}
-        defaultSize={pdf.isOpen ? 50 : 100}
-        minSize={30}
-        data-testid="assessment-shell-form"
+        id="assessment-shell-form"
+        defaultSize={pdf.isOpen ? "50%" : "100%"}
+        minSize="30%"
       >
         <div className="flex h-full flex-col">
           {/* In-shell PDF toggle: hidden when the caller owns the toggle
@@ -97,12 +97,10 @@ export function RunSplitShell({
         <>
           <ResizableHandle withHandle />
           <ResizablePanel
-            id="run-split-pdf"
-            order={2}
-            defaultSize={50}
-            minSize={30}
-            maxSize={70}
-            data-testid="assessment-shell-pdf"
+            id="assessment-shell-pdf"
+            defaultSize="50%"
+            minSize="30%"
+            maxSize="70%"
           >
             {pdfPanel}
           </ResizablePanel>
