@@ -23,8 +23,11 @@ updates:
       # Major = a deliberate framework migration (pydantic-ai 2.x has
       # breaking changes across agents/tools APIs). The <2.0.0 ceiling in
       # pyproject is intentional; widen it only in a planned migration PR.
+      # Fully ignored (no update-types filter): dependabot classifies a
+      # range-widening PR (<2.0.0 -> <3.0.0) as NOT semver-major, so the
+      # narrower rule failed to stop #409/#546 from reopening. In-range
+      # minors need no manifest change, so a full ignore loses nothing.
       - dependency-name: pydantic-ai-slim
-        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /
@@ -37,12 +40,13 @@ updates:
     open-pull-requests-limit: 5
     rebase-strategy: disabled
     ignore:
-      # TypeScript 6.0.x is blocked: openapi-typescript (critical for
-      # generate:api-types) peers on "^5.x" as of its latest 7.13.0.
-      # Revisit when openapi-typescript ships TS 6 support; 6.1+ will
-      # open a fresh PR automatically.
+      # TypeScript majors are blocked: openapi-typescript (critical for
+      # generate:api-types) peers on "^5.x" as of its latest 7.13.0 —
+      # TS 6 and TS 7 (#548) both fail that peer range. Unblock
+      # deliberately when openapi-typescript ships support, like the
+      # pydantic-ai migration.
       - dependency-name: typescript
-        versions: [">=6.0.0 <6.1.0"]
+        versions: [">=6.0.0"]
       # Babel 8 is blocked until babel-plugin-react-compiler supports it:
       # the React Compiler build pipeline (vite.shared-plugins.ts,
       # panicThreshold all_errors) hard-fails lint/tests/build under
