@@ -236,3 +236,125 @@ async def test_local_es256_uses_jwks_path(
     payload = await verify_supabase_jwt(_creds(_es256_token(private_key)))
 
     assert payload.sub == TEST_SUB
+
+
+# =================== jose -> PyJWT behavioral deltas ===================
+# PyJWT validates claims python-jose silently skipped (future iat,
+# missing aud). These tests pin the migrated behavior deliberately.
+
+
+@pytest.mark.usefixtures("local_env")
+async def test_future_iat_within_leeway_accepted() -> None:
+    now = int(time.time())
+    token = _hs256_token(_claims(iat=now + 5))
+
+    payload = await verify_supabase_jwt(_creds(token))
+
+    assert payload.sub == TEST_SUB
+
+
+@pytest.mark.usefixtures("local_env")
+async def test_future_iat_beyond_leeway_rejected() -> None:
+    now = int(time.time())
+    token = _hs256_token(_claims(iat=now + 300))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await verify_supabase_jwt(_creds(token))
+
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.usefixtures("production_env")
+async def test_production_es256_wrong_audience_rejected(
+    es256_keypair: tuple[Any, dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_key, jwk = es256_keypair
+    _patch_jwks(monkeypatch, [jwk])
+    token = _es256_token(private_key, _claims(aud="something-else"))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await verify_supabase_jwt(_creds(token))
+
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.usefixtures("production_env")
+async def test_production_es256_missing_audience_rejected(
+    es256_keypair: tuple[Any, dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Stricter than python-jose (whose missing-aud check was a no-op):
+    # a JWKS-signed token without an aud claim is now rejected. Pinned
+    # deliberately — GoTrue user tokens always carry aud=authenticated.
+    private_key, jwk = es256_keypair
+    _patch_jwks(monkeypatch, [jwk])
+    claims = _claims()
+    claims.pop("aud")
+    token = _es256_token(private_key, claims)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await verify_supabase_jwt(_creds(token))
+
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.usefixtures("production_env")
+async def test_production_es256_wrong_issuer_rejected(
+    es256_keypair: tuple[Any, dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_key, jwk = es256_keypair
+    _patch_jwks(monkeypatch, [jwk])
+    token = _es256_token(private_key, _claims(iss="https://evil.example.com/auth/v1"))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await verify_supabase_jwt(_creds(token))
+
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.usefixtures("production_env")
+async def test_production_rs256_valid_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cryptography.hazmat.primitives.asymmetric.rsa import (
+        generate_private_key as generate_rsa_key,
+    )
+
+    private_key = generate_rsa_key(public_exponent=65537, key_size=2048)
+    jwk = jwt.algorithms.RSAAlgorithm.to_jwk(private_key.public_key(), as_dict=True)
+    jwk["kid"] = TEST_KID
+    jwk["alg"] = "RS256"
+    _patch_jwks(monkeypatch, [jwk])
+    token = jwt.encode(_claims(), private_key, algorithm="RS256", headers={"kid": TEST_KID})
+
+    payload = await verify_supabase_jwt(_creds(token))
+
+    assert payload.sub == TEST_SUB
+
+
+@pytest.mark.usefixtures("production_env")
+async def test_production_kidless_token_rejected(
+    es256_keypair: tuple[Any, dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_key, jwk = es256_keypair
+    _patch_jwks(monkeypatch, [jwk])
+    token = jwt.encode(_claims(), private_key, algorithm="ES256")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await verify_supabase_jwt(_creds(token))
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Token signing key not found"
+
+
+@pytest.mark.usefixtures("local_env")
+async def test_local_wrong_audience_accepted_via_flexible_retry() -> None:
+    # Deliberate local-mode leniency (pre-existing design): the strict
+    # decode fails on aud, then the flexible retry accepts when the
+    # signature and issuer are valid.
+    token = _hs256_token(_claims(aud="not-authenticated"))
+
+    payload = await verify_supabase_jwt(_creds(token))
+
+    assert payload.sub == TEST_SUB

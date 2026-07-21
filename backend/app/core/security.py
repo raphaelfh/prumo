@@ -36,6 +36,11 @@ SUPABASE_LOCAL_JWT_SECRET = "super-secret-jwt-token-with-at-least-32-characters-
 LOCAL_JWT_ALGS = {"HS256"}
 JWKS_JWT_ALGS = {"RS256", "ES256"}
 
+# Clock-skew tolerance for iat/exp/nbf. PyJWT validates a future iat
+# (python-jose never did) with zero default leeway, so a backend clock
+# lagging Supabase Auth by even ~1s would 401 freshly minted tokens.
+JWT_LEEWAY_SECONDS = 10
+
 
 class TokenPayload(BaseModel):
     """
@@ -157,6 +162,7 @@ async def _decode_with_jwks(
         algorithms=[alg],
         audience="authenticated",
         issuer=expected_issuer,
+        leeway=JWT_LEEWAY_SECONDS,
     )
 
 
@@ -214,6 +220,7 @@ async def verify_supabase_jwt(
                         algorithms=["HS256"],
                         audience="authenticated",
                         issuer=expected_issuer,
+                        leeway=JWT_LEEWAY_SECONDS,
                     )
                 except jwt.PyJWTError as e:
                     logger.warning(
@@ -226,6 +233,7 @@ async def verify_supabase_jwt(
                         jwt_secret,
                         algorithms=["HS256"],
                         options={"verify_aud": False, "verify_iss": False},
+                        leeway=JWT_LEEWAY_SECONDS,
                     )
             elif alg in JWKS_JWT_ALGS:
                 logger.debug(
