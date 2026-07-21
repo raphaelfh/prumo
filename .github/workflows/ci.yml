@@ -594,7 +594,7 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         with:
           version: latest
       - name: Start Supabase (auth/storage migrations auto-applied)

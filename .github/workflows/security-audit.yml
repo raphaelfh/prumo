@@ -43,5 +43,13 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
-      - name: Audit (high+ severity)
-        run: npm audit --audit-level=high
+      # Blocking gate covers shipped (production) dependencies only.
+      # Dev-tooling advisories stay visible in the informational step but
+      # don't fail the job: they can't reach production and are sometimes
+      # unfixable upstream (e.g. GHSA-52cp-r559-cp3m: js-yaml 4.x under
+      # @redocly/openapi-core 1.x, pinned by openapi-typescript 7 — the
+      # codegen CLI; no compatible fixed release exists as of 2026-07-21).
+      - name: Audit production deps (high+ severity, blocking)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit all deps (informational)
+        run: npm audit --audit-level=high || true
