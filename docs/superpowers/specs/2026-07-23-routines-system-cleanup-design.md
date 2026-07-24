@@ -10,8 +10,8 @@ owner: '@raphaelfh'
 > **Scope:** the ten claude.ai scheduled cloud agents ("routines") pointed at
 > `raphaelfh/prumo`, and the 43 open GitHub issues they produced. This spec
 > retires eight of them, reshapes two, adds one, and liquidates the backlog.
-> **Not in scope:** the repository's own CI workflows, except where a retired
-> routine's job moves into one.
+> **Not in scope:** the repository's own CI workflows. Every retired routine's
+> job is either already covered deterministically or explicitly dropped.
 
 ## Context
 
@@ -164,7 +164,16 @@ connector instability rather than as prod actually changing state.
   files an issue.
 - `flaky-test-tracker` duplicates CI's own run history, and has been
   environmentally blind since #186.
-- `migration-drift-detector` produced one true positive (#185) in two months.
+- `migration-drift-detector` checks a condition the application already
+  enforces at startup. `check_pending_migrations()` in
+  `backend/app/main.py` runs inside the FastAPI `lifespan`, compares the
+  database's current heads against the Alembic script heads, and
+  `raise SystemExit(1)` on any pending revision. A deploy carrying an
+  unapplied migration therefore **cannot boot**; `/health` never returns 200;
+  and `post-deploy-smoke.yml` — which already gates on `/health` 200 after
+  every push to `main` and every six hours — fails and emails the owner.
+  Head drift is structurally impossible to miss. The routine's single true
+  positive in two months (#185) was an `RLS_DIFF`, a different class.
 
 ### What actually works
 
@@ -355,7 +364,7 @@ probation terms, fixed in advance:
 | `flaky-test-tracker` | blind since #186 (52 days); zero findings; CI holds the data |
 | `system-health-check` | 30 days of daily alarms into #390 with no action taken |
 | `linear-enrich` | broken 32 days; `analyzed=0`; Linear MCP unreachable |
-| `migration-drift-detector` | one true positive in two months; job moves into `post-deploy-smoke.yml` |
+| `migration-drift-detector` | head drift already blocked by `check_pending_migrations()` at startup and proven by `post-deploy-smoke.yml` |
 | `routine-watchdog` | with three routines delivering into the PR flow, silence is self-evident |
 
 **Operational constraint:** the routines API supports `enabled: false` but not
@@ -364,22 +373,25 @@ API; the maintainer deletes them at `https://claude.ai/code/routines`.
 
 ## What moves to deterministic tooling
 
-Three jobs are better done by code than by an agent:
+Three retired jobs are already covered by deterministic tooling. **None of them
+requires new work**, which is what makes the retirement safe:
 
-- **Migration drift** (deployed Alembic head vs. Supabase prod schema) becomes a
-  step in `.github/workflows/post-deploy-smoke.yml`. Comparing a head revision to
-  a schema is deterministic, free, and does not need weekly LLM inference. It also
-  runs at the moment drift can appear — right after a deploy — instead of up to
-  seven days later.
+- **Migration head drift** is enforced by `check_pending_migrations()` at
+  application startup and proven on every deploy by `post-deploy-smoke.yml`'s
+  `/health` probe. See §9. No CI step is added; adding one would duplicate a
+  guarantee the application already provides.
 - **Prod health** moves to native Railway, Vercel and Supabase alerting. Cheaper,
   more reliable, and it pages instead of filing.
-- **CVE detection** is already covered by `security-audit.yml` and Dependabot;
-  nothing to add.
+- **CVE detection** is already covered by `security-audit.yml` and Dependabot.
 
-The `post-deploy-smoke.yml` step is the only new work of the three, and it is a
-follow-up rather than a blocker: `migration-drift-detector` found one true
-positive in two months, so the coverage gap between disabling the routine and
-landing the CI step is small and bounded.
+**Residual gap, stated honestly:** nothing replaces the *schema-object* half of
+`migration-drift-detector` — RLS policy divergence between the Alembic-declared
+state and the live Supabase database, the class that produced #185. The startup
+gate compares revision identifiers, not policies. This gap is accepted: one
+occurrence in two months, and the routine that covered it filed into a queue that
+was never read, so its practical detection value was already zero. If RLS drift
+recurs, the right fix is a deterministic check in the migration round-trip suite,
+not a weekly agent.
 
 ## Backlog liquidation — one-shot, not a routine
 
@@ -456,8 +468,10 @@ Measured at four weeks (2026-08-20):
 - **Sandbox-green is weaker than suite-green.** PRs will reach the maintainer
   having passed only lints, types and unit tests. CI catches the rest, but review
   load per PR is slightly higher than if the routine had run everything.
-- **Migration-drift coverage gap** between disabling the routine and landing the
-  CI step. Bounded, as noted above.
+- **RLS drift becomes undetected.** The startup gate covers revision identifiers,
+  not policy bodies. Accepted and stated in "What moves to deterministic
+  tooling"; the replacement, if ever needed, is a check in the migration
+  round-trip suite.
 - **Retiring `system-health-check` removes cross-provider aggregation** that
   native alerts do not offer. Accepted: the aggregation was consumed zero times
   in 30 days.
@@ -467,5 +481,5 @@ Measured at four weeks (2026-08-20):
 - Reconnecting MCP connectors. No surviving routine needs one.
 - Refreshing routine model identifiers to current names. Worth doing, but it is
   configuration hygiene, not part of this redesign.
-- Any change to the repository's existing CI workflows other than the
-  `post-deploy-smoke.yml` migration-drift step named above.
+- Any change to the repository's existing CI workflows. The investigation
+  concluded that none is required — see "What moves to deterministic tooling".
