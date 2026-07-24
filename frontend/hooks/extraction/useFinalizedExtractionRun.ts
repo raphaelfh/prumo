@@ -12,7 +12,7 @@
  * resolver.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ExtractionValueService, type RunRef } from "@/services/extractionValueService";
 
@@ -38,23 +38,37 @@ export function useFinalizedExtractionRun(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
+  // Generation guard: a lookup started for one articleId must not write its
+  // result once a newer lookup has begun, or a slow response for the previous
+  // article silently overwrites the current one (#285). Same pattern as
+  // ProjectView's projectLoadRef.
+  const loadGenerationRef = useRef(0);
+
   const load = async () => {
     if (!articleId) {
       setFinalizedRun(null);
       return;
     }
+    loadGenerationRef.current += 1;
+    const generation = loadGenerationRef.current;
+
     setLoading(true);
     setError(null);
 
     ExtractionValueService.findLatestFinalizedRun(articleId, projectTemplateId ?? null)
       .then((run) => {
+        if (generation !== loadGenerationRef.current) return;
         setFinalizedRun(run);
       })
       .catch((err: unknown) => {
+        if (generation !== loadGenerationRef.current) return;
         setError(err instanceof Error ? err : new Error(String(err)));
         setFinalizedRun(null);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (generation !== loadGenerationRef.current) return;
+        setLoading(false);
+      });
   };
 
   useEffect(() => {
