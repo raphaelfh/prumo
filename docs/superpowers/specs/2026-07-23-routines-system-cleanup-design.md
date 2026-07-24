@@ -291,15 +291,35 @@ without being asked, which proves they exist on the account.
 
 The change was applied on 2026-07-24 at 01:22Z and reverted at 01:57Z after
 `pr-review` failed to comment on PR #554 within 15 minutes, against a measured
-historical latency of **2–4 minutes on every one of the six preceding PRs**. The
-correlation is not proof of causation — three cloud sessions were triggered
-manually in the same window, so queueing is an equally live explanation, and the
-API exposes no session state to distinguish them. But the change had no
-demonstrated benefit and the routine it touched was the only proven performer in
-the portfolio, so reverting is the correct asymmetry.
+historical latency of **2–4 minutes on every one of the six preceding PRs**.
 
-**The rule this yields:** do not modify the one component that works in order to
-tidy it. `pr-review` is out of scope for this cleanup.
+**The change is nonetheless exonerated as the cause.** At 02:06Z — with Context7
+already restored — `pr-review` was triggered manually and produced nothing in
+nine minutes either. The configuration is therefore not the differentiator. Four
+cloud sessions were triggered between 01:07Z and 02:06Z and **none produced any
+observable artifact**:
+
+| time (UTC) | session | artifact |
+|---|---|---|
+| 01:07 | `cleanup`, pre-rewrite prompt | none |
+| 01:29 | `bug-fix`, first run | none |
+| 01:29 | `cleanup`, rewritten prompt | none |
+| 02:06 | `pr-review`, manual, original config | none |
+
+The parsimonious reading is **platform-side capacity** — a queue or a run cap —
+not configuration. The retired `routine-watchdog` prompt listed "hit the daily
+run cap" among its expected causes of silence, so the failure mode is known.
+
+The revert stands anyway, on a principle rather than on this evidence: do not
+modify the one component that works in order to tidy it, especially on a premise
+you have not verified. `pr-review` is out of scope for this cleanup.
+
+**Consequence for this spec:** the rewritten `cleanup` and the new `bug-fix` are
+**unverified end to end**. Their gate was validated command by command locally,
+which is the stronger evidence, but neither has been observed completing a cloud
+run. The first scheduled runs are the real test — `bug-fix` Saturday 06:00 UTC,
+`cleanup` Tuesday 09:00 UTC. If those also produce nothing, the cause is not the
+gate.
 
 ### `bug-fix` — new; merges `bug-watch` and `bug-watch-write`
 
