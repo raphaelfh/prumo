@@ -242,18 +242,37 @@ async def get_export_status(
 
     result = AsyncResult(job_id, app=celery_app)
     state = result.state
-    # Issue #60: `result.backend` is always truthy when Celery has a result
-    # backend configured, so the previous guard was dead code and an unknown
-    # job_id would spin in "pending" indefinitely. Use the owner record
-    # (written at enqueue time with TTL = result_expires) as the authoritative
-    # existence signal: PENDING + no owner row = job was never enqueued or
-    # has fully expired.
-    if state == "PENDING" and _lookup_export_owner(job_id) is None:
+
+    # Ownership gate before any state-dependent return. Every branch below
+    # returns task state, and FAILURE returns ``str(result.result)`` (the raw
+    # exception repr), so a caller who guesses or enumerates a valid ``job_id``
+    # could read another user's export progress or error text. Mirror the
+    # sibling ``extraction_export.get_extraction_export_status`` fix: the Redis
+    # owner record (written at enqueue with TTL = result_expires) is
+    # authoritative; fall back to the SUCCESS payload's ``user_id`` when the TTL
+    # expired but Celery still has the result cached.
+    #
+    # This supersedes the Issue #60 PENDING-only existence guard: a missing
+    # owner record still yields NOT_FOUND (covering the never-enqueued /
+    # expired case), and now every other state is gated too instead of only
+    # SUCCESS.
+    owner = _lookup_export_owner(job_id)
+    if owner is None and state == "SUCCESS" and isinstance(result.result, dict):
+        owner = result.result.get("user_id")
+
+    if owner is None:
         return ApiResponse.failure(
             code="NOT_FOUND",
             message="Job not found or expired.",
             trace_id=trace_id,
         )
+    if owner != user.sub:
+        return ApiResponse.failure(
+            code="FORBIDDEN",
+            message="Job does not belong to current user.",
+            trace_id=trace_id,
+        )
+
     if state == "PENDING":
         return ApiResponse.success(
             data=ExportStatusResponse(
@@ -280,13 +299,8 @@ async def get_export_status(
             trace_id=trace_id,
         )
     if state == "SUCCESS" and result.result:
+        # Ownership already enforced by the gate at the top of the handler.
         data = result.result
-        if isinstance(data, dict) and data.get("user_id") != user.sub:
-            return ApiResponse.failure(
-                code="FORBIDDEN",
-                message="Job does not belong to current user.",
-                trace_id=trace_id,
-            )
         skipped = data.get("skipped_files") or []
         skipped_entries = None
         if skipped:
