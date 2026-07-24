@@ -11,7 +11,7 @@
  * @hook
  */
 
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import type {
@@ -54,6 +54,10 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
   // (a failed load must not mislabel decisions as Manual in consensus).
   const [suggestionsReady, setSuggestionsReady] = useState(false);
 
+  // Monotonic counter identifying the newest in-flight load; see the guard in
+  // loadSuggestions (#406).
+  const loadGenerationRef = useRef(0);
+
   // Stable, content-derived key for the caller-provided instance ids. The
   // loader reads ONLY this primitive (never the `providedInstanceIds` array
   // directly), so neither the manual deps nor the React Compiler's inferred
@@ -64,6 +68,15 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
 
     // Declare loadSuggestions BEFORE useEffect to avoid init error
   const loadSuggestions = (): Promise<LoadSuggestionsResult> => {
+    // Generation guard: the effect re-runs on articleId change, so a load
+    // started for one article must not write its suggestions once a newer
+    // load has begun — otherwise article A's map lands on article B (#406).
+    // The returned promise still resolves for whoever awaited it; only the
+    // state writes are suppressed.
+    loadGenerationRef.current += 1;
+    const generation = loadGenerationRef.current;
+    const isCurrent = () => generation === loadGenerationRef.current;
+
     setLoading(true);
     // Not ready while ANY load is in flight — consumers (the consensus
     // Manual chip) must see null, not a stale previous map, mid-refresh.
@@ -81,7 +94,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       .then((instanceIds) => {
         if (instanceIds.length === 0) {
           console.warn('No instances found when loading suggestions');
-          setSuggestions({});
+          if (isCurrent()) setSuggestions({});
           return { suggestions: {}, count: 0 } as LoadSuggestionsResult;
         }
 
@@ -93,6 +106,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         return AISuggestionService.loadSuggestions(articleId, instanceIds, runId);
       })
       .then((result) => {
+        if (!isCurrent()) return result;
         setSuggestionsReady(true);
         // CRITICAL: setSuggestions updates state asynchronously
         // Use updater function so previous state is considered
@@ -111,13 +125,17 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       })
       .catch((err: unknown) => {
         console.error('Error loading suggestions:', err);
-        const message = getErrorMessage(err);
-        toast.error(`${t('extraction', 'errors_loadSuggestions')}: ${message}`);
-        setSuggestionsReady(false);
-        setSuggestions({});
+        if (isCurrent()) {
+          const message = getErrorMessage(err);
+          toast.error(`${t('extraction', 'errors_loadSuggestions')}: ${message}`);
+          setSuggestionsReady(false);
+          setSuggestions({});
+        }
         return { suggestions: {}, count: 0 } as LoadSuggestionsResult;
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (isCurrent()) setLoading(false);
+      });
   };
 
     // useEffect AFTER loadSuggestions declaration
