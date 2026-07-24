@@ -317,22 +317,52 @@ finding, the BOLA leak, became a real fix (PR #555). The `pr-review` "anomaly"
 was a documented skip rule I failed to read before spending an hour chasing it —
 recorded so the next reader checks the contract first.
 
-**Two design facts the transcripts surfaced, left as open questions for the
-maintainer:**
+**Two design facts the transcripts surfaced — both now resolved (2026-07-24
+SOTA-hardening pass):**
 
-1. The probation ceiling blocked `bug-fix` from fixing the BOLA bug it correctly
-   found — a genuinely high-value change. It surfaced the finding through an
-   improvised private notification, which is *outside* the "a PR or nothing,
-   never a side-channel" output contract but was the right call with no
-   sanctioned channel available. Decide: allow security/BOLA findings to open a
-   PR during probation, or keep the ceiling and accept the side-channel for that
-   one class.
-2. `gh` is **not installed** in the routine sandbox (issue #186 noted this
-   months ago). Both routines adapted to GitHub **MCP** tools for their read and
-   dedup steps, but neither reached the write path this run, so the `gh pr
-   create` in both prompts is **unexercised**. The first run that actually wants
-   to open a PR may need the same MCP fallback; watch the first scheduled run
-   that finds something.
+1. **The probation ceiling blocked a real security fix → resolved by widening
+   the ceiling.** `bug-fix` found the BOLA bug and, forbidden from fixing it,
+   improvised a private notification — a side-channel *outside* the "a PR or
+   nothing" contract. The ceiling exists to keep the unproven routine's changes
+   low-amplitude, but a confirmed security fix is exactly the high-value, human-
+   merged change that should reach a PR fast. The ceiling now permits **(a)** the
+   four low-amplitude classes **plus (b)** confirmed security findings (BOLA /
+   missing ownership or membership check, auth bypass, injection, secret/PII
+   leak), under the same minimal-fix + regression-test + green-gate discipline.
+   The side-channel is now explicitly forbidden: a finding that cannot become a
+   PR is dropped.
+
+2. **The `gh pr create` write path was unexercised and would have failed →
+   resolved by routing all GitHub writes through MCP.** `gh` is not installed in
+   the routine sandbox (issue #186, months ago). Both routines already adapted to
+   GitHub **MCP** tools for their read/dedup steps, but their prompts still said
+   `gh pr create` for the write step — which would have aborted the first run
+   that actually found something, silently recreating the two-month
+   never-produces-a-PR failure. Both prompts now open with a "GitHub access"
+   section: `gh` is absent, use GitHub MCP for every GitHub operation (list,
+   branch, commit, PR), and `git` is for local work only — do not assume
+   `git push` has credentials. GitHub MCP is confirmed available in the sandbox
+   (the transcripts show both routines calling it without any configured
+   `mcp_connections`).
+
+**Model currency (same pass).** A routine pinned to an aging model is a latent
+burden — deprecation turns "works" into "silently broken". `cleanup` and
+`bug-fix` are on `claude-opus-4-8[1m]` (current top tier, best at the subtle-bug
+and dead-code judgement these do). `pr-review` was still on the prior-generation
+`claude-sonnet-4-6`; it is bumped to `claude-sonnet-5` — a pure model-currency
+change, prompt byte-identical, the single deliberate exception to "leave
+`pr-review` alone", justified because model rot is precisely the burden this
+directive targets. Like the other two routines this is unverified end to end
+(the sandbox exposes no session output); the id is from the documented model
+list, not a guess, and it is one field to revert.
+
+**Caveat carried forward:** none of these three changes has been observed
+completing a cloud run — the platform exposes no session output and a manual
+trigger of `bug-fix`/`cleanup` currently skips (nothing new in scope; `pr-review`
+skips `claude/*` PRs). The MCP write path in particular is proven for *reads* but
+still unexercised for *PR creation*; the first scheduled run that finds something
+is its first real test. If it aborts `reason=no-github-access` or fails to open a
+PR, the MCP write flow is where to look.
 
 ### `bug-fix` — new; merges `bug-watch` and `bug-watch-write`
 
