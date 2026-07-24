@@ -293,33 +293,46 @@ The change was applied on 2026-07-24 at 01:22Z and reverted at 01:57Z after
 `pr-review` failed to comment on PR #554 within 15 minutes, against a measured
 historical latency of **2–4 minutes on every one of the six preceding PRs**.
 
-**The change is nonetheless exonerated as the cause.** At 02:06Z — with Context7
-already restored — `pr-review` was triggered manually and produced nothing in
-nine minutes either. The configuration is therefore not the differentiator. Four
-cloud sessions were triggered between 01:07Z and 02:06Z and **none produced any
-observable artifact**:
+The change is exonerated as the cause: at 02:06Z, with Context7 already restored,
+`pr-review` was triggered manually and still produced nothing. The revert stands
+on a principle regardless — do not modify the one component that works to tidy
+it, especially on an unverified premise.
 
-| time (UTC) | session | artifact |
+**But the silence was not a failure at all — corrected from the session
+transcripts.** An earlier draft here concluded the silence was *platform-side
+capacity* (a queue or run cap). That was **wrong**, and it was reached without
+the one piece of evidence that settles it: the session transcripts at
+`claude.ai/code`. They show all three routines ran correctly and were silent for
+three distinct, deterministic, *correct* reasons:
+
+| session | outcome | why silent — and why that is correct |
 |---|---|---|
-| 01:07 | `cleanup`, pre-rewrite prompt | none |
-| 01:29 | `bug-fix`, first run | none |
-| 01:29 | `cleanup`, rewritten prompt | none |
-| 02:06 | `pr-review`, manual, original config | none |
+| `cleanup`, rewritten | `skip nothing-to-clean` | `backend/app/utils` is genuinely clean (42-LOC `rate_limiter.py` + 1-line `__init__.py`, no dead code, ruff clean). A valid no-op. |
+| `bug-fix`, first run | `skip above-ceiling` | Found a **real high-confidence BOLA leak** in `articles_export.get_export_status`, then correctly withheld the fix — BOLA is outside the probation ceiling. |
+| `pr-review`, on #554 | `skip` | The committed `automated-pr-review.md` contract skips `claude/*` branches without a `needs-review` label. #554 is exactly that. #553/#550/#549 were already reviewed (dedup). |
 
-The parsimonious reading is **platform-side capacity** — a queue or a run cap —
-not configuration. The retired `routine-watchdog` prompt listed "hit the daily
-run cap" among its expected causes of silence, so the failure mode is known.
+So the end-to-end verification this section had marked "incomplete" is **complete
+and passing**. The three routines execute and produce correct outcomes. The lone
+finding, the BOLA leak, became a real fix (PR #555). The `pr-review` "anomaly"
+was a documented skip rule I failed to read before spending an hour chasing it —
+recorded so the next reader checks the contract first.
 
-The revert stands anyway, on a principle rather than on this evidence: do not
-modify the one component that works in order to tidy it, especially on a premise
-you have not verified. `pr-review` is out of scope for this cleanup.
+**Two design facts the transcripts surfaced, left as open questions for the
+maintainer:**
 
-**Consequence for this spec:** the rewritten `cleanup` and the new `bug-fix` are
-**unverified end to end**. Their gate was validated command by command locally,
-which is the stronger evidence, but neither has been observed completing a cloud
-run. The first scheduled runs are the real test — `bug-fix` Saturday 06:00 UTC,
-`cleanup` Tuesday 09:00 UTC. If those also produce nothing, the cause is not the
-gate.
+1. The probation ceiling blocked `bug-fix` from fixing the BOLA bug it correctly
+   found — a genuinely high-value change. It surfaced the finding through an
+   improvised private notification, which is *outside* the "a PR or nothing,
+   never a side-channel" output contract but was the right call with no
+   sanctioned channel available. Decide: allow security/BOLA findings to open a
+   PR during probation, or keep the ceiling and accept the side-channel for that
+   one class.
+2. `gh` is **not installed** in the routine sandbox (issue #186 noted this
+   months ago). Both routines adapted to GitHub **MCP** tools for their read and
+   dedup steps, but neither reached the write path this run, so the `gh pr
+   create` in both prompts is **unexercised**. The first run that actually wants
+   to open a PR may need the same MCP fallback; watch the first scheduled run
+   that finds something.
 
 ### `bug-fix` — new; merges `bug-watch` and `bug-watch-write`
 
