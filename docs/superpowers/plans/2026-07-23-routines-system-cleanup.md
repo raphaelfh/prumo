@@ -811,7 +811,14 @@ violates the output contract.
 
 ## Run log
 
-Recorded as tasks complete.
-
-| when | task | observation |
+| when (UTC) | task | observation |
 |---|---|---|
+| 2026-07-24 01:21 | 1 | All eight retired routines set to `enabled: false`. Verified by `list`: 10 total, 2 enabled (`pr-review`, `cleanup`). Deletion is the maintainer's step at `https://claude.ai/code/routines` — the API has no delete. |
+| 2026-07-24 01:22 | 2 | `pr-review` `clear_mcp_connections: true`. Verified `mcp_connections: []`, prompt and `allowed_tools` intact, `enabled: true`. |
+| 2026-07-23 22:2x | 3 pre-work | **The gate as written in this plan was wrong in three ways**, each found by running it locally before shipping. (a) `uv run mypy` fails `Failed to spawn: mypy` — mypy lives in the `dev` *extra*, which a plain `uv sync` does not install. (b) `uv run pytest tests/unit` dies during collection with pydantic `Field required` — `Settings` needs `DATABASE_URL`, `SUPABASE_*`, `ENCRYPTION_KEY` etc. (c) a bare `uv run mypy app` reports **163 pre-existing errors**; the real gate is the ratchet, `{ uv run mypy app --ignore-missing-imports \|\| true; } \| uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline`. Shipping the plan's original text would have aborted every run — the exact bug being fixed. |
+| 2026-07-23 22:3x | 3 pre-work | Corrected gate validated end to end: ruff clean, ruff format clean, mypy ratchet `80 <= 86 tolerated, no new errors`, **1842 unit tests pass in 54s with dummy env and no database**. `npm run lint` exits 0. The `tsc` failure seen locally is a worktree artifact — this worktree has no `node_modules` and resolves the parent checkout's `react-resizable-panels@2.1.9` while `package.json` requires `^4.12.2`. |
+| 2026-07-24 01:28 | 3 | `cleanup` rewritten with the corrected gate, ready-for-review PR, proactive-only, total module selection. Verified: cron `0 9 * * 2`, prompt contains `uv run pytest tests/unit`, no `make test-backend` outside the do-not-use warning. |
+| 2026-07-24 01:28 | 4 | `bug-fix` created — `trig_01EAzKu5drRML9wiqQy8S1iE`, cron `0 6 * * 6`. The create call auto-attached six MCP connectors that were not requested; cleared with `clear_mcp_connections`. |
+| 2026-07-24 01:07 | 3 (old prompt) | Ran the **pre-rewrite** `cleanup` once as a diagnostic. Produced no branch, no PR, no issue, no comment in 15 minutes. The API exposes no session output, so "aborted on the gate" and "still running" are indistinguishable from outside — which is itself the observability failure recorded in the spec (§3). Inconclusive as a direct cause test; superseded by the local command-by-command validation above, which is stronger evidence. |
+| 2026-07-24 01:29 | 3, 4 | Verification runs triggered for both rewritten routines (`cse_011yj6kQPvMnVUcHfoTSVVbj`, `cse_01CTtYVwnHDZN2gXxzxJJPf4`). `bug-fix` lands on ISO week 30 → `SCOPE=2` (`api/v1/endpoints/*`, BOLA lens), a row the predecessor never scanned. `cleanup` targets `backend/app/utils` (coldest, last commit 2026-06-11). Outcome pending at time of writing. |
+| 2026-07-24 01:3x | 5 | Backlog **43 → 12**. 31 closed with per-issue evidence, 2 fixed in this branch (#284, #333). See `2026-07-23-auto-found-triage.md`. |
