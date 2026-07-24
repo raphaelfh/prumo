@@ -1,10 +1,13 @@
-"""Handler tests for /api/v1/articles-export (issues #30 and #60).
+"""Handler tests for /api/v1/articles-export (issues #30 and #60, plus the
+ownership gate on GET /status/{job_id}).
 
-These focus narrowly on the two behaviours under repair:
+These focus narrowly on:
 * the sync path surfaces ``X-Skipped-Files`` when the service reports
   any skipped files (was silently dropped before — issue #30);
 * GET /status/{job_id} returns ``NOT_FOUND`` for an unknown job id
-  instead of forever spinning in "pending" (was dead code — issue #60).
+  instead of forever spinning in "pending" (was dead code — issue #60);
+* GET /status/{job_id} refuses to leak another user's job state — the
+  BOLA gate that already protects the sibling ``extraction-export`` route.
 """
 
 from collections.abc import AsyncGenerator
@@ -20,6 +23,9 @@ from app.core.deps import get_db, get_supabase
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
 
+CALLER_USER_ID = str(uuid4())
+OTHER_USER_ID = str(uuid4())
+
 
 @pytest_asyncio.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
@@ -28,7 +34,7 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 
     async def override_get_current_user() -> TokenPayload:
         return TokenPayload(
-            sub=str(uuid4()),
+            sub=CALLER_USER_ID,
             email="user@example.com",
             role="authenticated",
             aal="aal1",
@@ -148,8 +154,8 @@ async def test_status_returns_not_found_for_unknown_job(
 async def test_status_pending_for_known_job(
     client: AsyncClient,
 ) -> None:
-    """Counterpart to the NOT_FOUND fix: a PENDING task with a known
-    owner record must still report 'pending', not 'not_found'."""
+    """Counterpart to the NOT_FOUND fix: a PENDING task owned by the caller
+    must still report 'pending', not 'not_found'."""
     known_job_id = str(uuid4())
 
     mock_result = MagicMock()
@@ -163,7 +169,7 @@ async def test_status_pending_for_known_job(
         ),
         patch(
             "app.api.v1.endpoints.articles_export._lookup_export_owner",
-            return_value="owner-uuid",
+            return_value=CALLER_USER_ID,
         ),
     ):
         res = await client.get(f"/api/v1/articles-export/status/{known_job_id}")
@@ -172,3 +178,93 @@ async def test_status_pending_for_known_job(
     body = res.json()
     assert body["ok"] is True
     assert body["data"]["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_status_other_users_pending_job_returns_forbidden(
+    client: AsyncClient,
+) -> None:
+    """BOLA regression: a PENDING job owned by a different user must not
+    leak its state. Before the ownership gate, every non-SUCCESS branch
+    returned task state to anyone who supplied a valid job id."""
+    job_id = str(uuid4())
+
+    mock_result = MagicMock()
+    mock_result.state = "PENDING"
+    mock_result.result = None
+
+    with (
+        patch("celery.result.AsyncResult", return_value=mock_result),
+        patch(
+            "app.api.v1.endpoints.articles_export._lookup_export_owner",
+            return_value=OTHER_USER_ID,
+        ),
+    ):
+        res = await client.get(f"/api/v1/articles-export/status/{job_id}")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["ok"] is False
+    assert body["error"]["code"] == "FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_status_other_users_failed_job_does_not_leak_error(
+    client: AsyncClient,
+) -> None:
+    """BOLA regression: the FAILURE branch returned ``str(result.result)`` —
+    the raw exception repr — to any caller. The gate must fire first so the
+    error text of another user's job never reaches the caller."""
+    job_id = str(uuid4())
+
+    mock_result = MagicMock()
+    mock_result.state = "FAILURE"
+    mock_result.result = Exception("secret path /srv/exports/user-42/report.zip")
+
+    with (
+        patch("celery.result.AsyncResult", return_value=mock_result),
+        patch(
+            "app.api.v1.endpoints.articles_export._lookup_export_owner",
+            return_value=OTHER_USER_ID,
+        ),
+    ):
+        res = await client.get(f"/api/v1/articles-export/status/{job_id}")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["ok"] is False
+    assert body["error"]["code"] == "FORBIDDEN"
+    assert "secret path" not in res.text
+
+
+@pytest.mark.asyncio
+async def test_status_own_success_job_returns_completed(
+    client: AsyncClient,
+) -> None:
+    """Sanity: the caller's own SUCCESS job still returns the completed
+    payload, including when the Redis owner TTL has expired and ownership
+    is recovered from the result's ``user_id``."""
+    job_id = str(uuid4())
+
+    mock_result = MagicMock()
+    mock_result.state = "SUCCESS"
+    mock_result.result = {
+        "user_id": CALLER_USER_ID,
+        "download_url": "https://example.com/export.zip",
+        "expires_at": "2026-07-24T12:00:00Z",
+    }
+
+    with (
+        patch("celery.result.AsyncResult", return_value=mock_result),
+        patch(
+            "app.api.v1.endpoints.articles_export._lookup_export_owner",
+            return_value=None,  # TTL expired; fall back to result.user_id
+        ),
+    ):
+        res = await client.get(f"/api/v1/articles-export/status/{job_id}")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["ok"] is True
+    assert body["data"]["status"] == "completed"
+    assert body["data"]["download_url"] == "https://example.com/export.zip"
