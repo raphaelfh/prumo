@@ -150,11 +150,16 @@ unconsumed detection layer.
 
 ### 8. Broken dependencies, some silent
 
-The claude.ai account currently has **no connected MCP connectors**. Five
-routines declare MCP dependencies (Linear, Supabase, Vercel, Context7).
-`linear-enrich` degrades loudly. The others degrade silently —
-`system-health-check`'s daily "score" swinging between 1 and 5 reads as
-connector instability rather than as prod actually changing state.
+Five routines declare MCP dependencies (Linear, Supabase, Vercel, Context7).
+`linear-enrich` degrades loudly — `error=mcp-unavailable` on three consecutive
+days. The others degrade silently: `system-health-check`'s daily "score" swinging
+between 1 and 5 reads as connector instability rather than as prod actually
+changing state.
+
+Note that connector *availability* and connector *attachment* are different
+things, and a tooling report claiming "no connected MCP connectors" is not
+evidence that a routine's declared connection is dead — see the correction under
+`pr-review` below.
 
 ### 9. Redundancy with cheaper deterministic gates
 
@@ -269,16 +274,32 @@ Both weekly routines are **unproven** and both run on probation — see
 
 ## Routine specifications
 
-### `pr-review` — unchanged except for a dead dependency
+### `pr-review` — unchanged
 
-Keep the existing prompt verbatim. It is a thin shell that defers all review
-knowledge to the repository's committed
+Keep the existing configuration **verbatim, including its `Context7` MCP
+connection**. It is a thin shell that defers all review knowledge to the
+repository's committed
 `.claude/skills/code-review/references/automated-pr-review.md`, which is the
 correct design and is working.
 
-One change: drop the `Context7` MCP connection. No connector is currently
-attached to the account, so the declaration is inert at best and a silent failure
-path at worst. The review checklist does not depend on it.
+**Correction, recorded because the mistake is instructive.** An earlier draft of
+this spec dropped the `Context7` connection, on the premise that the account had
+no connected MCP connectors — a premise taken from a stale tooling report. That
+premise was false: creating `bug-fix` caused the API to auto-attach six
+connectors (Vercel, Linear, Context7, Supabase, Buffer, Claude_Code_Remote)
+without being asked, which proves they exist on the account.
+
+The change was applied on 2026-07-24 at 01:22Z and reverted at 01:57Z after
+`pr-review` failed to comment on PR #554 within 15 minutes, against a measured
+historical latency of **2–4 minutes on every one of the six preceding PRs**. The
+correlation is not proof of causation — three cloud sessions were triggered
+manually in the same window, so queueing is an equally live explanation, and the
+API exposes no session state to distinguish them. But the change had no
+demonstrated benefit and the routine it touched was the only proven performer in
+the portfolio, so reverting is the correct asymmetry.
+
+**The rule this yields:** do not modify the one component that works in order to
+tidy it. `pr-review` is out of scope for this cleanup.
 
 ### `bug-fix` — new; merges `bug-watch` and `bug-watch-write`
 

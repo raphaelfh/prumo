@@ -117,11 +117,21 @@ Deletion is theirs to perform; do not attempt a workaround.
 
 ---
 
-### Task 2: Reshape `pr-review` — drop the dead Context7 connection
+### Task 2: `pr-review` — WITHDRAWN, leave it alone
 
-`pr-review` is the only routine with a track record. The single change is
-removing an MCP connection that cannot resolve, because the account currently has
-no connected connectors. The prompt is not touched.
+> **This task was executed on 2026-07-24 at 01:22Z and reverted at 01:57Z. Do
+> not re-run it.** It dropped the `Context7` MCP connection on the premise that
+> the account had no connected connectors. The premise was false — creating
+> `bug-fix` caused the API to auto-attach six connectors including Context7.
+> `pr-review` then failed to comment on PR #554 within 15 minutes against a
+> measured 2–4 minute historical latency across the six preceding PRs. The
+> connection is restored; the routine is out of scope for this cleanup. See the
+> spec's `pr-review` section for the full correction.
+
+The steps below are retained only as the record of what was done and undone.
+
+`pr-review` is the only routine with a track record. The change was removing an
+MCP connection believed dead. The prompt was not touched.
 
 **Files:** none — `RemoteTrigger` only.
 
@@ -815,6 +825,7 @@ violates the output contract.
 |---|---|---|
 | 2026-07-24 01:21 | 1 | All eight retired routines set to `enabled: false`. Verified by `list`: 10 total, 2 enabled (`pr-review`, `cleanup`). Deletion is the maintainer's step at `https://claude.ai/code/routines` — the API has no delete. |
 | 2026-07-24 01:22 | 2 | `pr-review` `clear_mcp_connections: true`. Verified `mcp_connections: []`, prompt and `allowed_tools` intact, `enabled: true`. |
+| 2026-07-24 01:57 | 2 | **REVERTED.** `pr-review` had not commented on PR #554 fifteen minutes after it opened. Measured baseline: it reviewed #546, #548, #549, #550, #551, #552, #553 within **2–4 minutes each**, dependabot PRs included. The premise for the change was also false — the account *does* have connectors; creating `bug-fix` auto-attached six of them unrequested. Context7 restored. Correlation is not proof (three cloud sessions were triggered manually in the same window, so queueing is an equally live explanation, and the API exposes no session state to tell them apart), but a change with no demonstrated benefit to the portfolio's only proven performer is the wrong risk to hold. |
 | 2026-07-23 22:2x | 3 pre-work | **The gate as written in this plan was wrong in three ways**, each found by running it locally before shipping. (a) `uv run mypy` fails `Failed to spawn: mypy` — mypy lives in the `dev` *extra*, which a plain `uv sync` does not install. (b) `uv run pytest tests/unit` dies during collection with pydantic `Field required` — `Settings` needs `DATABASE_URL`, `SUPABASE_*`, `ENCRYPTION_KEY` etc. (c) a bare `uv run mypy app` reports **163 pre-existing errors**; the real gate is the ratchet, `{ uv run mypy app --ignore-missing-imports \|\| true; } \| uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline`. Shipping the plan's original text would have aborted every run — the exact bug being fixed. |
 | 2026-07-23 22:3x | 3 pre-work | Corrected gate validated end to end: ruff clean, ruff format clean, mypy ratchet `80 <= 86 tolerated, no new errors`, **1842 unit tests pass in 54s with dummy env and no database**. `npm run lint` exits 0. The `tsc` failure seen locally is a worktree artifact — this worktree has no `node_modules` and resolves the parent checkout's `react-resizable-panels@2.1.9` while `package.json` requires `^4.12.2`. |
 | 2026-07-24 01:28 | 3 | `cleanup` rewritten with the corrected gate, ready-for-review PR, proactive-only, total module selection. Verified: cron `0 9 * * 2`, prompt contains `uv run pytest tests/unit`, no `make test-backend` outside the do-not-use warning. |
