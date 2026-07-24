@@ -88,7 +88,7 @@ Every test was verified to be a genuine regression test: stashing the
 corresponding hook alone makes exactly its own assertions fail, with the stale
 or over-optimistic value observed winning.
 
-#285 and #406 use the generation-counter pattern `ProjectView` already
+Both #285 and #406 use the generation-counter pattern `ProjectView` already
 established for this class (`projectLoadRef`, the fix for #110).
 
 ## Still open — 8
