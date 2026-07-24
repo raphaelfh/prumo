@@ -18,8 +18,11 @@ one closed before this pass was on 2026-06-06 — 47 days of pure accumulation.
 | verdict | count |
 |---|---|
 | OBSOLETE — closed with evidence | 31 |
-| REAL — fixed in this branch | 2 |
-| REAL / UNVERIFIABLE — still open | 10 |
+| REAL — fixed in this branch | 4 |
+| REAL / UNVERIFIABLE — still open | 8 |
+
+The four fixed issues stay open on GitHub until this branch merges; the count of
+open `auto-found` issues reads 12 until then, 8 after.
 
 ## OBSOLETE — closed
 
@@ -74,30 +77,35 @@ filing an issue.
 
 ## REAL — fixed in this branch
 
-| issue | fix |
-|---|---|
-| #284 | `useTopLevelSectionsExtraction` claimed success whenever one section survived. Now branches success / warning / error, matching the sibling hooks. Also removed the last hardcoded English strings in that hook |
-| #333 | `useBatchSectionExtractionChunked` called `options.onSuccess` even when every section failed. Now requires `successfulSections > 0` |
+| issue | fix | regression test |
+|---|---|---|
+| #284 | `useTopLevelSectionsExtraction` claimed success whenever one section survived. Now branches success / warning / error, matching the sibling hooks. Also removed the last hardcoded English strings in that hook (#531) | `extractionPartialFailure.test.tsx` |
+| #333 | `useBatchSectionExtractionChunked` called `options.onSuccess` even when every section failed. Now requires `successfulSections > 0` | `extractionPartialFailure.test.tsx` |
+| #285 | `useFinalizedExtractionRun` had no generation guard, so a stale `findLatestFinalizedRun` result put another article's run behind "Reopen for revision" | `useFinalizedExtractionRun.test.tsx` |
+| #406 | `useAISuggestions.loadSuggestions` had no generation guard, so article A's suggestion map could land while the form showed article B | `useAISuggestions.generation.test.tsx` |
 
-Regression coverage: `frontend/test/hooks/extractionPartialFailure.test.tsx`.
-Verified as genuine regression tests — reverting the two hooks makes exactly two
-of the five fail, one per issue.
+Every test was verified to be a genuine regression test: stashing the
+corresponding hook alone makes exactly its own assertions fail, with the stale
+or over-optimistic value observed winning.
 
-## Still open — 10
+#285 and #406 use the generation-counter pattern `ProjectView` already
+established for this class (`projectLoadRef`, the fix for #110).
+
+## Still open — 8
 
 Grouped by root cause. Each group is one PR in the follow-up.
 
-### Group A — missing cancellation / generation guards
-
-An async load is not invalidated when its input changes, so a stale response can
-overwrite fresh state. `ProjectView` (#110) already solved this class with a
-`projectLoadRef` generation counter; that is the pattern to copy.
+### Group A — effect stability
 
 | issue | file |
 |---|---|
-| #285 | `frontend/hooks/extraction/useFinalizedExtractionRun.ts` — no guard after the `findLatestFinalizedRun(...).then(...)` on `articleId` change |
-| #406 | `frontend/hooks/extraction/ai/useAISuggestions.ts` — `loadSuggestions` has no generation guard |
-| #521 | `frontend/hooks/extraction/useExtractionSession.ts` — unstabilized inline functions in `useEffect` deps |
+| #521 | `frontend/hooks/extraction/useExtractionSession.ts` — unstabilized inline functions in `useEffect` deps, reported across five sites |
+
+Deliberately **not** fixed in this pass. It is a different class from #285/#406:
+those were stale-response races with a known in-repo pattern to copy, while this
+one is an effect-identity problem that interacts with the React Compiler — which
+memoizes inline functions automatically and may already neutralise part of it.
+Verify the loop still reproduces at HEAD before changing five call sites.
 
 ### Group B — promise chaining and cache invalidation
 
