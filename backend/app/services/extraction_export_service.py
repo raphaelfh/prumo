@@ -49,6 +49,7 @@ from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
+from app.services.derived_judgment_service import compute_derived_judgments, derived_spec
 from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     load_export_sections,
@@ -93,6 +94,10 @@ class FieldDescriptor:
     unit: str | None = None
     is_required: bool = False
     allow_other: bool = False
+    # Machine name from the snapshot. Last, and defaulted, so the existing
+    # positional/short-form call sites keep working. Used to resolve a
+    # template's `derived_judgments` coordinates (§7 computed overalls).
+    name: str = ""
 
 
 @dataclass(frozen=True)
@@ -112,6 +117,8 @@ class SectionDescriptor:
     cardinality: ExtractionCardinality = ExtractionCardinality.ONE
     sort_order: int = 0
     description: str | None = None
+    # Machine name from the snapshot; see FieldDescriptor.name.
+    name: str = ""
 
 
 @dataclass(frozen=True)
@@ -287,6 +294,9 @@ class AppraisalRow:
     domain_verdicts: tuple[Any, ...]  # aligned to AppraisalModel.domain_labels
     overall: Any  # worst-case rollup (consensus / single-user)
     per_reviewer_overall: dict[UUID, Any]  # all-users only: reviewer_id -> Overall
+    # Computed overalls, aligned to ``AppraisalModel.derived_labels``; empty for
+    # templates that declare no derivation spec.
+    derived_values: tuple[str | None, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -302,6 +312,10 @@ class AppraisalModel:
     domain_section_ids: tuple[UUID, ...]
     domain_labels: tuple[str, ...]
     rows: tuple[AppraisalRow, ...]
+    # Labels of the template's computed overalls (``derived_judgments`` on its
+    # ``schema`` JSONB). When non-empty they REPLACE the legacy single
+    # worst-case ``Overall`` column; empty keeps the legacy behaviour.
+    derived_labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -540,6 +554,7 @@ class ExtractionExportService(LoggerMixin):
         appraisal: AppraisalModel | None = None
         if template.kind == TemplateKind.QUALITY_ASSESSMENT.value:
             appraisal = self._build_appraisal_model(
+                template_schema=template.schema_,
                 sections=sections,
                 articles=tuple(articles),
                 reviewers=reviewers,
@@ -578,6 +593,7 @@ class ExtractionExportService(LoggerMixin):
         reviewers: tuple[ReviewerDescriptor, ...],
         value_map: dict[tuple[Any, ...], Any],
         mode: ExportMode,
+        template_schema: Any = None,
     ) -> AppraisalModel | None:
         """Compute the appraisal roll-up for a quality-assessment template (§7).
 
@@ -633,6 +649,13 @@ class ExtractionExportService(LoggerMixin):
         if not domains:
             return None
 
+        # Computed overalls (§7): a template whose `schema` JSONB declares a
+        # `derived_judgments` spec replaces the legacy single worst-case
+        # `Overall` with its own named overalls, computed by the SAME module the
+        # run view uses so screen and workbook cannot drift.
+        spec = derived_spec(template_schema)
+        derived_labels = tuple(str(d.get("label", "")) for d in spec)
+
         domain_section_ids = tuple(s.entity_type_id for s, _ in domains)
         domain_labels = tuple(s.label for s, _ in domains)
         is_all_users = mode is ExportMode.ALL_USERS
@@ -673,6 +696,28 @@ class ExtractionExportService(LoggerMixin):
                 if is_all_users
                 else {}
             )
+            derived_values: tuple[str | None, ...] = ()
+            if spec:
+                # Resolve the spec's (section, field) coordinates against the
+                # SAME value_map the domain verdicts came from, so a derived
+                # overall can never disagree with the columns beside it.
+                values_by_coord: dict[tuple[str, str], Any] = {}
+                for section in sections:
+                    instance_ids = article.section_instances.get(section.entity_type_id, ())
+                    instance_id = instance_ids[0] if instance_ids else None
+                    for field in section.fields:
+                        key = (
+                            (run_id, instance_id, field.field_id, None)
+                            if is_all_users
+                            else (run_id, instance_id, field.field_id)
+                        )
+                        raw = value_map.get(key)
+                        if raw is not None:
+                            values_by_coord[(section.name, field.name)] = raw
+                derived_values = tuple(
+                    d.value for d in compute_derived_judgments(spec, values_by_coord)
+                )
+
             rows.append(
                 AppraisalRow(
                     article_id=article.article_id,
@@ -680,6 +725,7 @@ class ExtractionExportService(LoggerMixin):
                     domain_verdicts=tuple(consensus_verdicts),
                     overall=_appraisal_overall(tuple(consensus_verdicts)),
                     per_reviewer_overall=per_reviewer_overall,
+                    derived_values=derived_values,
                 )
             )
 
@@ -687,6 +733,7 @@ class ExtractionExportService(LoggerMixin):
             domain_section_ids=domain_section_ids,
             domain_labels=domain_labels,
             rows=tuple(rows),
+            derived_labels=derived_labels,
         )
 
     # ------------------------------------------------------------------
@@ -792,12 +839,14 @@ class ExtractionExportService(LoggerMixin):
                         unit=f.unit,
                         is_required=f.is_required,
                         allow_other=f.allow_other,
+                        name=f.name,
                     )
                     for f in s.fields
                 ),
                 cardinality=s.cardinality,
                 sort_order=s.sort_order,
                 description=s.description,
+                name=s.name,
             )
             for s in snapshot_sections
         )

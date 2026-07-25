@@ -207,6 +207,10 @@ export interface RunViewResponse extends RunDetailResponse {
   ready_count?: number;
   reviewer_count?: number;
   reviewers_ready?: string[];
+  /** Computed overall judgments (worst-domain over the domain judgments).
+   * Empty for templates that declare no derivation spec — i.e. everything
+   * except PROBAST+AI today. `value` is null when the inputs are incomplete. */
+  derived_judgments?: { id: string; label: string; value: string | null }[];
 }
 
 export interface ArticleRunRef {

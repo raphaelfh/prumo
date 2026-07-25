@@ -113,7 +113,16 @@ def build_appraisal_summary(layout: ExportLayout) -> SheetSpec | None:
     domain_labels = appraisal.domain_labels
     header_cells = [Cell(_RECORD_COL, _HEADER_STYLE)]
     header_cells.extend(Cell(label, _HEADER_STYLE) for label in domain_labels)
-    header_cells.append(Cell(_OVERALL_COL, _HEADER_STYLE))
+
+    # A template that declares a `derived_judgments` spec (PROBAST+AI) replaces
+    # the legacy single worst-case column with its own named overalls, computed
+    # by `derived_judgment_service` — the same module the run view uses.
+    # Templates without a spec keep the legacy column unchanged.
+    derived_labels = appraisal.derived_labels
+    if derived_labels:
+        header_cells.extend(Cell(label, _HEADER_STYLE) for label in derived_labels)
+    else:
+        header_cells.append(Cell(_OVERALL_COL, _HEADER_STYLE))
 
     reviewer_overall_cols: tuple[Any, ...] = ()
     if layout.mode is ExportMode.ALL_USERS:
@@ -125,14 +134,18 @@ def build_appraisal_summary(layout: ExportLayout) -> SheetSpec | None:
     for row in appraisal.rows:
         cells = [Cell(row.record_label)]
         cells.extend(Cell(v) for v in row.domain_verdicts)
-        cells.append(Cell(row.overall))
+        if derived_labels:
+            cells.extend(Cell(v) for v in row.derived_values)
+        else:
+            cells.append(Cell(row.overall))
         for reviewer in reviewer_overall_cols:
             cells.append(Cell(row.per_reviewer_overall.get(reviewer.reviewer_id)))
         rows.append(tuple(cells))
 
-    # Record column + one Overall column, plus one width per domain and per
-    # per-reviewer Overall column.
-    domain_and_overall = len(domain_labels) + 1 + len(reviewer_overall_cols)
+    # Record column + the overall column(s) — one legacy, or one per declared
+    # derived judgment — plus one width per domain and per per-reviewer Overall.
+    overall_cols = len(derived_labels) if derived_labels else 1
+    domain_and_overall = len(domain_labels) + overall_cols + len(reviewer_overall_cols)
     return SheetSpec(
         title="Appraisal summary",
         rows=tuple(rows),

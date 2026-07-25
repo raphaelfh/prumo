@@ -261,6 +261,20 @@ class RunViewInstance(BaseModel):
     updated_at: datetime
 
 
+class RunViewDerivedJudgment(BaseModel):
+    """One computed overall judgment (never stored, never entered).
+
+    Present only for templates whose ``schema`` JSONB declares a
+    ``derived_judgments`` spec (today: PROBAST+AI). ``value`` is None when the
+    inputs are incomplete — the client renders that as an em dash, never as the
+    most favourable judgment.
+    """
+
+    id: str
+    label: str
+    value: str | None = None
+
+
 class RunViewResponse(RunDetailResponse):
     """``RunDetailResponse`` (run + blind-filtered workflow rows) plus the three
     pieces the run-open form needs server-side: the frozen entity_types tree,
@@ -277,6 +291,10 @@ class RunViewResponse(RunDetailResponse):
     ready_count: int = 0
     reviewer_count: int = 0
     reviewers_ready: list[UUID] = Field(default_factory=list)
+    # Computed overalls (worst-domain over the domain judgments). Empty for
+    # templates that declare no derivation spec — i.e. everything except
+    # PROBAST+AI today.
+    derived_judgments: list[RunViewDerivedJudgment] = Field(default_factory=list)
 
 
 class RunReviewerProfile(BaseModel):
