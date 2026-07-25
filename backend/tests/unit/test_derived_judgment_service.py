@@ -65,13 +65,8 @@ def test_worst_domain_of_nothing_is_none() -> None:
 
 
 def test_worst_domain_maps_no_information_to_unclear() -> None:
-    """Corrected 2026-07-25: this previously asserted None, which was the bug.
-
-    The instrument (methodology.md §4b) says "NI que impeça julgar leva a
-    Unclear" — an explicit no-information answer on a domain IS a judgment.
-    Asserting None here is what left every overall permanently blank on a
-    fully-answered assessment. See test_derived_judgment_no_information.py.
-    """
+    """methodology.md §4b: "NI que impeça julgar leva a Unclear" — an explicit
+    no-information answer on a domain IS a judgment, not an absence."""
     marker = {"value": None, "absent_reason": "no_information"}
     assert worst_domain(["Low", marker]) == "Unclear"
 
