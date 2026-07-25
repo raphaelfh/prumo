@@ -206,24 +206,49 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
 
     // --- Discover three text-field coords (prefer one section for less
     // accordion juggling; fall back to spanning sections).
-    const etIds = Object.keys(session.instances_by_entity_type);
-    const [sections, textFields] = await Promise.all([
-      adminSelect<{ id: string; label: string }>(
-        "extraction_entity_types",
-        `select=id,label&id=in.(${etIds.join(",")})`,
-      ),
-      adminSelect<{ id: string; label: string; entity_type_id: string }>(
-        "extraction_fields",
-        `select=id,label,entity_type_id&entity_type_id=in.(${etIds.join(",")})&field_type=eq.text`,
-      ),
-    ]);
-    const sectionLabelById = new Map(sections.map((et) => [et.id, et.label]));
-    const coords: Coord[] = textFields.slice(0, 3).map((f) => ({
-      instanceId: session.instances_by_entity_type[f.entity_type_id],
-      fieldId: f.id,
-      label: f.label,
-      sectionLabel: sectionLabelById.get(f.entity_type_id) ?? "",
-    }));
+    //
+    // Sourced from the RUN VIEW, not the live extraction_* tables. The form
+    // renders from the run's frozen version snapshot, while the live tables
+    // are shared mutable state: `extraction-multi-instance.e2e.ts` (a
+    // different Playwright project, running concurrently) injects a
+    // "Field Zoo" entity type into this same project template without
+    // republishing its version. A live-table picker could therefore select a
+    // field whose section the screen can never render — the test then waited
+    // the full 240s for a "Field Zoo …%" accordion header that does not
+    // exist. Reading the snapshot makes the picker agree with the DOM by
+    // construction. Ordering is explicit for the same reason: neither
+    // PostgREST nor the payload guarantees row order, and `.slice(0, 3)` on
+    // an unordered set is a coin flip.
+    const runViewRes = await request.get(`${env.apiUrl}/api/v1/runs/${runId}/view`, {
+      headers: authHeaders(ownerToken, traceId),
+    });
+    expect(runViewRes.ok(), await runViewRes.text()).toBeTruthy();
+    const runView = (
+      await parseEnvelope<{
+        entity_types: {
+          id: string;
+          label: string;
+          sort_order: number;
+          fields: { id: string; label: string; field_type: string; sort_order: number }[];
+        }[];
+      }>(runViewRes)
+    ).data;
+
+    const coords: Coord[] = runView.entity_types
+      .filter((et) => session.instances_by_entity_type[et.id])
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .flatMap((et) =>
+        [...et.fields]
+          .filter((f) => f.field_type === "text")
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map((f) => ({
+            instanceId: session.instances_by_entity_type[et.id],
+            fieldId: f.id,
+            label: f.label,
+            sectionLabel: et.label,
+          })),
+      )
+      .slice(0, 3);
     test.skip(coords.length < 3, "CHARMS clone exposes fewer than 3 text fields");
     const [coord1, coord2, coord3] = coords;
 
