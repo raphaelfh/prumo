@@ -43,7 +43,7 @@ This guide explains how to load seed data after the schema migrations run.
 > `derived_judgments` coordinate) therefore needs `make db-fresh` locally, or a
 > deliberate manual UPDATE in a deployed environment — `make db-seed` alone
 > will silently keep the old row.
-
+>
 > Quality-assessment templates are seeded as `kind=quality_assessment` in
 > `extraction_templates_global`. When the frontend opens an assessment via
 > `POST /api/v1/hitl/sessions` with `kind=quality_assessment`, the backend
