@@ -3338,6 +3338,23 @@ export interface components {
             } | null;
         };
         /**
+         * RunViewDerivedJudgment
+         * @description One computed overall judgment (never stored, never entered).
+         *
+         *     Present only for templates whose ``schema`` JSONB declares a
+         *     ``derived_judgments`` spec (today: PROBAST+AI). ``value`` is None when the
+         *     inputs are incomplete — the client renders that as an em dash, never as the
+         *     most favourable judgment.
+         */
+        RunViewDerivedJudgment: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Value */
+            value?: string | null;
+        };
+        /**
          * RunViewEntityType
          * @description An entity type in the frozen template snapshot, with its fields embedded.
          *     ``role`` drives the study/model partition; the tree hierarchy is conveyed by
@@ -3493,6 +3510,8 @@ export interface components {
             current_values: components["schemas"]["RunViewCurrentValue"][];
             /** Decisions */
             decisions: components["schemas"]["ReviewerDecisionResponse"][];
+            /** Derived Judgments */
+            derived_judgments?: components["schemas"]["RunViewDerivedJudgment"][];
             /** Entity Types */
             entity_types: components["schemas"]["RunViewEntityType"][];
             /** Instances */

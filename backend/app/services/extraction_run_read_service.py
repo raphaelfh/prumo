@@ -12,6 +12,7 @@ Errors are domain exceptions; HTTP translation happens in the router.
 from __future__ import annotations
 
 import copy
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
@@ -19,11 +20,13 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.logging import get_logger
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
+    ProjectExtractionTemplate,
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion, TemplateKind
 from app.models.extraction_workflow import (
@@ -56,11 +59,69 @@ from app.schemas.extraction_run import (
     RunReviewerProfile,
     RunSummaryResponse,
     RunViewCurrentValue,
+    RunViewDerivedJudgment,
     RunViewEntityType,
     RunViewInstance,
     RunViewResponse,
 )
+from app.services.derived_judgment_service import (
+    compute_derived_judgments,
+    derived_spec,
+    spec_coordinates,
+)
 from app.services.extraction_reviewer_ready_service import ExtractionReviewerReadyService
+
+logger = get_logger(__name__)
+
+
+def build_derived_judgments_payload(
+    *,
+    template_schema: Any,
+    entity_types: Sequence[Any],
+    instances: Sequence[Any],
+    values: Sequence[Any],
+) -> list[RunViewDerivedJudgment]:
+    """Compute the template's overall judgments from *values*.
+
+    Resolves the spec's ``(section_name, field_name)`` coordinates against the
+    frozen entity_types tree plus this run's instances, then delegates the RULE
+    to ``derived_judgment_service`` — the single implementation shared with the
+    xlsx export. The caller chooses *values*: the canonical set once peers are
+    revealed, the caller's own while blind (see ``build_run_view``).
+    """
+    spec = derived_spec(template_schema)
+    if not spec:
+        return []
+
+    instance_by_entity_type: dict[Any, Any] = {}
+    for inst in instances:
+        # First instance wins, mirroring the export's ``instance_ids[0]``.
+        instance_by_entity_type.setdefault(inst.entity_type_id, inst.id)
+    value_by_ids = {(v.instance_id, v.field_id): v.value for v in values}
+
+    values_by_coord: dict[tuple[str, str], Any] = {}
+    known: set[tuple[str, str]] = set()
+    for et in entity_types:
+        instance_id = instance_by_entity_type.get(et.id)
+        for field in et.fields:
+            known.add((et.name, field.name))
+            if instance_id is None:
+                continue
+            raw = value_by_ids.get((instance_id, field.id))
+            if raw is not None:
+                values_by_coord[(et.name, field.name)] = raw
+
+    # A coordinate the template no longer carries is a definition bug that would
+    # otherwise null an overall in silence: the spec is read live off the
+    # template, while the coordinates come from the frozen version snapshot.
+    unresolvable = sorted({c for c in spec_coordinates(spec) if c not in known})
+    if unresolvable:
+        logger.warning("qa_derived_spec_dangling_ref", coordinates=unresolvable)
+
+    return [
+        RunViewDerivedJudgment(id=d.id, label=d.label, value=d.value)
+        for d in compute_derived_judgments(spec, values_by_coord)
+    ]
 
 
 class RunNotFoundError(Exception):
@@ -449,6 +510,27 @@ async def build_run_view(
         else []
     )
     instances = await _instances_for_run(db, detail.run)
+
+    derived_judgments: list[RunViewDerivedJudgment] = []
+    if detail.run.kind == TemplateKind.QUALITY_ASSESSMENT.value:
+        template = await db.get(ProjectExtractionTemplate, detail.run.template_id)
+        # Canonical once peers are revealed (consensus / finalized): the
+        # published state, else the consensus decision. Both are already loaded
+        # on `detail` and already returned to every caller, so this adds no
+        # query and no new blind surface. While blind, the caller's own values
+        # are the only correct source — resolve_caller_current_values is
+        # caller-scoped in every stage, so using it after reveal would show an
+        # arbitrator the reviewer's overalls instead of the published ones.
+        canonical: list[Any] = []
+        if detail.peers_revealed:
+            canonical = list(detail.published_states) or list(detail.consensus_decisions)
+        derived_judgments = build_derived_judgments_payload(
+            template_schema=template.schema_ if template is not None else None,
+            entity_types=entity_types,
+            instances=instances,
+            values=canonical or current_values,
+        )
+
     if detail.run.stage in _READY_HINT_STAGES:
         # include_peers reuses detail.peers_revealed (the single blind source),
         # so the reviewers_ready scrub cannot drift from the row filter.
@@ -473,6 +555,7 @@ async def build_run_view(
         ready_count=ready["ready_count"],
         reviewer_count=ready["reviewer_count"],
         reviewers_ready=ready["reviewers_ready"],
+        derived_judgments=derived_judgments,
         peers_revealed=detail.peers_revealed,
     )
 
