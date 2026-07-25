@@ -43,7 +43,7 @@ from app.seed import (
     _PROBAST_SIGNALING,
     _entity_type_from_spec,
     _EntitySpec,
-    _qa_field,
+    _field,
     _signaling,
 )
 
@@ -484,7 +484,7 @@ def _judgment_field(eid: UUID, judgment: _Judgment, sort: int) -> ExtractionFiel
     set rather than by name, so honest names cost nothing.
     """
     name, label, official_text = judgment
-    return _qa_field(
+    return _field(
         eid,
         name,
         label,

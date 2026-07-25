@@ -145,6 +145,65 @@ _ET_MODEL_RESULTS = UUID("000c000c-0000-0000-0000-000000000000")
 _ET_MODEL_INTERP = UUID("000c000d-0000-0000-0000-000000000000")
 _ET_MODEL_OBS = UUID("000c000e-0000-0000-0000-000000000000")
 
+# CHARMS + Multimodal (ML prediction) — extraction template.
+# The 000e prefix is reserved for this template; never reuse it.
+_MM_TEMPLATE_ID = UUID("000e0000-0000-0000-0000-000000000001")
+# Study-level sections (filled once per article)
+_MM_ET_SOURCE = UUID("000e0001-0000-0000-0000-000000000000")
+_MM_ET_PARTICIPANTS = UUID("000e0002-0000-0000-0000-000000000000")
+_MM_ET_OUTCOME = UUID("000e0003-0000-0000-0000-000000000000")
+_MM_ET_PREDICTORS = UUID("000e0004-0000-0000-0000-000000000000")
+_MM_ET_SAMPLE_SIZE = UUID("000e0005-0000-0000-0000-000000000000")
+_MM_ET_MISSING = UUID("000e0006-0000-0000-0000-000000000000")
+_MM_ET_INTERPRETATION = UUID("000e0007-0000-0000-0000-000000000000")
+# Model container + per-model sections (filled once per prediction model)
+_MM_ET_MODELS = UUID("000e0008-0000-0000-0000-000000000000")
+_MM_ET_MODEL_DEV = UUID("000e0009-0000-0000-0000-000000000000")
+_MM_ET_MODEL_PERF = UUID("000e000a-0000-0000-0000-000000000000")
+_MM_ET_MODEL_EVAL = UUID("000e000b-0000-0000-0000-000000000000")
+_MM_ET_RESULTS = UUID("000e000c-0000-0000-0000-000000000000")
+_MM_ET_MULTIMODAL = UUID("000e000d-0000-0000-0000-000000000000")
+_MM_ET_NUMERIC_PERF = UUID("000e000e-0000-0000-0000-000000000000")
+
+# Multimodal extension controlled vocabularies (review protocol).
+_MM_MODALITIES = [
+    "ecg",
+    "pcg",
+    "cxr",
+    "echo",
+    "cmr",
+    "clinical-text",
+    "tabular-ehr",
+    "ehr-timeseries",
+    "omics",
+    "hrv",
+    "wearable-iot",
+]
+_MM_VALIDATION_TYPES = ["apparent", "internal", "external"]
+
+# The modality definition (protocol, after Schouten 2025) is embedded in the
+# two prompts whose classification depends on it, rather than left to the
+# extraction wrapper to retrieve from the protocol document.
+_MM_DEFINITION = (
+    "Modality definition (review protocol, after Schouten 2025): data "
+    "originating from a distinct clinical or acquisition domain; a multimodal "
+    "model integrates two or more distinct domains, and imaging is not "
+    "required. Rules: static laboratory values belong to tabular-ehr, so "
+    "'clinical variables plus labs' alone is unimodal; ehr-timeseries "
+    "(longitudinal labs or vitals modelled by a temporal encoder) is a domain "
+    "distinct from static tabular data; multiple parameters, sequences, or "
+    "derivations from a single acquisition count as one domain (T1 and T2 from "
+    "the same MRI; several feature families from one ECG; multi-omics within "
+    "omics). Provenance criterion: a variable derived from imaging or a signal "
+    "carries that domain's identity only when the study deliberately extracts "
+    "it from the acquisition as a separate stream and fuses it with the rest "
+    "(for example valve area or epicardial adipose tissue volume measured on "
+    "echo or CMR and combined with clinical variables = imaging plus "
+    "clinical); a field of imaging origin consumed merely as part of the "
+    "structured record (for example ejection fraction sitting among EHR "
+    "variables) does not by itself make the model multimodal."
+)
+
 # ADR-0016: in-band disposition strings ("No information" / "Not applicable" /
 # "Not evaluated") are retired as select values. "The source is silent" is the
 # universal no_information marker (runtime control on every field); not_applicable
@@ -1274,7 +1333,7 @@ async def seed_charms(session: AsyncSession) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _qa_field(
+def _field(
     eid: UUID,
     name: str,
     label: str,
@@ -1282,13 +1341,25 @@ def _qa_field(
     ftype: str,
     sort: int,
     *,
-    required: bool = True,
+    llm: str,
     allowed: list[str] | None = None,
-    llm: str | None = None,
+    unit: str | None = None,
     allows_not_applicable: bool = False,
     allows_not_evaluated: bool = False,
 ) -> ExtractionField:
-    """Build an ExtractionField for a quality-assessment template."""
+    """Build an ``ExtractionField`` row. Shared by the seeded templates.
+
+    ``llm`` is required rather than optional: a field with no extraction
+    prompt silently degrades AI extraction for that variable, and every
+    seeded field has always supplied one.
+
+    ``is_required`` is always ``True``, matching every seeded template. A
+    seeded field is answerable with the universal ``no_information`` marker,
+    which the finalize gate counts as *filled*, so marking fields required
+    turns "the source is silent" into an explicitly recorded answer instead
+    of an indistinguishable blank (constitution IX). Managers relax
+    ``is_required`` per project clone when they want a looser gate.
+    """
     return ExtractionField(
         entity_type_id=eid,
         name=name,
@@ -1296,8 +1367,9 @@ def _qa_field(
         description=desc,
         field_type=ftype,
         sort_order=sort,
-        is_required=required,
+        is_required=True,
         allowed_values=allowed,
+        unit=unit,
         llm_description=llm,
         allows_not_applicable=allows_not_applicable,
         allows_not_evaluated=allows_not_evaluated,
@@ -1322,10 +1394,10 @@ def _signaling(
 
     ``llm`` overrides the generic instruction for checklists (PROBAST+AI) whose
     published elaboration gives each question its own criterion. Always route
-    signaling questions through this helper — building one with bare
-    ``_qa_field`` silently drops the identity-based ``allows_not_applicable``.
+    signaling questions through this helper — building one with bare ``_field``
+    silently drops the identity-based ``allows_not_applicable``.
     """
-    return _qa_field(
+    return _field(
         eid,
         name,
         question,
@@ -1347,7 +1419,7 @@ def _domain_judgment(
 ) -> list[ExtractionField]:
     """Build the per-domain judgment fields (risk_of_bias and applicability)."""
     fields = [
-        _qa_field(
+        _field(
             eid,
             "risk_of_bias",
             "Risk of bias",
@@ -1360,7 +1432,7 @@ def _domain_judgment(
     ]
     if include_applicability:
         fields.append(
-            _qa_field(
+            _field(
                 eid,
                 "applicability_concerns",
                 "Applicability concerns",
@@ -1656,7 +1728,7 @@ async def seed_probast(session: AsyncSession) -> None:
     # Overall judgment (no signaling questions)
     fields.extend(
         [
-            _qa_field(
+            _field(
                 _PROBAST_ET_OVERALL,
                 "overall_risk_of_bias",
                 "Overall risk of bias",
@@ -1666,7 +1738,7 @@ async def seed_probast(session: AsyncSession) -> None:
                 allowed=_PROBAST_JUDGMENT,
                 llm="Provide the overall risk-of-bias judgment across all PROBAST domains.",
             ),
-            _qa_field(
+            _field(
                 _PROBAST_ET_OVERALL,
                 "overall_applicability",
                 "Overall applicability",
@@ -1904,7 +1976,7 @@ async def seed_quadas2(session: AsyncSession) -> None:
     # Overall judgment (no signaling questions)
     fields.extend(
         [
-            _qa_field(
+            _field(
                 _QUADAS2_ET_OVERALL,
                 "overall_risk_of_bias",
                 "Overall risk of bias",
@@ -1914,7 +1986,7 @@ async def seed_quadas2(session: AsyncSession) -> None:
                 allowed=_QUADAS2_JUDGMENT,
                 llm="Provide the overall risk-of-bias judgment across all QUADAS-2 domains.",
             ),
-            _qa_field(
+            _field(
                 _QUADAS2_ET_OVERALL,
                 "overall_applicability",
                 "Overall applicability",
@@ -1934,6 +2006,1109 @@ async def seed_quadas2(session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
+# CHARMS + Multimodal (ML prediction)
+# ---------------------------------------------------------------------------
+
+
+async def seed_charms_mm(session: AsyncSession) -> None:
+    """Seeds the CHARMS + Multimodal template, 14 entity types, 66 fields.
+
+    The instrument for multimodal machine-learning prediction reviews: the
+    CHARMS study/model sections plus a per-model multimodal extension
+    (modality vocabulary, fusion taxonomy, representation tiers) and a
+    per-validation numeric performance block that feeds the meta-analysis.
+
+    Design: ``docs/superpowers/specs/2026-07-25-charms-multimodal-template-design.md``
+    """
+    print("Seeding CHARMS + Multimodal template...")
+
+    template = await session.get(ExtractionTemplateGlobal, _MM_TEMPLATE_ID)
+    if template:
+        print("  CHARMS + Multimodal already exists — skipping.")
+        return
+
+    # ---- Template ----
+    session.add(
+        ExtractionTemplateGlobal(
+            id=_MM_TEMPLATE_ID,
+            name="CHARMS + Multimodal (ML prediction)",
+            description=(
+                "CHARMS checklist extended for multimodal machine-learning "
+                "prediction models. Study-level sections (Source of Data, "
+                "Participants, Outcome, Candidate Predictors, Sample Size, "
+                "Missing Data, Interpretation) are filled once per article; "
+                "per-model sections (Model Development, Performance, "
+                "Evaluation, Results, Multimodal Extension) are filled once "
+                "per prediction model, and Numeric Performance repeats per "
+                "validation type (apparent / internal / external)."
+            ),
+            framework="CHARMS",
+            version="1.0.0",
+            kind=TemplateKind.EXTRACTION.value,
+        )
+    )
+
+    # ---- Entity types (14) ----
+    #
+    # The unit of analysis is the MODEL, not the study: one article that
+    # compares a multimodal model against a clinical-only model and against
+    # MAGGIC yields three model instances. Study-level facts are therefore
+    # kept out of the per-model sections so they are not re-entered per model.
+    _study = ExtractionEntityRole.STUDY_SECTION
+    _container = ExtractionEntityRole.MODEL_CONTAINER
+    _section = ExtractionEntityRole.MODEL_SECTION
+    entity_types: list[_EntitySpec] = [
+        _EntitySpec(
+            id=_MM_ET_SOURCE,
+            name="source_of_data",
+            label="Source of Data",
+            description="Study design and data source (CHARMS: source of data)",
+            parent_id=None,
+            cardinality="one",
+            role=_study,
+            sort_order=0,
+        ),
+        _EntitySpec(
+            id=_MM_ET_PARTICIPANTS,
+            name="participants",
+            label="Participants",
+            description="Eligibility, setting, and centres (CHARMS: participants)",
+            parent_id=None,
+            cardinality="one",
+            role=_study,
+            sort_order=1,
+        ),
+        _EntitySpec(
+            id=_MM_ET_OUTCOME,
+            name="outcome",
+            label="Outcome",
+            description="Predicted outcome, timing, and phenotype (CHARMS: outcome)",
+            parent_id=None,
+            cardinality="one",
+            role=_study,
+            sort_order=2,
+        ),
+        _EntitySpec(
+            id=_MM_ET_PREDICTORS,
+            name="candidate_predictors",
+            label="Candidate Predictors",
+            description=("Candidate predictors considered (CHARMS: candidate predictors)"),
+            parent_id=None,
+            cardinality="one",
+            role=_study,
+            sort_order=3,
+        ),
+        _EntitySpec(
+            id=_MM_ET_SAMPLE_SIZE,
+            name="sample_size",
+            label="Sample Size",
+            description="Participants, events, and EPV (CHARMS: sample size)",
+            parent_id=None,
+            cardinality="one",
+            role=_study,
+            sort_order=4,
+        ),
+        _EntitySpec(
+            id=_MM_ET_MISSING,
+            name="missing_data",
+            label="Missing Data",
+            description=("Missing-data reporting and handling (CHARMS: missing data)"),
+            parent_id=None,
+            cardinality="one",
+            role=_study,
+            sort_order=5,
+        ),
+        _EntitySpec(
+            id=_MM_ET_INTERPRETATION,
+            name="interpretation",
+            label="Interpretation",
+            description=(
+                "Authors' comparison with the literature, stated limitations, "
+                "and intended applicability (CHARMS: interpretation). "
+                "Study-level: describes the paper, not an individual model."
+            ),
+            parent_id=None,
+            cardinality="one",
+            role=_study,
+            sort_order=6,
+        ),
+        _EntitySpec(
+            id=_MM_ET_MODELS,
+            name="prediction_models",
+            label="Prediction Models",
+            description=(
+                "Prediction models relevant to the review question. One "
+                "instance per model — multimodal, unimodal comparator, "
+                "baseline, or guideline score."
+            ),
+            parent_id=None,
+            cardinality="many",
+            role=_container,
+            sort_order=7,
+        ),
+        _EntitySpec(
+            id=_MM_ET_MODEL_DEV,
+            name="model_development",
+            label="Model Development",
+            description=(
+                "Modelling method, predictor selection, tuning, internal "
+                "validation (CHARMS: model development)"
+            ),
+            parent_id=_MM_ET_MODELS,
+            cardinality="one",
+            role=_section,
+            sort_order=8,
+        ),
+        _EntitySpec(
+            id=_MM_ET_MODEL_PERF,
+            name="model_performance",
+            label="Model Performance",
+            description=(
+                "Reported discrimination, calibration, and classification "
+                "measures (CHARMS: model performance)"
+            ),
+            parent_id=_MM_ET_MODELS,
+            cardinality="one",
+            role=_section,
+            sort_order=9,
+        ),
+        _EntitySpec(
+            id=_MM_ET_MODEL_EVAL,
+            name="model_evaluation",
+            label="Model Evaluation",
+            description=(
+                "Validation level, external source, and comparator (CHARMS: model evaluation)"
+            ),
+            parent_id=_MM_ET_MODELS,
+            cardinality="one",
+            role=_section,
+            sort_order=10,
+        ),
+        _EntitySpec(
+            id=_MM_ET_RESULTS,
+            name="results",
+            label="Results",
+            description=("Final model presentation and coefficient availability (CHARMS: results)"),
+            parent_id=_MM_ET_MODELS,
+            cardinality="one",
+            role=_section,
+            sort_order=11,
+        ),
+        _EntitySpec(
+            id=_MM_ET_MULTIMODAL,
+            name="multimodal_extension",
+            label="Multimodal Extension",
+            description=(
+                "Modalities, domain count, fusion, representation tier, "
+                "encoders, provenance, and comparator type (review protocol)"
+            ),
+            parent_id=_MM_ET_MODELS,
+            cardinality="one",
+            role=_section,
+            sort_order=12,
+        ),
+        _EntitySpec(
+            id=_MM_ET_NUMERIC_PERF,
+            name="numeric_performance",
+            label="Numeric Performance",
+            description=(
+                "Quantitative performance for ONE validation type. Add one "
+                "instance per apparent / internal / external estimate — "
+                "separating them keeps optimistic apparent performance out of "
+                "the external pool in the meta-analysis."
+            ),
+            parent_id=_MM_ET_MODELS,
+            cardinality="many",
+            role=_section,
+            sort_order=13,
+        ),
+    ]
+    for spec in entity_types:
+        session.add(_entity_type_from_spec(spec, template_id=_MM_TEMPLATE_ID))
+
+    # ---- Fields (66) ----
+    #
+    # Per-field prompts carry only the field instruction: the extraction
+    # wrapper supplies grounding, the evidence-quote/page requirement, and the
+    # structured-output contract. "No information" is the universal ADR-0016
+    # marker, so it is never a select value.
+    fields = [
+        # --- source_of_data (4) ---
+        _field(
+            _MM_ET_SOURCE,
+            "src_design",
+            "Study design",
+            "Design of the study or data source",
+            "select",
+            0,
+            allowed=[
+                "cohort-prospective",
+                "cohort-retrospective",
+                "case-control",
+                "rct",
+                "registry",
+                "cross-sectional",
+                "other",
+            ],
+            llm=(
+                "Which study or data-source design was used? Choose one of the "
+                "listed options. If the article does not state it explicitly, "
+                "mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_SOURCE,
+            "src_data_source",
+            "Data source",
+            "Originating cohort, registry, EHR, or public database",
+            "text",
+            1,
+            llm=(
+                "What is the concrete source of the data (cohort, registry, EHR, public database)?"
+            ),
+        ),
+        _field(
+            _MM_ET_SOURCE,
+            "src_country",
+            "Country / region",
+            "Country or region where the data were collected",
+            "text",
+            2,
+            llm=(
+                "In which country or region were the data collected? If not "
+                "reported, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_SOURCE,
+            "src_recruit_period",
+            "Recruitment period",
+            "Temporal window of recruitment or data collection",
+            "text",
+            3,
+            llm=(
+                "What was the recruitment or data-collection period (dates or "
+                "years)? If absent, mark no information."
+            ),
+        ),
+        # --- participants (5) ---
+        _field(
+            _MM_ET_PARTICIPANTS,
+            "par_eligibility",
+            "Eligibility criteria",
+            "How participants became eligible and were recruited",
+            "text",
+            0,
+            llm=("Describe the eligibility criteria and how participants were recruited."),
+        ),
+        _field(
+            _MM_ET_PARTICIPANTS,
+            "par_setting",
+            "Clinical setting",
+            "Care context of the population",
+            "select",
+            1,
+            allowed=["inpatient", "outpatient", "ed", "mixed", "population", "unclear"],
+            llm=(
+                "What was the clinical setting of the population (inpatient, "
+                "outpatient, emergency department, mixed, or population-based)? "
+                "If it cannot be determined, answer unclear."
+            ),
+        ),
+        _field(
+            _MM_ET_PARTICIPANTS,
+            "par_n_centers",
+            "Number of centres",
+            "Count of contributing centres or sites",
+            "number",
+            2,
+            unit="centers",
+            llm=(
+                "How many centres or sites contributed data? Return the "
+                "number. If not reported, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_PARTICIPANTS,
+            "par_inclusion",
+            "Inclusion criteria",
+            "Specific inclusion criteria applied",
+            "text",
+            3,
+            llm="List the inclusion criteria.",
+        ),
+        _field(
+            _MM_ET_PARTICIPANTS,
+            "par_exclusion",
+            "Exclusion criteria",
+            "Exclusions applied to the population",
+            "text",
+            4,
+            llm=(
+                "List the exclusion criteria. If none were applied, record that none were reported."
+            ),
+        ),
+        # --- outcome (6) ---
+        _field(
+            _MM_ET_OUTCOME,
+            "out_definition",
+            "Outcome definition",
+            "Operational definition of the predicted outcome",
+            "text",
+            0,
+            llm="How is the predicted outcome defined?",
+        ),
+        _field(
+            _MM_ET_OUTCOME,
+            "out_type",
+            "Task type",
+            "Nature of the prediction task",
+            "select",
+            1,
+            allowed=["diagnostic", "prognostic", "both"],
+            llm="Is the model diagnostic, prognostic, or both?",
+        ),
+        _field(
+            _MM_ET_OUTCOME,
+            "out_timing",
+            "Measurement horizon",
+            "When the outcome is measured (e.g. in-hospital, 1 year)",
+            "text",
+            2,
+            llm=("Over what time horizon is the outcome measured? If absent, mark no information."),
+        ),
+        _field(
+            _MM_ET_OUTCOME,
+            "out_blinded",
+            "Blinded assessment",
+            "Whether outcome assessment was blind to the predictors",
+            "select",
+            3,
+            allowed=["yes", "no", "unclear"],
+            llm=("Was the outcome assessed blind to the predictors? Answer yes, no, or unclear."),
+        ),
+        _field(
+            _MM_ET_OUTCOME,
+            "out_hf_phenotype",
+            "Heart-failure phenotype",
+            "Target heart-failure phenotype",
+            "select",
+            4,
+            allowed=["HFpEF", "HFrEF", "HFmrEF", "mixed", "unspecified"],
+            llm=(
+                "Which heart-failure phenotype is targeted (HFpEF, HFrEF, "
+                "HFmrEF, or mixed)? If it is not specified, answer unspecified."
+            ),
+        ),
+        _field(
+            _MM_ET_OUTCOME,
+            "out_endpoint",
+            "Specific endpoint",
+            "Concrete endpoint predicted",
+            "text",
+            5,
+            llm=(
+                "What is the concrete endpoint (for example one-year "
+                "mortality, readmission, diagnosis of HFpEF)?"
+            ),
+        ),
+        # --- candidate_predictors (5) ---
+        _field(
+            _MM_ET_PREDICTORS,
+            "prd_list",
+            "Predictor list",
+            "Candidate predictors considered",
+            "text",
+            0,
+            llm=("List the candidate predictors (or feature families) considered."),
+        ),
+        _field(
+            _MM_ET_PREDICTORS,
+            "prd_n_candidates",
+            "Number of candidates",
+            "Count of candidate predictors before selection",
+            "number",
+            1,
+            unit="predictors",
+            llm=(
+                "How many candidate predictors or features were considered "
+                "before selection? Return the number. If absent, mark no "
+                "information."
+            ),
+        ),
+        _field(
+            _MM_ET_PREDICTORS,
+            "prd_timing",
+            "Measurement timing",
+            "When predictors are measured (e.g. at admission)",
+            "text",
+            2,
+            llm=("At what moment are the predictors measured relative to the outcome?"),
+        ),
+        _field(
+            _MM_ET_PREDICTORS,
+            "prd_blinded",
+            "Blinded assessment",
+            "Whether predictors were assessed blind to the outcome",
+            "select",
+            3,
+            allowed=["yes", "no", "unclear"],
+            llm=("Were the predictors assessed blind to the outcome? Answer yes, no, or unclear."),
+        ),
+        _field(
+            _MM_ET_PREDICTORS,
+            "prd_type",
+            "Predictor types",
+            "Nature of the predictors (clinical, lab, imaging, signal, omics)",
+            "text",
+            4,
+            llm=(
+                "Which types of predictor enter the model (clinical, "
+                "laboratory, imaging, ECG, omics)?"
+            ),
+        ),
+        # --- sample_size (3) ---
+        _field(
+            _MM_ET_SAMPLE_SIZE,
+            "ss_n_participants",
+            "Number of participants",
+            "Total analysed sample size",
+            "number",
+            0,
+            unit="participants",
+            llm=("How many participants were analysed (after exclusions)? Return the number."),
+        ),
+        _field(
+            _MM_ET_SAMPLE_SIZE,
+            "ss_n_events",
+            "Number of events",
+            "Count of outcome events",
+            "number",
+            1,
+            unit="events",
+            llm=(
+                "How many outcome events occurred? Return the number. If not "
+                "reported, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_SAMPLE_SIZE,
+            "ss_epv",
+            "Events per variable (EPV)",
+            "EPV, reported or derived",
+            "number",
+            2,
+            unit="events per predictor",
+            llm=(
+                "Is the EPV (events per variable) reported? If so, return the "
+                "value. If it can be derived from the number of events and the "
+                "number of predictors, compute it and note that it is derived. "
+                "If it cannot be determined, mark no information."
+            ),
+        ),
+        # --- missing_data (2) ---
+        _field(
+            _MM_ET_MISSING,
+            "miss_reported",
+            "Missing data reported",
+            "Whether the article reports missing data",
+            "select",
+            0,
+            allowed=["yes", "no", "unclear"],
+            llm=(
+                "Does the article report the presence or handling of missing "
+                "data? Answer yes, no, or unclear."
+            ),
+        ),
+        _field(
+            _MM_ET_MISSING,
+            "miss_method",
+            "Handling method",
+            "How missing data were handled",
+            "select",
+            1,
+            allowed=[
+                "complete-case",
+                "single-imputation",
+                "multiple-imputation",
+                "model-based",
+                "none",
+                "unclear",
+            ],
+            llm=(
+                "Which method was used to handle missing data? Choose one of "
+                "the listed options. If it is not described, answer unclear."
+            ),
+        ),
+        # --- interpretation (3) ---
+        _field(
+            _MM_ET_INTERPRETATION,
+            "intp_comparison",
+            "Comparison with the literature",
+            "How the study compares itself to previous work",
+            "text",
+            0,
+            llm=(
+                "How do the authors compare their results with the existing "
+                "literature? If this is not discussed, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_INTERPRETATION,
+            "intp_limitations",
+            "Stated limitations",
+            "Limitations acknowledged by the authors",
+            "text",
+            1,
+            llm="Which limitations do the authors state?",
+        ),
+        _field(
+            _MM_ET_INTERPRETATION,
+            "intp_applicability",
+            "Applicability",
+            "Intended context and generalization",
+            "text",
+            2,
+            llm="For which clinical context do the authors intend the model?",
+        ),
+        # --- prediction_models (2) ---
+        _field(
+            _MM_ET_MODELS,
+            "mdl_name",
+            "Model name",
+            "Name or architecture as given in the article",
+            "text",
+            0,
+            llm=(
+                "What is the name or architecture of this model, as given in "
+                "the article? If it is not named, describe the classifier "
+                "briefly."
+            ),
+        ),
+        _field(
+            _MM_ET_MODELS,
+            "mdl_role",
+            "Model role",
+            "Role of this model in the review's comparison",
+            "select",
+            1,
+            allowed=[
+                "multimodal",
+                "unimodal-comparator",
+                "baseline",
+                "guideline-score",
+            ],
+            llm=(
+                "Classify this model's role in the review's comparison: "
+                "multimodal (two or more distinct domains), "
+                "unimodal-comparator, baseline, or guideline-score (a "
+                "validated clinical score). If it is ambiguous, mark no "
+                "information."
+            ),
+        ),
+        # --- model_development (4) ---
+        _field(
+            _MM_ET_MODEL_DEV,
+            "dev_method",
+            "Modelling method",
+            "Algorithm or modelling approach",
+            "text",
+            0,
+            llm=("Which algorithm or modelling approach was used for this model?"),
+        ),
+        _field(
+            _MM_ET_MODEL_DEV,
+            "dev_selection",
+            "Predictor selection",
+            "Variable or feature selection strategy",
+            "text",
+            1,
+            llm=(
+                "How were predictors or features selected (univariable "
+                "screening, LASSO, importance ranking, none)? If it is not "
+                "described, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_MODEL_DEV,
+            "dev_hyperparam",
+            "Hyperparameter tuning",
+            "How hyperparameters were tuned",
+            "text",
+            2,
+            llm=(
+                "How were hyperparameters tuned (grid or random search, "
+                "validation, defaults)? If absent, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_MODEL_DEV,
+            "dev_internal_val",
+            "Internal validation",
+            "Internal validation technique",
+            "select",
+            3,
+            allowed=["none", "split", "cv", "bootstrap", "nested-cv", "other"],
+            llm=(
+                "Which internal validation technique was used (split, "
+                "cross-validation, bootstrap, nested cross-validation, none)?"
+            ),
+        ),
+        # --- model_performance (3) ---
+        _field(
+            _MM_ET_MODEL_PERF,
+            "perf_discrimination",
+            "Discrimination",
+            "Discrimination measures reported (AUC, C-index)",
+            "text",
+            0,
+            llm=(
+                "Which discrimination measures are reported, and with what "
+                "values? Record the numeric values in the Numeric Performance "
+                "section."
+            ),
+        ),
+        _field(
+            _MM_ET_MODEL_PERF,
+            "perf_calibration",
+            "Calibration",
+            "How calibration is assessed",
+            "text",
+            1,
+            allows_not_evaluated=True,
+            llm=(
+                "Is calibration assessed, and how (calibration curve, slope "
+                "and intercept, statistical test)? If it is not assessed, mark "
+                "not evaluated."
+            ),
+        ),
+        _field(
+            _MM_ET_MODEL_PERF,
+            "perf_classification",
+            "Classification measures",
+            "Sensitivity, specificity, PPV, accuracy, F1",
+            "text",
+            2,
+            llm=(
+                "Which classification measures are reported (sensitivity, "
+                "specificity, PPV, accuracy, F1)?"
+            ),
+        ),
+        # --- model_evaluation (3) ---
+        _field(
+            _MM_ET_MODEL_EVAL,
+            "eval_validation_type",
+            "Validation type",
+            "Level of validation reached",
+            "select",
+            0,
+            allowed=["apparent-only", "internal", "external", "both"],
+            llm=(
+                "Which types of validation does the study report for this "
+                "model (apparent only, internal, external, or both internal "
+                "and external)?"
+            ),
+        ),
+        _field(
+            _MM_ET_MODEL_EVAL,
+            "eval_external_source",
+            "External validation source",
+            "Origin of the external data, if any",
+            "text",
+            1,
+            allows_not_applicable=True,
+            llm=(
+                "If there is external validation, which source or cohort do "
+                "the external data come from? If there is no external "
+                "validation, mark not applicable."
+            ),
+        ),
+        _field(
+            _MM_ET_MODEL_EVAL,
+            "eval_comparator",
+            "Comparator",
+            "What the model is compared against",
+            "text",
+            2,
+            llm=(
+                "Against which comparator is this model evaluated (a guideline "
+                "score, a unimodal model, a regression, a human expert)? If "
+                "there is none, record that none was used."
+            ),
+        ),
+        # --- results (2) ---
+        _field(
+            _MM_ET_RESULTS,
+            "res_final_model",
+            "Final model",
+            "How the final model is presented",
+            "text",
+            0,
+            llm=(
+                "How is the final model presented (equation, weights, feature "
+                "importance, black box)?"
+            ),
+        ),
+        _field(
+            _MM_ET_RESULTS,
+            "res_coefficients",
+            "Coefficients available",
+            "Availability of coefficients or weights",
+            "select",
+            1,
+            allowed=["full", "partial", "none"],
+            llm=(
+                "Are the model coefficients or weights available in full, partially, or not at all?"
+            ),
+        ),
+        # --- multimodal_extension (7) ---
+        _field(
+            _MM_ET_MULTIMODAL,
+            "mm_modalities",
+            "Modalities",
+            "Data domains integrated by the model",
+            "multiselect",
+            0,
+            allowed=_MM_MODALITIES,
+            llm=(
+                "List the modalities or domains this model integrates, using "
+                "the controlled vocabulary (ecg, pcg, cxr, echo, cmr, "
+                "clinical-text, tabular-ehr, ehr-timeseries, omics, hrv, "
+                "wearable-iot). " + _MM_DEFINITION
+            ),
+        ),
+        _field(
+            _MM_ET_MULTIMODAL,
+            "mm_n_domains",
+            "Number of distinct domains",
+            "Count of distinct domains (eligibility requires two or more)",
+            "number",
+            1,
+            unit="domains",
+            llm=(
+                "How many distinct data domains does the model integrate "
+                "(eligibility requires two or more)? Count distinct clinical "
+                "or acquisition domains, not variables or feature families. "
+                + _MM_DEFINITION
+                + " Return the number and justify which domains you counted."
+            ),
+        ),
+        _field(
+            _MM_ET_MULTIMODAL,
+            "mm_fusion_type",
+            "Fusion type",
+            "Point at which the modalities are combined",
+            "select",
+            2,
+            allowed=["early", "intermediate", "late", "none"],
+            llm=(
+                "At which point in the pipeline are the modalities fused: "
+                "early (before feature encoding), intermediate (after "
+                "encoding, before the final layers), or late (combination of "
+                "unimodal predictions)? If it is not described, mark no "
+                "information."
+            ),
+        ),
+        _field(
+            _MM_ET_MULTIMODAL,
+            "mm_representation_tier",
+            "Representation tier",
+            "How the non-tabular modality is represented",
+            "select",
+            3,
+            allowed=["tier-1", "tier-2", "tier-3"],
+            llm=(
+                "Classify the representation: tier-1 (heterogeneous — the "
+                "modality appears in its native form or with a dedicated "
+                "encoder), tier-2 (homogeneous — distinct domains as "
+                "substantive tabular blocks), or tier-3 (collapsed — the "
+                "modality is reduced to a few scalars with no encoder)."
+            ),
+        ),
+        _field(
+            _MM_ET_MULTIMODAL,
+            "mm_encoders",
+            "Encoders per modality",
+            "Encoder used for each modality",
+            "text",
+            4,
+            llm=(
+                "Which encoder or architecture processes each modality (for "
+                "example a CNN for imaging, a transformer for text or signals, "
+                "an MLP for tabular data)? If the model is purely tabular, "
+                "record that."
+            ),
+        ),
+        _field(
+            _MM_ET_MULTIMODAL,
+            "mm_provenance_flag",
+            "Provenance",
+            "Provenance criterion from the review protocol",
+            "select",
+            5,
+            allowed=["separate-stream", "single-field-imaging-origin", "na"],
+            llm=(
+                "Does the imaging or signal modality enter as a deliberately "
+                "separate stream that is fused with the rest "
+                "(separate-stream), or is it only a single field of imaging "
+                "origin inside the structured record "
+                "(single-field-imaging-origin)? If it is not applicable, "
+                "answer na."
+            ),
+        ),
+        _field(
+            _MM_ET_MULTIMODAL,
+            "mm_comparator_type",
+            "Comparator type",
+            "Category of the comparator in the review question",
+            "select",
+            6,
+            allowed=[
+                "guideline-score",
+                "unimodal-ml",
+                "logistic-linear",
+                "human-expert",
+                "none",
+            ],
+            llm=(
+                "Which type of comparator is used for this model: a guideline "
+                "score (such as MAGGIC, SHFM, or SCORE), a unimodal "
+                "machine-learning model, a logistic or linear regression, a "
+                "human expert, or none?"
+            ),
+        ),
+        # --- numeric_performance (17) ---
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_validation_type",
+            "Validation type",
+            "Key of this performance block; add one instance per type",
+            "select",
+            0,
+            allowed=_MM_VALIDATION_TYPES,
+            llm=(
+                "Which type of performance does this block describe: apparent "
+                "(the same data used for development), internal (resampling or "
+                "cross-validation), or external (independent external data)?"
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_auc",
+            "AUC / AUROC",
+            "Area under the ROC curve (0-1)",
+            "number",
+            1,
+            llm=(
+                "What is the AUC/AUROC for this validation type? Return the "
+                "number. If it is not reported, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_auc_ci_low",
+            "AUC 95% CI — lower",
+            "Lower bound of the AUC confidence interval",
+            "number",
+            2,
+            llm=(
+                "What is the lower bound of the 95% confidence interval for "
+                "the AUC? Return the number only. If no interval is reported, "
+                "mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_auc_ci_high",
+            "AUC 95% CI — upper",
+            "Upper bound of the AUC confidence interval",
+            "number",
+            3,
+            llm=(
+                "What is the upper bound of the 95% confidence interval for "
+                "the AUC? Return the number only. If no interval is reported, "
+                "mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_cindex",
+            "C-index",
+            "Concordance index (survival)",
+            "number",
+            4,
+            llm=(
+                "What C-index is reported for this validation type? Return the "
+                "number. If it is not applicable or absent, mark no "
+                "information."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_cindex_ci_low",
+            "C-index 95% CI — lower",
+            "Lower bound of the C-index confidence interval",
+            "number",
+            5,
+            llm=(
+                "What is the lower bound of the 95% confidence interval for "
+                "the C-index? Return the number only. If no interval is "
+                "reported, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_cindex_ci_high",
+            "C-index 95% CI — upper",
+            "Upper bound of the C-index confidence interval",
+            "number",
+            6,
+            llm=(
+                "What is the upper bound of the 95% confidence interval for "
+                "the C-index? Return the number only. If no interval is "
+                "reported, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_sensitivity",
+            "Sensitivity",
+            "Reported sensitivity",
+            "number",
+            7,
+            llm=(
+                "What is the sensitivity for this validation type? Return the "
+                "number and indicate whether it is a proportion or a "
+                "percentage. If absent, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_specificity",
+            "Specificity",
+            "Reported specificity",
+            "number",
+            8,
+            llm=("What is the specificity? Return the number. If absent, mark no information."),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_accuracy",
+            "Accuracy",
+            "Overall accuracy",
+            "number",
+            9,
+            llm=(
+                "What is the overall accuracy reported? Return the number. If "
+                "absent, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_calib_slope",
+            "Calibration slope",
+            "Calibration slope (1 is ideal)",
+            "number",
+            10,
+            allows_not_evaluated=True,
+            llm=(
+                "What is the calibration slope? Return the number. If "
+                "calibration was not assessed, mark not evaluated."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_calib_intercept",
+            "Calibration intercept",
+            "Calibration-in-the-large (0 is ideal)",
+            "number",
+            11,
+            allows_not_evaluated=True,
+            llm=(
+                "What is the calibration intercept (calibration-in-the-large)? "
+                "Return the number. If calibration was not assessed, mark not "
+                "evaluated."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_nri",
+            "NRI",
+            "Net reclassification improvement",
+            "number",
+            12,
+            llm=(
+                "Does the study report a net reclassification improvement "
+                "(NRI) for this model? Return the value. If absent, mark no "
+                "information."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_brier",
+            "Brier score",
+            "Brier score (0-1)",
+            "number",
+            13,
+            llm=(
+                "What Brier score is reported? Return the number. If absent, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_n",
+            "n of the estimate",
+            "Participants in the set behind this estimate",
+            "number",
+            14,
+            unit="participants",
+            llm=(
+                "How many participants make up the set behind this estimate? "
+                "Return the number. If absent, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_events",
+            "Events of the estimate",
+            "Events in the set behind this estimate",
+            "number",
+            15,
+            unit="events",
+            llm=(
+                "How many events are in the set behind this estimate? Return "
+                "the number. If absent, mark no information."
+            ),
+        ),
+        _field(
+            _MM_ET_NUMERIC_PERF,
+            "pnum_explainability",
+            "Explainability methods",
+            "Explainability / transparency techniques applied",
+            "multiselect",
+            16,
+            allowed=[
+                "shap",
+                "integrated-gradients",
+                "feature-importance",
+                "attention",
+                "grad-cam",
+                "none",
+            ],
+            llm=(
+                "Which explainability or transparency methods are applied to "
+                "this model (SHAP, integrated gradients, feature importance, "
+                "attention, grad-CAM, or none)?"
+            ),
+        ),
+    ]
+    for field in fields:
+        session.add(field)
+
+    print(f"  Seeded {len(entity_types)} entity types and {len(fields)} fields.")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -1947,6 +3122,7 @@ async def main() -> None:
     async with AsyncSessionLocal() as session:
         try:
             await seed_charms(session)
+            await seed_charms_mm(session)
             await seed_probast(session)
             await seed_quadas2(session)
             await seed_probast_ai(session)

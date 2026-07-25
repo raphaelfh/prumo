@@ -13,28 +13,16 @@ from app.models.extraction import (
 )
 from app.seed import _PROBAST_JUDGMENT, _PROBAST_SIGNALING
 from app.seed_probast_ai import seed_probast_ai
+from tests.unit.conftest import CapturingSession
 
 
-class _CapturingSession:
-    """Forces the seed build path (``get`` -> None) and records every ``add``."""
-
-    def __init__(self) -> None:
-        self.added: list[Any] = []
-
-    async def get(self, *_a: Any, **_k: Any) -> None:
-        return None
-
-    def add(self, obj: Any) -> None:
-        self.added.append(obj)
-
-
-async def _seed() -> _CapturingSession:
-    session = _CapturingSession()
+async def _seed() -> CapturingSession:
+    session = CapturingSession()
     await seed_probast_ai(session)
     return session
 
 
-def _of(session: _CapturingSession, cls: type) -> list[Any]:
+def _of(session: CapturingSession, cls: type) -> list[Any]:
     return [o for o in session.added if isinstance(o, cls)]
 
 
@@ -183,7 +171,7 @@ async def test_every_spec_input_resolves_to_a_seeded_field() -> None:
 
 @pytest.mark.asyncio
 async def test_idempotent_when_template_exists() -> None:
-    class _Existing(_CapturingSession):
+    class _Existing(CapturingSession):
         async def get(self, *_a: Any, **_k: Any) -> Any:
             return object()
 
