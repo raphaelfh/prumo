@@ -8,7 +8,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 
 // Mock copy so t() returns the key (avoids needing the full copy registry).
 vi.mock('@/lib/copy', () => ({ t: (_n: string, k: string) => k }));

@@ -7,7 +7,7 @@
 
 import {useEffect, useState} from 'react';
 import {useQueryClient} from '@tanstack/react-query';
-import {useSearchParams} from 'react-router-dom';
+import {useSearchParams} from 'react-router';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';

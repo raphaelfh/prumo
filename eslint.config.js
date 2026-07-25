@@ -46,6 +46,16 @@ export default tseslint.config(
       }],
       "prefer-const": "error",
         "no-console": ["warn", {allow: ["warn", "error", "time", "timeEnd", "group", "groupEnd"]}],
+        // react-router-dom was removed in React Router v8 (#562 /
+        // GHSA-qwww-vcr4-c8h2). Uninstalling it already breaks a stale import
+        // at tsc, but that surfaces as a bare module-not-found; this names the
+        // reason and points at the replacement.
+        "no-restricted-imports": ["error", {
+            paths: [{
+                name: "react-router-dom",
+                message: "react-router-dom was removed in React Router v8. Import from 'react-router' instead (or 'react-router/dom' for RouterProvider/HydratedRouter).",
+            }],
+        }],
     },
   },
   {

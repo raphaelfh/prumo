@@ -4,7 +4,7 @@
  */
 
 import {useState} from 'react';
-import {useNavigate, useSearchParams} from 'react-router-dom';
+import {useNavigate, useSearchParams} from 'react-router';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {PageHeader} from '@/components/patterns/PageHeader';

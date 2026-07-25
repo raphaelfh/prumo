@@ -1,6 +1,6 @@
 import type {CSSProperties} from "react";
 import {forwardRef, useEffect, useImperativeHandle, useRef, useState} from "react";
-import {useNavigate} from "react-router-dom";
+import {useNavigate} from "react-router";
 import {Button} from "@/components/ui/button";
 import {Badge} from "@/components/ui/badge";
 import {Checkbox} from "@/components/ui/checkbox";
