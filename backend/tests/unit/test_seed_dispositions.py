@@ -19,33 +19,18 @@ from app.seed import (
     _YES_NO_UNCLEAR,
     _signaling,
     seed_charms,
+    seed_charms_mm,
     seed_probast,
     seed_quadas2,
 )
+from tests.unit.conftest import CapturingSession
 
 _DISPOSITION_STRINGS = {"No information", "Not applicable", "Not evaluated", "NI", "NA"}
 _SENTINEL_EID = "00000000-0000-0000-0000-000000000000"
 
 
-class _CapturingSession:
-    """A fake AsyncSession that forces the seed build path (``get`` → None) and
-    records every ``add``ed ORM object. The seed functions only use ``get`` +
-    ``add`` (no execute/flush/commit), so this needs no DB — it lets us assert
-    the *new* seed field shape independent of whatever an old ``make db-seed``
-    left in the shared local DB."""
-
-    def __init__(self) -> None:
-        self.added: list[object] = []
-
-    async def get(self, *_a: object, **_k: object) -> None:
-        return None
-
-    def add(self, obj: object) -> None:
-        self.added.append(obj)
-
-
 async def _seeded_fields(seed_fn) -> list[ExtractionField]:
-    session = _CapturingSession()
+    session = CapturingSession()
     await seed_fn(session)
     return [obj for obj in session.added if isinstance(obj, ExtractionField)]
 
@@ -77,7 +62,7 @@ def test_signaling_no_flag_for_quadas() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("seed_fn", [seed_charms, seed_probast, seed_quadas2])
+@pytest.mark.parametrize("seed_fn", [seed_charms, seed_charms_mm, seed_probast, seed_quadas2])
 async def test_no_seeded_field_carries_a_disposition_value(seed_fn) -> None:
     """No seeded field's allowed_values may contain any in-band disposition
     string in any encoding (full-word or PROBAST abbreviation). Catches inline
