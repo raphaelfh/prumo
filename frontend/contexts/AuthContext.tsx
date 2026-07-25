@@ -2,7 +2,7 @@ import {createContext, ReactNode, useContext, useEffect, useState} from "react";
 import {Session, User} from "@supabase/supabase-js";
 import {supabase} from "@/integrations/supabase/client";
 import {IS_LOCAL_SUPABASE, SUPABASE_ENV, SUPABASE_EXPECTED_ISSUER, SUPABASE_STORAGE_KEY,} from "@/config/supabase-env";
-import {useNavigate} from "react-router-dom";
+import {useNavigate} from "react-router";
 
 const ALLOWED_ALGS = IS_LOCAL_SUPABASE
   ? new Set(["HS256", "RS256", "ES256"])

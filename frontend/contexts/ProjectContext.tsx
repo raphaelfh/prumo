@@ -4,7 +4,7 @@
  */
 
 import React, {createContext, ReactNode, useContext, useEffect, useState} from 'react';
-import {useSearchParams} from 'react-router-dom';
+import {useSearchParams} from 'react-router';
 import {t} from '@/lib/copy';
 import type {ProjectSummary} from '@/types/project';
 

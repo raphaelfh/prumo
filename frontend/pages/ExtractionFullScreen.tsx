@@ -16,7 +16,7 @@
  */
 
 import {useEffect, useMemo, useRef, useState} from 'react';
-import {useNavigate, useParams} from 'react-router-dom';
+import {useNavigate, useParams} from 'react-router';
 import {toast} from 'sonner';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {getRequiredUserId} from '@/services/authService';

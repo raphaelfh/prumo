@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import {Outlet} from 'react-router-dom';
+import {Outlet} from 'react-router';
 import {Topbar} from '@/components/navigation';
 import {ProjectSidebar} from './ProjectSidebar';
 import {MobileSidebar} from './MobileSidebar';

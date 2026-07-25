@@ -2,7 +2,7 @@
  * Legacy route: redirects to project articles tab with the add-article sheet open.
  */
 
-import {Navigate, useParams} from "react-router-dom";
+import {Navigate, useParams} from "react-router";
 
 function AddArticle() {
     const {projectId} = useParams<{ projectId: string }>();

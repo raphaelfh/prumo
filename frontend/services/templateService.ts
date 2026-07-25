@@ -272,6 +272,10 @@ export interface GlobalTemplateWithCount {
  * Load all global extraction templates with entity-type counts.
  * Single round-trip: counts computed client-side over the flat entity-type
  * rows (tiny set, far cheaper than N per-template count queries).
+ *
+ * Scoped to `kind = 'extraction'`: the global catalogue holds both lineages,
+ * and quality-assessment tools (PROBAST, QUADAS-2) belong to the QA
+ * configuration screen — `qaTemplateService.fetchGlobalTemplates` reads them.
  */
 export function loadGlobalTemplates(): Promise<ErrorResult<GlobalTemplateWithCount[]>> {
   return toResult(async () => {
@@ -279,6 +283,7 @@ export function loadGlobalTemplates(): Promise<ErrorResult<GlobalTemplateWithCou
       .from('extraction_templates_global')
       .select('*')
       .eq('is_global', true)
+      .eq('kind', 'extraction')
       .order('framework', {ascending: true});
 
     if (templatesError) throw templatesError;

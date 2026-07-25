@@ -1,5 +1,5 @@
 import {useState} from "react";
-import {useNavigate} from "react-router-dom";
+import {useNavigate} from "react-router";
 import {signInWithPassword, signUp, resetPasswordForEmail} from "@/services/authService";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
