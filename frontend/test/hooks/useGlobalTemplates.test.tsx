@@ -6,6 +6,10 @@
  * dropped its error so a permission denial rendered every template as
  * "0 sections". The fix batches into a single query and surfaces
  * errors via the hook's `error` state.
+ *
+ * Also covers the kind-leak: the catalogue query filtered on `is_global`
+ * only, so quality-assessment tools (PROBAST, QUADAS-2) showed up in the
+ * data-extraction import dialog.
  */
 
 import { renderHook, waitFor } from '@testing-library/react';
@@ -121,6 +125,20 @@ describe('useGlobalTemplates', () => {
     expect(
       result.current.templates.find((t) => t.id === 'tpl-2')?.entityTypesCount,
     ).toBe(1);
+  });
+
+  it('requests only extraction-kind templates, not QA tools', async () => {
+    const templatesChain = chain({ data: SAMPLE_TEMPLATES });
+    const countsChain = chain({ data: [] });
+    (supabase.from as any)
+      .mockReturnValueOnce(templatesChain)
+      .mockReturnValueOnce(countsChain);
+
+    const { result } = renderHook(() => useGlobalTemplates());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Unfiltered, picking a QA tool here 404s on the clone endpoint.
+    expect(templatesChain.__calls.eqs).toContainEqual(['kind', 'extraction']);
   });
 
   it('surfaces count-query errors via the error state (#75)', async () => {
