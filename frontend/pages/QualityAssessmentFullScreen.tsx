@@ -28,6 +28,7 @@ import { Loader2 } from "lucide-react";
 import { RunSplitShell } from "@/components/runs/RunSplitShell";
 import { RunEditabilityProvider } from "@/components/runs/RunEditabilityContext";
 import { HITLPublishedBanner } from "@/components/runs/HITLStatusBadges";
+import { OverallJudgmentBanner } from "@/components/assessment/OverallJudgmentBanner";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
 import type {
@@ -49,6 +50,7 @@ import {
   useAutoSaveProposals,
   useCreateConsensus,
   useMarkReady,
+  useRefetchOnSave,
   useReopenRun,
   useReviewerSummary,
   useRun,
@@ -309,6 +311,19 @@ export default function QualityAssessmentFullScreen() {
         // read-only via forceReadOnly, this is the flush-path belt).
         permissions.userRole !== "viewer",
     });
+
+  // The overall-judgment banner is computed SERVER-side from the persisted
+  // domain judgments, and autosave deliberately never invalidates
+  // `runs.detail` (that would cost a run-view GET per debounce tick on every
+  // screen). Without this sync the banner keeps its page-load value while the
+  // reviewer edits, contradicting the domain judgments rendered right below
+  // it. Scoped to the QA page, and gated on the template actually declaring
+  // computed overalls so PROBAST / QUADAS-2 pay nothing.
+  useRefetchOnSave({
+    enabled: (runDetail?.derived_judgments?.length ?? 0) > 0,
+    lastSavedAt,
+    refetch: refetchRun,
+  });
 
   const { extractForRun, loading: extractingAI } = useRunAIExtraction({
     onSuccess: async () => {
@@ -796,6 +811,10 @@ export default function QualityAssessmentFullScreen() {
               {template.description}
             </p>
           ) : null}
+
+          <OverallJudgmentBanner
+            judgments={runDetail?.derived_judgments ?? []}
+          />
 
           {sortedDomains.length === 0 ? (
             <p className="text-sm text-muted-foreground">

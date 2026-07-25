@@ -14,6 +14,20 @@ updates:
     # Update-branch button — never `@dependabot rebase` a grouped PR
     # (it closes and recreates the PR under a new number + branch).
     rebase-strategy: disabled
+    ignore:
+      # Deliberate pin (see backend/pyproject.toml): the parser stack is
+      # drift-sensitive — an unpinned rapidocr bump broke prod via
+      # docling's OCR default. Bumps are done deliberately with a manual
+      # parse re-test, never via automated PRs.
+      - dependency-name: docling
+      # Major = a deliberate framework migration (pydantic-ai 2.x has
+      # breaking changes across agents/tools APIs). The <2.0.0 ceiling in
+      # pyproject is intentional; widen it only in a planned migration PR.
+      # Fully ignored (no update-types filter): dependabot classifies a
+      # range-widening PR (<2.0.0 -> <3.0.0) as NOT semver-major, so the
+      # narrower rule failed to stop #409/#546 from reopening. In-range
+      # minors need no manifest change, so a full ignore loses nothing.
+      - dependency-name: pydantic-ai-slim
 
   - package-ecosystem: npm
     directory: /
@@ -26,12 +40,25 @@ updates:
     open-pull-requests-limit: 5
     rebase-strategy: disabled
     ignore:
-      # TypeScript 6.0.x is blocked: openapi-typescript (critical for
-      # generate:api-types) peers on "^5.x" as of its latest 7.13.0.
-      # Revisit when openapi-typescript ships TS 6 support; 6.1+ will
-      # open a fresh PR automatically.
+      # TypeScript majors are blocked: openapi-typescript (critical for
+      # generate:api-types) peers on "^5.x" as of its latest 7.13.0 —
+      # TS 6 and TS 7 (#548) both fail that peer range. Unblock
+      # deliberately when openapi-typescript ships support, like the
+      # pydantic-ai migration.
       - dependency-name: typescript
-        versions: [">=6.0.0 <6.1.0"]
+        versions: [">=6.0.0"]
+      # Babel 8 is blocked until babel-plugin-react-compiler supports it:
+      # the React Compiler build pipeline (vite.shared-plugins.ts,
+      # panicThreshold all_errors) hard-fails lint/tests/build under
+      # @babel/core 8 (PR #442). Revisit when the compiler ships
+      # Babel 8 support.
+      - dependency-name: "@babel/core"
+        update-types: ["version-update:semver-major"]
+      # @types/node tracks the runtime major (Node 24 LTS — .nvmrc,
+      # engines, CI). Types for a newer Node would let code reference
+      # APIs the runtime doesn't have; bump together with the runtime.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

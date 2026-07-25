@@ -13,39 +13,26 @@ import pytest
 from app.llm.schema import _enum_values
 from app.models.extraction import ExtractionField
 from app.seed import (
+    _PROBAST_JUDGMENT,
     _PROBAST_SIGNALING,
     _QUADAS2_SIGNALING,
     _YES_NO,
     _YES_NO_UNCLEAR,
     _signaling,
     seed_charms,
+    seed_charms_mm,
     seed_probast,
     seed_quadas2,
 )
+from app.seed_probast_ai import seed_probast_ai
+from tests.unit.conftest import CapturingSession
 
 _DISPOSITION_STRINGS = {"No information", "Not applicable", "Not evaluated", "NI", "NA"}
 _SENTINEL_EID = "00000000-0000-0000-0000-000000000000"
 
 
-class _CapturingSession:
-    """A fake AsyncSession that forces the seed build path (``get`` → None) and
-    records every ``add``ed ORM object. The seed functions only use ``get`` +
-    ``add`` (no execute/flush/commit), so this needs no DB — it lets us assert
-    the *new* seed field shape independent of whatever an old ``make db-seed``
-    left in the shared local DB."""
-
-    def __init__(self) -> None:
-        self.added: list[object] = []
-
-    async def get(self, *_a: object, **_k: object) -> None:
-        return None
-
-    def add(self, obj: object) -> None:
-        self.added.append(obj)
-
-
 async def _seeded_fields(seed_fn) -> list[ExtractionField]:
-    session = _CapturingSession()
+    session = CapturingSession()
     await seed_fn(session)
     return [obj for obj in session.added if isinstance(obj, ExtractionField)]
 
@@ -77,7 +64,9 @@ def test_signaling_no_flag_for_quadas() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("seed_fn", [seed_charms, seed_probast, seed_quadas2])
+@pytest.mark.parametrize(
+    "seed_fn", [seed_charms, seed_charms_mm, seed_probast, seed_quadas2, seed_probast_ai]
+)
 async def test_no_seeded_field_carries_a_disposition_value(seed_fn) -> None:
     """No seeded field's allowed_values may contain any in-band disposition
     string in any encoding (full-word or PROBAST abbreviation). Catches inline
@@ -107,6 +96,19 @@ async def test_probast_signaling_fields_allow_not_applicable() -> None:
     signaling = [f for f in fields if f.allowed_values == _PROBAST_SIGNALING]
     assert signaling, "expected PROBAST signaling fields"
     assert all(f.allows_not_applicable for f in signaling)
+
+
+@pytest.mark.asyncio
+async def test_probast_ai_signaling_fields_allow_not_applicable() -> None:
+    """PROBAST+AI signaling questions offer NA in the instrument, so every one
+    opts into the not_applicable disposition; the 16 judgment fields do not."""
+    fields = await _seeded_fields(seed_probast_ai)
+    signaling = [f for f in fields if f.allowed_values == _PROBAST_SIGNALING]
+    assert len(signaling) == 42
+    assert all(f.allows_not_applicable for f in signaling)
+    judgments = [f for f in fields if f.allowed_values == _PROBAST_JUDGMENT]
+    assert judgments
+    assert not any(f.allows_not_applicable or f.allows_not_evaluated for f in judgments)
 
 
 @pytest.mark.asyncio

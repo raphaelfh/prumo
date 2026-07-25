@@ -8,8 +8,13 @@
  *
  * Renders one entity_type (domain) as a shadcn Accordion item. Signaling
  * questions render via the existing `FieldInput` component; the domain-level
- * `risk_of_bias` and `applicability_concerns` fields are highlighted as a
- * summary card below the questions.
+ * JUDGMENT fields are highlighted as a summary card below the questions.
+ *
+ * A judgment is detected by its answer set (`isJudgmentField`: a select whose
+ * allowed values are all risk labels), not by field name. PROBAST+AI's
+ * development part judges "Quality" rather than risk of bias, so the previous
+ * name allowlist would have rendered its four domain judgments as ordinary
+ * signaling rows.
  */
 
 import { ShieldAlert } from "lucide-react";
@@ -22,6 +27,8 @@ import {
 } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { FieldInput } from "@/components/extraction/FieldInput";
+import { isJudgmentField } from "@/lib/extraction/judgmentFields";
+import { qa } from "@/lib/copy/qa";
 import { SectionAIExtractButton } from "@/components/extraction/ai/shared/SectionAIExtractButton";
 import {
   ReviewerAvatarStack,
@@ -88,13 +95,6 @@ interface QASectionAccordionProps {
   };
 }
 
-const SUMMARY_FIELD_NAMES = new Set([
-  "risk_of_bias",
-  "applicability_concerns",
-  "overall_risk_of_bias",
-  "overall_applicability",
-]);
-
 export function QASectionAccordion({
   domain,
   values,
@@ -114,8 +114,8 @@ export function QASectionAccordion({
   getSuggestionsHistory,
 }: QASectionAccordionProps) {
   const { entityType, fields } = domain;
-  const signaling = fields.filter((f) => !SUMMARY_FIELD_NAMES.has(f.name));
-  const summary = fields.filter((f) => SUMMARY_FIELD_NAMES.has(f.name));
+  const signaling = fields.filter((f) => !isJudgmentField(f));
+  const summary = fields.filter((f) => isJudgmentField(f));
 
   // Prefer the real run instance id passed from the QA page so AI
   // suggestions resolve under the correct key. Standalone usage (no
@@ -270,7 +270,7 @@ export function QASectionAccordion({
               data-testid={`qa-domain-summary-${entityType.name}`}
             >
               <p className="mb-2 text-xs font-medium uppercase tracking-wide text-warning">
-                Domain judgment
+                {qa.domainJudgmentCardTitle}
               </p>
               <div className="space-y-1 divide-y">
                 {summary.map((field) => {

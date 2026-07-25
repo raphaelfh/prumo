@@ -36,10 +36,17 @@ try {
     if (!ok) failed = true;
   }
 } finally {
-  await server.close();
+  // Vite's server.close() can leave watcher handles pending and never
+  // settle; Node >=24 turns an unsettled top-level await into exit 13.
+  // Race a timeout and exit explicitly — the verdict is already known.
+  await Promise.race([
+    server.close(),
+    new Promise((resolve) => setTimeout(resolve, 5_000)),
+  ]);
 }
 if (failed) {
   console.error('React Compiler is NOT applied to all targets by the Vite pipeline.');
   process.exit(1);
 }
 console.log('Compiler coverage proof: PASS');
+process.exit(0);

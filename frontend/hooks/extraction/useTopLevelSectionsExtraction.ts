@@ -180,22 +180,39 @@ export function useTopLevelSectionsExtraction(options?: {
           totalSuggestionsCreated,
         });
 
-          // Success toast with aggregated info
-        if (successfulSections > 0) {
+        // Aggregated outcome toast. A partial result is a WARNING, never an
+        // unqualified success — the sibling chunked/all-models hooks already
+        // make that distinction and this one used to claim success whenever a
+        // single section survived (#284).
+        if (failedSections === 0 && successfulSections > 0) {
           toast.success(
-              `Top-level sections extracted: ${successfulSections}/${sections.length}`,
+            t('extraction', 'topLevelSuccessTitle')
+              .replace('{{success}}', String(successfulSections))
+              .replace('{{total}}', String(sections.length)),
             {
-              description: failedSections > 0
-                  ? `${failedSections} section(s) failed. ${totalSuggestionsCreated} suggestion(s) created.`
-                  : `${totalSuggestionsCreated} suggestion(s) created.`,
+              description: t('extraction', 'topLevelSuccessDesc')
+                .replace('{{suggestions}}', String(totalSuggestionsCreated)),
               duration: 6000,
+            },
+          );
+        } else if (successfulSections > 0) {
+          toast.warning(
+            t('extraction', 'topLevelPartialTitle')
+              .replace('{{success}}', String(successfulSections))
+              .replace('{{total}}', String(sections.length)),
+            {
+              description: t('extraction', 'topLevelPartialDesc')
+                .replace('{{suggestions}}', String(totalSuggestionsCreated))
+                .replace('{{failed}}', String(failedSections)),
+              duration: 8000,
             },
           );
         } else if (failedSections > 0) {
           toast.error(
-              `Failed to extract top-level sections`,
+            t('extraction', 'topLevelFailedTitle'),
             {
-                description: `All ${failedSections} section(s) failed.`,
+              description: t('extraction', 'topLevelFailedDesc')
+                .replace('{{failed}}', String(failedSections)),
               duration: 6000,
             },
           );

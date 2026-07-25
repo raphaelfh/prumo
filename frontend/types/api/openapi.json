@@ -5175,6 +5175,36 @@
         "title": "RunViewCurrentValue",
         "type": "object"
       },
+      "RunViewDerivedJudgment": {
+        "description": "One computed overall judgment (never stored, never entered).\n\nPresent only for templates whose ``schema`` JSONB declares a\n``derived_judgments`` spec (today: PROBAST+AI). ``value`` is None when the\ninputs are incomplete \u2014 the client renders that as an em dash, never as the\nmost favourable judgment.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "RunViewDerivedJudgment",
+        "type": "object"
+      },
       "RunViewEntityType": {
         "description": "An entity type in the frozen template snapshot, with its fields embedded.\n``role`` drives the study/model partition; the tree hierarchy is conveyed by\n``parent_entity_type_id`` (flat array, ordered by ``sort_order``).",
         "properties": {
@@ -5503,6 +5533,13 @@
               "$ref": "#/components/schemas/ReviewerDecisionResponse"
             },
             "title": "Decisions",
+            "type": "array"
+          },
+          "derived_judgments": {
+            "items": {
+              "$ref": "#/components/schemas/RunViewDerivedJudgment"
+            },
+            "title": "Derived Judgments",
             "type": "array"
           },
           "entity_types": {
