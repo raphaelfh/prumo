@@ -114,9 +114,63 @@ async def test_quadas2_has_five_entity_types(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
+async def test_probast_ai_template_exists(db_session: AsyncSession) -> None:
+    row = (
+        await db_session.execute(
+            text(
+                """
+                SELECT kind, framework, schema FROM public.extraction_templates_global
+                WHERE name = 'PROBAST+AI'
+                """
+            )
+        )
+    ).first()
+    assert row is not None, "PROBAST+AI template should exist after seed"
+    assert row[0] == "quality_assessment"
+    assert row[1] == "CUSTOM"
+    assert len(row[2]["derived_judgments"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_probast_ai_has_ten_flat_sections(db_session: AsyncSession) -> None:
+    rows = (
+        await db_session.execute(
+            text(
+                """
+                SELECT et.role, et.cardinality, et.parent_entity_type_id
+                FROM public.extraction_entity_types et
+                JOIN public.extraction_templates_global t ON t.id = et.template_id
+                WHERE t.name = 'PROBAST+AI'
+                """
+            )
+        )
+    ).all()
+    assert len(rows) == 10
+    assert all(r[0] == "study_section" and r[1] == "one" and r[2] is None for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_probast_ai_has_58_fields(db_session: AsyncSession) -> None:
+    count = (
+        await db_session.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM public.extraction_fields f
+                JOIN public.extraction_entity_types et ON et.id = f.entity_type_id
+                JOIN public.extraction_templates_global t ON t.id = et.template_id
+                WHERE t.name = 'PROBAST+AI'
+                """
+            )
+        )
+    ).scalar()
+    assert count == 58
+
+
+@pytest.mark.asyncio
 async def test_seed_is_idempotent(db_session: AsyncSession) -> None:
-    """Re-running seed_probast / seed_quadas2 produces no new rows."""
+    """Re-running the quality-assessment seeds produces no new rows."""
     from app.seed import seed_probast, seed_quadas2
+    from app.seed_probast_ai import seed_probast_ai
 
     template_count_before = (
         await db_session.execute(
@@ -128,6 +182,7 @@ async def test_seed_is_idempotent(db_session: AsyncSession) -> None:
 
     await seed_probast(db_session)
     await seed_quadas2(db_session)
+    await seed_probast_ai(db_session)
     await db_session.flush()
 
     template_count_after = (

@@ -357,6 +357,13 @@ class TemplateCloneService:
                         allow_other=f.allow_other,
                         other_label=f.other_label,
                         other_placeholder=f.other_placeholder,
+                        # ADR-0016 opt-in dispositions travel with the field:
+                        # the project clone is what the run-open form renders,
+                        # so dropping them here silently removes the
+                        # "Not applicable" affordance from every signaling
+                        # question (and freezes that loss into the snapshot).
+                        allows_not_applicable=f.allows_not_applicable,
+                        allows_not_evaluated=f.allows_not_evaluated,
                     )
                 )
                 field_count += 1

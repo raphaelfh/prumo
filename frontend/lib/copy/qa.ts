@@ -13,12 +13,15 @@ export const qa = {
     'Select a tool and an article to start (or resume) a structured quality-assessment session.',
   noTemplatesTitle: 'No quality-assessment templates seeded',
   noTemplatesDesc:
-    "Run `make db-seed` (or `python -m app.seed`) to install PROBAST and QUADAS-2.",
+    "Run `make db-seed` (or `python -m app.seed`) to install PROBAST, PROBAST+AI and QUADAS-2.",
   noArticlesTitle: 'No articles in this project yet',
   noArticlesDesc: 'Add an article first; quality assessment runs against an article + tool pair.',
   loadArticlesError: 'Failed to load articles for the quality-assessment view.',
   untitledArticle: 'Untitled article',
   noAuthors: 'Authors not provided',
+
+  // QASectionAccordion — the per-domain judgment card
+  domainJudgmentCardTitle: 'Domain judgment',
 
   // Tabs
   tabAssessment: 'Assessment',
@@ -33,7 +36,8 @@ export const qa = {
   // Configuration tab
   configHeader: 'Quality-assessment tools',
   configCountFormat: '{{enabled}}/{{total}} enabled',
-  configEmptyGlobals: 'No quality-assessment templates available. Seed PROBAST + QUADAS-2 first.',
+  configEmptyGlobals:
+    'No quality-assessment templates available. Seed PROBAST, PROBAST+AI and QUADAS-2 first.',
   configToggleEnable: 'Enable',
   configToggleDisable: 'Disable',
   configToggleEnabling: 'Enabling…',
@@ -68,7 +72,8 @@ export const qa = {
 
   // Active template bar
   activeTemplateLabel: 'Active tool:',
-  activeTemplateNone: 'No tool enabled — open Configuration to enable PROBAST or QUADAS-2.',
+  activeTemplateNone:
+    'No tool enabled — open Configuration to enable PROBAST, PROBAST+AI or QUADAS-2.',
 
   // Empty article-table state
   noArticlesForListTitle: 'No articles to assess',

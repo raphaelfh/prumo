@@ -103,6 +103,21 @@ class BatchAllSectionsFailed(Exception):
     unknown exception types as non-retryable."""
 
 
+def _qa_framework_label(template: Any | None) -> str | None:
+    """Label the quality-assessment prompt grounds in.
+
+    Prefers the template's human name ("PROBAST+AI", "QUADAS-2") over
+    ``framework``: every quality-assessment template is ``framework='CUSTOM'``
+    (the enum has only CHARMS/PICOS/CUSTOM), so the enum produced the literal
+    prompt "assessing a study using CUSTOM". Falls back to ``framework`` when
+    the name is missing or blank.
+    """
+    if template is None:
+        return None
+    name = (getattr(template, "name", None) or "").strip()
+    return name or getattr(template, "framework", None)
+
+
 class SectionExtractionService(LoggerMixin):
     """
     Service for template section extraction.
@@ -435,10 +450,11 @@ class SectionExtractionService(LoggerMixin):
         blind-review gate routes human values to ``ReviewerDecision`` rows
         rather than ``human`` proposals).
 
-        The system / user prompt is selected from ``run.kind`` +
-        ``template.framework`` so PROBAST / QUADAS-2 runs get an
-        assessment-style prompt while extraction runs keep the original
-        "extract from scientific article" prompt.
+        The system / user prompt is selected from ``run.kind`` + the template
+        NAME (see ``_qa_framework_label``) so PROBAST / PROBAST+AI / QUADAS-2
+        runs get an assessment-style prompt naming the actual instrument, while
+        extraction runs keep the original "extract from scientific article"
+        prompt.
         """
         start_time = perf_counter()
 
@@ -449,7 +465,7 @@ class SectionExtractionService(LoggerMixin):
             raise ValueError(f"Run {run_id} stage is {run.stage}; AI extraction requires EXTRACT")
 
         template = await self.db.get(ProjectExtractionTemplate, run.template_id)
-        framework: str | None = template.framework if template is not None else None
+        framework: str | None = _qa_framework_label(template)
         kind = run.kind
 
         await self._runs.start_run(run.id)
