@@ -23,6 +23,12 @@ export const qa = {
   // QASectionAccordion — the per-domain judgment card
   domainJudgmentCardTitle: 'Domain judgment',
 
+  // Computed overall judgments (worst-domain; never entered by a reviewer)
+  overallBannerTitle: 'Overall judgments',
+  overallBannerHint: 'Computed from the domain judgments (worst domain). Not editable.',
+  overallIncomplete: '—',
+  overallIncompleteHint: 'Incomplete — at least one domain has not been judged.',
+
   // Tabs
   tabAssessment: 'Assessment',
   tabDashboard: 'Dashboard',

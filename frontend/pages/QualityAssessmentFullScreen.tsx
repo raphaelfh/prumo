@@ -28,6 +28,7 @@ import { Loader2 } from "lucide-react";
 import { RunSplitShell } from "@/components/runs/RunSplitShell";
 import { RunEditabilityProvider } from "@/components/runs/RunEditabilityContext";
 import { HITLPublishedBanner } from "@/components/runs/HITLStatusBadges";
+import { OverallJudgmentBanner } from "@/components/assessment/OverallJudgmentBanner";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
 import type {
@@ -796,6 +797,10 @@ export default function QualityAssessmentFullScreen() {
               {template.description}
             </p>
           ) : null}
+
+          <OverallJudgmentBanner
+            judgments={runDetail?.derived_judgments ?? []}
+          />
 
           {sortedDomains.length === 0 ? (
             <p className="text-sm text-muted-foreground">
