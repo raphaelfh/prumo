@@ -25,6 +25,24 @@ This guide explains how to load seed data after the schema migrations run.
   studies. 5 domains + Overall, 11 signaling questions + summary fields with
   `allowed_values=['Y','N','Unclear']`. Deterministic UUID. Helper:
   `seed_quadas2()`.
+- **PROBAST+AI** — global quality-assessment template (Moons et al., BMJ 2025)
+  covering regression- and AI/ML-based prediction models. 10 flat sections
+  (development D1–D4 judged on Quality; evaluation D1–D3 plus evaluation D4
+  split by performance type — apparent / internal / external — judged on Risk
+  of Bias), 58 fields: 42 signaling rows and 16 domain judgments. Deterministic
+  UUID. Helper: `seed_probast_ai()` in
+  [`backend/app/seed_probast_ai.py`](../../backend/app/seed_probast_ai.py)
+  (its own module because `seed.py` is at the file-size ratchet cap).
+  The four **overall** judgments are deliberately NOT fields: they are computed
+  from the domain judgments by the worst-domain rule, configured by the
+  `derived_judgments` spec on the template's `schema` JSONB.
+
+> **Re-seeding does not update an existing template.** Every `seed_*` helper is
+> idempotent *by primary key*: it returns early when the row already exists and
+> never issues an UPDATE. A corrected definition (new field, fixed
+> `derived_judgments` coordinate) therefore needs `make db-fresh` locally, or a
+> deliberate manual UPDATE in a deployed environment — `make db-seed` alone
+> will silently keep the old row.
 
 > Quality-assessment templates are seeded as `kind=quality_assessment` in
 > `extraction_templates_global`. When the frontend opens an assessment via
@@ -97,8 +115,13 @@ SELECT name,
 FROM extraction_templates_global
 WHERE framework = 'CHARMS';
 
--- PROBAST + QUADAS-2
-SELECT name, kind, version
+-- PROBAST + PROBAST+AI + QUADAS-2
+SELECT name, kind, version,
+       (SELECT COUNT(*) FROM extraction_entity_types et
+        WHERE et.template_id = extraction_templates_global.id) AS entity_types,
+       (SELECT COUNT(*) FROM extraction_fields ef
+        JOIN extraction_entity_types et ON ef.entity_type_id = et.id
+        WHERE et.template_id = extraction_templates_global.id) AS fields
 FROM extraction_templates_global
 WHERE kind = 'quality_assessment'
 ORDER BY name;
@@ -109,8 +132,9 @@ Expected:
 | Template | Version | Entity types | Fields |
 | --- | --- | --- | --- |
 | CHARMS | 1.1.0 | 14 | ~80 |
-| PROBAST | 1.0.0 | 5 | 22+ |
-| QUADAS-2 | 1.0.0 | 5 | 11+ |
+| PROBAST | 1.0.0 | 5 | 29 |
+| PROBAST+AI | 1.0.0 | 10 | 58 |
+| QUADAS-2 | 1.0.0 | 5 | 20 |
 
 ## Troubleshooting
 

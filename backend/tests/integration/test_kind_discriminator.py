@@ -90,14 +90,14 @@ async def test_existing_templates_backfilled_to_extraction_kind(
     assert result.scalar() == 0
 
     # Global extraction templates (CHARMS) must remain kind='extraction'.
-    # PROBAST / QUADAS-2 are seeded as kind='quality_assessment' on purpose, so
-    # we exclude them by name when verifying the backfill.
+    # PROBAST / PROBAST+AI / QUADAS-2 are seeded as kind='quality_assessment' on
+    # purpose, so we exclude them by name when verifying the backfill.
     result = await db_session.execute(
         text(
             """
             SELECT COUNT(*) FROM public.extraction_templates_global
             WHERE kind <> 'extraction'
-              AND name NOT IN ('PROBAST', 'QUADAS-2')
+              AND name NOT IN ('PROBAST', 'QUADAS-2', 'PROBAST+AI')
             """
         )
     )

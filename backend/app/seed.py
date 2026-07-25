@@ -1310,6 +1310,8 @@ def _signaling(
     question: str,
     sort: int,
     allowed: list[str],
+    *,
+    llm: str | None = None,
 ) -> ExtractionField:
     """Build a signaling-question ExtractionField (select with fixed answer set).
 
@@ -1317,6 +1319,11 @@ def _signaling(
     ADR-0016 that becomes the opt-in ``not_applicable`` disposition flag. Detected
     by identity of the PROBAST answer set (QUADAS-2's Y/N/Unclear set never
     offered NA, so it stays flag-free).
+
+    ``llm`` overrides the generic instruction for checklists (PROBAST+AI) whose
+    published elaboration gives each question its own criterion. Always route
+    signaling questions through this helper — building one with bare
+    ``_qa_field`` silently drops the identity-based ``allows_not_applicable``.
     """
     return _qa_field(
         eid,
@@ -1327,7 +1334,7 @@ def _signaling(
         sort,
         allowed=allowed,
         allows_not_applicable=(allowed is _PROBAST_SIGNALING),
-        llm=f"Answer the signaling question: {question}",
+        llm=llm or f"Answer the signaling question: {question}",
     )
 
 
@@ -1932,12 +1939,17 @@ async def seed_quadas2(session: AsyncSession) -> None:
 
 
 async def main() -> None:
+    # Function-local: seed_probast_ai imports this module's shared helpers, so a
+    # top-level import here would be circular.
+    from app.seed_probast_ai import seed_probast_ai
+
     print("Starting database seeding process...")
     async with AsyncSessionLocal() as session:
         try:
             await seed_charms(session)
             await seed_probast(session)
             await seed_quadas2(session)
+            await seed_probast_ai(session)
             await session.commit()
             print("Seeding completed successfully.")
         except Exception as e:
