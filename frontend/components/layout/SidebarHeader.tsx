@@ -4,7 +4,7 @@
  */
 import React, {useState} from 'react';
 import {ChevronDown, Folder, Loader2, Plus} from 'lucide-react';
-import {useNavigate} from 'react-router-dom';
+import {useNavigate} from 'react-router';
 import {Button} from '@/components/ui/button';
 import {KbdBadge} from '@/components/ui/kbd-badge';
 import {

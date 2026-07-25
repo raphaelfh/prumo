@@ -25,7 +25,7 @@ import {countUnreadJobs, selectRecentJobs, useBackgroundJobs} from '@/stores/use
 import {useBackgroundJobPolling} from '@/hooks/useBackgroundJobPolling';
 import {cn} from '@/lib/utils';
 import {toast} from 'sonner';
-import {useNavigate} from 'react-router-dom';
+import {useNavigate} from 'react-router';
 import type {
     ArticlesExportJob,
     BackgroundJob,

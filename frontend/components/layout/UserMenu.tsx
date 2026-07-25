@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import {ChevronDown, Folder, HelpCircle, LogOut, Settings, UserPlus, User as UserIcon} from 'lucide-react';
-import {useNavigate} from 'react-router-dom';
+import {useNavigate} from 'react-router';
 import {toast} from 'sonner';
 import {Avatar, AvatarFallback, AvatarImage} from '@/components/ui/avatar';
 import {KbdBadge} from '@/components/ui/kbd-badge';

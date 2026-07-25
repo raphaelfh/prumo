@@ -14,7 +14,7 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {render, screen, act, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {MemoryRouter} from "react-router-dom";
+import {MemoryRouter} from "react-router";
 
 vi.mock("sonner", () => ({
     toast: {success: vi.fn(), info: vi.fn(), error: vi.fn()},
