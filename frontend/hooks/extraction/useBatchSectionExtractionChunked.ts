@@ -161,8 +161,10 @@ export function useBatchSectionExtractionChunked(options?: {
           );
         }
 
-        // Chamar callback de sucesso se fornecido
-        if (options?.onSuccess) {
+        // Success callback — only when at least one section actually
+        // succeeded. A run where every section failed is not a success, and
+        // callers use this to refresh as if suggestions had been created (#333).
+        if (options?.onSuccess && successfulSections > 0) {
           Promise.resolve(
             options.onSuccess({
               totalSections,
@@ -171,7 +173,7 @@ export function useBatchSectionExtractionChunked(options?: {
               totalSuggestionsCreated,
             })
           ).catch(err => {
-            console.error('[useBatchSectionExtractionChunked] Erro no callback onSuccess:', err);
+            console.error('[useBatchSectionExtractionChunked] onSuccess callback error:', err);
           });
         }
 
