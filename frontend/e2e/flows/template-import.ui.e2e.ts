@@ -47,9 +47,14 @@ test.describe("Extraction template import (global → project)", () => {
 
     const submit = page.getByTestId("import-template-submit");
     if (await submit.isDisabled()) {
+      // Scope to the option's name label. The framework Badge also renders the
+      // exact text "CHARMS", and more than one catalogue template carries
+      // framework="CHARMS" (e.g. "CHARMS + Multimodal"), so an unscoped
+      // getByText would match across cards and could select the wrong one.
       await page
         .getByTestId("import-template-dialog")
-        .getByText("CHARMS", { exact: true })
+        .locator("label")
+        .filter({ hasText: /^CHARMS$/ })
         .first()
         .click();
     }

@@ -67,8 +67,20 @@ left untouched.
 - `framework`: `"CHARMS"` · `version`: `"1.0.0"` · `kind`: `extraction`.
 - Fixed UUID block: template `000e0000-0000-0000-0000-000000000001`;
   entity types `000e00xx-…` (see the plan for the exact assignment).
-- `is_required=False` on every entity type and field — seed convention;
-  managers mark required per project clone.
+- **`is_required`:** `False` on every **entity type** (hardcoded by
+  `_entity_type_from_spec`); **`True` on every field**, matching all three
+  existing seeded templates (CHARMS / PROBAST / QUADAS-2 all leave the
+  `_f` / `_qa_field` `required=True` default in place). This is
+  deliberate, not incidental: the finalize gate counts an
+  `no_information` marker as **filled**, so a required field turns the
+  instrument's "if absent, NI" into an *explicitly recorded* answer
+  rather than a silent blank — constitution §IX ("a 'no information'
+  outcome is a recorded proposal, not a silent drop"). Managers relax
+  `is_required` per project clone if they want a looser gate.
+- The gate measures required fields **per existing instance**, so the two
+  `many` sections stay safe: a model with no `Numeric Performance`
+  instance contributes nothing, and reviewers create only the validation
+  blocks the paper actually reports.
 - `description`: study-level sections (Source of Data, Participants,
   Outcome, Candidate Predictors, Sample Size, Missing Data,
   Interpretation) filled once per article; per-model sections (Model
