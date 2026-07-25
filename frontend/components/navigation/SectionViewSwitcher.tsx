@@ -1,5 +1,5 @@
 import { useContext } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import { Check, ChevronDown } from 'lucide-react';
 import { ProjectContext } from '@/contexts/ProjectContext';
 import { useProjectMemberRole } from '@/hooks/useProjectMemberRole';

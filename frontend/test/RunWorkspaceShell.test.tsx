@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { RunWorkspaceShell } from '@/components/runs/RunWorkspaceShell';
 import { RunHeader } from '@/components/runs/header';
 import { useSidebar } from '@/contexts/SidebarContext';

@@ -2,7 +2,7 @@
  * App-wide shortcuts that work on any page: ⌘, (settings), ⌘⇧Q (sign out).
  * ⌘Q is intercepted by browsers on macOS, so we use ⌘⇧Q.
  */
-import {useNavigate} from 'react-router-dom';
+import {useNavigate} from 'react-router';
 import {useKeyboardShortcuts, type Binding} from './useKeyboardShortcuts';
 import {useAuth} from '@/contexts/AuthContext';
 

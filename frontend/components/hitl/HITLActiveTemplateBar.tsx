@@ -10,7 +10,7 @@
  * toggle between PROBAST and QUADAS-2 on the fly.
  */
 
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { ChevronDown, ShieldCheck, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";

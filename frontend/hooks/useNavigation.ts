@@ -4,7 +4,7 @@
  */
 
 import {useEffect, useState} from 'react';
-import {useLocation, useNavigate} from 'react-router-dom';
+import {useLocation, useNavigate} from 'react-router';
 import {useAuth} from '@/contexts/AuthContext';
 import {t} from '@/lib/copy';
 import {File, FileText, Folder, LogIn, Settings} from 'lucide-react';

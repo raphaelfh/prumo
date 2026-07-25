@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { SidebarProvider, useSidebar } from '@/contexts/SidebarContext';
 import { ProjectSidebar } from '@/components/layout/ProjectSidebar';
 import { MobileSidebar } from '@/components/layout/MobileSidebar';

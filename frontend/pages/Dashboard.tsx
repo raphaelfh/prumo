@@ -1,5 +1,5 @@
 import {useState} from "react";
-import {useNavigate} from "react-router-dom";
+import {useNavigate} from "react-router";
 import {useQuery, useQueryClient} from "@tanstack/react-query";
 import {useAuth} from "@/contexts/AuthContext";
 import {listProjectsForDashboard, createProject} from "@/services/projectsService";

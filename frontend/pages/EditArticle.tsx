@@ -2,7 +2,7 @@
  * Legacy route: redirects to project articles tab with the edit-article sheet open.
  */
 
-import {Navigate, useParams} from "react-router-dom";
+import {Navigate, useParams} from "react-router";
 
 function EditArticle() {
     const {projectId, articleId} = useParams<{

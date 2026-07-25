@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { CheckCircle, FileText, ShieldCheck } from "lucide-react";
 
 import {
