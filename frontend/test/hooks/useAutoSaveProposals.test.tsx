@@ -123,6 +123,48 @@ describe('useAutoSaveProposals — basic write semantics', () => {
     expect(apiClientMock).toHaveBeenCalledTimes(2);
   });
 
+  // The reported PROBAST+AI failure, at the hook level: a reviewer clears a
+  // domain judgment and then re-enters what it held on page load. The hydration
+  // baseline still says "no_information", but the server holds the clear — so
+  // the re-entry MUST be written. It used to be swallowed, leaving the computed
+  // overall dashed however often the reviewer re-entered the judgment.
+  it('writes a value re-entered after a clear, even though it equals the mount baseline', async () => {
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
+    const marker = { value: null, absent_reason: 'no_information' };
+    const baselineValues = { 'inst-1_field-1': marker } as Record<string, unknown>;
+
+    const { result, rerender } = renderHook(
+      ({ values }) =>
+        useAutoSaveProposals({
+          runId: 'run-1',
+          stage: 'extract',
+          values,
+          baselineValues,
+        }),
+      { initialProps: { values: baselineValues } },
+    );
+
+    // Mount: hydrated value equals the baseline — nothing to write.
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(0);
+
+    // The reviewer clears the judgment.
+    rerender({ values: { 'inst-1_field-1': null } });
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+
+    // …then re-enters exactly what was there before.
+    rerender({ values: { 'inst-1_field-1': marker } });
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(2);
+  });
+
   it('is a no-op when runId is missing', async () => {
     const { result } = renderHook(() =>
       useAutoSaveProposals({
@@ -477,6 +519,51 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
     expect((apiClientMock.mock.calls[0][1] as { body: { field_id: string } }).body.field_id)
       .toBe('b');
     expect(result.current.saveState).toBe('saved');
+  });
+
+  it('advances the save clock when SOME writes landed, so derived reads refresh', async () => {
+    // `Promise.allSettled` commits the successful writes, so the server HAS
+    // moved. The QA overall banner refreshes off `lastSavedAt`; leaving it
+    // parked on a partial failure meant a domain judgment that reached the
+    // server never showed up in the computed overall. The error surface is
+    // unaffected — SaveStatusBadge returns on `saveState === 'error'` before
+    // it ever reads the timestamp.
+    apiClientMock
+      .mockResolvedValueOnce(DECISION_RESPONSE)
+      .mockRejectedValueOnce(new Error('network drop'));
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        stage: 'extract',
+        values: { 'inst-1_a': '1', 'inst-1_b': '2' },
+      }),
+    );
+
+    await act(async () => {
+      await expect(result.current.saveNow()).rejects.toThrow();
+    });
+
+    expect(result.current.saveState).toBe('error');
+    expect(result.current.lastSavedAt).not.toBeNull();
+  });
+
+  it('leaves the save clock alone when EVERY write failed', async () => {
+    apiClientMock.mockRejectedValue(new Error('network drop'));
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        stage: 'extract',
+        values: { 'inst-1_a': '1' },
+      }),
+    );
+
+    await act(async () => {
+      await expect(result.current.saveNow()).rejects.toThrow();
+    });
+
+    expect(result.current.lastSavedAt).toBeNull();
   });
 
   it('saveNow() rejects when a write fails so run-advance can be gated (#5)', async () => {

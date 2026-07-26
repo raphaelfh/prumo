@@ -67,6 +67,27 @@ describe('selectDirtyEntries', () => {
     expect(selectDirtyEntries(values, {}, baseline)).toEqual([]);
   });
 
+  // The reported PROBAST+AI failure: a reviewer clears a domain judgment, then
+  // re-enters what it held on mount. The baseline still describes the mount
+  // value, but the server holds the clear — so the re-entry is a real edit. A
+  // baseline short-circuit here dropped it silently and the computed overall
+  // stayed dashed however often the reviewer re-typed it.
+  it('re-entering the mount value AFTER writing a clear is dirty, not clean', () => {
+    const original = { value: null, absent_reason: 'no_information' };
+    const baseline = { i1_f1: original };
+    // The clear was written and acknowledged; the server now holds null.
+    const lastSaved = { i1_f1: s(null) };
+    expect(selectDirtyEntries({ i1_f1: original }, lastSaved, baseline)).toEqual([
+      ['i1_f1', original],
+    ]);
+  });
+
+  it('still skips the mount value while the coord is unwritten', () => {
+    // The same coord, before any write: baseline is current and must hold.
+    const original = { value: null, absent_reason: 'no_information' };
+    expect(selectDirtyEntries({ i1_f1: original }, {}, { i1_f1: original })).toEqual([]);
+  });
+
   it('does not restripe a marker coord when an adjacent field is edited', () => {
     const marker = { value: null, absent_reason: 'no_information' };
     const values = { i1_f1: marker, i2_f2: 'edited' };

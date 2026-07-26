@@ -117,15 +117,13 @@ export function FieldInput(props: FieldInputProps) {
     // shown by the disposition control below; typing a real value clears it.
   const activeReason = valueAbsentReason(value);
 
-    // Value to display: prefer state value (already updated after accept)
-    // If no state value but there is accepted suggestion, show suggestion value
-  const displayValue = activeReason
-    ? ''
-    : !isEmptyValue(value)
-      ? value
-      : (hasAIAccepted && aiAcceptedValue !== null)
-        ? aiAcceptedValue
-        : '';
+    // Value to display: the form value, and ONLY the form value. Falling back
+    // to an accepted suggestion when the form value is empty made a cleared
+    // field keep showing its old answer — no feedback that the clear landed,
+    // and (because Radix suppresses onValueChange when the picked option already
+    // equals the controlled value) no way to re-pick that same option. The AI's
+    // value has its own surfaces: AISuggestionDisplay and the review popover.
+  const displayValue = activeReason || isEmptyValue(value) ? '' : value;
 
     // Basic validation
   const validateValue = (val: any): boolean => {

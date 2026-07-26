@@ -18,6 +18,14 @@
  * mount: `lastSaved` is empty until this client writes something, so without
  * a baseline every loaded value would look dirty and be re-recorded as a
  * brand-new proposal/decision on every page load.
+ *
+ * That makes the baseline a statement about the server BEFORE this client wrote
+ * anything — so it only applies while the coord is unwritten. Once we have
+ * written a coord, `lastSaved` is the only truth about what the server holds:
+ * re-entering the value the field had on mount is a real edit (the server now
+ * holds the clear that overwrote it), not a no-op. Consulting a stale baseline
+ * there silently dropped the write, which on a PROBAST+AI domain judgment left
+ * the computed overall dashed no matter how often the reviewer re-entered it.
  */
 
 export function fingerprintCoord(value: unknown, link: string | null | undefined): string {
@@ -37,7 +45,12 @@ export function selectDirtyEntries(
     if (value === undefined) continue;
     const current = fingerprintCoord(value, linkByKey[key]);
     if (lastSaved[key] === current) continue;
-    if (key in baseline && fingerprintCoord(baseline[key], baselineLink[key]) === current) {
+    // Only while this client has never written the coord — see the note above.
+    if (
+      !(key in lastSaved) &&
+      key in baseline &&
+      fingerprintCoord(baseline[key], baselineLink[key]) === current
+    ) {
       continue;
     }
     dirty.push([key, value]);

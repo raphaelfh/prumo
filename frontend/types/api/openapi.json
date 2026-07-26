@@ -5175,12 +5175,44 @@
         "title": "RunViewCurrentValue",
         "type": "object"
       },
+      "RunViewDerivedInput": {
+        "description": "One domain judgment feeding a computed overall, as the rule consumed it.\n\n``value`` is None when that domain is unjudged \u2014 which is exactly why the\noverall shows a dash, so the client can name the blocking domain instead of\nleaving the reviewer to hunt for it across ten sections.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "RunViewDerivedInput",
+        "type": "object"
+      },
       "RunViewDerivedJudgment": {
         "description": "One computed overall judgment (never stored, never entered).\n\nPresent only for templates whose ``schema`` JSONB declares a\n``derived_judgments`` spec (today: PROBAST+AI). ``value`` is None when the\ninputs are incomplete \u2014 the client renders that as an em dash, never as the\nmost favourable judgment.",
         "properties": {
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/RunViewDerivedInput"
+            },
+            "title": "Inputs",
+            "type": "array"
           },
           "label": {
             "title": "Label",

@@ -3338,6 +3338,20 @@ export interface components {
             } | null;
         };
         /**
+         * RunViewDerivedInput
+         * @description One domain judgment feeding a computed overall, as the rule consumed it.
+         *
+         *     ``value`` is None when that domain is unjudged — which is exactly why the
+         *     overall shows a dash, so the client can name the blocking domain instead of
+         *     leaving the reviewer to hunt for it across ten sections.
+         */
+        RunViewDerivedInput: {
+            /** Label */
+            label: string;
+            /** Value */
+            value?: string | null;
+        };
+        /**
          * RunViewDerivedJudgment
          * @description One computed overall judgment (never stored, never entered).
          *
@@ -3349,6 +3363,8 @@ export interface components {
         RunViewDerivedJudgment: {
             /** Id */
             id: string;
+            /** Inputs */
+            inputs?: components["schemas"]["RunViewDerivedInput"][];
             /** Label */
             label: string;
             /** Value */

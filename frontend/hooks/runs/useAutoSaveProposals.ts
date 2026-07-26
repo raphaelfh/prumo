@@ -239,6 +239,15 @@ export function useAutoSaveProposals(
         // ref even when some writes failed.
         setLastSavedByKey({ ...lastSavedByKeyRef.current });
 
+        // Any acknowledged write moved the server, so the save clock advances
+        // even when a sibling failed: server-DERIVED reads key off it (the QA
+        // overall banner via useRefetchOnSave), and parking it on a partial
+        // failure meant a domain judgment that reached the server never showed
+        // up in the computed overall. The error surface is untouched —
+        // SaveStatusBadge returns on `saveState === 'error'` before it reads
+        // the timestamp.
+        if (results.some((r) => r.status === 'fulfilled')) setLastSavedAt(new Date());
+
         const failures = results.filter(
           (r): r is PromiseRejectedResult => r.status === 'rejected',
         );
@@ -249,7 +258,6 @@ export function useAutoSaveProposals(
           throw new Error(message);
         }
 
-        setLastSavedAt(new Date());
         setSaveState('saved');
       });
 

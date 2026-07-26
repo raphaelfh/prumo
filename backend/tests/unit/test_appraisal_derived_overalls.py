@@ -78,6 +78,70 @@ def test_spec_template_emits_named_overall_columns() -> None:
     assert tuple(c.value for c in sheet.rows[1]) == ("Art 1", "Low", "Low", None)
 
 
+class _Reviewer:
+    def __init__(self, label: str) -> None:
+        self.reviewer_id = uuid4()
+        self.display_label = label
+
+
+def test_all_users_keeps_per_reviewer_overall_for_a_legacy_template() -> None:
+    reviewer = _Reviewer("Ana")
+    model = AppraisalModel(
+        domain_section_ids=(),
+        domain_labels=("D1",),
+        rows=(
+            AppraisalRow(
+                article_id=None,
+                record_label="Art 1",
+                domain_verdicts=("Low",),
+                overall="Low",
+                per_reviewer_overall={reviewer.reviewer_id: "High"},
+            ),
+        ),
+    )
+    layout = _Layout(model, mode=ExportMode.ALL_USERS)
+    layout.reviewers = (reviewer,)
+    sheet = build_appraisal_summary(layout)
+    assert sheet is not None
+    assert tuple(c.value for c in sheet.rows[0]) == ("Record", "D1", "Overall", "Overall — Ana")
+
+
+def test_all_users_spec_template_does_not_emit_the_legacy_per_reviewer_overall() -> None:
+    """The legacy per-reviewer rollup contradicts the derived rule on the SAME
+    row: it drops "No information" and blanks, so it prints Low where the
+    computed overall (and the banner) say Unclear. A template that defines its
+    own overalls has exactly those overalls — no second, laxer answer beside
+    them."""
+    reviewer = _Reviewer("Ana")
+    model = AppraisalModel(
+        domain_section_ids=(),
+        domain_labels=("Dev D1",),
+        rows=(
+            AppraisalRow(
+                article_id=None,
+                record_label="Art 1",
+                domain_verdicts=("No information",),
+                overall=None,
+                # What the lenient legacy rule would have printed here.
+                per_reviewer_overall={reviewer.reviewer_id: "Low"},
+                derived_values=("Unclear",),
+            ),
+        ),
+        derived_labels=("Overall quality (development)",),
+    )
+    layout = _Layout(model, mode=ExportMode.ALL_USERS)
+    layout.reviewers = (reviewer,)
+    sheet = build_appraisal_summary(layout)
+    assert sheet is not None
+    header = tuple(c.value for c in sheet.rows[0])
+    assert header == ("Record", "Dev D1", "Overall quality (development)")
+    assert not any(str(label).startswith("Overall — ") for label in header)
+    # The row must not carry the contradicting "Low" anywhere.
+    assert tuple(c.value for c in sheet.rows[1]) == ("Art 1", "No information", "Unclear")
+    # Column widths stay aligned with the emitted header.
+    assert len(sheet.column_widths) == len(header)
+
+
 # --- the model builder itself (the `if spec:` branch) -----------------------
 
 

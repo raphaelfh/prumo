@@ -11,3 +11,4 @@ frontend/lib/copy/extraction.ts:947
 frontend/pages/ExtractionFullScreen.tsx:1369
 frontend/pages/QualityAssessmentFullScreen.tsx:893
 frontend/test/QualityAssessmentFullScreen.test.tsx:1111
+frontend/test/hooks/useAutoSaveProposals.test.tsx:862
