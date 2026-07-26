@@ -227,7 +227,11 @@ export function FieldValueEditor({
       }
       return (
         <Select
-          value={(value as string) || ''}
+          // Guarded rather than cast: a marker envelope ({value:null,
+          // absent_reason}) is an OBJECT, and an object is truthy, so `|| ''`
+          // let it through as Radix's controlled value — which suppressed the
+          // placeholder and rendered an empty box with no selection at all.
+          value={typeof value === 'string' ? value : ''}
           onValueChange={onChange}
           disabled={disabled}
         >

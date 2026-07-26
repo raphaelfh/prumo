@@ -125,7 +125,13 @@ def build_appraisal_summary(layout: ExportLayout) -> SheetSpec | None:
         header_cells.append(Cell(_OVERALL_COL, _HEADER_STYLE))
 
     reviewer_overall_cols: tuple[Any, ...] = ()
-    if layout.mode is ExportMode.ALL_USERS:
+    # Only for templates WITHOUT a spec. The per-reviewer column is the legacy
+    # lenient rollup, which drops "No information" and blanks — so beside the
+    # derived columns it prints Low on the very row they call Unclear, and rolls
+    # development *Quality* together with evaluation *Risk of Bias* into one
+    # meaningless number. A template that declares its own overalls has exactly
+    # those overalls; a second, laxer answer next to them is worse than none.
+    if layout.mode is ExportMode.ALL_USERS and not derived_labels:
         reviewer_overall_cols = tuple(layout.reviewers)
         for reviewer in reviewer_overall_cols:
             header_cells.append(Cell(f"{_OVERALL_COL} — {reviewer.display_label}", _HEADER_STYLE))

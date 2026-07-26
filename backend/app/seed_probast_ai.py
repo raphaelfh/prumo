@@ -549,7 +549,11 @@ _PAI_DERIVED_JUDGMENTS: list[dict[str, Any]] = [
             {
                 # Domain 4 collapses across the reported performance types
                 # before entering the overall: unreported types are ignored.
+                # The label names the DOMAIN (the three sections are one domain
+                # split by performance type), so the client's per-domain
+                # breakdown reads as the instrument does.
                 "collapse": "worst_of",
+                "label": "Evaluation D4: Analysis",
                 "inputs": [
                     {"section": _S_EVAL_D4_A, "field": _F_ROB},
                     {"section": _S_EVAL_D4_I, "field": _F_ROB},

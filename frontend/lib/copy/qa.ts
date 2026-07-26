@@ -29,6 +29,19 @@ export const qa = {
   overallIncomplete: '—',
   overallIncompleteHint: 'Incomplete — at least one domain has not been judged.',
 
+  // "How is this calculated?" disclosure on the banner. A dash used to be
+  // unexplained: with sixteen domain judgments across ten sections, a reviewer
+  // could not tell which blank one was withholding the overall.
+  overallExplainShow: 'How is this calculated?',
+  overallExplainHide: 'Hide calculation',
+  overallExplainRule:
+    'Each overall takes the worst of the domain judgments that feed it: High beats Unclear, which beats Low. It is never entered by hand.',
+  overallExplainIncomplete:
+    'A dash means at least one contributing domain has not been judged yet — an unfinished assessment is never reported as low risk. Judge the domains marked “Not judged” below to complete it.',
+  overallExplainNoInformation:
+    '“No information” on a domain judgment counts as Unclear: on the Low / High / Unclear scale, “cannot determine from this article” is a judgment. Inside Evaluation D4 it means the study did not report that performance type, so it is left out instead — a study is not marked down for validation it never claimed to perform.',
+  overallExplainInputNotJudged: 'Not judged',
+
   // Tabs
   tabAssessment: 'Assessment',
   tabDashboard: 'Dashboard',

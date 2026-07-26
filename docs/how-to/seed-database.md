@@ -44,6 +44,15 @@ This guide explains how to load seed data after the schema migrations run.
 > deliberate manual UPDATE in a deployed environment — `make db-seed` alone
 > will silently keep the old row.
 >
+> **The project clone is a second copy with the same problem.** `schema` is
+> written once, in the create branch of `TemplateCloneService.clone()`; the
+> idempotent re-import branch heals entity types and versions but never
+> re-copies it, and nothing else assigns that column. So a corrected
+> `derived_judgments` spec has to reach *both* `extraction_templates_global`
+> and every `project_extraction_templates` row cloned from it. The run view
+> reads the spec live off the project row, so a stale clone is what the
+> reviewer actually sees.
+>
 > Quality-assessment templates are seeded as `kind=quality_assessment` in
 > `extraction_templates_global`. When the frontend opens an assessment via
 > `POST /api/v1/hitl/sessions` with `kind=quality_assessment`, the backend

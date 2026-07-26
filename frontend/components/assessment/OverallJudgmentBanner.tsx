@@ -7,17 +7,35 @@
  * only renders what it returns. An incomplete overall renders as an em dash,
  * never as the most favourable judgment: one does not conclude low risk from an
  * unfinished assessment.
+ *
+ * The disclosure exists because that em dash used to be a dead end. With
+ * sixteen domain judgments across ten sections, "why is this blank?" had no
+ * answer on screen, and a reviewer who blanked one judgment could re-enter
+ * values all day without learning which one was withholding the overall. The
+ * per-domain breakdown comes from the SAME computation as the value itself
+ * (`derived_judgments[].inputs`), so the explanation can never narrate a rule
+ * the backend did not apply.
  */
 
+import { ChevronDown } from "lucide-react";
+import { useState } from "react";
+
 import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { qa } from "@/lib/copy/qa";
 import { cn } from "@/lib/utils";
+
+export interface DerivedJudgmentInputView {
+  label: string;
+  value: string | null;
+}
 
 export interface DerivedJudgmentView {
   id: string;
   label: string;
   value: string | null;
+  inputs?: DerivedJudgmentInputView[];
 }
 
 interface OverallJudgmentBannerProps {
@@ -37,8 +55,43 @@ function toneFor(value: string | null): string {
   }
 }
 
+/** One overall's contributing domains, so a dash can be traced to its cause. */
+function InputBreakdown({ judgment }: { judgment: DerivedJudgmentView }) {
+  const inputs = judgment.inputs ?? [];
+  if (inputs.length === 0) return null;
+
+  return (
+    <div className="min-w-0">
+      <p className="mb-1 text-[11px] font-medium text-foreground">{judgment.label}</p>
+      <ul className="space-y-0.5">
+        {inputs.map((input) => (
+          <li
+            key={input.label}
+            className="flex items-baseline justify-between gap-3 text-[11px] leading-5"
+          >
+            <span className="min-w-0 truncate text-muted-foreground">{input.label}</span>
+            <span
+              className={cn(
+                "shrink-0 font-medium",
+                input.value === null ? "text-warning" : "text-foreground",
+              )}
+            >
+              {input.value ?? qa.overallExplainInputNotJudged}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function OverallJudgmentBanner({ judgments }: OverallJudgmentBannerProps) {
+  const [open, setOpen] = useState(false);
+
   if (judgments.length === 0) return null;
+
+  const anyIncomplete = judgments.some((judgment) => judgment.value === null);
+  const explainable = judgments.some((judgment) => (judgment.inputs?.length ?? 0) > 0);
 
   return (
     <section
@@ -73,6 +126,34 @@ export function OverallJudgmentBanner({ judgments }: OverallJudgmentBannerProps)
           </li>
         ))}
       </ul>
+
+      {explainable && (
+        <Collapsible open={open} onOpenChange={setOpen}>
+          <CollapsibleTrigger
+            className="mt-2 flex items-center gap-1 rounded-sm text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-testid="qa-overall-explain-toggle"
+          >
+            <ChevronDown
+              className={cn("h-3 w-3 transition-transform", open && "rotate-180")}
+              aria-hidden="true"
+            />
+            {open ? qa.overallExplainHide : qa.overallExplainShow}
+          </CollapsibleTrigger>
+          <CollapsibleContent
+            className="mt-2 border-t pt-2 text-[11px] leading-5 text-muted-foreground"
+            data-testid="qa-overall-explain"
+          >
+            <p>{qa.overallExplainRule}</p>
+            {anyIncomplete && <p className="mt-1">{qa.overallExplainIncomplete}</p>}
+            <p className="mt-1">{qa.overallExplainNoInformation}</p>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              {judgments.map((judgment) => (
+                <InputBreakdown key={judgment.id} judgment={judgment} />
+              ))}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
     </section>
   );
 }

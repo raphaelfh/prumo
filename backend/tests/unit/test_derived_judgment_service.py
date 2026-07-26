@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 from app.services.derived_judgment_service import (
+    DerivedInput,
     DerivedJudgment,
     compute_derived_judgments,
     derived_spec,
@@ -98,6 +99,16 @@ def test_compute_collapses_d4_then_aggregates() -> None:
             id="eval_overall_rob",
             label="Overall risk of bias (evaluation)",
             value="High",
+            # The per-domain breakdown the client explains the result from: the
+            # collapse group reports its collapsed judgment and carries EVERY
+            # section behind it, so a caller can name the group from what they
+            # share rather than after whichever one happens to come first.
+            inputs=(
+                DerivedInput(sections=("eval_d1",), label="", value="Low"),
+                DerivedInput(
+                    sections=("eval_d4_a", "eval_d4_i", "eval_d4_e"), label="", value="High"
+                ),
+            ),
         )
     ]
 
