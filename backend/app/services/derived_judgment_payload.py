@@ -24,6 +24,33 @@ from app.services.derived_judgment_service import (
 logger = get_logger(__name__)
 
 
+def _group_label(sections: tuple[str, ...], label_by_section: dict[str, str]) -> str:
+    """Name a breakdown row from the section label(s) behind it.
+
+    One section names itself. A collapse group takes what its members SHARE:
+    the three PROBAST+AI D4 sections are labelled "Evaluation D4: Analysis
+    (apparent performance / internal validation / external validation)", whose
+    common prefix is the domain's own name. Deriving it beats naming the group
+    after its first member — that would tell a reviewer their D4 row is about
+    apparent performance when it spans all three — and it needs no backfill for
+    the specs already in production, which carry no explicit group label.
+    """
+    labels = [label_by_section.get(name, name) for name in sections if name]
+    if not labels:
+        return ""
+    shared = labels[0]
+    for other in labels[1:]:
+        limit = min(len(shared), len(other))
+        cut = 0
+        while cut < limit and shared[cut] == other[cut]:
+            cut += 1
+        shared = shared[:cut]
+    # A prefix that stops mid-word or on the opening bracket of the part that
+    # differs is not a name; trim back to the last complete word.
+    shared = shared.rstrip().rstrip("([-–—:,;/").rstrip()
+    return shared or labels[0]
+
+
 def build_derived_judgments_payload(
     *,
     template_schema: Any,
@@ -75,12 +102,12 @@ def build_derived_judgments_payload(
             id=d.id,
             label=d.label,
             value=d.value,
-            # A collapse group names itself (it spans several sections); a plain
-            # coordinate borrows its section's own label, so the breakdown reads
+            # The spec's own name for a group wins; otherwise the label is
+            # derived from the sections behind the row, so the breakdown reads
             # in the same words as the accordion the reviewer scrolls through.
             inputs=[
                 RunViewDerivedInput(
-                    label=inp.label or label_by_section.get(inp.section, inp.section),
+                    label=inp.label or _group_label(inp.sections, label_by_section),
                     value=inp.value,
                 )
                 for inp in d.inputs

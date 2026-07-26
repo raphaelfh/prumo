@@ -75,14 +75,14 @@ class DerivedInput:
     without the contributions there is nothing on screen saying WHICH domain
     caused it — the failure mode that prompted this.
 
-    ``section`` names the coordinate it came from (the first sub-section for a
-    collapse group), so a caller holding the entity_types tree can label it.
-    ``label`` is the spec's own name for a collapse group, which has no single
-    section of its own; empty for a plain coordinate. ``value`` is the judgment
-    the rule consumed — None means unjudged.
+    ``sections`` are the coordinates it came from — one for a plain input, all
+    of them for a collapse group — so a caller holding the entity_types tree can
+    name it. ``label`` is the spec's own name for a collapse group; empty when
+    the spec does not carry one, which every spec seeded before the key existed
+    does not. ``value`` is the judgment the rule consumed — None means unjudged.
     """
 
-    section: str
+    sections: tuple[str, ...]
     label: str
     value: str | None
 
@@ -221,20 +221,20 @@ def _resolve_input(
     return values_by_coord.get((str(item.get("section", "")), str(item.get("field", ""))))
 
 
-def _input_identity(item: Mapping[str, Any]) -> tuple[str, str]:
-    """``(section, label)`` naming one input, for the client-facing breakdown.
+def _input_identity(item: Mapping[str, Any]) -> tuple[tuple[str, ...], str]:
+    """``(sections, label)`` naming one input, for the client-facing breakdown.
 
     A collapse group spans several sections, so the instrument's name for the
-    domain lives on the spec item; the first sub-section is kept as the label
-    fallback for specs seeded before that name existed.
+    domain lives on the spec item. Every sub-section is returned as well: a spec
+    seeded before that key existed carries no label, and naming the group after
+    just one of its members would claim a three-section row belongs to a single
+    performance type. The caller derives the group name from all of them.
     """
     if _COLLAPSE_KEY in item:
         nested = item.get("inputs")
-        first: Any = {}
-        if isinstance(nested, list):
-            first = next((sub for sub in nested if isinstance(sub, dict)), {})
-        return str(first.get("section", "")), str(item.get("label", ""))
-    return str(item.get("section", "")), ""
+        subs = [sub for sub in nested if isinstance(sub, dict)] if isinstance(nested, list) else []
+        return tuple(str(sub.get("section", "")) for sub in subs), str(item.get("label", ""))
+    return (str(item.get("section", "")),), ""
 
 
 def compute_derived_judgments(
@@ -262,11 +262,11 @@ def compute_derived_judgments(
         # narrate a contribution the overall was not actually computed from.
         contributions = tuple(
             DerivedInput(
-                section=section,
+                sections=sections,
                 label=label,
                 value=_judgment(raw, no_information_as_unclear=True),
             )
-            for (section, label), raw in zip(
+            for (sections, label), raw in zip(
                 (_input_identity(item) for item in items), resolved, strict=True
             )
         )

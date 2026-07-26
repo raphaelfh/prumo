@@ -7,6 +7,7 @@ payload assembly is exercised by calling the builder directly.
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 from uuid import uuid4
 
@@ -149,6 +150,76 @@ def test_dangling_spec_reference_does_not_crash() -> None:
 
 def test_schema_model_accepts_null_value() -> None:
     assert RunViewDerivedJudgment(id="x", label="X", value=None).value is None
+
+
+# --- naming a collapse group whose spec carries no label --------------------
+
+_D4_SPEC: dict[str, Any] = {
+    "derived_judgments": [
+        {
+            "id": "eval_overall_rob",
+            "label": "Overall risk of bias (evaluation)",
+            "rule": "worst_domain",
+            # No "label" on the collapse — exactly the spec shape production
+            # holds, because neither the seed nor the clone ever updates it.
+            "inputs": [
+                {
+                    "collapse": "worst_of",
+                    "inputs": [
+                        {"section": "eval_d4_analysis_apparent", "field": "risk_of_bias"},
+                        {"section": "eval_d4_analysis_internal", "field": "risk_of_bias"},
+                        {"section": "eval_d4_analysis_external", "field": "risk_of_bias"},
+                    ],
+                }
+            ],
+        }
+    ]
+}
+
+# Verbatim from the seeded PROBAST+AI template.
+_D4_LABELS = {
+    "eval_d4_analysis_apparent": "Evaluation D4: Analysis (apparent performance)",
+    "eval_d4_analysis_internal": "Evaluation D4: Analysis (internal validation)",
+    "eval_d4_analysis_external": "Evaluation D4: Analysis (external validation)",
+}
+
+
+def test_unlabelled_collapse_is_named_by_what_its_sections_share() -> None:
+    """A three-section row must not be named after one performance type."""
+    fid = uuid4()
+    entity_types, instances, values = [], [], []
+    for name, label in _D4_LABELS.items():
+        iid = uuid4()
+        et = _EntityType(name, [_Field(fid, "risk_of_bias")], label=label)
+        entity_types.append(et)
+        instances.append(_Instance(et.id, iid))
+        values.append(_Value(iid, fid, {"value": "Low"}))
+
+    out = build_derived_judgments_payload(
+        template_schema=_D4_SPEC,
+        entity_types=entity_types,
+        instances=instances,
+        values=values,
+    )
+    assert out[0].inputs == [RunViewDerivedInput(label="Evaluation D4: Analysis", value="Low")]
+
+
+def test_an_explicit_collapse_label_wins_over_the_derived_one() -> None:
+    spec = copy.deepcopy(_D4_SPEC)
+    spec["derived_judgments"][0]["inputs"][0]["label"] = "Domain 4 — Analysis"
+    fid = uuid4()
+    entity_types, instances, values = [], [], []
+    for name, label in _D4_LABELS.items():
+        iid = uuid4()
+        et = _EntityType(name, [_Field(fid, "risk_of_bias")], label=label)
+        entity_types.append(et)
+        instances.append(_Instance(et.id, iid))
+        values.append(_Value(iid, fid, {"value": "Low"}))
+
+    out = build_derived_judgments_payload(
+        template_schema=spec, entity_types=entity_types, instances=instances, values=values
+    )
+    assert out[0].inputs[0].label == "Domain 4 — Analysis"
 
 
 # --- which value set feeds the derivation, by stage and reveal --------------
