@@ -38,6 +38,8 @@ def _group_label(sections: tuple[str, ...], label_by_section: dict[str, str]) ->
     labels = [label_by_section.get(name, name) for name in sections if name]
     if not labels:
         return ""
+    if len(labels) == 1:
+        return labels[0]
     shared = labels[0]
     for other in labels[1:]:
         limit = min(len(shared), len(other))

@@ -204,6 +204,22 @@ def test_unlabelled_collapse_is_named_by_what_its_sections_share() -> None:
     assert out[0].inputs == [RunViewDerivedInput(label="Evaluation D4: Analysis", value="Low")]
 
 
+def test_a_single_section_label_is_used_verbatim() -> None:
+    """Only a group needs deriving; one section already names itself, trailing
+    punctuation and all."""
+    fid, iid = uuid4(), uuid4()
+    et = _EntityType(
+        "dev_d1_participants", [_Field(fid, "quality_concern")], label="D1: Participants:"
+    )
+    out = build_derived_judgments_payload(
+        template_schema=_SPEC,
+        entity_types=[et],
+        instances=[_Instance(et.id, iid)],
+        values=[_Value(iid, fid, "Low")],
+    )
+    assert out[0].inputs[0].label == "D1: Participants:"
+
+
 def test_an_explicit_collapse_label_wins_over_the_derived_one() -> None:
     spec = copy.deepcopy(_D4_SPEC)
     spec["derived_judgments"][0]["inputs"][0]["label"] = "Domain 4 — Analysis"
