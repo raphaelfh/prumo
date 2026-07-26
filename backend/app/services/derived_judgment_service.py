@@ -67,12 +67,34 @@ _SUPPORTED_RULE = "worst_domain"
 
 
 @dataclass(frozen=True)
+class DerivedInput:
+    """One domain's contribution to an overall, exactly as the rule saw it.
+
+    Carried so a client can explain the result instead of just showing it: a
+    reviewer who blanks one domain judgment gets a dash on the overall, and
+    without the contributions there is nothing on screen saying WHICH domain
+    caused it — the failure mode that prompted this.
+
+    ``sections`` are the coordinates it came from — one for a plain input, all
+    of them for a collapse group — so a caller holding the entity_types tree can
+    name it. ``label`` is the spec's own name for a collapse group; empty when
+    the spec does not carry one, which every spec seeded before the key existed
+    does not. ``value`` is the judgment the rule consumed — None means unjudged.
+    """
+
+    sections: tuple[str, ...]
+    label: str
+    value: str | None
+
+
+@dataclass(frozen=True)
 class DerivedJudgment:
     """One computed overall. ``value`` is None when the inputs are incomplete."""
 
     id: str
     label: str
     value: str | None
+    inputs: tuple[DerivedInput, ...] = ()
 
 
 def _absent_reason(raw: Any) -> str | None:
@@ -199,6 +221,22 @@ def _resolve_input(
     return values_by_coord.get((str(item.get("section", "")), str(item.get("field", ""))))
 
 
+def _input_identity(item: Mapping[str, Any]) -> tuple[tuple[str, ...], str]:
+    """``(sections, label)`` naming one input, for the client-facing breakdown.
+
+    A collapse group spans several sections, so the instrument's name for the
+    domain lives on the spec item. Every sub-section is returned as well: a spec
+    seeded before that key existed carries no label, and naming the group after
+    just one of its members would claim a three-section row belongs to a single
+    performance type. The caller derives the group name from all of them.
+    """
+    if _COLLAPSE_KEY in item:
+        nested = item.get("inputs")
+        subs = [sub for sub in nested if isinstance(sub, dict)] if isinstance(nested, list) else []
+        return tuple(str(sub.get("section", "")) for sub in subs), str(item.get("label", ""))
+    return (str(item.get("section", "")),), ""
+
+
 def compute_derived_judgments(
     spec: Any,
     values_by_coord: Mapping[tuple[str, str], Any],
@@ -217,14 +255,27 @@ def compute_derived_judgments(
         if not isinstance(inputs, list):
             continue
         rule = str(derived.get("rule", _SUPPORTED_RULE))
-        resolved = [
-            _resolve_input(item, values_by_coord) for item in inputs if isinstance(item, dict)
-        ]
+        items = [item for item in inputs if isinstance(item, dict)]
+        resolved = [_resolve_input(item, values_by_coord) for item in items]
+        # The per-domain breakdown reuses the SAME ``_judgment`` the rule applies,
+        # so what the client explains is what the rule consumed — it can never
+        # narrate a contribution the overall was not actually computed from.
+        contributions = tuple(
+            DerivedInput(
+                sections=sections,
+                label=label,
+                value=_judgment(raw, no_information_as_unclear=True),
+            )
+            for (sections, label), raw in zip(
+                (_input_identity(item) for item in items), resolved, strict=True
+            )
+        )
         results.append(
             DerivedJudgment(
                 id=str(derived.get("id", "")),
                 label=str(derived.get("label", "")),
                 value=worst_domain(resolved) if rule == _SUPPORTED_RULE else None,
+                inputs=contributions,
             )
         )
     return results

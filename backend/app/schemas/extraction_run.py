@@ -261,6 +261,18 @@ class RunViewInstance(BaseModel):
     updated_at: datetime
 
 
+class RunViewDerivedInput(BaseModel):
+    """One domain judgment feeding a computed overall, as the rule consumed it.
+
+    ``value`` is None when that domain is unjudged — which is exactly why the
+    overall shows a dash, so the client can name the blocking domain instead of
+    leaving the reviewer to hunt for it across ten sections.
+    """
+
+    label: str
+    value: str | None = None
+
+
 class RunViewDerivedJudgment(BaseModel):
     """One computed overall judgment (never stored, never entered).
 
@@ -273,6 +285,7 @@ class RunViewDerivedJudgment(BaseModel):
     id: str
     label: str
     value: str | None = None
+    inputs: list[RunViewDerivedInput] = Field(default_factory=list)
 
 
 class RunViewResponse(RunDetailResponse):

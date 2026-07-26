@@ -7,11 +7,15 @@ payload assembly is exercised by calling the builder directly.
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 from uuid import uuid4
 
-from app.schemas.extraction_run import RunViewDerivedJudgment
-from app.services.extraction_run_read_service import build_derived_judgments_payload
+from app.schemas.extraction_run import RunViewDerivedInput, RunViewDerivedJudgment
+from app.services.derived_judgment_payload import (
+    build_derived_judgments_payload,
+    values_for_derivation,
+)
 
 _SPEC: dict[str, Any] = {
     "derived_judgments": [
@@ -32,9 +36,10 @@ class _Field:
 
 
 class _EntityType:
-    def __init__(self, name: str, fields: list[_Field]) -> None:
+    def __init__(self, name: str, fields: list[_Field], label: str = "") -> None:
         self.id = uuid4()
         self.name = name
+        self.label = label
         self.fields = fields
 
 
@@ -62,7 +67,9 @@ def test_returns_empty_without_a_spec() -> None:
 
 def test_maps_names_to_coordinates_and_computes() -> None:
     fid, iid = uuid4(), uuid4()
-    et = _EntityType("dev_d1_participants", [_Field(fid, "quality_concern")])
+    et = _EntityType(
+        "dev_d1_participants", [_Field(fid, "quality_concern")], label="D1 — Participants"
+    )
     out = build_derived_judgments_payload(
         template_schema=_SPEC,
         entity_types=[et],
@@ -74,8 +81,40 @@ def test_maps_names_to_coordinates_and_computes() -> None:
             id="dev_overall_quality",
             label="Overall quality (development)",
             value="High",
+            # The breakdown names the contributing domain in the SECTION's own
+            # words, so the banner reads like the accordion below it.
+            inputs=[RunViewDerivedInput(label="D1 — Participants", value="High")],
         )
     ]
+
+
+def test_breakdown_names_the_domain_that_blocks_an_incomplete_overall() -> None:
+    """The dash's reason must be nameable: an unjudged domain reports value=None
+    against its own label, so the client never leaves the reviewer hunting."""
+    fid, iid = uuid4(), uuid4()
+    et = _EntityType(
+        "dev_d1_participants", [_Field(fid, "quality_concern")], label="D1 — Participants"
+    )
+    out = build_derived_judgments_payload(
+        template_schema=_SPEC,
+        entity_types=[et],
+        instances=[_Instance(et.id, iid)],
+        values=[_Value(iid, fid, {"value": None})],
+    )
+    assert out[0].value is None
+    assert out[0].inputs == [RunViewDerivedInput(label="D1 — Participants", value=None)]
+
+
+def test_breakdown_falls_back_to_the_section_name_without_a_label() -> None:
+    fid, iid = uuid4(), uuid4()
+    et = _EntityType("dev_d1_participants", [_Field(fid, "quality_concern")])
+    out = build_derived_judgments_payload(
+        template_schema=_SPEC,
+        entity_types=[et],
+        instances=[_Instance(et.id, iid)],
+        values=[_Value(iid, fid, "Low")],
+    )
+    assert out[0].inputs == [RunViewDerivedInput(label="dev_d1_participants", value="Low")]
 
 
 def test_unjudged_domain_yields_null_not_low() -> None:
@@ -111,3 +150,126 @@ def test_dangling_spec_reference_does_not_crash() -> None:
 
 def test_schema_model_accepts_null_value() -> None:
     assert RunViewDerivedJudgment(id="x", label="X", value=None).value is None
+
+
+# --- naming a collapse group whose spec carries no label --------------------
+
+_D4_SPEC: dict[str, Any] = {
+    "derived_judgments": [
+        {
+            "id": "eval_overall_rob",
+            "label": "Overall risk of bias (evaluation)",
+            "rule": "worst_domain",
+            # No "label" on the collapse — exactly the spec shape production
+            # holds, because neither the seed nor the clone ever updates it.
+            "inputs": [
+                {
+                    "collapse": "worst_of",
+                    "inputs": [
+                        {"section": "eval_d4_analysis_apparent", "field": "risk_of_bias"},
+                        {"section": "eval_d4_analysis_internal", "field": "risk_of_bias"},
+                        {"section": "eval_d4_analysis_external", "field": "risk_of_bias"},
+                    ],
+                }
+            ],
+        }
+    ]
+}
+
+# Verbatim from the seeded PROBAST+AI template.
+_D4_LABELS = {
+    "eval_d4_analysis_apparent": "Evaluation D4: Analysis (apparent performance)",
+    "eval_d4_analysis_internal": "Evaluation D4: Analysis (internal validation)",
+    "eval_d4_analysis_external": "Evaluation D4: Analysis (external validation)",
+}
+
+
+def test_unlabelled_collapse_is_named_by_what_its_sections_share() -> None:
+    """A three-section row must not be named after one performance type."""
+    fid = uuid4()
+    entity_types, instances, values = [], [], []
+    for name, label in _D4_LABELS.items():
+        iid = uuid4()
+        et = _EntityType(name, [_Field(fid, "risk_of_bias")], label=label)
+        entity_types.append(et)
+        instances.append(_Instance(et.id, iid))
+        values.append(_Value(iid, fid, {"value": "Low"}))
+
+    out = build_derived_judgments_payload(
+        template_schema=_D4_SPEC,
+        entity_types=entity_types,
+        instances=instances,
+        values=values,
+    )
+    assert out[0].inputs == [RunViewDerivedInput(label="Evaluation D4: Analysis", value="Low")]
+
+
+def test_a_single_section_label_is_used_verbatim() -> None:
+    """Only a group needs deriving; one section already names itself, trailing
+    punctuation and all."""
+    fid, iid = uuid4(), uuid4()
+    et = _EntityType(
+        "dev_d1_participants", [_Field(fid, "quality_concern")], label="D1: Participants:"
+    )
+    out = build_derived_judgments_payload(
+        template_schema=_SPEC,
+        entity_types=[et],
+        instances=[_Instance(et.id, iid)],
+        values=[_Value(iid, fid, "Low")],
+    )
+    assert out[0].inputs[0].label == "D1: Participants:"
+
+
+def test_an_explicit_collapse_label_wins_over_the_derived_one() -> None:
+    spec = copy.deepcopy(_D4_SPEC)
+    spec["derived_judgments"][0]["inputs"][0]["label"] = "Domain 4 — Analysis"
+    fid = uuid4()
+    entity_types, instances, values = [], [], []
+    for name, label in _D4_LABELS.items():
+        iid = uuid4()
+        et = _EntityType(name, [_Field(fid, "risk_of_bias")], label=label)
+        entity_types.append(et)
+        instances.append(_Instance(et.id, iid))
+        values.append(_Value(iid, fid, {"value": "Low"}))
+
+    out = build_derived_judgments_payload(
+        template_schema=spec, entity_types=entity_types, instances=instances, values=values
+    )
+    assert out[0].inputs[0].label == "Domain 4 — Analysis"
+
+
+# --- which value set feeds the derivation, by stage and reveal --------------
+#
+# Hypothesis A1 in the audit: a partial published set would win over the
+# caller's edits mid-consensus. It does — deliberately — and these pin the
+# whole truth table so the choice cannot drift silently.
+
+_PUBLISHED = ["published"]
+_OWN = ["own"]
+
+
+def test_blind_caller_derives_from_their_own_values() -> None:
+    """extract stage, or any reviewer who may not see peers."""
+    assert (
+        values_for_derivation(
+            peers_revealed=False, published_states=_PUBLISHED, current_values=_OWN
+        )
+        == _OWN
+    )
+
+
+def test_revealed_caller_derives_from_the_published_state() -> None:
+    """consensus (arbitrator) / finalized — never the caller's own values, or an
+    arbitrator would read the reviewer's overalls as if they were published."""
+    assert (
+        values_for_derivation(peers_revealed=True, published_states=_PUBLISHED, current_values=_OWN)
+        == _PUBLISHED
+    )
+
+
+def test_revealed_caller_before_anything_is_published_falls_back_to_own_values() -> None:
+    """An empty published set is 'consensus has not published yet', not 'every
+    domain is unjudged' — falling back keeps the banner meaningful."""
+    assert (
+        values_for_derivation(peers_revealed=True, published_states=[], current_values=_OWN) == _OWN
+    )
