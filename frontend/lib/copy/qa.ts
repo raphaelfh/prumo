@@ -41,7 +41,6 @@ export const qa = {
   overallExplainNoInformation:
     '“No information” on a domain judgment counts as Unclear: on the Low / High / Unclear scale, “cannot determine from this article” is a judgment. Inside Evaluation D4 it means the study did not report that performance type, so it is left out instead — a study is not marked down for validation it never claimed to perform.',
   overallExplainInputNotJudged: 'Not judged',
-  overallExplainInputsLabel: 'Domains feeding this overall',
 
   // Tabs
   tabAssessment: 'Assessment',
