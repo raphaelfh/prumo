@@ -33,11 +33,30 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.value_semantics import unwrap_value_envelope, value_absent_reason
+from app.services.value_semantics import (
+    ABSENT_REASON_LABELS,
+    AbsentReason,
+    unwrap_value_envelope,
+    value_absent_reason,
+)
+
+# The judgment an unjudgeable domain resolves to (see ``_judgment``). Declared
+# first so it is the same token as the severity key below, not a parallel copy.
+_UNCLEAR = "Unclear"
 
 # Severity order for the Low / High / Unclear judgment vocabulary. Higher is
 # worse; ``max`` over this mapping is the "worst" operator.
-JUDGMENT_SEVERITY: dict[str, int] = {"Low": 0, "Unclear": 1, "High": 2}
+JUDGMENT_SEVERITY: dict[str, int] = {"Low": 0, _UNCLEAR: 1, "High": 2}
+
+# The two callers hand us DIFFERENT shapes for the same stored value: the run
+# view passes the raw jsonb envelope, while the export passes a value_map whose
+# entries ``resolve_value`` has already collapsed to a display label. Mapping
+# the labels back to their codes is what keeps "screen and workbook cannot
+# drift" true — without it a marker reads as Unclear on the banner and as
+# nothing at all in the xlsx.
+_LABEL_TO_ABSENT_REASON: dict[str, str] = {
+    label.casefold(): code for code, label in ABSENT_REASON_LABELS.items()
+}
 
 _COLLAPSE_KEY = "collapse"
 
@@ -56,13 +75,43 @@ class DerivedJudgment:
     value: str | None
 
 
-def _judgment(raw: Any) -> str | None:
+def _absent_reason(raw: Any) -> str | None:
+    """The disposition code carried by *raw*, from either caller's shape.
+
+    Accepts the raw envelope (run view) and the already-resolved display label
+    (export), so both read a marker identically.
+    """
+    reason = value_absent_reason(raw)
+    if reason is not None:
+        return reason
+    value = unwrap_value_envelope(raw)
+    if isinstance(value, str):
+        return _LABEL_TO_ABSENT_REASON.get(value.strip().casefold())
+    return None
+
+
+def _judgment(raw: Any, *, no_information_as_unclear: bool = False) -> str | None:
     """The canonical judgment carried by *raw*, or None when it is not one.
 
-    A coded disposition marker ("no information" / "not applicable") is NOT a
-    judgment: it is excluded here and therefore counts as unjudged upstream.
+    A ``no_information`` marker means opposite things at the two levels, and
+    the instrument says so in two places:
+
+    * On a DOMAIN judgment it IS a judgment — "NI que impeça julgar leva a
+      Unclear" (methodology.md §4b): the Low/High/Unclear scale encodes
+      "cannot determine" as Unclear.
+    * On an evaluation-D4 performance type it means "the study did not report
+      this type", and "não se julga o que o estudo não fez" (methodology.md
+      §5) — excluding it is what stops a study being marked down for
+      validation it never claimed to perform.
+
+    Hence the flag: ``worst_domain`` sets it, ``worst_of`` (the D4 collapse)
+    does not. ``not_applicable`` / ``not_evaluated`` are never judgments in
+    either context — a PROBAST+AI domain cannot legitimately be N/A.
     """
-    if value_absent_reason(raw) is not None:
+    reason = _absent_reason(raw)
+    if reason is not None:
+        if no_information_as_unclear and reason == AbsentReason.NO_INFORMATION.value:
+            return _UNCLEAR
         return None
     value = unwrap_value_envelope(raw)
     if not isinstance(value, str):
@@ -75,7 +124,11 @@ def _judgment(raw: Any) -> str | None:
 
 
 def worst_of(values: Iterable[Any]) -> str | None:
-    """Worst judgment among *values*, IGNORING unjudged entries (lenient)."""
+    """Worst judgment among *values*, IGNORING unjudged entries (lenient).
+
+    Used for the evaluation-D4 collapse, so a ``no_information`` marker is an
+    unreported performance type and drops out rather than becoming Unclear.
+    """
     ranked = [j for j in (_judgment(v) for v in values) if j is not None]
     if not ranked:
         return None
@@ -83,8 +136,13 @@ def worst_of(values: Iterable[Any]) -> str | None:
 
 
 def worst_domain(values: Iterable[Any]) -> str | None:
-    """Worst judgment among *values*, None if ANY entry is unjudged (strict)."""
-    judgments = [_judgment(v) for v in values]
+    """Worst judgment among *values*, None if ANY entry is unjudged (strict).
+
+    A ``no_information`` marker counts as Unclear here (see ``_judgment``); a
+    genuinely missing value still yields None, so an overall is never concluded
+    from an unfinished assessment.
+    """
+    judgments = [_judgment(v, no_information_as_unclear=True) for v in values]
     if not judgments or any(j is None for j in judgments):
         return None
     ranked = [j for j in judgments if j is not None]
