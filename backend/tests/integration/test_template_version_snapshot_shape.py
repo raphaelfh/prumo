@@ -73,3 +73,29 @@ async def test_snapshot_carries_role_and_all_field_columns(
             assert set(f.keys()) >= _FIELD_KEYS, (
                 f"field missing keys: {_FIELD_KEYS - set(f.keys())}"
             )
+
+
+@pytest.mark.asyncio
+async def test_snapshot_omits_instruction_key_when_null(
+    db_session: AsyncSession,
+) -> None:
+    """Absent ≡ NULL: legacy templates must republish byte-identically."""
+    snapshot = await build_template_version_snapshot(db_session, SEED.primary_template)
+    assert "llm_template_instruction" not in snapshot
+
+
+@pytest.mark.asyncio
+async def test_snapshot_carries_instruction_when_set(
+    db_session: AsyncSession,
+) -> None:
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET llm_template_instruction = 'Focus on the primary cohort.' "
+            "WHERE id = :tid"
+        ),
+        {"tid": str(SEED.primary_template)},
+    )
+    snapshot = await build_template_version_snapshot(db_session, SEED.primary_template)
+    assert snapshot["llm_template_instruction"] == "Focus on the primary cohort."
+    # No commit: the fixture transaction rolls the UPDATE back.

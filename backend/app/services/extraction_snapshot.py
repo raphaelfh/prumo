@@ -11,6 +11,13 @@ again, and so migration 0026 can backfill old snapshots to the same shape.
 The key set mirrors the data columns of ``ExtractionEntityType`` and
 ``ExtractionField`` that the run-open form renders from (FK/audit columns are
 intentionally excluded — the form does not read them).
+
+The top-level ``llm_template_instruction`` key is **conditional**: appended in
+Python only when the template's live column is non-NULL/non-empty (absent ≡
+NULL — a legacy template's next republish stays byte-identical, no phantom
+v+1). It is deliberately NOT backfilled into old snapshots and needs no
+migration-0026-style copy: 0026 only rewrites snapshots lacking ``role``,
+which all pre-date this key.
 """
 
 from __future__ import annotations
@@ -79,9 +86,24 @@ SNAPSHOT_SQL = text(
 )
 
 
+_INSTRUCTION_SQL = text(
+    """
+    SELECT llm_template_instruction
+    FROM public.project_extraction_templates
+    WHERE id = :tid
+    """
+)
+
+
 async def build_template_version_snapshot(
     db: AsyncSession, project_template_id: UUID
 ) -> dict[str, Any]:
     """Build the frozen ``{entity_types: [...]}`` snapshot for a project template."""
     row = await db.execute(SNAPSHOT_SQL, {"tid": str(project_template_id)})
-    return row.scalar_one()
+    snapshot: dict[str, Any] = row.scalar_one()
+    instruction = (
+        await db.execute(_INSTRUCTION_SQL, {"tid": str(project_template_id)})
+    ).scalar_one_or_none()
+    if instruction:
+        snapshot["llm_template_instruction"] = instruction
+    return snapshot
