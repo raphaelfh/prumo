@@ -474,6 +474,44 @@ async def test_patch_template_active_403_for_non_member(
     assert res.status_code == 403, res.text
 
 
+# ========= GET/PUT /projects/{id}/templates/{tid}/llm-instruction =========
+
+
+@pytest.mark.asyncio
+async def test_get_template_llm_instruction_403_for_non_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> None:
+    fx = await _pick_template_for_outsider(db_session, outsider_user)
+    if fx is None:
+        pytest.skip("Need a template in a project the outsider does not belong to")
+    template_id, project_id = fx
+
+    res = await db_client.get(
+        f"/api/v1/projects/{project_id}/templates/{template_id}/llm-instruction",
+    )
+    assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_put_template_llm_instruction_403_for_non_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> None:
+    fx = await _pick_template_for_outsider(db_session, outsider_user)
+    if fx is None:
+        pytest.skip("Need a template in a project the outsider does not belong to")
+    template_id, project_id = fx
+
+    res = await db_client.put(
+        f"/api/v1/projects/{project_id}/templates/{template_id}/llm-instruction",
+        json={"llm_template_instruction": "x"},
+    )
+    assert res.status_code == 403, res.text
+
+
 # =================== POST /projects/{id}/templates/clone ===================
 
 

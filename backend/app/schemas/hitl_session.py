@@ -3,7 +3,7 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 # Re-export TemplateKind so endpoints can convert request.kind into the
 # canonical enum value without importing directly from app.models.* —
@@ -66,3 +66,23 @@ class UpdateTemplateActiveRequest(BaseModel):
 class UpdateTemplateActiveResponse(BaseModel):
     project_template_id: UUID
     is_active: bool
+
+
+class TemplateInstructionRead(BaseModel):
+    project_template_id: UUID
+    llm_template_instruction: str | None
+    default_instruction: str | None
+    """The origin global template's instruction (None for custom templates)."""
+
+
+class UpdateTemplateInstructionRequest(BaseModel):
+    llm_template_instruction: str | None = Field(default=None, max_length=4000)
+
+
+class UpdateTemplateInstructionResponse(BaseModel):
+    project_template_id: UUID
+    llm_template_instruction: str | None
+    version_id: UUID
+    version: int
+    changed: bool
+    repinned_run_count: int
