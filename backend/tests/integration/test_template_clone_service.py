@@ -80,6 +80,51 @@ async def test_clone_creates_full_structure_when_fresh(db_session: AsyncSession)
 
 
 @pytest.mark.asyncio
+async def test_clone_copies_llm_template_instruction(db_session: AsyncSession) -> None:
+    """Imports are born with the framework-tuned default (spec §4): the
+    global's instruction is copied onto the project clone AND frozen into
+    the v1 snapshot."""
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await _clean_project_clones(db_session, project_id)
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_templates_global "
+            "SET llm_template_instruction = 'Framework default text.' "
+            "WHERE id = :gid"
+        ),
+        {"gid": str(CHARMS_GLOBAL_ID)},
+    )
+
+    result = await TemplateCloneService(db_session).clone(
+        project_id=project_id,
+        global_template_id=CHARMS_GLOBAL_ID,
+        user_id=user_id,
+        kind=TemplateKind.EXTRACTION,
+    )
+
+    project_value = (
+        await db_session.execute(
+            text(
+                "SELECT llm_template_instruction "
+                "FROM public.project_extraction_templates WHERE id = :tid"
+            ),
+            {"tid": str(result.project_template_id)},
+        )
+    ).scalar_one()
+    assert project_value == "Framework default text."
+
+    v1_schema = (
+        await db_session.execute(
+            text("SELECT schema FROM public.extraction_template_versions WHERE id = :vid"),
+            {"vid": str(result.version_id)},
+        )
+    ).scalar_one()
+    assert v1_schema["llm_template_instruction"] == "Framework default text."
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
 async def test_clone_selfheals_snapshot_from_live_on_drift(
     db_session: AsyncSession,
 ) -> None:
