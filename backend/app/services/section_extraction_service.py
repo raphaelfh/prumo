@@ -58,6 +58,7 @@ from app.schemas.prompt_composition import PromptComposition, PromptCompositionA
 from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
+from app.services.extraction_snapshot import general_instructions_for_version
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.value_semantics import AbsentReason
 
@@ -314,10 +315,12 @@ class SectionExtractionService(LoggerMixin):
 
             # 5. Run LLM extraction (with token tracking)
             phase_start = perf_counter()
+            general_instructions = await general_instructions_for_version(self.db, run.version_id)
             extracted_data, llm_usage = await self._extract_with_llm(
                 pdf_text=pdf_text,
                 entity_type=entity_type,
                 model=model,
+                general_instructions=general_instructions,
             )
             phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
@@ -635,6 +638,7 @@ class SectionExtractionService(LoggerMixin):
                 return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
             fields_override = filtered
 
+        general_instructions = await general_instructions_for_version(self.db, run.version_id)
         extracted_data, llm_usage = await self._extract_with_llm(
             pdf_text=pdf_text,
             entity_type=full_entity_type,
@@ -642,6 +646,7 @@ class SectionExtractionService(LoggerMixin):
             kind=kind,
             framework=framework,
             fields_override=fields_override,
+            general_instructions=general_instructions,
         )
         suggestions_created = await self._create_suggestions(
             project_id=run.project_id,
@@ -1042,11 +1047,13 @@ class SectionExtractionService(LoggerMixin):
 
         # Run extraction with memory context
         phase_start = perf_counter()
+        general_instructions = await general_instructions_for_version(self.db, run.version_id)
         extracted_data, llm_usage = await self._extract_with_llm(
             pdf_text=pdf_text,
             entity_type=entity_type,
             model=model,
             memory_context=memory_history,
+            general_instructions=general_instructions,
         )
         section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
@@ -1193,6 +1200,7 @@ class SectionExtractionService(LoggerMixin):
         kind: str = "extraction",
         framework: str | None = None,
         fields_override: list[Any] | None = None,
+        general_instructions: str | None = None,
     ) -> tuple[dict[str, Any], LlmUsage]:
         """
         Run extraction using the typed LLM call layer.
@@ -1209,6 +1217,9 @@ class SectionExtractionService(LoggerMixin):
                 framework (PROBAST / QUADAS-2) the prompts ground in.
             fields_override: Exact field list for the LLM (e.g. human-settled
                 fields removed); avoids mutating ``entity_type.fields``.
+            general_instructions: Template-level instruction from the
+                run-pinned snapshot (never the live column); prepended to
+                the user prompt when present.
 
         Returns:
             Tuple of extracted data ({field_name: {value, confidence,
@@ -1228,6 +1239,7 @@ class SectionExtractionService(LoggerMixin):
                 article_text=pdf_text,
                 framework=framework,
                 memory_context=memory_context,
+                general_instructions=general_instructions,
             )
         else:
             prompt_module = section_extraction
@@ -1237,6 +1249,7 @@ class SectionExtractionService(LoggerMixin):
                 entity_description=entity_description,
                 article_text=pdf_text,
                 memory_context=memory_context,
+                general_instructions=general_instructions,
             )
 
         output_models = build_output_models(entity_type, fields=fields_override)
@@ -1275,6 +1288,7 @@ class SectionExtractionService(LoggerMixin):
                 article_text=ARTICLE_MARKDOWN_MARKER,
                 framework=framework,
                 memory_context=memory_context,
+                general_instructions=general_instructions,
             )
         else:
             section_instruction = section_extraction.render(
@@ -1282,6 +1296,7 @@ class SectionExtractionService(LoggerMixin):
                 entity_description=entity_description,
                 article_text=ARTICLE_MARKDOWN_MARKER,
                 memory_context=memory_context,
+                general_instructions=general_instructions,
             )
         info = self._prompt_input_info
         # The fields actually sent to the LLM: the human-settled override when the

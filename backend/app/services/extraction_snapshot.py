@@ -94,6 +94,28 @@ _INSTRUCTION_SQL = text(
     """
 )
 
+_GENERAL_INSTRUCTIONS_SQL = text(
+    """
+    SELECT schema ->> 'llm_template_instruction'
+    FROM public.extraction_template_versions
+    WHERE id = :vid
+    """
+)
+
+
+async def general_instructions_for_version(db: AsyncSession, version_id: UUID) -> str | None:
+    """Template-level general instruction pinned in a version snapshot.
+
+    Prompts must read the pinned snapshot, never the live column — a run
+    keeps the instruction it was opened under until a republish re-pins
+    it (spec §4). Returns None when the version has no key (legacy) or
+    the value is empty.
+    """
+    value = (
+        await db.execute(_GENERAL_INSTRUCTIONS_SQL, {"vid": str(version_id)})
+    ).scalar_one_or_none()
+    return value or None
+
 
 async def build_template_version_snapshot(
     db: AsyncSession, project_template_id: UUID

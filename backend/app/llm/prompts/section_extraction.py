@@ -1,6 +1,10 @@
 """Prompt for extracting one template section from an article."""
 
-from app.llm.prompts import content_version, render_memory_section
+from app.llm.prompts import (
+    content_version,
+    render_general_instructions_section,
+    render_memory_section,
+)
 
 NAME = "section_extraction"
 
@@ -14,7 +18,7 @@ SYSTEM_PROMPT = (
     " the value."
 )
 
-_USER_TEMPLATE = """Extract the following information from the scientific article:
+_USER_TEMPLATE = """{general_instructions_section}Extract the following information from the scientific article:
 
 Section: {entity_name}
 Description: {entity_description}
@@ -38,10 +42,12 @@ def render(
     entity_description: str,
     article_text: str,
     memory_context: list[dict[str, str]] | None = None,
+    general_instructions: str | None = None,
 ) -> str:
     return _USER_TEMPLATE.format(
         entity_name=entity_name,
         entity_description=entity_description,
         memory_section=render_memory_section(memory_context),
         article_text=article_text,
+        general_instructions_section=render_general_instructions_section(general_instructions),
     )

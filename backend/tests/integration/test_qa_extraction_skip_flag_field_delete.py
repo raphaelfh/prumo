@@ -158,3 +158,94 @@ async def test_skip_flag_does_not_delete_human_settled_field(
         )
     ).scalar()
     assert survived == 1
+
+
+@pytest.mark.asyncio
+async def test_call_site_passes_pinned_not_live_instruction(
+    db_session: AsyncSession,
+) -> None:
+    """Spec §9-A: prompts read the run-PINNED snapshot's general
+    instruction, never the live column — a reopened/old run keeps the
+    instruction it was assessed under. Guards the call-site wiring (an
+    implementation reading the live column or the active version would
+    leave every helper-level test green)."""
+    from uuid import uuid4
+
+    fx = await _coords(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id, _instance_id, field_a_id = fx
+
+    entity_type_id = (
+        await db_session.execute(
+            text("SELECT entity_type_id FROM public.extraction_fields WHERE id = :fid"),
+            {"fid": str(field_a_id)},
+        )
+    ).scalar()
+    assert entity_type_id is not None
+    entity_type_id = UUID(str(entity_type_id))
+
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
+            "AND article_id = :aid AND template_id = :tid"
+        ),
+        {"pid": str(project_id), "aid": str(article_id), "tid": str(template_id)},
+    )
+    session = await HITLSessionService(db_session).open_or_resume(
+        kind=TemplateKind.EXTRACTION,
+        project_id=project_id,
+        article_id=article_id,
+        user_id=profile_id,
+        project_template_id=template_id,
+    )
+    run = await db_session.get(ExtractionRun, session.run_id)
+    assert run is not None
+
+    # Pin the run to an OLD version whose snapshot carries "PINNED",
+    # while the live column says "LIVE".
+    old_version_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_template_versions "
+            "(id, project_template_id, version, schema, published_by, is_active) "
+            "VALUES (:id, :tid, 998, "
+            ' \'{"entity_types": [], "llm_template_instruction": "PINNED"}\'::jsonb, '
+            " :pub, false)"
+        ),
+        {"id": str(old_version_id), "tid": str(template_id), "pub": str(profile_id)},
+    )
+    await db_session.execute(
+        text("UPDATE public.extraction_runs SET version_id = :vid WHERE id = :rid"),
+        {"vid": str(old_version_id), "rid": str(run.id)},
+    )
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET llm_template_instruction = 'LIVE' WHERE id = :tid"
+        ),
+        {"tid": str(template_id)},
+    )
+    await db_session.refresh(run)
+
+    service = SectionExtractionService(
+        db=db_session,
+        user_id=str(profile_id),
+        storage=MagicMock(),
+        trace_id="test-pinned-instruction",
+    )
+    service._extract_with_llm = AsyncMock(  # type: ignore[method-assign]
+        return_value=({}, LlmUsage())
+    )
+
+    await service._extract_one_entity_type_for_run(
+        run=run,
+        entity_type=SimpleNamespace(id=entity_type_id),
+        pdf_text="irrelevant — LLM is mocked",
+        framework=None,
+        kind="extraction",
+        skip_fields_with_human_proposals=False,
+        model="gpt-4o-mini",
+    )
+
+    assert service._extract_with_llm.call_args.kwargs["general_instructions"] == "PINNED"

@@ -6,6 +6,8 @@ lifecycle)."""
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -99,3 +101,53 @@ async def test_snapshot_carries_instruction_when_set(
     snapshot = await build_template_version_snapshot(db_session, SEED.primary_template)
     assert snapshot["llm_template_instruction"] == "Focus on the primary cohort."
     # No commit: the fixture transaction rolls the UPDATE back.
+
+
+@pytest.mark.asyncio
+async def test_general_instructions_reader_prefers_pinned_snapshot(
+    db_session: AsyncSession,
+) -> None:
+    """The prompt path reads the pinned version, never the live column."""
+    from app.services.extraction_snapshot import general_instructions_for_version
+
+    version_id = uuid.uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_template_versions "
+            "(id, project_template_id, version, schema, published_by, is_active) "
+            "VALUES (:id, :tid, 999, "
+            ' \'{"entity_types": [], "llm_template_instruction": "PINNED"}\'::jsonb, '
+            " :pub, false)"
+        ),
+        {
+            "id": str(version_id),
+            "tid": str(SEED.primary_template),
+            "pub": str(SEED.primary_profile),
+        },
+    )
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET llm_template_instruction = 'LIVE' WHERE id = :tid"
+        ),
+        {"tid": str(SEED.primary_template)},
+    )
+    assert await general_instructions_for_version(db_session, version_id) == "PINNED"
+
+
+@pytest.mark.asyncio
+async def test_general_instructions_reader_none_when_key_absent(
+    db_session: AsyncSession,
+) -> None:
+    from app.services.extraction_snapshot import general_instructions_for_version
+
+    active_version_id = (
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.extraction_template_versions "
+                "WHERE project_template_id = :tid AND is_active"
+            ),
+            {"tid": str(SEED.primary_template)},
+        )
+    ).scalar_one()
+    assert await general_instructions_for_version(db_session, active_version_id) is None
