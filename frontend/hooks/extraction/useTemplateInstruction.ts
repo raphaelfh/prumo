@@ -24,10 +24,14 @@ export function useUpdateTemplateInstruction(projectId: string, templateId: stri
     onSuccess: async () => {
       // The PUT republished server-side: editable-stage runs were
       // re-pinned, so run-scoped reads are stale alongside our own key.
-      await queryClient.invalidateQueries({
-        queryKey: templateInstructionKeys.byTemplate(projectId, templateId),
-      });
-      await queryClient.invalidateQueries({queryKey: runsKeys.all});
+      // Parallel: the two refetch rounds are independent, and awaiting
+      // them serially would extend the disabled-Save window.
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: templateInstructionKeys.byTemplate(projectId, templateId),
+        }),
+        queryClient.invalidateQueries({queryKey: runsKeys.all}),
+      ]);
     },
   });
 }

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.llm.extractor import LlmUsage
+from app.llm.prompts import render_general_instructions_section
 from app.services.section_extraction_service import SectionExtractionService
 
 
@@ -68,12 +69,13 @@ async def test_extract_with_llm_prepends_general_instructions(monkeypatch) -> No
         model="gpt-test",
         general_instructions="Report values exactly as stated.",
     )
-    assert captured["user_prompt"].startswith(
-        "General instructions for this review:\nReport values exactly as stated.\n\n"
-    )
+    # Threading is under test here; the block's exact wording is golden-
+    # tested in tests/unit/llm/test_prompts.py, so build the expected
+    # prefix through the renderer instead of duplicating the literal.
+    expected_prefix = render_general_instructions_section("Report values exactly as stated.")
+    assert expected_prefix  # non-empty guard: a broken renderer must not pass
+    assert captured["user_prompt"].startswith(expected_prefix)
     # Constitution §IX: the persisted composition re-render must be
     # byte-faithful — it carries the same leading block.
     composition = service._run_provenance["prompt_composition"]
-    assert composition["section_instruction"].startswith(
-        "General instructions for this review:\nReport values exactly as stated.\n\n"
-    )
+    assert composition["section_instruction"].startswith(expected_prefix)

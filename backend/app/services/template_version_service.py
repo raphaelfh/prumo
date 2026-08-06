@@ -35,12 +35,7 @@ from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_session_service import HITLSessionService
 from app.services.template_clone_service import TemplateNotFoundError
 
-__all__ = [
-    "UNSET",
-    "RepublishResult",
-    "TemplateNotFoundError",
-    "TemplateVersionService",
-]
+__all__ = ["RepublishResult", "TemplateNotFoundError", "TemplateVersionService"]
 
 _EDITABLE_STAGES = (
     ExtractionRunStage.PENDING.value,
@@ -52,7 +47,7 @@ class _Unset:
     """Sentinel: distinguishes 'kwarg not provided' from an explicit None."""
 
 
-UNSET = _Unset()
+_UNSET = _Unset()
 
 
 class RepublishResult:
@@ -84,7 +79,7 @@ class TemplateVersionService:
         project_id: UUID,
         project_template_id: UUID,
         user_id: UUID,
-        llm_template_instruction: str | None | _Unset = UNSET,
+        llm_template_instruction: str | None | _Unset = _UNSET,
     ) -> RepublishResult:
         # BOLA defense (unlocked read): validate ownership before taking any
         # lock, so a caller who is only a manager elsewhere can never lock —

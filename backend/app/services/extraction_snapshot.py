@@ -86,7 +86,7 @@ SNAPSHOT_SQL = text(
 )
 
 
-_INSTRUCTION_SQL = text(
+_LIVE_INSTRUCTION_SQL = text(
     """
     SELECT llm_template_instruction
     FROM public.project_extraction_templates
@@ -94,7 +94,7 @@ _INSTRUCTION_SQL = text(
     """
 )
 
-_GENERAL_INSTRUCTIONS_SQL = text(
+_PINNED_INSTRUCTION_SQL = text(
     """
     SELECT schema ->> 'llm_template_instruction'
     FROM public.extraction_template_versions
@@ -112,7 +112,7 @@ async def general_instructions_for_version(db: AsyncSession, version_id: UUID) -
     the value is empty.
     """
     value = (
-        await db.execute(_GENERAL_INSTRUCTIONS_SQL, {"vid": str(version_id)})
+        await db.execute(_PINNED_INSTRUCTION_SQL, {"vid": str(version_id)})
     ).scalar_one_or_none()
     return value or None
 
@@ -124,7 +124,7 @@ async def build_template_version_snapshot(
     row = await db.execute(SNAPSHOT_SQL, {"tid": str(project_template_id)})
     snapshot: dict[str, Any] = row.scalar_one()
     instruction = (
-        await db.execute(_INSTRUCTION_SQL, {"tid": str(project_template_id)})
+        await db.execute(_LIVE_INSTRUCTION_SQL, {"tid": str(project_template_id)})
     ).scalar_one_or_none()
     if instruction:
         snapshot["llm_template_instruction"] = instruction

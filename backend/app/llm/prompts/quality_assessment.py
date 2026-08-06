@@ -40,7 +40,11 @@ For EACH field in the response schema, return an object with:
 - "evidence": an object with "text" (short quoted passage supporting the judgment) and "page_number" (integer, if known), or null
 """
 
-VERSION = content_version(_SYSTEM_TEMPLATE, _USER_TEMPLATE)
+# Canary: hashes the shared block renderer's literal prefix (see
+# section_extraction.py) so helper edits bump VERSION.
+VERSION = content_version(
+    _SYSTEM_TEMPLATE, _USER_TEMPLATE, render_general_instructions_section("x")
+)
 
 _DEFAULT_FRAMEWORK_LABEL = "the assessment tool"
 

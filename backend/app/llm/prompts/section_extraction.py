@@ -33,7 +33,10 @@ For EACH field in the response schema, return an object with:
 - "evidence": an object with "text" (short quoted passage from the article supporting the value) and "page_number" (integer, if known), or null
 """
 
-VERSION = content_version(SYSTEM_PROMPT, _USER_TEMPLATE)
+# The canary argument hashes the shared block renderer's literal prefix:
+# editing render_general_instructions_section changes production prompts,
+# so it must bump VERSION too (§IX traceability).
+VERSION = content_version(SYSTEM_PROMPT, _USER_TEMPLATE, render_general_instructions_section("x"))
 
 
 def render(

@@ -482,6 +482,9 @@ class SectionExtractionService(LoggerMixin):
         try:
             pdf_text = await self._assemble_prompt_text(run.article_id, model)
 
+            # Run-constant (keyed by the pinned version): fetch once, not per section.
+            general_instructions = await general_instructions_for_version(self.db, run.version_id)
+
             top_level = await self._top_level_entity_types_for_template(run.template_id)
 
             for entity_type in top_level:
@@ -494,6 +497,7 @@ class SectionExtractionService(LoggerMixin):
                         kind=kind,
                         skip_fields_with_human_proposals=skip_fields_with_human_proposals,
                         model=model,
+                        general_instructions=general_instructions,
                     )
                     successful += 1
                     total_suggestions += result["suggestions_created"]
@@ -592,6 +596,7 @@ class SectionExtractionService(LoggerMixin):
         kind: str,
         skip_fields_with_human_proposals: bool,
         model: str,
+        general_instructions: str | None = None,
     ) -> dict[str, Any]:
         """Extract a single entity_type into an existing Run.
 
@@ -638,7 +643,6 @@ class SectionExtractionService(LoggerMixin):
                 return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
             fields_override = filtered
 
-        general_instructions = await general_instructions_for_version(self.db, run.version_id)
         extracted_data, llm_usage = await self._extract_with_llm(
             pdf_text=pdf_text,
             entity_type=full_entity_type,
@@ -891,6 +895,9 @@ class SectionExtractionService(LoggerMixin):
             failed = 0
             total_suggestions = 0
 
+            # Run-constant (keyed by the pinned version): fetch once, not per section.
+            general_instructions = await general_instructions_for_version(self.db, run.version_id)
+
             # 3. Extract each section sequentially with memory — every section
             # appends to THE batch run (no more one-run-per-section pollution).
             for entity_type in child_types:
@@ -902,6 +909,7 @@ class SectionExtractionService(LoggerMixin):
                         pdf_text=pdf_text,
                         memory_history=memory_history,
                         model=model,
+                        general_instructions=general_instructions,
                     )
 
                     successful += 1
@@ -1017,6 +1025,7 @@ class SectionExtractionService(LoggerMixin):
         pdf_text: str,
         memory_history: list[dict[str, str]],
         model: str,
+        general_instructions: str | None = None,
     ) -> dict[str, Any]:
         """
         Extract one section with summarized memory context onto the batch run.
@@ -1047,7 +1056,6 @@ class SectionExtractionService(LoggerMixin):
 
         # Run extraction with memory context
         phase_start = perf_counter()
-        general_instructions = await general_instructions_for_version(self.db, run.version_id)
         extracted_data, llm_usage = await self._extract_with_llm(
             pdf_text=pdf_text,
             entity_type=entity_type,

@@ -234,18 +234,21 @@ async def test_call_site_passes_pinned_not_live_instruction(
         storage=MagicMock(),
         trace_id="test-pinned-instruction",
     )
+    # Only IO seams are faked; the pinned-instruction fetch inside
+    # extract_section runs against the real rows above.
+    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
+        return_value="irrelevant — LLM is mocked"
+    )
     service._extract_with_llm = AsyncMock(  # type: ignore[method-assign]
         return_value=({}, LlmUsage())
     )
 
-    await service._extract_one_entity_type_for_run(
-        run=run,
-        entity_type=SimpleNamespace(id=entity_type_id),
-        pdf_text="irrelevant — LLM is mocked",
-        framework=None,
-        kind="extraction",
-        skip_fields_with_human_proposals=False,
-        model="gpt-4o-mini",
+    await service.extract_section(
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+        entity_type_id=entity_type_id,
+        run_id=run.id,
     )
 
     assert service._extract_with_llm.call_args.kwargs["general_instructions"] == "PINNED"

@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import {
   useTemplateInstruction,
@@ -35,11 +36,12 @@ export function TemplateInstructionRow({
 }: TemplateInstructionRowProps) {
   const { data, isLoading } = useTemplateInstruction(projectId, templateId);
   const update = useUpdateTemplateInstruction(projectId, templateId);
-  const [expanded, setExpanded] = useState(false);
-  const [draft, setDraft] = useState('');
+  // null = collapsed; a string = the editor is open with that draft.
+  const [draft, setDraft] = useState<string | null>(null);
+  const expanded = draft !== null;
 
   if (isLoading || !data) {
-    return <div className="h-12 animate-pulse rounded-md border bg-card" />;
+    return <Skeleton className="h-12 rounded-md border" />;
   }
 
   const value = data.llm_template_instruction ?? '';
@@ -47,17 +49,13 @@ export function TemplateInstructionRow({
   const isEdited = hasOrigin && value !== '' && value !== data.default_instruction;
   const slotCount = customizeSlotCount(data.llm_template_instruction);
 
-  const openEditor = () => {
-    setDraft(value);
-    setExpanded(true);
-  };
-
   const save = () => {
+    if (draft === null) return;
     const normalized = draft.trim() === '' ? null : draft;
     update.mutate(normalized, {
       onSuccess: () => {
         toast.success(t('extraction', 'instructionSavedToast'));
-        setExpanded(false);
+        setDraft(null);
       },
       onError: () => {
         toast.error(t('extraction', 'errors_saveInstruction'));
@@ -69,7 +67,7 @@ export function TemplateInstructionRow({
     <div className="rounded-md border bg-card">
       <button
         type="button"
-        onClick={() => (expanded ? setExpanded(false) : openEditor())}
+        onClick={() => setDraft(expanded ? null : value)}
         className="flex h-12 w-full items-center gap-2 rounded-md px-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         aria-expanded={expanded}
       >
@@ -108,7 +106,7 @@ export function TemplateInstructionRow({
           )}
         />
       </button>
-      {expanded && (
+      {draft !== null && (
         <div className="space-y-2 border-t px-4 py-3">
           <Textarea
             value={draft}
@@ -154,7 +152,7 @@ export function TemplateInstructionRow({
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => setExpanded(false)}
+              onClick={() => setDraft(null)}
             >
               {t('extraction', 'instructionCancel')}
             </Button>
