@@ -133,6 +133,8 @@ class ExtractionTemplateGlobal(BaseModel):
     is_global: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     schema_: Mapped[dict[str, Any]] = mapped_column("schema", JSONB, default={}, nullable=False)
 
+    llm_template_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Relationships
     entity_types: Mapped[list["ExtractionEntityType"]] = relationship(
         "ExtractionEntityType",
@@ -144,6 +146,13 @@ class ExtractionTemplateGlobal(BaseModel):
     __table_args__ = (
         Index("idx_extraction_templates_global_schema_gin", "schema", postgresql_using="gin"),
         UniqueConstraint("id", "kind", name="uq_extraction_templates_global_id_kind"),
+        # SHORT name: the 'ck' naming convention (base.py) expands it to
+        # ck_extraction_templates_global_llm_instruction_len; a pre-expanded
+        # ck_ literal would double-wrap and md5-truncate.
+        CheckConstraint(
+            "char_length(llm_template_instruction) <= 4000",
+            name="llm_instruction_len",
+        ),
         {"schema": "public"},
     )
 
@@ -194,6 +203,8 @@ class ProjectExtractionTemplate(BaseModel):
     schema_: Mapped[dict[str, Any]] = mapped_column("schema", JSONB, default={}, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    llm_template_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.profiles.id", ondelete="RESTRICT"),
@@ -215,6 +226,11 @@ class ProjectExtractionTemplate(BaseModel):
     __table_args__ = (
         Index("idx_project_extraction_templates_schema_gin", "schema", postgresql_using="gin"),
         UniqueConstraint("id", "kind", name="uq_project_extraction_templates_id_kind"),
+        # SHORT name — expands to ck_project_extraction_templates_llm_instruction_len.
+        CheckConstraint(
+            "char_length(llm_template_instruction) <= 4000",
+            name="llm_instruction_len",
+        ),
         {"schema": "public"},
     )
 

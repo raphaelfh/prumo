@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-07-09
+last_reviewed: 2026-08-06
 owner: '@raphaelfh'
 ---
 
@@ -135,7 +135,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0045_one_live_run_guard` (post-squash numbering; run
+`0047_llm_template_instruction` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -189,8 +189,8 @@ migration `0039_absent_reason_backfill`. Decision record:
 
 | Table | Notable evolution | Where |
 | --- | --- | --- |
-| `extraction_templates_global` | + `kind` column, unique `(id, kind)` | 0011 |
-| `project_extraction_templates` | + `kind`, unique `(id, kind)` | 0011 |
+| `extraction_templates_global` | + `kind` column, unique `(id, kind)`; + `llm_template_instruction` TEXT NULL (CHECK ≤ 4000 — template-level general AI instruction, seeded per framework) | 0011 + 0047 |
+| `project_extraction_templates` | + `kind`, unique `(id, kind)`; + `llm_template_instruction` TEXT NULL (CHECK ≤ 4000 — copied from the global on clone; snapshot emits the key only when non-NULL) | 0011 + 0047 |
 | `extraction_runs` | + `kind`, `version_id` FK, `hitl_config_snapshot`; composite FK `(template_id, kind)` enforces template-run kind coherence; stage enum reconstructed | 0011 + 0014 |
 | `extraction_evidence` | + `run_id`, `proposal_record_id`, `reviewer_decision_id`, `consensus_decision_id`. Legacy `target_type`/`target_id` columns dropped in 0017; CHECK now requires the workflow path. Target FKs are `ON DELETE CASCADE` — evidence follows its sole workflow target (0044; SET NULL could never satisfy the CHECK). | 0013 + 0017 + 0044 |
 | `extraction_fields` | + `allows_not_applicable`, `allows_not_evaluated` opt-in disposition flags (ADR-0016; copied into `version.schema_` by the snapshot builder) | 0038 |

@@ -540,6 +540,43 @@ async def test_migration_0043_round_trip(
     )
 
 
+_LLM_INSTRUCTION_COLS = text(
+    "SELECT table_name FROM information_schema.columns "
+    "WHERE table_schema = 'public' "
+    "AND table_name IN ('extraction_templates_global', 'project_extraction_templates') "
+    "AND column_name = 'llm_template_instruction'"
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0047_round_trip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0047_llm_template_instruction`` adds ``llm_template_instruction``
+    to both template tables (structure only on downgrade — the text is
+    dropped with the column). Downgrading to the explicit parent
+    ``0046_revoke_min_mgr_exec`` drops both; upgrading to head restores
+    them. Downgrades to the explicit parent (not ``-1``) so the test
+    stays correct as later migrations stack on top."""
+    both_tables = {"extraction_templates_global", "project_extraction_templates"}
+    cols_at_head = set((await migration_session.execute(_LLM_INSTRUCTION_COLS)).scalars().all())
+    assert cols_at_head == both_tables, (
+        f"llm_template_instruction must exist on both tables at HEAD, got {cols_at_head}"
+    )
+
+    _run_alembic("downgrade", "0046_revoke_min_mgr_exec", database_url=migration_db_url)
+    try:
+        await migration_session.commit()
+        cols_down = set((await migration_session.execute(_LLM_INSTRUCTION_COLS)).scalars().all())
+        assert cols_down == set(), "downgrade must drop the column from both tables"
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    await migration_session.commit()
+    cols_after = set((await migration_session.execute(_LLM_INSTRUCTION_COLS)).scalars().all())
+    assert cols_after == both_tables, "upgrade head must restore both columns"
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     """Pin the head revision id. If a future migration is added without
@@ -548,8 +585,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0046_revoke_min_mgr_exec" in out, (
-        f"Expected head revision '0046_revoke_min_mgr_exec', got:\n{out}"
+    assert "0047_llm_template_instruction" in out, (
+        f"Expected head revision '0047_llm_template_instruction', got:\n{out}"
     )
 
 
