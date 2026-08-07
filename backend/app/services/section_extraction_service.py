@@ -33,7 +33,6 @@ from app.llm.provider import build_model
 from app.llm.schema import build_output_models, dump_extraction
 from app.llm.validators import evidence_is_plausible
 from app.models.extraction import (
-    ExtractionEntityType,
     ExtractionEvidence,
     ExtractionInstance,
     ExtractionRun,
@@ -58,7 +57,10 @@ from app.schemas.prompt_composition import PromptComposition, PromptCompositionA
 from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
-from app.services.extraction_snapshot import general_instructions_for_version
+from app.services.extraction_snapshot import (
+    entity_types_for_version,
+    general_instructions_for_version,
+)
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.value_semantics import AbsentReason
 
@@ -308,9 +310,23 @@ class SectionExtractionService(LoggerMixin):
             pdf_text = await self._assemble_prompt_text(article_id, model)
             phase_durations_ms["assemble_prompt"] = (perf_counter() - phase_start) * 1000
 
-            # 4. Fetch entity type and fields
+            # 4. Entity type + fields from the run-PINNED snapshot (B-2):
+            # structure and instructions come from run.version_id, never live
+            # rows. Fields sent to the LLM are snapshot ∩ live (a field
+            # deleted live is silently not extracted; one added live is
+            # invisible until publish re-pins). Falls back to the live row
+            # when the id is not in the pin (re-pin race) — today's behavior.
             phase_start = perf_counter()
-            entity_type = await self._get_entity_type(entity_type_id)
+            pinned_tree = await self._pinned_entity_types(run)
+            entity_type: Any = next((et for et in pinned_tree if et.id == entity_type_id), None)
+            fields_override: list[Any] | None = None
+            if entity_type is None:
+                entity_type = await self._get_entity_type(entity_type_id)
+            else:
+                fields_override = await self._live_field_intersection(entity_type)
+                if fields_override is None:
+                    # Pinned but deleted live — mirrors the live path's error.
+                    raise ValueError(f"Entity type not found: {entity_type_id}")
             phase_durations_ms["fetch_entity_type"] = (perf_counter() - phase_start) * 1000
 
             # 5. Run LLM extraction (with token tracking)
@@ -320,6 +336,7 @@ class SectionExtractionService(LoggerMixin):
                 pdf_text=pdf_text,
                 entity_type=entity_type,
                 model=model,
+                fields_override=fields_override,
                 general_instructions=general_instructions,
             )
             phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
@@ -485,7 +502,11 @@ class SectionExtractionService(LoggerMixin):
             # Run-constant (keyed by the pinned version): fetch once, not per section.
             general_instructions = await general_instructions_for_version(self.db, run.version_id)
 
-            top_level = await self._top_level_entity_types_for_template(run.template_id)
+            # Top-level set from the run-PINNED snapshot (B-2). The provider
+            # chains empty/narrow snapshots to live rows, so an empty pin can
+            # never turn this into a green no-op run.
+            pinned_tree = await self._pinned_entity_types(run)
+            top_level = [et for et in pinned_tree if et.parent_entity_type_id is None]
 
             for entity_type in top_level:
                 try:
@@ -604,8 +625,11 @@ class SectionExtractionService(LoggerMixin):
         NOT create a fresh Run — it appends ``source='ai'`` proposals
         onto the Run that the caller already owns.
         """
-        full_entity_type = await self._entity_types.get_with_fields(entity_type.id)
-        if full_entity_type is None:
+        # The PINNED entity drives the prompt; the live row is demoted to a
+        # coherence source (existence + live field-id set). None = deleted
+        # live -> skip, mirroring the old live-refetch behavior.
+        pinned_fields = await self._live_field_intersection(entity_type)
+        if pinned_fields is None:
             return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
 
         instance = await self._find_instance_for_entity_type(
@@ -613,12 +637,10 @@ class SectionExtractionService(LoggerMixin):
             entity_type_id=entity_type.id,
         )
 
-        # Filter via an override, never by mutating ``full_entity_type.fields``:
-        # that relationship is ``cascade="all, delete-orphan"``, so dropping the
-        # skipped (human-settled) fields would DELETE them on the next flush and
-        # hit the ondelete=RESTRICT FK from their proposal (ForeignKeyViolationError).
-        fields_override: list[Any] | None = None
-        original_fields = list(full_entity_type.fields or [])
+        # Always pass an override (never mutate a fields collection — the
+        # live ORM one cascades delete-orphan; see the FK regression test).
+        fields_override: list[Any] | None = pinned_fields
+        original_fields = list(pinned_fields)
         if skip_fields_with_human_proposals and instance is not None and original_fields:
             field_ids = [f.id for f in original_fields]
             # Protect a field from the AI re-run if the human has already
@@ -645,7 +667,7 @@ class SectionExtractionService(LoggerMixin):
 
         extracted_data, llm_usage = await self._extract_with_llm(
             pdf_text=pdf_text,
-            entity_type=full_entity_type,
+            entity_type=entity_type,
             model=model,
             kind=kind,
             framework=framework,
@@ -667,19 +689,40 @@ class SectionExtractionService(LoggerMixin):
             "usage": llm_usage,
         }
 
-    async def _top_level_entity_types_for_template(
-        self,
-        template_id: UUID,
-    ) -> list[ExtractionEntityType]:
-        stmt = (
-            select(ExtractionEntityType)
-            .where(
-                ExtractionEntityType.project_template_id == template_id,
-                ExtractionEntityType.parent_entity_type_id.is_(None),
-            )
-            .order_by(ExtractionEntityType.sort_order)
+    async def _pinned_entity_types(self, run: ExtractionRun) -> list[Any]:
+        """The frozen tree this run is pinned to (shared B-2 provider)."""
+        return await entity_types_for_version(
+            self.db, version_id=run.version_id, template_id=run.template_id
         )
-        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def _live_field_intersection(self, entity_type: Any) -> list[Any] | None:
+        """Snapshot fields ∩ live field ids for one pinned entity type.
+
+        ``None`` means the entity type no longer exists live (skip — a
+        proposal write could not resolve it anyway). The intersection is
+        pair-safe by construction: ids are matched inside this one entity
+        type's live field set.
+
+        The field NAME is the write-layer bridge: the LLM answers with the
+        prompt's property key and ``_create_suggestions`` resolves that key
+        against LIVE field names. A field renamed live (same id) therefore
+        carries the LIVE name into the prompt — otherwise the write would
+        silently drop the extracted value — while the semantic prompt
+        content (label, description, llm_description) stays pinned.
+        """
+        live = await self._entity_types.get_with_fields(entity_type.id)
+        if live is None:
+            return None
+        live_by_id = {f.id: f for f in (live.fields or [])}
+        result: list[Any] = []
+        for field in entity_type.fields:
+            live_field = live_by_id.get(field.id)
+            if live_field is None:
+                continue
+            if field.name != live_field.name:
+                field = field.model_copy(update={"name": live_field.name})
+            result.append(field)
+        return result
 
     async def _find_instance_for_entity_type(
         self,
@@ -884,7 +927,7 @@ class SectionExtractionService(LoggerMixin):
             # 2. Fetch child entity types
             phase_start = perf_counter()
             child_types = await self._get_child_entity_types(
-                template_id=template_id,
+                run=run,
                 parent_instance_id=parent_instance_id,
                 section_ids=section_ids,
             )
@@ -1054,6 +1097,13 @@ class SectionExtractionService(LoggerMixin):
         """
         section_phase_durations_ms: dict[str, float] = {}
 
+        # Same coherence contract as the sibling paths: fields sent to the
+        # LLM are snapshot ∩ live; a section deleted live is skipped before
+        # burning an LLM call on values the write layer could not resolve.
+        pinned_fields = await self._live_field_intersection(entity_type)
+        if pinned_fields is None:
+            return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
+
         # Run extraction with memory context
         phase_start = perf_counter()
         extracted_data, llm_usage = await self._extract_with_llm(
@@ -1061,6 +1111,7 @@ class SectionExtractionService(LoggerMixin):
             entity_type=entity_type,
             model=model,
             memory_context=memory_history,
+            fields_override=pinned_fields,
             general_instructions=general_instructions,
         )
         section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
@@ -1148,18 +1199,21 @@ class SectionExtractionService(LoggerMixin):
 
     async def _get_child_entity_types(
         self,
-        template_id: UUID,  # noqa: ARG002
+        run: ExtractionRun,
         parent_instance_id: UUID,
         section_ids: list[UUID] | None = None,
     ) -> list[Any]:
         """
-        Fetch child entity types based on the parent instance's entity_type.
+        Child entity types of the parent instance's entity_type, from the
+        run-PINNED snapshot (B-2).
 
-        parent_instance_id points to an instance (e.g. a model).
-        We need to fetch that instance's entity_type_id and then
-        fetch the entity types that have this entity_type as parent.
+        The parent INSTANCE is runtime data and stays a live read; the
+        children STRUCTURE comes from the pinned tree, so a child section
+        added live is invisible until publish re-pins the run. Field-level
+        coherence is enforced at the write layer (``_create_suggestions``
+        resolves field names against live rows).
         """
-        # 1. Fetch parent instance to get its entity_type_id
+        # 1. Fetch parent instance (runtime data — live) to get its entity_type_id
         parent_instance = await self._instances.get_by_id(parent_instance_id)
 
         if not parent_instance:
@@ -1170,19 +1224,19 @@ class SectionExtractionService(LoggerMixin):
             )
             return []
 
-        parent_entity_type_id = str(parent_instance.entity_type_id)
+        parent_entity_type_id = parent_instance.entity_type_id
 
-        # 2. Fetch child entity types of this parent_entity_type
-        child_entity_types = await self._entity_types.get_children(
-            parent_entity_type_id=parent_entity_type_id,
-            cardinality=None,  # Fetch all, not just 'one'
-        )
+        # 2. Children of this parent in the PINNED tree
+        pinned_tree = await self._pinned_entity_types(run)
+        child_entity_types = [
+            et for et in pinned_tree if et.parent_entity_type_id == parent_entity_type_id
+        ]
 
         if not child_entity_types:
             self.logger.info(
                 "no_child_entity_types_found",
                 trace_id=self.trace_id,
-                parent_entity_type_id=parent_entity_type_id,
+                parent_entity_type_id=str(parent_entity_type_id),
             )
             return []
 
@@ -1194,7 +1248,7 @@ class SectionExtractionService(LoggerMixin):
             "child_entity_types_found",
             trace_id=self.trace_id,
             count=len(child_entity_types),
-            parent_entity_type_id=parent_entity_type_id,
+            parent_entity_type_id=str(parent_entity_type_id),
         )
 
         return child_entity_types

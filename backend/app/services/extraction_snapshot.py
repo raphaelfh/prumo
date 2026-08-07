@@ -25,8 +25,13 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.models.extraction import ExtractionEntityType
+from app.models.extraction_versioning import ExtractionTemplateVersion
+from app.schemas.extraction_run import RunViewEntityType
 
 # WARNING: migration 0026_widen_template_snapshot embeds a copy of this
 # key set for its one-time backfill. If you add a key here, update that
@@ -129,3 +134,78 @@ async def build_template_version_snapshot(
     if instruction:
         snapshot["llm_template_instruction"] = instruction
     return snapshot
+
+
+def snapshot_is_narrow(entity_types: list[dict[str, Any]]) -> bool:
+    """Detect snapshots the run view / prompts cannot trust structurally.
+
+    Narrow = empty, ANY element lacking ``role``, or ANY field lacking a
+    wide-builder key. Three eras motivate the three probes:
+
+    - pre-0017: no ``role`` at all;
+    - 0017-patched pre-0016 rows and 0016→0026-era clone snapshots:
+      ``role`` present (0017 injected it in place) but the FIELD objects
+      predate the wide builder — migration 0026's backfill keys on the
+      role probe and skips exactly these, so ``model_validate`` would
+      serve them with ``llm_description``/``allow_other`` silently
+      defaulted where the pre-B-2 code read live rows;
+    - heterogeneous mixes of the above.
+
+    Per-element, per-field: one narrow member chains the whole tree to
+    the live fallback. Empty is narrow so the fallback repopulates it —
+    which is also what keeps an empty pinned snapshot from turning AI
+    extraction into a green no-op run.
+    """
+    if not entity_types:
+        return True
+    for et in entity_types:
+        if "role" not in et:
+            return True
+        for field in et.get("fields") or []:
+            if "llm_description" not in field or "allow_other" not in field:
+                return True
+    return False
+
+
+async def entity_types_for_version(
+    db: AsyncSession, *, version_id: UUID, template_id: UUID
+) -> list[RunViewEntityType]:
+    """The frozen entity-types tree a run is pinned to (spec §1.1).
+
+    THE shared provider for every snapshot-structure consumer — the run
+    view and both AI prompt services — so the fallback chain lives in one
+    place: pinned snapshot → live rows when the snapshot is narrow, empty,
+    heterogeneous, or the version row is missing. Both paths produce the
+    same shape via ``model_validate`` (``RunViewEntityType`` /
+    ``RunViewField`` carry ``from_attributes=True``), and ids round-trip
+    as ``UUID`` — consumers match them against DB-sourced ids, where a
+    ``str`` would silently never hit.
+    """
+    version = await db.get(ExtractionTemplateVersion, version_id)
+    snapshot_types: list[dict[str, Any]] = (
+        (version.schema_ or {}).get("entity_types", []) if version else []
+    )
+    if not snapshot_is_narrow(snapshot_types):
+        return [RunViewEntityType.model_validate(et) for et in snapshot_types]
+
+    # Live fallback — one statement, fields eager-loaded (selectinload).
+    # The relationship is not guaranteed field-ordered, so sort the
+    # validated fields by sort_order to match the snapshot path.
+    et_rows = (
+        (
+            await db.execute(
+                select(ExtractionEntityType)
+                .where(ExtractionEntityType.project_template_id == template_id)
+                .options(selectinload(ExtractionEntityType.fields))
+                .order_by(ExtractionEntityType.sort_order)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    result: list[RunViewEntityType] = []
+    for et in et_rows:
+        view_et = RunViewEntityType.model_validate(et)
+        view_et.fields.sort(key=lambda f: f.sort_order)
+        result.append(view_et)
+    return result

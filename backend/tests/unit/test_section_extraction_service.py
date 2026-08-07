@@ -109,6 +109,12 @@ def service(mock_db, mock_storage):
         svc._runs = mock_run_repo_instance
         svc._lifecycle = mock_lifecycle_instance
 
+        # B-2: the run-pinned snapshot provider is a service seam now. Default
+        # to an empty pinned tree so ``extract_section`` routes through the
+        # live-lookup fallback (the read the pre-B-2 assertions encode); tests
+        # that exercise the pinned branch override this per test.
+        svc._pinned_entity_types = AsyncMock(return_value=[])
+
         return svc
 
 
@@ -152,28 +158,33 @@ class TestSectionExtractionEntityTypes:
     @pytest.mark.asyncio
     async def test_get_child_entity_types(self, service):
         """Test fetch of child entity types."""
-        template_id = uuid4()
         parent_instance_id = uuid4()
         parent_entity_type_id = uuid4()
+
+        run = MagicMock()
+        run.version_id = uuid4()
+        run.template_id = uuid4()
 
         # Mock parent instance
         mock_parent = MagicMock()
         mock_parent.entity_type_id = parent_entity_type_id
         service._instances.get_by_id = AsyncMock(return_value=mock_parent)
 
-        # Mock child entity types
+        # B-2: children come from the run-pinned tree, filtered by parent id.
         mock_child1 = MagicMock()
         mock_child1.id = uuid4()
         mock_child1.name = "Section 1"
+        mock_child1.parent_entity_type_id = parent_entity_type_id
 
         mock_child2 = MagicMock()
         mock_child2.id = uuid4()
         mock_child2.name = "Section 2"
+        mock_child2.parent_entity_type_id = parent_entity_type_id
 
-        service._entity_types.get_children = AsyncMock(return_value=[mock_child1, mock_child2])
+        service._pinned_entity_types = AsyncMock(return_value=[mock_child1, mock_child2])
 
         result = await service._get_child_entity_types(
-            template_id=template_id,
+            run=run,
             parent_instance_id=parent_instance_id,
         )
 
@@ -213,8 +224,12 @@ class TestSectionExtractionFullFlow:
         mock_entity.id = entity_type_id
         mock_entity.name = "Test Entity"
         mock_entity.description = "Test description"
+        mock_entity.parent_entity_type_id = None
         mock_entity.fields = [mock_field]
         service._entity_types.get_with_fields = AsyncMock(return_value=mock_entity)
+        # B-2: the entity type is served from the run-pinned tree; the live
+        # ``get_with_fields`` above only feeds the field-id intersection.
+        service._pinned_entity_types = AsyncMock(return_value=[mock_entity])
 
         # Mock run resolution — the standalone path goes through the
         # resolve-or-create gate (one-live-run invariant); created=True keeps
@@ -486,12 +501,14 @@ class TestExtractForRun:
 
         service._entity_types.get_with_fields = AsyncMock(side_effect=fake_get_with_fields)
 
-        # The top-level lookup goes through self.db.execute(select(...))
-        scalars = MagicMock()
-        scalars.all.return_value = top_level_entity_types
+        # B-2: the top-level set comes from the run-pinned tree seam.
+        service._pinned_entity_types = AsyncMock(return_value=top_level_entity_types)
+
+        # db.execute serves the human-proposal probe and the pinned
+        # general-instruction fetch (scalar_one_or_none -> None).
         execute_result = MagicMock()
-        execute_result.scalars.return_value = scalars
         execute_result.all.return_value = []  # for the human-proposal probe
+        execute_result.scalar_one_or_none.return_value = None
         service.db.execute = AsyncMock(return_value=execute_result)
 
         # Existing instance per entity_type
@@ -783,9 +800,13 @@ class TestExtractOneEntityTypeForRun:
         service._extract_with_llm = AsyncMock(side_effect=fake_llm)
         service._create_suggestions = AsyncMock(return_value=0)
 
+        # B-2: the passed-in entity type is the PINNED fake and carries the
+        # snapshot fields; ``_live_field_intersection`` intersects them with
+        # the live ids served by the ``get_with_fields`` mock above.
         et_summary = MagicMock()
         et_summary.id = full_et.id
         et_summary.name = full_et.name
+        et_summary.fields = [f_keep, f_skip]
 
         await service._extract_one_entity_type_for_run(
             run=run,
@@ -823,9 +844,15 @@ class TestExtractOneEntityTypeForRun:
         )
         service._create_suggestions = AsyncMock(return_value=0)
 
+        # B-2: the pinned fake carries the snapshot fields.
+        et_summary = MagicMock()
+        et_summary.id = full_et.id
+        et_summary.name = "x"
+        et_summary.fields = [f1, f2]
+
         result = await service._extract_one_entity_type_for_run(
             run=run,
-            entity_type=MagicMock(id=full_et.id, name="x"),
+            entity_type=et_summary,
             pdf_text="text",
             framework=None,
             kind="extraction",
@@ -867,9 +894,15 @@ class TestExtractOneEntityTypeForRun:
         )
         service._create_suggestions = AsyncMock(return_value=0)
 
+        # B-2: the pinned fake carries the snapshot fields.
+        et_summary = MagicMock()
+        et_summary.id = full_et.id
+        et_summary.name = "x"
+        et_summary.fields = [f1]
+
         await service._extract_one_entity_type_for_run(
             run=run,
-            entity_type=MagicMock(id=full_et.id, name="x"),
+            entity_type=et_summary,
             pdf_text="text",
             framework=None,
             kind="extraction",
@@ -919,9 +952,15 @@ class TestExtractOneEntityTypeForRun:
         service._extract_with_llm = AsyncMock(side_effect=fake_llm)
         service._create_suggestions = AsyncMock(return_value=0)
 
+        # B-2: the pinned fake carries the snapshot fields.
+        et_summary = MagicMock()
+        et_summary.id = full_et.id
+        et_summary.name = "x"
+        et_summary.fields = [f_proposal, f_decision, f_open]
+
         await service._extract_one_entity_type_for_run(
             run=run,
-            entity_type=MagicMock(id=full_et.id, name="x"),
+            entity_type=et_summary,
             pdf_text="text",
             framework=None,
             kind="extraction",
@@ -931,7 +970,7 @@ class TestExtractOneEntityTypeForRun:
 
         # Only the untouched field is sent to the LLM, via the override ...
         assert captured["override"] == [f_open.id]
-        # ... while the ORM collection keeps all three fields (never mutated).
+        # ... while the pinned fields collection keeps all three (never mutated).
         assert captured["entity_fields"] == [f_proposal.id, f_decision.id, f_open.id]
 
 
@@ -1014,11 +1053,18 @@ class TestGenerateExtractionSummary:
 
 
 class TestGetChildEntityTypesEdgeCases:
+    @staticmethod
+    def _make_run():
+        run = MagicMock()
+        run.version_id = uuid4()
+        run.template_id = uuid4()
+        return run
+
     @pytest.mark.asyncio
     async def test_returns_empty_when_parent_instance_not_found(self, service):
         service._instances.get_by_id = AsyncMock(return_value=None)
         result = await service._get_child_entity_types(
-            template_id=uuid4(),
+            run=self._make_run(),
             parent_instance_id=uuid4(),
         )
         assert result == []
@@ -1028,9 +1074,9 @@ class TestGetChildEntityTypesEdgeCases:
         parent = MagicMock()
         parent.entity_type_id = uuid4()
         service._instances.get_by_id = AsyncMock(return_value=parent)
-        service._entity_types.get_children = AsyncMock(return_value=[])
+        service._pinned_entity_types = AsyncMock(return_value=[])
         result = await service._get_child_entity_types(
-            template_id=uuid4(),
+            run=self._make_run(),
             parent_instance_id=uuid4(),
         )
         assert result == []
@@ -1045,12 +1091,14 @@ class TestGetChildEntityTypesEdgeCases:
         id2 = uuid4()
         et1 = MagicMock()
         et1.id = id1
+        et1.parent_entity_type_id = parent.entity_type_id
         et2 = MagicMock()
         et2.id = id2
-        service._entity_types.get_children = AsyncMock(return_value=[et1, et2])
+        et2.parent_entity_type_id = parent.entity_type_id
+        service._pinned_entity_types = AsyncMock(return_value=[et1, et2])
 
         result = await service._get_child_entity_types(
-            template_id=uuid4(),
+            run=self._make_run(),
             parent_instance_id=uuid4(),
             section_ids=[id1],
         )
@@ -1732,7 +1780,6 @@ class TestExtractAllSections:
         self._minimal_lifecycle_wire(service, run)
 
         service._instances.get_by_id = AsyncMock(return_value=None)
-        service._entity_types.get_children = AsyncMock(return_value=[])
 
         result = await service.extract_all_sections(
             project_id=uuid4(),
@@ -1754,7 +1801,6 @@ class TestExtractAllSections:
         self._minimal_lifecycle_wire(service, run)
 
         service._instances.get_by_id = AsyncMock(return_value=None)
-        service._entity_types.get_children = AsyncMock(return_value=[])
         service._assemble_prompt_text = AsyncMock(return_value="pdf text")
 
         await service.extract_all_sections(
@@ -1777,7 +1823,6 @@ class TestExtractAllSections:
         self._minimal_lifecycle_wire(service, run)
 
         service._instances.get_by_id = AsyncMock(return_value=None)
-        service._entity_types.get_children = AsyncMock(return_value=[])
         service._assemble_prompt_text = AsyncMock(return_value="ignored")
         assert service._run_anchor_blocks == []  # empty stash at the start of the run
 
@@ -1805,11 +1850,14 @@ class TestExtractAllSections:
         child_ok.id = uuid4()
         child_ok.name = "Section OK"
         child_ok.label = "Section OK"
+        child_ok.parent_entity_type_id = parent.entity_type_id
         child_bad = MagicMock()
         child_bad.id = uuid4()
         child_bad.name = "Section A"
         child_bad.label = "Section A"
-        service._entity_types.get_children = AsyncMock(return_value=[child_ok, child_bad])
+        child_bad.parent_entity_type_id = parent.entity_type_id
+        # B-2: children come from the run-pinned tree seam.
+        service._pinned_entity_types = AsyncMock(return_value=[child_ok, child_bad])
 
         # First section succeeds, second raises — a partial-failure batch
         # completes (the all-failed guard does not fire) and records the failure.
@@ -1846,8 +1894,10 @@ class TestExtractAllSections:
         child1.id = uuid4()
         child1.name = "Sec1"
         child1.label = "Section 1"
+        child1.parent_entity_type_id = parent.entity_type_id
 
-        service._entity_types.get_children = AsyncMock(return_value=[child1])
+        # B-2: children come from the run-pinned tree seam.
+        service._pinned_entity_types = AsyncMock(return_value=[child1])
         service._extract_section_with_memory = AsyncMock(
             return_value={
                 "suggestions_created": 2,
@@ -1912,18 +1962,22 @@ class TestExtractAllSections:
         child1.id = uuid4()
         child1.name = "Section A"
         child1.label = "Section A"
+        child1.parent_entity_type_id = parent.entity_type_id
 
         child2 = MagicMock()
         child2.id = uuid4()
         child2.name = "Section B"
         child2.label = "Section B"
+        child2.parent_entity_type_id = parent.entity_type_id
 
         child3 = MagicMock()
         child3.id = uuid4()
         child3.name = "Section C"
         child3.label = "Section C"
+        child3.parent_entity_type_id = parent.entity_type_id
 
-        service._entity_types.get_children = AsyncMock(return_value=[child1, child2, child3])
+        # B-2: children come from the run-pinned tree seam.
+        service._pinned_entity_types = AsyncMock(return_value=[child1, child2, child3])
 
         # Wire _extract_section_with_memory: section 2 (child2) raises LLM error;
         # sections 1 and 3 succeed. Sections share THE batch run (no per-section
@@ -1989,7 +2043,9 @@ class TestExtractAllSections:
         child.id = uuid4()
         child.name = "Section A"
         child.label = "Section A"
-        service._entity_types.get_children = AsyncMock(return_value=[child])
+        child.parent_entity_type_id = parent.entity_type_id
+        # B-2: children come from the run-pinned tree seam.
+        service._pinned_entity_types = AsyncMock(return_value=[child])
 
         service._extract_with_llm = AsyncMock(
             side_effect=UnexpectedModelBehavior("reask budget exhausted")
@@ -2049,14 +2105,17 @@ class TestExtractForRunErrorPath:
         good_et = MagicMock()
         good_et.id = uuid4()
         good_et.name = "GoodSection"
+        good_et.parent_entity_type_id = None
         bad_et = MagicMock()
         bad_et.id = uuid4()
         bad_et.name = "BadSection"
+        bad_et.parent_entity_type_id = None
 
-        scalars = MagicMock()
-        scalars.all.return_value = [good_et, bad_et]
+        # B-2: the top-level set comes from the run-pinned tree seam;
+        # db.execute serves the pinned general-instruction fetch.
+        service._pinned_entity_types = AsyncMock(return_value=[good_et, bad_et])
         execute_result = MagicMock()
-        execute_result.scalars.return_value = scalars
+        execute_result.scalar_one_or_none.return_value = None
         service.db.execute = AsyncMock(return_value=execute_result)
 
         # One entity succeeds, one raises — a partial-failure batch completes

@@ -41,8 +41,9 @@ async def test_extract_for_run_raises_when_all_sections_fail():
     )
     # Mock _assemble_prompt_text to bypass build_prompt_input (PDF/storage not needed).
     svc._assemble_prompt_text = AsyncMock(return_value="text")
-    entity_type = SimpleNamespace(id="e1", name="Sec")
-    svc._top_level_entity_types_for_template = AsyncMock(return_value=[entity_type])
+    # B-2: the top-level set comes from the run-pinned tree seam.
+    entity_type = SimpleNamespace(id="e1", name="Sec", parent_entity_type_id=None)
+    svc._pinned_entity_types = AsyncMock(return_value=[entity_type])
     # Every entity-type extraction fails -> successful == 0.
     svc._extract_one_entity_type_for_run = AsyncMock(side_effect=RuntimeError("llm down"))
 
