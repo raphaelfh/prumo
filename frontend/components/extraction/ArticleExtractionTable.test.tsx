@@ -46,9 +46,16 @@ vi.mock('@/services/authService', () => ({
 }));
 
 // Keep entity-types "loading" so the component stays in its skeleton branch:
-// the load effect still runs, we just avoid rendering the full table.
-vi.mock('@/hooks/extraction/useTemplateEntityTypes', () => ({
-  useTemplateEntityTypes: () => ({ entityTypes: [], isLoading: true }),
+// the load effect still runs, we just avoid rendering the full table. The
+// mock also keeps the import chain away from the supabase client, which
+// crashes in CI where no VITE_SUPABASE_URL env exists.
+vi.mock('@/hooks/extraction/useActiveTemplateStructure', () => ({
+  useActiveTemplateStructure: () => ({
+    entityTypes: [],
+    isLoading: true,
+    isError: false,
+    error: null,
+  }),
 }));
 
 vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({

@@ -1,13 +1,16 @@
 """Snapshot section reader for the publication-ready xlsx export (spec §5.1).
 
-Reads the frozen per-Run / per-version template snapshot
-(``extraction_template_versions.schema_["entity_types"]``) and returns
+Reads the frozen per-Run / per-version template snapshot and returns
 ordered ``SnapshotSection`` descriptors carrying role + cardinality +
 parent + full field metadata. This is the column-layout *anchor* and the
-per-Run obsolete-field diff source. It mirrors
-``extraction_run_read_service._entity_types_for_run``: validate the frozen
-snapshot via ``RunViewEntityType``/``RunViewField``; fall back to the live
-tables only for a pre-0026 *narrow* snapshot.
+per-Run obsolete-field diff source.
+
+The tree itself comes from the SHARED provider
+(``extraction_snapshot.entity_types_for_version``, B-2/B-3a) — one
+narrowness probe and one snapshot -> live fallback chain for every
+consumer. This module only projects ``RunViewEntityType`` into the
+export-specific frozen dataclasses (enum coercion +
+``allowed_values`` normalization).
 
 Layer-legal: ``services`` reading via the injected ``AsyncSession``; no
 HTTP/storage/network types cross the boundary.
@@ -19,17 +22,15 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityType,
     ExtractionFieldType,
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.schemas.extraction_run import RunViewEntityType, RunViewField
+from app.services.extraction_snapshot import entity_types_for_version
 
 
 @dataclass(frozen=True)
@@ -66,29 +67,25 @@ class SnapshotSection:
     description: str | None = None
 
 
-def _snapshot_is_narrow(entity_types: list[dict[str, Any]]) -> bool:
-    """A pre-0026 snapshot lacks 'role' on its first entity_type (mirrors the
-    run-read service). Empty trees are treated as narrow so the live fallback
-    repopulates them."""
-    return not entity_types or "role" not in entity_types[0]
-
-
 async def load_export_sections(
     db: AsyncSession,
     *,
     version_id: UUID,
 ) -> tuple[SnapshotSection, ...]:
     """Read the frozen entity_types tree for a version snapshot, ordered by
-    ``sort_order``. Returns ``()`` only when the version row itself is missing;
-    an empty or pre-0026 *narrow* tree falls through to the live tables, exactly
-    like the canonical ``_entity_types_for_run`` it mirrors."""
+    ``sort_order``, via the shared provider (its per-field narrowness probe
+    replaced this module's stale first-element/role-only copy, which
+    accepted 0016->0026-era snapshots and silently defaulted
+    ``llm_description``/``allow_other`` in exports). Returns ``()`` only
+    when the version row itself is missing (unreachable for FK-sourced
+    ids — defensive)."""
     version = await db.get(ExtractionTemplateVersion, version_id)
     if version is None:
         return ()
-    snapshot_types: list[dict[str, Any]] = (version.schema_ or {}).get("entity_types", [])
-    if _snapshot_is_narrow(snapshot_types):
-        return await _load_live_sections(db, version.project_template_id)
-    return tuple(_section_from_view(RunViewEntityType.model_validate(et)) for et in snapshot_types)
+    views = await entity_types_for_version(
+        db, version_id=version_id, template_id=version.project_template_id
+    )
+    return tuple(_section_from_view(view) for view in views)
 
 
 def _section_from_view(view: RunViewEntityType) -> SnapshotSection:
@@ -141,27 +138,3 @@ def _normalize_allowed_values(raw: Any) -> tuple[AllowedValue, ...]:
         elif isinstance(item, str):
             out.append(AllowedValue(value=item, label=item))
     return tuple(out)
-
-
-async def _load_live_sections(
-    db: AsyncSession,
-    project_template_id: UUID,
-) -> tuple[SnapshotSection, ...]:
-    """Live-table fallback for pre-0026 narrow snapshots (belt-and-suspenders).
-
-    One statement, fields eager-loaded; validated through the same
-    ``RunViewEntityType`` path so both branches produce the same shape.
-    """
-    et_rows = (
-        (
-            await db.execute(
-                select(ExtractionEntityType)
-                .where(ExtractionEntityType.project_template_id == project_template_id)
-                .options(selectinload(ExtractionEntityType.fields))
-                .order_by(ExtractionEntityType.sort_order)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    return tuple(_section_from_view(RunViewEntityType.model_validate(et)) for et in et_rows)

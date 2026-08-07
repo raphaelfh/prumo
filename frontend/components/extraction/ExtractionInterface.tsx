@@ -19,7 +19,7 @@ import {
 } from '@/hooks/hitl/useHITLProjectTemplates';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {useArticleExtractionValues} from '@/hooks/extraction/useArticleExtractionValues';
-import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
+import {useActiveTemplateStructure} from '@/hooks/extraction/useActiveTemplateStructure';
 import {computeRowProgress} from '@/lib/extraction/progress';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
@@ -29,7 +29,10 @@ import {useAuth} from '@/contexts/AuthContext';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
 import {loadProjectArticles} from '@/services/articlesService';
 import {runsKeys} from '@/hooks/runs/types';
-import {templateEntityTypesKeys} from '@/lib/query-keys/extraction';
+import {
+  templateActiveStructureKeys,
+  templateEntityTypesKeys,
+} from '@/lib/query-keys/extraction';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 
@@ -62,7 +65,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     activeTemplate?.id,
     user?.id,
   );
-  const { entityTypes } = useTemplateEntityTypes(activeTemplate?.id);
+  // ACTIVE snapshot (B-3a). Loading/error must render a placeholder, never
+  // stats computed from an empty tree (reads as inflated completeness).
+  const {
+    entityTypes,
+    isLoading: structureLoading,
+    isError: structureError,
+  } = useActiveTemplateStructure(projectId, activeTemplate?.id);
 
   const extractionStats = (() => {
     const totalArticles = articles.length;
@@ -211,7 +220,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
 
     // Render Dashboard tab
-  const renderDashboard = () => (
+  const renderDashboard = () => {
+    // Same gate as the worklist tables: while the active-version structure
+    // is loading — or errored — show a placeholder, never numbers from [].
+    if (activeTemplate && (structureLoading || structureError)) {
+      return <Skeleton data-testid="dashboard-skeleton" className="h-48 w-full rounded-md border" />;
+    }
+    return (
       <div className="space-y-4">
           {/* Dense stat strip — one bordered row of figures (replaces the
               three oversized single-number cards). */}
@@ -295,8 +310,9 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           </CardContent>
         </Card>
       )}
-    </div>
-  );
+      </div>
+    );
+  };
 
     // Render tab content (only when not loading templates)
   const renderTabContent = () => {
@@ -553,6 +569,8 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             // live-structure and run-view caches must not keep serving the
             // pre-import shape.
             void queryClient.invalidateQueries({queryKey: templateEntityTypesKeys.all});
+            // Import republishes server-side: the ACTIVE snapshot moved too.
+            void queryClient.invalidateQueries({queryKey: templateActiveStructureKeys.all});
             void queryClient.invalidateQueries({queryKey: runsKeys.all});
             // Refresh templates without reloading the page
           const updatedTemplates = await refreshTemplates() || [];
