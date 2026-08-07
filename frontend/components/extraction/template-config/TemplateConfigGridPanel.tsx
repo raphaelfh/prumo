@@ -87,7 +87,11 @@ export function TemplateConfigGridPanel({
   onAddSection,
 }: TemplateConfigGridPanelProps) {
   const [fields, setFields] = useState<ExtractionField[]>([]);
-  const [loadingFields, setLoadingFields] = useState(true);
+  // Skeleton only until the first successful load. A refresh (after a
+  // dialog save) keeps the current rows on screen instead of flashing —
+  // and, more importantly, keeps this component mounted so selection,
+  // search and collapse state survive.
+  const [fieldsLoaded, setFieldsLoaded] = useState(false);
   const [selection, setSelection] = useState<TemplateGridSelection | null>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState('');
@@ -103,10 +107,9 @@ export function TemplateConfigGridPanel({
     // TemplateConfigEditor already uses for its own loader).
     queueMicrotask(() => {
       if (cancelled) return;
-      setLoadingFields(true);
       if (ids.length === 0) {
         setFields([]);
-        setLoadingFields(false);
+        setFieldsLoaded(true);
         return;
       }
       // One request per section through the existing service. B-7 replaces
@@ -119,7 +122,7 @@ export function TemplateConfigGridPanel({
           if (result.ok) loaded.push(...result.data);
         }
         setFields(loaded);
-        setLoadingFields(false);
+        setFieldsLoaded(true);
       });
     });
     return () => {
@@ -159,7 +162,7 @@ export function TemplateConfigGridPanel({
     setSelection(null);
   };
 
-  if (loadingFields) {
+  if (!fieldsLoaded) {
     return <Skeleton className="h-72 w-full rounded-md border" />;
   }
 

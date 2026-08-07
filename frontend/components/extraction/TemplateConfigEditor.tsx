@@ -33,7 +33,11 @@ interface TemplateConfigEditorProps {
 
 export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEditorProps) {
   const [entityTypes, setEntityTypes] = useState<ExtractionEntityType[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Only the FIRST load blanks the screen. Later refreshes (after a dialog
+  // save, a rename, a section add) must keep the grid mounted — unmounting
+  // it throws away the panel's view state: selection, search query,
+  // collapsed sections and column toggles.
+  const [initialLoading, setInitialLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
   const [showAddSectionDialog, setShowAddSectionDialog] = useState(false);
@@ -51,7 +55,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   const { republish } = useTemplateRepublish(projectId, templateId);
 
   const loadEntityTypes = async () => {
-    setLoading(true);
 
     console.warn('📦 Carregando entity types do template:', templateId);
 
@@ -60,13 +63,13 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     if (!result.ok) {
       console.error('❌ Erro ao carregar entity types:', result.error);
       toast.error(`${t('common', 'error')}: ${result.error.message}`);
-      setLoading(false);
+      setInitialLoading(false);
       return;
     }
 
     console.warn(`✅ Entity types encontrados: ${result.data.length}`);
     setEntityTypes(result.data as unknown as ExtractionEntityType[]);
-    setLoading(false);
+    setInitialLoading(false);
   };
 
   useEffect(() => {
@@ -122,7 +125,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     }
   });
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <div className="flex items-center justify-center p-12">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -233,17 +236,8 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         </Card>
       )}
 
-        {/* Add section — ghost row (replaces the full-width Card). */}
-      {entityTypes.length > 0 && (
-        <Button
-          variant="ghost"
-          onClick={() => setShowAddSectionDialog(true)}
-          className="h-10 w-full justify-center border border-dashed border-border/50 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          {t('extraction', 'addNewSection')}
-        </Button>
-      )}
+        {/* Adding a section lives in the grid now: the rail footer and
+            the end-of-grid ghost row. A third button here was duplicate. */}
 
       {/* Dialogs */}
       <AddSectionDialog
