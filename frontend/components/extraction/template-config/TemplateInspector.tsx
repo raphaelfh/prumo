@@ -105,6 +105,9 @@ export function TemplateInspector({
         <Label>{t('extraction', 'inspectorTypeLabel')}</Label>
         <ReadOnlyValue>
           <span className="capitalize">{field.fieldType}</span>
+          {field.unit && (
+            <span className="ml-1.5 text-muted-foreground">· {field.unit}</span>
+          )}
         </ReadOnlyValue>
 
         <Label>{t('extraction', 'inspectorRequiredLabel')}</Label>

@@ -48,6 +48,7 @@ export interface TemplateFieldInput {
   field_type: string;
   is_required?: boolean;
   allowed_values?: string[] | null;
+  unit?: string | null;
   llm_description?: string | null;
   sort_order?: number;
 }
@@ -64,6 +65,7 @@ export interface GridField {
   hasAiInstruction: boolean;
   allowedValues: string[] | null;
   optionCount: number;
+  unit: string | null;
   /** Set only while a search filter is active. */
   matchHint?: TemplateMatchHint;
 }
@@ -80,7 +82,7 @@ export interface GridSection {
   children: GridSection[];
   /** Fields owned directly by this section. */
   fieldCount: number;
-  /** Own fields plus every descendant's — what the rail counts. */
+  /** Own fields plus every descendant's — what the inspector shows for a group. */
   totalFieldCount: number;
 }
 
@@ -119,6 +121,7 @@ function toGridField(input: TemplateFieldInput): GridField {
     hasAiInstruction: aiInstruction !== null,
     allowedValues: options,
     optionCount: options?.length ?? 0,
+    unit: input.unit?.trim() ? input.unit : null,
   };
 }
 

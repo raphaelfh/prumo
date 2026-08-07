@@ -10,6 +10,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {Input} from '@/components/ui/input';
 import {Skeleton} from '@/components/ui/skeleton';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
+import {toast} from 'sonner';
+
 import {loadEntityTypeFields} from '@/services/extractionFieldService';
 import {t} from '@/lib/copy';
 import type {ExtractionField} from '@/types/extraction';
@@ -45,6 +48,7 @@ interface TemplateConfigGridPanelProps {
   refreshToken: number;
   /** Receives the RAW row, which is what the edit dialog needs. */
   onEditField: (field: ExtractionField) => void;
+  onDeleteField: (field: ExtractionField) => void;
   sectionActions: TemplateSectionActions;
   onAddSection: () => void;
 }
@@ -83,6 +87,7 @@ export function TemplateConfigGridPanel({
   entityTypes,
   refreshToken,
   onEditField,
+  onDeleteField,
   sectionActions,
   onAddSection,
 }: TemplateConfigGridPanelProps) {
@@ -118,9 +123,14 @@ export function TemplateConfigGridPanel({
       void Promise.all(ids.map((id) => loadEntityTypeFields(id))).then((results) => {
         if (cancelled) return;
         const loaded: ExtractionField[] = [];
+        let failures = 0;
         for (const result of results) {
           if (result.ok) loaded.push(...result.data);
+          else failures += 1;
         }
+        // A dropped read would otherwise render the section as legitimately
+        // empty — with a `0` count and an inviting "New field" ghost row.
+        if (failures > 0) toast.error(t('extraction', 'errors_loadFields'));
         setFields(loaded);
         setFieldsLoaded(true);
       });
@@ -148,10 +158,10 @@ export function TemplateConfigGridPanel({
     ? findSection(tree, selectedField.entityTypeId)
     : null;
 
-  // The grid speaks in projections; the dialog needs the row it came from.
-  const editRawField = (gridField: GridField) => {
+  // The grid speaks in projections; the dialogs need the row they came from.
+  const withRawField = (handler: (raw: ExtractionField) => void) => (gridField: GridField) => {
     const raw = fields.find((f) => f.id === gridField.id);
-    if (raw) onEditField(raw);
+    if (raw) handler(raw);
   };
 
   const clearOrDeselect = () => {
@@ -209,17 +219,22 @@ export function TemplateConfigGridPanel({
         <span className="flex-1" />
 
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8"
-              aria-label={t('extraction', 'gridDisplayMenu')}
-            >
-              <SlidersHorizontal className="size-3.5" aria-hidden />
-            </Button>
-          </DropdownMenuTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8"
+                  aria-label={t('extraction', 'gridDisplayMenu')}
+                >
+                  <SlidersHorizontal className="size-3.5" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>{t('extraction', 'gridDisplayMenu')}</TooltipContent>
+          </Tooltip>
           <DropdownMenuContent align="end">
             <DropdownMenuCheckboxItem
               checked={showKeyColumn}
@@ -237,27 +252,33 @@ export function TemplateConfigGridPanel({
         </DropdownMenu>
       </div>
 
-      <div className="flex max-h-[70vh] items-stretch">
-        <TemplateOutlineRail
-          sections={tree}
-          visibleSectionIds={visibleSectionIds}
-          selectedSectionId={selection?.kind === 'section' ? selection.id : null}
-          onSelectSection={(sectionId) => setSelection({kind: 'section', id: sectionId})}
-          onAddSection={onAddSection}
-          isFiltering={filtered.isFiltering}
-        />
+      <div className="@container/grid flex max-h-[70vh] items-stretch">
+        <div className="hidden @[52rem]/grid:contents">
+          <TemplateOutlineRail
+            sections={tree}
+            visibleSectionIds={visibleSectionIds}
+            selectedSectionId={selection?.kind === 'section' ? selection.id : null}
+            onSelectSection={(sectionId) => setSelection({kind: 'section', id: sectionId})}
+            onAddSection={onAddSection}
+            isFiltering={filtered.isFiltering}
+          />
+        </div>
 
         <div className="min-w-0 flex-1 overflow-auto">
           {filtered.sections.length === 0 ? (
             <p className="p-6 text-center text-xs text-muted-foreground">
-              {t('extraction', 'gridNoMatches')}
+              {t(
+                'extraction',
+                filtered.isFiltering ? 'gridNoMatches' : 'gridEmptyTemplate',
+              )}
             </p>
           ) : (
             <TemplateGrid
               sections={filtered.sections}
               selection={selection}
               onSelect={setSelection}
-              onEditField={editRawField}
+              onEditField={withRawField(onEditField)}
+              onDeleteField={withRawField(onDeleteField)}
               sectionActions={sectionActions}
               onAddSection={onAddSection}
               collapsed={collapsed}
@@ -274,12 +295,14 @@ export function TemplateConfigGridPanel({
           )}
         </div>
 
-        <TemplateInspector
-          field={selectedField}
-          section={selectedSection}
-          owningSection={owningSection}
-          onEditField={editRawField}
-        />
+        <div className="hidden @[40rem]/grid:contents">
+          <TemplateInspector
+            field={selectedField}
+            section={selectedSection}
+            owningSection={owningSection}
+            onEditField={withRawField(onEditField)}
+          />
+        </div>
       </div>
     </div>
   );

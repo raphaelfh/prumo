@@ -46,7 +46,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   const [showImportDialog, setShowImportDialog] = useState(false);
   // Grid editing bridge (B-1): the grid selects, the existing dialogs edit.
   const [fieldDialog, setFieldDialog] = useState<{
-    mode: 'add' | 'edit';
+    mode: 'add' | 'edit' | 'delete';
     entityTypeId: string;
     sectionName: string;
     field: ExtractionField | null;
@@ -201,6 +201,15 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
               field: null,
             });
           },
+        }}
+        onDeleteField={(field) => {
+          const section = entityTypes.find((et) => et.id === field.entity_type_id);
+          setFieldDialog({
+            mode: 'delete',
+            entityTypeId: field.entity_type_id,
+            sectionName: section?.label ?? '',
+            field,
+          });
         }}
         onAddSection={() => setShowAddSectionDialog(true)}
       />
