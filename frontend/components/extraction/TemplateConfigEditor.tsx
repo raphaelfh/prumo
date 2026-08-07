@@ -12,17 +12,16 @@ import {
   loadTemplateEntityTypes,
   updateEntityTypeLabel,
 } from '@/services/templateService';
-import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
+import {Card, CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
-import {Input} from '@/components/ui/input';
-import {Accordion, AccordionContent, AccordionItem, AccordionTrigger,} from '@/components/ui/accordion';
-import {ChevronRight, Download, Edit2, Loader2, Plus, Save, Settings, Trash2, X} from 'lucide-react';
+import {Download, Loader2, Plus, Settings} from 'lucide-react';
 import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructionRow';
+import {TemplateConfigGridPanel} from '@/components/extraction/template-config/TemplateConfigGridPanel';
+import {TemplateFieldDialogs} from '@/components/extraction/template-config/TemplateFieldDialogs';
+import type {ExtractionField} from '@/types/extraction';
 import {toast} from 'sonner';
-import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
-import {FieldsManager} from './FieldsManager';
 import {AddSectionDialog, ImportTemplateDialog, RemoveSectionDialog} from './dialogs';
 import {ExtractionEntityType} from '@/types/extraction';
 import {useTemplateRepublish} from '@/hooks/extraction/useTemplateRepublish';
@@ -41,6 +40,14 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   const [removingSectionId, setRemovingSectionId] = useState<string | null>(null);
   const [removingSectionName, setRemovingSectionName] = useState('');
   const [showImportDialog, setShowImportDialog] = useState(false);
+  // Grid editing bridge (B-1): the grid selects, the existing dialogs edit.
+  const [fieldDialog, setFieldDialog] = useState<{
+    mode: 'add' | 'edit';
+    entityTypeId: string;
+    sectionName: string;
+    field: ExtractionField | null;
+  } | null>(null);
+  const [gridRefreshToken, setGridRefreshToken] = useState(0);
   const { republish } = useTemplateRepublish(projectId, templateId);
 
   const loadEntityTypes = async () => {
@@ -69,11 +76,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     }
   }, [projectId, templateId]);
 
-  const handleStartEdit = (entityType: ExtractionEntityType) => {
-    setEditingId(entityType.id);
-    setEditLabel(entityType.label);
-  };
-
   const handleSaveEdit = async (entityTypeId: string) => {
     const result = await updateEntityTypeLabel(entityTypeId, editLabel);
     if (!result.ok) {
@@ -90,11 +92,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   const handleCancelEdit = () => {
     setEditingId(null);
     setEditLabel('');
-  };
-
-  const handleRemoveSection = (entityType: ExtractionEntityType) => {
-    setRemovingSectionId(entityType.id);
-    setRemovingSectionName(entityType.label);
   };
 
   const handleSectionAdded = () => {
@@ -166,161 +163,44 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
 
       <TemplateInstructionRow projectId={projectId} templateId={templateId} />
 
-      <Accordion type="single" collapsible className="space-y-2">
-        {rootEntityTypes.map((entityType) => {
-          const children = childrenByParent[entityType.id] || [];
-          const hasChildren = children.length > 0;
-          
-          return (
-            <AccordionItem key={entityType.id} value={entityType.id}>
-              <Card className={cn(hasChildren && "border-l-4 border-l-primary")}>
-                  <AccordionTrigger className="px-4 py-2 text-[13px] min-h-[44px] hover:no-underline">
-                  <div className="flex items-center justify-between w-full pr-4">
-                    <div className="flex items-center gap-3">
-                      <Badge variant="secondary" className="font-mono text-xs">
-                        {entityType.sort_order}
-                      </Badge>
-                      {editingId === entityType.id ? (
-                        <Input
-                          value={editLabel}
-                          onChange={(e) => setEditLabel(e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="max-w-xs"
-                          autoFocus
-                        />
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{entityType.label}</span>
-                          {hasChildren && (
-                            <Badge variant="secondary" className="text-xs">
-                                {(children.length === 1
-                                  ? t('extraction', 'configSubSectionsCountOne')
-                                  : t('extraction', 'configSubSectionsCountOther')
-                                ).replace('{{n}}', String(children.length))}
-                            </Badge>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">
-                          {(entityType as any).fieldsCount || 0} {t('extraction', 'fieldsCountLabel')}
-                      </Badge>
-                      <Badge variant="outline">
-                          {entityType.cardinality === 'one' ? t('extraction', 'cardinalityUnique') : t('extraction', 'cardinalityMultiple')}
-                      </Badge>
-                    </div>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent>
-                  <CardContent className="pt-4 space-y-4">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="text-sm text-muted-foreground min-w-0">
-                          <p><strong>{t('extraction', 'technicalName')}:</strong> {entityType.name}</p>
-                        <p className="mt-1">
-                            <strong>{t('extraction', 'typeLabel')}:</strong> {entityType.cardinality === 'one' ? t('extraction', 'sectionSingle') : t('extraction', 'sectionMultiple')}
-                        </p>
-                        {entityType.description && (
-                          <p className="mt-1">{entityType.description}</p>
-                        )}
-                      </div>
-                          <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                        {editingId === entityType.id ? (
-                          <>
-                            <Button
-                              size="sm"
-                              onClick={() => handleSaveEdit(entityType.id)}
-                              className="gap-1"
-                            >
-                              <Save className="h-4 w-4" />
-                                {t('common', 'save')}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={handleCancelEdit}
-                              className="gap-1"
-                            >
-                              <X className="h-4 w-4" />
-                                {t('common', 'cancel')}
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleStartEdit(entityType)}
-                              className="gap-1"
-                            >
-                              <Edit2 className="h-4 w-4" />
-                                {t('extraction', 'editLabelButton')}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleRemoveSection(entityType)}
-                              className="gap-1 text-destructive hover:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                                {t('extraction', 'removeButton')}
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Campos deste entity type */}
-                    <div className="border-t pt-4">
-                      <FieldsManager
-                        entityTypeId={entityType.id}
-                        sectionName={entityType.label}
-                        templateId={templateId}
-                      />
-                    </div>
-
-                      {/* Children of this entity type (sub-sections) */}
-                    {hasChildren && (
-                      <div className="border-t pt-4 mt-4">
-                        <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                          <ChevronRight className="h-4 w-4" />
-                            {t('extraction', 'subSections')} ({children.length})
-                        </h4>
-                        <div className="space-y-3 pl-4">
-                          {children.map((child) => (
-                            <Card key={child.id} className="bg-muted/40 border-border/40">
-                              <CardHeader className="pb-3">
-                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                  <div>
-                                    <CardTitle className="text-sm">{child.label}</CardTitle>
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                        {child.name} • {child.cardinality === 'many' ? t('extraction', 'cardinalityMultiple') : t('extraction', 'cardinalityUnique')}
-                                    </p>
-                                  </div>
-                                  <Badge variant="outline" className="text-xs">
-                                      {(child as any).fieldsCount || 0} {t('extraction', 'fieldsCountLabel')}
-                                  </Badge>
-                                </div>
-                              </CardHeader>
-                              <CardContent>
-                                <FieldsManager
-                                  entityTypeId={child.id}
-                                  sectionName={child.label}
-                                  templateId={templateId}
-                                />
-                              </CardContent>
-                            </Card>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </AccordionContent>
-              </Card>
-            </AccordionItem>
-          );
-        })}
-      </Accordion>
+      <TemplateConfigGridPanel
+        entityTypes={entityTypes}
+        refreshToken={gridRefreshToken}
+        onEditField={(field) => {
+          const section = entityTypes.find((et) => et.id === field.entity_type_id);
+          setFieldDialog({
+            mode: 'edit',
+            entityTypeId: field.entity_type_id,
+            sectionName: section?.label ?? '',
+            field,
+          });
+        }}
+        sectionActions={{
+          renamingId: editingId,
+          renameValue: editLabel,
+          onRenameValueChange: setEditLabel,
+          onStartRename: (section) => {
+            setEditingId(section.id);
+            setEditLabel(section.label);
+          },
+          onCommitRename: (sectionId) => void handleSaveEdit(sectionId),
+          onCancelRename: handleCancelEdit,
+          onDelete: (section) => {
+            setRemovingSectionId(section.id);
+            setRemovingSectionName(section.label);
+          },
+          onAddField: (sectionId) => {
+            const section = entityTypes.find((et) => et.id === sectionId);
+            setFieldDialog({
+              mode: 'add',
+              entityTypeId: sectionId,
+              sectionName: section?.label ?? '',
+              field: null,
+            });
+          },
+        }}
+        onAddSection={() => setShowAddSectionDialog(true)}
+      />
 
       {entityTypes.length === 0 && (
         <Card>
@@ -388,6 +268,22 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         }}
         onSectionRemoved={handleSectionRemoved}
       />
+
+      {fieldDialog && (
+        <TemplateFieldDialogs
+          mode={fieldDialog.mode}
+          entityTypeId={fieldDialog.entityTypeId}
+          sectionName={fieldDialog.sectionName}
+          projectId={projectId}
+          templateId={templateId}
+          field={fieldDialog.field}
+          onClose={() => {
+            setFieldDialog(null);
+            setGridRefreshToken((token) => token + 1);
+            void loadEntityTypes();
+          }}
+        />
+      )}
 
       <ImportTemplateDialog
         projectId={projectId}
