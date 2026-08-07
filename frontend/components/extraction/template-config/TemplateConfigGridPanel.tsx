@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState} from 'react';
+import {useMemo, useState} from 'react';
 import {Search, SlidersHorizontal, X} from 'lucide-react';
 
 import {Button} from '@/components/ui/button';
@@ -10,7 +10,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {Input} from '@/components/ui/input';
 import {Skeleton} from '@/components/ui/skeleton';
-import {loadEntityTypeFields} from '@/services/extractionFieldService';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
+import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
 import {t} from '@/lib/copy';
 import type {ExtractionField} from '@/types/extraction';
 
@@ -23,10 +24,11 @@ import {TemplateInspector} from './TemplateInspector';
 import {TemplateOutlineRail} from './TemplateOutlineRail';
 import {
   buildTemplateTree,
+  collectSectionIds,
   filterTemplateTree,
+  findField,
+  findSection,
   type GridField,
-  type GridSection,
-  type TemplateEntityTypeInput,
 } from './templateTree';
 
 /**
@@ -40,96 +42,36 @@ import {
  */
 
 interface TemplateConfigGridPanelProps {
-  entityTypes: TemplateEntityTypeInput[];
-  /** Bumped by the parent after any mutation, to re-read the fields. */
-  refreshToken: number;
+  templateId: string;
   /** Receives the RAW row, which is what the edit dialog needs. */
   onEditField: (field: ExtractionField) => void;
+  onDeleteField: (field: ExtractionField) => void;
   sectionActions: TemplateSectionActions;
   onAddSection: () => void;
 }
 
-function collectSectionIds(sections: GridSection[]): Set<string> {
-  const ids = new Set<string>();
-  for (const section of sections) {
-    ids.add(section.id);
-    for (const child of section.children) ids.add(child.id);
-  }
-  return ids;
-}
-
-function findField(sections: GridSection[], fieldId: string): GridField | null {
-  for (const section of sections) {
-    const own = section.fields.find((f) => f.id === fieldId);
-    if (own) return own;
-    for (const child of section.children) {
-      const nested = child.fields.find((f) => f.id === fieldId);
-      if (nested) return nested;
-    }
-  }
-  return null;
-}
-
-function findSection(sections: GridSection[], sectionId: string): GridSection | null {
-  for (const section of sections) {
-    if (section.id === sectionId) return section;
-    const child = section.children.find((c) => c.id === sectionId);
-    if (child) return child;
-  }
-  return null;
-}
-
 export function TemplateConfigGridPanel({
-  entityTypes,
-  refreshToken,
+  templateId,
   onEditField,
+  onDeleteField,
   sectionActions,
   onAddSection,
 }: TemplateConfigGridPanelProps) {
-  const [fields, setFields] = useState<ExtractionField[]>([]);
-  const [loadingFields, setLoadingFields] = useState(true);
+  // ONE request for the whole structure, TanStack-cached on the key
+  // `useTemplateRepublish` already invalidates after every config mutation —
+  // so the grid refreshes itself and needs no hand-rolled refresh protocol.
+  // `isLoading` is first-load-only, which keeps the rows (and the user's
+  // selection, search and collapse state) on screen during a refetch.
+  const {entityTypes, isLoading} = useTemplateEntityTypes(templateId);
   const [selection, setSelection] = useState<TemplateGridSelection | null>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState('');
   const [showKeyColumn, setShowKeyColumn] = useState(false);
   const [showOptionsColumn, setShowOptionsColumn] = useState(false);
 
-  const entityTypeIds = entityTypes.map((et) => et.id).join(',');
-
-  useEffect(() => {
-    let cancelled = false;
-    const ids = entityTypeIds ? entityTypeIds.split(',') : [];
-    // Microtask so the state writes land in an async callback (the pattern
-    // TemplateConfigEditor already uses for its own loader).
-    queueMicrotask(() => {
-      if (cancelled) return;
-      setLoadingFields(true);
-      if (ids.length === 0) {
-        setFields([]);
-        setLoadingFields(false);
-        return;
-      }
-      // One request per section through the existing service. B-7 replaces
-      // this with a single typed endpoint; a batched PostgREST read here
-      // would open a new direct data path the fitness gate cannot see.
-      void Promise.all(ids.map((id) => loadEntityTypeFields(id))).then((results) => {
-        if (cancelled) return;
-        const loaded: ExtractionField[] = [];
-        for (const result of results) {
-          if (result.ok) loaded.push(...result.data);
-        }
-        setFields(loaded);
-        setLoadingFields(false);
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [entityTypeIds, refreshToken]);
-
   const tree = useMemo(
-    () => buildTemplateTree(entityTypes, fields),
-    [entityTypes, fields],
+    () => buildTemplateTree(entityTypes, entityTypes.flatMap((et) => et.fields)),
+    [entityTypes],
   );
   const filtered = useMemo(() => filterTemplateTree(tree, query), [tree, query]);
   const visibleSectionIds = useMemo(
@@ -145,10 +87,12 @@ export function TemplateConfigGridPanel({
     ? findSection(tree, selectedField.entityTypeId)
     : null;
 
-  // The grid speaks in projections; the dialog needs the row it came from.
-  const editRawField = (gridField: GridField) => {
-    const raw = fields.find((f) => f.id === gridField.id);
-    if (raw) onEditField(raw);
+  // The grid speaks in projections; the dialogs need the row they came from.
+  const withRawField = (handler: (raw: ExtractionField) => void) => (gridField: GridField) => {
+    const raw = entityTypes
+      .flatMap((et) => et.fields)
+      .find((f) => f.id === gridField.id);
+    if (raw) handler(raw);
   };
 
   const clearOrDeselect = () => {
@@ -159,7 +103,7 @@ export function TemplateConfigGridPanel({
     setSelection(null);
   };
 
-  if (loadingFields) {
+  if (isLoading) {
     return <Skeleton className="h-72 w-full rounded-md border" />;
   }
 
@@ -206,17 +150,22 @@ export function TemplateConfigGridPanel({
         <span className="flex-1" />
 
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8"
-              aria-label={t('extraction', 'gridDisplayMenu')}
-            >
-              <SlidersHorizontal className="size-3.5" aria-hidden />
-            </Button>
-          </DropdownMenuTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8"
+                  aria-label={t('extraction', 'gridDisplayMenu')}
+                >
+                  <SlidersHorizontal className="size-3.5" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>{t('extraction', 'gridDisplayMenu')}</TooltipContent>
+          </Tooltip>
           <DropdownMenuContent align="end">
             <DropdownMenuCheckboxItem
               checked={showKeyColumn}
@@ -234,27 +183,32 @@ export function TemplateConfigGridPanel({
         </DropdownMenu>
       </div>
 
-      <div className="flex max-h-[70vh] items-stretch">
-        <TemplateOutlineRail
-          sections={tree}
-          visibleSectionIds={visibleSectionIds}
-          selectedSectionId={selection?.kind === 'section' ? selection.id : null}
-          onSelectSection={(sectionId) => setSelection({kind: 'section', id: sectionId})}
-          onAddSection={onAddSection}
-          isFiltering={filtered.isFiltering}
-        />
+      <div className="@container/grid flex max-h-[70vh] items-stretch">
+          <TemplateOutlineRail
+            className="hidden @[52rem]/grid:block"
+            sections={tree}
+            visibleSectionIds={visibleSectionIds}
+            selectedSectionId={selection?.kind === 'section' ? selection.id : null}
+            onSelectSection={(sectionId) => setSelection({kind: 'section', id: sectionId})}
+            onAddSection={onAddSection}
+            isFiltering={filtered.isFiltering}
+          />
 
         <div className="min-w-0 flex-1 overflow-auto">
           {filtered.sections.length === 0 ? (
             <p className="p-6 text-center text-xs text-muted-foreground">
-              {t('extraction', 'gridNoMatches')}
+              {t(
+                'extraction',
+                filtered.isFiltering ? 'gridNoMatches' : 'gridEmptyTemplate',
+              )}
             </p>
           ) : (
             <TemplateGrid
               sections={filtered.sections}
               selection={selection}
               onSelect={setSelection}
-              onEditField={editRawField}
+              onEditField={withRawField(onEditField)}
+              onDeleteField={withRawField(onDeleteField)}
               sectionActions={sectionActions}
               onAddSection={onAddSection}
               collapsed={collapsed}
@@ -272,10 +226,11 @@ export function TemplateConfigGridPanel({
         </div>
 
         <TemplateInspector
+          className="hidden @[40rem]/grid:block"
           field={selectedField}
           section={selectedSection}
           owningSection={owningSection}
-          onEditField={editRawField}
+          onEditField={withRawField(onEditField)}
         />
       </div>
     </div>

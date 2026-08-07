@@ -48,6 +48,7 @@ export interface TemplateFieldInput {
   field_type: string;
   is_required?: boolean;
   allowed_values?: string[] | null;
+  unit?: string | null;
   llm_description?: string | null;
   sort_order?: number;
 }
@@ -64,6 +65,7 @@ export interface GridField {
   hasAiInstruction: boolean;
   allowedValues: string[] | null;
   optionCount: number;
+  unit: string | null;
   /** Set only while a search filter is active. */
   matchHint?: TemplateMatchHint;
 }
@@ -80,7 +82,7 @@ export interface GridSection {
   children: GridSection[];
   /** Fields owned directly by this section. */
   fieldCount: number;
-  /** Own fields plus every descendant's — what the rail counts. */
+  /** Own fields plus every descendant's — what the inspector shows for a group. */
   totalFieldCount: number;
 }
 
@@ -119,6 +121,7 @@ function toGridField(input: TemplateFieldInput): GridField {
     hasAiInstruction: aiInstruction !== null,
     allowedValues: options,
     optionCount: options?.length ?? 0,
+    unit: input.unit?.trim() ? input.unit : null,
   };
 }
 
@@ -239,6 +242,40 @@ function sectionSelfMatches(section: GridSection, terms: string[]): boolean {
   return terms.every((term) => haystack.includes(term));
 }
 
+/** Every section id in the tree, roots and their children. */
+export function collectSectionIds(sections: GridSection[]): Set<string> {
+  const ids = new Set<string>();
+  for (const section of sections) {
+    ids.add(section.id);
+    for (const child of section.children) ids.add(child.id);
+  }
+  return ids;
+}
+
+export function findField(sections: GridSection[], fieldId: string): GridField | null {
+  for (const section of sections) {
+    const own = section.fields.find((f) => f.id === fieldId);
+    if (own) return own;
+    for (const child of section.children) {
+      const nested = child.fields.find((f) => f.id === fieldId);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+export function findSection(
+  sections: GridSection[],
+  sectionId: string,
+): GridSection | null {
+  for (const section of sections) {
+    if (section.id === sectionId) return section;
+    const child = section.children.find((c) => c.id === sectionId);
+    if (child) return child;
+  }
+  return null;
+}
+
 function countFields(sections: GridSection[]): number {
   return sections.reduce(
     (sum, section) => sum + section.fields.length + countFields(section.children),
@@ -277,7 +314,10 @@ export function filterTemplateTree(
   sections: GridSection[],
   query: string,
 ): FilteredTemplateTree {
-  const totalCount = countFields(sections);
+  // The unfiltered total is already materialised per section; only the
+  // filtered result needs a walk (filterSection carries the pre-filter
+  // totalFieldCount through its spread, so it cannot use this shortcut).
+  const totalCount = sections.reduce((sum, s) => sum + s.totalFieldCount, 0);
   const terms = normalizeForSearch(query).split(/\s+/).filter(Boolean);
 
   if (terms.length === 0) {

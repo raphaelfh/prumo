@@ -3,6 +3,7 @@ import {Pencil, Sparkles} from 'lucide-react';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {t} from '@/lib/copy';
+import {cn} from '@/lib/utils';
 
 import type {GridField, GridSection} from './templateTree';
 
@@ -21,12 +22,16 @@ const KIND_COPY = {
   groupChild: 'inspectorKindGroupChild',
 } as const;
 
+const PANEL_CLASS =
+  'w-[300px] shrink-0 overflow-y-auto border-l bg-muted/20 px-3.5 py-3 text-xs';
+
 interface TemplateInspectorProps {
   field: GridField | null;
   section: GridSection | null;
   /** The section that owns the selected field, for the read-only Section row. */
   owningSection: GridSection | null;
   onEditField: (field: GridField) => void;
+  className?: string;
 }
 
 function Label({children}: {children: React.ReactNode}) {
@@ -58,10 +63,11 @@ export function TemplateInspector({
   section,
   owningSection,
   onEditField,
+  className,
 }: TemplateInspectorProps) {
   if (!field && !section) {
     return (
-      <aside className="w-[300px] shrink-0 border-l bg-muted/20 px-3.5 py-3 text-xs">
+      <aside className={cn(PANEL_CLASS, className)}>
         <div className="font-medium">{t('extraction', 'inspectorEmptyTitle')}</div>
         <p className="mt-1 text-muted-foreground">
           {t('extraction', 'inspectorEmptyHint')}
@@ -74,7 +80,7 @@ export function TemplateInspector({
     return (
       <aside
         data-testid="template-inspector"
-        className="w-[300px] shrink-0 overflow-y-auto border-l bg-muted/20 px-3.5 py-3 text-xs"
+        className={cn(PANEL_CLASS, className)}
       >
         <div className="flex items-center gap-1.5">
           <strong className="min-w-0 flex-1 truncate">{field.label}</strong>
@@ -105,6 +111,9 @@ export function TemplateInspector({
         <Label>{t('extraction', 'inspectorTypeLabel')}</Label>
         <ReadOnlyValue>
           <span className="capitalize">{field.fieldType}</span>
+          {field.unit && (
+            <span className="ml-1.5 text-muted-foreground">· {field.unit}</span>
+          )}
         </ReadOnlyValue>
 
         <Label>{t('extraction', 'inspectorRequiredLabel')}</Label>
@@ -158,7 +167,7 @@ export function TemplateInspector({
   return (
     <aside
       data-testid="template-inspector"
-      className="w-[300px] shrink-0 overflow-y-auto border-l bg-muted/20 px-3.5 py-3 text-xs"
+      className={cn(PANEL_CLASS, className)}
     >
       <div className="flex items-center gap-1.5">
         <strong className="min-w-0 flex-1 truncate">{selectedSection.label}</strong>

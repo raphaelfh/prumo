@@ -1,5 +1,15 @@
 import {Fragment} from 'react';
-import {ChevronDown, ChevronRight, GripVertical, Pencil, Plus, Sparkles, Trash2} from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  GripVertical,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
 
 import {Input} from '@/components/ui/input';
 import {
@@ -8,6 +18,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 
@@ -49,6 +60,7 @@ interface TemplateGridProps {
   selection: TemplateGridSelection | null;
   onSelect: (selection: TemplateGridSelection) => void;
   onEditField: (field: GridField) => void;
+  onDeleteField: (field: GridField) => void;
   sectionActions: TemplateSectionActions;
   onAddSection: () => void;
   collapsed: ReadonlySet<string>;
@@ -100,11 +112,7 @@ function RequiredBox({checked}: {checked: boolean}) {
         checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
       )}
     >
-      {checked && (
-        <svg viewBox="0 0 10 10" className="size-2.5" fill="none" stroke="currentColor">
-          <path d="M1.5 5.2 4 7.5 8.5 2.5" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      )}
+      {checked && <Check className="size-2.5" strokeWidth={3} aria-hidden />}
     </span>
   );
 }
@@ -115,6 +123,7 @@ function FieldRow({
   selected,
   onSelect,
   onEdit,
+  onDelete,
   showKeyColumn,
   showOptionsColumn,
 }: {
@@ -123,6 +132,7 @@ function FieldRow({
   selected: boolean;
   onSelect: () => void;
   onEdit: () => void;
+  onDelete: () => void;
   showKeyColumn: boolean;
   showOptionsColumn: boolean;
 }) {
@@ -130,18 +140,8 @@ function FieldRow({
   return (
     <tr
       data-testid="template-grid-field-row"
-      aria-selected={selected}
-      tabIndex={selected ? 0 : -1}
-      onClick={onSelect}
-      onDoubleClick={onEdit}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          onEdit();
-        }
-      }}
       className={cn(
-        'h-[30px] cursor-pointer border-b border-border/50 outline-none hover:bg-muted/40',
+        'group/row h-[30px] border-b border-border/50 hover:bg-muted/40',
         selected && 'bg-muted/60',
       )}
     >
@@ -149,9 +149,21 @@ function FieldRow({
         <GripVertical className="size-3" aria-hidden />
       </td>
       <td className={cn('min-w-0 px-2', indent)}>
-        <span
+        {/* The focusable element is the button, not the row: a keyboard user
+            must be able to reach and select every field. Double-click (mouse)
+            edits; from the keyboard, select then use the inspector's Edit. */}
+        {/* The row itself carries no handlers: a click target that also lives
+            on the <tr> fires twice for nested controls, and `stopPropagation`
+            on `click` does NOT stop `dblclick` — double-clicking the ⋯ menu
+            used to open the edit dialog behind it. */}
+        <button
+          type="button"
+          onClick={onSelect}
+          onDoubleClick={onEdit}
+          aria-current={selected ? 'true' : undefined}
           className={cn(
-            'flex max-w-full items-baseline gap-1.5 rounded',
+            'flex w-full max-w-full items-baseline gap-1.5 rounded text-left',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             selected && 'outline outline-2 -outline-offset-2 outline-ring',
           )}
         >
@@ -163,7 +175,7 @@ function FieldRow({
               · {t('extraction', hintKey)}
             </span>
           )}
-        </span>
+        </button>
       </td>
       {showKeyColumn && (
         <td className="max-w-[160px] truncate px-2 font-mono text-[10px] text-muted-foreground">
@@ -180,11 +192,51 @@ function FieldRow({
       )}
       <td className="w-10 px-2">
         <RequiredBox checked={field.isRequired} />
+        <span className="sr-only">
+          {t(
+            'extraction',
+            field.isRequired ? 'inspectorRequiredYes' : 'inspectorRequiredNo',
+          )}
+        </span>
       </td>
       <td className="w-[26px] px-2">
         {field.hasAiInstruction && (
           <Sparkles className="size-3 text-primary" aria-label={t('extraction', 'gridColAi')} />
         )}
+      </td>
+      <td className="w-[34px] px-1 text-right">
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={t('extraction', 'actionsForFieldAria').replace(
+                '{{label}}',
+                field.label,
+              )}
+              className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/row:opacity-100 data-[state=open]:opacity-100"
+            >
+              <MoreHorizontal className="size-3.5" aria-hidden />
+            </button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>{t('extraction', 'gridRowActions')}</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end" className="text-xs">
+            <DropdownMenuItem onSelect={onEdit}>
+              <Pencil className="mr-2 size-3.5" aria-hidden />
+              {t('extraction', 'gridEditFieldTooltip')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={onDelete}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="mr-2 size-3.5" aria-hidden />
+              {t('extraction', 'deleteField')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </td>
     </tr>
   );
@@ -218,9 +270,7 @@ function SectionHeaderRow({
   return (
     <tr
       data-testid="template-grid-section-row"
-      aria-selected={selected}
-      onClick={onSelect}
-      className={cn('h-8 cursor-pointer border-b border-border/50 bg-muted/50')}
+      className="h-8 border-b border-border/50 bg-muted/50"
     >
       <td className="w-3.5 px-2 text-muted-foreground/60">
         <GripVertical className="size-3" aria-hidden />
@@ -229,12 +279,9 @@ function SectionHeaderRow({
         <div className="flex items-center gap-[7px] overflow-hidden whitespace-nowrap">
           <button
             type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggle();
-            }}
+            onClick={onToggle}
             aria-expanded={!collapsed}
-            aria-label={section.label}
+            aria-label={`${t('extraction', collapsed ? 'gridExpandSection' : 'gridCollapseSection')} — ${section.label}`}
             className="rounded text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Chevron className="size-3.5" aria-hidden />
@@ -256,7 +303,14 @@ function SectionHeaderRow({
               className="h-6 max-w-[220px] text-xs"
             />
           ) : (
-            <span className="truncate font-semibold">{section.label}</span>
+            <button
+              type="button"
+              onClick={onSelect}
+              aria-current={selected ? 'true' : undefined}
+              className="truncate rounded text-left font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {section.label}
+            </button>
           )}
           {section.hasDescription && (
             <span className="shrink-0 text-primary" aria-hidden>
@@ -270,17 +324,21 @@ function SectionHeaderRow({
       </td>
       <td className="px-2 text-right">
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
             <button
               type="button"
-              onClick={(event) => event.stopPropagation()}
               aria-label={`${t('extraction', 'gridAddMenu')} — ${section.label}`}
               className="inline-flex items-center gap-0.5 whitespace-nowrap rounded-md border bg-card px-[7px] py-px text-[10.5px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Plus className="size-3" aria-hidden />
               <ChevronDown className="size-2.5" aria-hidden />
             </button>
-          </DropdownMenuTrigger>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>{t('extraction', 'gridAddMenu')}</TooltipContent>
+          </Tooltip>
           <DropdownMenuContent align="end" className="text-xs">
             <DropdownMenuItem onSelect={() => actions.onAddField(section.id)}>
               <Plus className="mr-2 size-3.5" aria-hidden />
@@ -340,6 +398,7 @@ export function TemplateGrid({
   selection,
   onSelect,
   onEditField,
+  onDeleteField,
   sectionActions,
   onAddSection,
   collapsed,
@@ -348,8 +407,8 @@ export function TemplateGrid({
   showOptionsColumn,
   isFiltering,
 }: TemplateGridProps) {
-  // grab · label · [key] · type · [options] · required · ai
-  const columnCount = 5 + (showKeyColumn ? 1 : 0) + (showOptionsColumn ? 1 : 0);
+  // grab · label · [key] · type · [options] · required · ai · row actions
+  const columnCount = 6 + (showKeyColumn ? 1 : 0) + (showOptionsColumn ? 1 : 0);
 
   const isSelected = (kind: 'field' | 'section', id: string) =>
     selection?.kind === kind && selection.id === id;
@@ -363,13 +422,14 @@ export function TemplateGrid({
         selected={isSelected('field', field.id)}
         onSelect={() => onSelect({kind: 'field', id: field.id})}
         onEdit={() => onEditField(field)}
+        onDelete={() => onDeleteField(field)}
         showKeyColumn={showKeyColumn}
         showOptionsColumn={showOptionsColumn}
       />
     ));
 
   return (
-    <table role="grid" className="w-full table-fixed border-collapse text-xs">
+    <table className="w-full table-fixed border-collapse text-xs">
       <thead>
         <tr className="h-[26px] border-b border-border/50 text-[9.5px] uppercase tracking-[0.04em] text-muted-foreground">
           <th className="w-3.5" />
@@ -389,6 +449,7 @@ export function TemplateGrid({
             {t('extraction', 'gridColRequired')}
           </th>
           <th className="w-[26px] px-2" aria-label={t('extraction', 'gridColAi')} />
+          <th className="w-[34px]" aria-label={t('extraction', 'gridRowActions')} />
         </tr>
       </thead>
 

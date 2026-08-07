@@ -157,6 +157,60 @@ is 200 px, 11 px, scroll-spy, per-section counts, nested entries indented
 3. **Mount** — replace the accordion in `TemplateConfigEditor`, keep row
    zero on top, bridge editing to `EditFieldDialog`.
 
+### Post-ship review (2026-08-07)
+
+A four-lens adversarial review of the merged B-1 commit returned 27
+verdicts — 18 confirmed, 9 refuted. All confirmed findings were fixed in
+the follow-up PR: field deletion (reachable again via a per-row actions
+menu wired to the existing impact check), keyboard entry (the grid had
+zero focusable rows; every actionable element is now a real button),
+`role="grid"` dropped as an unbacked promise, a text alternative for the
+Required column, a toast for partial field-load failures, a distinct
+empty-template state, tooltips on icon-only triggers, the unit restored
+in the inspector, and container queries so the rail and inspector
+collapse on a narrow card.
+
+**Orphan marker for B-5:** `FieldsManager.tsx`, `FieldsTable.tsx`,
+`FieldsHeader.tsx` and `EmptyFieldsState.tsx` are no longer mounted
+anywhere — the grid replaced them and only their dialogs are reused via
+`TemplateFieldDialogs`. They stay on disk until B-5 deletes them; a
+`git grep` for field-management code will land on them misleadingly
+until then.
+
+### Simplify pass (2026-08-07)
+
+Four cleanup lenses (reuse, simplification, efficiency, altitude) over the
+slice. The deep finding: `useTemplateEntityTypes`
+(`frontend/hooks/extraction/useTemplateEntityTypes.ts`) already read the
+whole structure — entity types **with nested fields** — in ONE request,
+TanStack-cached on the key `useTemplateRepublish` already invalidates
+after every config mutation. The panel's per-section fan-out and its
+hand-rolled `refreshToken` protocol were reinventing it. Widening that
+hook's select with the entity-type metadata (additive; its three other
+consumers read only `fields`) and consuming it deleted both.
+
+Opening the Configuration tab went from **29 requests to 2**: the panel's
+14 field reads collapsed into the shared query, and
+`loadTemplateEntityTypes` stopped firing one HEAD count per section for a
+count its own `extraction_fields(count)` select already returned.
+
+Also fixed: a real bug the altitude lens caught with a probe —
+double-clicking the row `⋯` menu opened the edit dialog, because
+`stopPropagation` on `click` does not stop `dblclick`; the row no longer
+duplicates the handlers its own cells carry. Plus copy-key reuse
+(`deleteField`, `actionsForFieldAria` already existed), the shared `Check`
+glyph instead of a hand-drawn path, container queries moved onto the
+component roots instead of `display:contents` wrappers, tree walkers moved
+into `templateTree.ts`, the delete pre-flight's first frame (it flashed
+"impossible to delete") and its missing failure fallback.
+
+**Deferred, with measurements:** the per-row Radix `DropdownMenu` +
+`Tooltip` pair costs ~2.2 ms per grid mount (82 rows, measured). Mounting
+it lazily on hover/focus is a B-5 concern — it adds machinery this slice
+does not need. `sectionActions` relocating a text input's state three
+layers up is real; `SectionHeaderRow` should own its rename draft when
+B-5 rewrites the cell model.
+
 ### Verify
 
 `npm run test:run`, `npx tsc -p tsconfig.app.json --noEmit`, `npm run lint`,

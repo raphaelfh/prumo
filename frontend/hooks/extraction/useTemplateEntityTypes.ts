@@ -8,6 +8,12 @@
  * compute a divergent instance-based number). Caching by the
  * article-independent template id means one fetch serves every row instead of
  * one-per-article.
+ *
+ * The select also carries the entity-type metadata the Configuration grid
+ * renders (label/role/cardinality/parent/sort_order) so that screen reads the
+ * whole template structure in ONE request instead of fanning out per section —
+ * and inherits the invalidation `useTemplateRepublish` already performs on this
+ * key after every config mutation.
  */
 
 import { useQuery } from '@tanstack/react-query';
@@ -18,6 +24,13 @@ import type { ExtractionField } from '@/types/extraction';
 
 export interface TemplateEntityTypeWithFields {
   id: string;
+  name: string;
+  label: string | null;
+  description: string | null;
+  role: string | null;
+  cardinality: string | null;
+  parent_entity_type_id: string | null;
+  sort_order: number;
   fields: ExtractionField[];
 }
 
@@ -31,12 +44,21 @@ export function useTemplateEntityTypes(templateId: string | null | undefined) {
     queryFn: async (): Promise<TemplateEntityTypeWithFields[]> => {
       const { data, error } = await supabase
         .from('extraction_entity_types')
-        .select('id, fields:extraction_fields(*)')
+        .select(
+          'id, name, label, description, role, cardinality, parent_entity_type_id, sort_order, fields:extraction_fields(*)',
+        )
         .eq('project_template_id', templateId as string)
         .order('sort_order', { ascending: true });
       if (error) throw error;
       return (data ?? []).map((et) => ({
         id: et.id as string,
+        name: et.name as string,
+        label: (et.label ?? null) as string | null,
+        description: (et.description ?? null) as string | null,
+        role: (et.role ?? null) as string | null,
+        cardinality: (et.cardinality ?? null) as string | null,
+        parent_entity_type_id: (et.parent_entity_type_id ?? null) as string | null,
+        sort_order: (et.sort_order ?? 0) as number,
         fields: (et.fields ?? []) as unknown as ExtractionField[],
       }));
     },
@@ -44,6 +66,9 @@ export function useTemplateEntityTypes(templateId: string | null | undefined) {
 
   return {
     entityTypes: query.data ?? [],
+    // isLoading is first-load-only (isFetching covers background refetches),
+    // which is exactly the "skeleton once, then keep the rows" rule the
+    // editor needs to preserve selection/search across a refresh.
     isLoading: query.isLoading,
     isError: query.isError,
     error: query.error,

@@ -86,23 +86,17 @@ export async function loadTemplateEntityTypes(
 
     if (entityTypesError) throw entityTypesError;
 
-    const entityTypesWithCounts = await Promise.all(
-      (entityTypesData || []).map(async (et) => {
-        const {count, error: countError} = await supabase
-          .from('extraction_fields')
-          .select('*', {count: 'exact', head: true})
-          .eq('entity_type_id', et.id);
-
-        if (countError) {
-          console.error(`Error counting fields for ${et.name}:`, countError);
-        }
-
-        return {
-          ...et,
-          fieldsCount: count || 0,
-        } as EntityTypeWithCount;
-      }),
-    );
+    // The embedded `extraction_fields(count)` above already carries the
+    // per-section count; the old code fired one extra HEAD request per
+    // entity type (14 on CHARMS) and discarded the value it already had.
+    const entityTypesWithCounts = (entityTypesData ?? []).map((et) => {
+      const embedded = (et as {extraction_fields?: {count: number}[]})
+        .extraction_fields;
+      return {
+        ...et,
+        fieldsCount: embedded?.[0]?.count ?? 0,
+      } as EntityTypeWithCount;
+    });
 
     return entityTypesWithCounts;
   }, 'loadTemplateEntityTypes');
