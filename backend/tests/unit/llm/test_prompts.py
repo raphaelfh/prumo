@@ -105,6 +105,18 @@ def test_model_identification_render_and_output_model():
     )
     assert "prediction models" in prompt
     assert prompt.count("§") == 20_000  # no truncation
+    assert "General instructions" not in prompt
+
+
+def test_model_identification_general_instructions_block_leads():
+    """Phase-A gap (B-2): the template-level ✨ instruction must reach the
+    model-identification prompt like the other two prompt pairs."""
+    prompt = model_identification.render(
+        container_label="prediction models",
+        article_text="text",
+        general_instructions="Focus on cardiac models.",
+    )
+    assert prompt.startswith("General instructions for this review:\nFocus on cardiac models.\n\n")
     output = model_identification.ModelIdentificationOutput.model_validate(
         {"models": [{"name": "Cox model"}]}
     )

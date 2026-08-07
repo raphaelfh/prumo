@@ -37,6 +37,10 @@ from app.repositories import (
     GlobalTemplateRepository,
 )
 from app.services.extraction_prompt_input import build_prompt_input
+from app.services.extraction_snapshot import (
+    entity_types_for_version,
+    general_instructions_for_version,
+)
 from app.services.run_lifecycle_service import RunLifecycleService
 
 
@@ -191,7 +195,7 @@ class ModelExtractionService(LoggerMixin):
 
             # 5. Identificar modelos usando LLM (com tracking de tokens)
             phase_start = perf_counter()
-            models, llm_usage = await self._identify_models(pdf_text, template, model)
+            models, llm_usage = await self._identify_models(pdf_text, template, model, run)
             phase_durations_ms["identify_models_llm"] = (perf_counter() - phase_start) * 1000
 
             # 6. Create instances in DB (model + children)
@@ -319,9 +323,16 @@ class ModelExtractionService(LoggerMixin):
         pdf_text: str,
         template: Any,
         model: str,
+        run: Any,
     ) -> tuple[list[dict[str, Any]], LlmUsage]:
         """
         Use LLM to identify models in PDF text.
+
+        Prompt content (container label + the template-level ✨ general
+        instruction) comes from the run-PINNED snapshot (B-2), never live
+        rows; the live template stays only as a fallback for trees the
+        provider could not serve (e.g. a global template, which has no
+        version snapshot).
 
         Returns:
             Tuple of model list and token usage.
@@ -329,7 +340,12 @@ class ModelExtractionService(LoggerMixin):
         # Find the model container entity type by structural role —
         # replaces the legacy ``name in ("prediction_models", "model", ...)``
         # lookup that silently masked typos and template renames.
-        entity_types = template.entity_types if hasattr(template, "entity_types") else []
+        pinned_tree = await entity_types_for_version(
+            self.db, version_id=run.version_id, template_id=run.template_id
+        )
+        entity_types: list[Any] = list(pinned_tree)
+        if not entity_types:
+            entity_types = template.entity_types if hasattr(template, "entity_types") else []
         model_entity = next(
             (et for et in entity_types if et.role == ExtractionEntityRole.MODEL_CONTAINER.value),
             None,
@@ -346,12 +362,14 @@ class ModelExtractionService(LoggerMixin):
             )
 
         container_label = model_entity.label if model_entity else "prediction models"
+        general_instructions = await general_instructions_for_version(self.db, run.version_id)
         output, usage = await extract_structured(
             output_model=model_identification.ModelIdentificationOutput,
             system_prompt=model_identification.SYSTEM_PROMPT,
             user_prompt=model_identification.render(
                 container_label=container_label,
                 article_text=pdf_text,
+                general_instructions=general_instructions,
             ),
             model=build_model(settings.LLM_PROVIDER, model, api_key=self._llm_api_key),
             prompt_name=model_identification.NAME,

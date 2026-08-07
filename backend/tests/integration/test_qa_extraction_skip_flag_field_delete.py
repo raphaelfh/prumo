@@ -25,7 +25,6 @@ flushes while the skipped field is orphaned.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
@@ -80,6 +79,16 @@ async def test_skip_flag_does_not_delete_human_settled_field(
     )
     db_session.add(field_b)
     await db_session.flush()
+
+    # The Configuration UI republishes after every edit; without it the new
+    # field would (correctly, B-2) be invisible to the pinned prompt tree.
+    from app.services.template_version_service import TemplateVersionService
+
+    await TemplateVersionService(db_session).republish(
+        project_id=project_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
 
     # Fresh EXTRACT run for this coord (surrounding suite leaks runs).
     await db_session.execute(
@@ -138,9 +147,11 @@ async def test_skip_flag_does_not_delete_human_settled_field(
 
     # Before the fix this raises ForeignKeyViolationError on flush; after the
     # fix it completes and field_A survives untouched.
+    pinned_tree = await service._pinned_entity_types(run)
+    pinned_entity = next(et for et in pinned_tree if et.id == entity_type_id)
     result = await service._extract_one_entity_type_for_run(
         run=run,
-        entity_type=SimpleNamespace(id=entity_type_id),
+        entity_type=pinned_entity,
         pdf_text="irrelevant — LLM is mocked",
         framework=None,
         kind="quality_assessment",
