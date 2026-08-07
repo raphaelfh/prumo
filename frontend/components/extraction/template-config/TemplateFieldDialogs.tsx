@@ -1,6 +1,7 @@
 import {useEffect, useState} from 'react';
 
 import {useFieldManagement} from '@/hooks/extraction/useFieldManagement';
+import {t} from '@/lib/copy';
 
 import {AddFieldDialog} from '../dialogs/AddFieldDialog';
 import {DeleteFieldConfirm} from '../dialogs/DeleteFieldConfirm';
@@ -17,7 +18,11 @@ import type {ExtractionField, FieldValidationResult} from '@/types/extraction';
  * section's fields and owns the republish) never runs idle.
  *
  * Deleted by B-5, when a committed cell stops minting a template version
- * and the grid becomes the editor.
+ * and the grid becomes the editor. The impact pre-fetch below is the third
+ * copy of that flow (FieldsManager and FieldsManagerWithDragDrop hold the
+ * others, both now orphaned) — consolidate it into `DeleteFieldConfirm` via
+ * an `onValidate` prop, the shape `EditFieldDialog` already uses, when B-5
+ * deletes those two.
  */
 interface TemplateFieldDialogsProps {
   mode: 'add' | 'edit' | 'delete';
@@ -51,7 +56,7 @@ export function TemplateFieldDialogs({
   // carrying reviewer decisions is protected by RESTRICT foreign keys, so the
   // user must see the impact BEFORE the database refuses the delete.
   const [validation, setValidation] = useState<FieldValidationResult | null>(null);
-  const [validating, setValidating] = useState(false);
+  const [validating, setValidating] = useState(true);
   const deletingFieldId = mode === 'delete' ? (field?.id ?? null) : null;
 
   useEffect(() => {
@@ -64,7 +69,16 @@ export function TemplateFieldDialogs({
       setValidating(true);
       void validateField(deletingFieldId).then((result) => {
         if (cancelled) return;
-        setValidation(result ?? null);
+        setValidation(
+          result ?? {
+            canDelete: false,
+            canUpdate: false,
+            canChangeType: false,
+            extractedValuesCount: 0,
+            affectedArticles: [],
+            message: t('extraction', 'errors_validateField'),
+          },
+        );
         setValidating(false);
       });
     });
@@ -97,11 +111,7 @@ export function TemplateFieldDialogs({
         field={field}
         open
         onOpenChange={handleOpenChange}
-        onConfirm={async (fieldId) => {
-          const deleted = await deleteField(fieldId);
-          if (deleted) onClose();
-          return deleted;
-        }}
+        onConfirm={deleteField}
         validation={validation}
         loading={validating}
       />

@@ -18,6 +18,7 @@ interface TemplateOutlineRailProps {
   onSelectSection: (sectionId: string) => void;
   onAddSection: () => void;
   isFiltering: boolean;
+  className?: string;
 }
 
 function RailItem({
@@ -67,11 +68,15 @@ export function TemplateOutlineRail({
   onSelectSection,
   onAddSection,
   isFiltering,
+  className,
 }: TemplateOutlineRailProps) {
   return (
     <nav
       aria-label={t('extraction', 'configHeaderTitle')}
-      className="w-[200px] shrink-0 space-y-px overflow-y-auto border-r bg-muted/20 p-2 text-[11px]"
+      className={cn(
+        'w-[200px] shrink-0 space-y-px overflow-y-auto border-r bg-muted/20 p-2 text-[11px]',
+        className,
+      )}
     >
       {sections.map((section) => (
         <div key={section.id} className="space-y-px">

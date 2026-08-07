@@ -123,9 +123,9 @@ describe('TemplateGrid accessibility', () => {
   it('keeps field deletion reachable — the accordion had it and the grid must too', async () => {
     const {onDeleteField} = renderGrid();
     await userEvent.click(
-      screen.getByRole('button', {name: /gridRowActions — Study design/}),
+      screen.getByRole('button', {name: /actionsForFieldAria/}),
     );
-    await userEvent.click(screen.getByRole('menuitem', {name: /gridDeleteField/}));
+    await userEvent.click(screen.getByRole('menuitem', {name: /deleteField/}));
     expect(onDeleteField).toHaveBeenCalledWith(
       expect.objectContaining({id: 'f1'}),
     );

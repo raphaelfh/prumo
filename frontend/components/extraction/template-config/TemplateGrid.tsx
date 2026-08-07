@@ -1,5 +1,6 @@
 import {Fragment} from 'react';
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   GripVertical,
@@ -111,11 +112,7 @@ function RequiredBox({checked}: {checked: boolean}) {
         checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
       )}
     >
-      {checked && (
-        <svg viewBox="0 0 10 10" className="size-2.5" fill="none" stroke="currentColor">
-          <path d="M1.5 5.2 4 7.5 8.5 2.5" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      )}
+      {checked && <Check className="size-2.5" strokeWidth={3} aria-hidden />}
     </span>
   );
 }
@@ -143,10 +140,8 @@ function FieldRow({
   return (
     <tr
       data-testid="template-grid-field-row"
-      onClick={onSelect}
-      onDoubleClick={onEdit}
       className={cn(
-        'group/row h-[30px] cursor-pointer border-b border-border/50 hover:bg-muted/40',
+        'group/row h-[30px] border-b border-border/50 hover:bg-muted/40',
         selected && 'bg-muted/60',
       )}
     >
@@ -157,16 +152,14 @@ function FieldRow({
         {/* The focusable element is the button, not the row: a keyboard user
             must be able to reach and select every field. Double-click (mouse)
             edits; from the keyboard, select then use the inspector's Edit. */}
+        {/* The row itself carries no handlers: a click target that also lives
+            on the <tr> fires twice for nested controls, and `stopPropagation`
+            on `click` does NOT stop `dblclick` — double-clicking the ⋯ menu
+            used to open the edit dialog behind it. */}
         <button
           type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onSelect();
-          }}
-          onDoubleClick={(event) => {
-            event.stopPropagation();
-            onEdit();
-          }}
+          onClick={onSelect}
+          onDoubleClick={onEdit}
           aria-current={selected ? 'true' : undefined}
           className={cn(
             'flex w-full max-w-full items-baseline gap-1.5 rounded text-left',
@@ -218,8 +211,10 @@ function FieldRow({
               <DropdownMenuTrigger asChild>
             <button
               type="button"
-              onClick={(event) => event.stopPropagation()}
-              aria-label={`${t('extraction', 'gridRowActions')} — ${field.label}`}
+              aria-label={t('extraction', 'actionsForFieldAria').replace(
+                '{{label}}',
+                field.label,
+              )}
               className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/row:opacity-100 data-[state=open]:opacity-100"
             >
               <MoreHorizontal className="size-3.5" aria-hidden />
@@ -238,7 +233,7 @@ function FieldRow({
               className="text-destructive focus:text-destructive"
             >
               <Trash2 className="mr-2 size-3.5" aria-hidden />
-              {t('extraction', 'gridDeleteField')}
+              {t('extraction', 'deleteField')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -275,8 +270,7 @@ function SectionHeaderRow({
   return (
     <tr
       data-testid="template-grid-section-row"
-      onClick={onSelect}
-      className={cn('h-8 cursor-pointer border-b border-border/50 bg-muted/50')}
+      className="h-8 border-b border-border/50 bg-muted/50"
     >
       <td className="w-3.5 px-2 text-muted-foreground/60">
         <GripVertical className="size-3" aria-hidden />
@@ -285,10 +279,7 @@ function SectionHeaderRow({
         <div className="flex items-center gap-[7px] overflow-hidden whitespace-nowrap">
           <button
             type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggle();
-            }}
+            onClick={onToggle}
             aria-expanded={!collapsed}
             aria-label={`${t('extraction', collapsed ? 'gridExpandSection' : 'gridCollapseSection')} — ${section.label}`}
             className="rounded text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -314,10 +305,7 @@ function SectionHeaderRow({
           ) : (
             <button
               type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onSelect();
-              }}
+              onClick={onSelect}
               aria-current={selected ? 'true' : undefined}
               className="truncate rounded text-left font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
@@ -341,7 +329,6 @@ function SectionHeaderRow({
               <DropdownMenuTrigger asChild>
             <button
               type="button"
-              onClick={(event) => event.stopPropagation()}
               aria-label={`${t('extraction', 'gridAddMenu')} — ${section.label}`}
               className="inline-flex items-center gap-0.5 whitespace-nowrap rounded-md border bg-card px-[7px] py-px text-[10.5px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >

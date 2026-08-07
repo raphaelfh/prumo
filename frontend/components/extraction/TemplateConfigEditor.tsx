@@ -51,7 +51,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     sectionName: string;
     field: ExtractionField | null;
   } | null>(null);
-  const [gridRefreshToken, setGridRefreshToken] = useState(0);
   const { republish } = useTemplateRepublish(projectId, templateId);
 
   const loadEntityTypes = async () => {
@@ -110,20 +109,8 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     loadEntityTypes();
   };
 
-  // Organizar entity types por hierarquia
-  const rootEntityTypes = entityTypes.filter(et => !et.parent_entity_type_id);
-  const childEntityTypes = entityTypes.filter(et => et.parent_entity_type_id);
-
-  // Map de children por parent
-  const childrenByParent: Record<string, ExtractionEntityType[]> = {};
-  childEntityTypes.forEach(child => {
-    if (child.parent_entity_type_id) {
-      if (!childrenByParent[child.parent_entity_type_id]) {
-        childrenByParent[child.parent_entity_type_id] = [];
-      }
-      childrenByParent[child.parent_entity_type_id].push(child);
-    }
-  });
+  // Only the header count reads this now — the grid owns the hierarchy.
+  const rootEntityTypes = entityTypes.filter((et) => !et.parent_entity_type_id);
 
   if (initialLoading) {
     return (
@@ -166,9 +153,9 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
 
       <TemplateInstructionRow projectId={projectId} templateId={templateId} />
 
+      {entityTypes.length > 0 && (
       <TemplateConfigGridPanel
-        entityTypes={entityTypes}
-        refreshToken={gridRefreshToken}
+        templateId={templateId}
         onEditField={(field) => {
           const section = entityTypes.find((et) => et.id === field.entity_type_id);
           setFieldDialog({
@@ -213,6 +200,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         }}
         onAddSection={() => setShowAddSectionDialog(true)}
       />
+      )}
 
       {entityTypes.length === 0 && (
         <Card>
@@ -280,11 +268,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
           projectId={projectId}
           templateId={templateId}
           field={fieldDialog.field}
-          onClose={() => {
-            setFieldDialog(null);
-            setGridRefreshToken((token) => token + 1);
-            void loadEntityTypes();
-          }}
+          onClose={() => setFieldDialog(null)}
         />
       )}
 
