@@ -44,3 +44,9 @@ export const templateEntityTypesKeys = {
   byTemplate: (templateId: string) =>
     ['template-entity-types', templateId] as const,
 };
+
+/** Template general AI instruction (Configuration row zero). */
+export const templateInstructionKeys = {
+  byTemplate: (projectId: string, templateId: string) =>
+    ['template-instruction', projectId, templateId] as const,
+};

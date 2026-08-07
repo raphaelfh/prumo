@@ -18,6 +18,7 @@ import {Badge} from '@/components/ui/badge';
 import {Input} from '@/components/ui/input';
 import {Accordion, AccordionContent, AccordionItem, AccordionTrigger,} from '@/components/ui/accordion';
 import {ChevronRight, Download, Edit2, Loader2, Plus, Save, Settings, Trash2, X} from 'lucide-react';
+import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructionRow';
 import {toast} from 'sonner';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
@@ -162,6 +163,8 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
           </Button>
         </div>
       </div>
+
+      <TemplateInstructionRow projectId={projectId} templateId={templateId} />
 
       <Accordion type="single" collapsible className="space-y-2">
         {rootEntityTypes.map((entityType) => {

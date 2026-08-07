@@ -776,7 +776,7 @@ class TestExtractOneEntityTypeForRun:
         # never a mutation of the ORM collection.
         captured: dict[str, list] = {}
 
-        async def fake_llm(*, pdf_text, entity_type, model, kind, framework, fields_override):  # noqa: ARG001
+        async def fake_llm(*, fields_override, **_kwargs):
             captured["override"] = [f.id for f in fields_override]
             return ({}, LlmUsage(prompt_tokens=1, completion_tokens=1))
 
@@ -911,7 +911,7 @@ class TestExtractOneEntityTypeForRun:
 
         captured: dict[str, list] = {}
 
-        async def fake_llm(*, pdf_text, entity_type, model, kind, framework, fields_override):  # noqa: ARG001
+        async def fake_llm(*, entity_type, fields_override, **_kwargs):
             captured["override"] = [f.id for f in fields_override]
             captured["entity_fields"] = [f.id for f in entity_type.fields]
             return ({}, LlmUsage(prompt_tokens=1, completion_tokens=1))

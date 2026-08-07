@@ -11,6 +11,13 @@ again, and so migration 0026 can backfill old snapshots to the same shape.
 The key set mirrors the data columns of ``ExtractionEntityType`` and
 ``ExtractionField`` that the run-open form renders from (FK/audit columns are
 intentionally excluded — the form does not read them).
+
+The top-level ``llm_template_instruction`` key is **conditional**: appended in
+Python only when the template's live column is non-NULL/non-empty (absent ≡
+NULL — a legacy template's next republish stays byte-identical, no phantom
+v+1). It is deliberately NOT backfilled into old snapshots and needs no
+migration-0026-style copy: 0026 only rewrites snapshots lacking ``role``,
+which all pre-date this key.
 """
 
 from __future__ import annotations
@@ -79,9 +86,46 @@ SNAPSHOT_SQL = text(
 )
 
 
+_LIVE_INSTRUCTION_SQL = text(
+    """
+    SELECT llm_template_instruction
+    FROM public.project_extraction_templates
+    WHERE id = :tid
+    """
+)
+
+_PINNED_INSTRUCTION_SQL = text(
+    """
+    SELECT schema ->> 'llm_template_instruction'
+    FROM public.extraction_template_versions
+    WHERE id = :vid
+    """
+)
+
+
+async def general_instructions_for_version(db: AsyncSession, version_id: UUID) -> str | None:
+    """Template-level general instruction pinned in a version snapshot.
+
+    Prompts must read the pinned snapshot, never the live column — a run
+    keeps the instruction it was opened under until a republish re-pins
+    it (spec §4). Returns None when the version has no key (legacy) or
+    the value is empty.
+    """
+    value = (
+        await db.execute(_PINNED_INSTRUCTION_SQL, {"vid": str(version_id)})
+    ).scalar_one_or_none()
+    return value or None
+
+
 async def build_template_version_snapshot(
     db: AsyncSession, project_template_id: UUID
 ) -> dict[str, Any]:
     """Build the frozen ``{entity_types: [...]}`` snapshot for a project template."""
     row = await db.execute(SNAPSHOT_SQL, {"tid": str(project_template_id)})
-    return row.scalar_one()
+    snapshot: dict[str, Any] = row.scalar_one()
+    instruction = (
+        await db.execute(_LIVE_INSTRUCTION_SQL, {"tid": str(project_template_id)})
+    ).scalar_one_or_none()
+    if instruction:
+        snapshot["llm_template_instruction"] = instruction
+    return snapshot

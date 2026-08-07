@@ -179,6 +179,63 @@ async def test_republish_is_noop_when_snapshot_current(db_session: AsyncSession)
 
 
 @pytest.mark.asyncio
+async def test_republish_versions_instruction_set_and_clear(
+    db_session: AsyncSession,
+) -> None:
+    """Set → v+1 with the key; same again → no-op (the conditional key
+    doesn't break no-op detection); clear → v+1 without the key."""
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await _clean_project_clones(db_session, project_id)
+    clone = await _clone_charms(db_session, project_id, user_id)
+    service = TemplateVersionService(db_session)
+
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET llm_template_instruction = 'General guidance.' WHERE id = :tid"
+        ),
+        {"tid": str(clone.project_template_id)},
+    )
+    set_result = await service.republish(
+        project_id=project_id,
+        project_template_id=clone.project_template_id,
+        user_id=user_id,
+    )
+    assert set_result.changed is True
+    assert set_result.version == 2
+    set_version = await db_session.get(ExtractionTemplateVersion, set_result.version_id)
+    assert set_version is not None
+    assert set_version.schema_["llm_template_instruction"] == "General guidance."
+
+    noop = await service.republish(
+        project_id=project_id,
+        project_template_id=clone.project_template_id,
+        user_id=user_id,
+    )
+    assert noop.changed is False
+    assert noop.version == 2
+
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET llm_template_instruction = NULL WHERE id = :tid"
+        ),
+        {"tid": str(clone.project_template_id)},
+    )
+    cleared = await service.republish(
+        project_id=project_id,
+        project_template_id=clone.project_template_id,
+        user_id=user_id,
+    )
+    assert cleared.changed is True
+    assert cleared.version == 3
+    cleared_version = await db_session.get(ExtractionTemplateVersion, cleared.version_id)
+    assert cleared_version is not None
+    assert "llm_template_instruction" not in cleared_version.schema_
+
+
+@pytest.mark.asyncio
 async def test_republish_repins_editable_runs_but_not_finalized(
     db_session: AsyncSession,
 ) -> None:

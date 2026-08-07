@@ -43,6 +43,13 @@ _EDITABLE_STAGES = (
 )
 
 
+class _Unset:
+    """Sentinel: distinguishes 'kwarg not provided' from an explicit None."""
+
+
+_UNSET = _Unset()
+
+
 class RepublishResult:
     """Result envelope returned by ``TemplateVersionService.republish``."""
 
@@ -72,6 +79,7 @@ class TemplateVersionService:
         project_id: UUID,
         project_template_id: UUID,
         user_id: UUID,
+        llm_template_instruction: str | None | _Unset = _UNSET,
     ) -> RepublishResult:
         # BOLA defense (unlocked read): validate ownership before taking any
         # lock, so a caller who is only a manager elsewhere can never lock —
@@ -118,6 +126,17 @@ class TemplateVersionService:
             .where(ProjectExtractionTemplate.id == project_template_id)
             .with_for_update()
         )
+
+        if not isinstance(llm_template_instruction, _Unset):
+            # Applied under the same locks as the snapshot build. Writing
+            # the column before the advisory locks (e.g. in a caller)
+            # would invert the documented lock order above and deadlock
+            # against session-open / a concurrent republish.
+            await self.db.execute(
+                update(ProjectExtractionTemplate)
+                .where(ProjectExtractionTemplate.id == project_template_id)
+                .values(llm_template_instruction=llm_template_instruction)
+            )
 
         snapshot = await build_template_version_snapshot(self.db, project_template_id)
 

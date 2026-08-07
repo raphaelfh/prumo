@@ -20,11 +20,20 @@ async def test_extract_for_run_raises_when_all_sections_fail():
     svc.trace_id = "t"
 
     run = SimpleNamespace(
-        id="r", template_id="tpl", article_id="a", kind="extraction", stage="extract"
+        id="r",
+        template_id="tpl",
+        article_id="a",
+        kind="extraction",
+        stage="extract",
+        version_id="v",
     )
     template = SimpleNamespace(framework="CHARMS")
-    # db.get is called twice: first the run, then the template.
-    svc.db = SimpleNamespace(get=AsyncMock(side_effect=[run, template]))
+    # db.get is called twice: first the run, then the template. db.execute
+    # serves the hoisted general_instructions_for_version fetch (-> None).
+    svc.db = SimpleNamespace(
+        get=AsyncMock(side_effect=[run, template]),
+        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: None)),
+    )
     svc._runs = SimpleNamespace(
         start_run=AsyncMock(),
         complete_run=AsyncMock(),

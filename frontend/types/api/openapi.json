@@ -1790,6 +1790,54 @@
         "title": "ApiResponse[RunViewResponse]",
         "type": "object"
       },
+      "ApiResponse_TemplateInstructionRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateInstructionRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateInstructionRead]",
+        "type": "object"
+      },
       "ApiResponse_Union_RunSummaryResponse__NoneType__": {
         "properties": {
           "data": {
@@ -2008,6 +2056,54 @@
           "ok"
         ],
         "title": "ApiResponse[UpdateTemplateActiveResponse]",
+        "type": "object"
+      },
+      "ApiResponse_UpdateTemplateInstructionResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateTemplateInstructionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[UpdateTemplateInstructionResponse]",
         "type": "object"
       },
       "ApiResponse_list_AISuggestionHistoryItem__": {
@@ -6103,6 +6199,44 @@
         "title": "SyncStatusResponse",
         "type": "object"
       },
+      "TemplateInstructionRead": {
+        "properties": {
+          "default_instruction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Instruction"
+          },
+          "llm_template_instruction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Template Instruction"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_template_id",
+          "llm_template_instruction",
+          "default_instruction"
+        ],
+        "title": "TemplateInstructionRead",
+        "type": "object"
+      },
       "TestConnectionResponse": {
         "description": "Response de teste de conexao.",
         "properties": {
@@ -6249,6 +6383,71 @@
           "is_active"
         ],
         "title": "UpdateTemplateActiveResponse",
+        "type": "object"
+      },
+      "UpdateTemplateInstructionRequest": {
+        "properties": {
+          "llm_template_instruction": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Template Instruction"
+          }
+        },
+        "title": "UpdateTemplateInstructionRequest",
+        "type": "object"
+      },
+      "UpdateTemplateInstructionResponse": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "llm_template_instruction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Template Instruction"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          },
+          "repinned_run_count": {
+            "title": "Repinned Run Count",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_template_id",
+          "llm_template_instruction",
+          "version_id",
+          "version",
+          "changed",
+          "repinned_run_count"
+        ],
+        "title": "UpdateTemplateInstructionResponse",
         "type": "object"
       },
       "ValidationError": {
@@ -8252,6 +8451,132 @@
           }
         ],
         "summary": "Update Project Template Active",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/llm-instruction": {
+      "get": {
+        "description": "Current general AI instruction + the origin global's default.\n\nManager-gated like the sibling endpoints \u2014 the Configuration tab is\nthe only consumer.",
+        "operationId": "get_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateInstructionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Template Llm Instruction",
+        "tags": [
+          "project-templates"
+        ]
+      },
+      "put": {
+        "description": "Set/clear the instruction and republish in one transaction.\n\nWhitespace-only normalizes to NULL (nothing injected). Editable-stage\nruns are re-pinned by the republish so open forms and the next AI\nextraction pick the change up; runs from consensus on keep the\ninstruction they were assessed under.",
+        "operationId": "update_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTemplateInstructionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UpdateTemplateInstructionResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Update Template Llm Instruction",
         "tags": [
           "project-templates"
         ]

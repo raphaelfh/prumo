@@ -188,6 +188,7 @@ class TemplateCloneService:
             version=global_tpl.version,
             kind=global_tpl.kind,
             schema_=global_tpl.schema_ or {},
+            llm_template_instruction=global_tpl.llm_template_instruction,
             is_active=True,
             created_by=user_id,
         )

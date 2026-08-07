@@ -789,6 +789,23 @@ export const extraction = {
     subSections: 'Subsections',
     editLabelButton: 'Edit label',
     removeButton: 'Remove',
+    // TemplateInstructionRow (general AI instruction, config row zero)
+    instructionTitle: 'General AI instruction',
+    instructionEmpty:
+      'No general instruction — the AI receives only section and field instructions.',
+    instructionPlaceholder:
+      'Guidance sent to the AI before every section of this template…',
+    instructionCustomizeChip: '{{n}} to customize',
+    instructionEditedBadge: 'edited',
+    instructionCounter: '{{n}} / 4000',
+    instructionSave: 'Save',
+    instructionCancel: 'Cancel',
+    instructionResetDefault: 'Reset to template default',
+    instructionInsertDefault: 'Insert suggested default',
+    instructionSuggestedDefault:
+      "You are extracting data for a systematic review. Report values exactly as stated in the article, do not infer unreported values, and quote the passage supporting each value. [customize: describe this review's scope]",
+    instructionSavedToast: 'General AI instruction saved',
+    errors_saveInstruction: 'Could not save the general AI instruction',
     // QualityAssessmentInterface / dashboard
     dashboardProgress: 'Progress',
     sectionSingle: 'section',

@@ -667,6 +667,38 @@ export interface paths {
         patch: operations["update_project_template_active_api_v1_projects__project_id__templates__template_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates/{template_id}/llm-instruction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Template Llm Instruction
+         * @description Current general AI instruction + the origin global's default.
+         *
+         *     Manager-gated like the sibling endpoints — the Configuration tab is
+         *     the only consumer.
+         */
+        get: operations["get_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_get"];
+        /**
+         * Update Template Llm Instruction
+         * @description Set/clear the instruction and republish in one transaction.
+         *
+         *     Whitespace-only normalizes to NULL (nothing injected). Editable-stage
+         *     runs are re-pinned by the republish so open forms and the next AI
+         *     extraction pick the change up; runs from consensus on keep the
+         *     instruction they were assessed under.
+         */
+        put: operations["update_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/{template_id}/republish-version": {
         parameters: {
             query?: never;
@@ -1753,6 +1785,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[TemplateInstructionRead] */
+        ApiResponse_TemplateInstructionRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateInstructionRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[Union[RunSummaryResponse, NoneType]] */
         ApiResponse_Union_RunSummaryResponse__NoneType__: {
             /** @description Dados da resposta */
@@ -1811,6 +1860,23 @@ export interface components {
         ApiResponse_UpdateTemplateActiveResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["UpdateTemplateActiveResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[UpdateTemplateInstructionResponse] */
+        ApiResponse_UpdateTemplateInstructionResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["UpdateTemplateInstructionResponse"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3747,6 +3813,18 @@ export interface components {
             /** Traceid */
             traceId: string;
         };
+        /** TemplateInstructionRead */
+        TemplateInstructionRead: {
+            /** Default Instruction */
+            default_instruction: string | null;
+            /** Llm Template Instruction */
+            llm_template_instruction: string | null;
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+        };
         /**
          * TestConnectionResponse
          * @description Response de teste de conexao.
@@ -3813,6 +3891,32 @@ export interface components {
              * Format: uuid
              */
             project_template_id: string;
+        };
+        /** UpdateTemplateInstructionRequest */
+        UpdateTemplateInstructionRequest: {
+            /** Llm Template Instruction */
+            llm_template_instruction?: string | null;
+        };
+        /** UpdateTemplateInstructionResponse */
+        UpdateTemplateInstructionResponse: {
+            /** Changed */
+            changed: boolean;
+            /** Llm Template Instruction */
+            llm_template_instruction: string | null;
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+            /** Repinned Run Count */
+            repinned_run_count: number;
+            /** Version */
+            version: number;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -5000,6 +5104,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_UpdateTemplateActiveResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateInstructionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTemplateInstructionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_UpdateTemplateInstructionResponse_"];
                 };
             };
             /** @description Validation Error */

@@ -29,9 +29,12 @@ from app.schemas.hitl_session import (
     CloneTemplateRequest,
     CloneTemplateResponse,
     RepublishTemplateVersionResponse,
+    TemplateInstructionRead,
     TemplateKind,
     UpdateTemplateActiveRequest,
     UpdateTemplateActiveResponse,
+    UpdateTemplateInstructionRequest,
+    UpdateTemplateInstructionResponse,
 )
 from app.services.project_template_active_service import (
     LastActiveExtractionTemplateError,
@@ -41,6 +44,10 @@ from app.services.project_template_active_service import (
 from app.services.template_clone_service import (
     TemplateCloneService,
     TemplateNotFoundError,
+)
+from app.services.template_instruction_service import (
+    get_template_instruction,
+    set_template_instruction,
 )
 from app.services.template_version_service import TemplateVersionService
 
@@ -114,6 +121,69 @@ async def update_project_template_active(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except LastActiveExtractionTemplateError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    return ApiResponse.success(
+        result,
+        trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.get(
+    "/{project_id}/templates/{template_id}/llm-instruction",
+)
+async def get_template_llm_instruction(
+    project_id: UUID,
+    template_id: UUID,
+    request: Request,
+    db: DbSession,
+    _user_sub: UUID = Depends(require_project_manager),
+) -> ApiResponse[TemplateInstructionRead]:
+    """Current general AI instruction + the origin global's default.
+
+    Manager-gated like the sibling endpoints — the Configuration tab is
+    the only consumer.
+    """
+    try:
+        result = await get_template_instruction(db, project_id=project_id, template_id=template_id)
+    except ProjectTemplateNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return ApiResponse.success(
+        result,
+        trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.put(
+    "/{project_id}/templates/{template_id}/llm-instruction",
+)
+async def update_template_llm_instruction(
+    project_id: UUID,
+    template_id: UUID,
+    body: UpdateTemplateInstructionRequest,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(require_project_manager),
+) -> ApiResponse[UpdateTemplateInstructionResponse]:
+    """Set/clear the instruction and republish in one transaction.
+
+    Whitespace-only normalizes to NULL (nothing injected). Editable-stage
+    runs are re-pinned by the republish so open forms and the next AI
+    extraction pick the change up; runs from consensus on keep the
+    instruction they were assessed under.
+    """
+    try:
+        result = await set_template_instruction(
+            db,
+            project_id=project_id,
+            template_id=template_id,
+            llm_template_instruction=body.llm_template_instruction,
+            user_id=current_user_sub,
+        )
+    except (ProjectTemplateNotFoundError, TemplateNotFoundError) as e:
+        # TemplateNotFoundError: the inner republish ownership re-check —
+        # reachable if the template is deleted between our BOLA check and
+        # the locked section (TOCTOU window). Same 404 semantics.
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    await db.commit()
     return ApiResponse.success(
         result,
         trace_id=getattr(request.state, "trace_id", None),
