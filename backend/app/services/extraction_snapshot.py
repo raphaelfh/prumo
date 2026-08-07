@@ -139,17 +139,32 @@ async def build_template_version_snapshot(
 def snapshot_is_narrow(entity_types: list[dict[str, Any]]) -> bool:
     """Detect snapshots the run view / prompts cannot trust structurally.
 
-    Narrow = empty, or ANY element lacking ``role``. Per-element (not just
-    ``entity_types[0]``): a heterogeneous snapshot — 0017-patched first
-    element, unpatched later one — would pass a first-element check and
-    then blow up ``model_validate`` on element N (``role`` has no
-    default). Empty is treated as narrow so the live fallback repopulates
-    it; a legitimately empty template just round-trips to an empty live
-    read, which is the correct (if marginally wasteful) recovery — and it
-    is what keeps an empty pinned snapshot from turning AI extraction
-    into a green no-op run.
+    Narrow = empty, ANY element lacking ``role``, or ANY field lacking a
+    wide-builder key. Three eras motivate the three probes:
+
+    - pre-0017: no ``role`` at all;
+    - 0017-patched pre-0016 rows and 0016→0026-era clone snapshots:
+      ``role`` present (0017 injected it in place) but the FIELD objects
+      predate the wide builder — migration 0026's backfill keys on the
+      role probe and skips exactly these, so ``model_validate`` would
+      serve them with ``llm_description``/``allow_other`` silently
+      defaulted where the pre-B-2 code read live rows;
+    - heterogeneous mixes of the above.
+
+    Per-element, per-field: one narrow member chains the whole tree to
+    the live fallback. Empty is narrow so the fallback repopulates it —
+    which is also what keeps an empty pinned snapshot from turning AI
+    extraction into a green no-op run.
     """
-    return not entity_types or any("role" not in et for et in entity_types)
+    if not entity_types:
+        return True
+    for et in entity_types:
+        if "role" not in et:
+            return True
+        for field in et.get("fields") or []:
+            if "llm_description" not in field or "allow_other" not in field:
+                return True
+    return False
 
 
 async def entity_types_for_version(

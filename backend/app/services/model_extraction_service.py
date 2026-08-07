@@ -149,6 +149,14 @@ class ModelExtractionService(LoggerMixin):
                 raise ValueError(
                     f"Run {run_id} stage is {existing_run.stage}; model extraction requires EXTRACT"
                 )
+            if existing_run.template_id != template_id:
+                # B-2 splits identification (run-PINNED tree) from instance
+                # creation (caller's template_id): a mismatched pair would
+                # identify against one template and materialize into another.
+                raise ValueError(
+                    f"Run {run_id} belongs to template {existing_run.template_id}, "
+                    f"not {template_id}"
+                )
             run = existing_run
             manage_lifecycle = False
         else:

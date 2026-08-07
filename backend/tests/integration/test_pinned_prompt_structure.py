@@ -250,7 +250,14 @@ async def test_extract_for_run_iterates_the_pinned_top_level_set(
                     str(entity_type_id),
                     "pinned_top_level",
                     fields=[_snapshot_field(str(field_a_id), "field_a")],
-                )
+                ),
+                # A pinned CHILD must not be iterated by the top-level loop.
+                _snapshot_entity(
+                    str(uuid.uuid4()),
+                    "pinned_child_not_top_level",
+                    role="model_section",
+                    parent=str(entity_type_id),
+                ),
             ]
         },
     )
@@ -404,3 +411,118 @@ async def test_model_identification_uses_pinned_label_and_instruction(
     assert captured["user_prompt"].startswith(
         "General instructions for this review:\nPINNED GENERAL INSTRUCTION\n\n"
     )
+
+
+@pytest.mark.asyncio
+async def test_pinned_but_deleted_live_paths(db_session: AsyncSession) -> None:
+    """Both 'pinned but deleted live' branches: extract_section raises the
+    live-path error; the batch helper skips without an LLM call."""
+    fx = await _coords(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id, _instance_id, _field_a_id = fx
+
+    run = await _fresh_extract_run(db_session, fx)
+    ghost_entity_id = uuid.uuid4()  # in the pin, never existed live
+    await _pin_run_to_snapshot(
+        db_session,
+        run_id=run.id,
+        template_id=template_id,
+        profile_id=profile_id,
+        schema={
+            "entity_types": [
+                _snapshot_entity(
+                    str(ghost_entity_id),
+                    "ghost_section",
+                    fields=[_snapshot_field(str(uuid.uuid4()), "ghost_field")],
+                )
+            ]
+        },
+    )
+    await db_session.refresh(run)
+
+    service = _service(db_session, profile_id)
+    with pytest.raises(ValueError, match="Entity type not found"):
+        await service.extract_section(
+            project_id=project_id,
+            article_id=article_id,
+            template_id=template_id,
+            entity_type_id=ghost_entity_id,
+            run_id=run.id,
+        )
+
+    pinned_tree = await service._pinned_entity_types(run)
+    result = await service._extract_one_entity_type_for_run(
+        run=run,
+        entity_type=pinned_tree[0],
+        pdf_text="irrelevant",
+        framework=None,
+        kind="extraction",
+        skip_fields_with_human_proposals=False,
+        model="gpt-test",
+    )
+    assert result == {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
+    service._extract_with_llm.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_live_rename_carries_live_name_into_the_prompt_bridge(
+    db_session: AsyncSession,
+) -> None:
+    """A field renamed live (same id) must reach the LLM under its LIVE name —
+    the write layer resolves the LLM's output key against live names, so a
+    pinned name would silently drop the extracted value. Semantic content
+    (llm_description) stays pinned."""
+    fx = await _coords(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id, _instance_id, field_a_id = fx
+
+    entity_type_id = (
+        await db_session.execute(
+            text("SELECT entity_type_id FROM public.extraction_fields WHERE id = :fid"),
+            {"fid": str(field_a_id)},
+        )
+    ).scalar()
+    entity_type_id = UUID(str(entity_type_id))
+
+    run = await _fresh_extract_run(db_session, fx)
+    await _pin_run_to_snapshot(
+        db_session,
+        run_id=run.id,
+        template_id=template_id,
+        profile_id=profile_id,
+        schema={
+            "entity_types": [
+                _snapshot_entity(
+                    str(entity_type_id),
+                    "section",
+                    fields=[
+                        _snapshot_field(
+                            str(field_a_id),
+                            "old_pinned_name",
+                            llm_description="PINNED INSTRUCTION",
+                        )
+                    ],
+                )
+            ]
+        },
+    )
+    await db_session.execute(
+        text("UPDATE public.extraction_fields SET name = 'renamed_live' WHERE id = :fid"),
+        {"fid": str(field_a_id)},
+    )
+    await db_session.refresh(run)
+
+    service = _service(db_session, profile_id)
+    await service.extract_section(
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+        entity_type_id=entity_type_id,
+        run_id=run.id,
+    )
+
+    sent = service._extract_with_llm.call_args.kwargs["fields_override"]
+    assert [f.name for f in sent] == ["renamed_live"]
+    assert sent[0].llm_description == "PINNED INSTRUCTION"

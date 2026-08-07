@@ -449,10 +449,12 @@ class TestFullExtractionFlow:
         service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
         service._entity_types.get_children = AsyncMock(return_value=[])
 
-        # The session run to reuse — already in EXTRACT stage.
+        # The session run to reuse — already in EXTRACT stage, owned by the
+        # same template (the B-2 mismatch guard rejects a foreign pair).
         existing_run = MagicMock()
         existing_run.id = run_id
         existing_run.stage = "extract"
+        existing_run.template_id = template_id
         mock_db.get = AsyncMock(return_value=existing_run)
 
         # Lifecycle hooks that must remain UNCALLED in the reuse path.

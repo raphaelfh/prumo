@@ -702,12 +702,27 @@ class SectionExtractionService(LoggerMixin):
         proposal write could not resolve it anyway). The intersection is
         pair-safe by construction: ids are matched inside this one entity
         type's live field set.
+
+        The field NAME is the write-layer bridge: the LLM answers with the
+        prompt's property key and ``_create_suggestions`` resolves that key
+        against LIVE field names. A field renamed live (same id) therefore
+        carries the LIVE name into the prompt — otherwise the write would
+        silently drop the extracted value — while the semantic prompt
+        content (label, description, llm_description) stays pinned.
         """
         live = await self._entity_types.get_with_fields(entity_type.id)
         if live is None:
             return None
-        live_ids = {f.id for f in (live.fields or [])}
-        return [f for f in entity_type.fields if f.id in live_ids]
+        live_by_id = {f.id: f for f in (live.fields or [])}
+        result: list[Any] = []
+        for field in entity_type.fields:
+            live_field = live_by_id.get(field.id)
+            if live_field is None:
+                continue
+            if field.name != live_field.name:
+                field = field.model_copy(update={"name": live_field.name})
+            result.append(field)
+        return result
 
     async def _find_instance_for_entity_type(
         self,
@@ -1082,6 +1097,13 @@ class SectionExtractionService(LoggerMixin):
         """
         section_phase_durations_ms: dict[str, float] = {}
 
+        # Same coherence contract as the sibling paths: fields sent to the
+        # LLM are snapshot ∩ live; a section deleted live is skipped before
+        # burning an LLM call on values the write layer could not resolve.
+        pinned_fields = await self._live_field_intersection(entity_type)
+        if pinned_fields is None:
+            return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
+
         # Run extraction with memory context
         phase_start = perf_counter()
         extracted_data, llm_usage = await self._extract_with_llm(
@@ -1089,6 +1111,7 @@ class SectionExtractionService(LoggerMixin):
             entity_type=entity_type,
             model=model,
             memory_context=memory_history,
+            fields_override=pinned_fields,
             general_instructions=general_instructions,
         )
         section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000

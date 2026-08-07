@@ -8,11 +8,20 @@ owner: '@raphaelfh'
 
 > Slice 2 of the track-B re-slicing
 > (`docs/superpowers/plans/2026-08-07-template-config-b1-grid-shell.md`).
-> Spec §1.1 finding 1. **Provably inert on merge**: every AI entry point
+> Spec §1.1 finding 1. **Inert on merge, precisely scoped** (the pre-ship
+> review corrected the original blanket claim): every AI entry point
 > hard-requires `stage == EXTRACT`, republish re-pins editable-stage runs
-> on both its branches, and `run.version_id` is NOT NULL — so today every
-> AI-eligible run is pinned to the active version and live == snapshot.
-> The change becomes load-bearing when B-4 stops per-edit republishing.
+> on both its branches, and `run.version_id` is NOT NULL — so every
+> AI-eligible run is pinned to the active version. Field-SET and content
+> equality with live rows additionally requires a post-wide-builder,
+> post-last-edit snapshot; legacy field-narrow snapshots (0016→0026-era,
+> skipped by migration 0026's role-keyed backfill) are detected by the
+> per-field narrowness probe and chain to the live fallback — i.e. they
+> keep reading exactly what they read before this slice. Prompt field
+> ORDER becomes deterministic (`sort_order`) where the old ORM
+> relationship order was formally unspecified — a disclosed, benign
+> delta, not a regression. The change becomes load-bearing when B-4
+> stops per-edit republishing.
 
 ## Goal
 
@@ -53,7 +62,16 @@ pinned snapshot must never turn AI extraction into a green no-op run
 (`section_extraction_service` short-circuits its all-failed guard on an
 empty section list) nor the worklist into 100 % complete.
 
-**Coordinate coherence, two independent layers.**
+**Coordinate coherence, two independent layers.** The pre-ship review
+added a third rule: the field NAME is the write-layer bridge (the LLM
+answers with the prompt's property key; `_create_suggestions` resolves
+that key against LIVE names), so `_live_field_intersection` carries the
+LIVE name onto a renamed field while label/description/llm_description
+stay pinned — otherwise a live rename would silently drop the write.
+The children batch path applies the same intersection as the other two
+(skip-before-LLM-call when the section is gone live).
+
+
 1. *Prompt layer:* fields sent to the LLM = snapshot fields ∩ live field
    ids, scoped per entity type (a pair intersection by construction —
    ids are matched inside one entity type's field set). A field deleted
