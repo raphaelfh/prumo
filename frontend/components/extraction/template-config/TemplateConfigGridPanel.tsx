@@ -12,6 +12,7 @@ import {Input} from '@/components/ui/input';
 import {Skeleton} from '@/components/ui/skeleton';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
+import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
 import {t} from '@/lib/copy';
 import type {ExtractionField} from '@/types/extraction';
 
@@ -42,6 +43,7 @@ import {
  */
 
 interface TemplateConfigGridPanelProps {
+  projectId: string;
   templateId: string;
   /** Receives the RAW row, which is what the edit dialog needs. */
   onEditField: (field: ExtractionField) => void;
@@ -51,6 +53,7 @@ interface TemplateConfigGridPanelProps {
 }
 
 export function TemplateConfigGridPanel({
+  projectId,
   templateId,
   onEditField,
   onDeleteField,
@@ -63,6 +66,9 @@ export function TemplateConfigGridPanel({
   // `isLoading` is first-load-only, which keeps the rows (and the user's
   // selection, search and collapse state) on screen during a refetch.
   const {entityTypes, isLoading} = useTemplateEntityTypes(templateId);
+  // One mutation for the whole panel — NOT per selection: the inspector's
+  // save composes the PostgREST update with an awaited republish.
+  const updateField = useUpdateTemplateField(projectId, templateId);
   const [selection, setSelection] = useState<TemplateGridSelection | null>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState('');
@@ -231,6 +237,7 @@ export function TemplateConfigGridPanel({
           section={selectedSection}
           owningSection={owningSection}
           onEditField={withRawField(onEditField)}
+          updateField={updateField}
         />
       </div>
     </div>
