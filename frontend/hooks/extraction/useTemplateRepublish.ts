@@ -29,18 +29,20 @@ export function useTemplateRepublish(
   const queryClient = useQueryClient();
 
   /**
-   * Fire the republish + cache invalidation. Resolves quietly on success;
-   * toasts on failure (the structural edit itself already succeeded — the
-   * user must know the forms may lag behind).
+   * Fire the republish + cache invalidation. Toasts on failure (the
+   * structural edit itself already succeeded — the user must know the
+   * forms may lag behind) and reports the outcome so callers that need
+   * honest saved-state (the inspector's Save) can react; fire-and-forget
+   * callers just keep `void republish()`.
    */
-  const republish = async (): Promise<void> => {
-    if (!projectId || !templateId) return;
+  const republish = async (): Promise<boolean> => {
+    if (!projectId || !templateId) return false;
 
     const result = await republishTemplateVersion(projectId, templateId);
     if (!result.ok) {
       console.error('[useTemplateRepublish] republish failed:', result.error);
       toast.error(t('extraction', 'errors_republishTemplate'));
-      return;
+      return false;
     }
 
     await queryClient.invalidateQueries({queryKey: runsKeys.all});
@@ -51,6 +53,7 @@ export function useTemplateRepublish(
     await queryClient.invalidateQueries({
       queryKey: templateActiveStructureKeys.byTemplate(projectId, templateId),
     });
+    return true;
   };
 
   return {republish};

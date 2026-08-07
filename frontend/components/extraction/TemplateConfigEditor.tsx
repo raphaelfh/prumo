@@ -155,6 +155,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
 
       {entityTypes.length > 0 && (
       <TemplateConfigGridPanel
+        projectId={projectId}
         templateId={templateId}
         onEditField={(field) => {
           const section = entityTypes.find((et) => et.id === field.entity_type_id);
