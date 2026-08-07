@@ -46,6 +46,13 @@ export const templateEntityTypesKeys = {
 };
 
 /** Template general AI instruction (Configuration row zero). */
+/** ACTIVE-version template structure (worklist/dashboard reads, B-3a). */
+export const templateActiveStructureKeys = {
+  all: ['template-active-structure'] as const,
+  byTemplate: (projectId: string, templateId: string) =>
+    ['template-active-structure', projectId, templateId] as const,
+};
+
 export const templateInstructionKeys = {
   byTemplate: (projectId: string, templateId: string) =>
     ['template-instruction', projectId, templateId] as const,

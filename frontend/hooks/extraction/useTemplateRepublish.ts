@@ -16,7 +16,10 @@ import {useQueryClient} from '@tanstack/react-query';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {runsKeys} from '@/hooks/runs/types';
-import {templateEntityTypesKeys} from '@/lib/query-keys/extraction';
+import {
+  templateActiveStructureKeys,
+  templateEntityTypesKeys,
+} from '@/lib/query-keys/extraction';
 import {republishTemplateVersion} from '@/services/templateService';
 
 export function useTemplateRepublish(
@@ -43,6 +46,10 @@ export function useTemplateRepublish(
     await queryClient.invalidateQueries({queryKey: runsKeys.all});
     await queryClient.invalidateQueries({
       queryKey: templateEntityTypesKeys.byTemplate(templateId),
+    });
+    // The worklist reads the ACTIVE snapshot (B-3a) — republish just moved it.
+    await queryClient.invalidateQueries({
+      queryKey: templateActiveStructureKeys.byTemplate(projectId, templateId),
     });
   };
 

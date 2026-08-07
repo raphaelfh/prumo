@@ -1025,7 +1025,18 @@ class ExtractionExportService(LoggerMixin):
         self,
         template_id: UUID,
     ) -> dict[UUID, ExtractionEntityRole]:
-        """Return ``entity_type_id -> role`` for the template."""
+        """``entity_type_id -> role`` from the ACTIVE snapshot (B-3a).
+
+        Derived from the same anchor the column layout uses — a live read
+        here would let an unpublished draft edit repartition the export's
+        study/model fan-out under B-4. Chains to the live rows when no
+        active version exists (unreachable for templates with runs —
+        trigger 0004 — but chain, never swap).
+        """
+        version = await self._template_versions_repo().get_active(template_id)
+        if version is not None:
+            sections = await load_export_sections(self.db, version_id=version.id)
+            return {s.entity_type_id: ExtractionEntityRole(s.role) for s in sections}
         rows = (
             await self.db.execute(
                 select(ExtractionEntityType.id, ExtractionEntityType.role).where(
@@ -1777,35 +1788,49 @@ class ExtractionExportService(LoggerMixin):
                 for idx, iid in enumerate(ids, start=1):
                     instance_index_by_id[iid] = idx
 
-        # Section labels — lookup needs entity_type_id for an instance.
-        # If an entity_type doesn't appear in our snapshot sections, we
-        # fall back to a "(unknown section)" label rather than erroring.
-        ent_label_rows = (
-            await self.db.execute(
-                select(ExtractionEntityType.id, ExtractionEntityType.label).where(
-                    ExtractionEntityType.id.in_({etid for etid, _aid in instance_meta.values()})
-                    if instance_meta
-                    else (False,)  # type: ignore[arg-type]  # SA short-circuits on no-op
-                )
-            )
-        ).all()
-        section_label_by_entity: dict[UUID, str] = dict(ent_label_rows)
-
         # 6. Model per run — resolved from run.parameters["model"] (set at
         # dispatch time). Falls back to "" for older runs without the key.
+        # version_id rides along to feed the label-fallback chain below.
         run_param_rows = (
             await self.db.execute(
-                select(ExtractionRun.id, ExtractionRun.parameters).where(
+                select(ExtractionRun.id, ExtractionRun.parameters, ExtractionRun.version_id).where(
                     ExtractionRun.id.in_(run_ids)
                 )
             )
         ).all()
         model_by_run: dict[UUID, str] = {
-            rid: (params or {}).get("model", "") for rid, params in run_param_rows
+            rid: (params or {}).get("model", "") for rid, params, _vid in run_param_rows
         }
 
-        # Field-label fallback when a field is not in the template snapshot
-        # (rare; happens when the run was finalized on an older version).
+        # Label-fallback CHAIN (B-3a): anchor sections -> the RUN's pinned
+        # snapshot -> live tables -> "(unknown ...)". An instance belongs to
+        # its run's pinned version, not the anchor, so a section or field
+        # removed after the run finalized must resolve from that version
+        # before the live table (which may have lost the row entirely).
+        section_label_by_entity: dict[UUID, str] = {}
+        run_field_labels: dict[UUID, str] = {}
+        for vid in {vid for _rid, _params, vid in run_param_rows}:
+            for section in await load_export_sections(self.db, version_id=vid):
+                section_label_by_entity.setdefault(section.entity_type_id, section.label)
+                for snap_field in section.fields:
+                    run_field_labels.setdefault(snap_field.field_id, snap_field.label)
+        for fid, label in run_field_labels.items():
+            field_label_by_id.setdefault(fid, label)
+
+        missing_entity_ids = {
+            etid for etid, _aid in instance_meta.values()
+        } - section_label_by_entity.keys()
+        if missing_entity_ids:
+            ent_label_rows = (
+                await self.db.execute(
+                    select(ExtractionEntityType.id, ExtractionEntityType.label).where(
+                        ExtractionEntityType.id.in_(missing_entity_ids)
+                    )
+                )
+            ).all()
+            for etid, label in ent_label_rows:
+                section_label_by_entity.setdefault(etid, label)
+
         missing_field_ids = {
             fid for _pid, _rid, _iid, fid, *_ in proposal_rows if fid not in field_label_by_id
         }

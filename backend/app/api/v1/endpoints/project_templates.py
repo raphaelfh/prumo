@@ -22,13 +22,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.api.deps.security import require_project_manager
+from app.api.deps.security import require_project_manager, require_project_scope
 from app.core.deps import DbSession
 from app.schemas.common import ApiResponse
 from app.schemas.hitl_session import (
     CloneTemplateRequest,
     CloneTemplateResponse,
     RepublishTemplateVersionResponse,
+    TemplateActiveVersionRead,
     TemplateInstructionRead,
     TemplateKind,
     UpdateTemplateActiveRequest,
@@ -48,6 +49,10 @@ from app.services.template_clone_service import (
 from app.services.template_instruction_service import (
     get_template_instruction,
     set_template_instruction,
+)
+from app.services.template_version_read_service import (
+    NoActiveTemplateVersionError,
+    get_active_version_tree,
 )
 from app.services.template_version_service import TemplateVersionService
 
@@ -226,5 +231,31 @@ async def republish_template_version(
             changed=result.changed,
             repinned_run_count=result.repinned_run_count,
         ),
+        trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.get(
+    "/{project_id}/templates/{template_id}/active-version",
+)
+async def get_template_active_version(
+    project_id: UUID,
+    template_id: UUID,
+    request: Request,
+    db: DbSession,
+    _user_sub: UUID = Depends(require_project_scope),
+) -> ApiResponse[TemplateActiveVersionRead]:
+    """The ACTIVE version tree the worklist/dashboard render from (B-3a).
+
+    Member-gated (reviewers see the worklist). A template with no active
+    version is a typed 404 — never an empty tree, which progress math
+    would read as fully complete.
+    """
+    try:
+        result = await get_active_version_tree(db, project_id=project_id, template_id=template_id)
+    except (ProjectTemplateNotFoundError, NoActiveTemplateVersionError) as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return ApiResponse.success(
+        result,
         trace_id=getattr(request.state, "trace_id", None),
     )

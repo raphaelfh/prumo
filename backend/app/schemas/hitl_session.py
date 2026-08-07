@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 # canonical enum value without importing directly from app.models.* —
 # enforced by scripts/fitness/check_layered_arch.py.
 from app.models.extraction_versioning import TemplateKind  # noqa: E402,F401
-from app.schemas.extraction_run import RunViewResponse
+from app.schemas.extraction_run import RunViewEntityType, RunViewResponse
 
 
 class OpenHITLSessionRequest(BaseModel):
@@ -86,3 +86,13 @@ class UpdateTemplateInstructionResponse(BaseModel):
     version: int
     changed: bool
     repinned_run_count: int
+
+
+class TemplateActiveVersionRead(BaseModel):
+    """The template's ACTIVE version tree — what the worklist/dashboard
+    progress and exports render from (B-3a). Never an empty stand-in for a
+    missing active version: that case is a typed 404."""
+
+    version_id: UUID
+    version: int
+    entity_types: list[RunViewEntityType]

@@ -667,6 +667,30 @@ export interface paths {
         patch: operations["update_project_template_active_api_v1_projects__project_id__templates__template_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates/{template_id}/active-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Template Active Version
+         * @description The ACTIVE version tree the worklist/dashboard render from (B-3a).
+         *
+         *     Member-gated (reviewers see the worklist). A template with no active
+         *     version is a typed 404 — never an empty tree, which progress math
+         *     would read as fully complete.
+         */
+        get: operations["get_template_active_version_api_v1_projects__project_id__templates__template_id__active_version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/{template_id}/llm-instruction": {
         parameters: {
             query?: never;
@@ -1772,6 +1796,23 @@ export interface components {
         ApiResponse_RunViewResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["RunViewResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateActiveVersionRead] */
+        ApiResponse_TemplateActiveVersionRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateActiveVersionRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3813,6 +3854,23 @@ export interface components {
             /** Traceid */
             traceId: string;
         };
+        /**
+         * TemplateActiveVersionRead
+         * @description The template's ACTIVE version tree — what the worklist/dashboard
+         *     progress and exports render from (B-3a). Never an empty stand-in for a
+         *     missing active version: that case is a typed 404.
+         */
+        TemplateActiveVersionRead: {
+            /** Entity Types */
+            entity_types: components["schemas"]["RunViewEntityType"][];
+            /** Version */
+            version: number;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+        };
         /** TemplateInstructionRead */
         TemplateInstructionRead: {
             /** Default Instruction */
@@ -5104,6 +5162,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_UpdateTemplateActiveResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_template_active_version_api_v1_projects__project_id__templates__template_id__active_version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateActiveVersionRead_"];
                 };
             };
             /** @description Validation Error */

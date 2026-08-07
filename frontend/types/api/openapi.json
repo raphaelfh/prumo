@@ -1790,6 +1790,54 @@
         "title": "ApiResponse[RunViewResponse]",
         "type": "object"
       },
+      "ApiResponse_TemplateActiveVersionRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateActiveVersionRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateActiveVersionRead]",
+        "type": "object"
+      },
       "ApiResponse_TemplateInstructionRead_": {
         "properties": {
           "data": {
@@ -6199,6 +6247,34 @@
         "title": "SyncStatusResponse",
         "type": "object"
       },
+      "TemplateActiveVersionRead": {
+        "description": "The template's ACTIVE version tree \u2014 what the worklist/dashboard\nprogress and exports render from (B-3a). Never an empty stand-in for a\nmissing active version: that case is a typed 404.",
+        "properties": {
+          "entity_types": {
+            "items": {
+              "$ref": "#/components/schemas/RunViewEntityType"
+            },
+            "title": "Entity Types",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_id",
+          "version",
+          "entity_types"
+        ],
+        "title": "TemplateActiveVersionRead",
+        "type": "object"
+      },
       "TemplateInstructionRead": {
         "properties": {
           "default_instruction": {
@@ -8451,6 +8527,65 @@
           }
         ],
         "summary": "Update Project Template Active",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/active-version": {
+      "get": {
+        "description": "The ACTIVE version tree the worklist/dashboard render from (B-3a).\n\nMember-gated (reviewers see the worklist). A template with no active\nversion is a typed 404 \u2014 never an empty tree, which progress math\nwould read as fully complete.",
+        "operationId": "get_template_active_version_api_v1_projects__project_id__templates__template_id__active_version_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateActiveVersionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Template Active Version",
         "tags": [
           "project-templates"
         ]
