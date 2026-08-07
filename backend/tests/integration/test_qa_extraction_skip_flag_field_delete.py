@@ -252,3 +252,81 @@ async def test_call_site_passes_pinned_not_live_instruction(
     )
 
     assert service._extract_with_llm.call_args.kwargs["general_instructions"] == "PINNED"
+
+
+@pytest.mark.asyncio
+async def test_batch_call_site_passes_pinned_not_live_instruction(
+    db_session: AsyncSession,
+) -> None:
+    """Same §9-A guard for the QA/batch surface: ``extract_for_run``'s
+    hoisted fetch must read the run-PINNED snapshot, never the live
+    column (a live-column or active-version read would leave the
+    helper-level tests green)."""
+    from uuid import uuid4
+
+    fx = await _coords(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id, _instance_id, _field_a_id = fx
+
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
+            "AND article_id = :aid AND template_id = :tid"
+        ),
+        {"pid": str(project_id), "aid": str(article_id), "tid": str(template_id)},
+    )
+    session = await HITLSessionService(db_session).open_or_resume(
+        kind=TemplateKind.EXTRACTION,
+        project_id=project_id,
+        article_id=article_id,
+        user_id=profile_id,
+        project_template_id=template_id,
+    )
+    run = await db_session.get(ExtractionRun, session.run_id)
+    assert run is not None
+
+    old_version_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_template_versions "
+            "(id, project_template_id, version, schema, published_by, is_active) "
+            "VALUES (:id, :tid, 997, "
+            ' \'{"entity_types": [], "llm_template_instruction": "PINNED"}\'::jsonb, '
+            " :pub, false)"
+        ),
+        {"id": str(old_version_id), "tid": str(template_id), "pub": str(profile_id)},
+    )
+    await db_session.execute(
+        text("UPDATE public.extraction_runs SET version_id = :vid WHERE id = :rid"),
+        {"vid": str(old_version_id), "rid": str(run.id)},
+    )
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET llm_template_instruction = 'LIVE' WHERE id = :tid"
+        ),
+        {"tid": str(template_id)},
+    )
+    await db_session.refresh(run)
+
+    service = SectionExtractionService(
+        db=db_session,
+        user_id=str(profile_id),
+        storage=MagicMock(),
+        trace_id="test-pinned-instruction-batch",
+    )
+    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
+        return_value="irrelevant — LLM is mocked"
+    )
+    service._extract_with_llm = AsyncMock(  # type: ignore[method-assign]
+        return_value=({}, LlmUsage())
+    )
+
+    await service.extract_for_run(run_id=run.id, auto_advance_to_review=False)
+
+    assert service._extract_with_llm.call_count > 0
+    assert all(
+        call.kwargs["general_instructions"] == "PINNED"
+        for call in service._extract_with_llm.call_args_list
+    )

@@ -48,13 +48,13 @@ async def test_extract_with_llm_prepends_general_instructions(monkeypatch) -> No
     )
     monkeypatch.setattr(
         "app.services.section_extraction_service.dump_extraction",
-        lambda output: {},
+        lambda _output: {},
     )
     # Unconditional: build_model raises MissingLLMKeyError without a key;
     # every existing direct _extract_with_llm test patches it.
     monkeypatch.setattr(
         "app.services.section_extraction_service.build_model",
-        lambda *a, **k: MagicMock(),
+        lambda *_a, **_k: MagicMock(),
     )
 
     service = SectionExtractionService(
