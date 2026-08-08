@@ -1,9 +1,8 @@
 /**
  * Snake_case key generation for template structure (fields + sections).
  *
- * Extracted from AddFieldDialog (B-5 Task 4) so the ghost-row insert
- * queue and AddSectionDialog share ONE implementation; the dialog keeps
- * its private copy until it is deleted in Task 8.
+ * Extracted from the late add-field dialog (B-5 Task 4) so the
+ * ghost-row insert queue and AddSectionDialog share ONE implementation.
  *
  * @module lib/extraction/slug
  */

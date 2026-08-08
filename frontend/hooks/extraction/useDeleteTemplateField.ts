@@ -1,8 +1,8 @@
 /**
  * Dedicated delete path for the editor-hosted DeleteFieldConfirm (B-5
- * Task 7). Same rationale as `useUpdateTemplateField`: deliberately NOT
- * `useFieldManagement` (two requests per mount for state the panel
- * already has). B-4: a delete is a draft edit — nothing republishes; on
+ * Task 7). Same rationale as `useUpdateTemplateField`: a small
+ * single-write mutation, no per-mount permission/field fetches for state
+ * the panel already has. B-4: a delete is a draft edit — nothing republishes; on
  * success the grid + Draft chip caches refresh. Permission gating is the
  * Configuration tab (manager-only) plus RLS on the write.
  *

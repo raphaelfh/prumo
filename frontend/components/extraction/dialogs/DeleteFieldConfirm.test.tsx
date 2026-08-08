@@ -1,9 +1,9 @@
 /**
  * DeleteFieldConfirm — folded-in impact pre-fetch (B-5 Task 7).
  *
- * The dialog owns its validation fetch through the `onValidate` prop
- * (the shape EditFieldDialog already uses), replacing the third copy of
- * the pre-fetch that lived in its hosts. The result is ADVISORY: a
+ * The dialog owns its validation fetch through the `onValidate` prop,
+ * replacing the third copy of the pre-fetch that lived in its hosts.
+ * The result is ADVISORY: a
  * blocked validation explains the impact up front, but the DB's 23503
  * refusal (mapped in the service) is the real invariant.
  */

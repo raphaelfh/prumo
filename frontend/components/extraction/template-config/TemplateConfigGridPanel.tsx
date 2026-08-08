@@ -126,8 +126,7 @@ export function applyRetentionToFilter(
 interface TemplateConfigGridPanelProps {
   projectId: string;
   templateId: string;
-  /** Receives the RAW row, which is what the edit dialog needs. */
-  onEditField: (field: ExtractionField) => void;
+  /** Receives the RAW row — the editor-hosted DeleteFieldConfirm needs it. */
   onDeleteField: (field: ExtractionField) => void;
   sectionActions: TemplateSectionActions;
   onAddSection: () => void;
@@ -136,7 +135,6 @@ interface TemplateConfigGridPanelProps {
 export function TemplateConfigGridPanel({
   projectId,
   templateId,
-  onEditField,
   onDeleteField,
   sectionActions,
   onAddSection,
@@ -268,7 +266,7 @@ export function TemplateConfigGridPanel({
       ? {group: focusGroup.group, seq: focusGroup.seq}
       : null;
 
-  // The grid speaks in projections; the dialogs need the row they came from.
+  // The grid speaks in projections; the delete confirm needs the raw row.
   const withRawField = (handler: (raw: ExtractionField) => void) => (gridField: GridField) => {
     const raw = entityTypes
       .flatMap((et) => et.fields)
@@ -607,7 +605,6 @@ export function TemplateConfigGridPanel({
               sections={visibleSections}
               selection={selection}
               onSelect={setSelection}
-              onEditField={withRawField(onEditField)}
               onDeleteField={withRawField(onDeleteField)}
               onCommitField={handleCommitField}
               onInsertField={handleInsertField}

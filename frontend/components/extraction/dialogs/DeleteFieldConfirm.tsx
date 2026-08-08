@@ -3,7 +3,7 @@
  *
  * Features:
  * - Owns its impact pre-fetch through `onValidate` (B-5 Task 7 folded
- *   the third copy of that flow in here; the shape EditFieldDialog uses)
+ *   the third copy of that flow in here)
  * - Shows impact of deletion (extracted values, affected articles)
  * - Blocks deletion if there is data — ADVISORY: the DB's RESTRICT FKs
  *   (mapped to friendly copy in the service) are the real invariant

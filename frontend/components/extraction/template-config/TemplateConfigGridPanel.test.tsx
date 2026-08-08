@@ -130,12 +130,11 @@ describe('applyRetentionToFilter', () => {
 });
 
 /** Task 6: the grid row owns the rename draft — the panel only threads
- * the single commit through (plus delete and the dead-until-Task-8
- * add-field). Shared across suites; no panel test asserts on it. */
+ * the single commit through (plus delete). Shared across suites; no
+ * panel test asserts on it. */
 const sectionActions: TemplateSectionActions = {
   onCommitRename: vi.fn(),
   onDelete: vi.fn(),
-  onAddField: vi.fn(),
 };
 
 /** Default queue stub: enqueueInsert echoes a deterministic client key. */
@@ -193,7 +192,6 @@ describe('TemplateConfigGridPanel — retention wiring', () => {
       <TemplateConfigGridPanel
         projectId="p1"
         templateId="t1"
-        onEditField={vi.fn()}
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
         onAddSection={vi.fn()}
@@ -276,7 +274,6 @@ describe('TemplateConfigGridPanel — optimistic ghost inserts (B-5 Task 4)', ()
       <TemplateConfigGridPanel
         projectId="p1"
         templateId="t1"
-        onEditField={vi.fn()}
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
         onAddSection={vi.fn()}
@@ -425,7 +422,6 @@ describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', 
       <TemplateConfigGridPanel
         projectId="p1"
         templateId="t1"
-        onEditField={vi.fn()}
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
         onAddSection={vi.fn()}
@@ -585,7 +581,6 @@ describe('TemplateConfigGridPanel — inspector visibility (B-5 Task 5)', () => 
       <TemplateConfigGridPanel
         projectId="p1"
         templateId="t1"
-        onEditField={vi.fn()}
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
         onAddSection={vi.fn()}
@@ -705,7 +700,6 @@ describe('TemplateConfigGridPanel — 3-rung Esc ladder (B-5 Task 6)', () => {
       <TemplateConfigGridPanel
         projectId="p1"
         templateId="t1"
-        onEditField={vi.fn()}
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
         onAddSection={vi.fn()}

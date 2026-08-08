@@ -6,8 +6,7 @@
  * its dismiss-Esc (portals propagate through the REACT tree) into the
  * panel's `handleEscapeEscalate` and close the inspector as a side
  * effect. These tests pin the hosting, the small dedicated delete
- * mutation path (service + invalidateStructure — not useFieldManagement)
- * and that Esc regression.
+ * mutation path (service + invalidateStructure) and that Esc regression.
  */
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {render, screen, waitFor, within} from '@testing-library/react';
@@ -45,9 +44,6 @@ vi.mock('@/components/extraction/TemplateInstructionRow', () => ({
 }));
 vi.mock('@/components/extraction/template-config/TemplateConfigPublishControls', () => ({
   TemplateConfigPublishControls: () => null,
-}));
-vi.mock('@/components/extraction/template-config/TemplateFieldDialogs', () => ({
-  TemplateFieldDialogs: () => null,
 }));
 vi.mock('./dialogs', () => ({
   AddSectionDialog: () => null,

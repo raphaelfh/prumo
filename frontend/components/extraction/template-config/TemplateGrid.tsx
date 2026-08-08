@@ -57,15 +57,15 @@ import {
  * value (selected), typing opens it seeded with the typed key (typing
  * replaces), Enter commits and advances DOWN, blur commits in place, Esc
  * reverts with focus staying on the cell. Commits surface through
- * `onCommitField`; the row menu still raises `onEditField` for the
- * dialog's other properties (absorbed by the inspector in Task 5).
+ * `onCommitField`; every other field property edits in the inspector
+ * (Task 5), so the row menu only deletes.
  *
  * B-5 Task 4: GHOST rows (every section, child sections included) edit
  * inline — click/Enter/typing opens the ghost editor, Enter commits the
  * drafted field through `onInsertField` and REOPENS the same editor (the
  * Enter-chain), Enter on an empty draft exits, a never-typed ghost
  * auto-discards on blur, a typed one commits. The `＋ ▾` New-field item
- * focuses the section's ghost editor instead of the old add dialog. The
+ * focuses the section's ghost editor — adds never leave the grid. The
  * panel owns the optimistic pending rows; `rowIdRemaps` keeps the focus
  * coordinate alive when a confirmed pending row swaps its client key for
  * the server id.
@@ -103,9 +103,6 @@ export interface TemplateGridSelection {
 export interface TemplateSectionActions {
   onCommitRename: (sectionId: string, label: string) => void;
   onDelete: (section: GridSection) => void;
-  /** Unused since Task 4 — the ghost editor owns "New field" (both the
-   * ghost rows and the `＋ ▾` item). Deleted with the dialogs in Task 8. */
-  onAddField: (sectionId: string) => void;
 }
 
 /** Columns that edit inline as free text. */
@@ -115,7 +112,6 @@ interface TemplateGridProps {
   sections: GridSection[];
   selection: TemplateGridSelection | null;
   onSelect: (selection: TemplateGridSelection) => void;
-  onEditField: (field: GridField) => void;
   onDeleteField: (field: GridField) => void;
   /** Inline text-cell commit — label/key writes belong to the panel. Only
    * called with a CHANGED, non-empty, trimmed value. */
@@ -497,7 +493,6 @@ function FieldRow({
   focus,
   editing,
   onSelect,
-  onEdit,
   onDelete,
   deleteDisabled,
   onEditorCommit,
@@ -516,7 +511,6 @@ function FieldRow({
    * cells; `seed` carries the typed key for typing-replaces. */
   editing: {column: TextCellColumn; seed: string | null} | null;
   onSelect: () => void;
-  onEdit: () => void;
   onDelete: () => void;
   /** True on pending optimistic rows — see `pendingRowIds`. */
   deleteDisabled: boolean;
@@ -550,8 +544,8 @@ function FieldRow({
             inline editor (the model's text-cell transitions). */}
         {/* The row itself carries no handlers: a click target that also lives
             on the <tr> fires twice for nested controls, and `stopPropagation`
-            on `click` does NOT stop `dblclick` — double-clicking the ⋯ menu
-            used to open the edit dialog behind it. */}
+            on `click` does NOT stop `dblclick` — a double-click on the ⋯ menu
+            would also hit whatever the row bound behind it. */}
         {editing?.column === 'label' ? (
           <TextCellEditor
             initialValue={editing.seed ?? field.label}
@@ -755,10 +749,6 @@ function FieldRow({
             <TooltipContent>{t('extraction', 'gridRowActions')}</TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end" className="text-xs">
-            <DropdownMenuItem onSelect={onEdit}>
-              <Pencil className="mr-2 size-3.5" aria-hidden />
-              {t('extraction', 'gridEditFieldTooltip')}
-            </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={onDelete}
               disabled={deleteDisabled}
@@ -798,8 +788,8 @@ function SectionHeaderRow({
   spanCols: string;
   onToggle: () => void;
   onSelect: () => void;
-  /** Task 4: focuses the section's ghost editor (the old add dialog dies
-   * in Task 8). Disabled while filtering — the ghost rows are hidden. */
+  /** Task 4: focuses the section's ghost editor. Disabled while
+   * filtering — the ghost rows are hidden. */
   onNewField: () => void;
   newFieldDisabled: boolean;
   actions: TemplateSectionActions;
@@ -1108,7 +1098,6 @@ export function TemplateGrid({
   sections,
   selection,
   onSelect,
-  onEditField,
   onDeleteField,
   onCommitField,
   onInsertField,
@@ -1409,7 +1398,6 @@ export function TemplateGrid({
           focus={focus}
           editing={editing}
           onSelect={() => onSelect({kind: 'field', id: field.id})}
-          onEdit={() => onEditField(field)}
           onDelete={() => onDeleteField(field)}
           deleteDisabled={pendingRowIds?.has(field.id) ?? false}
           onEditorCommit={(column, draft, via) =>

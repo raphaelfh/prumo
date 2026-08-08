@@ -57,28 +57,6 @@ export function checkProjectPermissions(
 }
 
 // ---------------------------------------------------------------------------
-// Field loading
-// ---------------------------------------------------------------------------
-
-/**
- * Load all fields for a given entity type, ordered by sort_order.
- */
-export function loadEntityTypeFields(
-  entityTypeId: string,
-): Promise<ErrorResult<ExtractionField[]>> {
-  return toResult(async () => {
-    const {data, error} = await supabase
-      .from('extraction_fields')
-      .select('*')
-      .eq('entity_type_id', entityTypeId)
-      .order('sort_order', {ascending: true});
-
-    if (error) throw error;
-    return (data as ExtractionField[]) ?? [];
-  }, 'loadEntityTypeFields');
-}
-
-// ---------------------------------------------------------------------------
 // Field impact validation
 // ---------------------------------------------------------------------------
 
@@ -216,33 +194,4 @@ export function deleteField(fieldId: string): Promise<ErrorResult<void>> {
     }
     if (error) throw error;
   }, 'deleteField');
-}
-
-/**
- * Batch-update sort_order for a set of fields.
- * PostgREST resolves (never rejects) on SQL/RLS errors — so we inspect
- * each result for an error field rather than relying on Promise.all to throw.
- */
-export function reorderFields(
-  reorderedFields: {id: string; sort_order: number}[],
-): Promise<ErrorResult<void>> {
-  return toResult(async () => {
-    const updates = reorderedFields.map(({id, sort_order}) =>
-      supabase
-        .from('extraction_fields')
-        .update({sort_order})
-        .eq('id', id),
-    );
-
-    const results = await Promise.all(updates);
-    const failed = results
-      .map((r) => (r as {error: {message: string} | null}).error)
-      .filter((e): e is {message: string} => Boolean(e));
-
-    if (failed.length > 0) {
-      throw new Error(
-        `Failed to update sort_order for ${failed.length} field(s): ${failed[0].message}`,
-      );
-    }
-  }, 'reorderFields');
 }

@@ -40,17 +40,15 @@ const tree = buildTemplateTree(
 
 function renderGrid(over: Partial<Parameters<typeof TemplateGrid>[0]> = {}) {
   // Task 6: the row owns the rename draft — the parent only gets the
-  // single commit (plus delete and the dead-until-Task-8 add-field).
+  // single commit (plus delete).
   const sectionActions: TemplateSectionActions = {
     onCommitRename: vi.fn(),
     onDelete: vi.fn(),
-    onAddField: vi.fn(),
   };
   const props = {
     sections: tree,
     selection: null,
     onSelect: vi.fn(),
-    onEditField: vi.fn(),
     onDeleteField: vi.fn(),
     onCommitField: vi.fn(),
     onInsertField: vi.fn(),
@@ -267,13 +265,12 @@ describe('TemplateGrid inline text editing (B-5 Task 3)', () => {
     expect(labelEditor()).toHaveValue('x');
   });
 
-  it('a second click inline-edits the label instead of opening the dialog', async () => {
-    const {onEditField} = renderGrid();
+  it('a second click inline-edits the label in place', async () => {
+    renderGrid();
     const label = screen.getByRole('button', {name: 'Study design'});
     await userEvent.click(label);
     await userEvent.click(label);
     expect(labelEditor()).toHaveValue('Study design');
-    expect(onEditField).not.toHaveBeenCalled();
   });
 
   it('commit on Enter fires exactly one write and advances focus DOWN', async () => {
@@ -478,8 +475,8 @@ describe('TemplateGrid ghost-row Enter-chain (B-5 Task 4)', () => {
     );
   });
 
-  it('the ＋ ▾ New-field item opens the section ghost editor, not the dialog', async () => {
-    const {sectionActions} = renderGrid();
+  it('the ＋ ▾ New-field item opens the section ghost editor', async () => {
+    renderGrid();
     await userEvent.click(
       screen.getByRole('button', {name: /gridAddMenu — Source of Data/}),
     );
@@ -487,7 +484,6 @@ describe('TemplateGrid ghost-row Enter-chain (B-5 Task 4)', () => {
       await screen.findByRole('menuitem', {name: /gridNewField/}),
     );
     expect(ghostEditor()).toBeInTheDocument();
-    expect(sectionActions.onAddField).not.toHaveBeenCalled();
   });
 
   it('the ＋ ▾ New-field item is disabled while filtering (ghosts are hidden)', async () => {

@@ -23,8 +23,8 @@
  * body (React Compiler `all_errors`); the async plumbing chains through
  * module-level functions, which the compiler never touches.
  *
- * B-4 invariant (migrated from `useFieldManagement`'s republish test):
- * inserts are draft edits — NOTHING here republishes.
+ * B-4 invariant (migrated from the late field-management hook's
+ * republish test): inserts are draft edits — NOTHING here republishes.
  *
  * @module hooks/extraction/useInsertTemplateField
  */
@@ -177,7 +177,7 @@ async function runInsert(
   const sortOrder =
     (s.sortBase.get(entityTypeId) ?? 0) + (s.committedCount.get(entityTypeId) ?? 0) + 1;
 
-  // Ghost-insert defaults; same shape as the late `useFieldManagement.addField`.
+  // Ghost-insert defaults; same shape the late add-field dialog submitted.
   const zodResult = ExtractionFieldSchema.safeParse({
     name,
     label,

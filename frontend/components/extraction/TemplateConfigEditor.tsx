@@ -19,7 +19,6 @@ import {Download, Loader2, Plus, Settings} from 'lucide-react';
 import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructionRow';
 import {TemplateConfigGridPanel} from '@/components/extraction/template-config/TemplateConfigGridPanel';
 import {TemplateConfigPublishControls} from '@/components/extraction/template-config/TemplateConfigPublishControls';
-import {TemplateFieldDialogs} from '@/components/extraction/template-config/TemplateFieldDialogs';
 import type {ExtractionField, FieldValidationResult} from '@/types/extraction';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
@@ -46,13 +45,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   const [removingSectionId, setRemovingSectionId] = useState<string | null>(null);
   const [removingSectionName, setRemovingSectionName] = useState('');
   const [showImportDialog, setShowImportDialog] = useState(false);
-  // Grid editing bridge (B-1): the grid selects, the existing dialogs edit.
-  const [fieldDialog, setFieldDialog] = useState<{
-    mode: 'add' | 'edit';
-    entityTypeId: string;
-    sectionName: string;
-    field: ExtractionField | null;
-  } | null>(null);
   // Delete confirm (B-5 Task 7): hosted HERE, outside the grid panel's
   // React subtree — a Radix dialog inside the panel would bubble its
   // dismiss-Esc (portals propagate through the REACT tree) into the
@@ -205,29 +197,11 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
       <TemplateConfigGridPanel
         projectId={projectId}
         templateId={templateId}
-        onEditField={(field) => {
-          const section = entityTypes.find((et) => et.id === field.entity_type_id);
-          setFieldDialog({
-            mode: 'edit',
-            entityTypeId: field.entity_type_id,
-            sectionName: section?.label ?? '',
-            field,
-          });
-        }}
         sectionActions={{
           onCommitRename: (sectionId, label) => void handleSaveEdit(sectionId, label),
           onDelete: (section) => {
             setRemovingSectionId(section.id);
             setRemovingSectionName(section.label);
-          },
-          onAddField: (sectionId) => {
-            const section = entityTypes.find((et) => et.id === sectionId);
-            setFieldDialog({
-              mode: 'add',
-              entityTypeId: sectionId,
-              sectionName: section?.label ?? '',
-              field: null,
-            });
           },
         }}
         onDeleteField={setDeletingField}
@@ -269,7 +243,9 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         {/* Adding a section lives in the grid now: the rail footer and
             the end-of-grid ghost row. A third button here was duplicate. */}
 
-      {/* Dialogs */}
+      {/* Dialogs. Field add/edit went inline in B-5 (ghost rows + the
+          inspector); AddSectionDialog SURVIVES until sections go inline
+          in B-8. */}
       <AddSectionDialog
         projectId={projectId}
         templateId={templateId}
@@ -292,18 +268,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         }}
         onSectionRemoved={handleSectionRemoved}
       />
-
-      {fieldDialog && (
-        <TemplateFieldDialogs
-          mode={fieldDialog.mode}
-          entityTypeId={fieldDialog.entityTypeId}
-          sectionName={fieldDialog.sectionName}
-          projectId={projectId}
-          templateId={templateId}
-          field={fieldDialog.field}
-          onClose={() => setFieldDialog(null)}
-        />
-      )}
 
       {/* Mounted per open so the dialog's impact pre-fetch runs fresh.
           Kept OUTSIDE the grid panel subtree (see deletingField above). */}
