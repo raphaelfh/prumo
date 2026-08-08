@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.template_structure import (
@@ -31,6 +32,8 @@ from app.services.template_field_service import (
     EntityTypeNotFoundError,
     FieldInUseError,
     FieldNotFoundError,
+    _is_field_name_unique_violation,
+    _pgcode,
     create_field,
     delete_field,
     move_field,
@@ -566,3 +569,33 @@ async def test_reorder_bola_foreign_project(db_session: AsyncSession) -> None:
                 updates=[TemplateFieldSortOrderUpdate(id=SEED.primary_field, sort_order=1)]
             ),
         )
+
+
+# =================== 0050 DB backstop ===================
+
+
+@pytest.mark.asyncio
+async def test_duplicate_name_db_backstop_fires_without_service(
+    db_session: AsyncSession,
+) -> None:
+    """A raw INSERT dodging the service's read-time check hits migration
+    0050's unique index, and the remap predicate is keyed to the REAL
+    constraint name the DB raises — the backstop holds for writers that
+    bypass ``create_field`` (residual PostgREST writes, racing clients)."""
+    with pytest.raises(IntegrityError) as excinfo:
+        await db_session.execute(
+            text(
+                "INSERT INTO public.extraction_fields "
+                "(id, entity_type_id, name, label, field_type, is_required) "
+                "VALUES (gen_random_uuid(), :et, 'sample_size', 'Sample Size', "
+                "'text', false)"
+            ),
+            {"et": str(SEED.primary_entity_type)},
+        )
+    await db_session.rollback()
+
+    assert _pgcode(excinfo.value) == "23505"
+    assert _is_field_name_unique_violation(excinfo.value), (
+        "the 23505 remap must key on uq_extraction_fields_entity_type_name "
+        "exactly as the DB names it"
+    )

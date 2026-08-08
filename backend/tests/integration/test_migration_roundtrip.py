@@ -762,6 +762,189 @@ async def test_migration_0049_round_trip(
     _assert_0049_policies(await _config_write_policies(migration_session))
 
 
+# --- 0050: per-section field-name unique index + duplicate-name heal ---
+# Fixed fixture ids (0050-prefixed, hex-only) so assertions can name rows.
+_H_PROFILE = "00500000-0000-4000-8000-00000000000a"
+_H_PROJECT = "00500000-0000-4000-8000-00000000000b"
+_H_TEMPLATE = "00500000-0000-4000-8000-00000000000c"
+_H_GLOBAL_TPL = "00500000-0000-4000-8000-00000000000d"
+_H_SECTION = "00500000-0000-4000-8000-00000000000e"
+_H_GLOBAL_SECTION = "00500000-0000-4000-8000-00000000000f"
+_H_F_KEEP = "00500000-0000-4000-8000-000000000001"
+_H_F_DUP2 = "00500000-0000-4000-8000-000000000002"
+_H_F_DUP3 = "00500000-0000-4000-8000-000000000003"
+_H_F_TAKEN = "00500000-0000-4000-8000-000000000004"
+_H_G_KEEP = "00500000-0000-4000-8000-000000000005"
+_H_G_DUP = "00500000-0000-4000-8000-000000000006"
+
+# The deterministic heal outcome (panel decision 6): keeper = earliest
+# created_at per (section, name); rn>1 rows renamed in rn order to the
+# first FREE suffix — the pre-existing dup_probe_2 forces _3/_4.
+_HEALED_PROJECT_NAMES = {
+    _H_F_KEEP: "dup_probe",
+    _H_F_DUP2: "dup_probe_3",
+    _H_F_DUP3: "dup_probe_4",
+    _H_F_TAKEN: "dup_probe_2",
+}
+_HEALED_GLOBAL_NAMES = {_H_G_KEEP: "g_dup", _H_G_DUP: "g_dup_2"}
+
+_FIELD_UNIQUE_INDEX = text(
+    "SELECT 1 FROM pg_indexes "
+    "WHERE schemaname = 'public' AND tablename = 'extraction_fields' "
+    "AND indexname = 'uq_extraction_fields_entity_type_name'"
+)
+_SECTION_FIELD_NAMES = text(
+    "SELECT id::text, name FROM public.extraction_fields WHERE entity_type_id = :sid"
+)
+_HEAL_MARKER = text(
+    "SELECT config_draft_since FROM public.project_extraction_templates WHERE id = :tid"
+)
+_CLEAR_HEAL_MARKER = text(
+    "UPDATE public.project_extraction_templates SET config_draft_since = NULL WHERE id = :tid"
+)
+
+# Duplicate names are only representable at 0049 (pre-index). Mirrors the
+# minimal FK graph of test_one_live_run_guard_migration; created_at is
+# staggered explicitly because it is the heal's rank key.
+_HEAL_FIXTURE_STATEMENTS = (
+    "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES "
+    f"('{_H_PROFILE}', 'heal-0050@integration-test.prumo.local', "
+    "'00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')",
+    "INSERT INTO public.profiles (id, email, full_name) VALUES "
+    f"('{_H_PROFILE}', 'heal-0050@integration-test.prumo.local', 'Heal 0050')",
+    "INSERT INTO public.projects (id, name, created_by_id, is_active) VALUES "
+    f"('{_H_PROJECT}', 'Heal 0050 Project', '{_H_PROFILE}', true)",
+    "INSERT INTO public.project_extraction_templates "
+    "(id, project_id, name, framework, version, kind, schema, is_active, created_by) VALUES "
+    f"('{_H_TEMPLATE}', '{_H_PROJECT}', 'heal-0050-template', 'CUSTOM', '1.0', "
+    f"'extraction', '{{}}'::jsonb, true, '{_H_PROFILE}')",
+    # Deferred 0004 invariant: an ACTIVE project template needs an active
+    # version row by COMMIT time.
+    "INSERT INTO public.extraction_template_versions "
+    "(id, project_template_id, version, schema, published_by, is_active) VALUES "
+    f"('00500000-0000-4000-8000-0000000000aa', '{_H_TEMPLATE}', 1, "
+    f"'{{\"entity_types\": []}}'::jsonb, '{_H_PROFILE}', true)",
+    "INSERT INTO public.extraction_templates_global "
+    "(id, name, framework, version, kind, is_global, schema) VALUES "
+    f"('{_H_GLOBAL_TPL}', 'heal-0050-global', 'CUSTOM', '1.0', 'extraction', "
+    "true, '{}'::jsonb)",
+    "INSERT INTO public.extraction_entity_types "
+    "(id, project_template_id, name, label, cardinality, role, "
+    " parent_entity_type_id, sort_order, is_required) VALUES "
+    f"('{_H_SECTION}', '{_H_TEMPLATE}', 'heal_section', 'Heal Section', 'one', "
+    "'study_section', NULL, 0, false)",
+    "INSERT INTO public.extraction_entity_types "
+    "(id, template_id, name, label, cardinality, role, "
+    " parent_entity_type_id, sort_order, is_required) VALUES "
+    f"('{_H_GLOBAL_SECTION}', '{_H_GLOBAL_TPL}', 'heal_global_section', "
+    "'Heal Global Section', 'one', 'study_section', NULL, 0, false)",
+    # Project section: three 'dup_probe' rows + a pre-existing 'dup_probe_2'
+    # that must NOT collide with the healed names (collision-proof case).
+    "INSERT INTO public.extraction_fields "
+    "(id, entity_type_id, name, label, field_type, is_required, sort_order, created_at) VALUES "
+    f"('{_H_F_KEEP}', '{_H_SECTION}', 'dup_probe', 'Dup Probe', 'text', false, 0, "
+    "now() - interval '3 hours'), "
+    f"('{_H_F_DUP2}', '{_H_SECTION}', 'dup_probe', 'Dup Probe', 'text', false, 1, "
+    "now() - interval '2 hours'), "
+    f"('{_H_F_DUP3}', '{_H_SECTION}', 'dup_probe', 'Dup Probe', 'text', false, 2, "
+    "now() - interval '1 hour'), "
+    f"('{_H_F_TAKEN}', '{_H_SECTION}', 'dup_probe_2', 'Dup Probe 2', 'text', false, 3, "
+    "now() - interval '4 hours')",
+    # Global lineage: the heal covers BOTH lineages (plain per-section scan).
+    "INSERT INTO public.extraction_fields "
+    "(id, entity_type_id, name, label, field_type, is_required, sort_order, created_at) VALUES "
+    f"('{_H_G_KEEP}', '{_H_GLOBAL_SECTION}', 'g_dup', 'G Dup', 'text', false, 0, "
+    "now() - interval '2 hours'), "
+    f"('{_H_G_DUP}', '{_H_GLOBAL_SECTION}', 'g_dup', 'G Dup', 'text', false, 1, "
+    "now() - interval '1 hour')",
+)
+
+
+async def _section_names(session: AsyncSession, section_id: str) -> dict[str, str]:
+    rows = (await session.execute(_SECTION_FIELD_NAMES, {"sid": section_id})).all()
+    return {row[0]: row[1] for row in rows}
+
+
+@pytest.mark.asyncio
+async def test_migration_0050_round_trip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0050_field_name_unique_heal`` heals duplicate per-section field
+    names (deterministic first-free-suffix rename, 0048 trigger ENABLED)
+    and creates the ``uq_extraction_fields_entity_type_name`` unique
+    index. Downgrading to the explicit parent ``0049`` drops the INDEX
+    ONLY — healed names persist (permanent data repair) — and a second
+    upgrade renames nothing (idempotency). Duplicate fixtures are
+    inserted while downgraded (the only state that can represent them);
+    the healed project template must carry a stamped draft marker (the
+    trigger-enabled proof, panel decision 6). Every alembic subprocess is
+    preceded by ``rollback()``: the data reads above take AccessShare
+    locks on ``extraction_fields`` that would deadlock the DDL."""
+    assert (await migration_session.execute(_FIELD_UNIQUE_INDEX)).scalar() == 1, (
+        "uq_extraction_fields_entity_type_name must exist at HEAD"
+    )
+    await migration_session.rollback()
+
+    _run_alembic("downgrade", "0049_config_write_rls_manager", database_url=migration_db_url)
+    try:
+        assert (await migration_session.execute(_FIELD_UNIQUE_INDEX)).scalar() is None, (
+            "downgrade must drop the unique index"
+        )
+        for statement in _HEAL_FIXTURE_STATEMENTS:
+            await migration_session.execute(text(statement))
+        # The fixture INSERTs fired the (still-present) 0048 trigger and
+        # stamped the template; reset so the upgrade's heal must re-stamp.
+        await migration_session.execute(_CLEAR_HEAL_MARKER, {"tid": _H_TEMPLATE})
+        await migration_session.commit()
+    finally:
+        await migration_session.rollback()
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    assert await _section_names(migration_session, _H_SECTION) == _HEALED_PROJECT_NAMES, (
+        "heal must rename rn>1 rows to the first FREE suffix (skipping the "
+        "pre-existing dup_probe_2), keeping the earliest-created row's name"
+    )
+    assert await _section_names(migration_session, _H_GLOBAL_SECTION) == _HEALED_GLOBAL_NAMES, (
+        "heal must cover the GLOBAL lineage too"
+    )
+    assert (await migration_session.execute(_HEAL_MARKER, {"tid": _H_TEMPLATE})).scalar() is not (
+        None
+    ), "the heal must stamp config_draft_since — the 0048 trigger stays ENABLED (panel 6)"
+    assert (await migration_session.execute(_FIELD_UNIQUE_INDEX)).scalar() == 1, (
+        "upgrade head must create the unique index"
+    )
+    await migration_session.rollback()
+
+    # Idempotency leg: downgrade drops the index only; healed names
+    # persist; a re-upgrade selects no rn>1 rows and renames nothing.
+    _run_alembic("downgrade", "0049_config_write_rls_manager", database_url=migration_db_url)
+    try:
+        assert (await migration_session.execute(_FIELD_UNIQUE_INDEX)).scalar() is None
+        assert await _section_names(migration_session, _H_SECTION) == _HEALED_PROJECT_NAMES, (
+            "healed names must persist through the downgrade (index-only)"
+        )
+        # NULL the marker again: if the second heal renamed anything the
+        # trigger would re-stamp it, so a still-NULL marker after the
+        # upgrade is the no-op proof.
+        await migration_session.execute(_CLEAR_HEAL_MARKER, {"tid": _H_TEMPLATE})
+        await migration_session.commit()
+    finally:
+        await migration_session.rollback()
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    assert await _section_names(migration_session, _H_SECTION) == _HEALED_PROJECT_NAMES, (
+        "re-running the heal must rename nothing (idempotent)"
+    )
+    assert await _section_names(migration_session, _H_GLOBAL_SECTION) == _HEALED_GLOBAL_NAMES
+    assert (await migration_session.execute(_HEAL_MARKER, {"tid": _H_TEMPLATE})).scalar() is None, (
+        "an idempotent re-heal performs no DML, so the trigger must not re-stamp"
+    )
+    assert (await migration_session.execute(_FIELD_UNIQUE_INDEX)).scalar() == 1
+    await migration_session.rollback()
+    # Fixture rows are left in place: the scratch DB is dropped at session
+    # end, and the healed names are unique so later round-trips no-op.
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     """Pin the head revision id. If a future migration is added without
@@ -770,8 +953,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0049_config_write_rls_manager" in out, (
-        f"Expected head revision '0049_config_write_rls_manager', got:\n{out}"
+    assert "0050_field_name_unique_heal" in out, (
+        f"Expected head revision '0050_field_name_unique_heal', got:\n{out}"
     )
 
 

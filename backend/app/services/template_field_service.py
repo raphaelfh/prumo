@@ -65,8 +65,8 @@ __all__ = [
 
 _FK_VIOLATION = "23503"
 _UNIQUE_VIOLATION = "23505"
-# Frozen by the B-7 plan (panel 7); the index itself lands in migration
-# 0050 — until then the read-time checks below are the only enforcement.
+# Frozen by the B-7 plan (panel 7); matches migration 0050's CREATE
+# UNIQUE INDEX — the DB backstop behind the read-time checks below.
 _FIELD_NAME_UNIQUE_INDEX = "uq_extraction_fields_entity_type_name"
 
 

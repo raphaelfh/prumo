@@ -135,7 +135,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0049_config_write_rls_manager` (post-squash numbering; run
+`0050_field_name_unique_heal` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -194,7 +194,7 @@ migration `0039_absent_reason_backfill`. Decision record:
 | `extraction_runs` | + `kind`, `version_id` FK, `hitl_config_snapshot`; composite FK `(template_id, kind)` enforces template-run kind coherence; stage enum reconstructed | 0011 + 0014 |
 | `extraction_evidence` | + `run_id`, `proposal_record_id`, `reviewer_decision_id`, `consensus_decision_id`. Legacy `target_type`/`target_id` columns dropped in 0017; CHECK now requires the workflow path. Target FKs are `ON DELETE CASCADE` — evidence follows its sole workflow target (0044; SET NULL could never satisfy the CHECK). | 0013 + 0017 + 0044 |
 | `extraction_entity_types` | Write RLS manager-gated (B-7): INSERT/UPDATE policies require `is_project_manager` (was member), both with explicit WITH CHECK, plus `template_id IS NULL` — the RLS floor against writing GLOBAL-catalogue sections (cross-tenant prompt injection via cloned `llm_description`; previously only the `template_xor` CHECK stood in the way). SELECT `USING (true)` and manager DELETE unchanged. Residual: manager JWTs can still write via PostgREST (GRANT survives) — follow-up REVOKE recorded in the 0049 docstring. | 0049 |
-| `extraction_fields` | + `allows_not_applicable`, `allows_not_evaluated` opt-in disposition flags (ADR-0016; copied into `version.schema_` by the snapshot builder); write RLS manager-gated (B-7): INSERT/UPDATE require `is_project_manager` through the et→pet chain (global lineage never joins), UPDATE gains explicit WITH CHECK | 0038 + 0049 |
+| `extraction_fields` | + `allows_not_applicable`, `allows_not_evaluated` opt-in disposition flags (ADR-0016; copied into `version.schema_` by the snapshot builder); write RLS manager-gated (B-7): INSERT/UPDATE require `is_project_manager` through the et→pet chain (global lineage never joins), UPDATE gains explicit WITH CHECK; per-section name uniqueness enforced by unique index `uq_extraction_fields_entity_type_name (entity_type_id, name)` — preceded by a deterministic first-free-suffix heal of pre-existing duplicates (both lineages, 0048 trigger left ENABLED so healed templates stamp as real drift; downgrade drops the index only). `template_field_service` remaps a 23505 on this index to the typed duplicate error. Promotion runs the duplicate + hybrid-row audit from the 0050 docstring against prod FIRST. | 0038 + 0049 + 0050 |
 
 ### Legacy tables — fully removed
 
