@@ -1,13 +1,18 @@
 /**
- * Dialog to add a new section to the template
+ * Dialog to add a new section to the template — the PERMANENT create
+ * surface for sections (B-8: inline section creation was dropped).
  *
- * Features:
- * - Form with react-hook-form + zod
- * - Auto-generated name (snake_case) from label
- * - Real-time validation
- * - Conditional fields for cardinality
- * - Visual error feedback
- * - Writes through the typed section endpoint (B-7)
+ * Three mode variants (B-8 D3), chosen by the invoking menu/ghost:
+ * - root ("New section"): the B-7 study-section form — cardinality
+ *   select, description, required switch;
+ * - group ("Add repeating group…"): Label + Entry label only; role
+ *   model_container and cardinality 'many' are hard-coded (the server
+ *   422s anything else — the form never offers the impossible);
+ * - perModel ("New per-{noun} section"): parent preset from the invoking
+ *   group; cardinality select stays, worded per-{noun}.
+ *
+ * Mount keyed by `mode.kind` (the editor does) so react-hook-form
+ * re-initializes defaults when the variant changes between opens.
  *
  * @component
  */
@@ -36,8 +41,20 @@ import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {generateSnakeCaseName} from '@/lib/extraction/slug';
 
+// =================== MODES ===================
+
+/** Which create variant the dialog runs (B-8 D3). */
+export type AddSectionMode =
+  | {kind: 'root'}
+  | {kind: 'group'}
+  | {kind: 'perModel'; parentId: string; parentLabel: string; entryNoun: string};
+
 // =================== SCHEMAS ===================
 
+/** One superset shape across modes (react-hook-form needs a single form
+ * type); honesty per mode lives in WHICH controls render and in the
+ * submit mapping below — group mode hard-codes cardinality 'many' /
+ * is_required false, and the server 422s any contract breach anyway. */
 const getAddSectionSchema = () => z.object({
   name: z.string()
       .min(1, t('extraction', 'nameRequired'))
@@ -52,6 +69,9 @@ const getAddSectionSchema = () => z.object({
       .max(500, t('extraction', 'descriptionMax500'))
     .optional()
     .nullable(),
+  entry_label: z.string()
+      .max(50, t('templateConfig', 'entryLabelMax50'))
+    .optional(),
   cardinality: z.enum(['one', 'many'], {
       required_error: t('extraction', 'cardinalityRequired'),
   }),
@@ -66,9 +86,16 @@ interface AddSectionDialogProps {
   projectId: string;
   templateId: string;
   open: boolean;
+  mode: AddSectionMode;
   onOpenChange: (open: boolean) => void;
   onSectionAdded: () => void;
 }
+
+const ROLE_BY_MODE = {
+  root: 'study_section',
+  group: 'model_container',
+  perModel: 'model_section',
+} as const;
 
 // =================== COMPONENT ===================
 
@@ -76,11 +103,13 @@ export function AddSectionDialog({
   projectId,
   templateId,
   open,
+  mode,
   onOpenChange,
   onSectionAdded,
 }: AddSectionDialogProps) {
   const [loading, setLoading] = useState(false);
   const [autoGenerateName, setAutoGenerateName] = useState(true);
+  const noun = mode.kind === 'perModel' ? mode.entryNoun : 'model';
 
   const form = useForm<AddSectionInput>({
       resolver: zodResolver(getAddSectionSchema()),
@@ -88,7 +117,9 @@ export function AddSectionDialog({
       name: '',
       label: '',
       description: '',
-      cardinality: 'one',
+      entry_label: '',
+      // A group ALWAYS repeats; the other modes default to one.
+      cardinality: mode.kind === 'group' ? 'many' : 'one',
       is_required: false,
     },
   });
@@ -108,19 +139,18 @@ export function AddSectionDialog({
   const handleSubmit = async (data: AddSectionInput) => {
     setLoading(true);
 
-    console.warn('Creating new section:', data);
-
     const result = await createSection({
       projectId,
       templateId,
       name: data.name,
       label: data.label,
-      description: data.description,
-      cardinality: data.cardinality,
-      // This dialog only creates root study sections; model structure
-      // comes from template import/clone.
-      role: 'study_section',
-      isRequired: data.is_required,
+      description: mode.kind === 'group' ? null : data.description || null,
+      cardinality: mode.kind === 'group' ? 'many' : data.cardinality,
+      role: ROLE_BY_MODE[mode.kind],
+      parentEntityTypeId: mode.kind === 'perModel' ? mode.parentId : null,
+      // Blank → omit so the server defaults the noun to 'model' (D3).
+      entryLabel: mode.kind === 'group' ? data.entry_label?.trim() || undefined : undefined,
+      isRequired: mode.kind === 'group' ? false : data.is_required,
     });
 
     if (!result.ok) {
@@ -146,22 +176,35 @@ export function AddSectionDialog({
     }
   };
 
+  const title =
+    mode.kind === 'group'
+      ? t('templateConfig', 'addGroupDialogTitle')
+      : mode.kind === 'perModel'
+        ? t('templateConfig', 'newPerModelSection').replace('{{noun}}', noun)
+        : t('extraction', 'addNewSection');
+  const description =
+    mode.kind === 'group'
+      ? t('templateConfig', 'addGroupDialogDesc')
+      : mode.kind === 'perModel'
+        ? t('templateConfig', 'perModelDialogDesc')
+            .replace('{{group}}', mode.parentLabel)
+            .replace('{{noun}}', noun)
+        : t('templateConfig', 'addSectionDialogDesc');
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-5 w-5" />
-              {t('extraction', 'addNewSection')}
+            {title}
           </DialogTitle>
-          <DialogDescription>
-              Create a custom section to extract project-specific data.
-          </DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            
+
             {/* Label */}
             <FormField
               control={form.control}
@@ -214,7 +257,33 @@ export function AddSectionDialog({
               )}
             />
 
-              {/* Description */}
+            {/* Entry label — group mode only (D3): what one entry is
+                called; blank falls back to the server default "model". */}
+            {mode.kind === 'group' && (
+              <FormField
+                control={form.control}
+                name="entry_label"
+                render={({field}) => (
+                  <FormItem>
+                    <FormLabel>{t('templateConfig', 'entryLabelLabel')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={t('templateConfig', 'entryLabelPlaceholder')}
+                        {...field}
+                        value={field.value || ''}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t('templateConfig', 'entryLabelHint')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {/* Description — not part of the minimal group form */}
+            {mode.kind !== 'group' && (
             <FormField
               control={form.control}
               name="description"
@@ -236,8 +305,12 @@ export function AddSectionDialog({
                 </FormItem>
               )}
             />
+            )}
 
-            {/* Cardinalidade */}
+            {/* Cardinality — root and per-model modes; a group is always
+                'many' (no choice to offer). Wording follows the mode:
+                per-article for roots, per-{noun} for model sections. */}
+            {mode.kind !== 'group' && (
             <FormField
               control={form.control}
               name="cardinality"
@@ -253,35 +326,48 @@ export function AddSectionDialog({
                     <SelectContent>
                       <SelectItem value="one">
                         <div className="flex flex-col items-start">
-                            <span className="font-medium">{t('extraction', 'sectionTypeSingle')}</span>
-                          <span className="text-xs text-muted-foreground">
-                            One occurrence per article (e.g. Summary, Conclusion)
+                          <span className="font-medium">
+                            {mode.kind === 'perModel'
+                              ? t('templateConfig', 'cardinalityOncePerModel').replace('{{noun}}', noun)
+                              : t('extraction', 'sectionTypeSingle')}
                           </span>
+                          {mode.kind === 'root' && (
+                            <span className="text-xs text-muted-foreground">
+                              {t('templateConfig', 'cardinalityRootSingleHint')}
+                            </span>
+                          )}
                         </div>
                       </SelectItem>
                       <SelectItem value="many">
                         <div className="flex flex-col items-start">
-                            <span className="font-medium">{t('extraction', 'sectionTypeMultiple')}</span>
-                          <span className="text-xs text-muted-foreground">
-                            Multiple occurrences per article (e.g. Authors, Groups)
+                          <span className="font-medium">
+                            {mode.kind === 'perModel'
+                              ? t('templateConfig', 'cardinalityRepeatsPerModel').replace('{{noun}}', noun)
+                              : t('extraction', 'sectionTypeMultiple')}
                           </span>
+                          {mode.kind === 'root' && (
+                            <span className="text-xs text-muted-foreground">
+                              {t('templateConfig', 'cardinalityRootMultipleHint')}
+                            </span>
+                          )}
                         </div>
                       </SelectItem>
                     </SelectContent>
                   </Select>
-                  <FormDescription className="flex items-start gap-2">
-                    <Info className="h-4 w-4 mt-0.5 text-info shrink-0" />
-                    <span>
-                      Single section for data that appears once per article.
-                      Multiple section allows several instances (e.g. a list or table).
-                    </span>
-                  </FormDescription>
+                  {mode.kind === 'root' && (
+                    <FormDescription className="flex items-start gap-2">
+                      <Info className="h-4 w-4 mt-0.5 text-info shrink-0" />
+                      <span>{t('templateConfig', 'cardinalityRootInfo')}</span>
+                    </FormDescription>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
             />
+            )}
 
-              {/* Required */}
+            {/* Required — root and per-model modes only */}
+            {mode.kind !== 'group' && (
             <FormField
               control={form.control}
               name="is_required"
@@ -302,6 +388,7 @@ export function AddSectionDialog({
                 </FormItem>
               )}
             />
+            )}
 
             <DialogFooter>
               <Button

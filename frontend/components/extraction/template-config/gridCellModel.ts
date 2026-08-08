@@ -30,6 +30,10 @@ export interface GridRowShape {
    * special-cased (Enter-chain opens it in edit mode). */
   kind: 'field' | 'ghost' | 'section';
   sectionId: string;
+  /** Ghost rows only (B-8 D9): `false` marks a DIALOG-opening ghost —
+   * a real sectionId for attribution but no inline editor, so landing
+   * there must stay in focus mode. Absent/`true` = the editing kind. */
+  inlineEditor?: boolean;
 }
 
 export type GridEffect =
@@ -180,8 +184,10 @@ function moveHorizontal(
 
 /** Commit the current edit, then advance DOWN in the same column —
  * chaining into a FIELD ghost row (which opens in edit mode) when the
- * next row is one. The template-level add-section ghost (empty
- * sectionId) has no inline editor, so landing there stays focus mode. */
+ * next row is one. Dialog-opening ghosts — the template-level
+ * add-section row (empty sectionId) and the per-group "New per-model
+ * section" row (`inlineEditor: false`, B-8 D9) — have no inline editor,
+ * so landing there stays focus mode. */
 function commitAndAdvance(state: GridModelState, rows: GridRowShape[]): GridModelState {
   if (!state.focus) return state;
   const effects: GridEffect[] = [{kind: 'commit', coord: state.focus}];
@@ -191,7 +197,7 @@ function commitAndAdvance(state: GridModelState, rows: GridRowShape[]): GridMode
     return {...state, mode: 'focus', editSeed: null, effects};
   }
   const focus = {rowId: next.rowId, column: state.focus.column};
-  if (next.kind === 'ghost' && next.sectionId !== '') {
+  if (next.kind === 'ghost' && next.sectionId !== '' && next.inlineEditor !== false) {
     return {...state, focus, mode: 'edit', editSeed: null, ghostDraftEmpty: true, effects};
   }
   return {...state, focus, mode: 'focus', editSeed: null, effects};

@@ -1,11 +1,19 @@
 import {useState} from 'react';
-import {Plus} from 'lucide-react';
+import {ChevronDown, FolderPlus, Plus} from 'lucide-react';
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {Input} from '@/components/ui/input';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 
 import {ringClass, rovingTabIndex, type CellFocus} from './gridCellFocus';
+import {ADD_SECTION_ROW_ID} from './gridRowShapes';
 
 /**
  * Inline editor for a ghost row — the Enter-chain's input. Unlike
@@ -82,8 +90,10 @@ export function GhostRow({
   label: string;
   focus: CellFocus;
   onClick: () => void;
-  /** Inline-editing support (field ghosts only — the add-section ghost
-   * keeps its button until sections go inline in B-8). */
+  /** Inline-editing support (field ghosts only). Dialog-opening ghosts —
+   * the per-group "New per-model section" row — omit it and keep their
+   * button: AddSectionDialog is the PERMANENT create surface for
+   * sections (inline section creation was dropped in the B-8 plan). */
   editor?: {
     editing: {seed: string | null} | null;
     onCommit: (draft: string, via: 'enter' | 'blur') => void;
@@ -122,6 +132,90 @@ export function GhostRow({
             {label}
           </button>
         )}
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * The template-level add row as a `＋▾` menu (B-8 D8/D12): "New section"
+ * opens AddSectionDialog in root mode; "Add repeating group…" opens it
+ * in group mode — DISABLED (with a tooltip naming the existing group)
+ * once the tree has one, since a template holds at most one container
+ * (DB partial-unique index, 0016). Both are dialog-opening items: they
+ * fire on select directly, no editor-focus claim. The trigger keeps the
+ * ghost row's look and its roving-focus coordinates.
+ */
+export function AddSectionMenuRow({
+  columnCount,
+  focus,
+  existingGroupLabel,
+  onAddSection,
+  onAddGroup,
+}: {
+  columnCount: number;
+  focus: CellFocus;
+  /** The current group's label when one exists — disables the add-group
+   * item and names the reason; null when the template has none yet. */
+  existingGroupLabel: string | null;
+  onAddSection: () => void;
+  onAddGroup: () => void;
+}) {
+  return (
+    <tr className="h-[30px] border-b border-border/50">
+      <td role="gridcell" />
+      <td
+        role="gridcell"
+        colSpan={columnCount - 1}
+        className={cn('px-2 pl-2', ringClass(focus, ADD_SECTION_ROW_ID, '*'))}
+      >
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              data-testid="template-grid-add-section"
+              data-cell-row={ADD_SECTION_ROW_ID}
+              data-cell-cols="*"
+              tabIndex={rovingTabIndex(focus, ADD_SECTION_ROW_ID, '*')}
+              className="inline-flex items-center gap-1 rounded italic text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Plus className="size-3" aria-hidden />
+              {t('templateConfig', 'addSectionMenu')}
+              <ChevronDown className="size-2.5" aria-hidden />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="text-xs">
+            <DropdownMenuItem onSelect={onAddSection}>
+              <Plus className="mr-2 size-3.5" aria-hidden />
+              {t('extraction', 'gridNewSection')}
+            </DropdownMenuItem>
+            {existingGroupLabel === null ? (
+              <DropdownMenuItem onSelect={onAddGroup}>
+                <FolderPlus className="mr-2 size-3.5" aria-hidden />
+                {t('templateConfig', 'addRepeatingGroup')}
+              </DropdownMenuItem>
+            ) : (
+              <Tooltip>
+                {/* A disabled Radix item is pointer-events:none — the
+                    wrapping span carries the hover for the reason. */}
+                <TooltipTrigger asChild>
+                  <span tabIndex={-1}>
+                    <DropdownMenuItem disabled>
+                      <FolderPlus className="mr-2 size-3.5" aria-hidden />
+                      {t('templateConfig', 'addRepeatingGroup')}
+                    </DropdownMenuItem>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {t('templateConfig', 'addGroupExistsTooltip').replace(
+                    '{{label}}',
+                    existingGroupLabel,
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </td>
     </tr>
   );

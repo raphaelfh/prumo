@@ -751,7 +751,7 @@ export const extraction = {
     gridOptionsCellAria: 'Options — {{label}}',
     sectionMetaRepeatingGroup: 'Repeating group',
     sectionMetaRepeatsPerArticle: 'repeats per article',
-    sectionMetaRepeatsPerModel: 'repeats per model',
+    sectionMetaRepeatsPerModel: 'repeats per {{noun}}', // B-8 D7: grid call site interpolates the group's entry noun
     matchHintKey: 'in key',
     matchHintDescription: 'in description',
     matchHintAiInstruction: 'in AI instruction',
@@ -778,7 +778,7 @@ export const extraction = {
     inspectorRequiredSwitch: 'Mark this field as required',
     inspectorKindRoot: 'Section',
     inspectorKindGroup: 'Repeating group',
-    inspectorKindGroupChild: 'Per-model section',
+    inspectorKindGroupChild: 'Per-model section', // B-8 T6: flip to 'Per-{{noun}} section' WITH its TemplateInspector consumer
     // Inspector absorption + visibility (B-5 Task 5)
     inspectorUnitsLabel: 'Units',
     inspectorUnitsHint: 'The first unit is the default reviewers see.',

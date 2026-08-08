@@ -7,11 +7,32 @@
  * ceiling and must not grow.
  */
 export const templateConfig = {
+  addGroupDialogDesc:
+    'A repeating group collects the entries reviewers add in the run view; the sections inside it repeat once per entry.',
+  addGroupDialogTitle: 'Add repeating group',
+  addGroupExistsTooltip: 'This template already has a repeating group ({{label}}).',
+  addRepeatingGroup: 'Add repeating group…',
+  addSectionDialogDesc: 'Create a custom section to extract project-specific data.',
+  addSectionMenu: 'Add section',
+  cardinalityOncePerModel: 'Once per {{noun}}',
+  cardinalityRepeatsPerModel: 'Repeats per {{noun}}',
+  cardinalityRootInfo:
+    'Single for data that appears once per article; multiple allows several instances (e.g. a list or table).',
+  cardinalityRootMultipleHint: 'Multiple occurrences per article (e.g. Authors, Groups)',
+  cardinalityRootSingleHint: 'One occurrence per article (e.g. Summary, Conclusion)',
+  deleteGroupCascadeWarning:
+    'Deleting this repeating group also deletes {{children}} per-{{noun}} section(s) inside it and their {{fields}} field(s)',
+  deleteRepeatingGroup: 'Delete repeating group…',
   dragCancelled: 'Move cancelled — {{field}} stays where it was',
   dragHandleHint: 'Drag to reorder',
   dragLockedFiltering: 'Clear search to reorder',
   dragLockedPending: 'Wait for the new field to finish saving',
   dragPickedUp: 'Picked up {{field}}',
+  entryLabelHint:
+    'What reviewers call one entry (e.g. model, arm, algorithm). Blank defaults to "model".',
+  entryLabelLabel: 'Entry label',
+  entryLabelMax50: 'Entry label must have at most 50 characters',
+  entryLabelPlaceholder: 'model',
   errors_cardinalityInUse:
     'This section cannot be set to repeat once: at least one model already has multiple entries of it. Remove the extra entries first.',
   errors_deleteSectionInUse:
@@ -28,6 +49,9 @@ export const templateConfig = {
   moveDialogHeading: 'Sections',
   moveDialogPlaceholder: 'Move {{field}} to…',
   moveDialogTitle: 'Move field to a section',
+  newPerModelSection: 'New per-{{noun}} section',
+  perModelDialogDesc:
+    'Lives inside {{group}} — reviewers fill it once for each {{noun}}.',
   shortcutMoveDown: '⌘⇧↓',
   shortcutMoveToSection: '⌘⇧M',
   shortcutMoveUp: '⌘⇧↑',

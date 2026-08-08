@@ -135,7 +135,7 @@ describe('applyRetentionToFilter', () => {
 const sectionActions: TemplateSectionActions = {
   onCommitRename: vi.fn(),
   onDelete: vi.fn(),
-};
+  onAddPerModelSection: vi.fn()};
 
 /** Default queue stub: enqueueInsert echoes a deterministic client key. */
 function stubInsertQueue() {
@@ -194,7 +194,7 @@ describe('TemplateConfigGridPanel — retention wiring', () => {
         templateId="t1"
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
-        onAddSection={vi.fn()}
+        onAddSection={vi.fn()} onAddGroup={vi.fn()}
       />
     </TooltipProvider>
   );
@@ -276,7 +276,7 @@ describe('TemplateConfigGridPanel — optimistic ghost inserts (B-5 Task 4)', ()
         templateId="t1"
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
-        onAddSection={vi.fn()}
+        onAddSection={vi.fn()} onAddGroup={vi.fn()}
       />
     </TooltipProvider>
   );
@@ -469,7 +469,7 @@ describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', 
         templateId="t1"
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
-        onAddSection={vi.fn()}
+        onAddSection={vi.fn()} onAddGroup={vi.fn()}
       />
     </TooltipProvider>
   );
@@ -667,7 +667,7 @@ describe('TemplateConfigGridPanel — key-cell commit validation (B-5 review fix
         templateId="t1"
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
-        onAddSection={vi.fn()}
+        onAddSection={vi.fn()} onAddGroup={vi.fn()}
       />
     </TooltipProvider>
   );
@@ -780,7 +780,7 @@ describe('TemplateConfigGridPanel — inspector visibility (B-5 Task 5)', () => 
         templateId="t1"
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
-        onAddSection={vi.fn()}
+        onAddSection={vi.fn()} onAddGroup={vi.fn()}
       />
     </TooltipProvider>
   );
@@ -899,7 +899,7 @@ describe('TemplateConfigGridPanel — 3-rung Esc ladder (B-5 Task 6)', () => {
         templateId="t1"
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
-        onAddSection={vi.fn()}
+        onAddSection={vi.fn()} onAddGroup={vi.fn()}
       />
     </TooltipProvider>
   );
