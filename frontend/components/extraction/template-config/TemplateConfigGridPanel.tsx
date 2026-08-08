@@ -39,14 +39,19 @@ import {
 } from './TemplateGrid';
 import {TemplateInspector, type InspectorFocusGroup} from './TemplateInspector';
 import {TemplateOutlineRail} from './TemplateOutlineRail';
+import {MoveToSectionDialog} from './MoveToSectionDialog';
+import {applyRetentionToFilter} from './filterRetention';
+import {GridDndContext} from './gridDrag';
+import {useMoveFieldTo} from './useMoveFieldTo';
+import {useStructuralUndo} from './useStructuralUndo';
 import {
   buildTemplateTree,
   collectSectionIds,
+  deriveMoveTargets,
   filterTemplateTree,
   findField,
   findSection,
   type GridField,
-  type GridSection,
 } from './templateTree';
 
 /**
@@ -89,43 +94,8 @@ interface PendingInsert {
  * used to be display-hidden (and its properties uneditable). */
 const INSPECTOR_NARROW_PX = 640;
 
-/**
- * Keep rows the user just edited AWAY from the active search visible
- * until the query string changes (B-5 Task 3): committing a label that no
- * longer matches must not make the row vanish mid-interaction. Retention
- * is a view concern, so it lives here in the panel's filter application —
- * `templateTree` stays a pure search layer. Retained rows are merged back
- * in ORIGINAL tree order; sections (and child sections) the filter
- * dropped are resurrected when they own a retained field.
- */
-export function applyRetentionToFilter(
-  tree: GridSection[],
-  filteredSections: GridSection[],
-  retained: ReadonlySet<string>,
-): GridSection[] {
-  if (retained.size === 0) return filteredSections;
-  const filteredRoots = new Map(filteredSections.map((s) => [s.id, s]));
-
-  const mergeSection = (
-    section: GridSection,
-    kept: GridSection | undefined,
-  ): GridSection | null => {
-    const keptFields = new Map((kept?.fields ?? []).map((f) => [f.id, f]));
-    const fields = section.fields
-      .map((field) => keptFields.get(field.id) ?? (retained.has(field.id) ? field : null))
-      .filter((f): f is GridField => f !== null);
-    const keptChildren = new Map((kept?.children ?? []).map((c) => [c.id, c]));
-    const children = section.children
-      .map((child) => mergeSection(child, keptChildren.get(child.id)))
-      .filter((child): child is GridSection => child !== null);
-    if (!kept && fields.length === 0 && children.length === 0) return null;
-    return {...(kept ?? section), fields, children};
-  };
-
-  return tree
-    .map((section) => mergeSection(section, filteredRoots.get(section.id)))
-    .filter((section): section is GridSection => section !== null);
-}
+// Re-exported (B-6 T7 extraction) so existing import sites keep working.
+export {applyRetentionToFilter};
 
 interface TemplateConfigGridPanelProps {
   projectId: string;
@@ -252,13 +222,32 @@ export function TemplateConfigGridPanel({
     () => buildTemplateTree(entityTypes, mergedFields),
     [entityTypes, mergedFields],
   );
-  const filtered = useMemo(() => filterTemplateTree(tree, query), [tree, query]);
+  // Rows still client-keyed: the grid disables their row-menu Delete (a
+  // queued insert has no cancel API — Task 7) and every move path skips them.
+  const pendingRowIds = useMemo(
+    () => new Set(pendingInserts.map((p) => p.clientKey)),
+    [pendingInserts],
+  );
+  // B-6 T3: the serialized move/reorder dispatcher — the single chokepoint
+  // every structural move (chord, combobox, T6 drag, undo) routes through.
+  // Announcements surface via the live region below; `displayTree` carries
+  // the optimistic order overlay (decision 7), so the grid renders from it.
+  const {moveFieldTo, announcement: moveAnnouncement, displayTree} =
+    useMoveFieldTo({projectId, templateId, tree, collapsed, pendingRowIds});
+  // B-6 T5: the single-slot Undo wrapper. EVERY chokepoint (the grid's
+  // chord + drag via onMoveField, the combobox via moveFieldToSectionEnd)
+  // dispatches through it; Undo itself re-enters through the RAW moveFieldTo.
+  const {moveFieldWithUndo} = useStructuralUndo({tree, moveFieldTo});
+  const filtered = useMemo(
+    () => filterTemplateTree(displayTree, query),
+    [displayTree, query],
+  );
   const visibleSections = useMemo(
     () =>
       filtered.isFiltering
-        ? applyRetentionToFilter(tree, filtered.sections, retained)
+        ? applyRetentionToFilter(displayTree, filtered.sections, retained)
         : filtered.sections,
-    [tree, filtered.isFiltering, filtered.sections, retained],
+    [displayTree, filtered.isFiltering, filtered.sections, retained],
   );
   const visibleSectionIds = useMemo(
     () => collectSectionIds(visibleSections),
@@ -270,12 +259,14 @@ export function TemplateConfigGridPanel({
     if (retained.size > 0) setRetained(new Set());
   };
 
+  // Selection resolves from displayTree (the decision-7 overlay) so the
+  // inspector tracks a mid-flight move instead of snapping back.
   const selectedField =
-    selection?.kind === 'field' ? findField(tree, selection.id) : null;
+    selection?.kind === 'field' ? findField(displayTree, selection.id) : null;
   const selectedSection =
-    selection?.kind === 'section' ? findSection(tree, selection.id) : null;
+    selection?.kind === 'section' ? findSection(displayTree, selection.id) : null;
   const owningSection = selectedField
-    ? findSection(tree, selectedField.entityTypeId)
+    ? findSection(displayTree, selectedField.entityTypeId)
     : null;
   // A deep-link only travels with ITS field — selecting another row keeps
   // the inspector from stealing focus to a stale group.
@@ -330,12 +321,28 @@ export function TemplateConfigGridPanel({
   const isPendingRow = (fieldId: string) =>
     pendingInserts.some((p) => p.clientKey === fieldId);
 
-  // Rows still client-keyed: the grid disables their row-menu Delete
-  // (a queued insert has no cancel API — Task 7).
-  const pendingRowIds = useMemo(
-    () => new Set(pendingInserts.map((p) => p.clientKey)),
-    [pendingInserts],
-  );
+  // B-6 T4: the inspector combobox's destinations — the CURRENT
+  // template's sections only (the client-side move guard), counted from
+  // the overlay so a mid-flight END pick lands on the planned order.
+  const moveTargets = useMemo(() => deriveMoveTargets(displayTree), [displayTree]);
+  /** Combobox pick = END of the destination (filter-independent, so the
+   * combobox stays live while the ⌘⇧ chords are filter-gated). Returns
+   * the FieldMoveRecord for T5's Undo to capture the inverse. */
+  const moveFieldToSectionEnd = (field: GridField, toSectionId: string) =>
+    moveFieldWithUndo(
+      field,
+      toSectionId,
+      moveTargets.find((s) => s.id === toSectionId)?.fieldCount ?? 0,
+    );
+  const movePending = selectedField !== null && pendingRowIds.has(selectedField.id);
+  // B-6 T7: the ONE "Move to section…" dialog slot for the whole grid —
+  // non-null opens it for that field. Rows request it through the grid's
+  // onOpenMoveDialog; ⌘⇧M below is the keyboard entry.
+  const [moveDialogField, setMoveDialogField] = useState<GridField | null>(null);
+  const closeMoveDialog = () => {
+    setMoveDialogField(null);
+    focusGridCellSoon();
+  };
 
   // Edit on a STILL-PENDING row: update the optimistic copy and queue the
   // write behind the row's insert by client key (concurrency rule 5).
@@ -549,6 +556,20 @@ export function TemplateConfigGridPanel({
           event.preventDefault();
           toggleInspector();
         }
+        // ⌘⇧M opens the Move-to-section dialog for the FOCUSED (else the
+        // selected) field row; no-ops otherwise (B-6 T7). altKey excluded:
+        // ⌥ variants are distinct chords (and ⌥ can mutate event.key).
+        // NOTE: Chrome on macOS claims ⌘⇧M for its profile menu, so the
+        // binding may lose in the real browser — the ⋯ menu is reliable.
+        if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'm') {
+          const holder = (event.target as HTMLElement).closest('[data-cell-row]');
+          const focused = findField(displayTree, holder?.getAttribute('data-cell-row') ?? '');
+          const field = focused ?? selectedField;
+          if (field && !pendingRowIds.has(field.id)) {
+            event.preventDefault();
+            setMoveDialogField(field);
+          }
+        }
       }}
     >
       <div className="flex h-12 items-center gap-2 border-b px-3">
@@ -646,13 +667,21 @@ export function TemplateConfigGridPanel({
         </Tooltip>
       </div>
 
+      {/* B-6 T3: the surface's first live region (precedent SaveSlot) —
+          announces completed keyboard moves, since the moved row may
+          re-render far away or inside a collapsed section. Always
+          mounted so announcements land. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {moveAnnouncement}
+      </span>
+
       <div
         ref={containerRef}
         className="@container/grid flex max-h-[70vh] items-stretch"
       >
           <TemplateOutlineRail
             className="hidden @[52rem]/grid:block"
-            sections={tree}
+            sections={displayTree}
             visibleSectionIds={visibleSectionIds}
             selectedSectionId={selection?.kind === 'section' ? selection.id : null}
             onSelectSection={(sectionId) => setSelection({kind: 'section', id: sectionId})}
@@ -669,36 +698,46 @@ export function TemplateConfigGridPanel({
               )}
             </p>
           ) : (
-            <TemplateGrid
+            <GridDndContext
               sections={visibleSections}
-              selection={selection}
-              onSelect={setSelection}
-              onDeleteField={withRawField(onDeleteField)}
-              onCommitField={handleCommitField}
-              onInsertField={handleInsertField}
-              onToggleRequired={(field, isRequired) =>
-                saveFieldUpdates(field, {is_required: isRequired})
-              }
-              onChangeType={handleChangeType}
-              onDeepLink={handleDeepLink}
-              rowIdRemaps={rowIdRemaps}
-              pendingRowIds={pendingRowIds}
-              sectionActions={sectionActions}
-              onAddSection={onAddSection}
-              // Esc ladder rungs 2-3: the grid escalates here once
-              // rung 1 (cancel edit) is resolved in the editors.
-              onEscapeEscalate={handleEscapeEscalate}
               collapsed={collapsed}
-              onToggleCollapse={(sectionId) => {
-                const next = new Set(collapsed);
-                if (next.has(sectionId)) next.delete(sectionId);
-                else next.add(sectionId);
-                setCollapsed(next);
-              }}
-              showKeyColumn={showKeyColumn}
-              showOptionsColumn={showOptionsColumn}
               isFiltering={filtered.isFiltering}
-            />
+              pendingRowIds={pendingRowIds}
+              onMoveField={moveFieldWithUndo}
+            >
+              <TemplateGrid
+                sections={visibleSections}
+                selection={selection}
+                onSelect={setSelection}
+                onDeleteField={withRawField(onDeleteField)}
+                onCommitField={handleCommitField}
+                onInsertField={handleInsertField}
+                onToggleRequired={(field, isRequired) =>
+                  saveFieldUpdates(field, {is_required: isRequired})
+                }
+                onChangeType={handleChangeType}
+                onDeepLink={handleDeepLink}
+                onMoveField={moveFieldWithUndo}
+                onOpenMoveDialog={setMoveDialogField}
+                rowIdRemaps={rowIdRemaps}
+                pendingRowIds={pendingRowIds}
+                sectionActions={sectionActions}
+                onAddSection={onAddSection}
+                // Esc ladder rungs 2-3: the grid escalates here once
+                // rung 1 (cancel edit) is resolved in the editors.
+                onEscapeEscalate={handleEscapeEscalate}
+                collapsed={collapsed}
+                onToggleCollapse={(sectionId) => {
+                  const next = new Set(collapsed);
+                  if (next.has(sectionId)) next.delete(sectionId);
+                  else next.add(sectionId);
+                  setCollapsed(next);
+                }}
+                showKeyColumn={showKeyColumn}
+                showOptionsColumn={showOptionsColumn}
+                isFiltering={filtered.isFiltering}
+              />
+            </GridDndContext>
           )}
         </div>
 
@@ -721,6 +760,9 @@ export function TemplateConfigGridPanel({
                 owningSection={owningSection}
                 onSaveField={saveFieldUpdates}
                 saving={updateField.isPending}
+                sections={moveTargets}
+                onMoveField={moveFieldToSectionEnd}
+                moveDisabled={movePending}
                 focusGroup={inspectorFocusGroup}
               />
             </SheetContent>
@@ -733,11 +775,25 @@ export function TemplateConfigGridPanel({
               owningSection={owningSection}
               onSaveField={saveFieldUpdates}
               saving={updateField.isPending}
+              sections={moveTargets}
+              onMoveField={moveFieldToSectionEnd}
+              moveDisabled={movePending}
               focusGroup={inspectorFocusGroup}
             />
           )
         )}
       </div>
+
+      {/* B-6 T7: ONE dialog for the whole grid (T8's lazy-mount work must
+          keep this panel-hosted — never move it into the rows). A pick
+          moves to the destination's END via the same moveFieldToSectionEnd
+          the combobox uses; closing returns focus to the field's cell. */}
+      <MoveToSectionDialog
+        field={moveDialogField}
+        targets={moveTargets}
+        onMove={moveFieldToSectionEnd}
+        onClose={closeMoveDialog}
+      />
     </div>
   );
 }

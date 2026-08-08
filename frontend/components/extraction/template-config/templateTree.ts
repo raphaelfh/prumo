@@ -85,6 +85,11 @@ export interface TemplateFieldInput {
 export interface GridField {
   id: string;
   entityTypeId: string;
+  /** Committed per-section position as fetched. UNREAD by the B-6
+   * move/reorder writes — renumbering derives new sort_orders from array
+   * INDEX (`fieldMove`), never from this value; absent on the wire
+   * defaults to 0 like `bySortOrder`. */
+  sortOrder: number;
   label: string;
   key: string;
   fieldType: string;
@@ -132,6 +137,31 @@ export interface FilteredTemplateTree {
   totalCount: number;
 }
 
+/** One destination for the inspector's Section move combobox (B-6 T4) —
+ * ALWAYS derived from the current template's tree: the RLS write policy
+ * does not block cross-template moves, so this list is the client-side
+ * guard (B-7 owns the server fix). `fieldCount` lets the panel land a
+ * pick at the destination's END without a tree walk. */
+export interface MoveTargetSection {
+  id: string;
+  label: string;
+  kind: TemplateSectionKind;
+  fieldCount: number;
+}
+
+/** Every section as a move destination, roots and children in tree
+ * order — fields carry no placement constraints, so all are legal. */
+export function deriveMoveTargets(sections: GridSection[]): MoveTargetSection[] {
+  return sections.flatMap((section) =>
+    [section, ...section.children].map(({id, label, kind, fieldCount}) => ({
+      id,
+      label,
+      kind,
+      fieldCount,
+    })),
+  );
+}
+
 /** Case- and diacritic-insensitive fold, applied to BOTH sides of a match. */
 export function normalizeForSearch(value: string): string {
   return value
@@ -151,6 +181,7 @@ function toGridField(input: TemplateFieldInput): GridField {
   return {
     id: input.id,
     entityTypeId: input.entity_type_id,
+    sortOrder: input.sort_order ?? 0,
     label: input.label ?? input.name,
     key: input.name,
     fieldType: input.field_type,

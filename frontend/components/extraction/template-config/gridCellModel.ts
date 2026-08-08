@@ -4,7 +4,10 @@
  * interpret the returned `effects` (commit/cancel/activate/exit/
  * escalate) — which keeps the whole keyboard/mouse contract
  * unit-testable and the React layer compiler-safe (all imperative focus
- * happens in event handlers reading `state.focus`).
+ * happens in event handlers reading `state.focus`). B-6 adds the
+ * `moveRow` effect: ⌘⇧↑/↓ in focus mode on a FIELD row emits a
+ * boundary-aware landing slot (see `nextMoveSlot`); the DOM layer owns
+ * the actual write + refocus.
  *
  * Esc ladder: rung 1 (cancel edit) is resolved HERE; rungs 2-3 (close
  * inspector with focus-return, clear focus/search) belong to the
@@ -34,7 +37,11 @@ export type GridEffect =
   | {kind: 'cancelEdit'; coord: CellCoord}
   | {kind: 'activateControl'; coord: CellCoord}
   | {kind: 'exitGrid'}
-  | {kind: 'escalateEsc'};
+  | {kind: 'escalateEsc'}
+  /** Move the field row to `toIndex` among the destination section's
+   * FIELD rows (0-based; END = the section's field count). Emitted by
+   * the ⌘⇧↑/↓ chord; the consumer performs the write (+ renumber). */
+  | {kind: 'moveRow'; fieldRowId: string; toSectionId: string; toIndex: number};
 
 export interface GridModelState {
   focus: CellCoord | null;
@@ -69,6 +76,15 @@ export type GridEvent =
       key: string;
       printable?: boolean;
       composing?: boolean;
+      /** Move-chord modifiers (B-6): `meta` is metaKey OR ctrlKey — the
+       * DOM layer folds them (⌘ on macOS, Ctrl elsewhere). Only
+       * meta+shift+ArrowUp/Down is interpreted; other modified arrows
+       * keep the plain rove. */
+      meta?: boolean;
+      shift?: boolean;
+      /** True while the grid is filtered: visible indices ≠ true
+       * indices, so the move chord is disabled (B-6 panel decision 4). */
+      filtering?: boolean;
       cellKind: CellKind;
       rows: GridRowShape[];
       columns?: readonly string[];
@@ -105,6 +121,48 @@ function moveVertical(
   const next = rows[idx + delta];
   if (!next) return state;
   return {...state, focus: {rowId: next.rowId, column: state.focus.column}};
+}
+
+export interface MoveSlot {
+  toSectionId: string;
+  /** Destination among the section's FIELD rows only (0-based; END =
+   * the section's field count) — headers/ghosts never count. */
+  toIndex: number;
+}
+
+/**
+ * Boundary-aware landing slot for a keyboard move (⌘⇧↑/↓), pinned by
+ * the B-6 panel: down within a section swaps with the next FIELD
+ * sibling (toIndex = currentIndex+1); down from a section's LAST field
+ * targets the FIRST slot (0) of the next section; up mirrors it — up
+ * from a FIRST field targets the END of the previous section (the
+ * symmetric inverse, so up-then-down returns). Template first/last →
+ * null (the caller no-ops). Section headers and ghost rows are SKIPPED:
+ * slots exist only between FIELD rows. Section order is the order of
+ * `kind: 'section'` rows in `rows` (children follow their header in
+ * DOM order).
+ */
+export function nextMoveSlot(
+  rows: GridRowShape[],
+  fieldRowId: string,
+  delta: 1 | -1,
+): MoveSlot | null {
+  const row = rows.find((r) => r.rowId === fieldRowId);
+  if (!row || row.kind !== 'field') return null;
+  const fieldsOf = (sectionId: string) =>
+    rows.filter((r) => r.kind === 'field' && r.sectionId === sectionId);
+  const siblings = fieldsOf(row.sectionId);
+  const within = siblings.findIndex((r) => r.rowId === fieldRowId) + delta;
+  if (within >= 0 && within < siblings.length) {
+    return {toSectionId: row.sectionId, toIndex: within};
+  }
+  // Crossing a boundary: the adjacent section in header order.
+  const sectionIds = rows.filter((r) => r.kind === 'section').map((r) => r.sectionId);
+  const pos = sectionIds.indexOf(row.sectionId);
+  if (pos < 0) return null;
+  const target = sectionIds[pos + delta];
+  if (target === undefined) return null;
+  return {toSectionId: target, toIndex: delta === 1 ? 0 : fieldsOf(target).length};
 }
 
 function moveHorizontal(
@@ -228,6 +286,31 @@ export function gridReducer(state: GridModelState, event: GridEvent): GridModelS
   }
 
   // mode === 'focus'
+  // ⌘⇧↑/↓ MOVES the focused FIELD row (B-6). The chord is consumed
+  // whole: when the move is disallowed (section/ghost row, filtering,
+  // template edge) NOTHING happens — it never falls back to a rove.
+  // Focus keeps the SAME coordinate: the row re-renders elsewhere and
+  // the DOM layer refocuses it (resolveFocusCoord/recoverFocus).
+  if (event.meta && event.shift && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+    if (!state.focus || event.filtering) return base;
+    const slot = nextMoveSlot(
+      event.rows,
+      state.focus.rowId,
+      event.key === 'ArrowDown' ? 1 : -1,
+    );
+    if (!slot) return base;
+    return {
+      ...base,
+      effects: [
+        {
+          kind: 'moveRow',
+          fieldRowId: state.focus.rowId,
+          toSectionId: slot.toSectionId,
+          toIndex: slot.toIndex,
+        },
+      ],
+    };
+  }
   switch (event.key) {
     case 'Enter':
     case 'F2':

@@ -1,44 +1,31 @@
 import {Fragment, useRef, useState} from 'react';
-import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  GripVertical,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Sparkles,
-  Trash2,
-} from 'lucide-react';
+import {SortableContext, verticalListSortingStrategy} from '@dnd-kit/sortable';
 
-import {Input} from '@/components/ui/input';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 
+import type {CellFocus} from './gridCellFocus';
 import {
   gridReducer,
   initialGridState,
+  nextMoveSlot,
   recoverFocus,
   type CellCoord,
   type CellKind,
   type GridRowShape,
 } from './gridCellModel';
+import {ADD_SECTION_ROW_ID, buildRowShapes, ghostRowId} from './gridRowShapes';
+import {FieldRow, type TextCellColumn} from './TemplateGridFieldRow';
+import {GhostRow} from './TemplateGridGhostRow';
 import {
-  FIELD_TYPE_OPTIONS,
-  findField,
-  type GridField,
-  type GridSection,
-  type TemplateMatchHint,
-} from './templateTree';
+  SectionHeaderRow,
+  type TemplateSectionActions,
+} from './TemplateGridSectionHeaderRow';
+import {findField, type GridField, type GridSection} from './templateTree';
+
+// Re-exported (B-6 T0 split) so existing import sites keep working.
+export type {TextCellColumn} from './TemplateGridFieldRow';
+export type {TemplateSectionActions} from './TemplateGridSectionHeaderRow';
 
 /**
  * The template configuration grid (spec §2, mock `manager-grid-v3-polish`).
@@ -93,21 +80,6 @@ export interface TemplateGridSelection {
   id: string;
 }
 
-/**
- * Section-level actions the accordion used to expose through its `⋮` menu.
- * Kept whole so replacing the accordion is not a capability regression.
- * Since Task 6 the ROW owns rename mode and its draft (SectionHeaderRow);
- * the parent owns only the write — ONE commit per rename, called with a
- * CHANGED, non-empty, trimmed label (a revert never reaches it).
- */
-export interface TemplateSectionActions {
-  onCommitRename: (sectionId: string, label: string) => void;
-  onDelete: (section: GridSection) => void;
-}
-
-/** Columns that edit inline as free text. */
-export type TextCellColumn = 'label' | 'key';
-
 interface TemplateGridProps {
   sections: GridSection[];
   selection: TemplateGridSelection | null;
@@ -134,6 +106,19 @@ interface TemplateGridProps {
   /** ✨/Options cell activation (Task 5): the panel selects the field and
    * opens the inspector on the group (docked or Sheet). */
   onDeepLink: (field: GridField, group: 'ai' | 'options') => void;
+  /** ⌘⇧↑/↓ move dispatch (B-6 T3): the panel's serialized `moveFieldTo`
+   * chokepoint. Optional so shells without the write layer render
+   * unchanged. `settled` resolves after the write + refetch — the grid
+   * then nudges DOM focus back onto the row (a React re-parent drops
+   * focus to body). */
+  onMoveField?: (
+    field: GridField,
+    toSectionId: string,
+    toIndex: number,
+  ) => {settled: Promise<boolean>} | null;
+  /** Requests the panel-hosted "Move to section…" dialog for a row (B-6
+   * T7) — ONE dialog instance lives at panel level; the row menu asks. */
+  onOpenMoveDialog?: (field: GridField) => void;
   /** Client key → server id for pending rows the panel reconciled: the
    * focus coordinate follows the row identity across the drain refetch. */
   rowIdRemaps?: ReadonlyMap<string, string>;
@@ -157,21 +142,6 @@ interface TemplateGridProps {
   isFiltering: boolean;
 }
 
-type MatchHintCopyKey =
-  | 'matchHintKey'
-  | 'matchHintDescription'
-  | 'matchHintAiInstruction'
-  | 'matchHintOptions';
-
-/** The label hit needs no hint — the user can see why it matched. */
-const MATCH_HINT_COPY: Record<TemplateMatchHint, MatchHintCopyKey | null> = {
-  label: null,
-  key: 'matchHintKey',
-  description: 'matchHintDescription',
-  aiInstruction: 'matchHintAiInstruction',
-  options: 'matchHintOptions',
-};
-
 /** Indentation ladder from the mock: identity 22px, sub-header 14px, child fields 36px. */
 const INDENT = {
   rootField: 'pl-2',
@@ -179,20 +149,6 @@ const INDENT = {
   childHeader: 'pl-[14px]',
   childField: 'pl-[36px]',
 } as const;
-
-// --- Roving-focus plumbing -------------------------------------------------
-//
-// Every focusable cell target carries `data-cell-row` + `data-cell-cols`
-// (the column positions it covers; '*' = whole row, for ghost rows whose
-// single cell spans every column). The target is the cell's PRIMARY
-// interactive element when it has one (label button, menu trigger,
-// collapse chevron) — native Enter/Space activation then works without any
-// synthetic events — and the <td> itself when the cell has none yet
-// (type/required/AI cells until Tasks 3-5 make them live).
-
-const ADD_SECTION_ROW_ID = 'ghost:template';
-
-const ghostRowId = (sectionId: string) => `ghost:${sectionId}`;
 
 /** Keys the grid routes through the cell model on EVERY cell. Text and
  * ghost cells additionally route Enter/F2/printables (they open the
@@ -239,38 +195,6 @@ function isPrintableKey(event: React.KeyboardEvent): boolean {
   return event.key.length === 1 && !event.ctrlKey && !event.metaKey;
 }
 
-interface CellFocus {
-  /** Resolved roving coordinate — never a dead row (see resolveFocusCoord). */
-  coord: CellCoord | null;
-  /** Focus is physically inside the grid; the ring only paints then. */
-  within: boolean;
-}
-
-type CoveredCols = readonly string[] | '*';
-
-function coversColumn(cols: CoveredCols, column: string): boolean {
-  return cols === '*' || cols.includes(column);
-}
-
-function isCellAt(focus: CellFocus, rowId: string, cols: CoveredCols): boolean {
-  return (
-    focus.coord !== null &&
-    focus.coord.rowId === rowId &&
-    coversColumn(cols, focus.coord.column)
-  );
-}
-
-function rovingTabIndex(focus: CellFocus, rowId: string, cols: CoveredCols): 0 | -1 {
-  return isCellAt(focus, rowId, cols) ? 0 : -1;
-}
-
-/** Same outline vocabulary as the selected-state ring, painted on the td. */
-const CELL_RING = 'outline outline-2 -outline-offset-2 outline-ring';
-
-function ringClass(focus: CellFocus, rowId: string, cols: CoveredCols): string | false {
-  return focus.within && isCellAt(focus, rowId, cols) && CELL_RING;
-}
-
 function targetCovers(el: HTMLElement, column: string): boolean {
   const cols = el.dataset.cellCols ?? '';
   return cols === '*' || cols.split(' ').includes(column);
@@ -305,41 +229,6 @@ function findFocusTarget(
   return null;
 }
 
-/** The visible rows in DOM order — the model's vertical axis. Must mirror
- * the JSX exactly (collapse hides fields/children, filtering hides
- * ghosts; every section — child sections included — carries a ghost). */
-function buildRowShapes(
-  sections: GridSection[],
-  collapsed: ReadonlySet<string>,
-  isFiltering: boolean,
-): GridRowShape[] {
-  const rows: GridRowShape[] = [];
-  for (const section of sections) {
-    rows.push({rowId: section.id, kind: 'section', sectionId: section.id});
-    if (collapsed.has(section.id)) continue;
-    for (const field of section.fields) {
-      rows.push({rowId: field.id, kind: 'field', sectionId: section.id});
-    }
-    if (!isFiltering) {
-      rows.push({rowId: ghostRowId(section.id), kind: 'ghost', sectionId: section.id});
-    }
-    for (const child of section.children) {
-      rows.push({rowId: child.id, kind: 'section', sectionId: child.id});
-      if (collapsed.has(child.id)) continue;
-      for (const field of child.fields) {
-        rows.push({rowId: field.id, kind: 'field', sectionId: child.id});
-      }
-      if (!isFiltering) {
-        rows.push({rowId: ghostRowId(child.id), kind: 'ghost', sectionId: child.id});
-      }
-    }
-  }
-  if (!isFiltering) {
-    rows.push({rowId: ADD_SECTION_ROW_ID, kind: 'ghost', sectionId: ''});
-  }
-  return rows;
-}
-
 /** The invariant lives here: this never returns a coordinate without a
  * live row while the grid has rows, so EXACTLY ONE target renders
  * tabIndex=0 — defaulting to the first cell (the B-1 regression), and
@@ -367,739 +256,6 @@ function resolveFocusCoord(
   return recoverFocus({rowId: focus.rowId, column}, null, rows) ?? fallback;
 }
 
-function TypePill({field}: {field: GridField}) {
-  const label =
-    field.optionCount > 0 ? `${field.fieldType} · ${field.optionCount}` : field.fieldType;
-  return (
-    <span className="inline-block truncate rounded-full border bg-muted/50 px-[7px] py-px text-[10.5px] capitalize text-muted-foreground">
-      {label}
-    </span>
-  );
-}
-
-function RequiredBox({checked}: {checked: boolean}) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        'inline-flex size-[14px] items-center justify-center rounded border-[1.5px] align-middle',
-        checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
-      )}
-    >
-      {checked && <Check className="size-2.5" strokeWidth={3} aria-hidden />}
-    </span>
-  );
-}
-
-/**
- * Inline editor for a text cell — the compiler-safe recipe (plan Global
- * Constraints): `autoFocus` + `onFocus` select() for focus-then-edit, the
- * draft seeded from the typed key for typing-replaces, zero refs/effects
- * for focus. Mounted only while the model is in edit mode on this cell,
- * so `useState` re-seeds per edit session. Height-capped like the h-6
- * rename input to preserve the 30px rows.
- */
-function TextCellEditor({
-  initialValue,
-  selectOnFocus,
-  ariaLabel,
-  onCommit,
-  onCancel,
-}: {
-  initialValue: string;
-  selectOnFocus: boolean;
-  ariaLabel: string;
-  onCommit: (draft: string, via: 'enter' | 'blur') => void;
-  onCancel: () => void;
-}) {
-  const [draft, setDraft] = useState(initialValue);
-  return (
-    <Input
-      value={draft}
-      autoFocus
-      aria-label={ariaLabel}
-      onFocus={(event) => {
-        if (selectOnFocus) event.currentTarget.select();
-      }}
-      onChange={(event) => setDraft(event.target.value)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-          event.preventDefault();
-          onCommit(draft, 'enter');
-        }
-        if (event.key === 'Escape') {
-          // Rung 1 belongs to the editor: without stopPropagation the
-          // panel's Esc listener would also clear the search/selection.
-          event.preventDefault();
-          event.stopPropagation();
-          onCancel();
-        }
-      }}
-      onBlur={() => onCommit(draft, 'blur')}
-      className="h-6 text-xs"
-    />
-  );
-}
-
-/**
- * Inline rename editor for a section header (Task 6) — the same
- * compiler-safe recipe as TextCellEditor (mount-scoped draft,
- * `autoFocus`, zero refs/effects), kept separate because the rename
- * target is a colSpan cell: it stays in the roving order under the
- * section row's span columns. The row decides what a commit/cancel
- * means; the editor only reports them.
- */
-function SectionRenameEditor({
-  initialValue,
-  rowId,
-  spanCols,
-  tabIndex,
-  onCommit,
-  onCancel,
-}: {
-  initialValue: string;
-  rowId: string;
-  spanCols: string;
-  tabIndex: 0 | -1;
-  onCommit: (draft: string, via: 'enter' | 'blur') => void;
-  onCancel: () => void;
-}) {
-  const [draft, setDraft] = useState(initialValue);
-  return (
-    <Input
-      value={draft}
-      autoFocus
-      aria-label={t('extraction', 'gridRenameSectionAria')}
-      data-cell-row={rowId}
-      data-cell-cols={spanCols}
-      tabIndex={tabIndex}
-      onChange={(event) => setDraft(event.target.value)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-          event.preventDefault();
-          onCommit(draft, 'enter');
-        }
-        if (event.key === 'Escape') {
-          // Rung 1 belongs to the editor (see TextCellEditor).
-          event.preventDefault();
-          event.stopPropagation();
-          onCancel();
-        }
-      }}
-      onBlur={() => onCommit(draft, 'blur')}
-      className="h-6 max-w-[220px] text-xs"
-    />
-  );
-}
-
-function FieldRow({
-  field,
-  indent,
-  selected,
-  focus,
-  editing,
-  onSelect,
-  onDelete,
-  deleteDisabled,
-  onEditorCommit,
-  onEditorCancel,
-  onToggleRequired,
-  onChangeType,
-  onDeepLink,
-  showKeyColumn,
-  showOptionsColumn,
-}: {
-  field: GridField;
-  indent: string;
-  selected: boolean;
-  focus: CellFocus;
-  /** Non-null while the model is in edit mode on one of this row's text
-   * cells; `seed` carries the typed key for typing-replaces. */
-  editing: {column: TextCellColumn; seed: string | null} | null;
-  onSelect: () => void;
-  onDelete: () => void;
-  /** True on pending optimistic rows — see `pendingRowIds`. */
-  deleteDisabled: boolean;
-  onEditorCommit: (column: TextCellColumn, draft: string, via: 'enter' | 'blur') => void;
-  onEditorCancel: () => void;
-  onToggleRequired: (isRequired: boolean) => void;
-  onChangeType: (fieldType: string) => void;
-  onDeepLink: (group: 'ai' | 'options') => void;
-  showKeyColumn: boolean;
-  showOptionsColumn: boolean;
-}) {
-  const hintKey = field.matchHint ? MATCH_HINT_COPY[field.matchHint] : null;
-  const rowId = field.id;
-  return (
-    <tr
-      data-testid="template-grid-field-row"
-      className={cn(
-        'group/row h-[30px] border-b border-border/50 hover:bg-muted/40',
-        selected && 'bg-muted/60',
-      )}
-    >
-      <td role="gridcell" className="w-3.5 px-2 text-muted-foreground/60">
-        <GripVertical className="size-3" aria-hidden />
-      </td>
-      <td
-        role="gridcell"
-        className={cn('min-w-0 px-2', indent, ringClass(focus, rowId, ['label']))}
-      >
-        {/* The roving target is the button, not the td: Enter/Space select
-            natively; a second click / Enter / F2 / typing swaps it for the
-            inline editor (the model's text-cell transitions). */}
-        {/* The row itself carries no handlers: a click target that also lives
-            on the <tr> fires twice for nested controls, and `stopPropagation`
-            on `click` does NOT stop `dblclick` — a double-click on the ⋯ menu
-            would also hit whatever the row bound behind it. */}
-        {editing?.column === 'label' ? (
-          <TextCellEditor
-            initialValue={editing.seed ?? field.label}
-            selectOnFocus={editing.seed === null}
-            ariaLabel={t('extraction', 'gridEditLabelAria')}
-            onCommit={(draft, via) => onEditorCommit('label', draft, via)}
-            onCancel={onEditorCancel}
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={onSelect}
-            aria-current={selected ? 'true' : undefined}
-            data-cell-row={rowId}
-            data-cell-cols="label"
-            tabIndex={rovingTabIndex(focus, rowId, ['label'])}
-            className={cn(
-              'flex w-full max-w-full items-baseline gap-1.5 rounded text-left',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              selected && 'outline outline-2 -outline-offset-2 outline-ring',
-            )}
-          >
-            <span className={cn('truncate', field.isRequired && 'font-medium')}>
-              {field.label}
-            </span>
-            {hintKey && (
-              <span className="shrink-0 text-[10.5px] text-muted-foreground">
-                · {t('extraction', hintKey)}
-              </span>
-            )}
-          </button>
-        )}
-      </td>
-      {showKeyColumn && (
-        <td
-          role="gridcell"
-          data-cell-row={rowId}
-          data-cell-cols="key"
-          // While the editor (an implicit tab stop) is inside, the td
-          // steps out of the roving order — one tab stop at all times.
-          tabIndex={
-            editing?.column === 'key' ? -1 : rovingTabIndex(focus, rowId, ['key'])
-          }
-          className={cn(
-            'max-w-[160px] truncate px-2 font-mono text-[10px] text-muted-foreground',
-            ringClass(focus, rowId, ['key']),
-          )}
-        >
-          {editing?.column === 'key' ? (
-            <TextCellEditor
-              initialValue={editing.seed ?? field.key}
-              selectOnFocus={editing.seed === null}
-              ariaLabel={t('extraction', 'gridEditKeyAria')}
-              onCommit={(draft, via) => onEditorCommit('key', draft, via)}
-              onCancel={onEditorCancel}
-            />
-          ) : (
-            field.key
-          )}
-        </td>
-      )}
-      <td
-        role="gridcell"
-        className={cn('w-[110px] px-2', ringClass(focus, rowId, ['type']))}
-      >
-        {/* Control cells act on the FIRST click (Task 5): the pill is the
-            menu trigger, so click/Enter/Space open natively and a pick
-            routes to the panel's probed write. */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={t('extraction', 'gridTypeMenuAria').replace(
-                '{{label}}',
-                field.label,
-              )}
-              data-cell-row={rowId}
-              data-cell-cols="type"
-              tabIndex={rovingTabIndex(focus, rowId, ['type'])}
-              className="block max-w-full rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <TypePill field={field} />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="text-xs">
-            <DropdownMenuRadioGroup
-              value={field.fieldType}
-              onValueChange={(value) => {
-                if (value !== field.fieldType) onChangeType(value);
-              }}
-            >
-              {FIELD_TYPE_OPTIONS.map(({value, copyKey}) => (
-                <DropdownMenuRadioItem key={value} value={value}>
-                  {t('extraction', copyKey)}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </td>
-      {showOptionsColumn && (
-        <td
-          role="gridcell"
-          className={cn(
-            'max-w-[200px] px-2',
-            ringClass(focus, rowId, ['options']),
-          )}
-        >
-          <button
-            type="button"
-            onClick={() => onDeepLink('options')}
-            aria-label={t('extraction', 'gridOptionsCellAria').replace(
-              '{{label}}',
-              field.label,
-            )}
-            data-cell-row={rowId}
-            data-cell-cols="options"
-            tabIndex={rovingTabIndex(focus, rowId, ['options'])}
-            className="block min-h-[18px] w-full truncate rounded text-left text-[10.5px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {(field.allowedValues ?? []).join(', ')}
-          </button>
-        </td>
-      )}
-      <td
-        role="gridcell"
-        className={cn('w-10 px-2', ringClass(focus, rowId, ['required']))}
-      >
-        {/* A REAL checkbox toggling on the first click; sr-only input +
-            the 14px visual keep the compact look. Space toggles natively;
-            Enter arrives via the model's activateControl interpretation
-            (native checkboxes ignore Enter). */}
-        <label className="inline-flex cursor-pointer items-center align-middle">
-          <input
-            type="checkbox"
-            checked={field.isRequired}
-            onChange={(event) => onToggleRequired(event.target.checked)}
-            aria-label={t('extraction', 'gridRequiredToggleAria').replace(
-              '{{label}}',
-              field.label,
-            )}
-            data-cell-row={rowId}
-            data-cell-cols="required"
-            tabIndex={rovingTabIndex(focus, rowId, ['required'])}
-            className="peer sr-only"
-          />
-          <RequiredBox checked={field.isRequired} />
-        </label>
-      </td>
-      <td
-        role="gridcell"
-        className={cn('w-[26px] px-1', ringClass(focus, rowId, ['sparkle']))}
-      >
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={() => onDeepLink('ai')}
-              aria-label={t('extraction', 'gridAiCellAria').replace(
-                '{{label}}',
-                field.label,
-              )}
-              data-cell-row={rowId}
-              data-cell-cols="sparkle"
-              tabIndex={rovingTabIndex(focus, rowId, ['sparkle'])}
-              className="flex h-[18px] w-full items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {field.hasAiInstruction && (
-                <Sparkles className="size-3 text-primary" aria-hidden />
-              )}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>
-            {t('extraction', 'gridAiCellAria').replace('{{label}}', field.label)}
-          </TooltipContent>
-        </Tooltip>
-      </td>
-      <td
-        role="gridcell"
-        className={cn('w-[34px] px-1 text-right', ringClass(focus, rowId, ['actions']))}
-      >
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={t('extraction', 'actionsForFieldAria').replace(
-                '{{label}}',
-                field.label,
-              )}
-              data-cell-row={rowId}
-              data-cell-cols="actions"
-              tabIndex={rovingTabIndex(focus, rowId, ['actions'])}
-              className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/row:opacity-100 data-[state=open]:opacity-100"
-            >
-              <MoreHorizontal className="size-3.5" aria-hidden />
-            </button>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent>{t('extraction', 'gridRowActions')}</TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent align="end" className="text-xs">
-            <DropdownMenuItem
-              onSelect={onDelete}
-              disabled={deleteDisabled}
-              className="text-destructive focus:text-destructive"
-            >
-              <Trash2 className="mr-2 size-3.5" aria-hidden />
-              {t('extraction', 'deleteField')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </td>
-    </tr>
-  );
-}
-
-function SectionHeaderRow({
-  section,
-  columnCount,
-  indent,
-  collapsed,
-  selected,
-  focus,
-  spanCols,
-  onToggle,
-  onSelect,
-  onNewField,
-  newFieldDisabled,
-  actions,
-}: {
-  section: GridSection;
-  columnCount: number;
-  indent: string;
-  collapsed: boolean;
-  selected: boolean;
-  focus: CellFocus;
-  /** Space-joined middle column positions the header's colSpan cell covers. */
-  spanCols: string;
-  onToggle: () => void;
-  onSelect: () => void;
-  /** Task 4: focuses the section's ghost editor. Disabled while
-   * filtering — the ghost rows are hidden. */
-  onNewField: () => void;
-  newFieldDisabled: boolean;
-  actions: TemplateSectionActions;
-}) {
-  // New-field and Rename both mount an autoFocus editor. Neither may
-  // open from onSelect: the menu's FocusScope is still trapping at that
-  // point and yanks focus straight back off the fresh editor — whose
-  // blur is an auto-discard (ghost) or an instant rename exit. So
-  // onSelect only FLAGS the intent and the open runs in
-  // onCloseAutoFocus, after the trap is torn down, with the default
-  // trigger-refocus prevented for that one hand-off. Every other close
-  // keeps the a11y default.
-  const menuClaimedFocus = useRef<'newField' | 'rename' | null>(null);
-  // Task 6: the row owns rename MODE; the mounted editor owns the draft.
-  // Both exits (commit, cancel) leave rename mode synchronously, so the
-  // editor unmounts while focused and no blur-commit can double-fire
-  // (the Task-3 exactly-once pattern).
-  const [renaming, setRenaming] = useState(false);
-  const labelButtonRef = useRef<HTMLButtonElement>(null);
-
-  /** The label control remounts on the same flush that unmounts the
-   * editor — focus it after that flush (the grid's focusCellSoon
-   * pattern; still handler-originated, never an effect). */
-  const focusLabelSoon = () => {
-    queueMicrotask(() => labelButtonRef.current?.focus());
-  };
-
-  const commitRename = (draft: string, via: 'enter' | 'blur') => {
-    setRenaming(false);
-    const value = draft.trim();
-    // An unchanged (or emptied) draft is a revert, never a write.
-    if (value !== '' && value !== section.label) {
-      actions.onCommitRename(section.id, value);
-    }
-    // On Enter the editor unmounts while focused (no blur follows) —
-    // put focus back on the label control. On blur the world already
-    // moved focus; stealing it back would fight the user.
-    if (via === 'enter') focusLabelSoon();
-  };
-
-  const cancelRename = () => {
-    setRenaming(false);
-    focusLabelSoon();
-  };
-
-  const Chevron = collapsed ? ChevronRight : ChevronDown;
-  const meta = [
-    ...section.metaKeys.map((key) => t('extraction', key)),
-    String(section.fieldCount),
-  ];
-  // Two roving stops inside the colSpan cell, in DOM order: the collapse
-  // chevron sits at the 'label' position, the section label at the middle
-  // positions the colSpan covers — so both stay keyboard-reachable with
-  // native Enter activation.
-  const spanColList = spanCols.split(' ');
-  const cellCols = ['label', ...spanColList];
-  return (
-    <tr
-      data-testid="template-grid-section-row"
-      className="h-8 border-b border-border/50 bg-muted/50"
-    >
-      <td role="gridcell" className="w-3.5 px-2 text-muted-foreground/60">
-        <GripVertical className="size-3" aria-hidden />
-      </td>
-      <td
-        role="gridcell"
-        colSpan={columnCount - 2}
-        className={cn('px-2', indent, ringClass(focus, section.id, cellCols))}
-      >
-        <div className="flex items-center gap-[7px] overflow-hidden whitespace-nowrap">
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-expanded={!collapsed}
-            aria-label={`${t('extraction', collapsed ? 'gridExpandSection' : 'gridCollapseSection')} — ${section.label}`}
-            data-cell-row={section.id}
-            data-cell-cols="label"
-            tabIndex={rovingTabIndex(focus, section.id, ['label'])}
-            className="rounded text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Chevron className="size-3.5" aria-hidden />
-          </button>
-          {renaming ? (
-            <SectionRenameEditor
-              initialValue={section.label}
-              rowId={section.id}
-              spanCols={spanCols}
-              tabIndex={rovingTabIndex(focus, section.id, spanColList)}
-              onCommit={commitRename}
-              onCancel={cancelRename}
-            />
-          ) : (
-            <button
-              ref={labelButtonRef}
-              type="button"
-              onClick={onSelect}
-              aria-current={selected ? 'true' : undefined}
-              data-cell-row={section.id}
-              data-cell-cols={spanCols}
-              tabIndex={rovingTabIndex(focus, section.id, spanColList)}
-              className="truncate rounded text-left font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {section.label}
-            </button>
-          )}
-          {section.hasDescription && (
-            <span className="shrink-0 text-primary" aria-hidden>
-              ●
-            </span>
-          )}
-          <span className="truncate text-[10.5px] text-muted-foreground">
-            · {meta.join(' · ')}
-          </span>
-        </div>
-      </td>
-      <td
-        role="gridcell"
-        className={cn('px-2 text-right', ringClass(focus, section.id, ['actions']))}
-      >
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={`${t('extraction', 'gridAddMenu')} — ${section.label}`}
-              data-cell-row={section.id}
-              data-cell-cols="actions"
-              tabIndex={rovingTabIndex(focus, section.id, ['actions'])}
-              className="inline-flex items-center gap-0.5 whitespace-nowrap rounded-md border bg-card px-[7px] py-px text-[10.5px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Plus className="size-3" aria-hidden />
-              <ChevronDown className="size-2.5" aria-hidden />
-            </button>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent>{t('extraction', 'gridAddMenu')}</TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent
-            align="end"
-            className="text-xs"
-            onCloseAutoFocus={(event) => {
-              const claimed = menuClaimedFocus.current;
-              menuClaimedFocus.current = null;
-              if (claimed === 'newField') {
-                event.preventDefault();
-                onNewField();
-              } else if (claimed === 'rename') {
-                event.preventDefault();
-                setRenaming(true);
-              }
-            }}
-          >
-            <DropdownMenuItem
-              onSelect={() => {
-                menuClaimedFocus.current = 'newField';
-              }}
-              disabled={newFieldDisabled}
-            >
-              <Plus className="mr-2 size-3.5" aria-hidden />
-              {t('extraction', 'gridNewField')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => {
-                menuClaimedFocus.current = 'rename';
-              }}
-            >
-              <Pencil className="mr-2 size-3.5" aria-hidden />
-              {t('extraction', 'editLabelButton')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => actions.onDelete(section)}
-              className="text-destructive focus:text-destructive"
-            >
-              <Trash2 className="mr-2 size-3.5" aria-hidden />
-              {t('extraction', 'removeButton')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </td>
-    </tr>
-  );
-}
-
-/**
- * Inline editor for a ghost row — the Enter-chain's input. Unlike
- * TextCellEditor it SURVIVES its own Enter-commit (the chain reopens the
- * same ghost, so the component clears its draft instead of unmounting)
- * and reports the empty↔non-empty flip so the model can distinguish
- * "Enter commits the next field" from "Enter exits the chain". Same
- * compiler-safe recipe: `autoFocus`, draft seeded from the typed key,
- * zero refs/effects.
- */
-function GhostCellEditor({
-  rowId,
-  seed,
-  onCommit,
-  onCancel,
-  onDraftEmptyChange,
-}: {
-  rowId: string;
-  seed: string | null;
-  onCommit: (draft: string, via: 'enter' | 'blur') => void;
-  onCancel: () => void;
-  onDraftEmptyChange: (empty: boolean) => void;
-}) {
-  const [draft, setDraft] = useState(seed ?? '');
-  return (
-    <Input
-      value={draft}
-      autoFocus
-      aria-label={t('extraction', 'gridNewFieldAria')}
-      placeholder={t('extraction', 'gridNewFieldPlaceholder')}
-      data-cell-row={rowId}
-      data-cell-cols="*"
-      onChange={(event) => {
-        const value = event.target.value;
-        const wasEmpty = draft.trim() === '';
-        const isEmpty = value.trim() === '';
-        setDraft(value);
-        if (wasEmpty !== isEmpty) onDraftEmptyChange(isEmpty);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-          event.preventDefault();
-          onCommit(draft, 'enter');
-          // The chain reopens this SAME editor — start the next field
-          // empty. (On an exit the editor unmounts; the set is inert.)
-          setDraft('');
-        }
-        if (event.key === 'Escape') {
-          // Rung 1 belongs to the editor (see TextCellEditor).
-          event.preventDefault();
-          event.stopPropagation();
-          onCancel();
-        }
-      }}
-      onBlur={() => onCommit(draft, 'blur')}
-      className="h-6 text-xs"
-    />
-  );
-}
-
-function GhostRow({
-  rowId,
-  columnCount,
-  indent,
-  label,
-  focus,
-  onClick,
-  editor,
-  testId,
-}: {
-  rowId: string;
-  columnCount: number;
-  indent: string;
-  label: string;
-  focus: CellFocus;
-  onClick: () => void;
-  /** Inline-editing support (field ghosts only — the add-section ghost
-   * keeps its button until sections go inline in B-8). */
-  editor?: {
-    editing: {seed: string | null} | null;
-    onCommit: (draft: string, via: 'enter' | 'blur') => void;
-    onCancel: () => void;
-    onDraftEmptyChange: (empty: boolean) => void;
-  };
-  testId: string;
-}) {
-  return (
-    <tr className="h-[30px] border-b border-border/50">
-      <td role="gridcell" />
-      <td
-        role="gridcell"
-        colSpan={columnCount - 1}
-        className={cn('px-2', indent, ringClass(focus, rowId, '*'))}
-      >
-        {editor?.editing ? (
-          <GhostCellEditor
-            rowId={rowId}
-            seed={editor.editing.seed}
-            onCommit={editor.onCommit}
-            onCancel={editor.onCancel}
-            onDraftEmptyChange={editor.onDraftEmptyChange}
-          />
-        ) : (
-          <button
-            type="button"
-            data-testid={testId}
-            data-cell-row={rowId}
-            data-cell-cols="*"
-            tabIndex={rovingTabIndex(focus, rowId, '*')}
-            onClick={onClick}
-            className="inline-flex items-center gap-1 rounded italic text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Plus className="size-3" aria-hidden />
-            {label}
-          </button>
-        )}
-      </td>
-    </tr>
-  );
-}
-
 export function TemplateGrid({
   sections,
   selection,
@@ -1110,6 +266,8 @@ export function TemplateGrid({
   onToggleRequired,
   onChangeType,
   onDeepLink,
+  onMoveField,
+  onOpenMoveDialog,
   rowIdRemaps,
   pendingRowIds,
   sectionActions,
@@ -1160,6 +318,44 @@ export function TemplateGrid({
     else if (coord.column === 'options') onDeepLink(field, 'options');
   };
 
+  /** Once a move settles — either way — the row's DOM node may have been
+   * re-parented (success: the awaited refetch; failure: the order overlay
+   * retiring) and focus fell to body — nudge it back onto `target` via
+   * setTimeout, which runs after React's scheduled commit (still
+   * handler-originated, never an effect). Skips the nudge when the user
+   * moved focus elsewhere meanwhile. Shared by the ⌘⇧ chord and the row
+   * menu's Move up/down (T7). */
+  const refocusAfterMove = (record: {settled: Promise<boolean>}, target: CellCoord) => {
+    void record.settled.then(() => {
+      setTimeout(() => {
+        const table = tableRef.current;
+        const active = document.activeElement;
+        if (!table) return;
+        if (active && active !== document.body && !table.contains(active)) return;
+        const el =
+          findFocusTarget(table, target) ??
+          table.querySelector<HTMLElement>('[tabindex="0"]');
+        el?.focus();
+      }, 0);
+    });
+  };
+
+  /** Row-menu Move up/down (T7, panel decision 5): the visible,
+   * single-pointer counterpart of the chord — same boundary-aware slot,
+   * same chokepoint. Radix refocuses the ⋯ trigger on menu close, so the
+   * nudge targets the row's actions cell. */
+  const moveFieldStep = (field: GridField, delta: 1 | -1) => {
+    const slot = nextMoveSlot(rowShapes, field.id, delta);
+    if (!slot) return;
+    const record = onMoveField?.(field, slot.toSectionId, slot.toIndex);
+    if (record) refocusAfterMove(record, {rowId: field.id, column: 'actions'});
+  };
+  const moveStepDisabled = (fieldId: string, delta: 1 | -1) =>
+    !onMoveField ||
+    isFiltering ||
+    (pendingRowIds?.has(fieldId) ?? false) ||
+    nextMoveSlot(rowShapes, fieldId, delta) === null;
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTableElement>) => {
     if (event.defaultPrevented) return; // e.g. Radix trigger opened on ArrowDown
     const target = event.target as HTMLElement;
@@ -1190,6 +386,14 @@ export function TemplateGrid({
       key: event.key,
       printable,
       composing: event.nativeEvent.isComposing,
+      // B-6 move chord: ⌘ and Ctrl fold into one `meta` (Ctrl⇧ is the
+      // equal-citizen fallback where the OS claims ⌘⇧-arrows). Arrows
+      // pass the ROVING_KEYS gate below regardless — carrying the
+      // modifiers is what routes the chord to the model's move branch
+      // (which runs BEFORE its rove switch) instead of a plain rove.
+      meta: event.metaKey || event.ctrlKey,
+      shift: event.shiftKey,
+      filtering: isFiltering,
       cellKind,
       rows: rowShapes,
       columns,
@@ -1208,6 +412,19 @@ export function TemplateGrid({
         // the activation fires exactly once.
         event.preventDefault();
         activateControlCell(effect.coord);
+      }
+      if (effect.kind === 'moveRow' && !pendingRowIds?.has(effect.fieldRowId)) {
+        // B-6 T3: pending rows have no server id yet — the chord no-ops.
+        // The Arrow branch below preventDefaults either way (a consumed
+        // chord must never scroll). The model keeps the SAME coordinate;
+        // refocusAfterMove nudges DOM focus back once the write settles.
+        const moved = findField(sections, effect.fieldRowId);
+        const record = moved
+          ? onMoveField?.(moved, effect.toSectionId, effect.toIndex)
+          : null;
+        if (record) {
+          refocusAfterMove(record, {rowId: effect.fieldRowId, column: coord.column});
+        }
       }
       // 'exitGrid' (Tab): deliberately NOT preventDefault-ed — the grid has
       // one tab stop, so native Tab already leaves it (APG).
@@ -1390,40 +607,55 @@ export function TemplateGrid({
     };
   };
 
-  const renderFields = (fields: GridField[], indent: string) =>
-    fields.map((field) => {
-      const editing =
-        gridState.mode === 'edit' &&
-        focus.coord?.rowId === field.id &&
-        (focus.coord.column === 'label' || focus.coord.column === 'key')
-          ? {
-              column: focus.coord.column as TextCellColumn,
-              seed: gridState.editSeed,
+  // One SortableContext PER SECTION (B-6 T6): items mirror the rendered rows.
+  const renderFields = (fields: GridField[], indent: string) => (
+    <SortableContext items={fields} strategy={verticalListSortingStrategy}>
+      {fields.map((field) => {
+        const editing =
+          gridState.mode === 'edit' &&
+          focus.coord?.rowId === field.id &&
+          (focus.coord.column === 'label' || focus.coord.column === 'key')
+            ? {
+                column: focus.coord.column as TextCellColumn,
+                seed: gridState.editSeed,
+              }
+            : null;
+        return (
+          <FieldRow
+            key={field.id}
+            field={field}
+            indent={indent}
+            selected={isSelected('field', field.id)}
+            focus={focus}
+            editing={editing}
+            onSelect={() => onSelect({kind: 'field', id: field.id})}
+            onDelete={() => onDeleteField(field)}
+            deleteDisabled={pendingRowIds?.has(field.id) ?? false}
+            dragLocked={isFiltering ? 'filtering' : pendingRowIds?.has(field.id) ? 'pending' : null}
+            move={{
+              upDisabled: moveStepDisabled(field.id, -1),
+              downDisabled: moveStepDisabled(field.id, 1),
+              // Filter-independent (the combobox rule): a pick lands at
+              // the destination's END, so only pending rows disable it.
+              toSectionDisabled:
+                !onOpenMoveDialog || (pendingRowIds?.has(field.id) ?? false),
+              onStep: (delta) => moveFieldStep(field, delta),
+              onToSection: () => onOpenMoveDialog?.(field),
+            }}
+            onEditorCommit={(column, draft, via) =>
+              handleEditorCommit({kind: 'field', field, column}, draft, via)
             }
-          : null;
-      return (
-        <FieldRow
-          key={field.id}
-          field={field}
-          indent={indent}
-          selected={isSelected('field', field.id)}
-          focus={focus}
-          editing={editing}
-          onSelect={() => onSelect({kind: 'field', id: field.id})}
-          onDelete={() => onDeleteField(field)}
-          deleteDisabled={pendingRowIds?.has(field.id) ?? false}
-          onEditorCommit={(column, draft, via) =>
-            handleEditorCommit({kind: 'field', field, column}, draft, via)
-          }
-          onEditorCancel={handleEditorCancel}
-          onToggleRequired={(isRequired) => onToggleRequired(field, isRequired)}
-          onChangeType={(fieldType) => onChangeType(field, fieldType)}
-          onDeepLink={(group) => onDeepLink(field, group)}
-          showKeyColumn={showKeyColumn}
-          showOptionsColumn={showOptionsColumn}
-        />
-      );
-    });
+            onEditorCancel={handleEditorCancel}
+            onToggleRequired={(isRequired) => onToggleRequired(field, isRequired)}
+            onChangeType={(fieldType) => onChangeType(field, fieldType)}
+            onDeepLink={(group) => onDeepLink(field, group)}
+            showKeyColumn={showKeyColumn}
+            showOptionsColumn={showOptionsColumn}
+          />
+        );
+      })}
+    </SortableContext>
+  );
 
   return (
     <table

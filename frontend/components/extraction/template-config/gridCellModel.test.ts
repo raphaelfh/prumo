@@ -14,15 +14,20 @@
  *     movement
  *   - focus recovery: when the focused coordinate unmounts (filter
  *     change, delete), focus lands on the nearest surviving cell
+ *   - ⌘⇧↑/↓ (meta-or-ctrl + shift) MOVES the focused FIELD row (B-6):
+ *     boundary-aware landing slots; disabled in edit mode, on
+ *     section/ghost rows, and while filtering — never a rove fallback
  */
 import {describe, expect, it} from 'vitest';
 
 import {
   type CellCoord,
+  type CellKind,
   type GridModelState,
   type GridRowShape,
   gridReducer,
   initialGridState,
+  nextMoveSlot,
   recoverFocus,
 } from '@/components/extraction/template-config/gridCellModel';
 
@@ -31,6 +36,19 @@ const ROWS: GridRowShape[] = [
   {rowId: 'f-2', kind: 'field', sectionId: 's-1'},
   {rowId: 'ghost:s-1', kind: 'ghost', sectionId: 's-1'},
   {rowId: 'f-3', kind: 'field', sectionId: 's-2'},
+  {rowId: 'ghost:s-2', kind: 'ghost', sectionId: 's-2'},
+];
+
+/** The real grid's row order: section headers, then their fields, then
+ * the section's ghost — two sections, two fields each. */
+const MOVE_ROWS: GridRowShape[] = [
+  {rowId: 'sec:s-1', kind: 'section', sectionId: 's-1'},
+  {rowId: 'f-1', kind: 'field', sectionId: 's-1'},
+  {rowId: 'f-2', kind: 'field', sectionId: 's-1'},
+  {rowId: 'ghost:s-1', kind: 'ghost', sectionId: 's-1'},
+  {rowId: 'sec:s-2', kind: 'section', sectionId: 's-2'},
+  {rowId: 'f-3', kind: 'field', sectionId: 's-2'},
+  {rowId: 'f-4', kind: 'field', sectionId: 's-2'},
   {rowId: 'ghost:s-2', kind: 'ghost', sectionId: 's-2'},
 ];
 
@@ -371,6 +389,178 @@ describe('gridCellModel — focusSync (focus moved by other means)', () => {
     s = gridReducer(s, {type: 'focusSync', coord: at('f-2', 'label')});
     expect(s.mode).toBe('focus');
     focused(s, 'f-2', 'label');
+  });
+});
+
+describe('gridCellModel — keyboard move chord (B-6 T2)', () => {
+  const focusOn = (rowId: string): GridModelState =>
+    gridReducer(initialGridState, {type: 'focusSync', coord: at(rowId, 'label')});
+
+  const chord = (
+    s: GridModelState,
+    key: 'ArrowUp' | 'ArrowDown',
+    extra?: {filtering?: boolean; cellKind?: CellKind},
+  ): GridModelState =>
+    gridReducer(s, {
+      type: 'key',
+      key,
+      meta: true,
+      shift: true,
+      filtering: extra?.filtering,
+      cellKind: extra?.cellKind ?? 'text',
+      rows: MOVE_ROWS,
+    });
+
+  it('⌘⇧↓ within a section swaps with the next field sibling', () => {
+    const s = chord(focusOn('f-1'), 'ArrowDown');
+    expect(s.effects).toEqual([
+      {kind: 'moveRow', fieldRowId: 'f-1', toSectionId: 's-1', toIndex: 1},
+    ]);
+    // Focus follows the moved row: same coordinate, the DOM re-renders it.
+    focused(s, 'f-1', 'label');
+    expect(s.mode).toBe('focus');
+  });
+
+  it('⌘⇧↑ within a section swaps with the previous field sibling', () => {
+    const s = chord(focusOn('f-2'), 'ArrowUp');
+    expect(s.effects).toEqual([
+      {kind: 'moveRow', fieldRowId: 'f-2', toSectionId: 's-1', toIndex: 0},
+    ]);
+    focused(s, 'f-2', 'label');
+  });
+
+  it("⌘⇧↓ from a section's LAST field targets the NEXT section's FIRST slot (ghost skipped)", () => {
+    const s = chord(focusOn('f-2'), 'ArrowDown');
+    expect(s.effects).toEqual([
+      {kind: 'moveRow', fieldRowId: 'f-2', toSectionId: 's-2', toIndex: 0},
+    ]);
+    focused(s, 'f-2', 'label');
+  });
+
+  it("⌘⇧↑ from a section's FIRST field targets the END of the previous section (header + ghost skipped)", () => {
+    const s = chord(focusOn('f-3'), 'ArrowUp');
+    expect(s.effects).toEqual([
+      {kind: 'moveRow', fieldRowId: 'f-3', toSectionId: 's-1', toIndex: 2},
+    ]);
+    focused(s, 'f-3', 'label');
+  });
+
+  it("⌘⇧↑ on the template's first field is a NO-OP (no effect, focus kept)", () => {
+    const s = chord(focusOn('f-1'), 'ArrowUp');
+    expect(s.effects).toEqual([]);
+    focused(s, 'f-1', 'label');
+  });
+
+  it("⌘⇧↓ on the template's last field is a NO-OP", () => {
+    const s = chord(focusOn('f-4'), 'ArrowDown');
+    expect(s.effects).toEqual([]);
+    focused(s, 'f-4', 'label');
+  });
+
+  it('never fires in EDIT mode (the editor owns the keys)', () => {
+    let s = focusOn('f-1');
+    s = gridReducer(s, {type: 'key', key: 'Enter', cellKind: 'text', rows: MOVE_ROWS});
+    expect(s.mode).toBe('edit');
+    s = gridReducer(s, {
+      type: 'key',
+      key: 'ArrowDown',
+      meta: true,
+      shift: true,
+      cellKind: 'text',
+      rows: MOVE_ROWS,
+    });
+    expect(s.effects).toEqual([]);
+    expect(s.mode).toBe('edit');
+    focused(s, 'f-1', 'label');
+  });
+
+  it('on a SECTION row it neither moves nor roves', () => {
+    const s = chord(focusOn('sec:s-2'), 'ArrowDown');
+    expect(s.effects).toEqual([]);
+    focused(s, 'sec:s-2', 'label');
+  });
+
+  it('on a GHOST row it neither moves nor roves', () => {
+    const s = chord(focusOn('ghost:s-1'), 'ArrowDown', {cellKind: 'ghost'});
+    expect(s.effects).toEqual([]);
+    focused(s, 'ghost:s-1', 'label');
+  });
+
+  it('is disabled while FILTERING (visible indices ≠ true indices — panel decision 4)', () => {
+    const s = chord(focusOn('f-1'), 'ArrowDown', {filtering: true});
+    expect(s.effects).toEqual([]);
+    focused(s, 'f-1', 'label');
+  });
+
+  it('plain arrows (no modifiers) still rove, never move', () => {
+    const s = gridReducer(focusOn('f-1'), {
+      type: 'key',
+      key: 'ArrowDown',
+      cellKind: 'text',
+      rows: MOVE_ROWS,
+    });
+    expect(s.effects).toEqual([]);
+    focused(s, 'f-2', 'label');
+  });
+
+  it('a single-modifier arrow (shift only / meta only) roves, never moves', () => {
+    const shiftOnly = gridReducer(focusOn('f-1'), {
+      type: 'key',
+      key: 'ArrowDown',
+      shift: true,
+      cellKind: 'text',
+      rows: MOVE_ROWS,
+    });
+    expect(shiftOnly.effects).toEqual([]);
+    focused(shiftOnly, 'f-2', 'label');
+    const metaOnly = gridReducer(focusOn('f-1'), {
+      type: 'key',
+      key: 'ArrowDown',
+      meta: true,
+      cellKind: 'text',
+      rows: MOVE_ROWS,
+    });
+    expect(metaOnly.effects).toEqual([]);
+    focused(metaOnly, 'f-2', 'label');
+  });
+});
+
+describe('gridCellModel — nextMoveSlot (boundary-aware slot helper)', () => {
+  it('down within a section targets the next field slot (currentIndex+1)', () => {
+    expect(nextMoveSlot(MOVE_ROWS, 'f-1', 1)).toEqual({toSectionId: 's-1', toIndex: 1});
+  });
+
+  it('up within a section targets the previous field slot (currentIndex-1)', () => {
+    expect(nextMoveSlot(MOVE_ROWS, 'f-4', -1)).toEqual({toSectionId: 's-2', toIndex: 0});
+  });
+
+  it('is null at the template edges (first field up, last field down)', () => {
+    expect(nextMoveSlot(MOVE_ROWS, 'f-1', -1)).toBeNull();
+    expect(nextMoveSlot(MOVE_ROWS, 'f-4', 1)).toBeNull();
+  });
+
+  it('is null for section rows, ghost rows, and unknown ids', () => {
+    expect(nextMoveSlot(MOVE_ROWS, 'sec:s-1', 1)).toBeNull();
+    expect(nextMoveSlot(MOVE_ROWS, 'ghost:s-1', 1)).toBeNull();
+    expect(nextMoveSlot(MOVE_ROWS, 'nope', 1)).toBeNull();
+  });
+
+  it('cross-boundary up-then-down is a symmetric inverse (returns to the origin slot)', () => {
+    // f-3 is the FIRST field of s-2: up → END of s-1 (2 fields → slot 2).
+    expect(nextMoveSlot(MOVE_ROWS, 'f-3', -1)).toEqual({toSectionId: 's-1', toIndex: 2});
+    // Rows AFTER that move (f-3 now the LAST field of s-1)…
+    const afterUp: GridRowShape[] = [
+      {rowId: 'sec:s-1', kind: 'section', sectionId: 's-1'},
+      {rowId: 'f-1', kind: 'field', sectionId: 's-1'},
+      {rowId: 'f-2', kind: 'field', sectionId: 's-1'},
+      {rowId: 'f-3', kind: 'field', sectionId: 's-1'},
+      {rowId: 'ghost:s-1', kind: 'ghost', sectionId: 's-1'},
+      {rowId: 'sec:s-2', kind: 'section', sectionId: 's-2'},
+      {rowId: 'f-4', kind: 'field', sectionId: 's-2'},
+      {rowId: 'ghost:s-2', kind: 'ghost', sectionId: 's-2'},
+    ];
+    // …down: last field of s-1 → FIRST slot of s-2 — back where it began.
+    expect(nextMoveSlot(afterUp, 'f-3', 1)).toEqual({toSectionId: 's-2', toIndex: 0});
   });
 });
 
