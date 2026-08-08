@@ -95,48 +95,25 @@ class TemplateVersionService:
         if owned is None:
             raise TemplateNotFoundError(f"Template {project_template_id} not found")
 
-        # Lock ordering mirrors HITLSessionService.open_or_resume — advisory
-        # (article, template) locks FIRST (sorted for a deterministic global
-        # order), THEN the template row. open_or_resume holds the advisory
-        # lock while create_run takes the template row FOR SHARE; taking the
-        # template FOR UPDATE before the advisory locks here would invert
-        # that order and deadlock.
-        run_pairs: list[tuple[UUID, UUID]] = [
-            (row.project_id, row.article_id)
-            for row in (
-                await self.db.execute(
-                    select(ExtractionRun.project_id, ExtractionRun.article_id)
-                    .where(
-                        ExtractionRun.template_id == project_template_id,
-                        ExtractionRun.stage.in_(_EDITABLE_STAGES),
-                    )
-                    .distinct()
-                )
-            ).all()
-        ]
-        for _, article_id in sorted(run_pairs, key=lambda pair: str(pair[1])):
-            await take_advisory_xact_lock(self.db, article_id, project_template_id)
+        run_pairs = await self.acquire_publish_locks(project_template_id)
 
-        # Serialization: FOR UPDATE so two concurrent republishes cannot both
-        # compute the same next version number (unique on
-        # (project_template_id, version)), and so run creation (FOR SHARE on
-        # this row) cannot pin a version this transaction is deactivating.
-        await self.db.execute(
-            select(ProjectExtractionTemplate.id)
-            .where(ProjectExtractionTemplate.id == project_template_id)
-            .with_for_update()
-        )
-
+        # Publishing makes the live tree the recorded intent — clear the
+        # B-4 draft marker under the same locks as the snapshot build.
+        # Runs in BOTH branches below (changed and unchanged): a marker
+        # set by a snapshot-identical edit chain (A→B→A) must still
+        # clear, or the Draft chip sticks with a dead Publish button.
+        # When provided, the instruction lands in the same statement
+        # (writing it before the advisory locks would invert the
+        # documented lock order and deadlock against session-open / a
+        # concurrent republish).
+        publish_values: dict[str, Any] = {"config_draft_since": None}
         if not isinstance(llm_template_instruction, _Unset):
-            # Applied under the same locks as the snapshot build. Writing
-            # the column before the advisory locks (e.g. in a caller)
-            # would invert the documented lock order above and deadlock
-            # against session-open / a concurrent republish.
-            await self.db.execute(
-                update(ProjectExtractionTemplate)
-                .where(ProjectExtractionTemplate.id == project_template_id)
-                .values(llm_template_instruction=llm_template_instruction)
-            )
+            publish_values["llm_template_instruction"] = llm_template_instruction
+        await self.db.execute(
+            update(ProjectExtractionTemplate)
+            .where(ProjectExtractionTemplate.id == project_template_id)
+            .values(**publish_values)
+        )
 
         snapshot = await build_template_version_snapshot(self.db, project_template_id)
 
@@ -203,6 +180,49 @@ class TemplateVersionService:
             changed=True,
             repinned_run_count=repinned,
         )
+
+    async def acquire_publish_locks(self, project_template_id: UUID) -> list[tuple[UUID, UUID]]:
+        """Advisory (article, template) locks for editable-stage runs —
+        sorted, FIRST — then the template row FOR UPDATE.
+
+        Lock ordering mirrors HITLSessionService.open_or_resume: it holds
+        the advisory lock while create_run takes the template row FOR
+        SHARE; taking the template FOR UPDATE before the advisory locks
+        would invert that order and deadlock. Idempotent within a
+        transaction, so a caller that must hold the locks BEFORE writing
+        live rows (the clone service's zero-state rebuild — its mark-draft
+        trigger stamps take the template-row lock) can take them early;
+        ``republish`` re-takes them harmlessly.
+
+        Returns the (project_id, article_id) pairs of editable-stage runs
+        for the instance-materialization pass.
+        """
+        run_pairs: list[tuple[UUID, UUID]] = [
+            (row.project_id, row.article_id)
+            for row in (
+                await self.db.execute(
+                    select(ExtractionRun.project_id, ExtractionRun.article_id)
+                    .where(
+                        ExtractionRun.template_id == project_template_id,
+                        ExtractionRun.stage.in_(_EDITABLE_STAGES),
+                    )
+                    .distinct()
+                )
+            ).all()
+        ]
+        for _, article_id in sorted(run_pairs, key=lambda pair: str(pair[1])):
+            await take_advisory_xact_lock(self.db, article_id, project_template_id)
+
+        # Serialization: FOR UPDATE so two concurrent republishes cannot both
+        # compute the same next version number (unique on
+        # (project_template_id, version)), and so run creation (FOR SHARE on
+        # this row) cannot pin a version this transaction is deactivating.
+        await self.db.execute(
+            select(ProjectExtractionTemplate.id)
+            .where(ProjectExtractionTemplate.id == project_template_id)
+            .with_for_update()
+        )
+        return run_pairs
 
     async def _repin_editable_runs(self, project_template_id: UUID, version_id: UUID) -> int:
         result = await self.db.execute(

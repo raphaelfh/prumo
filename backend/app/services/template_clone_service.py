@@ -1,8 +1,6 @@
 """Clone a global extraction or quality-assessment template into a project."""
 
 from collections import deque
-from datetime import UTC, datetime
-from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, text, update
@@ -16,7 +14,6 @@ from app.models.extraction import (
     TemplateKind,
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
-from app.services.extraction_snapshot import build_template_version_snapshot
 
 
 class TemplateNotFoundError(Exception):
@@ -110,18 +107,34 @@ class TemplateCloneService:
             #      factory recovery is an explicit delete + re-import.
             zero_state = entity_types == 0 and fields == 0
             if zero_state:
+                # Local import: template_version_service imports this module
+                # (TemplateNotFoundError), so a top-level import would cycle.
+                from app.services.template_version_service import (
+                    TemplateVersionService,
+                )
+
+                publisher = TemplateVersionService(self.db)
+                # Locks BEFORE the rebuild: the rebuild's mark-draft trigger
+                # stamps take the template-row lock, and taking republish's
+                # advisory locks after that would invert the documented
+                # order against session-open (ABBA).
+                await publisher.acquire_publish_locks(existing.id)
                 global_entity_types = await self._global_entity_types(global_template_id)
                 field_count = await self._insert_project_structure_from_global(
                     project_template_id=existing.id,
                     global_entity_types=global_entity_types,
                 )
-                await self._upsert_active_version(
+                # Publish through the one publish path (B-4): a NEW active
+                # version (append-only — never rewrite the placeholder in
+                # place), draft marker cleared under the locks above.
+                republished = await publisher.republish(
+                    project_id=project_id,
                     project_template_id=existing.id,
                     user_id=user_id,
                 )
                 entity_types = len(global_entity_types)
                 fields = field_count
-                version = await self._active_version(existing.id)
+                version = await self.db.get(ExtractionTemplateVersion, republished.version_id)
                 assert version is not None, (
                     f"Heal left project_extraction_template {existing.id} "
                     f"without an active version."
@@ -201,20 +214,22 @@ class TemplateCloneService:
             global_entity_types=global_entity_types,
         )
 
-        version = ExtractionTemplateVersion(
+        # Publish v1 through the one publish path (B-4): republish
+        # snapshots under its locks and clears the draft marker the
+        # structure inserts above just stamped. A brand-new template has
+        # no runs, so the advisory step is a no-op (no ABBA reachable).
+        # Local import: template_version_service imports this module.
+        from app.services.template_version_service import TemplateVersionService
+
+        republished = await TemplateVersionService(self.db).republish(
+            project_id=project_id,
             project_template_id=project_tpl.id,
-            version=1,
-            schema_=await self._snapshot(project_tpl.id),
-            published_at=datetime.now(UTC),
-            published_by=user_id,
-            is_active=True,
+            user_id=user_id,
         )
-        self.db.add(version)
-        await self.db.flush()
 
         return TemplateClone(
             project_template_id=project_tpl.id,
-            version_id=version.id,
+            version_id=republished.version_id,
             entity_type_count=len(global_entity_types),
             field_count=field_count,
             created=True,
@@ -371,30 +386,6 @@ class TemplateCloneService:
         await self.db.flush()
         return field_count
 
-    async def _upsert_active_version(self, *, project_template_id: UUID, user_id: UUID) -> None:
-        """Ensure exactly one active version exists and points to current snapshot."""
-        snapshot = await self._snapshot(project_template_id)
-        current_active = await self._active_version(project_template_id)
-        if current_active is None:
-            self.db.add(
-                ExtractionTemplateVersion(
-                    project_template_id=project_template_id,
-                    version=1,
-                    schema_=snapshot,
-                    published_at=datetime.now(UTC),
-                    published_by=user_id,
-                    is_active=True,
-                )
-            )
-            await self.db.flush()
-            return
-
-        current_active.schema_ = snapshot
-        current_active.published_at = datetime.now(UTC)
-        current_active.published_by = user_id
-        current_active.is_active = True
-        await self.db.flush()
-
     async def _find_existing_clone(
         self,
         project_id: UUID,
@@ -467,6 +458,3 @@ class TemplateCloneService:
             ExtractionTemplateVersion.is_active.is_(True),
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
-
-    async def _snapshot(self, project_template_id: UUID) -> dict[str, Any]:
-        return await build_template_version_snapshot(self.db, project_template_id)

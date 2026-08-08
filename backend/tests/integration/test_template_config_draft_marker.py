@@ -14,10 +14,10 @@ it never snapshotted.
 """
 
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
@@ -149,3 +149,242 @@ async def test_global_lineage_writes_never_stamp(db_session: AsyncSession) -> No
     await db_session.flush()
 
     assert await _marker(db_session, SEED.primary_template) is None
+
+
+# ---------------------------------------------------------------------------
+# Publish paths clear the marker (Task 2): every path that publishes live
+# structure routes through TemplateVersionService.republish, whose locked
+# section clears the stamp. The lazy v1 self-heal on run creation is the
+# DELIBERATE exception (clearing under create_run's FOR SHARE would be an
+# in-place lock upgrade — two concurrent first-runs deadlock).
+# ---------------------------------------------------------------------------
+
+CHARMS_GLOBAL_ID = UUID("000c0000-0000-0000-0000-000000000001")
+
+
+async def _clean_project_clones(db: AsyncSession, project_id: UUID) -> None:
+    await db.execute(
+        text("DELETE FROM public.project_extraction_templates WHERE project_id = :pid"),
+        {"pid": str(project_id)},
+    )
+
+
+async def _clone_charms(db: AsyncSession, project_id: UUID, user_id: UUID):
+    from app.models.extraction import TemplateKind
+    from app.services.template_clone_service import TemplateCloneService
+
+    return await TemplateCloneService(db).clone(
+        project_id=project_id,
+        global_template_id=CHARMS_GLOBAL_ID,
+        user_id=user_id,
+        kind=TemplateKind.EXTRACTION,
+    )
+
+
+async def _first_entity_type_id(db: AsyncSession, project_template_id: UUID) -> UUID:
+    return (
+        await db.execute(
+            select(ExtractionEntityType.id)
+            .where(ExtractionEntityType.project_template_id == project_template_id)
+            .order_by(ExtractionEntityType.sort_order)
+            .limit(1)
+        )
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_republish_clears_marker_after_change(db_session: AsyncSession) -> None:
+    from app.services.template_version_service import TemplateVersionService
+
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await _clean_project_clones(db_session, project_id)
+    clone = await _clone_charms(db_session, project_id, user_id)
+
+    et = await db_session.get(
+        ExtractionEntityType, await _first_entity_type_id(db_session, clone.project_template_id)
+    )
+    assert et is not None
+    et.label = f"{et.label} (draft edit)"
+    await db_session.flush()
+    assert await _marker(db_session, clone.project_template_id) is not None
+
+    result = await TemplateVersionService(db_session).republish(
+        project_id=project_id,
+        project_template_id=clone.project_template_id,
+        user_id=user_id,
+    )
+    assert result.changed is True
+    assert await _marker(db_session, clone.project_template_id) is None
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_republish_clears_marker_when_snapshot_identical(
+    db_session: AsyncSession,
+) -> None:
+    """Marker set + snapshot-identical live tree (e.g. an A→B→A rename):
+    Publish must still clear, or the chip sticks on "Unpublished changes"
+    with a dead Publish button."""
+    from app.services.template_version_service import TemplateVersionService
+
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await _clean_project_clones(db_session, project_id)
+    clone = await _clone_charms(db_session, project_id, user_id)
+
+    await _set_marker(db_session, clone.project_template_id, _SENTINEL)
+    result = await TemplateVersionService(db_session).republish(
+        project_id=project_id,
+        project_template_id=clone.project_template_id,
+        user_id=user_id,
+    )
+    assert result.changed is False
+    assert await _marker(db_session, clone.project_template_id) is None
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_fresh_clone_commits_clean(db_session: AsyncSession) -> None:
+    """A brand-new clone's own structure inserts stamp the marker
+    mid-transaction; the clone must still END clean — a pristine import
+    must not show the Draft chip nor 409 the next re-import."""
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await _clean_project_clones(db_session, project_id)
+
+    clone = await _clone_charms(db_session, project_id, user_id)
+
+    assert clone.created is True
+    assert await _marker(db_session, clone.project_template_id) is None
+    active = (
+        await db_session.execute(
+            text(
+                "SELECT version FROM public.extraction_template_versions "
+                "WHERE project_template_id = :tid AND is_active"
+            ),
+            {"tid": str(clone.project_template_id)},
+        )
+    ).scalar_one()
+    assert active == 1
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_zero_state_heal_commits_clean(db_session: AsyncSession) -> None:
+    """Zero-state heal (empty live structure, marker NULL — the legacy
+    aborted-clone shape) rebuilds from the global and publishes: marker
+    NULL after, and a NEW active version is minted (append-only history —
+    the old in-place rewrite is gone)."""
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await _clean_project_clones(db_session, project_id)
+    clone = await _clone_charms(db_session, project_id, user_id)
+
+    await db_session.execute(
+        text("DELETE FROM public.extraction_entity_types WHERE project_template_id = :tid"),
+        {"tid": str(clone.project_template_id)},
+    )
+    await db_session.flush()
+    # The delete itself stamped the marker; reset to NULL to simulate the
+    # legacy zero-state shape (aborted clone, nothing ever edited).
+    await _set_marker(db_session, clone.project_template_id, None)
+
+    healed = await _clone_charms(db_session, project_id, user_id)
+
+    assert healed.project_template_id == clone.project_template_id
+    assert healed.entity_type_count > 0
+    assert await _marker(db_session, clone.project_template_id) is None
+    active_version = (
+        await db_session.execute(
+            text(
+                "SELECT version FROM public.extraction_template_versions "
+                "WHERE project_template_id = :tid AND is_active"
+            ),
+            {"tid": str(clone.project_template_id)},
+        )
+    ).scalar_one()
+    assert active_version > 1, "heal publishes a NEW version, never rewrites v1"
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_lazy_initial_version_keeps_marker_and_warns(
+    db_session: AsyncSession,
+) -> None:
+    """A template with NO version rows (legacy/frontend-created) gets a
+    lazy v1 on first run creation. That path must NOT clear the marker
+    (an UPDATE under create_run's FOR SHARE is an in-place lock upgrade —
+    two concurrent first-runs deadlock) — it logs a warning instead."""
+    import structlog
+    from structlog.testing import LogCapture
+
+    from app.services.run_lifecycle_service import RunLifecycleService
+
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await _clean_project_clones(db_session, project_id)
+
+    template_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.project_extraction_templates "
+            "(id, project_id, name, framework, version, kind, schema, is_active, "
+            " created_by) "
+            "VALUES (:id, :pid, 'b4 lazy v1 probe', 'CUSTOM', '1.0.0', 'extraction', "
+            " '{}', true, :uid)"
+        ),
+        {"id": str(template_id), "pid": str(project_id), "uid": str(user_id)},
+    )
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_entity_types "
+            "(id, project_template_id, name, label, cardinality, role, sort_order, "
+            " is_required) "
+            "VALUES (:id, :tid, 'lazy_section', 'Lazy section', 'one', "
+            " 'study_section', 0, false)"
+        ),
+        {"id": str(uuid4()), "tid": str(template_id)},
+    )
+    await db_session.flush()
+    # The raw inserts above stamped the marker via the trigger — keep it:
+    # that IS the pending-draft state the lazy publish must not silently
+    # clear.
+    assert await _marker(db_session, template_id) is not None
+
+    article_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.articles (id, project_id, title, row_version) "
+            "VALUES (:id, :pid, 'lazy v1 article', 1)"
+        ),
+        {"id": str(article_id), "pid": str(project_id)},
+    )
+    await db_session.flush()
+
+    capture = LogCapture()
+    structlog.configure(processors=[capture])
+    try:
+        run = await RunLifecycleService(db_session).create_run(
+            project_id=project_id,
+            article_id=article_id,
+            project_template_id=template_id,
+            user_id=user_id,
+        )
+    finally:
+        structlog.reset_defaults()
+
+    assert run.version_id is not None
+    assert await _marker(db_session, template_id) is not None, (
+        "lazy v1 must NOT clear the marker (deadlock-free by design)"
+    )
+    assert any(
+        entry["event"] == "lazy_initial_version_published_pending_draft"
+        for entry in capture.entries
+    ), "the least-harm publish of a pending draft must be logged"
+
+    await db_session.rollback()
