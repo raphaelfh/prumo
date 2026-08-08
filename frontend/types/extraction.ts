@@ -382,11 +382,12 @@ export const ExtractionFieldSchema = z.object({
         {message: 'Allowed values cannot have duplicates'}
     ),
 
-  // Suporte a "Outro (especificar)"
+  // "Other (specify)" support
   allow_other: z.boolean().default(false).optional(),
+  // No default: a .default() wrapped in .optional() never fires (dead
+  // code, removed at B-7) — the runtime fallback is the English copy key.
   other_label: z.string()
       .max(100, '"Other" label must be at most 100 characters')
-    .default('Outro (especificar)')
     .optional()
     .nullable(),
   other_placeholder: z.string()
