@@ -53,6 +53,18 @@ describe('buildTemplateTree', () => {
     expect(tree[0].fieldCount).toBe(2);
   });
 
+  it('carries sort_order onto GridField — move/reorder writes renumber from it (B-6)', () => {
+    const tree = buildTemplateTree(
+      [section({id: 'a', sort_order: 1})],
+      [
+        field({id: 'f1', entity_type_id: 'a', sort_order: 3}),
+        field({id: 'f2', entity_type_id: 'a'}),
+      ],
+    );
+
+    expect(tree[0].fields.map((f) => f.sortOrder)).toEqual([0, 3]);
+  });
+
   it('nests model sections under the repeating group and keeps them out of the roots', () => {
     const tree = buildTemplateTree(
       [

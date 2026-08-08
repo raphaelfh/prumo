@@ -195,3 +195,81 @@ export function deleteField(fieldId: string): Promise<ErrorResult<void>> {
     if (error) throw error;
   }, 'deleteField');
 }
+
+// ---------------------------------------------------------------------------
+// Move + reorder (B-6)
+//
+// Honest debt: both writes below go straight to PostgREST from the
+// client — B-7's typed endpoints own server-side validation (destination
+// checks, renumber atomicity) when they land.
+// ---------------------------------------------------------------------------
+
+/** One row of a `reorderFields` batch. */
+export interface FieldSortOrderUpdate {
+  id: string;
+  sort_order: number;
+}
+
+/**
+ * Batch-update sort_order for a set of fields — callers renumber the
+ * whole affected section(s), not just the moved row (sort_order is a
+ * per-section RENDERING convention, not a DB invariant).
+ *
+ * PostgREST builders RESOLVE (never reject) with an `{error}` payload on
+ * SQL/RLS refusals, so each result is inspected for an error field — a
+ * bare Promise.all throw-check would swallow an RLS refusal as silent
+ * success.
+ */
+export function reorderFields(
+  updates: FieldSortOrderUpdate[],
+): Promise<ErrorResult<void>> {
+  return toResult(async () => {
+    const writes = updates.map(({id, sort_order}) =>
+      supabase
+        .from('extraction_fields')
+        .update({sort_order})
+        .eq('id', id),
+    );
+
+    const results = await Promise.all(writes);
+    const failed = results
+      .map((r) => (r as {error: {message: string} | null}).error)
+      .filter((e): e is {message: string} => Boolean(e));
+
+    if (failed.length > 0) {
+      throw new Error(
+        `Failed to update sort_order for ${failed.length} field(s): ${failed[0].message}`,
+      );
+    }
+  }, 'reorderFields');
+}
+
+/**
+ * Move a field to another section: one write carrying the new
+ * entity_type_id + sort_order (caller-computed, end of destination).
+ *
+ * Deliberately NOT expressed through ExtractionFieldUpdate — the
+ * inspector form schema must not learn entity_type_id. RLS reality (B-6
+ * panel decision 8): entity_type_id is ALREADY server-writable via
+ * PostgREST today, and no policy can constrain "same template as before"
+ * (WITH CHECK cannot see OLD) — destination constraining is CLIENT-side
+ * until B-7's typed endpoints own it. `.single()` also surfaces an
+ * RLS-filtered zero-row update as an error instead of silent success.
+ */
+export function moveField(
+  fieldId: string,
+  entityTypeId: string,
+  sortOrder: number,
+): Promise<ErrorResult<ExtractionField>> {
+  return toResult(async () => {
+    const {data, error} = await supabase
+      .from('extraction_fields')
+      .update({entity_type_id: entityTypeId, sort_order: sortOrder})
+      .eq('id', fieldId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as ExtractionField;
+  }, 'moveField');
+}

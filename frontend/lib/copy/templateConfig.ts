@@ -6,4 +6,7 @@
  * THIS namespace — `lib/copy/extraction.ts` sits at its file-size ratchet
  * ceiling and must not grow.
  */
-export const templateConfig = {} as const;
+export const templateConfig = {
+  errors_moveField: 'Error moving field',
+  errors_reorderFields: 'Error reordering fields',
+} as const;

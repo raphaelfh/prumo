@@ -1,5 +1,6 @@
 /**
- * extractionFieldService — delete-safety contract (B-5 Task 7).
+ * extractionFieldService — delete-safety contract (B-5 Task 7) plus the
+ * move/reorder write layer (B-6 T1).
  *
  * The impact probe is ADVISORY: it explains the common in-use cases up
  * front, but reject-only reviewer decisions and consensus/published rows
@@ -7,6 +8,10 @@
  * SQLSTATE 23503 mapping in `deleteField` — a foreign-key refusal must
  * surface as a typed PgError carrying FRIENDLY copy, never the raw
  * Postgres message.
+ *
+ * B-6: PostgREST builders RESOLVE (never reject) with `{error}` payloads
+ * on SQL/RLS refusals — `reorderFields` must inspect each result; a bare
+ * Promise.all throw-check would report silent success on an RLS refusal.
  */
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -15,7 +20,12 @@ vi.mock('@/lib/copy', () => ({t: (ns: string, key: string) => `${ns}.${key}`}));
 
 import {supabase} from '@/integrations/supabase/client';
 import {PgError} from '@/lib/error-utils';
-import {deleteField, validateFieldImpact} from '@/services/extractionFieldService';
+import {
+  deleteField,
+  moveField,
+  reorderFields,
+  validateFieldImpact,
+} from '@/services/extractionFieldService';
 
 const fromMock = vi.mocked(supabase.from);
 
@@ -168,5 +178,116 @@ describe('deleteField — SQLSTATE 23503 mapped to friendly PgError', () => {
     const result = await deleteField('f1');
 
     expect(result.ok).toBe(true);
+  });
+});
+
+/** Stub the reorder batch: each `from()` call yields a fresh
+ * update/eq chain whose awaited result carries the error mapped to the
+ * row id — RESOLVED, never rejected (the PostgREST contract under test).
+ * Returns the collected payloads for shape assertions. */
+function stubReorder(errorsById: Record<string, {message: string} | null>) {
+  const updateCalls: Array<Record<string, unknown>> = [];
+  const eqCalls: Array<[string, string]> = [];
+  fromMock.mockImplementation(((table: string) => {
+    if (table !== 'extraction_fields') throw new Error(`unexpected table: ${table}`);
+    const chain: Record<string, unknown> = {};
+    chain.update = vi.fn((payload: Record<string, unknown>) => {
+      updateCalls.push(payload);
+      return chain;
+    });
+    chain.eq = vi.fn((column: string, id: string) => {
+      eqCalls.push([column, id]);
+      return Promise.resolve({error: errorsById[id] ?? null});
+    });
+    return chain;
+  }) as never);
+  return {updateCalls, eqCalls};
+}
+
+function stubMove(result: {
+  data?: unknown;
+  error?: {message: string; code?: string} | null;
+}) {
+  const updateCalls: Array<Record<string, unknown>> = [];
+  const eqCalls: Array<[string, string]> = [];
+  fromMock.mockImplementation(((table: string) => {
+    if (table !== 'extraction_fields') throw new Error(`unexpected table: ${table}`);
+    const chain: Record<string, unknown> = {};
+    chain.update = vi.fn((payload: Record<string, unknown>) => {
+      updateCalls.push(payload);
+      return chain;
+    });
+    chain.eq = vi.fn((column: string, id: string) => {
+      eqCalls.push([column, id]);
+      return chain;
+    });
+    chain.select = vi.fn(() => chain);
+    chain.single = vi.fn(() =>
+      Promise.resolve({data: result.data ?? null, error: result.error ?? null}),
+    );
+    return chain;
+  }) as never);
+  return {updateCalls, eqCalls};
+}
+
+describe('reorderFields — resolve-dont-reject inspection (B-6 T1)', () => {
+  it('writes each sort_order keyed by row id and resolves ok when no builder reports an error', async () => {
+    const {updateCalls, eqCalls} = stubReorder({f1: null, f2: null});
+
+    const result = await reorderFields([
+      {id: 'f1', sort_order: 1},
+      {id: 'f2', sort_order: 2},
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(updateCalls).toEqual([{sort_order: 1}, {sort_order: 2}]);
+    expect(eqCalls).toEqual([
+      ['id', 'f1'],
+      ['id', 'f2'],
+    ]);
+  });
+
+  it('aggregates RESOLVED {error} payloads into ok:false — a bare Promise.all throw-check would report silent success', async () => {
+    // Both builders RESOLVE (nothing rejects): the RLS refusal on f2
+    // only exists as an error field on a fulfilled promise.
+    stubReorder({
+      f1: null,
+      f2: {message: 'permission denied for table extraction_fields'},
+    });
+
+    const result = await reorderFields([
+      {id: 'f1', sort_order: 1},
+      {id: 'f2', sort_order: 2},
+    ]);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain('1 field(s)');
+    expect(result.error.message).toContain('permission denied');
+  });
+});
+
+describe('moveField — one update carrying entity_type_id + sort_order (B-6 T1)', () => {
+  it('writes {entity_type_id, sort_order} keyed by field id and returns the updated row', async () => {
+    const row = {id: 'f1', entity_type_id: 'sec-2', sort_order: 5};
+    const {updateCalls, eqCalls} = stubMove({data: row});
+
+    const result = await moveField('f1', 'sec-2', 5);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(updateCalls).toEqual([{entity_type_id: 'sec-2', sort_order: 5}]);
+    expect(eqCalls).toEqual([['id', 'f1']]);
+    expect(result.data).toEqual(row);
+  });
+
+  it('propagates a refused write as ok:false', async () => {
+    stubMove({error: {message: 'permission denied', code: '42501'}});
+
+    const result = await moveField('f1', 'sec-2', 5);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain('permission denied');
   });
 });

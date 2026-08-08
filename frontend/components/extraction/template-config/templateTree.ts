@@ -85,6 +85,9 @@ export interface TemplateFieldInput {
 export interface GridField {
   id: string;
   entityTypeId: string;
+  /** Committed per-section position — move/reorder writes (B-6) renumber
+   * from it; absent on the wire defaults to 0 like `bySortOrder`. */
+  sortOrder: number;
   label: string;
   key: string;
   fieldType: string;
@@ -151,6 +154,7 @@ function toGridField(input: TemplateFieldInput): GridField {
   return {
     id: input.id,
     entityTypeId: input.entity_type_id,
+    sortOrder: input.sort_order ?? 0,
     label: input.label ?? input.name,
     key: input.name,
     fieldType: input.field_type,
