@@ -43,6 +43,7 @@ import {useMoveFieldTo} from './useMoveFieldTo';
 import {
   buildTemplateTree,
   collectSectionIds,
+  deriveMoveTargets,
   filterTemplateTree,
   findField,
   findSection,
@@ -348,6 +349,20 @@ export function TemplateConfigGridPanel({
     collapsed,
     pendingRowIds,
   });
+
+  // B-6 T4: the inspector combobox's destinations — the CURRENT
+  // template's sections only (the client-side move guard).
+  const moveTargets = useMemo(() => deriveMoveTargets(tree), [tree]);
+  /** Combobox pick = END of the destination (filter-independent, so the
+   * combobox stays live while the ⌘⇧ chords are filter-gated). Returns
+   * the FieldMoveRecord for T5's Undo to capture the inverse. */
+  const moveFieldToSectionEnd = (field: GridField, toSectionId: string) =>
+    moveFieldTo(
+      field,
+      toSectionId,
+      moveTargets.find((s) => s.id === toSectionId)?.fieldCount ?? 0,
+    );
+  const movePending = selectedField !== null && pendingRowIds.has(selectedField.id);
 
   // Edit on a STILL-PENDING row: update the optimistic copy and queue the
   // write behind the row's insert by client key (concurrency rule 5).
@@ -742,6 +757,9 @@ export function TemplateConfigGridPanel({
                 owningSection={owningSection}
                 onSaveField={saveFieldUpdates}
                 saving={updateField.isPending}
+                sections={moveTargets}
+                onMoveField={moveFieldToSectionEnd}
+                moveDisabled={movePending}
                 focusGroup={inspectorFocusGroup}
               />
             </SheetContent>
@@ -754,6 +772,9 @@ export function TemplateConfigGridPanel({
               owningSection={owningSection}
               onSaveField={saveFieldUpdates}
               saving={updateField.isPending}
+              sections={moveTargets}
+              onMoveField={moveFieldToSectionEnd}
+              moveDisabled={movePending}
               focusGroup={inspectorFocusGroup}
             />
           )

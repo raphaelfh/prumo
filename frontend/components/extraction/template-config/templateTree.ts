@@ -135,6 +135,31 @@ export interface FilteredTemplateTree {
   totalCount: number;
 }
 
+/** One destination for the inspector's Section move combobox (B-6 T4) —
+ * ALWAYS derived from the current template's tree: the RLS write policy
+ * does not block cross-template moves, so this list is the client-side
+ * guard (B-7 owns the server fix). `fieldCount` lets the panel land a
+ * pick at the destination's END without a tree walk. */
+export interface MoveTargetSection {
+  id: string;
+  label: string;
+  kind: TemplateSectionKind;
+  fieldCount: number;
+}
+
+/** Every section as a move destination, roots and children in tree
+ * order — fields carry no placement constraints, so all are legal. */
+export function deriveMoveTargets(sections: GridSection[]): MoveTargetSection[] {
+  return sections.flatMap((section) =>
+    [section, ...section.children].map(({id, label, kind, fieldCount}) => ({
+      id,
+      label,
+      kind,
+      fieldCount,
+    })),
+  );
+}
+
 /** Case- and diacritic-insensitive fold, applied to BOTH sides of a match. */
 export function normalizeForSearch(value: string): string {
   return value

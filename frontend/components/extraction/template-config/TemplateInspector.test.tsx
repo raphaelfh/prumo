@@ -4,7 +4,11 @@ import {describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 
-import {TemplateInspector, type SaveFieldHandler} from './TemplateInspector';
+import {
+  TemplateInspector,
+  type MoveTargetSection,
+  type SaveFieldHandler,
+} from './TemplateInspector';
 import {buildTemplateTree} from './templateTree';
 
 const tree = buildTemplateTree(
@@ -85,6 +89,15 @@ const textField = section.fields[1];
 const numberField = section.fields[2];
 const otherField = section.fields[3];
 
+/** Destination list the panel threads in — ALWAYS this template's
+ * sections only (the client-side guard against the RLS move hole). */
+const moveTargets: MoveTargetSection[] = [
+  {id: 'sec', label: 'Source of Data', kind: 'root', fieldCount: 4},
+  {id: 'grp', label: 'Models', kind: 'group', fieldCount: 0},
+  {id: 'grpChild', label: 'Performance', kind: 'groupChild', fieldCount: 2},
+  {id: 'sec2', label: 'Outcomes', kind: 'root', fieldCount: 1},
+];
+
 function renderInspector(
   over: Partial<Parameters<typeof TemplateInspector>[0]> = {},
 ) {
@@ -95,6 +108,9 @@ function renderInspector(
     onSaveField: vi.fn() as SaveFieldHandler,
     saving: false,
     focusGroup: null,
+    sections: moveTargets,
+    onMoveField: vi.fn(),
+    moveDisabled: false,
     ...over,
   };
   const view = render(<TemplateInspector {...props} />);
@@ -387,5 +403,44 @@ describe('TemplateInspector absorbed capabilities (B-5 Task 5)', () => {
     expect(document.activeElement).toBe(
       screen.getByPlaceholderText('placeholderOptions'),
     );
+  });
+});
+
+describe('TemplateInspector Section combobox (B-6 T4)', () => {
+  it('renders the owning section as the selected destination', () => {
+    renderInspector();
+    expect(screen.getByLabelText('inspectorSectionLabel')).toHaveValue('sec');
+  });
+
+  it('lists ONLY this template sections, in tree order', () => {
+    renderInspector();
+    const select = screen.getByLabelText(
+      'inspectorSectionLabel',
+    ) as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.value)).toEqual([
+      'sec',
+      'grp',
+      'grpChild',
+      'sec2',
+    ]);
+  });
+
+  it('a pick commits IMMEDIATELY: onMoveField fires with the section id', async () => {
+    const user = userEvent.setup();
+    const {props} = renderInspector();
+    await user.selectOptions(
+      screen.getByLabelText('inspectorSectionLabel'),
+      'sec2',
+    );
+    expect(props.onMoveField).toHaveBeenCalledTimes(1);
+    expect(props.onMoveField).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'f1'}),
+      'sec2',
+    );
+  });
+
+  it('is disabled on pending rows (no server id to move yet)', () => {
+    renderInspector({moveDisabled: true});
+    expect(screen.getByLabelText('inspectorSectionLabel')).toBeDisabled();
   });
 });

@@ -18,6 +18,7 @@
  * real interpolated string.
  */
 import {act, fireEvent, render, screen, waitFor} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/hooks/extraction/useTemplateEntityTypes', () => ({
@@ -394,6 +395,36 @@ describe('TemplateConfigGridPanel — moveFieldTo dispatcher', () => {
         {id: 'f3', sort_order: 3},
       ],
     });
+  });
+
+  it('combobox path (T4): a pick moves to the END of the destination and announces', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    // Click selects the row; the docked inspector opens on Beta.
+    await user.click(screen.getByRole('button', {name: 'Beta'}));
+    await user.selectOptions(screen.getByLabelText('Section'), 'sec2');
+    await flush();
+    // END of Outcomes: one existing field -> toIndex 1, sort_order 2.
+    expect(moveMutateAsync).toHaveBeenCalledTimes(1);
+    expect(moveMutateAsync).toHaveBeenCalledWith({
+      fieldId: 'f2',
+      entityTypeId: 'sec2',
+      sortOrder: 2,
+    });
+    expect(reorderMutateAsync).toHaveBeenCalledWith({
+      updates: [
+        {id: 'f1', sort_order: 1},
+        {id: 'f3', sort_order: 2},
+        {id: 'f4', sort_order: 1},
+      ],
+    });
+    // The announcement rides the DISPATCHER, so the combobox affordance
+    // announces exactly like the chord does.
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Moved Beta to Outcomes, position 2 of 2',
+      ),
+    );
   });
 
   it('coalesces a rapid REPEAT: the second identical chord plans to nothing', async () => {

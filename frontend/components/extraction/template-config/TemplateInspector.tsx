@@ -12,7 +12,14 @@ import type {ExtractionFieldUpdate} from '@/types/extraction';
 
 import {AllowedUnitsList} from '../dialogs/AllowedUnitsList';
 import {AllowedValuesList} from '../dialogs/AllowedValuesList';
-import {FIELD_TYPE_OPTIONS, type GridField, type GridSection} from './templateTree';
+import {
+  FIELD_TYPE_OPTIONS,
+  type GridField,
+  type GridSection,
+  type MoveTargetSection,
+} from './templateTree';
+
+export type {MoveTargetSection} from './templateTree';
 
 /**
  * Docked, non-modal inspector (spec §2).
@@ -25,7 +32,9 @@ import {FIELD_TYPE_OPTIONS, type GridField, type GridSection} from './templateTr
  * session; the write path is the panel's (`onSaveField` routes real rows
  * through the update mutation and PENDING optimistic rows through the
  * insert queue). Sections stay read-only here — rename is already inline
- * in the grid.
+ * in the grid. Exception (B-6 T4): the field pane's Section row is the
+ * accessible MOVE combobox — an immediate structural action through the
+ * panel's move dispatcher, never part of the draft.
  */
 
 /** Deep-link target from the grid's ✨/Options cells: remounts the form
@@ -56,11 +65,20 @@ const PANEL_CLASS =
 interface TemplateInspectorProps {
   field: GridField | null;
   section: GridSection | null;
-  /** The section that owns the selected field, for the read-only Section row. */
+  /** The section that owns the selected field — the combobox's value. */
   owningSection: GridSection | null;
   onSaveField: SaveFieldHandler;
   /** True while the panel's update mutation is in flight. */
   saving: boolean;
+  /** Destinations for the Section combobox (current template only). */
+  sections: MoveTargetSection[];
+  /** Section combobox pick (B-6 T4) — commits IMMEDIATELY as its own
+   * move action through the panel's dispatcher (the Type menu's
+   * semantics), never through the form draft. The panel supplies the
+   * end-of-destination index and calls `moveFieldTo`. */
+  onMoveField: (field: GridField, toSectionId: string) => void;
+  /** True on PENDING rows — no server id to move yet (delete's gating). */
+  moveDisabled: boolean;
   /** Deep-link from the grid; only forwarded when it targets `field`. */
   focusGroup?: InspectorFocusGroup | null;
   className?: string;
@@ -192,10 +210,15 @@ function supportsOptionsType(fieldType: string): boolean {
  * exactly what the form already shows. The cost is that an external edit
  * discards an in-progress draft — the safe resolution of a two-editors
  * race on one field.
+ *
+ * `entityTypeId` joins the key (B-6 T4) so a grid-side MOVE remounts the
+ * form too — the combobox value and the owning-section context must
+ * re-derive when the field lands in another section.
  */
 function fieldContentKey(field: GridField): string {
   return JSON.stringify([
     field.id,
+    field.entityTypeId,
     field.label,
     field.fieldType,
     field.isRequired,
@@ -216,12 +239,18 @@ function FieldInspectorForm({
   owningSection,
   onSaveField,
   saving,
+  sections,
+  onMoveField,
+  moveDisabled,
   focusGroup,
 }: {
   field: GridField;
   owningSection: GridSection | null;
   onSaveField: SaveFieldHandler;
   saving: boolean;
+  sections: MoveTargetSection[];
+  onMoveField: (field: GridField, toSectionId: string) => void;
+  moveDisabled: boolean;
   focusGroup: 'ai' | 'options' | null;
 }) {
   const [baseline, setBaseline] = useState<FieldDraft>(() => draftFromField(field));
@@ -299,8 +328,26 @@ function FieldInspectorForm({
 
       {owningSection && (
         <>
-          <Label>{t('extraction', 'inspectorSectionLabel')}</Label>
-          <ReadOnlyValue>{owningSection.label}</ReadOnlyValue>
+          <Label htmlFor="inspector-field-section">
+            {t('extraction', 'inspectorSectionLabel')}
+          </Label>
+          {/* The accessible MOVE mechanism (B-6 T4, panel decision 2):
+              a pick commits immediately as its own move action — it
+              never joins the form draft, so Save/Reset stay untouched.
+              Native select for the same reason as the type select. */}
+          <select
+            id="inspector-field-section"
+            value={owningSection.id}
+            onChange={(e) => onMoveField(field, e.target.value)}
+            disabled={saving || moveDisabled}
+            className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {sections.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.kind === 'groupChild' ? `\u00A0\u00A0${s.label}` : s.label}
+              </option>
+            ))}
+          </select>
         </>
       )}
 
@@ -504,6 +551,9 @@ export function TemplateInspector({
   owningSection,
   onSaveField,
   saving,
+  sections,
+  onMoveField,
+  moveDisabled,
   focusGroup,
   className,
 }: TemplateInspectorProps) {
@@ -532,6 +582,9 @@ export function TemplateInspector({
           owningSection={owningSection}
           onSaveField={onSaveField}
           saving={saving}
+          sections={sections}
+          onMoveField={onMoveField}
+          moveDisabled={moveDisabled}
           focusGroup={focusGroup?.group ?? null}
         />
       </aside>

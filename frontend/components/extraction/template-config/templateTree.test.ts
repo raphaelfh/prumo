@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 
 import {
   buildTemplateTree,
+  deriveMoveTargets,
   filterTemplateTree,
   normalizeForSearch,
   type TemplateEntityTypeInput,
@@ -169,6 +170,41 @@ describe('buildTemplateTree', () => {
       [],
     );
     expect(tree.map((s) => s.id)).toEqual(['lost']);
+  });
+});
+
+describe('deriveMoveTargets (B-6 T4)', () => {
+  it('flattens EVERY section as a destination — group children right after their group, own fieldCount carried', () => {
+    const tree = buildTemplateTree(
+      [
+        section({id: 'root1', sort_order: 1}),
+        section({
+          id: 'grp',
+          role: 'model_container',
+          cardinality: 'many',
+          sort_order: 2,
+        }),
+        section({
+          id: 'child',
+          role: 'model_section',
+          parent_entity_type_id: 'grp',
+          sort_order: 3,
+        }),
+        section({id: 'root2', sort_order: 4}),
+      ],
+      [
+        field({id: 'f1', entity_type_id: 'root1'}),
+        field({id: 'f2', entity_type_id: 'child'}),
+        field({id: 'f3', entity_type_id: 'child', sort_order: 2}),
+      ],
+    );
+
+    expect(deriveMoveTargets(tree)).toEqual([
+      {id: 'root1', label: 'root1', kind: 'root', fieldCount: 1},
+      {id: 'grp', label: 'grp', kind: 'group', fieldCount: 0},
+      {id: 'child', label: 'child', kind: 'groupChild', fieldCount: 2},
+      {id: 'root2', label: 'root2', kind: 'root', fieldCount: 0},
+    ]);
   });
 });
 
