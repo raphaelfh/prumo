@@ -715,6 +715,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates/{template_id}/fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Template Field
+         * @description Create a field in a section of the path template.
+         *
+         *     The write stamps the B-4 draft marker via the 0048 trigger (nothing
+         *     manual); the field reaches article forms at Publish.
+         */
+        post: operations["create_template_field_api_v1_projects__project_id__templates__template_id__fields_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/fields/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reorder Template Fields
+         * @description Atomic batch renumber (multi-section batches are legal).
+         *
+         *     Every id must belong to a section of this template; the batch fully
+         *     applies or fully fails. Stamps the B-4 draft marker via the 0048
+         *     trigger.
+         */
+        post: operations["reorder_template_fields_api_v1_projects__project_id__templates__template_id__fields_reorder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/fields/{field_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Template Field
+         * @description Delete a field; recorded extraction work (RESTRICT FKs) is a 409.
+         *
+         *     Stamps the B-4 draft marker via the 0048 trigger (nothing manual).
+         */
+        delete: operations["delete_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Template Field
+         * @description Partial field update — only explicitly-set keys are applied.
+         *
+         *     Relocation is the move endpoint's job (the schema rejects a smuggled
+         *     ``entity_type_id``). Stamps the B-4 draft marker via the 0048 trigger.
+         */
+        patch: operations["update_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/fields/{field_id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move Template Field
+         * @description Move a field onto another section of the SAME template.
+         *
+         *     A destination outside the path template is a 422 (deterministic, no
+         *     retry can succeed) — the cross-template hole this slice closes.
+         *     Stamps the B-4 draft marker via the 0048 trigger.
+         */
+        post: operations["move_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/{template_id}/llm-instruction": {
         parameters: {
             query?: never;
@@ -772,6 +872,61 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/sections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Template Section
+         * @description Create a section; ``sort_order`` is server-computed (max+1).
+         *
+         *     ``role`` and ``parent_entity_type_id`` are explicit parameters — a
+         *     model_section's parent must be the template's model_container (400);
+         *     a second model_container is a 409. Stamps the B-4 draft marker via
+         *     the 0048 trigger (nothing manual).
+         */
+        post: operations["create_template_section_api_v1_projects__project_id__templates__template_id__sections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/sections/{section_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Template Section
+         * @description Delete a section (the DB cascades fields and child sections).
+         *
+         *     Extracted data anywhere under it (RESTRICT FK) is a 409. Stamps the
+         *     B-4 draft marker via the 0048 trigger (nothing manual).
+         */
+        delete: operations["delete_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename Template Section
+         * @description Rename a section (label only).
+         *
+         *     A real rename stamps the B-4 draft marker via the 0048 trigger; a
+         *     no-op rename skips the write (no stamp).
+         */
+        patch: operations["rename_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch"];
         trace?: never;
     };
     "/api/v1/runs": {
@@ -1833,6 +1988,40 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[SectionDeleteResponse] */
+        ApiResponse_SectionDeleteResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["SectionDeleteResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[SectionRead] */
+        ApiResponse_SectionRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["SectionRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[TemplateActiveVersionRead] */
         ApiResponse_TemplateActiveVersionRead_: {
             /** @description Dados da resposta */
@@ -1854,6 +2043,57 @@ export interface components {
         ApiResponse_TemplateConfigStatusRead_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["TemplateConfigStatusRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateFieldDeleteResponse] */
+        ApiResponse_TemplateFieldDeleteResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateFieldDeleteResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateFieldRead] */
+        ApiResponse_TemplateFieldRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateFieldRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateFieldReorderResponse] */
+        ApiResponse_TemplateFieldReorderResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateFieldReorderResponse"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3712,6 +3952,57 @@ export interface components {
             integration_id: string;
         };
         /**
+         * SectionCreateRequest
+         * @description Create a section (entity type) in the path template.
+         *
+         *     ``role`` is REQUIRED with no default — the column deliberately has no
+         *     server_default (migration 0016 step 4) so an insert that omits the
+         *     structural role fails loudly instead of silently becoming a
+         *     study_section. ``sort_order`` is deliberately ABSENT: the server
+         *     computes max+1 template-wide inside the INSERT itself, killing the
+         *     frontend's read-then-write race. The ``ck_role_parent`` validator
+         *     below mirrors the DB CHECK of the same name; parent OWNERSHIP
+         *     (parent belongs to THIS template) is the service's BOLA job.
+         */
+        SectionCreateRequest: {
+            /**
+             * Cardinality
+             * @enum {string}
+             */
+            cardinality: "one" | "many";
+            /** Description */
+            description?: string | null;
+            /**
+             * Is Required
+             * @default false
+             */
+            is_required: boolean;
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+            /** Parent Entity Type Id */
+            parent_entity_type_id?: string | null;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "study_section" | "model_container" | "model_section";
+        };
+        /**
+         * SectionDeleteResponse
+         * @description Payload of the section DELETE endpoint.
+         */
+        SectionDeleteResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
          * SectionExtractionRequest
          * @description Request for extraction de section.
          */
@@ -3796,6 +4087,62 @@ export interface components {
              * @default 0
              */
             tokens_used: number;
+        };
+        /**
+         * SectionRead
+         * @description The full section row the config editor renders. Built from the
+         *     ORM row via ``model_validate`` — the create/rename response payload.
+         *
+         *     ``project_template_id`` is non-optional: the section service writes
+         *     only project-lineage rows (global-lineage sections are seed-owned).
+         */
+        SectionRead: {
+            /**
+             * Cardinality
+             * @enum {string}
+             */
+            cardinality: "one" | "many";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Required */
+            is_required: boolean;
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+            /** Parent Entity Type Id */
+            parent_entity_type_id?: string | null;
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "study_section" | "model_container" | "model_section";
+            /** Sort Order */
+            sort_order: number;
+        };
+        /**
+         * SectionRenameRequest
+         * @description Rename a section: the label is the only client-editable attribute
+         *     after creation (structure changes are create/delete operations).
+         */
+        SectionRenameRequest: {
+            /** Label */
+            label: string;
         };
         /**
          * SkippedFileEntry
@@ -3930,6 +4277,253 @@ export interface components {
              * Format: uuid
              */
             project_template_id: string;
+        };
+        /**
+         * TemplateFieldCreateRequest
+         * @description Create a field in a section of the path template.
+         *
+         *     ``entity_type_id`` names the owning section (mirrors the frontend
+         *     ``ExtractionFieldInsert``); the service re-verifies it belongs to the
+         *     path template (BOLA chain entity_type -> template -> project).
+         *     ``sort_order`` is client-supplied (panel 10): it is a per-section
+         *     rendering convention computed at dequeue time by the optimistic-row
+         *     ghost chain — the server validates >= 0 and otherwise trusts it.
+         */
+        TemplateFieldCreateRequest: {
+            /**
+             * Allow Other
+             * @default false
+             */
+            allow_other: boolean;
+            /** Allowed Units */
+            allowed_units?: string[] | null;
+            /** Allowed Values */
+            allowed_values?: string[] | null;
+            /**
+             * Allows Not Applicable
+             * @default false
+             */
+            allows_not_applicable: boolean;
+            /**
+             * Allows Not Evaluated
+             * @default false
+             */
+            allows_not_evaluated: boolean;
+            /** Description */
+            description?: string | null;
+            /**
+             * Entity Type Id
+             * Format: uuid
+             */
+            entity_type_id: string;
+            /**
+             * Field Type
+             * @enum {string}
+             */
+            field_type: "text" | "number" | "date" | "select" | "multiselect" | "boolean";
+            /**
+             * Is Required
+             * @default false
+             */
+            is_required: boolean;
+            /** Label */
+            label: string;
+            /** Llm Description */
+            llm_description?: string | null;
+            /** Name */
+            name: string;
+            /** Other Label */
+            other_label?: string | null;
+            /** Other Placeholder */
+            other_placeholder?: string | null;
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+            /** Unit */
+            unit?: string | null;
+            /** Validation Schema */
+            validation_schema?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * TemplateFieldDeleteResponse
+         * @description Payload of the field DELETE endpoint.
+         */
+        TemplateFieldDeleteResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * TemplateFieldMoveRequest
+         * @description Move a field to another section: destination + landing position.
+         *
+         *     Both required — a move always names where it lands. The service
+         *     refuses a destination outside the path template (the cross-template
+         *     hole this slice closes) and treats same-section as a plain reorder
+         *     concern, not a move.
+         */
+        TemplateFieldMoveRequest: {
+            /**
+             * Entity Type Id
+             * Format: uuid
+             */
+            entity_type_id: string;
+            /** Sort Order */
+            sort_order: number;
+        };
+        /**
+         * TemplateFieldRead
+         * @description The full field row the config editor renders (mirrors the frontend
+         *     ``ExtractionField`` interface). Built from the ORM row via
+         *     ``model_validate`` — the create/update/move response payload.
+         */
+        TemplateFieldRead: {
+            /**
+             * Allow Other
+             * @default false
+             */
+            allow_other: boolean;
+            /** Allowed Units */
+            allowed_units?: string[] | null;
+            /** Allowed Values */
+            allowed_values?: string[] | null;
+            /**
+             * Allows Not Applicable
+             * @default false
+             */
+            allows_not_applicable: boolean;
+            /**
+             * Allows Not Evaluated
+             * @default false
+             */
+            allows_not_evaluated: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Entity Type Id
+             * Format: uuid
+             */
+            entity_type_id: string;
+            /**
+             * Field Type
+             * @enum {string}
+             */
+            field_type: "text" | "number" | "date" | "select" | "multiselect" | "boolean";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Required */
+            is_required: boolean;
+            /** Label */
+            label: string;
+            /** Llm Description */
+            llm_description?: string | null;
+            /** Name */
+            name: string;
+            /** Other Label */
+            other_label?: string | null;
+            /** Other Placeholder */
+            other_placeholder?: string | null;
+            /** Sort Order */
+            sort_order: number;
+            /** Unit */
+            unit?: string | null;
+            /** Validation Schema */
+            validation_schema?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * TemplateFieldReorderRequest
+         * @description Atomic batch renumber — callers renumber the whole affected
+         *     section(s). Multi-section batches are legal (see module docstring);
+         *     id ownership and duplicate rejection are enforced by the service.
+         */
+        TemplateFieldReorderRequest: {
+            /** Updates */
+            updates: components["schemas"]["TemplateFieldSortOrderUpdate"][];
+        };
+        /**
+         * TemplateFieldReorderResponse
+         * @description Payload of the reorder endpoint: how many rows the atomic batch
+         *     renumbered (equals the request batch size on success).
+         */
+        TemplateFieldReorderResponse: {
+            /** Updated Count */
+            updated_count: number;
+        };
+        /**
+         * TemplateFieldSortOrderUpdate
+         * @description One row of a reorder batch.
+         */
+        TemplateFieldSortOrderUpdate: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Sort Order */
+            sort_order: number;
+        };
+        /**
+         * TemplateFieldUpdateRequest
+         * @description Partial update — every field optional; the service applies only the
+         *     explicitly-set keys (``model_dump(exclude_unset=True)``).
+         *
+         *     ``entity_type_id`` is deliberately absent (``extra="forbid"`` rejects
+         *     it): relocating a field across sections is a MOVE with its own model
+         *     and server-side destination checks — an update must never smuggle one.
+         */
+        TemplateFieldUpdateRequest: {
+            /** Allow Other */
+            allow_other?: boolean | null;
+            /** Allowed Units */
+            allowed_units?: string[] | null;
+            /** Allowed Values */
+            allowed_values?: string[] | null;
+            /** Allows Not Applicable */
+            allows_not_applicable?: boolean | null;
+            /** Allows Not Evaluated */
+            allows_not_evaluated?: boolean | null;
+            /** Description */
+            description?: string | null;
+            /** Field Type */
+            field_type?: ("text" | "number" | "date" | "select" | "multiselect" | "boolean") | null;
+            /** Is Required */
+            is_required?: boolean | null;
+            /** Label */
+            label?: string | null;
+            /** Llm Description */
+            llm_description?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Other Label */
+            other_label?: string | null;
+            /** Other Placeholder */
+            other_placeholder?: string | null;
+            /** Sort Order */
+            sort_order?: number | null;
+            /** Unit */
+            unit?: string | null;
+            /** Validation Schema */
+            validation_schema?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** TemplateInstructionRead */
         TemplateInstructionRead: {
@@ -5292,6 +5886,185 @@ export interface operations {
             };
         };
     };
+    create_template_field_api_v1_projects__project_id__templates__template_id__fields_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateFieldCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateFieldRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_template_fields_api_v1_projects__project_id__templates__template_id__fields_reorder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateFieldReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateFieldReorderResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+                field_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateFieldDeleteResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+                field_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateFieldUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateFieldRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__move_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+                field_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateFieldMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateFieldRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_get: {
         parameters: {
             query?: never;
@@ -5379,6 +6152,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_RepublishTemplateVersionResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_template_section_api_v1_projects__project_id__templates__template_id__sections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SectionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_SectionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_SectionDeleteResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SectionRenameRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_SectionRead_"];
                 };
             };
             /** @description Validation Error */

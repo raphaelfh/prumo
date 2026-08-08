@@ -73,7 +73,7 @@ describe('useReorderTemplateFields', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(reorderMock).toHaveBeenCalledWith(BATCH);
+    expect(reorderMock).toHaveBeenCalledWith('p1', 't1', BATCH);
     expect(structureInvalidations(invalidateSpy).length).toBeGreaterThan(0);
     expect(republishMock).not.toHaveBeenCalled();
     // The Undo toast (T5, panel-owned) is the success surface — not here.

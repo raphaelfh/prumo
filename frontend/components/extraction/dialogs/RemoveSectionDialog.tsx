@@ -35,6 +35,7 @@ import {
 } from '@/services/templateService';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
+import {PgError} from '@/lib/error-utils';
 
 // =================== SCHEMAS ===================
 
@@ -71,8 +72,8 @@ interface RemoveSectionDialogProps {
 // =================== COMPONENT ===================
 
 export function RemoveSectionDialog({
-                                        projectId: _projectId,
-                                        templateId: _templateId,
+  projectId,
+  templateId,
   sectionId,
   sectionName,
   open,
@@ -166,11 +167,18 @@ export function RemoveSectionDialog({
     console.warn('Starting section removal:', {sectionId, sectionName});
     console.warn('🎯 Entity type a ser removido:', sectionId);
 
-    const result = await deleteSection(sectionId);
+    const result = await deleteSection(projectId, templateId, sectionId);
 
     if (!result.ok) {
       console.error('Error removing section:', result.error);
-      toast.error(`${t('extraction', 'sectionRemoveError')}: ${result.error.message}`);
+      // Section-in-use refusal (backend 409 over the RESTRICT FKs): the
+      // service already mapped it to a PgError whose message IS the
+      // friendly copy — toast it verbatim, never the raw backend text.
+      if (result.error instanceof PgError && result.error.code === '23503') {
+        toast.error(result.error.message);
+      } else {
+        toast.error(`${t('extraction', 'sectionRemoveError')}: ${result.error.message}`);
+      }
       setLoading(false);
       return;
     }

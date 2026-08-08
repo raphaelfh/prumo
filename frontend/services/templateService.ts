@@ -5,16 +5,21 @@
  * adding/removing sections, creating custom templates.  Article-list
  * queries live in articlesService.ts; auth queries in authService.ts.
  *
+ * Section WRITES (create/rename/delete) go through apiClient onto the
+ * typed B-7 endpoints; the reads stay PostgREST until the read-path
+ * consolidation follow-up.
+ *
  * All exported functions return ErrorResult<T> via toResult so components
  * can branch on result.ok without try/catch.
  *
  * @module services/templateService
  */
 
-import {apiClient} from '@/integrations/api/client';
+import {ApiError, apiClient} from '@/integrations/api/client';
 import {supabase} from '@/integrations/supabase/client';
+import {t} from '@/lib/copy';
 import type {ErrorResult} from '@/lib/error-utils';
-import {toResult} from '@/lib/error-utils';
+import {PgError, toResult} from '@/lib/error-utils';
 import type {components} from '@/types/api/schema';
 
 // --- Types ---
@@ -24,6 +29,10 @@ export type RepublishTemplateVersionResponse =
 
 export type TemplateConfigStatus =
   components['schemas']['TemplateConfigStatusRead'];
+
+type SectionRead = components['schemas']['SectionRead'];
+type SectionDeleteResponse = components['schemas']['SectionDeleteResponse'];
+type SectionRole = components['schemas']['SectionCreateRequest']['role'];
 
 /**
  * Publish the live template structure as a new active version.
@@ -121,21 +130,23 @@ export async function loadTemplateEntityTypes(
 // --- Entity type label update ---
 
 /**
- * Update the label of an entity type (section rename).
+ * Update the label of an entity type (section rename) via the typed
+ * rename endpoint — the label is the only client-editable attribute
+ * after creation.
  * NOTE: on success the caller should show a toast using the extraction
  * 'labelUpdatedSuccess' copy key.
  */
 export async function updateEntityTypeLabel(
+  projectId: string,
+  templateId: string,
   entityTypeId: string,
   label: string,
 ): Promise<ErrorResult<void>> {
   return toResult(async () => {
-    const {error} = await supabase
-      .from('extraction_entity_types')
-      .update({label})
-      .eq('id', entityTypeId);
-
-    if (error) throw error;
+    await apiClient<SectionRead>(
+      `/api/v1/projects/${projectId}/templates/${templateId}/sections/${entityTypeId}`,
+      {method: 'PATCH', body: {label}},
+    );
   }, 'updateEntityTypeLabel');
 }
 
@@ -145,6 +156,12 @@ export async function updateEntityTypeLabel(
  * Analyze the impact of removing a section (entity type).
  * Returns field/instance/data counts and warnings so the component can
  * present them before the user confirms.
+ *
+ * ADVISORY only, and honest debt: these are direct workflow-table reads
+ * from the frontend. B-7 moved only the config WRITES onto typed
+ * endpoints; these reads move with the read-path consolidation
+ * follow-up (the multi-line fitness-regex fix + honest baseline, split
+ * out of B-7). The real refusal is `deleteSection`'s 409 remap.
  */
 export async function analyzeSectionRemovalImpact(
   entityTypeId: string,
@@ -199,19 +216,34 @@ export async function analyzeSectionRemovalImpact(
 // --- Section deletion ---
 
 /**
- * Delete an entity type (CASCADE removes fields, instances, values).
- * NOTE: caller toasts success/error using extraction copy keys.
+ * Delete an entity type via the typed endpoint (the DB cascades fields
+ * and child sections).
+ *
+ * Recorded extraction work anywhere under the section (RESTRICT FKs)
+ * refuses the delete with a 409 — the advisory impact probe above can
+ * miss those rows, so this translation is the real invariant: re-wrap
+ * as a typed PgError ('23503', the SQLSTATE behind the refusal)
+ * carrying friendly copy. RemoveSectionDialog branches on exactly that
+ * pair to toast it verbatim; the raw backend message never reaches the
+ * user. NOTE: caller toasts success/error.
  */
 export async function deleteSection(
+  projectId: string,
+  templateId: string,
   entityTypeId: string,
 ): Promise<ErrorResult<void>> {
   return toResult(async () => {
-    const {error} = await supabase
-      .from('extraction_entity_types')
-      .delete()
-      .eq('id', entityTypeId);
-
-    if (error) throw error;
+    try {
+      await apiClient<SectionDeleteResponse>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/sections/${entityTypeId}`,
+        {method: 'DELETE'},
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        throw new PgError(t('templateConfig', 'errors_deleteSectionInUse'), '23503');
+      }
+      throw error;
+    }
   }, 'deleteSection');
 }
 
@@ -332,49 +364,43 @@ export function loadGlobalTemplates(): Promise<ErrorResult<GlobalTemplateWithCou
 // --- Section creation ---
 
 export interface CreateSectionParams {
+  projectId: string;
   templateId: string;
   name: string;
   label: string;
   description?: string | null;
   cardinality: 'one' | 'many';
+  /** Structural role — the caller states its intent (the old service
+   * hard-coded study_section). A model_section additionally needs a
+   * parent, which no caller creates today — the endpoint owns that rule. */
+  role: SectionRole;
   isRequired: boolean;
 }
 
 /**
- * Insert a new root entity type into a template (fetches next sort_order first).
+ * Create a root entity type via the typed endpoint. `sort_order` is
+ * deliberately NOT sent: the server computes max+1 inside the INSERT,
+ * killing the old read-then-write race.
  * NOTE: caller toasts success using extraction 'sectionCreatedSuccess' copy key.
  */
 export async function createSection(
   params: CreateSectionParams,
 ): Promise<ErrorResult<void>> {
   return toResult(async () => {
-    // Fetch next sort_order
-    const {data: existing, error: orderError} = await supabase
-      .from('extraction_entity_types')
-      .select('sort_order')
-      .eq('project_template_id', params.templateId)
-      .order('sort_order', {ascending: false})
-      .limit(1);
-
-    if (orderError) throw orderError;
-
-    const nextSortOrder = (existing?.[0]?.sort_order || 0) + 1;
-
-    const {error: entityError} = await supabase
-      .from('extraction_entity_types')
-      .insert({
-        project_template_id: params.templateId,
-        name: params.name,
-        label: params.label,
-        description: params.description || null,
-        cardinality: params.cardinality,
-        sort_order: nextSortOrder,
-        is_required: params.isRequired,
-        parent_entity_type_id: null,
-        role: 'study_section' as const,
-      });
-
-    if (entityError) throw entityError;
+    await apiClient<SectionRead>(
+      `/api/v1/projects/${params.projectId}/templates/${params.templateId}/sections`,
+      {
+        method: 'POST',
+        body: {
+          name: params.name,
+          label: params.label,
+          description: params.description || null,
+          cardinality: params.cardinality,
+          role: params.role,
+          is_required: params.isRequired,
+        },
+      },
+    );
   }, 'createSection');
 }
 

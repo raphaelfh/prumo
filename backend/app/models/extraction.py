@@ -412,6 +412,20 @@ class ExtractionField(BaseModel):
         back_populates="fields",
     )
 
+    # Per-section name uniqueness (B-7, migration 0050). Declared as a
+    # NAMED unique Index — not a UniqueConstraint — with the exact name
+    # of the migration's CREATE UNIQUE INDEX, so autogenerate emits no
+    # spurious diffs; the tuple must end with the schema dict (#93).
+    __table_args__ = (
+        Index(
+            "uq_extraction_fields_entity_type_name",
+            "entity_type_id",
+            "name",
+            unique=True,
+        ),
+        {"schema": "public"},
+    )
+
     def __repr__(self) -> str:
         return f"<ExtractionField {self.name}>"
 

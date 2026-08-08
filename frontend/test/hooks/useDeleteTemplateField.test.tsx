@@ -68,7 +68,7 @@ describe('useDeleteTemplateField', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(deleteMock).toHaveBeenCalledWith('f1');
+    expect(deleteMock).toHaveBeenCalledWith('p1', 't1', 'f1');
     expect(structureInvalidations(invalidateSpy).length).toBeGreaterThan(0);
     expect(republishMock).not.toHaveBeenCalled();
     expect(toast.success).toHaveBeenCalledTimes(1);

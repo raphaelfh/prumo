@@ -89,6 +89,8 @@ export interface UseInsertTemplateFieldArgs {
 interface SessionDeps {
   userId: string | null;
   projectId: string | undefined;
+  /** The typed field endpoints are template-scoped (B-7). */
+  templateId: string | undefined;
   invalidateStructure: () => Promise<void>;
   onConfirmed: UseInsertTemplateFieldArgs['onConfirmed'];
   onFailed: UseInsertTemplateFieldArgs['onFailed'];
@@ -200,8 +202,11 @@ async function runInsert(
   name: string,
   label: string,
 ): Promise<void> {
-  const allowed = await s.permissionProbe;
-  if (!allowed) {
+  // Missing ids join the no-permission path: the endpoint is
+  // project/template-scoped, so without them nothing can write.
+  const {projectId, templateId} = s.deps;
+  const allowed = projectId && templateId ? await s.permissionProbe : false;
+  if (!allowed || !projectId || !templateId) {
     if (!s.permissionToastShown) {
       s.permissionToastShown = true;
       toast.error(t('extraction', 'errors_noPermissionAddField'));
@@ -250,7 +255,7 @@ async function runInsert(
     sort_order: zodResult.data.sort_order,
   };
 
-  const result = await insertField(newField);
+  const result = await insertField(projectId, templateId, newField);
   if (!result.ok) {
     console.error('[useInsertTemplateField] insert failed:', result.error);
     toast.error(`${t('extraction', 'errors_addField')}: ${result.error.message}`);
@@ -270,7 +275,10 @@ async function runUpdate(
 ): Promise<void> {
   const serverId = s.serverIdByClientKey.get(clientKey);
   if (!serverId) return; // its insert failed — the pending row is gone
-  const result = await updateField(serverId, updates);
+  // A landed insert implies the ids existed; this narrows for TS only.
+  const {projectId, templateId} = s.deps;
+  if (!projectId || !templateId) return;
+  const result = await updateField(projectId, templateId, serverId, updates);
   if (!result.ok) {
     console.error('[useInsertTemplateField] pending-row update failed:', result.error);
     toast.error(`${t('extraction', 'errors_updateField')}: ${result.error.message}`);
@@ -338,6 +346,7 @@ export function useInsertTemplateField(args: UseInsertTemplateFieldArgs) {
   const deps: SessionDeps = {
     userId: user?.id ?? null,
     projectId: args.projectId,
+    templateId: args.templateId,
     invalidateStructure,
     onConfirmed: args.onConfirmed,
     onFailed: args.onFailed,

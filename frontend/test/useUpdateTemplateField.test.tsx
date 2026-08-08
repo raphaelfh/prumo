@@ -61,7 +61,7 @@ describe('useUpdateTemplateField', () => {
       });
     });
 
-    expect(updateField).toHaveBeenCalledWith('f1', {label: 'Saved'});
+    expect(updateField).toHaveBeenCalledWith('p1', 't1', 'f1', {label: 'Saved'});
     expect(resolved).toEqual(saved);
     expect(toast.success).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(invalidateStructure).toHaveBeenCalledTimes(1));

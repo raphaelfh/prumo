@@ -4,7 +4,7 @@
  *
  * Deliberately a single write: no per-mount permission probe or
  * whole-section field fetch (the panel already has that state), and
- * nothing runs per selection. B-4: Save is the PostgREST write
+ * nothing runs per selection. B-4: Save is the typed-endpoint write
  * alone — an edit is a draft edit (the DB stamps the draft marker), so
  * nothing republishes; on success the grid + Draft chip caches refresh.
  * A failed write rejects the mutation, so the form keeps its dirty state
@@ -33,7 +33,10 @@ export function useUpdateTemplateField(
 
   return useMutation<ExtractionField, Error, UpdateArgs>({
     mutationFn: async ({fieldId, updates}) => {
-      const result = await updateField(fieldId, updates);
+      if (!projectId || !templateId) {
+        throw new Error('projectId and templateId are required');
+      }
+      const result = await updateField(projectId, templateId, fieldId, updates);
       if (!result.ok) {
         throw new Error(result.error.message);
       }

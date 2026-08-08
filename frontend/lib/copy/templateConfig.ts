@@ -12,6 +12,10 @@ export const templateConfig = {
   dragLockedFiltering: 'Clear search to reorder',
   dragLockedPending: 'Wait for the new field to finish saving',
   dragPickedUp: 'Picked up {{field}}',
+  errors_deleteSectionInUse:
+    'This section cannot be deleted: extraction work (proposals, decisions, or published values) already references its fields.',
+  errors_duplicateFieldName:
+    'A field with this name already exists in this section.',
   errors_moveField: 'Error moving field',
   errors_reorderFields: 'Error reordering fields',
   menuMoveDown: 'Move down',
