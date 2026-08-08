@@ -14,7 +14,7 @@ it never snapshotted.
 """
 
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -275,8 +275,7 @@ async def test_lazy_initial_version_keeps_marker_and_warns(
     lazy v1 on first run creation. That path must NOT clear the marker
     (an UPDATE under create_run's FOR SHARE is an in-place lock upgrade —
     two concurrent first-runs deadlock) — it logs a warning instead."""
-    import structlog
-    from structlog.testing import LogCapture
+    from structlog.testing import capture_logs
 
     from app.services.run_lifecycle_service import RunLifecycleService
 
@@ -321,25 +320,144 @@ async def test_lazy_initial_version_keeps_marker_and_warns(
     )
     await db_session.flush()
 
-    capture = LogCapture()
-    structlog.configure(processors=[capture])
-    try:
+    with capture_logs() as entries:
         run = await RunLifecycleService(db_session).create_run(
             project_id=project_id,
             article_id=article_id,
             project_template_id=template_id,
             user_id=user_id,
         )
-    finally:
-        structlog.reset_defaults()
 
     assert run.version_id is not None
     assert await get_config_draft_marker(db_session, template_id) is not None, (
         "lazy v1 must NOT clear the marker (deadlock-free by design)"
     )
     assert any(
-        entry["event"] == "lazy_initial_version_published_pending_draft"
-        for entry in capture.entries
+        entry["event"] == "lazy_initial_version_published_pending_draft" for entry in entries
     ), "the least-harm publish of a pending draft must be logged"
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_qa_session_open_survives_pending_draft(db_session: AsyncSession) -> None:
+    """Session-open must NEVER be gated on the draft marker (B-4 global
+    constraint): a QA open via global_template_id resolves the existing
+    clone AS-IS — no heal, no publish, no 409/500 — and the pending
+    draft survives untouched."""
+    from app.models.extraction import TemplateKind
+    from app.schemas.hitl_session import TemplateKind as SchemaTemplateKind
+    from app.services.hitl_session_service import HITLSessionService
+    from app.services.template_clone_service import TemplateCloneService
+
+    qa_global = (
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.extraction_templates_global "
+                "WHERE kind='quality_assessment' LIMIT 1"
+            )
+        )
+    ).scalar()
+    if qa_global is None:
+        pytest.skip("No global QA template seeded")
+    qa_global_id = UUID(str(qa_global))
+
+    clone = await TemplateCloneService(db_session).clone(
+        project_id=SEED.primary_project,
+        global_template_id=qa_global_id,
+        user_id=SEED.primary_profile,
+        kind=TemplateKind.QUALITY_ASSESSMENT,
+    )
+    active_before = (
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.extraction_template_versions "
+                "WHERE project_template_id = :tid AND is_active"
+            ),
+            {"tid": str(clone.project_template_id)},
+        )
+    ).scalar_one()
+
+    # Structural draft: a new field (count drift) — the trigger stamps.
+    et_id = await first_entity_type_id(db_session, clone.project_template_id)
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_fields "
+            "(id, entity_type_id, name, label, field_type, is_required, sort_order) "
+            "VALUES (:id, :et, 'qa_draft_field', 'QA draft field', 'text', false, 999)"
+        ),
+        {"id": str(uuid4()), "et": str(et_id)},
+    )
+    await db_session.flush()
+    assert await get_config_draft_marker(db_session, clone.project_template_id) is not None
+
+    session = await HITLSessionService(db_session).open_or_resume(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        kind=SchemaTemplateKind.QUALITY_ASSESSMENT,
+        user_id=SEED.primary_profile,
+        global_template_id=qa_global_id,
+    )
+
+    assert session.project_template_id == clone.project_template_id, (
+        "session-open must resolve the EXISTING clone, not fork or fail"
+    )
+    assert await get_config_draft_marker(db_session, clone.project_template_id) is not None, (
+        "the pending draft must survive session-open (no silent publish)"
+    )
+    active_after = (
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.extraction_template_versions "
+                "WHERE project_template_id = :tid AND is_active"
+            ),
+            {"tid": str(clone.project_template_id)},
+        )
+    ).scalar_one()
+    assert str(active_after) == str(active_before), "no publish may happen on session-open"
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_cross_template_repoint_stamps_both(db_session: AsyncSession) -> None:
+    """An UPDATE that re-points a section to another template must stamp
+    BOTH templates (the source lost structure and must not fall into the
+    silent-self-heal shape). Guards the trigger's v_old/v_new split."""
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await clean_project_clones(db_session, project_id)
+    source = await clone_charms(db_session, project_id, user_id)
+
+    target_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.project_extraction_templates "
+            "(id, project_id, name, framework, version, kind, schema, is_active, "
+            " created_by) "
+            "VALUES (:id, :pid, 'repoint target', 'CUSTOM', '1.0.0', 'extraction', "
+            " '{}', false, :uid)"
+        ),
+        {"id": str(target_id), "pid": str(project_id), "uid": str(user_id)},
+    )
+    await db_session.flush()
+    await set_config_draft_marker(db_session, source.project_template_id, None)
+    await set_config_draft_marker(db_session, target_id, None)
+
+    et_id = await first_entity_type_id(db_session, source.project_template_id)
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_entity_types SET project_template_id = :target WHERE id = :et"
+        ),
+        {"target": str(target_id), "et": str(et_id)},
+    )
+    await db_session.flush()
+
+    assert await get_config_draft_marker(db_session, source.project_template_id) is not None, (
+        "the SOURCE template lost structure — it must be stamped"
+    )
+    assert await get_config_draft_marker(db_session, target_id) is not None, (
+        "the TARGET template gained structure — it must be stamped"
+    )
 
     await db_session.rollback()

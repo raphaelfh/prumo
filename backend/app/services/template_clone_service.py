@@ -33,8 +33,7 @@ class PendingConfigDraftError(Exception):
     def __init__(
         self,
         msg: str = (
-            "Template has unpublished configuration changes. "
-            "Publish them before re-importing."
+            "Template has unpublished configuration changes. Publish them before re-importing."
         ),
     ) -> None:
         super().__init__(msg)
@@ -405,6 +404,17 @@ class TemplateCloneService:
                 field_count += 1
         await self.db.flush()
         return field_count
+
+    async def resolve_existing_clone(
+        self,
+        project_id: UUID,
+        global_template_id: UUID,
+    ) -> ProjectExtractionTemplate | None:
+        """The existing clone row, AS-IS — no heal, no publish, no
+        activation. Session-open falls back to this when the drift heal
+        refuses on a pending draft (B-4: the marker must never gate
+        reviewers)."""
+        return await self._find_existing_clone(project_id, global_template_id)
 
     async def _find_existing_clone(
         self,

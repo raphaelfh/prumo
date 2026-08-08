@@ -33,18 +33,22 @@ export function TemplateConfigPublishControls({
 
   const hasPendingChanges = configStatus?.has_pending_changes === true;
 
-  const handlePublish = async () => {
+  const handlePublish = () => {
     setPublishing(true);
-    const result = await republish();
-    setPublishing(false);
-    if (result) {
-      toast.success(
-        t('extraction', 'configPublishSuccess').replace(
-          '{{n}}',
-          String(result.version),
-        ),
-      );
-    }
+    // Promise .finally (not try/finally — compiler-banned in component
+    // bodies) so an invalidation rejection can never strand the button.
+    void republish()
+      .then((result) => {
+        if (result) {
+          toast.success(
+            t('extraction', 'configPublishSuccess').replace(
+              '{{n}}',
+              String(result.version),
+            ),
+          );
+        }
+      })
+      .finally(() => setPublishing(false));
   };
 
   let chip = null;
