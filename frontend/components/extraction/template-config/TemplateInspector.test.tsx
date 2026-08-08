@@ -4,7 +4,7 @@ import {describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 
-import {TemplateInspector, type UpdateFieldMutation} from './TemplateInspector';
+import {TemplateInspector, type SaveFieldHandler} from './TemplateInspector';
 import {buildTemplateTree} from './templateTree';
 
 const tree = buildTemplateTree(
@@ -45,20 +45,45 @@ const tree = buildTemplateTree(
       llm_description: null,
       sort_order: 2,
     },
+    {
+      id: 'f3',
+      entity_type_id: 'sec',
+      name: 'weight',
+      label: 'Weight',
+      description: null,
+      field_type: 'number',
+      is_required: false,
+      allowed_values: null,
+      unit: 'kg',
+      allowed_units: ['kg', 'g'],
+      llm_description: null,
+      sort_order: 3,
+    },
+    {
+      id: 'f4',
+      entity_type_id: 'sec',
+      name: 'funding',
+      label: 'Funding',
+      description: null,
+      field_type: 'select',
+      is_required: false,
+      allowed_values: ['Public', 'Private'],
+      allow_other: true,
+      other_label: 'Other source',
+      other_placeholder: 'Type the source',
+      allows_not_applicable: true,
+      allows_not_evaluated: true,
+      llm_description: null,
+      sort_order: 4,
+    },
   ],
 );
 
 const section = tree[0];
 const selectField = section.fields[0];
 const textField = section.fields[1];
-
-function makeMutation(over: Partial<UpdateFieldMutation> = {}): UpdateFieldMutation {
-  return {
-    mutate: vi.fn(),
-    isPending: false,
-    ...over,
-  } as unknown as UpdateFieldMutation;
-}
+const numberField = section.fields[2];
+const otherField = section.fields[3];
 
 function renderInspector(
   over: Partial<Parameters<typeof TemplateInspector>[0]> = {},
@@ -67,13 +92,17 @@ function renderInspector(
     field: selectField,
     section: null,
     owningSection: section,
-    onEditField: vi.fn(),
-    updateField: makeMutation(),
+    onSaveField: vi.fn() as SaveFieldHandler,
+    saving: false,
+    focusGroup: null,
     ...over,
   };
   const view = render(<TemplateInspector {...props} />);
   return {props, view};
 }
+
+const lastUpdates = (onSaveField: SaveFieldHandler) =>
+  (onSaveField as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
 
 describe('TemplateInspector field form', () => {
   it('renders the current values as an editable draft', () => {
@@ -81,7 +110,9 @@ describe('TemplateInspector field form', () => {
     expect(screen.getByLabelText('inspectorLabelLabel')).toHaveValue(
       'Study design',
     );
-    expect(screen.getByRole('switch')).toBeChecked();
+    expect(
+      screen.getByRole('switch', {name: 'inspectorRequiredSwitch'}),
+    ).toBeChecked();
     expect(screen.getByLabelText(/inspectorAiLabel/)).toHaveValue(
       'Extract the design.',
     );
@@ -102,7 +133,7 @@ describe('TemplateInspector field form', () => {
     expect(save).toBeEnabled();
   });
 
-  it('saves the 5-key payload with empty strings collapsed to null', async () => {
+  it('saves the full payload with empty strings collapsed to null', async () => {
     const user = userEvent.setup();
     const {props} = renderInspector();
 
@@ -110,18 +141,24 @@ describe('TemplateInspector field form', () => {
     await user.clear(ai);
     await user.click(screen.getByRole('button', {name: 'inspectorSave'}));
 
-    expect(props.updateField.mutate).toHaveBeenCalledWith(
+    expect(props.onSaveField).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'f1'}),
       {
-        fieldId: 'f1',
-        updates: {
-          label: 'Study design',
-          is_required: true,
-          allowed_values: ['Cohort', 'RCT'],
-          llm_description: null,
-          description: 'For reviewers',
-        },
+        label: 'Study design',
+        field_type: 'select',
+        is_required: true,
+        allowed_values: ['Cohort', 'RCT'],
+        allow_other: false,
+        other_label: null,
+        other_placeholder: null,
+        allowed_units: null,
+        unit: null,
+        allows_not_applicable: false,
+        allows_not_evaluated: false,
+        llm_description: null,
+        description: 'For reviewers',
       },
-      expect.anything(),
+      expect.any(Function),
     );
   });
 
@@ -138,9 +175,7 @@ describe('TemplateInspector field form', () => {
     }
     await user.click(screen.getByRole('button', {name: 'inspectorSave'}));
 
-    const call = (props.updateField.mutate as ReturnType<typeof vi.fn>).mock
-      .calls[0][0];
-    expect(call.updates.allowed_values).toBeNull();
+    expect(lastUpdates(props.onSaveField).allowed_values).toBeNull();
   });
 
   it('hides the options editor for non-select fields', () => {
@@ -163,17 +198,17 @@ describe('TemplateInspector field form', () => {
   });
 
   it('re-derives the draft when the same field changes underneath', async () => {
-    // The "Edit field" dialog saving while this field stays selected: same
-    // id, new content. A stale draft here would silently revert the
-    // dialog's edit on the next Save.
+    // Another editor saving while this field stays selected: same id, new
+    // content. A stale draft here would silently revert that edit on the
+    // next Save.
     const user = userEvent.setup();
     const {props, view} = renderInspector();
     await user.type(screen.getByLabelText('inspectorLabelLabel'), ' DRAFT');
 
-    const renamedElsewhere = {...selectField, label: 'Renamed in dialog'};
+    const renamedElsewhere = {...selectField, label: 'Renamed elsewhere'};
     view.rerender(<TemplateInspector {...props} field={renamedElsewhere} />);
     expect(screen.getByLabelText('inspectorLabelLabel')).toHaveValue(
-      'Renamed in dialog',
+      'Renamed elsewhere',
     );
     expect(screen.getByRole('button', {name: 'inspectorSave'})).toBeDisabled();
   });
@@ -188,9 +223,27 @@ describe('TemplateInspector field form', () => {
     expect(screen.getByRole('button', {name: 'inspectorSave'})).toBeDisabled();
   });
 
+  it('moves the baseline when the save callback confirms — Save disarms', async () => {
+    const user = userEvent.setup();
+    const onSaveField = vi.fn(
+      (_field, _updates, onSaved: () => void) => onSaved(),
+    ) as SaveFieldHandler;
+    renderInspector({onSaveField});
+
+    await user.type(screen.getByLabelText('inspectorLabelLabel'), '!');
+    await user.click(screen.getByRole('button', {name: 'inspectorSave'}));
+
+    expect(screen.getByLabelText('inspectorLabelLabel')).toHaveValue(
+      'Study design!',
+    );
+    expect(screen.getByRole('button', {name: 'inspectorSave'})).toBeDisabled();
+  });
+
   it('disables the form and Save while a save is in flight', () => {
-    renderInspector({updateField: makeMutation({isPending: true})});
-    expect(screen.getByRole('switch')).toBeDisabled();
+    renderInspector({saving: true});
+    expect(
+      screen.getByRole('switch', {name: 'inspectorRequiredSwitch'}),
+    ).toBeDisabled();
     expect(screen.getByLabelText('inspectorLabelLabel')).toBeDisabled();
     expect(screen.getByRole('button', {name: 'inspectorSave'})).toBeDisabled();
   });
@@ -201,11 +254,138 @@ describe('TemplateInspector field form', () => {
     await user.clear(screen.getByLabelText('inspectorLabelLabel'));
     expect(screen.getByRole('button', {name: 'inspectorSave'})).toBeDisabled();
   });
+});
 
-  it('keeps the Edit field escape hatch for type changes', async () => {
+describe('TemplateInspector absorbed capabilities (B-5 Task 5)', () => {
+  it('edits the type inline — the Edit-field escape hatch is GONE', async () => {
+    // Inverts the pre-Task-5 escape-hatch test: type changes no longer
+    // detour through the dialog (which Task 8 deletes).
     const user = userEvent.setup();
     const {props} = renderInspector();
-    await user.click(screen.getByRole('button', {name: /inspectorEditButton/}));
-    expect(props.onEditField).toHaveBeenCalledWith(selectField);
+    expect(
+      screen.queryByRole('button', {name: /inspectorEditButton/}),
+    ).toBeNull();
+
+    const type = screen.getByLabelText('inspectorTypeLabel');
+    expect(type).toHaveValue('select');
+    await user.selectOptions(type, 'text');
+    await user.click(screen.getByRole('button', {name: 'inspectorSave'}));
+
+    expect(lastUpdates(props.onSaveField)).toMatchObject({
+      field_type: 'text',
+      allowed_values: null,
+    });
+  });
+
+  it('switching the draft type to select reveals the options editor', async () => {
+    const user = userEvent.setup();
+    renderInspector({field: textField});
+    expect(screen.queryByText('inspectorOptionsLabel')).toBeNull();
+    await user.selectOptions(
+      screen.getByLabelText('inspectorTypeLabel'),
+      'select',
+    );
+    expect(screen.getByText('inspectorOptionsLabel')).toBeInTheDocument();
+  });
+
+  it('round-trips the ADR-0016 dispositions', async () => {
+    const user = userEvent.setup();
+    const {props} = renderInspector();
+
+    const notApplicable = screen.getByRole('switch', {
+      name: 'dispositionAllowNotApplicableLabel',
+    });
+    const notEvaluated = screen.getByRole('switch', {
+      name: 'dispositionAllowNotEvaluatedLabel',
+    });
+    expect(notApplicable).not.toBeChecked();
+    expect(notEvaluated).not.toBeChecked();
+
+    await user.click(notApplicable);
+    await user.click(notEvaluated);
+    await user.click(screen.getByRole('button', {name: 'inspectorSave'}));
+
+    expect(lastUpdates(props.onSaveField)).toMatchObject({
+      allows_not_applicable: true,
+      allows_not_evaluated: true,
+    });
+  });
+
+  it('renders stored dispositions and allow-other state as checked', () => {
+    renderInspector({field: otherField});
+    expect(
+      screen.getByRole('switch', {name: 'dispositionAllowNotApplicableLabel'}),
+    ).toBeChecked();
+    expect(
+      screen.getByRole('switch', {name: 'dispositionAllowNotEvaluatedLabel'}),
+    ).toBeChecked();
+    expect(
+      screen.getByRole('switch', {name: 'allowOtherSpecifyLabel'}),
+    ).toBeChecked();
+    expect(screen.getByLabelText('otherLabelLabel')).toHaveValue('Other source');
+    expect(screen.getByLabelText('placeholderLabel')).toHaveValue(
+      'Type the source',
+    );
+  });
+
+  it('enables allow-other with its label and placeholder in one save', async () => {
+    const user = userEvent.setup();
+    const {props} = renderInspector();
+
+    await user.click(screen.getByRole('switch', {name: 'allowOtherSpecifyLabel'}));
+    await user.type(screen.getByLabelText('otherLabelLabel'), 'Other design');
+    await user.type(screen.getByLabelText('placeholderLabel'), 'Describe it');
+    await user.click(screen.getByRole('button', {name: 'inspectorSave'}));
+
+    expect(lastUpdates(props.onSaveField)).toMatchObject({
+      allow_other: true,
+      other_label: 'Other design',
+      other_placeholder: 'Describe it',
+    });
+  });
+
+  it('edits units for number fields, first unit becoming the default', async () => {
+    const user = userEvent.setup();
+    const {props} = renderInspector({field: numberField});
+
+    // AllowedUnitsList re-hosted from the dialog: stored units render
+    // (list row + preview both show the default unit).
+    expect(screen.getAllByText('kg').length).toBeGreaterThan(0);
+    await user.type(
+      screen.getByPlaceholderText('placeholderUnits'),
+      'mg{Enter}',
+    );
+    await user.click(screen.getByRole('button', {name: 'inspectorSave'}));
+
+    expect(lastUpdates(props.onSaveField)).toMatchObject({
+      allowed_units: ['kg', 'g', 'mg'],
+      unit: 'kg',
+    });
+  });
+
+  it('hides the units editor for non-number fields', () => {
+    renderInspector({field: textField});
+    expect(screen.queryByText('inspectorUnitsLabel')).toBeNull();
+  });
+
+  it('shows option REORDER controls (the dialog had them; the inspector must too)', () => {
+    const {view} = renderInspector();
+    expect(
+      view.container.querySelectorAll('[aria-roledescription="sortable"]').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('deep-link to the AI group focuses the instruction editor', () => {
+    renderInspector({focusGroup: {group: 'ai', seq: 1}});
+    expect(document.activeElement).toBe(
+      screen.getByLabelText(/inspectorAiLabel/),
+    );
+  });
+
+  it('deep-link to the options group focuses the option input', () => {
+    renderInspector({focusGroup: {group: 'options', seq: 1}});
+    expect(document.activeElement).toBe(
+      screen.getByPlaceholderText('placeholderOptions'),
+    );
   });
 });

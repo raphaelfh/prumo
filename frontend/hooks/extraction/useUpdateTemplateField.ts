@@ -2,9 +2,9 @@
  * Composed write path for the inspector's field form (template-config B
  * track).
  *
- * Deliberately NOT `useFieldManagement`: that hook costs two requests per
- * mount (permission probe + a whole-section field fetch the panel already
- * has) and would run per selection. B-4: Save is the PostgREST write
+ * Deliberately a single write: no per-mount permission probe or
+ * whole-section field fetch (the panel already has that state), and
+ * nothing runs per selection. B-4: Save is the PostgREST write
  * alone — an edit is a draft edit (the DB stamps the draft marker), so
  * nothing republishes; on success the grid + Draft chip caches refresh.
  * A failed write rejects the mutation, so the form keeps its dirty state

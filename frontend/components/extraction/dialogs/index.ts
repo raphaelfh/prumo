@@ -2,8 +2,6 @@
  * Exportações centralizadas dos dialogs de extração
  */
 
-export { AddFieldDialog } from './AddFieldDialog';
-export { EditFieldDialog } from './EditFieldDialog';
 export { DeleteFieldConfirm } from './DeleteFieldConfirm';
 export { AllowedValuesList } from './AllowedValuesList';
 export { UnitEditor } from './UnitEditor';
