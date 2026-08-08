@@ -45,7 +45,10 @@ vi.mock('@/hooks/shared/useContainerNarrow', () => ({
 vi.mock('@/services/extractionFieldService', () => ({
   validateFieldImpact: vi.fn(),
 }));
-vi.mock('sonner', () => ({toast: {error: vi.fn(), success: vi.fn()}}));
+// Callable: T5's undo wrapper toasts on every settled move dispatch.
+vi.mock('sonner', () => ({
+  toast: Object.assign(vi.fn(), {error: vi.fn(), success: vi.fn(), info: vi.fn()}),
+}));
 
 import {TooltipProvider} from '@/components/ui/tooltip';
 import {useInsertTemplateField} from '@/hooks/extraction/useInsertTemplateField';

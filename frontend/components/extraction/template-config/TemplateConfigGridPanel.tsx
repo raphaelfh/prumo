@@ -40,6 +40,7 @@ import {
 import {TemplateInspector, type InspectorFocusGroup} from './TemplateInspector';
 import {TemplateOutlineRail} from './TemplateOutlineRail';
 import {useMoveFieldTo} from './useMoveFieldTo';
+import {useStructuralUndo} from './useStructuralUndo';
 import {
   buildTemplateTree,
   collectSectionIds,
@@ -349,6 +350,10 @@ export function TemplateConfigGridPanel({
     collapsed,
     pendingRowIds,
   });
+  // B-6 T5: the single-slot Undo wrapper. EVERY chokepoint (chord below,
+  // combobox via moveFieldToSectionEnd, T6's drag onDragEnd) dispatches
+  // through it; Undo itself re-enters through the RAW moveFieldTo.
+  const {moveFieldWithUndo} = useStructuralUndo({tree, moveFieldTo});
 
   // B-6 T4: the inspector combobox's destinations — the CURRENT
   // template's sections only (the client-side move guard).
@@ -357,7 +362,7 @@ export function TemplateConfigGridPanel({
    * combobox stays live while the ⌘⇧ chords are filter-gated). Returns
    * the FieldMoveRecord for T5's Undo to capture the inverse. */
   const moveFieldToSectionEnd = (field: GridField, toSectionId: string) =>
-    moveFieldTo(
+    moveFieldWithUndo(
       field,
       toSectionId,
       moveTargets.find((s) => s.id === toSectionId)?.fieldCount ?? 0,
@@ -716,7 +721,7 @@ export function TemplateConfigGridPanel({
               }
               onChangeType={handleChangeType}
               onDeepLink={handleDeepLink}
-              onMoveField={moveFieldTo}
+              onMoveField={moveFieldWithUndo}
               rowIdRemaps={rowIdRemaps}
               pendingRowIds={pendingRowIds}
               sectionActions={sectionActions}

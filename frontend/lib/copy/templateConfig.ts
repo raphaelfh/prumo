@@ -10,4 +10,7 @@ export const templateConfig = {
   errors_moveField: 'Error moving field',
   errors_reorderFields: 'Error reordering fields',
   moveAnnouncement: 'Moved {{field}} to {{section}}, position {{position}} of {{count}}',
+  undoAction: 'Undo',
+  undoFieldMissing: 'This field no longer exists — nothing to undo',
+  undoMoveToast: 'Moved {{field}}',
 } as const;
