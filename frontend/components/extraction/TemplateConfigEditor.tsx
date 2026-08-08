@@ -39,8 +39,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   // it throws away the panel's view state: selection, search query,
   // collapsed sections and column toggles.
   const [initialLoading, setInitialLoading] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editLabel, setEditLabel] = useState('');
   const [showAddSectionDialog, setShowAddSectionDialog] = useState(false);
   const [removingSectionId, setRemovingSectionId] = useState<string | null>(null);
   const [removingSectionName, setRemovingSectionName] = useState('');
@@ -82,22 +80,19 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     }
   }, [projectId, templateId]);
 
-  const handleSaveEdit = async (entityTypeId: string) => {
-    const result = await updateEntityTypeLabel(entityTypeId, editLabel);
+  // Task 6: the grid row owns the rename draft — only the WRITE lives
+  // here (service call + cache refresh; the grid guarantees one commit
+  // per rename, with a changed, non-empty, trimmed label).
+  const handleSaveEdit = async (entityTypeId: string, label: string) => {
+    const result = await updateEntityTypeLabel(entityTypeId, label);
     if (!result.ok) {
       console.error('Erro ao atualizar label:', result.error);
       toast.error(`${t('common', 'error')}: ${result.error.message}`);
       return;
     }
     toast.success(t('extraction', 'labelUpdatedSuccess'));
-    setEditingId(null);
     void invalidateStructure();
     await loadEntityTypes();
-  };
-
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditLabel('');
   };
 
   const handleSectionAdded = () => {
@@ -175,15 +170,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
           });
         }}
         sectionActions={{
-          renamingId: editingId,
-          renameValue: editLabel,
-          onRenameValueChange: setEditLabel,
-          onStartRename: (section) => {
-            setEditingId(section.id);
-            setEditLabel(section.label);
-          },
-          onCommitRename: (sectionId) => void handleSaveEdit(sectionId),
-          onCancelRename: handleCancelEdit,
+          onCommitRename: (sectionId, label) => void handleSaveEdit(sectionId, label),
           onDelete: (section) => {
             setRemovingSectionId(section.id);
             setRemovingSectionName(section.label);

@@ -816,6 +816,7 @@ export const extraction = {
     gridEditFieldTooltip: 'Edit field',
     gridEditLabelAria: 'Edit label',
     gridEditKeyAria: 'Edit key',
+    gridRenameSectionAria: 'Rename section',
     gridNewFieldAria: 'New field label',
     gridNewFieldPlaceholder: 'Field label',
     gridRowActions: 'Field actions',

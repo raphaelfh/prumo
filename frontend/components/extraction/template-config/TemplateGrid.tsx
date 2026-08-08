@@ -79,6 +79,13 @@ import {
  * keyboard Enter/F2 routes through the cell model and the effects loop
  * interprets `activateControl` — a native checkbox ignores Enter, and
  * preventDefault keeps button cells from double-firing.
+ *
+ * B-5 Task 6: the section RENAME is row-local — SectionHeaderRow owns
+ * rename mode, the mounted editor owns the draft, and both exits leave
+ * rename mode synchronously so the editor unmounts while focused (no
+ * blur-commit can follow an Enter commit or an Esc cancel — the Task-3
+ * exactly-once pattern). The parent receives ONE commit per rename;
+ * Esc cancels locally (ladder rung 1) with focus staying on the cell.
  */
 
 export interface TemplateGridSelection {
@@ -88,16 +95,13 @@ export interface TemplateGridSelection {
 
 /**
  * Section-level actions the accordion used to expose through its `⋮` menu.
- * Kept whole so replacing the accordion is not a capability regression;
- * rename stays inline (one commit; since B-4 it stages a draft edit).
+ * Kept whole so replacing the accordion is not a capability regression.
+ * Since Task 6 the ROW owns rename mode and its draft (SectionHeaderRow);
+ * the parent owns only the write — ONE commit per rename, called with a
+ * CHANGED, non-empty, trimmed label (a revert never reaches it).
  */
 export interface TemplateSectionActions {
-  renamingId: string | null;
-  renameValue: string;
-  onRenameValueChange: (value: string) => void;
-  onStartRename: (section: GridSection) => void;
-  onCommitRename: (sectionId: string) => void;
-  onCancelRename: () => void;
+  onCommitRename: (sectionId: string, label: string) => void;
   onDelete: (section: GridSection) => void;
   /** Unused since Task 4 — the ghost editor owns "New field" (both the
    * ghost rows and the `＋ ▾` item). Deleted with the dialogs in Task 8. */
@@ -134,8 +138,9 @@ interface TemplateGridProps {
   sectionActions: TemplateSectionActions;
   onAddSection: () => void;
   /** Esc pressed in focus mode: rungs 2-3 of the ladder belong to the
-   * panel (close inspector / clear search / deselect). Rung 1 (cancel
-   * edit) resolves inside the cell model once editors land. */
+   * panel's central dispatcher (close inspector with focus-return, then
+   * clear search / deselect). Rung 1 (cancel a cell or rename edit)
+   * resolves inside the editors, which stopPropagation. */
   onEscapeEscalate: () => void;
   collapsed: ReadonlySet<string>;
   onToggleCollapse: (sectionId: string) => void;
@@ -424,6 +429,57 @@ function TextCellEditor({
       }}
       onBlur={() => onCommit(draft, 'blur')}
       className="h-6 text-xs"
+    />
+  );
+}
+
+/**
+ * Inline rename editor for a section header (Task 6) — the same
+ * compiler-safe recipe as TextCellEditor (mount-scoped draft,
+ * `autoFocus`, zero refs/effects), kept separate because the rename
+ * target is a colSpan cell: it stays in the roving order under the
+ * section row's span columns. The row decides what a commit/cancel
+ * means; the editor only reports them.
+ */
+function SectionRenameEditor({
+  initialValue,
+  rowId,
+  spanCols,
+  tabIndex,
+  onCommit,
+  onCancel,
+}: {
+  initialValue: string;
+  rowId: string;
+  spanCols: string;
+  tabIndex: 0 | -1;
+  onCommit: (draft: string, via: 'enter' | 'blur') => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(initialValue);
+  return (
+    <Input
+      value={draft}
+      autoFocus
+      aria-label={t('extraction', 'gridRenameSectionAria')}
+      data-cell-row={rowId}
+      data-cell-cols={spanCols}
+      tabIndex={tabIndex}
+      onChange={(event) => setDraft(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+          event.preventDefault();
+          onCommit(draft, 'enter');
+        }
+        if (event.key === 'Escape') {
+          // Rung 1 belongs to the editor (see TextCellEditor).
+          event.preventDefault();
+          event.stopPropagation();
+          onCancel();
+        }
+      }}
+      onBlur={() => onCommit(draft, 'blur')}
+      className="h-6 max-w-[220px] text-xs"
     />
   );
 }
@@ -738,15 +794,47 @@ function SectionHeaderRow({
   newFieldDisabled: boolean;
   actions: TemplateSectionActions;
 }) {
-  // New-field mounts the ghost editor (autoFocus). It must NOT open from
-  // onSelect: the menu's FocusScope is still trapping at that point and
-  // yanks focus straight back off the fresh editor — whose never-typed
-  // blur is an auto-discard. So onSelect only FLAGS the intent and the
-  // open runs in onCloseAutoFocus, after the trap is torn down, with the
-  // default trigger-refocus prevented for that one hand-off. Every other
-  // close keeps the a11y default.
-  const newFieldClaimedFocus = useRef(false);
-  const isRenaming = actions.renamingId === section.id;
+  // New-field and Rename both mount an autoFocus editor. Neither may
+  // open from onSelect: the menu's FocusScope is still trapping at that
+  // point and yanks focus straight back off the fresh editor — whose
+  // blur is an auto-discard (ghost) or an instant rename exit. So
+  // onSelect only FLAGS the intent and the open runs in
+  // onCloseAutoFocus, after the trap is torn down, with the default
+  // trigger-refocus prevented for that one hand-off. Every other close
+  // keeps the a11y default.
+  const menuClaimedFocus = useRef<'newField' | 'rename' | null>(null);
+  // Task 6: the row owns rename MODE; the mounted editor owns the draft.
+  // Both exits (commit, cancel) leave rename mode synchronously, so the
+  // editor unmounts while focused and no blur-commit can double-fire
+  // (the Task-3 exactly-once pattern).
+  const [renaming, setRenaming] = useState(false);
+  const labelButtonRef = useRef<HTMLButtonElement>(null);
+
+  /** The label control remounts on the same flush that unmounts the
+   * editor — focus it after that flush (the grid's focusCellSoon
+   * pattern; still handler-originated, never an effect). */
+  const focusLabelSoon = () => {
+    queueMicrotask(() => labelButtonRef.current?.focus());
+  };
+
+  const commitRename = (draft: string, via: 'enter' | 'blur') => {
+    setRenaming(false);
+    const value = draft.trim();
+    // An unchanged (or emptied) draft is a revert, never a write.
+    if (value !== '' && value !== section.label) {
+      actions.onCommitRename(section.id, value);
+    }
+    // On Enter the editor unmounts while focused (no blur follows) —
+    // put focus back on the label control. On blur the world already
+    // moved focus; stealing it back would fight the user.
+    if (via === 'enter') focusLabelSoon();
+  };
+
+  const cancelRename = () => {
+    setRenaming(false);
+    focusLabelSoon();
+  };
+
   const Chevron = collapsed ? ChevronRight : ChevronDown;
   const meta = [
     ...section.metaKeys.map((key) => t('extraction', key)),
@@ -784,27 +872,18 @@ function SectionHeaderRow({
           >
             <Chevron className="size-3.5" aria-hidden />
           </button>
-          {isRenaming ? (
-            <Input
-              value={actions.renameValue}
-              autoFocus
-              data-cell-row={section.id}
-              data-cell-cols={spanCols}
+          {renaming ? (
+            <SectionRenameEditor
+              initialValue={section.label}
+              rowId={section.id}
+              spanCols={spanCols}
               tabIndex={rovingTabIndex(focus, section.id, spanColList)}
-              onClick={(event) => event.stopPropagation()}
-              onChange={(event) => actions.onRenameValueChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') actions.onCommitRename(section.id);
-                if (event.key === 'Escape') {
-                  event.stopPropagation();
-                  actions.onCancelRename();
-                }
-              }}
-              onBlur={() => actions.onCommitRename(section.id)}
-              className="h-6 max-w-[220px] text-xs"
+              onCommit={commitRename}
+              onCancel={cancelRename}
             />
           ) : (
             <button
+              ref={labelButtonRef}
               type="button"
               onClick={onSelect}
               aria-current={selected ? 'true' : undefined}
@@ -853,23 +932,31 @@ function SectionHeaderRow({
             align="end"
             className="text-xs"
             onCloseAutoFocus={(event) => {
-              if (newFieldClaimedFocus.current) {
-                newFieldClaimedFocus.current = false;
+              const claimed = menuClaimedFocus.current;
+              menuClaimedFocus.current = null;
+              if (claimed === 'newField') {
                 event.preventDefault();
                 onNewField();
+              } else if (claimed === 'rename') {
+                event.preventDefault();
+                setRenaming(true);
               }
             }}
           >
             <DropdownMenuItem
               onSelect={() => {
-                newFieldClaimedFocus.current = true;
+                menuClaimedFocus.current = 'newField';
               }}
               disabled={newFieldDisabled}
             >
               <Plus className="mr-2 size-3.5" aria-hidden />
               {t('extraction', 'gridNewField')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => actions.onStartRename(section)}>
+            <DropdownMenuItem
+              onSelect={() => {
+                menuClaimedFocus.current = 'rename';
+              }}
+            >
               <Pencil className="mr-2 size-3.5" aria-hidden />
               {t('extraction', 'editLabelButton')}
             </DropdownMenuItem>

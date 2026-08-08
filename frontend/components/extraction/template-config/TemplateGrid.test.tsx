@@ -39,13 +39,10 @@ const tree = buildTemplateTree(
 );
 
 function renderGrid(over: Partial<Parameters<typeof TemplateGrid>[0]> = {}) {
+  // Task 6: the row owns the rename draft — the parent only gets the
+  // single commit (plus delete and the dead-until-Task-8 add-field).
   const sectionActions: TemplateSectionActions = {
-    renamingId: null,
-    renameValue: '',
-    onRenameValueChange: vi.fn(),
-    onStartRename: vi.fn(),
     onCommitRename: vi.fn(),
-    onCancelRename: vi.fn(),
     onDelete: vi.fn(),
     onAddField: vi.fn(),
   };
@@ -588,5 +585,90 @@ describe('TemplateGrid control cells (B-5 Task 5)', () => {
       expect.objectContaining({id: 'f1'}),
       'options',
     );
+  });
+});
+
+describe('TemplateGrid section rename (B-5 Task 6)', () => {
+  const renameEditor = () =>
+    screen.getByRole<HTMLInputElement>('textbox', {name: 'gridRenameSectionAria'});
+  const queryRenameEditor = () =>
+    screen.queryByRole('textbox', {name: 'gridRenameSectionAria'});
+
+  /** Open the rename editor through the section `＋ ▾` menu. */
+  async function startRename() {
+    await userEvent.click(
+      screen.getByRole('button', {name: /gridAddMenu — Source of Data/}),
+    );
+    await userEvent.click(
+      await screen.findByRole('menuitem', {name: /editLabelButton/}),
+    );
+  }
+
+  it('opens the rename editor from the menu, seeded with the label and focused', async () => {
+    renderGrid();
+    await startRename();
+    const editor = renameEditor();
+    expect(editor).toHaveValue('Source of Data');
+    // The menu's close must NOT yank focus back to its trigger — the
+    // editor keeps it (an immediate blur would be an instant commit-exit).
+    expect(document.activeElement).toBe(editor);
+  });
+
+  it('Enter commits the changed draft exactly once and focus returns to the label', async () => {
+    const {sectionActions} = renderGrid();
+    await startRename();
+    await userEvent.clear(renameEditor());
+    await userEvent.type(renameEditor(), 'Data Sources');
+    await userEvent.keyboard('{Enter}');
+    expect(sectionActions.onCommitRename).toHaveBeenCalledTimes(1);
+    expect(sectionActions.onCommitRename).toHaveBeenCalledWith('sec', 'Data Sources');
+    // The editor unmounts while focused (no blur-commit can double-fire)
+    // and focus lands back on the section label control.
+    expect(queryRenameEditor()).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', {name: 'Source of Data'}),
+    );
+  });
+
+  it('Esc reverts without a write and focus stays on the section label', async () => {
+    const {sectionActions, onEscapeEscalate} = renderGrid();
+    await startRename();
+    await userEvent.type(renameEditor(), ' zzz');
+    await userEvent.keyboard('{Escape}');
+    expect(sectionActions.onCommitRename).not.toHaveBeenCalled();
+    // Rung 1 resolved in the editor: the ladder must not advance.
+    expect(onEscapeEscalate).not.toHaveBeenCalled();
+    expect(queryRenameEditor()).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', {name: 'Source of Data'}),
+    );
+  });
+
+  it('blur commits a changed draft exactly once', async () => {
+    const {sectionActions} = renderGrid();
+    await startRename();
+    await userEvent.clear(renameEditor());
+    await userEvent.type(renameEditor(), 'Data Sources');
+    await userEvent.tab();
+    expect(sectionActions.onCommitRename).toHaveBeenCalledTimes(1);
+    expect(sectionActions.onCommitRename).toHaveBeenCalledWith('sec', 'Data Sources');
+    expect(queryRenameEditor()).toBeNull();
+  });
+
+  it('a no-change blur exits rename mode without a write', async () => {
+    const {sectionActions} = renderGrid();
+    await startRename();
+    await userEvent.tab();
+    expect(sectionActions.onCommitRename).not.toHaveBeenCalled();
+    expect(queryRenameEditor()).toBeNull();
+  });
+
+  it('an emptied draft reverts on Enter instead of committing a blank label', async () => {
+    const {sectionActions} = renderGrid();
+    await startRename();
+    await userEvent.clear(renameEditor());
+    await userEvent.keyboard('{Enter}');
+    expect(sectionActions.onCommitRename).not.toHaveBeenCalled();
+    expect(queryRenameEditor()).toBeNull();
   });
 });

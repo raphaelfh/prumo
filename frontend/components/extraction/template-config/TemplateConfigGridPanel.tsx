@@ -276,7 +276,34 @@ export function TemplateConfigGridPanel({
     if (raw) handler(raw);
   };
 
-  const clearOrDeselect = () => {
+  /** Rung-2 focus return: the roving contract keeps EXACTLY ONE
+   * `tabindex="0"` target inside the grid — that IS the focused cell.
+   * The inspector may be unmounting under the focused element, so the
+   * focus runs after React's flush (the grid's focusCellSoon pattern;
+   * handler-originated, never an effect). */
+  const focusGridCellSoon = () => {
+    queueMicrotask(() => {
+      containerRef.current
+        ?.querySelector<HTMLElement>('[role="grid"] [tabindex="0"]')
+        ?.focus();
+    });
+  };
+
+  /**
+   * Rungs 2-3 of the Esc ladder — the ONE central dispatcher (Task 6).
+   * Rung 1 (cancel a cell or section-rename edit) resolves inside the
+   * editors, which stopPropagation so the ladder never advances on the
+   * same press. Rung 2: an OPEN inspector (whichever host is active)
+   * absorbs the Esc — BEFORE search-clear — and focus returns to the
+   * focused cell. Rung 3: clear the search query, else the selection.
+   */
+  const handleEscapeEscalate = () => {
+    if (isNarrow ? sheetOpen : dockedOpen) {
+      if (isNarrow) setSheetOpen(false);
+      else setDockedOpen(false);
+      focusGridCellSoon();
+      return;
+    }
     if (query) {
       changeQuery('');
       return;
@@ -451,7 +478,7 @@ export function TemplateConfigGridPanel({
     <div
       className="overflow-hidden rounded-md border bg-card"
       onKeyDown={(event) => {
-        if (event.key === 'Escape') clearOrDeselect();
+        if (event.key === 'Escape') handleEscapeEscalate();
         // ⌘. toggles the inspector (Task 5). Panel-scoped on purpose: the
         // shortcut belongs to the Configuration surface, not the page.
         if ((event.metaKey || event.ctrlKey) && event.key === '.') {
@@ -585,9 +612,9 @@ export function TemplateConfigGridPanel({
               rowIdRemaps={rowIdRemaps}
               sectionActions={sectionActions}
               onAddSection={onAddSection}
-              // Esc ladder rungs 2-3: the grid's central dispatcher
-              // escalates here once rung 1 (cancel edit) is resolved.
-              onEscapeEscalate={clearOrDeselect}
+              // Esc ladder rungs 2-3: the grid escalates here once
+              // rung 1 (cancel edit) is resolved in the editors.
+              onEscapeEscalate={handleEscapeEscalate}
               collapsed={collapsed}
               onToggleCollapse={(sectionId) => {
                 const next = new Set(collapsed);

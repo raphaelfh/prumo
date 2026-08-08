@@ -129,6 +129,15 @@ describe('applyRetentionToFilter', () => {
   });
 });
 
+/** Task 6: the grid row owns the rename draft — the panel only threads
+ * the single commit through (plus delete and the dead-until-Task-8
+ * add-field). Shared across suites; no panel test asserts on it. */
+const sectionActions: TemplateSectionActions = {
+  onCommitRename: vi.fn(),
+  onDelete: vi.fn(),
+  onAddField: vi.fn(),
+};
+
 /** Default queue stub: enqueueInsert echoes a deterministic client key. */
 function stubInsertQueue() {
   const enqueueInsert = vi.fn(() => ({clientKey: 'pending-1', name: 'peso'}));
@@ -176,17 +185,6 @@ describe('TemplateConfigGridPanel — retention wiring', () => {
       ],
     },
   ];
-
-  const sectionActions: TemplateSectionActions = {
-    renamingId: null,
-    renameValue: '',
-    onRenameValueChange: vi.fn(),
-    onStartRename: vi.fn(),
-    onCommitRename: vi.fn(),
-    onCancelRename: vi.fn(),
-    onDelete: vi.fn(),
-    onAddField: vi.fn(),
-  };
 
   // A FRESH element per (re)render: reusing one element reference makes
   // React bail out of the subtree on rerender, so mocked data never lands.
@@ -272,17 +270,6 @@ describe('TemplateConfigGridPanel — optimistic ghost inserts (B-5 Task 4)', ()
       ],
     },
   ];
-
-  const sectionActions: TemplateSectionActions = {
-    renamingId: null,
-    renameValue: '',
-    onRenameValueChange: vi.fn(),
-    onStartRename: vi.fn(),
-    onCommitRename: vi.fn(),
-    onCancelRename: vi.fn(),
-    onDelete: vi.fn(),
-    onAddField: vi.fn(),
-  };
 
   const panel = () => (
     <TooltipProvider>
@@ -411,17 +398,6 @@ describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', 
       ],
     },
   ];
-
-  const sectionActions: TemplateSectionActions = {
-    renamingId: null,
-    renameValue: '',
-    onRenameValueChange: vi.fn(),
-    onStartRename: vi.fn(),
-    onCommitRename: vi.fn(),
-    onCancelRename: vi.fn(),
-    onDelete: vi.fn(),
-    onAddField: vi.fn(),
-  };
 
   const panel = () => (
     <TooltipProvider>
@@ -583,17 +559,6 @@ describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', 
 });
 
 describe('TemplateConfigGridPanel — inspector visibility (B-5 Task 5)', () => {
-  const sectionActions: TemplateSectionActions = {
-    renamingId: null,
-    renameValue: '',
-    onRenameValueChange: vi.fn(),
-    onStartRename: vi.fn(),
-    onCommitRename: vi.fn(),
-    onCancelRename: vi.fn(),
-    onDelete: vi.fn(),
-    onAddField: vi.fn(),
-  };
-
   const panel = () => (
     <TooltipProvider>
       <TemplateConfigGridPanel
@@ -710,5 +675,122 @@ describe('TemplateConfigGridPanel — inspector visibility (B-5 Task 5)', () => 
     );
     await userEvent.keyboard('{Meta>}.{/Meta}');
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+});
+
+describe('TemplateConfigGridPanel — 3-rung Esc ladder (B-5 Task 6)', () => {
+  const panel = () => (
+    <TooltipProvider>
+      <TemplateConfigGridPanel
+        projectId="p1"
+        templateId="t1"
+        onEditField={vi.fn()}
+        onDeleteField={vi.fn()}
+        sectionActions={sectionActions}
+        onAddSection={vi.fn()}
+      />
+    </TooltipProvider>
+  );
+
+  const mockEntityTypes = () => {
+    vi.mocked(useTemplateEntityTypes).mockReturnValue({
+      entityTypes: [
+        {
+          id: 'sec',
+          name: 'sec_a',
+          label: 'Section A',
+          description: null,
+          role: 'study_section',
+          cardinality: 'one',
+          parent_entity_type_id: null,
+          sort_order: 1,
+          fields: [
+            field('f1', 'sec', 'q1', 'Study design', 1),
+            field('f2', 'sec', 'q2', 'Sample size', 2),
+          ],
+        },
+      ] as never,
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+  };
+
+  const mockMutation = () => {
+    const mutate = vi.fn();
+    vi.mocked(useUpdateTemplateField).mockReturnValue({
+      mutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useUpdateTemplateField>);
+    return mutate;
+  };
+
+  it('rung 1: a cell-edit Esc cancels only the edit — the inspector stays open', async () => {
+    const mutate = mockMutation();
+    mockEntityTypes();
+    render(panel());
+
+    const label = screen.getByRole('button', {name: 'Study design'});
+    await userEvent.click(label); // select (the inspector shows the form)
+    await userEvent.click(label); // second click edits
+    await userEvent.keyboard('zzz');
+    await userEvent.keyboard('{Escape}');
+
+    // The edit reverted without a write…
+    expect(mutate).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox', {name: 'gridEditLabelAria'})).toBeNull();
+    // …and the ladder did NOT advance: the inspector form is still open.
+    expect(screen.getByLabelText('inspectorLabelLabel')).toBeInTheDocument();
+  });
+
+  it('rung 2: Esc closes the open inspector and returns focus to the focused cell', async () => {
+    mockMutation();
+    mockEntityTypes();
+    render(panel());
+
+    const label = screen.getByRole('button', {name: 'Study design'});
+    await userEvent.click(label);
+    const inspectorLabel = screen.getByLabelText('inspectorLabelLabel');
+    // Esc pressed while focus is INSIDE the inspector: the pane unmounts
+    // under the focused element, so the return to the roving cell is the
+    // dispatcher's job — not a browser accident.
+    await userEvent.click(inspectorLabel);
+    expect(document.activeElement).toBe(inspectorLabel);
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.queryByLabelText('inspectorLabelLabel')).toBeNull();
+    expect(document.activeElement).toBe(label);
+    // Only the inspector closed — the selection survives rung 2.
+    expect(label).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('rung 2 before rung 3: the open inspector absorbs Esc BEFORE the query clears', async () => {
+    mockMutation();
+    mockEntityTypes();
+    render(panel());
+
+    const search = screen.getByRole('textbox', {name: 'gridSearchPlaceholder'});
+    await userEvent.type(search, 'design');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByText('inspectorEmptyTitle')).toBeNull();
+    expect(search).toHaveValue('design');
+
+    // Second Esc: the inspector is closed now — the query clears.
+    await userEvent.keyboard('{Escape}');
+    expect(search).toHaveValue('');
+  });
+
+  it('rung 3: with the inspector closed and no query, Esc clears the selection', async () => {
+    mockMutation();
+    mockEntityTypes();
+    render(panel());
+
+    await userEvent.click(screen.getByRole('button', {name: 'inspectorToggle'}));
+    const label = screen.getByRole('button', {name: 'Study design'});
+    await userEvent.click(label);
+    expect(label).toHaveAttribute('aria-current', 'true');
+
+    await userEvent.keyboard('{Escape}');
+    expect(label).not.toHaveAttribute('aria-current');
   });
 });
