@@ -1,5 +1,6 @@
-import {useMemo, useState} from 'react';
-import {Search, SlidersHorizontal, X} from 'lucide-react';
+import {useMemo, useRef, useState} from 'react';
+import {PanelRight, Search, SlidersHorizontal, X} from 'lucide-react';
+import {toast} from 'sonner';
 
 import {Button} from '@/components/ui/button';
 import {
@@ -9,13 +10,22 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {Input} from '@/components/ui/input';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {Skeleton} from '@/components/ui/skeleton';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {useInsertTemplateField} from '@/hooks/extraction/useInsertTemplateField';
 import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
+import {useContainerNarrow} from '@/hooks/shared/useContainerNarrow';
 import {t} from '@/lib/copy';
-import type {ExtractionField} from '@/types/extraction';
+import {validateFieldImpact} from '@/services/extractionFieldService';
+import type {ExtractionField, ExtractionFieldUpdate} from '@/types/extraction';
 
 import {
   TemplateGrid,
@@ -23,7 +33,7 @@ import {
   type TemplateSectionActions,
   type TextCellColumn,
 } from './TemplateGrid';
-import {TemplateInspector} from './TemplateInspector';
+import {TemplateInspector, type InspectorFocusGroup} from './TemplateInspector';
 import {TemplateOutlineRail} from './TemplateOutlineRail';
 import {
   buildTemplateTree,
@@ -38,20 +48,29 @@ import {
 /**
  * Rail + grid + inspector shell for the Configuration tab (slice B-1).
  *
- * Owns only view state — selection, collapse, search, column display —
- * plus the inline write paths: label/key commits go through the panel's
- * `useUpdateTemplateField` mutation (B-5 Task 3), and ghost-row inserts
- * through the serialized `useInsertTemplateField` queue (Task 4) with
- * PANEL-LOCAL optimistic rows: pending inserts are merged into the tree
- * input here — never written into the shared template-entity-types cache,
- * which the worklist/dashboard read. Other field properties still travel
- * the pre-B-5 dialog paths. Since B-4, edits are draft edits — they
- * refresh the grid + Draft chip caches and the explicit Publish button
- * owns versioning.
+ * Owns only view state — selection, collapse, search, column display,
+ * inspector visibility — plus ALL the inline write paths: label/key
+ * commits and every inspector/control-cell save go through the panel's
+ * `saveFieldUpdates` routing (B-5 Tasks 3+5) — real rows through the
+ * `useUpdateTemplateField` mutation (type changes probed first via
+ * `validateFieldImpact`), PENDING optimistic rows through the serialized
+ * `useInsertTemplateField` queue (Task 4), whose rows are merged into the
+ * tree input here — never written into the shared template-entity-types
+ * cache, which the worklist/dashboard read. Since B-4, edits are draft
+ * edits — they refresh the grid + Draft chip caches and the explicit
+ * Publish button owns versioning.
+ *
+ * Inspector visibility (Task 5): docked and visible by default at wide
+ * container widths; below the 40rem container breakpoint it re-hosts as
+ * a Sheet overlay (container queries cannot MOUNT different hosts, so
+ * the width is observed — `useContainerNarrow`). `⌘.`/the toolbar button
+ * toggle whichever host is active; ✨/Options deep-links open it.
  */
 
 /** Optimistic ghost insert: rendered under `clientKey` until the drain
- * refetch serves the committed row, then pruned (`onDrained`). */
+ * refetch serves the committed row, then pruned (`onDrained`).
+ * `overrides` carries inspector/control-cell edits made while the row is
+ * still pending, so the optimistic copy tracks the queued writes. */
 interface PendingInsert {
   clientKey: string;
   entityTypeId: string;
@@ -59,7 +78,12 @@ interface PendingInsert {
   label: string;
   sortOrder: number;
   serverId: string | null;
+  overrides: ExtractionFieldUpdate;
 }
+
+/** 40rem — the container breakpoint below which the docked inspector
+ * used to be display-hidden (and its properties uneditable). */
+const INSPECTOR_NARROW_PX = 640;
 
 /**
  * Keep rows the user just edited AWAY from the active search visible
@@ -142,6 +166,18 @@ export function TemplateConfigGridPanel({
   const [rowIdRemaps, setRowIdRemaps] = useState<ReadonlyMap<string, string>>(
     new Map(),
   );
+  // Inspector visibility (Task 5): the docked pane defaults open; the
+  // narrow-container Sheet is opt-in (an overlay must never auto-cover
+  // the grid on mount). ⌘./the toolbar button toggle the ACTIVE host.
+  const [dockedOpen, setDockedOpen] = useState(true);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  // ✨/Options deep-link: which inspector group to focus for which field;
+  // seq re-triggers the focus on repeated clicks.
+  const [focusGroup, setFocusGroup] = useState<
+    (InspectorFocusGroup & {fieldId: string}) | null
+  >(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isNarrow = useContainerNarrow(containerRef, INSPECTOR_NARROW_PX);
 
   const insertQueue = useInsertTemplateField({
     projectId,
@@ -181,13 +217,16 @@ export function TemplateConfigGridPanel({
       .map((p) => ({
         id: p.clientKey,
         entity_type_id: p.entityTypeId,
-        name: p.name,
-        label: p.label,
         description: null,
         field_type: 'text',
         is_required: false,
         allowed_values: null,
         llm_description: null,
+        // Queued inspector/control-cell edits on the still-pending row
+        // (rule 5) — the identity keys below always win.
+        ...p.overrides,
+        name: p.name,
+        label: p.label,
         sort_order: p.sortOrder,
       }));
     return [...fetchedFields, ...optimistic];
@@ -222,6 +261,12 @@ export function TemplateConfigGridPanel({
   const owningSection = selectedField
     ? findSection(tree, selectedField.entityTypeId)
     : null;
+  // A deep-link only travels with ITS field — selecting another row keeps
+  // the inspector from stealing focus to a stale group.
+  const inspectorFocusGroup: InspectorFocusGroup | null =
+    focusGroup && selectedField && focusGroup.fieldId === selectedField.id
+      ? {group: focusGroup.group, seq: focusGroup.seq}
+      : null;
 
   // The grid speaks in projections; the dialogs need the row they came from.
   const withRawField = (handler: (raw: ExtractionField) => void) => (gridField: GridField) => {
@@ -239,12 +284,81 @@ export function TemplateConfigGridPanel({
     setSelection(null);
   };
 
+  const isPendingRow = (fieldId: string) =>
+    pendingInserts.some((p) => p.clientKey === fieldId);
+
+  // Edit on a STILL-PENDING row: update the optimistic copy and queue the
+  // write behind the row's insert by client key (concurrency rule 5).
+  const applyPendingUpdate = (clientKey: string, updates: ExtractionFieldUpdate) => {
+    setPendingInserts((prev) =>
+      prev.map((p) =>
+        p.clientKey === clientKey
+          ? {
+              ...p,
+              label: updates.label ?? p.label,
+              name: updates.name ?? p.name,
+              overrides: {...p.overrides, ...updates},
+            }
+          : p,
+      ),
+    );
+    insertQueue.enqueueUpdate(clientKey, updates);
+  };
+
+  /**
+   * ONE write router for every field save — inline text commits, the
+   * Required checkbox, the Type menu and the inspector form (Task 5).
+   * Pending rows go through the insert queue (no probe: a row that never
+   * existed server-side cannot hold extracted data). Real rows go through
+   * the update mutation; a TYPE change runs the impact probe first and is
+   * refused with the friendly toast when the field already holds data —
+   * the same semantics the edit dialog had.
+   */
+  const saveFieldUpdates = (
+    field: GridField,
+    updates: ExtractionFieldUpdate,
+    onSaved?: () => void,
+  ) => {
+    if (isPendingRow(field.id)) {
+      applyPendingUpdate(field.id, updates);
+      // The queue serializes the write; the optimistic copy already moved.
+      onSaved?.();
+      return;
+    }
+    const typeChanged =
+      typeof updates.field_type === 'string' &&
+      updates.field_type !== field.fieldType;
+    if (!typeChanged) {
+      updateField.mutate(
+        {fieldId: field.id, updates},
+        onSaved ? {onSuccess: onSaved} : undefined,
+      );
+      return;
+    }
+    void (async () => {
+      const probe = await validateFieldImpact(
+        field.id,
+        t('extraction', 'fieldSafeToModifyMessage'),
+        (count, articles) =>
+          t('extraction', 'fieldExtractedValuesMessage')
+            .replace('{{count}}', String(count))
+            .replace('{{n}}', String(articles)),
+      );
+      if (!probe.ok || !probe.data.canChangeType) {
+        toast.error(t('extraction', 'errors_cannotChangeFieldType'));
+        return;
+      }
+      updateField.mutate(
+        {fieldId: field.id, updates},
+        onSaved ? {onSuccess: onSaved} : undefined,
+      );
+    })();
+  };
+
   // Inline text-cell commits (grid Task 3): label edits update `label`,
   // key-column edits update `name`. The grid already filtered out
   // no-change commits; retention is registered BEFORE the write so the
   // row survives the refetch even if it no longer matches the query.
-  // An edit on a STILL-PENDING row updates the optimistic copy and queues
-  // behind its insert by client key (concurrency rule 5).
   const handleCommitField = (
     field: GridField,
     column: TextCellColumn,
@@ -257,15 +371,46 @@ export function TemplateConfigGridPanel({
         return next;
       });
     }
-    const updates = column === 'label' ? {label: value} : {name: value};
-    if (pendingInserts.some((p) => p.clientKey === field.id)) {
-      setPendingInserts((prev) =>
-        prev.map((p) => (p.clientKey === field.id ? {...p, ...updates} : p)),
-      );
-      insertQueue.enqueueUpdate(field.id, updates);
-      return;
-    }
-    updateField.mutate({fieldId: field.id, updates});
+    saveFieldUpdates(field, column === 'label' ? {label: value} : {name: value});
+  };
+
+  /** Type menu pick (Task 5): dependent groups clear with the NEW type —
+   * the dialog's semantics (options/allow-other only survive select
+   * kinds, units only numbers). */
+  const handleChangeType = (field: GridField, fieldType: string) => {
+    if (fieldType === field.fieldType) return;
+    const supportsOptions = fieldType === 'select' || fieldType === 'multiselect';
+    const updates: ExtractionFieldUpdate = {
+      field_type: fieldType as ExtractionFieldUpdate['field_type'],
+      ...(supportsOptions
+        ? {}
+        : {
+            allowed_values: null,
+            allow_other: false,
+            other_label: null,
+            other_placeholder: null,
+          }),
+      ...(fieldType === 'number' ? {} : {unit: null, allowed_units: null}),
+    };
+    saveFieldUpdates(field, updates);
+  };
+
+  /** ✨/Options cells (Task 5): select the field and open the inspector
+   * on the right group — the Sheet when the container is narrow. */
+  const handleDeepLink = (field: GridField, group: 'ai' | 'options') => {
+    setSelection({kind: 'field', id: field.id});
+    setFocusGroup((prev) => ({
+      fieldId: field.id,
+      group,
+      seq: (prev?.seq ?? 0) + 1,
+    }));
+    if (isNarrow) setSheetOpen(true);
+    else setDockedOpen(true);
+  };
+
+  const toggleInspector = () => {
+    if (isNarrow) setSheetOpen((open) => !open);
+    else setDockedOpen((open) => !open);
   };
 
   // Ghost-row commit (Task 4): the queue resolves the collision-suffixed
@@ -293,6 +438,7 @@ export function TemplateConfigGridPanel({
         label,
         sortOrder: provisionalSortOrder,
         serverId: null,
+        overrides: {},
       },
     ]);
   };
@@ -306,6 +452,12 @@ export function TemplateConfigGridPanel({
       className="overflow-hidden rounded-md border bg-card"
       onKeyDown={(event) => {
         if (event.key === 'Escape') clearOrDeselect();
+        // ⌘. toggles the inspector (Task 5). Panel-scoped on purpose: the
+        // shortcut belongs to the Configuration surface, not the page.
+        if ((event.metaKey || event.ctrlKey) && event.key === '.') {
+          event.preventDefault();
+          toggleInspector();
+        }
       }}
     >
       <div className="flex h-12 items-center gap-2 border-b px-3">
@@ -375,9 +527,29 @@ export function TemplateConfigGridPanel({
             </DropdownMenuCheckboxItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8"
+              aria-label={t('extraction', 'inspectorToggle')}
+              aria-pressed={isNarrow ? sheetOpen : dockedOpen}
+              onClick={toggleInspector}
+            >
+              <PanelRight className="size-3.5" aria-hidden />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('extraction', 'inspectorToggle')}</TooltipContent>
+        </Tooltip>
       </div>
 
-      <div className="@container/grid flex max-h-[70vh] items-stretch">
+      <div
+        ref={containerRef}
+        className="@container/grid flex max-h-[70vh] items-stretch"
+      >
           <TemplateOutlineRail
             className="hidden @[52rem]/grid:block"
             sections={tree}
@@ -405,6 +577,11 @@ export function TemplateConfigGridPanel({
               onDeleteField={withRawField(onDeleteField)}
               onCommitField={handleCommitField}
               onInsertField={handleInsertField}
+              onToggleRequired={(field, isRequired) =>
+                saveFieldUpdates(field, {is_required: isRequired})
+              }
+              onChangeType={handleChangeType}
+              onDeepLink={handleDeepLink}
               rowIdRemaps={rowIdRemaps}
               sectionActions={sectionActions}
               onAddSection={onAddSection}
@@ -425,14 +602,41 @@ export function TemplateConfigGridPanel({
           )}
         </div>
 
-        <TemplateInspector
-          className="hidden @[40rem]/grid:block"
-          field={selectedField}
-          section={selectedSection}
-          owningSection={owningSection}
-          onEditField={withRawField(onEditField)}
-          updateField={updateField}
-        />
+        {/* One host at a time: docked pane at wide widths, Sheet overlay
+            below the breakpoint — the FORM component is the same, so
+            every capability stays editable on narrow containers. */}
+        {isNarrow ? (
+          <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+            <SheetContent side="right" className="w-[320px] p-0 sm:max-w-[320px]">
+              <SheetHeader className="sr-only">
+                <SheetTitle>{t('extraction', 'inspectorSheetTitle')}</SheetTitle>
+                <SheetDescription>
+                  {t('extraction', 'inspectorEmptyHint')}
+                </SheetDescription>
+              </SheetHeader>
+              <TemplateInspector
+                className="block h-full w-full border-l-0 pt-10"
+                field={selectedField}
+                section={selectedSection}
+                owningSection={owningSection}
+                onSaveField={saveFieldUpdates}
+                saving={updateField.isPending}
+                focusGroup={inspectorFocusGroup}
+              />
+            </SheetContent>
+          </Sheet>
+        ) : (
+          dockedOpen && (
+            <TemplateInspector
+              field={selectedField}
+              section={selectedSection}
+              owningSection={owningSection}
+              onSaveField={saveFieldUpdates}
+              saving={updateField.isPending}
+              focusGroup={inspectorFocusGroup}
+            />
+          )
+        )}
       </div>
     </div>
   );

@@ -7,7 +7,7 @@
  * panel's filter application (not in templateTree), so these tests pin
  * both the pure merge helper and the wired behavior.
  */
-import {act, render, screen} from '@testing-library/react';
+import {act, render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -21,6 +21,13 @@ vi.mock('@/hooks/extraction/useUpdateTemplateField', () => ({
 vi.mock('@/hooks/extraction/useInsertTemplateField', () => ({
   useInsertTemplateField: vi.fn(),
 }));
+vi.mock('@/hooks/shared/useContainerNarrow', () => ({
+  useContainerNarrow: vi.fn(() => false),
+}));
+vi.mock('@/services/extractionFieldService', () => ({
+  validateFieldImpact: vi.fn(),
+}));
+vi.mock('sonner', () => ({toast: {error: vi.fn(), success: vi.fn()}}));
 
 import {TooltipProvider} from '@/components/ui/tooltip';
 import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
@@ -29,7 +36,10 @@ import {
   type UseInsertTemplateFieldArgs,
 } from '@/hooks/extraction/useInsertTemplateField';
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
-import type {ExtractionField} from '@/types/extraction';
+import {useContainerNarrow} from '@/hooks/shared/useContainerNarrow';
+import {validateFieldImpact} from '@/services/extractionFieldService';
+import {toast} from 'sonner';
+import type {ExtractionField, FieldValidationResult} from '@/types/extraction';
 
 import {
   applyRetentionToFilter,
@@ -127,9 +137,26 @@ function stubInsertQueue() {
   return {enqueueInsert, enqueueUpdate};
 }
 
+/** Impact-probe stub (type changes route through it on REAL rows). */
+function stubProbe(canChangeType: boolean) {
+  vi.mocked(validateFieldImpact).mockResolvedValue({
+    ok: true,
+    data: {
+      canDelete: canChangeType,
+      canUpdate: true,
+      canChangeType,
+      extractedValuesCount: canChangeType ? 0 : 3,
+      affectedArticles: [],
+      message: '',
+    } satisfies FieldValidationResult,
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   stubInsertQueue();
+  stubProbe(true);
+  vi.mocked(useContainerNarrow).mockReturnValue(false);
 });
 
 describe('TemplateConfigGridPanel — retention wiring', () => {
@@ -208,10 +235,10 @@ describe('TemplateConfigGridPanel — retention wiring', () => {
     await userEvent.click(label);
     await userEvent.keyboard('Cohort type{Enter}');
     expect(mutate).toHaveBeenCalledTimes(1);
-    expect(mutate).toHaveBeenCalledWith({
-      fieldId: 'f1',
-      updates: {label: 'Cohort type'},
-    });
+    expect(mutate).toHaveBeenCalledWith(
+      {fieldId: 'f1', updates: {label: 'Cohort type'}},
+      undefined,
+    );
 
     // The refetch lands the new label — the row must NOT vanish.
     mockEntityTypes('Cohort type');
@@ -364,5 +391,324 @@ describe('TemplateConfigGridPanel — optimistic ghost inserts (B-5 Task 4)', ()
     });
     rerender(panel());
     expect(screen.getAllByRole('button', {name: 'Peso'})).toHaveLength(1);
+  });
+});
+
+describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', () => {
+  const makeEntityTypes = () => [
+    {
+      id: 'sec',
+      name: 'sec_a',
+      label: 'Section A',
+      description: null,
+      role: 'study_section',
+      cardinality: 'one',
+      parent_entity_type_id: null,
+      sort_order: 1,
+      fields: [
+        field('f1', 'sec', 'q1', 'Study design', 1),
+        field('f2', 'sec', 'q2', 'Sample size', 2),
+      ],
+    },
+  ];
+
+  const sectionActions: TemplateSectionActions = {
+    renamingId: null,
+    renameValue: '',
+    onRenameValueChange: vi.fn(),
+    onStartRename: vi.fn(),
+    onCommitRename: vi.fn(),
+    onCancelRename: vi.fn(),
+    onDelete: vi.fn(),
+    onAddField: vi.fn(),
+  };
+
+  const panel = () => (
+    <TooltipProvider>
+      <TemplateConfigGridPanel
+        projectId="p1"
+        templateId="t1"
+        onEditField={vi.fn()}
+        onDeleteField={vi.fn()}
+        sectionActions={sectionActions}
+        onAddSection={vi.fn()}
+      />
+    </TooltipProvider>
+  );
+
+  const mockEntityTypes = () => {
+    vi.mocked(useTemplateEntityTypes).mockReturnValue({
+      entityTypes: makeEntityTypes() as never,
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+  };
+
+  const mockMutation = () => {
+    const mutate = vi.fn();
+    vi.mocked(useUpdateTemplateField).mockReturnValue({
+      mutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useUpdateTemplateField>);
+    return mutate;
+  };
+
+  async function insertPeso() {
+    await userEvent.click(screen.getByTestId('template-grid-add-field-sec'));
+    await userEvent.keyboard('Peso');
+    await userEvent.keyboard('{Enter}');
+  }
+
+  it('routes a Required toggle on a REAL row through the update mutation — one write', async () => {
+    const mutate = mockMutation();
+    mockEntityTypes();
+    render(panel());
+
+    await userEvent.click(
+      screen.getAllByRole('checkbox', {name: /gridRequiredToggleAria/})[0],
+    );
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate).toHaveBeenCalledWith(
+      {fieldId: 'f1', updates: {is_required: true}},
+      undefined,
+    );
+  });
+
+  it('routes a Required toggle on a PENDING row through the insert queue', async () => {
+    const {enqueueUpdate} = stubInsertQueue();
+    const mutate = mockMutation();
+    mockEntityTypes();
+    render(panel());
+    await insertPeso();
+
+    // The pending row renders last — its checkbox is the third one.
+    const checkboxes = screen.getAllByRole('checkbox', {
+      name: /gridRequiredToggleAria/,
+    });
+    await userEvent.click(checkboxes[checkboxes.length - 1]);
+    expect(enqueueUpdate).toHaveBeenCalledWith('pending-1', {is_required: true});
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it('writes a grid type change after the impact probe allows it, with type-dependent clears', async () => {
+    const mutate = mockMutation();
+    mockEntityTypes();
+    render(panel());
+
+    await userEvent.click(
+      screen.getAllByRole('button', {name: /gridTypeMenuAria/})[0],
+    );
+    await userEvent.click(
+      await screen.findByRole('menuitemradio', {name: 'fieldTypeNumber'}),
+    );
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(validateFieldImpact)).toHaveBeenCalledTimes(1);
+    expect(mutate).toHaveBeenCalledWith(
+      {
+        fieldId: 'f1',
+        updates: {
+          field_type: 'number',
+          allowed_values: null,
+          allow_other: false,
+          other_label: null,
+          other_placeholder: null,
+        },
+      },
+      undefined,
+    );
+  });
+
+  it('refuses a grid type change when the probe says no — toast, no write', async () => {
+    stubProbe(false);
+    const mutate = mockMutation();
+    mockEntityTypes();
+    render(panel());
+
+    await userEvent.click(
+      screen.getAllByRole('button', {name: /gridTypeMenuAria/})[0],
+    );
+    await userEvent.click(
+      await screen.findByRole('menuitemradio', {name: 'fieldTypeNumber'}),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('errors_cannotChangeFieldType'),
+    );
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it('skips the probe for type changes on PENDING rows — the queue serializes them', async () => {
+    const {enqueueUpdate} = stubInsertQueue();
+    const mutate = mockMutation();
+    mockEntityTypes();
+    render(panel());
+    await insertPeso();
+
+    const triggers = screen.getAllByRole('button', {name: /gridTypeMenuAria/});
+    await userEvent.click(triggers[triggers.length - 1]);
+    await userEvent.click(
+      await screen.findByRole('menuitemradio', {name: 'fieldTypeNumber'}),
+    );
+
+    expect(vi.mocked(validateFieldImpact)).not.toHaveBeenCalled();
+    expect(enqueueUpdate).toHaveBeenCalledWith(
+      'pending-1',
+      expect.objectContaining({field_type: 'number'}),
+    );
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it('routes an inspector Save on a PENDING row through the insert queue', async () => {
+    const {enqueueUpdate} = stubInsertQueue();
+    const mutate = mockMutation();
+    mockEntityTypes();
+    render(panel());
+    await insertPeso();
+
+    // Select the pending row; its full properties open in the inspector.
+    await userEvent.click(screen.getByRole('button', {name: 'Peso'}));
+    const label = screen.getByLabelText('inspectorLabelLabel');
+    expect(label).toHaveValue('Peso');
+    await userEvent.type(label, ' corporal');
+    await userEvent.click(screen.getByRole('button', {name: 'inspectorSave'}));
+
+    expect(enqueueUpdate).toHaveBeenCalledWith(
+      'pending-1',
+      expect.objectContaining({label: 'Peso corporal'}),
+    );
+    expect(mutate).not.toHaveBeenCalled();
+  });
+});
+
+describe('TemplateConfigGridPanel — inspector visibility (B-5 Task 5)', () => {
+  const sectionActions: TemplateSectionActions = {
+    renamingId: null,
+    renameValue: '',
+    onRenameValueChange: vi.fn(),
+    onStartRename: vi.fn(),
+    onCommitRename: vi.fn(),
+    onCancelRename: vi.fn(),
+    onDelete: vi.fn(),
+    onAddField: vi.fn(),
+  };
+
+  const panel = () => (
+    <TooltipProvider>
+      <TemplateConfigGridPanel
+        projectId="p1"
+        templateId="t1"
+        onEditField={vi.fn()}
+        onDeleteField={vi.fn()}
+        sectionActions={sectionActions}
+        onAddSection={vi.fn()}
+      />
+    </TooltipProvider>
+  );
+
+  const mockEntityTypes = () => {
+    vi.mocked(useTemplateEntityTypes).mockReturnValue({
+      entityTypes: [
+        {
+          id: 'sec',
+          name: 'sec_a',
+          label: 'Section A',
+          description: null,
+          role: 'study_section',
+          cardinality: 'one',
+          parent_entity_type_id: null,
+          sort_order: 1,
+          fields: [field('f1', 'sec', 'q1', 'Study design', 1)],
+        },
+      ] as never,
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+  };
+
+  const mockMutation = () => {
+    vi.mocked(useUpdateTemplateField).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useUpdateTemplateField>);
+  };
+
+  it('⌘. toggles the docked inspector', async () => {
+    mockMutation();
+    mockEntityTypes();
+    render(panel());
+    expect(screen.getByText('inspectorEmptyTitle')).toBeInTheDocument();
+
+    // The shortcut listens on the panel, so focus must be inside it.
+    await userEvent.click(
+      screen.getByRole('textbox', {name: 'gridSearchPlaceholder'}),
+    );
+    await userEvent.keyboard('{Meta>}.{/Meta}');
+    expect(screen.queryByText('inspectorEmptyTitle')).toBeNull();
+
+    await userEvent.keyboard('{Meta>}.{/Meta}');
+    expect(screen.getByText('inspectorEmptyTitle')).toBeInTheDocument();
+  });
+
+  it('offers a pointer affordance for the same toggle', async () => {
+    mockMutation();
+    mockEntityTypes();
+    render(panel());
+    const toggle = screen.getByRole('button', {name: 'inspectorToggle'});
+    await userEvent.click(toggle);
+    expect(screen.queryByText('inspectorEmptyTitle')).toBeNull();
+    await userEvent.click(toggle);
+    expect(screen.getByText('inspectorEmptyTitle')).toBeInTheDocument();
+  });
+
+  it('deep-linking from the ✨ cell selects the field and opens its inspector group', async () => {
+    mockMutation();
+    mockEntityTypes();
+    render(panel());
+
+    await userEvent.click(
+      screen.getAllByRole('button', {name: /gridAiCellAria/})[0],
+    );
+    expect(screen.getByLabelText('inspectorLabelLabel')).toHaveValue(
+      'Study design',
+    );
+    expect(document.activeElement).toBe(
+      screen.getByLabelText(/inspectorAiLabel/),
+    );
+  });
+
+  it('below the container breakpoint the inspector is a Sheet, opened by deep-link', async () => {
+    vi.mocked(useContainerNarrow).mockReturnValue(true);
+    mockMutation();
+    mockEntityTypes();
+    render(panel());
+
+    // No docked pane in narrow mode — and no auto-opened overlay either.
+    expect(screen.queryByText('inspectorEmptyTitle')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await userEvent.click(
+      screen.getAllByRole('button', {name: /gridAiCellAria/})[0],
+    );
+    const sheet = await screen.findByRole('dialog');
+    expect(sheet).toBeInTheDocument();
+    expect(screen.getByLabelText('inspectorLabelLabel')).toHaveValue(
+      'Study design',
+    );
+  });
+
+  it('⌘. opens and closes the Sheet in narrow mode', async () => {
+    vi.mocked(useContainerNarrow).mockReturnValue(true);
+    mockMutation();
+    mockEntityTypes();
+    render(panel());
+
+    await userEvent.click(
+      screen.getByRole('textbox', {name: 'gridSearchPlaceholder'}),
+    );
+    await userEvent.keyboard('{Meta>}.{/Meta}');
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 });

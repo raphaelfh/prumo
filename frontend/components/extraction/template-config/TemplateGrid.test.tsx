@@ -57,6 +57,9 @@ function renderGrid(over: Partial<Parameters<typeof TemplateGrid>[0]> = {}) {
     onDeleteField: vi.fn(),
     onCommitField: vi.fn(),
     onInsertField: vi.fn(),
+    onToggleRequired: vi.fn(),
+    onChangeType: vi.fn(),
+    onDeepLink: vi.fn(),
     sectionActions,
     onAddSection: vi.fn(),
     onEscapeEscalate: vi.fn(),
@@ -224,9 +227,15 @@ describe('TemplateGrid accessibility', () => {
     );
   });
 
-  it('announces the required state, which the checkbox alone cannot', () => {
+  it('exposes the required state as a real named checkbox (sr-only text gone)', () => {
+    // Task 5 made the required cell a real checkbox: role + checked state
+    // announce what the sr-only text used to duplicate.
     renderGrid();
-    expect(screen.getByText('inspectorRequiredYes')).toBeInTheDocument();
+    const checkbox = screen.getByRole('checkbox', {
+      name: /gridRequiredToggleAria/,
+    });
+    expect(checkbox).toBeChecked();
+    expect(screen.queryByText('inspectorRequiredYes')).toBeNull();
   });
 
   it('hides ghost add-rows while a search filter is active', () => {
@@ -491,5 +500,93 @@ describe('TemplateGrid ghost-row Enter-chain (B-5 Task 4)', () => {
     );
     const item = await screen.findByRole('menuitem', {name: /gridNewField/});
     expect(item).toHaveAttribute('aria-disabled', 'true');
+  });
+});
+
+describe('TemplateGrid control cells (B-5 Task 5)', () => {
+  const requiredCheckbox = () =>
+    screen.getByRole('checkbox', {name: /gridRequiredToggleAria/});
+
+  it('toggles Required on the FIRST click with exactly one write', async () => {
+    const {onToggleRequired, container} = renderGrid();
+    await userEvent.click(requiredCheckbox());
+    expect(onToggleRequired).toHaveBeenCalledTimes(1);
+    expect(onToggleRequired).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'f1'}),
+      false, // f1 is required today; the first click un-requires it
+    );
+    // The checkbox joined the roving order without breaking the one-stop rule.
+    expect(container.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
+  });
+
+  it('toggles Required from the keyboard: Enter interprets activateControl', async () => {
+    const {onToggleRequired} = renderGrid();
+    focusEl(requiredCheckbox());
+    await userEvent.keyboard('{Enter}');
+    expect(onToggleRequired).toHaveBeenCalledTimes(1);
+    expect(onToggleRequired).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'f1'}),
+      false,
+    );
+  });
+
+  it('opens the type menu on the FIRST click and routes the pick to onChangeType', async () => {
+    const {onChangeType} = renderGrid();
+    await userEvent.click(
+      screen.getByRole('button', {name: /gridTypeMenuAria/}),
+    );
+    const item = await screen.findByRole('menuitemradio', {
+      name: 'fieldTypeNumber',
+    });
+    await userEvent.click(item);
+    expect(onChangeType).toHaveBeenCalledTimes(1);
+    expect(onChangeType).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'f1'}),
+      'number',
+    );
+  });
+
+  it('marks the current type as checked in the menu', async () => {
+    renderGrid();
+    await userEvent.click(
+      screen.getByRole('button', {name: /gridTypeMenuAria/}),
+    );
+    const current = await screen.findByRole('menuitemradio', {
+      name: 'fieldTypeSelect',
+    });
+    expect(current).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('deep-links the ✨ cell to the AI group on click', async () => {
+    const {onDeepLink} = renderGrid();
+    await userEvent.click(screen.getByRole('button', {name: /gridAiCellAria/}));
+    expect(onDeepLink).toHaveBeenCalledTimes(1);
+    expect(onDeepLink).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'f1'}),
+      'ai',
+    );
+  });
+
+  it('deep-links the ✨ cell exactly once from the keyboard', async () => {
+    const {onDeepLink} = renderGrid();
+    focusEl(screen.getByRole('button', {name: /gridAiCellAria/}));
+    await userEvent.keyboard('{Enter}');
+    expect(onDeepLink).toHaveBeenCalledTimes(1);
+    expect(onDeepLink).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'f1'}),
+      'ai',
+    );
+  });
+
+  it('deep-links the Options cell to the options group', async () => {
+    const {onDeepLink} = renderGrid({showOptionsColumn: true});
+    await userEvent.click(
+      screen.getByRole('button', {name: /gridOptionsCellAria/}),
+    );
+    expect(onDeepLink).toHaveBeenCalledTimes(1);
+    expect(onDeepLink).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'f1'}),
+      'options',
+    );
   });
 });

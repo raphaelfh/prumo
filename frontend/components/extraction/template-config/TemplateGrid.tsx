@@ -16,6 +16,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
@@ -30,7 +32,13 @@ import {
   type CellKind,
   type GridRowShape,
 } from './gridCellModel';
-import type {GridField, GridSection, TemplateMatchHint} from './templateTree';
+import {
+  FIELD_TYPE_OPTIONS,
+  findField,
+  type GridField,
+  type GridSection,
+  type TemplateMatchHint,
+} from './templateTree';
 
 /**
  * The template configuration grid (spec §2, mock `manager-grid-v3-polish`).
@@ -61,6 +69,16 @@ import type {GridField, GridSection, TemplateMatchHint} from './templateTree';
  * panel owns the optimistic pending rows; `rowIdRemaps` keeps the focus
  * coordinate alive when a confirmed pending row swaps its client key for
  * the server id.
+ *
+ * B-5 Task 5: CONTROL cells act on the FIRST click. The Type cell is a
+ * menu trigger (the pick routes through `onChangeType`, probed by the
+ * panel), Required is a real checkbox (`onToggleRequired` — the panel
+ * routes real rows vs pending rows; the grid stays write-free), and the
+ * ✨/Options cells deep-link the inspector to the right group
+ * (`onDeepLink`). Mouse/Space activation is native on each control;
+ * keyboard Enter/F2 routes through the cell model and the effects loop
+ * interprets `activateControl` — a native checkbox ignores Enter, and
+ * preventDefault keeps button cells from double-firing.
  */
 
 export interface TemplateGridSelection {
@@ -101,6 +119,15 @@ interface TemplateGridProps {
   /** Ghost-row commit (Task 4): the panel owns the optimistic insert
    * queue. Only called with a non-empty, trimmed label. */
   onInsertField: (sectionId: string, label: string) => void;
+  /** Required-cell toggle (Task 5): the panel routes the write (update
+   * mutation for real rows, insert queue for pending rows). */
+  onToggleRequired: (field: GridField, isRequired: boolean) => void;
+  /** Type-menu pick (Task 5): the panel runs the impact probe and the
+   * type-dependent clears before writing. */
+  onChangeType: (field: GridField, fieldType: string) => void;
+  /** ✨/Options cell activation (Task 5): the panel selects the field and
+   * opens the inspector on the group (docked or Sheet). */
+  onDeepLink: (field: GridField, group: 'ai' | 'options') => void;
   /** Client key → server id for pending rows the panel reconciled: the
    * focus coordinate follows the row identity across the drain refetch. */
   rowIdRemaps?: ReadonlyMap<string, string>;
@@ -178,6 +205,18 @@ function cellKindAt(coord: CellCoord, rows: GridRowShape[]): CellKind {
   if (row.kind === 'ghost') return row.sectionId === '' ? 'control' : 'ghost';
   if (row.kind !== 'field') return 'control';
   return coord.column === 'label' || coord.column === 'key' ? 'text' : 'control';
+}
+
+/** Field-row control cells whose keyboard activation the GRID interprets
+ * (via the model's `activateControl` effect): the required checkbox
+ * ignores a native Enter, and the ✨/Options buttons must not double-fire
+ * (interpretation preventDefaults the native Enter-click). The type and
+ * actions cells stay fully native — their Radix triggers own Enter. */
+const INTERPRETED_CONTROL_COLUMNS = new Set(['required', 'sparkle', 'options']);
+
+function interpretsActivation(coord: CellCoord, rows: GridRowShape[]): boolean {
+  const row = rows.find((r) => r.rowId === coord.rowId);
+  return row?.kind === 'field' && INTERPRETED_CONTROL_COLUMNS.has(coord.column);
 }
 
 /** A key that types a character. Ctrl/Cmd chords are commands, never
@@ -400,6 +439,9 @@ function FieldRow({
   onDelete,
   onEditorCommit,
   onEditorCancel,
+  onToggleRequired,
+  onChangeType,
+  onDeepLink,
   showKeyColumn,
   showOptionsColumn,
 }: {
@@ -415,6 +457,9 @@ function FieldRow({
   onDelete: () => void;
   onEditorCommit: (column: TextCellColumn, draft: string, via: 'enter' | 'blur') => void;
   onEditorCancel: () => void;
+  onToggleRequired: (isRequired: boolean) => void;
+  onChangeType: (fieldType: string) => void;
+  onDeepLink: (group: 'ai' | 'options') => void;
   showKeyColumn: boolean;
   showOptionsColumn: boolean;
 }) {
@@ -505,52 +550,119 @@ function FieldRow({
       )}
       <td
         role="gridcell"
-        data-cell-row={rowId}
-        data-cell-cols="type"
-        tabIndex={rovingTabIndex(focus, rowId, ['type'])}
         className={cn('w-[110px] px-2', ringClass(focus, rowId, ['type']))}
       >
-        <TypePill field={field} />
+        {/* Control cells act on the FIRST click (Task 5): the pill is the
+            menu trigger, so click/Enter/Space open natively and a pick
+            routes to the panel's probed write. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={t('extraction', 'gridTypeMenuAria').replace(
+                '{{label}}',
+                field.label,
+              )}
+              data-cell-row={rowId}
+              data-cell-cols="type"
+              tabIndex={rovingTabIndex(focus, rowId, ['type'])}
+              className="block max-w-full rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <TypePill field={field} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="text-xs">
+            <DropdownMenuRadioGroup
+              value={field.fieldType}
+              onValueChange={(value) => {
+                if (value !== field.fieldType) onChangeType(value);
+              }}
+            >
+              {FIELD_TYPE_OPTIONS.map(({value, copyKey}) => (
+                <DropdownMenuRadioItem key={value} value={value}>
+                  {t('extraction', copyKey)}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </td>
       {showOptionsColumn && (
         <td
           role="gridcell"
-          data-cell-row={rowId}
-          data-cell-cols="options"
-          tabIndex={rovingTabIndex(focus, rowId, ['options'])}
           className={cn(
-            'max-w-[200px] truncate px-2 text-[10.5px] text-muted-foreground',
+            'max-w-[200px] px-2',
             ringClass(focus, rowId, ['options']),
           )}
         >
-          {(field.allowedValues ?? []).join(', ')}
+          <button
+            type="button"
+            onClick={() => onDeepLink('options')}
+            aria-label={t('extraction', 'gridOptionsCellAria').replace(
+              '{{label}}',
+              field.label,
+            )}
+            data-cell-row={rowId}
+            data-cell-cols="options"
+            tabIndex={rovingTabIndex(focus, rowId, ['options'])}
+            className="block min-h-[18px] w-full truncate rounded text-left text-[10.5px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {(field.allowedValues ?? []).join(', ')}
+          </button>
         </td>
       )}
       <td
         role="gridcell"
-        data-cell-row={rowId}
-        data-cell-cols="required"
-        tabIndex={rovingTabIndex(focus, rowId, ['required'])}
         className={cn('w-10 px-2', ringClass(focus, rowId, ['required']))}
       >
-        <RequiredBox checked={field.isRequired} />
-        <span className="sr-only">
-          {t(
-            'extraction',
-            field.isRequired ? 'inspectorRequiredYes' : 'inspectorRequiredNo',
-          )}
-        </span>
+        {/* A REAL checkbox toggling on the first click; sr-only input +
+            the 14px visual keep the compact look. Space toggles natively;
+            Enter arrives via the model's activateControl interpretation
+            (native checkboxes ignore Enter). */}
+        <label className="inline-flex cursor-pointer items-center align-middle">
+          <input
+            type="checkbox"
+            checked={field.isRequired}
+            onChange={(event) => onToggleRequired(event.target.checked)}
+            aria-label={t('extraction', 'gridRequiredToggleAria').replace(
+              '{{label}}',
+              field.label,
+            )}
+            data-cell-row={rowId}
+            data-cell-cols="required"
+            tabIndex={rovingTabIndex(focus, rowId, ['required'])}
+            className="peer sr-only"
+          />
+          <RequiredBox checked={field.isRequired} />
+        </label>
       </td>
       <td
         role="gridcell"
-        data-cell-row={rowId}
-        data-cell-cols="sparkle"
-        tabIndex={rovingTabIndex(focus, rowId, ['sparkle'])}
-        className={cn('w-[26px] px-2', ringClass(focus, rowId, ['sparkle']))}
+        className={cn('w-[26px] px-1', ringClass(focus, rowId, ['sparkle']))}
       >
-        {field.hasAiInstruction && (
-          <Sparkles className="size-3 text-primary" aria-label={t('extraction', 'gridColAi')} />
-        )}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => onDeepLink('ai')}
+              aria-label={t('extraction', 'gridAiCellAria').replace(
+                '{{label}}',
+                field.label,
+              )}
+              data-cell-row={rowId}
+              data-cell-cols="sparkle"
+              tabIndex={rovingTabIndex(focus, rowId, ['sparkle'])}
+              className="flex h-[18px] w-full items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {field.hasAiInstruction && (
+                <Sparkles className="size-3 text-primary" aria-hidden />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {t('extraction', 'gridAiCellAria').replace('{{label}}', field.label)}
+          </TooltipContent>
+        </Tooltip>
       </td>
       <td
         role="gridcell"
@@ -903,6 +1015,9 @@ export function TemplateGrid({
   onDeleteField,
   onCommitField,
   onInsertField,
+  onToggleRequired,
+  onChangeType,
+  onDeepLink,
   rowIdRemaps,
   sectionActions,
   onAddSection,
@@ -942,10 +1057,24 @@ export function TemplateGrid({
   const isSelected = (kind: 'field' | 'section', id: string) =>
     selection?.kind === kind && selection.id === id;
 
+  /** Interpret `activateControl` for the columns native activation cannot
+   * cover (see INTERPRETED_CONTROL_COLUMNS). */
+  const activateControlCell = (coord: CellCoord) => {
+    const field = findField(sections, coord.rowId);
+    if (!field) return;
+    if (coord.column === 'required') onToggleRequired(field, !field.isRequired);
+    else if (coord.column === 'sparkle') onDeepLink(field, 'ai');
+    else if (coord.column === 'options') onDeepLink(field, 'options');
+  };
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTableElement>) => {
     if (event.defaultPrevented) return; // e.g. Radix trigger opened on ArrowDown
     const target = event.target as HTMLElement;
-    if (target.closest('input, textarea, [contenteditable="true"]')) return;
+    // Text editors own their keys; the required CHECKBOX is an input too,
+    // but not a text editor — its Enter/arrows still route to the model.
+    if (target.closest('input:not([type="checkbox"]), textarea, [contenteditable="true"]')) {
+      return;
+    }
     const holder = target.closest<HTMLElement>('[data-cell-row]');
     if (!holder) return; // portal content (open menus) is not a cell
     const coord = coordFromTarget(holder, gridState.focus, columns);
@@ -954,7 +1083,11 @@ export function TemplateGrid({
     const opensEditor =
       (cellKind === 'text' || cellKind === 'ghost') &&
       (event.key === 'Enter' || event.key === 'F2' || printable);
-    if (!ROVING_KEYS.has(event.key) && !opensEditor) return;
+    const activatesControl =
+      cellKind === 'control' &&
+      (event.key === 'Enter' || event.key === 'F2') &&
+      interpretsActivation(coord, rowShapes);
+    if (!ROVING_KEYS.has(event.key) && !opensEditor && !activatesControl) return;
     let state = gridState;
     if (!state.focus || state.focus.rowId !== coord.rowId || state.focus.column !== coord.column) {
       state = gridReducer(state, {type: 'focusSync', coord});
@@ -976,10 +1109,16 @@ export function TemplateGrid({
         event.stopPropagation();
         onEscapeEscalate();
       }
+      if (effect.kind === 'activateControl') {
+        // Task 5: toggle the required checkbox / deep-link ✨ and Options.
+        // preventDefault stops the native Enter-click on button cells so
+        // the activation fires exactly once.
+        event.preventDefault();
+        activateControlCell(effect.coord);
+      }
       // 'exitGrid' (Tab): deliberately NOT preventDefault-ed — the grid has
       // one tab stop, so native Tab already leaves it (APG).
-      // 'commit' / 'cancelEdit' surface via the editor's own handlers;
-      // 'activateControl' stays native until Task 5.
+      // 'commit' / 'cancelEdit' surface via the editor's own handlers.
     }
     if (event.key.startsWith('Arrow')) {
       event.preventDefault();
@@ -1178,6 +1317,9 @@ export function TemplateGrid({
             handleEditorCommit({kind: 'field', field, column}, draft, via)
           }
           onEditorCancel={handleEditorCancel}
+          onToggleRequired={(isRequired) => onToggleRequired(field, isRequired)}
+          onChangeType={(fieldType) => onChangeType(field, fieldType)}
+          onDeepLink={(group) => onDeepLink(field, group)}
           showKeyColumn={showKeyColumn}
           showOptionsColumn={showOptionsColumn}
         />

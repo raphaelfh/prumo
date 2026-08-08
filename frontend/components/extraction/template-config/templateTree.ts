@@ -28,6 +28,29 @@ export type TemplateMatchHint = 'label' | 'key' | 'description' | 'aiInstruction
 const ROLE_MODEL_CONTAINER = 'model_container';
 const CARDINALITY_MANY = 'many';
 
+/** Copy keys in the `extraction` namespace naming each field type. */
+export type FieldTypeCopyKey =
+  | 'fieldTypeText'
+  | 'fieldTypeNumber'
+  | 'fieldTypeDate'
+  | 'fieldTypeSelect'
+  | 'fieldTypeMultiselect'
+  | 'fieldTypeBoolean';
+
+/** The six field types (same set as the DB enum), labelled through copy —
+ * shared by the inspector's type select and the grid's type menu. */
+export const FIELD_TYPE_OPTIONS: ReadonlyArray<{
+  value: string;
+  copyKey: FieldTypeCopyKey;
+}> = [
+  {value: 'text', copyKey: 'fieldTypeText'},
+  {value: 'number', copyKey: 'fieldTypeNumber'},
+  {value: 'date', copyKey: 'fieldTypeDate'},
+  {value: 'select', copyKey: 'fieldTypeSelect'},
+  {value: 'multiselect', copyKey: 'fieldTypeMultiselect'},
+  {value: 'boolean', copyKey: 'fieldTypeBoolean'},
+];
+
 export interface TemplateEntityTypeInput {
   id: string;
   name: string;
@@ -49,6 +72,12 @@ export interface TemplateFieldInput {
   is_required?: boolean;
   allowed_values?: string[] | null;
   unit?: string | null;
+  allowed_units?: string[] | null;
+  allow_other?: boolean;
+  other_label?: string | null;
+  other_placeholder?: string | null;
+  allows_not_applicable?: boolean;
+  allows_not_evaluated?: boolean;
   llm_description?: string | null;
   sort_order?: number;
 }
@@ -66,6 +95,16 @@ export interface GridField {
   allowedValues: string[] | null;
   optionCount: number;
   unit: string | null;
+  /** B-5 Task 5 — everything the inspector edits rides the projection so
+   * PENDING optimistic rows (which have no raw ExtractionField) can still
+   * open the full form; absent columns default to off/empty until the
+   * drain refetch serves the committed row. */
+  allowedUnits: string[] | null;
+  allowOther: boolean;
+  otherLabel: string | null;
+  otherPlaceholder: string | null;
+  allowsNotApplicable: boolean;
+  allowsNotEvaluated: boolean;
   /** Set only while a search filter is active. */
   matchHint?: TemplateMatchHint;
 }
@@ -122,6 +161,12 @@ function toGridField(input: TemplateFieldInput): GridField {
     allowedValues: options,
     optionCount: options?.length ?? 0,
     unit: input.unit?.trim() ? input.unit : null,
+    allowedUnits: input.allowed_units ?? null,
+    allowOther: Boolean(input.allow_other),
+    otherLabel: input.other_label ?? null,
+    otherPlaceholder: input.other_placeholder ?? null,
+    allowsNotApplicable: Boolean(input.allows_not_applicable),
+    allowsNotEvaluated: Boolean(input.allows_not_evaluated),
   };
 }
 
