@@ -105,6 +105,16 @@ interface TemplateGridProps {
   /** ✨/Options cell activation (Task 5): the panel selects the field and
    * opens the inspector on the group (docked or Sheet). */
   onDeepLink: (field: GridField, group: 'ai' | 'options') => void;
+  /** ⌘⇧↑/↓ move dispatch (B-6 T3): the panel's serialized `moveFieldTo`
+   * chokepoint. Optional so shells without the write layer render
+   * unchanged. `settled` resolves after the write + refetch — the grid
+   * then nudges DOM focus back onto the row (a React re-parent drops
+   * focus to body). */
+  onMoveField?: (
+    field: GridField,
+    toSectionId: string,
+    toIndex: number,
+  ) => {settled: Promise<boolean>} | null;
   /** Client key → server id for pending rows the panel reconciled: the
    * focus coordinate follows the row identity across the drain refetch. */
   rowIdRemaps?: ReadonlyMap<string, string>;
@@ -291,6 +301,7 @@ export function TemplateGrid({
   onToggleRequired,
   onChangeType,
   onDeepLink,
+  onMoveField,
   rowIdRemaps,
   pendingRowIds,
   sectionActions,
@@ -371,6 +382,14 @@ export function TemplateGrid({
       key: event.key,
       printable,
       composing: event.nativeEvent.isComposing,
+      // B-6 move chord: ⌘ and Ctrl fold into one `meta` (Ctrl⇧ is the
+      // equal-citizen fallback where the OS claims ⌘⇧-arrows). Arrows
+      // pass the ROVING_KEYS gate below regardless — carrying the
+      // modifiers is what routes the chord to the model's move branch
+      // (which runs BEFORE its rove switch) instead of a plain rove.
+      meta: event.metaKey || event.ctrlKey,
+      shift: event.shiftKey,
+      filtering: isFiltering,
       cellKind,
       rows: rowShapes,
       columns,
@@ -389,6 +408,36 @@ export function TemplateGrid({
         // the activation fires exactly once.
         event.preventDefault();
         activateControlCell(effect.coord);
+      }
+      if (effect.kind === 'moveRow' && !pendingRowIds?.has(effect.fieldRowId)) {
+        // B-6 T3: pending rows have no server id yet — the chord no-ops.
+        // The Arrow branch below preventDefaults either way (a consumed
+        // chord must never scroll). The model keeps the SAME coordinate;
+        // once the write + refetch settle, the row's DOM node has been
+        // re-parented (focus fell to body), so nudge focus back — via
+        // setTimeout, which runs after React's scheduled commit; still
+        // handler-originated, never an effect. Skip the nudge when the
+        // user moved focus elsewhere meanwhile.
+        const moved = findField(sections, effect.fieldRowId);
+        const record = moved
+          ? onMoveField?.(moved, effect.toSectionId, effect.toIndex)
+          : null;
+        if (record) {
+          const target: CellCoord = {rowId: effect.fieldRowId, column: coord.column};
+          void record.settled.then((ok) => {
+            if (!ok) return;
+            setTimeout(() => {
+              const table = tableRef.current;
+              const active = document.activeElement;
+              if (!table) return;
+              if (active && active !== document.body && !table.contains(active)) return;
+              const el =
+                findFocusTarget(table, target) ??
+                table.querySelector<HTMLElement>('[tabindex="0"]');
+              el?.focus();
+            }, 0);
+          });
+        }
       }
       // 'exitGrid' (Tab): deliberately NOT preventDefault-ed — the grid has
       // one tab stop, so native Tab already leaves it (APG).

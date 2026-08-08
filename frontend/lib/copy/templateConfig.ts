@@ -9,4 +9,5 @@
 export const templateConfig = {
   errors_moveField: 'Error moving field',
   errors_reorderFields: 'Error reordering fields',
+  moveAnnouncement: 'Moved {{field}} to {{section}}, position {{position}} of {{count}}',
 } as const;

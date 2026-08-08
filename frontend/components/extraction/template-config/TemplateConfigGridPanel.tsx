@@ -39,6 +39,7 @@ import {
 } from './TemplateGrid';
 import {TemplateInspector, type InspectorFocusGroup} from './TemplateInspector';
 import {TemplateOutlineRail} from './TemplateOutlineRail';
+import {useMoveFieldTo} from './useMoveFieldTo';
 import {
   buildTemplateTree,
   collectSectionIds,
@@ -336,6 +337,17 @@ export function TemplateConfigGridPanel({
     () => new Set(pendingInserts.map((p) => p.clientKey)),
     [pendingInserts],
   );
+
+  // B-6 T3: the serialized move/reorder dispatcher — the single
+  // chokepoint every structural move (chord, combobox, undo) routes
+  // through. Announcements surface via the live region below.
+  const {moveFieldTo, announcement: moveAnnouncement} = useMoveFieldTo({
+    projectId,
+    templateId,
+    tree,
+    collapsed,
+    pendingRowIds,
+  });
 
   // Edit on a STILL-PENDING row: update the optimistic copy and queue the
   // write behind the row's insert by client key (concurrency rule 5).
@@ -646,6 +658,14 @@ export function TemplateConfigGridPanel({
         </Tooltip>
       </div>
 
+      {/* B-6 T3: the surface's first live region (precedent SaveSlot) —
+          announces completed keyboard moves, since the moved row may
+          re-render far away or inside a collapsed section. Always
+          mounted so announcements land. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {moveAnnouncement}
+      </span>
+
       <div
         ref={containerRef}
         className="@container/grid flex max-h-[70vh] items-stretch"
@@ -681,6 +701,7 @@ export function TemplateConfigGridPanel({
               }
               onChangeType={handleChangeType}
               onDeepLink={handleDeepLink}
+              onMoveField={moveFieldTo}
               rowIdRemaps={rowIdRemaps}
               pendingRowIds={pendingRowIds}
               sectionActions={sectionActions}
