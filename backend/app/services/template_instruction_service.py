@@ -1,14 +1,15 @@
-"""Read/update a project template's general AI instruction (spec Phase A).
+"""Read/update a project template's general AI instruction.
 
-The column write happens INSIDE ``TemplateVersionService.republish``'s
-locked section (advisory locks → row FOR UPDATE → write → snapshot), so
-the live column and the active snapshot can never desync the way the
-PostgREST-write + fire-and-forget-republish path could — and the write
-cannot invert the republish lock order (ABBA deadlock).
+Since slice B-4 an instruction edit is a DRAFT edit: the column is
+written and ``config_draft_since`` stamped (COALESCE keeps the first
+edit's timestamp), but nothing republishes — the text reaches snapshots
+and prompts only when the manager presses Publish
+(``TemplateVersionService.republish``, which also clears the marker).
 """
 
 from uuid import UUID
 
+from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionTemplateGlobal, ProjectExtractionTemplate
@@ -17,18 +18,12 @@ from app.schemas.hitl_session import (
     UpdateTemplateInstructionResponse,
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_version_service import TemplateVersionService
 
 
 async def _owned_template(
     db: AsyncSession, *, project_id: UUID, template_id: UUID
 ) -> ProjectExtractionTemplate:
-    """BOLA guard: 404 (not 403) so foreign ids don't leak existence.
-
-    Read-only — callers must not mutate the returned row directly (an
-    autoflushed UPDATE before republish's locks would re-introduce the
-    lock-order inversion).
-    """
+    """BOLA guard: 404 (not 403) so foreign ids don't leak existence."""
     tpl = await db.get(ProjectExtractionTemplate, template_id)
     if tpl is None or tpl.project_id != project_id:
         raise ProjectTemplateNotFoundError(f"Template {template_id} not found")
@@ -57,26 +52,30 @@ async def set_template_instruction(
     project_id: UUID,
     template_id: UUID,
     llm_template_instruction: str | None,
-    user_id: UUID,
 ) -> UpdateTemplateInstructionResponse:
-    """Normalize and write the column inside republish (caller commits).
+    """Normalize and stage the instruction as a draft edit (slice B-4).
 
+    No republish: the text reaches prompts/snapshots only at Publish.
     Whitespace-only input normalizes to NULL — the snapshot then omits
-    the key and prompts inject nothing.
+    the key and prompts inject nothing. A no-op write (same value) does
+    not stamp the draft marker. The compare-then-write is an unlocked
+    read: two racing PUTs can make one a silent no-op — millisecond
+    window, self-correcting on retry, accepted.
     """
-    await _owned_template(db, project_id=project_id, template_id=template_id)
+    tpl = await _owned_template(db, project_id=project_id, template_id=template_id)
     normalized = (llm_template_instruction or "").strip() or None
-    republished = await TemplateVersionService(db).republish(
-        project_id=project_id,
-        project_template_id=template_id,
-        user_id=user_id,
-        llm_template_instruction=normalized,
-    )
+    if normalized != tpl.llm_template_instruction:
+        await db.execute(
+            update(ProjectExtractionTemplate)
+            .where(ProjectExtractionTemplate.id == template_id)
+            .values(
+                llm_template_instruction=normalized,
+                config_draft_since=func.coalesce(
+                    ProjectExtractionTemplate.config_draft_since, func.now()
+                ),
+            )
+        )
     return UpdateTemplateInstructionResponse(
         project_template_id=template_id,
         llm_template_instruction=normalized,
-        version_id=republished.version_id,
-        version=republished.version,
-        changed=republished.changed,
-        repinned_run_count=republished.repinned_run_count,
     )

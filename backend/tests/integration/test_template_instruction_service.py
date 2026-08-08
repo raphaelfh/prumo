@@ -1,6 +1,6 @@
-"""template_instruction_service: BOLA guard, normalization, atomic
-column-update + republish (the write happens inside republish's locked
-section — no fire-and-forget desync, no lock-order inversion)."""
+"""template_instruction_service: BOLA guard, normalization, and the B-4
+draft contract — an instruction edit stages a draft (column + marker),
+never republishes; the text reaches the snapshot only at Publish."""
 
 from __future__ import annotations
 
@@ -22,37 +22,142 @@ from tests.integration.conftest import SEED
 _CHARMS_GLOBAL_ID = uuid.UUID("000c0000-0000-0000-0000-000000000001")
 
 
+async def _marker(db: AsyncSession, template_id: uuid.UUID):
+    return (
+        await db.execute(
+            text(
+                "SELECT config_draft_since FROM public.project_extraction_templates WHERE id = :tid"
+            ),
+            {"tid": str(template_id)},
+        )
+    ).scalar_one()
+
+
+async def _version_count(db: AsyncSession, template_id: uuid.UUID) -> int:
+    return (
+        await db.execute(
+            text(
+                "SELECT count(*) FROM public.extraction_template_versions "
+                "WHERE project_template_id = :tid"
+            ),
+            {"tid": str(template_id)},
+        )
+    ).scalar_one()
+
+
 @pytest.mark.asyncio
-async def test_set_updates_column_and_republishes(db_session: AsyncSession) -> None:
+async def test_set_stages_draft_without_republishing(db_session: AsyncSession) -> None:
+    """B-4 inversion: the write lands on the column + stamps the draft
+    marker; NO version row appears and the active snapshot stays
+    untouched until an explicit Publish."""
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET config_draft_since = NULL WHERE id = :tid"
+        ),
+        {"tid": str(SEED.primary_template)},
+    )
+    versions_before = await _version_count(db_session, SEED.primary_template)
+
     result = await set_template_instruction(
         db_session,
         project_id=SEED.primary_project,
         template_id=SEED.primary_template,
         llm_template_instruction="Report values exactly as stated.",
-        user_id=SEED.primary_profile,
     )
     assert result.llm_template_instruction == "Report values exactly as stated."
-    assert result.changed is True
+    assert result.project_template_id == SEED.primary_template
 
-    # The atomic contract: the ACTIVE snapshot published by the same call
-    # carries the new text.
+    assert await _version_count(db_session, SEED.primary_template) == versions_before, (
+        "an instruction edit must not mint a version"
+    )
+    active_snapshot = (
+        await db_session.execute(
+            text(
+                "SELECT schema FROM public.extraction_template_versions "
+                "WHERE project_template_id = :tid AND is_active"
+            ),
+            {"tid": str(SEED.primary_template)},
+        )
+    ).scalar_one_or_none()
+    if active_snapshot is not None:
+        assert active_snapshot.get("llm_template_instruction") != (
+            "Report values exactly as stated."
+        ), "the draft text must not reach the active snapshot before Publish"
+    assert await _marker(db_session, SEED.primary_template) is not None, (
+        "an instruction edit is a draft edit — it must stamp the marker"
+    )
+
+
+@pytest.mark.asyncio
+async def test_publish_picks_up_staged_instruction(db_session: AsyncSession) -> None:
+    """The staged text reaches the snapshot at Publish, which clears the
+    marker."""
+    from app.services.template_version_service import TemplateVersionService
+
+    await db_session.execute(
+        text("DELETE FROM public.project_extraction_templates WHERE project_id = :pid"),
+        {"pid": str(SEED.secondary_project)},
+    )
+    clone = await TemplateCloneService(db_session).clone(
+        project_id=SEED.secondary_project,
+        global_template_id=_CHARMS_GLOBAL_ID,
+        user_id=SEED.primary_profile,
+        kind=TemplateKind.EXTRACTION,
+    )
+
+    await set_template_instruction(
+        db_session,
+        project_id=SEED.secondary_project,
+        template_id=clone.project_template_id,
+        llm_template_instruction="Staged guidance.",
+    )
+    assert await _marker(db_session, clone.project_template_id) is not None
+
+    published = await TemplateVersionService(db_session).republish(
+        project_id=SEED.secondary_project,
+        project_template_id=clone.project_template_id,
+        user_id=SEED.primary_profile,
+    )
+    assert published.changed is True
     snapshot = (
         await db_session.execute(
             text("SELECT schema FROM public.extraction_template_versions WHERE id = :vid"),
-            {"vid": str(result.version_id)},
+            {"vid": str(published.version_id)},
         )
     ).scalar_one()
-    assert snapshot["llm_template_instruction"] == "Report values exactly as stated."
+    assert snapshot["llm_template_instruction"] == "Staged guidance."
+    assert await _marker(db_session, clone.project_template_id) is None
 
-    same_again = await set_template_instruction(
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_same_value_is_noop_and_does_not_stamp(db_session: AsyncSession) -> None:
+    await set_template_instruction(
         db_session,
         project_id=SEED.primary_project,
         template_id=SEED.primary_template,
-        llm_template_instruction="Report values exactly as stated.",
-        user_id=SEED.primary_profile,
+        llm_template_instruction="Stable text.",
     )
-    assert same_again.changed is False
-    assert same_again.version == result.version
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET config_draft_since = NULL WHERE id = :tid"
+        ),
+        {"tid": str(SEED.primary_template)},
+    )
+
+    again = await set_template_instruction(
+        db_session,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        llm_template_instruction="Stable text.",
+    )
+    assert again.llm_template_instruction == "Stable text."
+    assert await _marker(db_session, SEED.primary_template) is None, (
+        "a no-op write must not stamp the draft marker"
+    )
 
 
 @pytest.mark.asyncio
@@ -64,19 +169,24 @@ async def test_clear_and_whitespace_normalize_to_null(
         project_id=SEED.primary_project,
         template_id=SEED.primary_template,
         llm_template_instruction="Some text.",
-        user_id=SEED.primary_profile,
     )
     cleared = await set_template_instruction(
         db_session,
         project_id=SEED.primary_project,
         template_id=SEED.primary_template,
         llm_template_instruction="   \n  ",
-        user_id=SEED.primary_profile,
     )
     assert cleared.llm_template_instruction is None
-    assert cleared.changed is True
-    # Key-absent snapshot content is the snapshot suite's contract — no
-    # re-assert here.
+    value = (
+        await db_session.execute(
+            text(
+                "SELECT llm_template_instruction "
+                "FROM public.project_extraction_templates WHERE id = :tid"
+            ),
+            {"tid": str(SEED.primary_template)},
+        )
+    ).scalar_one()
+    assert value is None
 
 
 @pytest.mark.asyncio
@@ -87,7 +197,6 @@ async def test_set_is_bola_guarded(db_session: AsyncSession) -> None:
             project_id=SEED.secondary_project,
             template_id=SEED.primary_template,
             llm_template_instruction="X",
-            user_id=SEED.primary_profile,
         )
     value = (
         await db_session.execute(

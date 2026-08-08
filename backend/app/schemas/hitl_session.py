@@ -80,12 +80,11 @@ class UpdateTemplateInstructionRequest(BaseModel):
 
 
 class UpdateTemplateInstructionResponse(BaseModel):
+    """B-4: the PUT stages a draft edit — no version fields (nothing
+    republishes until the explicit Publish)."""
+
     project_template_id: UUID
     llm_template_instruction: str | None
-    version_id: UUID
-    version: int
-    changed: bool
-    repinned_run_count: int
 
 
 class TemplateActiveVersionRead(BaseModel):

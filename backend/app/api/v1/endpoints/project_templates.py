@@ -10,9 +10,10 @@
   ``is_active`` (e.g. disable a QA tool in Configuration).
 * ``POST /api/v1/projects/{project_id}/templates/{template_id}/republish-version``
   — publish the live section/field structure as a new active
-  ``extraction_template_versions`` row. Called by the configuration UI after
-  every section/field edit (the edits themselves go through PostgREST), so
-  article forms — which render from the run's version snapshot — pick them up.
+  ``extraction_template_versions`` row. Since slice B-4 this is the
+  explicit Publish button's endpoint: config edits (still PostgREST)
+  only stamp the draft marker, and article forms — which render from
+  the run's version snapshot — pick them up at Publish.
 
 These are project-scoped. ``POST /api/v1/hitl/sessions`` is per-article run
 lifecycle and is separate.
@@ -166,14 +167,14 @@ async def update_template_llm_instruction(
     body: UpdateTemplateInstructionRequest,
     request: Request,
     db: DbSession,
-    current_user_sub: UUID = Depends(require_project_manager),
+    _user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[UpdateTemplateInstructionResponse]:
-    """Set/clear the instruction and republish in one transaction.
+    """Stage the instruction as a draft edit (slice B-4).
 
-    Whitespace-only normalizes to NULL (nothing injected). Editable-stage
-    runs are re-pinned by the republish so open forms and the next AI
-    extraction pick the change up; runs from consensus on keep the
-    instruction they were assessed under.
+    Whitespace-only normalizes to NULL (nothing injected). Nothing
+    republishes here — the text reaches snapshots, prompts and
+    editable-stage runs when the manager presses Publish
+    (``republish-version``).
     """
     try:
         result = await set_template_instruction(
@@ -181,12 +182,8 @@ async def update_template_llm_instruction(
             project_id=project_id,
             template_id=template_id,
             llm_template_instruction=body.llm_template_instruction,
-            user_id=current_user_sub,
         )
-    except (ProjectTemplateNotFoundError, TemplateNotFoundError) as e:
-        # TemplateNotFoundError: the inner republish ownership re-check —
-        # reachable if the template is deleted between our BOLA check and
-        # the locked section (TOCTOU window). Same 404 semantics.
+    except ProjectTemplateNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     await db.commit()
     return ApiResponse.success(
