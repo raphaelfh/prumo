@@ -271,6 +271,10 @@ class ExtractionEntityType(BaseModel):
     label: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Group entry noun interpolated into config-editor/run-view copy;
+    # meaningful only for role='model_container' rows, seeded "model" (B-8).
+    entry_label: Mapped[str | None] = mapped_column(String, nullable=True)
+
     parent_entity_type_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.extraction_entity_types.id", ondelete="CASCADE"),

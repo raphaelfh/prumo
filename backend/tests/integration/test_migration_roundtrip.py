@@ -945,6 +945,145 @@ async def test_migration_0050_round_trip(
     # end, and the healed names are unique so later round-trips no-op.
 
 
+# --- 0051: group entry noun column + container backfill (B-8) ---
+# Fixed fixture ids (0051-prefixed, hex-only) so assertions can name rows.
+_B8_PROFILE = "00510000-0000-4000-8000-00000000000a"
+_B8_PROJECT = "00510000-0000-4000-8000-00000000000b"
+_B8_TEMPLATE = "00510000-0000-4000-8000-00000000000c"
+_B8_GLOBAL_TPL = "00510000-0000-4000-8000-00000000000d"
+_B8_CONTAINER = "00510000-0000-4000-8000-000000000001"
+_B8_SECTION = "00510000-0000-4000-8000-000000000002"
+_B8_GLOBAL_CONTAINER = "00510000-0000-4000-8000-000000000003"
+
+_ENTRY_LABEL_COL = text(
+    "SELECT 1 FROM information_schema.columns "
+    "WHERE table_schema = 'public' AND table_name = 'extraction_entity_types' "
+    "AND column_name = 'entry_label'"
+)
+_B8_ENTRY_LABELS = text(
+    "SELECT id::text, entry_label FROM public.extraction_entity_types "
+    f"WHERE id IN ('{_B8_CONTAINER}', '{_B8_SECTION}', '{_B8_GLOBAL_CONTAINER}')"
+)
+
+# Rows are inserted while downgraded to 0050 (pre-column state) so the
+# upgrade's backfill has to stamp them. Mirrors the 0050 heal fixture's
+# minimal FK graph; the containers live on BOTH lineages because the
+# backfill predicate is role-only and must stay that way.
+_B8_FIXTURE_STATEMENTS = (
+    "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES "
+    f"('{_B8_PROFILE}', 'entry-label-0051@integration-test.prumo.local', "
+    "'00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')",
+    "INSERT INTO public.profiles (id, email, full_name) VALUES "
+    f"('{_B8_PROFILE}', 'entry-label-0051@integration-test.prumo.local', 'Entry Label 0051')",
+    "INSERT INTO public.projects (id, name, created_by_id, is_active) VALUES "
+    f"('{_B8_PROJECT}', 'Entry Label 0051 Project', '{_B8_PROFILE}', true)",
+    "INSERT INTO public.project_extraction_templates "
+    "(id, project_id, name, framework, version, kind, schema, is_active, created_by) VALUES "
+    f"('{_B8_TEMPLATE}', '{_B8_PROJECT}', 'entry-label-0051-template', 'CUSTOM', '1.0', "
+    f"'extraction', '{{}}'::jsonb, true, '{_B8_PROFILE}')",
+    # Deferred 0004 invariant: an ACTIVE project template needs an active
+    # version row by COMMIT time.
+    "INSERT INTO public.extraction_template_versions "
+    "(id, project_template_id, version, schema, published_by, is_active) VALUES "
+    f"('00510000-0000-4000-8000-0000000000aa', '{_B8_TEMPLATE}', 1, "
+    f"'{{\"entity_types\": []}}'::jsonb, '{_B8_PROFILE}', true)",
+    "INSERT INTO public.extraction_templates_global "
+    "(id, name, framework, version, kind, is_global, schema) VALUES "
+    f"('{_B8_GLOBAL_TPL}', 'entry-label-0051-global', 'CUSTOM', '1.0', 'extraction', "
+    "true, '{}'::jsonb)",
+    "INSERT INTO public.extraction_entity_types "
+    "(id, project_template_id, name, label, cardinality, role, "
+    " parent_entity_type_id, sort_order, is_required) VALUES "
+    f"('{_B8_CONTAINER}', '{_B8_TEMPLATE}', 'prediction_models', 'Prediction Models', "
+    "'many', 'model_container', NULL, 0, false)",
+    "INSERT INTO public.extraction_entity_types "
+    "(id, project_template_id, name, label, cardinality, role, "
+    " parent_entity_type_id, sort_order, is_required) VALUES "
+    f"('{_B8_SECTION}', '{_B8_TEMPLATE}', 'population', 'Population', "
+    "'one', 'study_section', NULL, 1, false)",
+    "INSERT INTO public.extraction_entity_types "
+    "(id, template_id, name, label, cardinality, role, "
+    " parent_entity_type_id, sort_order, is_required) VALUES "
+    f"('{_B8_GLOBAL_CONTAINER}', '{_B8_GLOBAL_TPL}', 'prediction_models', "
+    "'Prediction Models', 'many', 'model_container', NULL, 0, false)",
+)
+
+
+async def _entry_labels(session: AsyncSession) -> dict[str, str | None]:
+    rows = (await session.execute(_B8_ENTRY_LABELS)).all()
+    return {row[0]: row[1] for row in rows}
+
+
+@pytest.mark.asyncio
+async def test_migration_0051_round_trip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0051_entity_entry_label`` adds ``extraction_entity_types.entry_label``
+    and backfills ``'model'`` where ``role='model_container'`` — the role-only
+    predicate covers BOTH lineages (global and project) and must stay
+    role-only, so the fixture plants a container on each. The backfill runs
+    with the 0048 mark-draft trigger DISABLED (0048 docstring WARNING: an
+    every-row backfill would stamp every project template), proven by the
+    still-NULL draft marker after upgrade. Downgrading to the explicit parent
+    ``0050`` drops the column; a second upgrade re-backfills idempotently.
+    Every alembic subprocess is preceded by ``rollback()`` so no data-read
+    lock outlives the transaction and deadlocks the DDL."""
+    assert (await migration_session.execute(_ENTRY_LABEL_COL)).scalar() == 1, (
+        "entry_label must exist at HEAD"
+    )
+    await migration_session.rollback()
+
+    _run_alembic("downgrade", "0050_field_name_unique_heal", database_url=migration_db_url)
+    try:
+        assert (await migration_session.execute(_ENTRY_LABEL_COL)).scalar() is None, (
+            "downgrade must drop entry_label"
+        )
+        for statement in _B8_FIXTURE_STATEMENTS:
+            await migration_session.execute(text(statement))
+        # The fixture INSERTs fired the (present-since-0048) mark-draft
+        # trigger; reset so a stamped marker after upgrade could only come
+        # from the backfill UPDATE. (_CLEAR_HEAL_MARKER/_HEAL_MARKER are
+        # generic project_extraction_templates marker queries — reused.)
+        await migration_session.execute(_CLEAR_HEAL_MARKER, {"tid": _B8_TEMPLATE})
+        await migration_session.commit()
+    finally:
+        await migration_session.rollback()
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    labels = await _entry_labels(migration_session)
+    assert labels[_B8_CONTAINER] == "model", (
+        "backfill must stamp 'model' on the project-lineage container"
+    )
+    assert labels[_B8_GLOBAL_CONTAINER] == "model", (
+        "backfill must cover the GLOBAL lineage too (role-only predicate)"
+    )
+    assert labels[_B8_SECTION] is None, "study_section rows must stay NULL"
+    assert (await migration_session.execute(_HEAL_MARKER, {"tid": _B8_TEMPLATE})).scalar() is (
+        None
+    ), "the backfill must not stamp config_draft_since (0048 trigger disabled)"
+    await migration_session.rollback()
+
+    # Downgrade drops the column; the second upgrade re-adds it and the
+    # backfill re-stamps the containers (idempotent re-run).
+    _run_alembic("downgrade", "0050_field_name_unique_heal", database_url=migration_db_url)
+    try:
+        assert (await migration_session.execute(_ENTRY_LABEL_COL)).scalar() is None, (
+            "second downgrade must drop entry_label again"
+        )
+    finally:
+        await migration_session.rollback()
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    labels = await _entry_labels(migration_session)
+    assert labels[_B8_CONTAINER] == "model", "second upgrade must re-backfill the container"
+    assert labels[_B8_GLOBAL_CONTAINER] == "model"
+    assert labels[_B8_SECTION] is None
+    assert (await migration_session.execute(_HEAL_MARKER, {"tid": _B8_TEMPLATE})).scalar() is (
+        None
+    ), "the re-backfill must not stamp config_draft_since either"
+    await migration_session.rollback()
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     """Pin the head revision id. If a future migration is added without
@@ -953,8 +1092,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0050_field_name_unique_heal" in out, (
-        f"Expected head revision '0050_field_name_unique_heal', got:\n{out}"
+    assert "0051_entity_entry_label" in out, (
+        f"Expected head revision '0051_entity_entry_label', got:\n{out}"
     )
 
 

@@ -83,6 +83,8 @@ class _EntitySpec(NamedTuple):
     cardinality: str
     role: ExtractionEntityRole
     sort_order: int
+    # Group entry noun; only meaningful for MODEL_CONTAINER specs (B-8).
+    entry_label: str | None = None
 
 
 def _entity_type_from_spec(
@@ -101,6 +103,7 @@ def _entity_type_from_spec(
         name=spec.name,
         label=spec.label,
         description=spec.description,
+        entry_label=spec.entry_label,
         parent_entity_type_id=spec.parent_id,
         cardinality=spec.cardinality,
         role=spec.role.value,
@@ -340,6 +343,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "many",
             _container,
             6,
+            entry_label="model",
         ),
         # Per-model children
         _EntitySpec(
@@ -2146,6 +2150,7 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             cardinality="many",
             role=_container,
             sort_order=7,
+            entry_label="model",
         ),
         _EntitySpec(
             id=_MM_ET_MODEL_DEV,
