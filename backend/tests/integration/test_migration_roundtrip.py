@@ -642,6 +642,126 @@ async def test_migration_0048_round_trip(
     assert triggers_after == _BOTH_DRAFT_TRIGGERS, "upgrade head must restore both triggers"
 
 
+# The four template-config write policies 0049 rewrites. pg_policies
+# pretty-prints qual/with_check via pg_get_expr (re-quoted, re-nested), so
+# every assertion below is SUBSTRING matching — never string equality.
+_CONFIG_WRITE_POLICY_NAMES = {
+    "extraction_entity_types_project_insert",
+    "extraction_entity_types_project_update",
+    "extraction_fields_project_insert",
+    "extraction_fields_project_update",
+}
+_CONFIG_WRITE_POLICIES = text(
+    "SELECT policyname, cmd, qual, with_check FROM pg_policies "
+    "WHERE schemaname = 'public' "
+    "AND tablename IN ('extraction_entity_types', 'extraction_fields') "
+    "AND policyname IN ("
+    "'extraction_entity_types_project_insert', "
+    "'extraction_entity_types_project_update', "
+    "'extraction_fields_project_insert', "
+    "'extraction_fields_project_update')"
+)
+_ENTITY_TYPE_POLICY_NAMES = (
+    "extraction_entity_types_project_insert",
+    "extraction_entity_types_project_update",
+)
+_UPDATE_POLICY_NAMES = (
+    "extraction_entity_types_project_update",
+    "extraction_fields_project_update",
+)
+
+
+async def _config_write_policies(session: AsyncSession) -> dict:
+    rows = (await session.execute(_CONFIG_WRITE_POLICIES)).all()
+    return {row.policyname: row for row in rows}
+
+
+def _assert_0049_policies(policies: dict) -> None:
+    """The manager-gated shape 0049 installs."""
+    assert set(policies) == _CONFIG_WRITE_POLICY_NAMES, (
+        f"all four write policies must exist, got {set(policies)}"
+    )
+    for name, row in policies.items():
+        combined = (row.qual or "") + (row.with_check or "")
+        assert "is_project_manager" in combined, (
+            f"{name} must gate on is_project_manager, got: {combined}"
+        )
+        assert "is_project_member" not in combined, (
+            f"{name} must no longer mention is_project_member, got: {combined}"
+        )
+    # The blocking global-lineage predicate (panel decision 1) on the
+    # entity-types pair — in EVERY expression each policy carries.
+    for name in _ENTITY_TYPE_POLICY_NAMES:
+        row = policies[name]
+        for expr in (row.qual, row.with_check):
+            if expr is not None:
+                assert "template_id IS NULL" in expr, (
+                    f"{name} must pin template_id IS NULL, got: {expr}"
+                )
+    # Both UPDATEs carry an explicit WITH CHECK (panel decision 3).
+    for name in _UPDATE_POLICY_NAMES:
+        assert policies[name].with_check is not None, (
+            f"{name} must carry an explicit WITH CHECK at head"
+        )
+
+
+def _assert_baseline_policies(policies: dict) -> None:
+    """The four ASYMMETRIC baseline originals the downgrade restores."""
+    assert set(policies) == _CONFIG_WRITE_POLICY_NAMES
+    for name, row in policies.items():
+        combined = (row.qual or "") + (row.with_check or "")
+        assert "is_project_member" in combined, (
+            f"downgrade must restore is_project_member on {name}, got: {combined}"
+        )
+        assert "is_project_manager" not in combined, (
+            f"downgrade must remove is_project_manager from {name}, got: {combined}"
+        )
+    # The lazy-downgrade catch (panel decision 8): baseline UPDATEs were
+    # USING-only — a downgrade that keeps the WITH CHECK is wrong.
+    for name in _UPDATE_POLICY_NAMES:
+        assert policies[name].with_check is None, (
+            f"downgrade must drop the WITH CHECK from {name} (baseline is USING-only)"
+        )
+    # Baseline entity-types INSERT keeps its lineage guard but never the
+    # 0049 template_id IS NULL predicate ("project_template_id IS NOT
+    # NULL" does not contain the "template_id IS NULL" substring).
+    et_insert = policies["extraction_entity_types_project_insert"].with_check
+    assert et_insert is not None and "project_template_id IS NOT NULL" in et_insert
+    assert "template_id IS NULL" not in et_insert, (
+        f"downgrade must restore the baseline INSERT verbatim, got: {et_insert}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_migration_0049_round_trip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0049_config_write_rls_manager`` rewrites the four template-config
+    write policies: member → manager, explicit WITH CHECK on both UPDATEs,
+    and ``template_id IS NULL`` on the entity-types pair (the global-
+    catalogue injection floor). Downgrading to the explicit parent
+    ``0048_config_draft_marker`` restores the asymmetric baseline originals
+    verbatim (member predicates, USING-only UPDATEs); ``upgrade head``
+    re-installs the manager shape. Downgrades to the explicit parent (not
+    ``-1``) so the test stays correct as later migrations stack on top."""
+    _assert_0049_policies(await _config_write_policies(migration_session))
+    # pg_policies deparses qual/with_check via pg_get_expr, which takes an
+    # AccessShare lock on the policies' TABLES — unlike the sibling tests'
+    # information_schema reads. End the transaction before every alembic
+    # subprocess or its DROP POLICY (AccessExclusive) waits on this session
+    # forever.
+    await migration_session.rollback()
+
+    _run_alembic("downgrade", "0048_config_draft_marker", database_url=migration_db_url)
+    try:
+        _assert_baseline_policies(await _config_write_policies(migration_session))
+    finally:
+        await migration_session.rollback()
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    _assert_0049_policies(await _config_write_policies(migration_session))
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     """Pin the head revision id. If a future migration is added without
@@ -650,8 +770,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0048_config_draft_marker" in out, (
-        f"Expected head revision '0048_config_draft_marker', got:\n{out}"
+    assert "0049_config_write_rls_manager" in out, (
+        f"Expected head revision '0049_config_write_rls_manager', got:\n{out}"
     )
 
 
