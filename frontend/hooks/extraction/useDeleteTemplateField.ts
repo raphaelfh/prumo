@@ -6,9 +6,10 @@
  * success the grid + Draft chip caches refresh. Permission gating is the
  * Configuration tab (manager-only) plus RLS on the write.
  *
- * A RESTRICT-FK refusal arrives from the service as a PgError whose
- * message IS the friendly copy (SQLSTATE 23503 mapped there), so it
- * toasts verbatim — the raw Postgres message never reaches the user.
+ * A field-in-use refusal (backend 409 over the RESTRICT FKs) arrives
+ * from the service as a PgError whose message IS the friendly copy
+ * ('23503' mapped there), so it toasts verbatim — the raw backend
+ * message never reaches the user.
  */
 import {useMutation} from '@tanstack/react-query';
 import {toast} from 'sonner';
@@ -30,7 +31,10 @@ export function useDeleteTemplateField(
 
   return useMutation<void, Error, DeleteArgs>({
     mutationFn: async ({fieldId}) => {
-      const result = await deleteField(fieldId);
+      if (!projectId || !templateId) {
+        throw new Error('projectId and templateId are required');
+      }
+      const result = await deleteField(projectId, templateId, fieldId);
       // Rethrow the service error itself so a PgError keeps its type.
       if (!result.ok) throw result.error;
     },

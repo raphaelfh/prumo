@@ -121,7 +121,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   // here (service call + cache refresh; the grid guarantees one commit
   // per rename, with a changed, non-empty, trimmed label).
   const handleSaveEdit = async (entityTypeId: string, label: string) => {
-    const result = await updateEntityTypeLabel(entityTypeId, label);
+    const result = await updateEntityTypeLabel(projectId, templateId, entityTypeId, label);
     if (!result.ok) {
       console.error('Erro ao atualizar label:', result.error);
       toast.error(`${t('common', 'error')}: ${result.error.message}`);

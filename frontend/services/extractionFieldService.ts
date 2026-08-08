@@ -1,6 +1,11 @@
 /**
- * Extraction field service — CRUD IO for extraction fields and permission
- * checks on project members.
+ * Extraction field service — field writes on the typed B-7 endpoints,
+ * plus permission checks and the ADVISORY impact probe.
+ *
+ * Writes (insert/update/delete/move/reorder) go through apiClient onto
+ * `/api/v1/projects/{pid}/templates/{tid}/fields...` — manager-gated,
+ * BOLA-checked and server-validated. Reads (permission probe, impact
+ * probe) stay PostgREST until the read-path consolidation follow-up.
  *
  * Service-layer contract (zero-bailouts spec): exported functions never
  * throw across the boundary; they return ErrorResult<T>. try/catch and
@@ -10,9 +15,11 @@
  * @module services/extractionFieldService
  */
 
+import {ApiError, apiClient} from '@/integrations/api/client';
 import {supabase} from '@/integrations/supabase/client';
 import {t} from '@/lib/copy';
 import {PgError, toResult, type ErrorResult} from '@/lib/error-utils';
+import type {components} from '@/types/api/schema';
 import type {
   ExtractionField,
   ExtractionFieldInsert,
@@ -20,6 +27,36 @@ import type {
   PermissionCheckResult,
   ProjectMemberRole,
 } from '@/types/extraction';
+
+type TemplateFieldRead = components['schemas']['TemplateFieldRead'];
+type TemplateFieldDeleteResponse =
+  components['schemas']['TemplateFieldDeleteResponse'];
+type TemplateFieldReorderResponse =
+  components['schemas']['TemplateFieldReorderResponse'];
+
+/**
+ * The endpoint payload mirrors `ExtractionField` 1:1 at runtime
+ * (Pydantic serializes every key, defaulted or not); the generated type
+ * only marks server-defaulted keys optional, so one normalizing cast
+ * bridges the generated shape to the editor's interface.
+ */
+function toExtractionField(row: TemplateFieldRead): ExtractionField {
+  return row as ExtractionField;
+}
+
+/**
+ * The typed endpoints refuse a duplicate per-section field name with a
+ * 409 (uniqueness is server-enforced since B-7). Re-wrap as a typed
+ * PgError carrying the friendly copy — 23505 mirrors the unique
+ * violation the DB raises for the same conflict. Everything else
+ * (404 family, 422 cross-template, network) passes through untouched.
+ */
+function rethrowFieldWriteRefusal(error: unknown): never {
+  if (error instanceof ApiError && error.status === 409) {
+    throw new PgError(t('templateConfig', 'errors_duplicateFieldName'), '23505');
+  }
+  throw error;
+}
 
 // ---------------------------------------------------------------------------
 // Permission check
@@ -75,9 +112,10 @@ export interface FieldValidationResult {
  * Used to determine whether a field can be deleted or its type changed.
  *
  * ADVISORY only (B-5 Task 7): reject-only decisions and consensus/
- * published rows RESTRICT at the DB yet count 0 here — the SQLSTATE
- * 23503 mapping in `deleteField` is the real invariant. This probe just
- * explains the common in-use cases before the database refuses.
+ * published rows RESTRICT at the DB yet count 0 here — the 409 →
+ * PgError('23503') translation in `deleteField` is the real invariant.
+ * This probe just explains the common in-use cases before the backend
+ * refuses.
  */
 export function validateFieldImpact(
   fieldId: string,
@@ -86,8 +124,10 @@ export function validateFieldImpact(
 ): Promise<ErrorResult<FieldValidationResult>> {
   return toResult(async () => {
     // Honest debt: the proposal-records count is a direct workflow-table
-    // read from the frontend — parked at B-7 with the typed-endpoint
-    // consolidation (same as the reviewer-decisions read above it).
+    // read from the frontend (same as the reviewer-decisions read below
+    // it). B-7 moved only the config WRITES onto typed endpoints; these
+    // reads move with the read-path consolidation follow-up (the
+    // multi-line fitness-regex fix + honest baseline, split out of B-7).
     const [decisionsResult, proposalsResult] = await Promise.all([
       supabase
         .from('extraction_reviewer_decisions')
@@ -132,76 +172,88 @@ export function validateFieldImpact(
 }
 
 // ---------------------------------------------------------------------------
-// Field CRUD
+// Field CRUD (typed endpoints — B-7)
 // ---------------------------------------------------------------------------
 
 /**
- * Insert a new field and return the created row.
+ * Create a field in a section of the template and return the created
+ * row. A duplicate per-section name is a 409 → friendly PgError.
  */
 export function insertField(
+  projectId: string,
+  templateId: string,
   newField: ExtractionFieldInsert,
 ): Promise<ErrorResult<ExtractionField>> {
   return toResult(async () => {
-    const {data, error} = await supabase
-      .from('extraction_fields')
-      .insert(newField)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as ExtractionField;
+    try {
+      const row = await apiClient<TemplateFieldRead>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/fields`,
+        {method: 'POST', body: newField},
+      );
+      return toExtractionField(row);
+    } catch (error) {
+      rethrowFieldWriteRefusal(error);
+    }
   }, 'insertField');
 }
 
 /**
- * Update an existing field and return the updated row.
+ * Partially update a field and return the updated row. Only the given
+ * keys are applied server-side; relocation is `moveField`'s job (the
+ * endpoint rejects a smuggled entity_type_id).
  */
 export function updateField(
+  projectId: string,
+  templateId: string,
   fieldId: string,
   updates: ExtractionFieldUpdate,
 ): Promise<ErrorResult<ExtractionField>> {
   return toResult(async () => {
-    const {data, error} = await supabase
-      .from('extraction_fields')
-      .update(updates)
-      .eq('id', fieldId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as ExtractionField;
+    try {
+      const row = await apiClient<TemplateFieldRead>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/fields/${fieldId}`,
+        {method: 'PATCH', body: updates},
+      );
+      return toExtractionField(row);
+    } catch (error) {
+      rethrowFieldWriteRefusal(error);
+    }
   }, 'updateField');
 }
 
 /**
  * Delete a field by id.
  *
- * A RESTRICT foreign key (proposal records, reviewer decisions/states,
- * consensus decisions, published states) refuses the delete with
- * SQLSTATE 23503. The advisory probe above can miss those rows, so THIS
- * mapping is the real invariant: re-wrap as a typed PgError carrying the
- * friendly copy — the raw Postgres FK message must never reach a toast.
+ * Recorded extraction work (proposal records, reviewer decisions/
+ * states, consensus decisions, published states — RESTRICT FKs) refuses
+ * the delete with a 409. The advisory probe above can miss those rows,
+ * so THIS translation is the real invariant: re-wrap as a typed PgError
+ * ('23503', the SQLSTATE the DB raised behind the endpoint) carrying
+ * the friendly copy — useDeleteTemplateField branches on exactly that
+ * pair, and the raw backend message must never reach a toast.
  */
-export function deleteField(fieldId: string): Promise<ErrorResult<void>> {
+export function deleteField(
+  projectId: string,
+  templateId: string,
+  fieldId: string,
+): Promise<ErrorResult<void>> {
   return toResult(async () => {
-    const {error} = await supabase
-      .from('extraction_fields')
-      .delete()
-      .eq('id', fieldId);
-
-    if (error?.code === '23503') {
-      throw new PgError(t('extraction', 'errors_deleteFieldInUse'), error.code);
+    try {
+      await apiClient<TemplateFieldDeleteResponse>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/fields/${fieldId}`,
+        {method: 'DELETE'},
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        throw new PgError(t('extraction', 'errors_deleteFieldInUse'), '23503');
+      }
+      throw error;
     }
-    if (error) throw error;
   }, 'deleteField');
 }
 
 // ---------------------------------------------------------------------------
-// Move + reorder (B-6)
-//
-// Honest debt: both writes below go straight to PostgREST from the
-// client — B-7's typed endpoints own server-side validation (destination
-// checks, renumber atomicity) when they land.
+// Move + reorder
 // ---------------------------------------------------------------------------
 
 /** One row of a `reorderFields` batch. */
@@ -211,65 +263,53 @@ export interface FieldSortOrderUpdate {
 }
 
 /**
- * Batch-update sort_order for a set of fields — callers renumber the
- * whole affected section(s), not just the moved row (sort_order is a
- * per-section RENDERING convention, not a DB invariant).
- *
- * PostgREST builders RESOLVE (never reject) with an `{error}` payload on
- * SQL/RLS refusals, so each result is inspected for an error field — a
- * bare Promise.all throw-check would swallow an RLS refusal as silent
- * success.
+ * Atomic batch renumber — callers renumber the whole affected
+ * section(s), not just the moved row (sort_order is a per-section
+ * RENDERING convention, not a DB invariant). Multi-section batches are
+ * legal (a cross-section move renumbers two sections in one batch).
+ * The endpoint applies the batch fully or not at all — the old
+ * N-independent-UPDATEs partial-failure mode is gone.
  */
 export function reorderFields(
+  projectId: string,
+  templateId: string,
   updates: FieldSortOrderUpdate[],
 ): Promise<ErrorResult<void>> {
   return toResult(async () => {
-    const writes = updates.map(({id, sort_order}) =>
-      supabase
-        .from('extraction_fields')
-        .update({sort_order})
-        .eq('id', id),
+    await apiClient<TemplateFieldReorderResponse>(
+      `/api/v1/projects/${projectId}/templates/${templateId}/fields/reorder`,
+      {method: 'POST', body: {updates}},
     );
-
-    const results = await Promise.all(writes);
-    const failed = results
-      .map((r) => (r as {error: {message: string} | null}).error)
-      .filter((e): e is {message: string} => Boolean(e));
-
-    if (failed.length > 0) {
-      throw new Error(
-        `Failed to update sort_order for ${failed.length} field(s): ${failed[0].message}`,
-      );
-    }
   }, 'reorderFields');
 }
 
 /**
- * Move a field to another section: one write carrying the new
- * entity_type_id + sort_order (caller-computed, end of destination).
+ * Move a field to another section: destination + landing position
+ * (caller-computed, end of destination for live gestures).
  *
  * Deliberately NOT expressed through ExtractionFieldUpdate — the
- * inspector form schema must not learn entity_type_id. RLS reality (B-6
- * panel decision 8): entity_type_id is ALREADY server-writable via
- * PostgREST today, and no policy can constrain "same template as before"
- * (WITH CHECK cannot see OLD) — destination constraining is CLIENT-side
- * until B-7's typed endpoints own it. `.single()` also surfaces an
- * RLS-filtered zero-row update as an error instead of silent success.
+ * inspector form schema must not learn entity_type_id, and the update
+ * endpoint rejects it anyway. The server refuses a destination outside
+ * the template (422 — the cross-template hole B-6 documented, closed
+ * here) and a duplicate name in the destination (409 → friendly
+ * PgError).
  */
 export function moveField(
+  projectId: string,
+  templateId: string,
   fieldId: string,
   entityTypeId: string,
   sortOrder: number,
 ): Promise<ErrorResult<ExtractionField>> {
   return toResult(async () => {
-    const {data, error} = await supabase
-      .from('extraction_fields')
-      .update({entity_type_id: entityTypeId, sort_order: sortOrder})
-      .eq('id', fieldId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as ExtractionField;
+    try {
+      const row = await apiClient<TemplateFieldRead>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/fields/${fieldId}/move`,
+        {method: 'POST', body: {entity_type_id: entityTypeId, sort_order: sortOrder}},
+      );
+      return toExtractionField(row);
+    } catch (error) {
+      rethrowFieldWriteRefusal(error);
+    }
   }, 'moveField');
 }

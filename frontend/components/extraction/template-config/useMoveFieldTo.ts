@@ -12,8 +12,9 @@
  * coalesce instead of re-planning from the stale tree. The working
  * order resets when the chain drains (or a write fails, after which it
  * would lie); the next burst re-derives from the refetched tree. A
- * failure also refetches (reorderFields is N independent writes — a
- * partial batch may have landed) and poisons the rest of the burst:
+ * failure also refetches (a cross-section move is still TWO HTTP calls
+ * — move then reorder — so the move may have landed while the atomic
+ * renumber failed) and poisons the rest of the burst:
  * executes already queued behind it skip, since their plans were
  * premised on the failed write; a fresh dispatch starts clean.
  *
@@ -133,10 +134,12 @@ export function useMoveFieldTo(args: {
       // it; skip (the failure already refetched, and a fresh dispatch
       // will re-derive from the refetched tree).
       if (state.epoch !== epoch) return false;
-      // Failure: refetch fire-and-forget — reorderFields is N independent
-      // writes, so a partial batch may have landed and the screen must
-      // mirror whatever the DB now holds (the awaited success-path
-      // invalidation below is never reached on this path).
+      // Failure: refetch fire-and-forget — the reorder batch is atomic
+      // (B-7), but a cross-section move is still TWO HTTP calls (move,
+      // then reorder), so the move may have landed while the renumber
+      // failed and the screen must mirror whatever the DB now holds
+      // (the awaited success-path invalidation below is never reached
+      // on this path).
       const fail = (): false => {
         state.epoch += 1;
         void invalidateStructure();

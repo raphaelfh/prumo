@@ -4,9 +4,9 @@
  * permission/field fetches for state the panel already has. B-4: a
  * reorder is a draft edit — nothing republishes; on success the grid +
  * Draft chip caches refresh. Permission gating is the Configuration tab
- * (manager-only) plus RLS on the writes (the service inspects each
- * RESOLVED PostgREST result, so a partial RLS refusal arrives here as a
- * normal error — never silent success).
+ * (manager-only) plus the manager-gated typed endpoint. The batch is
+ * atomic server-side (B-7): it fully applies or arrives here as a
+ * normal error — never partial success.
  *
  * This hook is the chokepoint Undo re-enters through (panel decision 1):
  * the args carry the full {id, sort_order}[] batch (an inverse is just
@@ -43,7 +43,10 @@ export function useReorderTemplateFields(
 
   return useMutation<void, Error, ReorderTemplateFieldsArgs>({
     mutationFn: async ({updates}) => {
-      const result = await reorderFields(updates);
+      if (!projectId || !templateId) {
+        throw new Error('projectId and templateId are required');
+      }
+      const result = await reorderFields(projectId, templateId, updates);
       if (!result.ok) {
         throw new Error(result.error.message);
       }

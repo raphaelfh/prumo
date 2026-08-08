@@ -7,7 +7,7 @@
  * - Real-time validation
  * - Conditional fields for cardinality
  * - Visual error feedback
- * - Supabase integration
+ * - Writes through the typed section endpoint (B-7)
  *
  * @component
  */
@@ -73,7 +73,7 @@ interface AddSectionDialogProps {
 // =================== COMPONENT ===================
 
 export function AddSectionDialog({
-                                     projectId: _projectId,
+  projectId,
   templateId,
   open,
   onOpenChange,
@@ -111,11 +111,15 @@ export function AddSectionDialog({
     console.warn('Creating new section:', data);
 
     const result = await createSection({
+      projectId,
       templateId,
       name: data.name,
       label: data.label,
       description: data.description,
       cardinality: data.cardinality,
+      // This dialog only creates root study sections; model structure
+      // comes from template import/clone.
+      role: 'study_section',
       isRequired: data.is_required,
     });
 

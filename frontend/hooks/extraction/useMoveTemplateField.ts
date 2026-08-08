@@ -42,7 +42,16 @@ export function useMoveTemplateField(
 
   return useMutation<ExtractionField, Error, MoveTemplateFieldArgs>({
     mutationFn: async ({fieldId, entityTypeId, sortOrder}) => {
-      const result = await moveField(fieldId, entityTypeId, sortOrder);
+      if (!projectId || !templateId) {
+        throw new Error('projectId and templateId are required');
+      }
+      const result = await moveField(
+        projectId,
+        templateId,
+        fieldId,
+        entityTypeId,
+        sortOrder,
+      );
       if (!result.ok) {
         throw new Error(result.error.message);
       }

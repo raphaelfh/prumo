@@ -129,8 +129,10 @@ beforeEach(() => {
     ok: true,
     data: {canView: true, canEdit: true, canDelete: true, canCreate: true, role: 'manager'},
   });
-  insertMock.mockImplementation((row: {name: string}) =>
-    Promise.resolve({ok: true, data: serverRow(`srv-${row.name}`, {name: row.name})}),
+  // B-7 arity: (projectId, templateId, row) — the field body is arg 2.
+  insertMock.mockImplementation(
+    (_projectId: string, _templateId: string, row: {name: string}) =>
+      Promise.resolve({ok: true, data: serverRow(`srv-${row.name}`, {name: row.name})}),
   );
   updateMock.mockResolvedValue({ok: true, data: serverRow('srv-peso')});
 });
@@ -178,8 +180,8 @@ describe('useInsertTemplateField — queue serialization', () => {
     });
 
     await waitFor(() => expect(insertMock).toHaveBeenCalledTimes(2));
-    expect(insertMock.mock.calls[0][0]).toMatchObject({name: 'peso', sort_order: 6});
-    expect(insertMock.mock.calls[1][0]).toMatchObject({name: 'altura', sort_order: 7});
+    expect(insertMock.mock.calls[0][2]).toMatchObject({name: 'peso', sort_order: 6});
+    expect(insertMock.mock.calls[1][2]).toMatchObject({name: 'altura', sort_order: 7});
   });
 
   it('hoists the permission probe ONCE per queue session', async () => {
@@ -238,8 +240,8 @@ describe('useInsertTemplateField — collision suffix (rule 4)', () => {
     expect(first.name).toBe('sample_size_2');
     expect(second.name).toBe('sample_size_3');
     await waitFor(() => expect(onDrained).toHaveBeenCalledTimes(1));
-    expect(insertMock.mock.calls[0][0]).toMatchObject({name: 'sample_size_2'});
-    expect(insertMock.mock.calls[1][0]).toMatchObject({name: 'sample_size_3'});
+    expect(insertMock.mock.calls[0][2]).toMatchObject({name: 'sample_size_2'});
+    expect(insertMock.mock.calls[1][2]).toMatchObject({name: 'sample_size_3'});
     expect(toast.error).not.toHaveBeenCalled();
   });
 
@@ -369,7 +371,9 @@ describe('useInsertTemplateField — updates behind inserts (rule 5)', () => {
 
     gate.resolve({ok: true, data: serverRow('srv-1', {name: 'peso'})});
     await waitFor(() =>
-      expect(updateMock).toHaveBeenCalledWith('srv-1', {label: 'Peso corporal'}),
+      expect(updateMock).toHaveBeenCalledWith('p1', 't1', 'srv-1', {
+        label: 'Peso corporal',
+      }),
     );
   });
 

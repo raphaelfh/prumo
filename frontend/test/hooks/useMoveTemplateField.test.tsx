@@ -72,7 +72,7 @@ describe('useMoveTemplateField', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(moveMock).toHaveBeenCalledWith('f1', 'sec-2', 5);
+    expect(moveMock).toHaveBeenCalledWith('p1', 't1', 'f1', 'sec-2', 5);
     expect(structureInvalidations(invalidateSpy).length).toBeGreaterThan(0);
     expect(republishMock).not.toHaveBeenCalled();
     // The Undo toast (T5, panel-owned) is the success surface — not here.

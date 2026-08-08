@@ -166,7 +166,7 @@ describe('TemplateConfigEditor — delete-field hosting (B-5 Task 7)', () => {
       await within(dialog).findByRole('button', {name: /deleteField/}),
     );
 
-    await waitFor(() => expect(deleteField).toHaveBeenCalledWith('f1'));
+    await waitFor(() => expect(deleteField).toHaveBeenCalledWith('p1', 't1', 'f1'));
     await waitFor(() => expect(invalidateStructure).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
