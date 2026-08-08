@@ -68,14 +68,12 @@ async def test_get_llm_instruction_maps_not_found_to_404(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_put_llm_instruction_commits_and_wraps(monkeypatch) -> None:
+    """B-4: the PUT stages a draft edit — the response carries only the
+    normalized value (no version fields; nothing republishes)."""
     template_id = uuid.uuid4()
     result = UpdateTemplateInstructionResponse(
         project_template_id=template_id,
         llm_template_instruction="X",
-        version_id=uuid.uuid4(),
-        version=2,
-        changed=True,
-        repinned_run_count=1,
     )
     monkeypatch.setattr(endpoint_module, "set_template_instruction", AsyncMock(return_value=result))
     db = AsyncMock()
@@ -85,11 +83,20 @@ async def test_put_llm_instruction_commits_and_wraps(monkeypatch) -> None:
         body=UpdateTemplateInstructionRequest(llm_template_instruction="X"),
         request=_request(),
         db=db,
-        current_user_sub=uuid.uuid4(),
+        _user_sub=uuid.uuid4(),
     )
     assert response.ok is True
     assert response.data is result
     db.commit.assert_awaited_once()
+
+
+def test_put_response_schema_has_no_version_fields() -> None:
+    """Guards against a silent contract resurrection: pydantic's default
+    extra='ignore' would keep an old-shape construction green."""
+    assert set(UpdateTemplateInstructionResponse.model_fields) == {
+        "project_template_id",
+        "llm_template_instruction",
+    }
 
 
 @pytest.mark.asyncio
@@ -107,7 +114,7 @@ async def test_put_llm_instruction_maps_not_found_to_404(monkeypatch) -> None:
             body=UpdateTemplateInstructionRequest(llm_template_instruction="X"),
             request=_request(),
             db=db,
-            current_user_sub=uuid.uuid4(),
+            _user_sub=uuid.uuid4(),
         )
     assert exc.value.status_code == 404
     db.commit.assert_not_awaited()

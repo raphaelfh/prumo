@@ -18,13 +18,14 @@ import {Badge} from '@/components/ui/badge';
 import {Download, Loader2, Plus, Settings} from 'lucide-react';
 import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructionRow';
 import {TemplateConfigGridPanel} from '@/components/extraction/template-config/TemplateConfigGridPanel';
+import {TemplateConfigPublishControls} from '@/components/extraction/template-config/TemplateConfigPublishControls';
 import {TemplateFieldDialogs} from '@/components/extraction/template-config/TemplateFieldDialogs';
 import type {ExtractionField} from '@/types/extraction';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {AddSectionDialog, ImportTemplateDialog, RemoveSectionDialog} from './dialogs';
 import {ExtractionEntityType} from '@/types/extraction';
-import {useTemplateRepublish} from '@/hooks/extraction/useTemplateRepublish';
+import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
 
 interface TemplateConfigEditorProps {
   projectId: string;
@@ -51,7 +52,10 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     sectionName: string;
     field: ExtractionField | null;
   } | null>(null);
-  const { republish } = useTemplateRepublish(projectId, templateId);
+  const {invalidateStructure, invalidateAfterImport} = useTemplateConfigCaches(
+    projectId,
+    templateId,
+  );
 
   const loadEntityTypes = async () => {
 
@@ -87,7 +91,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     }
     toast.success(t('extraction', 'labelUpdatedSuccess'));
     setEditingId(null);
-    void republish();
+    void invalidateStructure();
     await loadEntityTypes();
   };
 
@@ -98,14 +102,14 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
 
   const handleSectionAdded = () => {
     setShowAddSectionDialog(false);
-    void republish();
+    void invalidateStructure();
     loadEntityTypes();
   };
 
   const handleSectionRemoved = () => {
     setRemovingSectionId(null);
     setRemovingSectionName('');
-    void republish();
+    void invalidateStructure();
     loadEntityTypes();
   };
 
@@ -148,6 +152,10 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
             <Download className="h-4 w-4 mr-2" />
             {t('extraction', 'configImportTemplateButton')}
           </Button>
+          <TemplateConfigPublishControls
+            projectId={projectId}
+            templateId={templateId}
+          />
         </div>
       </div>
 
@@ -279,10 +287,9 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         onOpenChange={setShowImportDialog}
         onTemplateImported={() => {
           setShowImportDialog(false);
-          // Import may have healed/rewritten structure — republish is a
-          // server-side no-op when current, but re-pins stale runs and
-          // invalidates the form caches either way.
-          void republish();
+          // Import publishes server-side (clone routes through republish),
+          // possibly for a DIFFERENT template — id-free .all invalidation.
+          void invalidateAfterImport();
           loadEntityTypes();
         }}
       />

@@ -1,11 +1,11 @@
 /**
- * Field mutations must republish the template version.
+ * B-4 inversion: field mutations NEVER republish.
  *
- * Template edits are written through PostgREST, so nothing on the backend
- * sees them; article forms render from the run's frozen version snapshot.
- * After every successful field mutation the hook must POST
- * /templates/{id}/republish-version (via templateService) and invalidate the
- * run-view cache so open forms refetch the new schema.
+ * Config edits are draft edits — the DB trigger stamps the draft marker
+ * and the explicit Publish button owns versioning. After every
+ * successful mutation the hook only refreshes the grid + Draft chip
+ * caches (template-entity-types + template-config-status). A republish
+ * POST from an edit is a regression to the pre-B-4 per-edit publish.
  */
 
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
@@ -24,6 +24,7 @@ vi.mock('@/services/extractionFieldService', () => ({
 }));
 vi.mock('@/services/templateService', () => ({
   republishTemplateVersion: vi.fn(),
+  loadTemplateConfigStatus: vi.fn(),
 }));
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({user: {id: 'user-1'}}),
@@ -39,9 +40,13 @@ import {
   updateField,
   validateFieldImpact,
   deleteField,
+  reorderFields,
 } from '@/services/extractionFieldService';
 import {republishTemplateVersion} from '@/services/templateService';
-import {runsKeys} from '@/hooks/runs/types';
+import {
+  templateConfigStatusKeys,
+  templateEntityTypesKeys,
+} from '@/lib/query-keys/extraction';
 import {useFieldManagement} from '@/hooks/extraction/useFieldManagement';
 
 const permissionsMock = checkProjectPermissions as unknown as ReturnType<typeof vi.fn>;
@@ -49,6 +54,7 @@ const loadFieldsMock = loadEntityTypeFields as unknown as ReturnType<typeof vi.f
 const insertMock = insertField as unknown as ReturnType<typeof vi.fn>;
 const updateMock = updateField as unknown as ReturnType<typeof vi.fn>;
 const deleteMock = deleteField as unknown as ReturnType<typeof vi.fn>;
+const reorderMock = reorderFields as unknown as ReturnType<typeof vi.fn>;
 const validateMock = validateFieldImpact as unknown as ReturnType<typeof vi.fn>;
 const republishMock = republishTemplateVersion as unknown as ReturnType<typeof vi.fn>;
 
@@ -93,6 +99,19 @@ function renderFieldManagement() {
   return {...rendered, queryClient};
 }
 
+function expectStructureInvalidated(
+  invalidateSpy: ReturnType<typeof vi.spyOn>,
+) {
+  expect(invalidateSpy).toHaveBeenCalledWith(
+    expect.objectContaining({queryKey: templateEntityTypesKeys.byTemplate('tpl-1')}),
+  );
+  expect(invalidateSpy).toHaveBeenCalledWith(
+    expect.objectContaining({
+      queryKey: templateConfigStatusKeys.byTemplate('proj-1', 'tpl-1'),
+    }),
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   permissionsMock.mockResolvedValue({
@@ -110,20 +129,17 @@ beforeEach(() => {
       affectedArticles: [],
     },
   });
-  republishMock.mockResolvedValue({
-    ok: true,
-    data: {version_id: 'v-2', version: 2, changed: true, repinned_run_count: 1},
-  });
 });
 
-describe('useFieldManagement — republish after mutations', () => {
-  it('republishes the template version after a successful addField', async () => {
+describe('useFieldManagement — edits are draft edits (B-4: never republish)', () => {
+  it('addField never republishes; it refreshes the grid + chip caches', async () => {
     insertMock.mockResolvedValue({
       ok: true,
       data: {...FIELD, id: 'f-new', name: 'new_field', label: 'New field'},
     });
-    const {result} = renderFieldManagement();
+    const {result, queryClient} = renderFieldManagement();
     await waitFor(() => expect(result.current.loading).toBe(false));
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
     await result.current.addField({
       name: 'new_field',
@@ -133,10 +149,26 @@ describe('useFieldManagement — republish after mutations', () => {
       sort_order: 2,
     });
 
-    expect(republishMock).toHaveBeenCalledWith('proj-1', 'tpl-1');
+    expect(republishMock).not.toHaveBeenCalled();
+    await waitFor(() => expectStructureInvalidated(invalidateSpy));
   });
 
-  it('republishes after a successful updateField and invalidates the runs cache', async () => {
+  it('createOtherSpecifyField never republishes; it refreshes the caches', async () => {
+    insertMock.mockResolvedValue({
+      ok: true,
+      data: {...FIELD, id: 'f-other', name: 'sample_size_other_specify'},
+    });
+    const {result, queryClient} = renderFieldManagement();
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    await result.current.createOtherSpecifyField('sample_size', 'Sample size', 1);
+
+    expect(republishMock).not.toHaveBeenCalled();
+    await waitFor(() => expectStructureInvalidated(invalidateSpy));
+  });
+
+  it('updateField never republishes; it refreshes the caches', async () => {
     updateMock.mockResolvedValue({ok: true, data: {...FIELD, label: 'Renamed'}});
     const {result, queryClient} = renderFieldManagement();
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -144,31 +176,45 @@ describe('useFieldManagement — republish after mutations', () => {
 
     await result.current.updateField('f-1', {label: 'Renamed'});
 
-    expect(republishMock).toHaveBeenCalledWith('proj-1', 'tpl-1');
-    await waitFor(() =>
-      expect(invalidateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({queryKey: runsKeys.all}),
-      ),
-    );
+    expect(republishMock).not.toHaveBeenCalled();
+    await waitFor(() => expectStructureInvalidated(invalidateSpy));
   });
 
-  it('republishes after a successful deleteField', async () => {
+  it('deleteField never republishes; it refreshes the caches', async () => {
     deleteMock.mockResolvedValue({ok: true, data: undefined});
-    const {result} = renderFieldManagement();
+    const {result, queryClient} = renderFieldManagement();
     await waitFor(() => expect(result.current.loading).toBe(false));
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
     await result.current.deleteField('f-1');
 
-    expect(republishMock).toHaveBeenCalledWith('proj-1', 'tpl-1');
+    expect(republishMock).not.toHaveBeenCalled();
+    await waitFor(() => expectStructureInvalidated(invalidateSpy));
   });
 
-  it('does NOT republish when the mutation fails', async () => {
-    updateMock.mockResolvedValue({ok: false, error: {message: 'boom'}});
-    const {result} = renderFieldManagement();
+  it('reorderFields never republishes; it refreshes the caches', async () => {
+    reorderMock.mockResolvedValue({ok: true, data: undefined});
+    const {result, queryClient} = renderFieldManagement();
     await waitFor(() => expect(result.current.loading).toBe(false));
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    await result.current.reorderFields([{id: 'f-1', sort_order: 2}]);
+
+    expect(republishMock).not.toHaveBeenCalled();
+    await waitFor(() => expectStructureInvalidated(invalidateSpy));
+  });
+
+  it('does not invalidate anything when the mutation fails', async () => {
+    updateMock.mockResolvedValue({ok: false, error: {message: 'boom'}});
+    const {result, queryClient} = renderFieldManagement();
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
     await result.current.updateField('f-1', {label: 'Renamed'});
 
     expect(republishMock).not.toHaveBeenCalled();
+    expect(invalidateSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({queryKey: templateEntityTypesKeys.byTemplate('tpl-1')}),
+    );
   });
 });

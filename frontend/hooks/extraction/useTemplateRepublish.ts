@@ -1,13 +1,13 @@
 /**
- * Publish the live template structure as a new active version after a
- * configuration edit.
+ * The template-config PUBLISH path + its cache contract (slice B-4).
  *
- * Section/field edits are written through PostgREST, but the per-article
- * extraction/QA forms render from the run's frozen version snapshot
- * (`extraction_template_versions.schema_`). Without a republish the edit
- * never reaches any form — not even for brand-new runs. The backend also
- * re-pins runs still in an editable stage (pending/extract) to the new
- * version, so this hook invalidates the run-view cache afterwards.
+ * Config edits are draft edits: they stamp the DB draft marker and only
+ * refresh the grid + Draft chip caches (`invalidateStructure`). The
+ * explicit Publish button calls `republish`, which mints the version,
+ * re-pins editable-stage runs server-side, and then refreshes the
+ * run-scoped and ACTIVE-snapshot caches too (`invalidateAll`). Import
+ * flows invalidate the `.all` families (`invalidateAfterImport`) because
+ * an import may target a DIFFERENT template than the current selection.
  *
  * @module hooks/extraction/useTemplateRepublish
  */
@@ -18,42 +18,82 @@ import {t} from '@/lib/copy';
 import {runsKeys} from '@/hooks/runs/types';
 import {
   templateActiveStructureKeys,
+  templateConfigStatusKeys,
   templateEntityTypesKeys,
 } from '@/lib/query-keys/extraction';
-import {republishTemplateVersion} from '@/services/templateService';
+import {
+  republishTemplateVersion,
+  type RepublishTemplateVersionResponse,
+} from '@/services/templateService';
 
-export function useTemplateRepublish(
+export function useTemplateConfigCaches(
   projectId: string | undefined,
   templateId: string | undefined,
 ) {
   const queryClient = useQueryClient();
 
+  /** After a config edit: the grid + the Draft chip re-read. */
+  const invalidateStructure = async (): Promise<void> => {
+    if (!projectId || !templateId) return;
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: templateEntityTypesKeys.byTemplate(templateId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: templateConfigStatusKeys.byTemplate(projectId, templateId),
+      }),
+    ]);
+  };
+
+  /** After a publish: run-scoped reads and the ACTIVE snapshot moved too. */
+  const invalidateAll = async (): Promise<void> => {
+    if (!projectId || !templateId) return;
+    await Promise.all([
+      invalidateStructure(),
+      queryClient.invalidateQueries({queryKey: runsKeys.all}),
+      queryClient.invalidateQueries({
+        queryKey: templateActiveStructureKeys.byTemplate(projectId, templateId),
+      }),
+    ]);
+  };
+
+  /** After an import (server-side publish, possibly of ANOTHER template):
+   * id-free `.all` invalidation. */
+  const invalidateAfterImport = async (): Promise<void> => {
+    await Promise.all([
+      queryClient.invalidateQueries({queryKey: templateEntityTypesKeys.all}),
+      queryClient.invalidateQueries({queryKey: templateConfigStatusKeys.all}),
+      queryClient.invalidateQueries({queryKey: templateActiveStructureKeys.all}),
+      queryClient.invalidateQueries({queryKey: runsKeys.all}),
+    ]);
+  };
+
+  return {invalidateStructure, invalidateAll, invalidateAfterImport};
+}
+
+export function useTemplateRepublish(
+  projectId: string | undefined,
+  templateId: string | undefined,
+) {
+  const {invalidateAll} = useTemplateConfigCaches(projectId, templateId);
+
   /**
-   * Fire the republish + cache invalidation. Toasts on failure (the
-   * structural edit itself already succeeded — the user must know the
-   * forms may lag behind) and reports the outcome so callers that need
-   * honest saved-state (the inspector's Save) can react; fire-and-forget
-   * callers just keep `void republish()`.
+   * Publish the live structure. Returns the publish result (for the
+   * success toast's version number) or null on failure — the failure
+   * toast lives here so every caller reports consistently.
    */
-  const republish = async (): Promise<boolean> => {
-    if (!projectId || !templateId) return false;
+  const republish = async (): Promise<RepublishTemplateVersionResponse | null> => {
+    if (!projectId || !templateId) return null;
 
     const result = await republishTemplateVersion(projectId, templateId);
     if (!result.ok) {
-      console.error('[useTemplateRepublish] republish failed:', result.error);
+      console.error('[useTemplateRepublish] publish failed:', result.error);
       toast.error(t('extraction', 'errors_republishTemplate'));
-      return false;
+      return null;
     }
 
-    await queryClient.invalidateQueries({queryKey: runsKeys.all});
-    await queryClient.invalidateQueries({
-      queryKey: templateEntityTypesKeys.byTemplate(templateId),
-    });
-    // The worklist reads the ACTIVE snapshot (B-3a) — republish just moved it.
-    await queryClient.invalidateQueries({
-      queryKey: templateActiveStructureKeys.byTemplate(projectId, templateId),
-    });
-    return true;
+    await invalidateAll();
+    return result.data;
   };
 
   return {republish};

@@ -577,6 +577,71 @@ async def test_migration_0047_round_trip(
     assert cols_after == both_tables, "upgrade head must restore both columns"
 
 
+_DRAFT_MARKER_COL = text(
+    "SELECT column_name FROM information_schema.columns "
+    "WHERE table_schema = 'public' "
+    "AND table_name = 'project_extraction_templates' "
+    "AND column_name = 'config_draft_since'"
+)
+_DRAFT_MARKER_TRIGGERS = text(
+    "SELECT tgname FROM pg_trigger "
+    "WHERE tgname IN ('trg_extraction_entity_types_mark_draft', "
+    "'trg_extraction_fields_mark_draft') AND NOT tgisinternal"
+)
+_DRAFT_MARKER_FUNC = text("SELECT 1 FROM pg_proc WHERE proname = 'mark_template_config_draft'")
+_BOTH_DRAFT_TRIGGERS = {
+    "trg_extraction_entity_types_mark_draft",
+    "trg_extraction_fields_mark_draft",
+}
+
+
+@pytest.mark.asyncio
+async def test_migration_0048_round_trip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0048_config_draft_marker`` adds ``config_draft_since`` +
+    the two mark-draft triggers and their SECURITY DEFINER function.
+    Downgrading to the explicit parent ``0047_llm_template_instruction``
+    drops all four; ``upgrade head`` re-creates them idempotently.
+    Downgrades to the explicit parent (not ``-1``) so the test stays
+    correct as later migrations stack on top."""
+    assert (await migration_session.execute(_DRAFT_MARKER_COL)).scalar() is not None, (
+        "config_draft_since must exist at HEAD"
+    )
+    assert (await migration_session.execute(_DRAFT_MARKER_FUNC)).scalar() == 1, (
+        "mark_template_config_draft function must exist at HEAD"
+    )
+    triggers_at_head = set(
+        (await migration_session.execute(_DRAFT_MARKER_TRIGGERS)).scalars().all()
+    )
+    assert triggers_at_head == _BOTH_DRAFT_TRIGGERS, (
+        f"both mark-draft triggers must exist at HEAD, got {triggers_at_head}"
+    )
+
+    _run_alembic("downgrade", "0047_llm_template_instruction", database_url=migration_db_url)
+    try:
+        await migration_session.commit()
+        assert (await migration_session.execute(_DRAFT_MARKER_COL)).scalar() is None, (
+            "downgrade must drop the column"
+        )
+        assert (await migration_session.execute(_DRAFT_MARKER_FUNC)).scalar() is None, (
+            "downgrade must drop the function"
+        )
+        triggers_down = set(
+            (await migration_session.execute(_DRAFT_MARKER_TRIGGERS)).scalars().all()
+        )
+        assert triggers_down == set(), "downgrade must drop both triggers"
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    await migration_session.commit()
+    assert (await migration_session.execute(_DRAFT_MARKER_COL)).scalar() is not None, (
+        "upgrade head must restore the column"
+    )
+    triggers_after = set((await migration_session.execute(_DRAFT_MARKER_TRIGGERS)).scalars().all())
+    assert triggers_after == _BOTH_DRAFT_TRIGGERS, "upgrade head must restore both triggers"
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     """Pin the head revision id. If a future migration is added without
@@ -585,8 +650,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0047_llm_template_instruction" in out, (
-        f"Expected head revision '0047_llm_template_instruction', got:\n{out}"
+    assert "0048_config_draft_marker" in out, (
+        f"Expected head revision '0048_config_draft_marker', got:\n{out}"
     )
 
 

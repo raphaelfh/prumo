@@ -30,7 +30,7 @@ import type {GridField, GridSection, TemplateMatchHint} from './templateTree';
  * B-1 renders and selects; it does not edit. A second click or Enter on a
  * field raises `onEditField`, which the parent bridges to the existing
  * dialog — inline cell editing waits for B-4 to stop the per-edit
- * republish, because Enter-chaining against today's republish would mint
+ * republish (pre-B-4), because Enter-chaining per-edit publishes would mint
  * one version per cell.
  */
 
@@ -42,7 +42,7 @@ export interface TemplateGridSelection {
 /**
  * Section-level actions the accordion used to expose through its `⋮` menu.
  * Kept whole so replacing the accordion is not a capability regression;
- * rename stays inline (one commit, one republish — exactly today's cadence).
+ * rename stays inline (one commit; since B-4 it stages a draft edit).
  */
 export interface TemplateSectionActions {
   renamingId: string | null;

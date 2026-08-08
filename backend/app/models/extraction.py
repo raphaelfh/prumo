@@ -205,6 +205,15 @@ class ProjectExtractionTemplate(BaseModel):
 
     llm_template_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Slice B-4: stamped by DB triggers on any live config write
+    # (extraction_entity_types / extraction_fields — the editor writes
+    # via PostgREST until B-7, so the DB is the only chokepoint);
+    # cleared ONLY inside TemplateVersionService.republish's locked
+    # section. NULL = live == published intent.
+    config_draft_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.profiles.id", ondelete="RESTRICT"),

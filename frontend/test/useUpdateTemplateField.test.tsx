@@ -1,10 +1,10 @@
 /**
- * useUpdateTemplateField — the inspector's composed write path.
+ * useUpdateTemplateField — the inspector's write path.
  *
- * The invariant under test: the mutation settles only after BOTH the
- * PostgREST field update AND the republish have finished. The dialog's
- * fire-and-forget `void republish()` lets the UI report "saved" while the
- * forms still render the previous version; the inspector must not.
+ * B-4: Save is the PostgREST write alone — edits are draft edits, so no
+ * republish happens (the Publish button owns versioning). On success the
+ * hook refreshes the grid + Draft chip caches; on failure the form keeps
+ * its dirty state and Save stays available for retry.
  */
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {act, renderHook, waitFor} from '@testing-library/react';
@@ -16,19 +16,19 @@ vi.mock('@/services/extractionFieldService', () => ({
   updateField: (...args: unknown[]) => updateField(...args),
 }));
 
-const republish = vi.fn();
+const invalidateStructure = vi.fn();
 vi.mock('@/hooks/extraction/useTemplateRepublish', () => ({
-  useTemplateRepublish: () => ({republish}),
+  useTemplateConfigCaches: () => ({
+    invalidateStructure,
+    invalidateAll: vi.fn(),
+  }),
 }));
 
 vi.mock('sonner', () => ({
   toast: {success: vi.fn(), error: vi.fn()},
 }));
 
-import {
-  RepublishFailedError,
-  useUpdateTemplateField,
-} from '@/hooks/extraction/useUpdateTemplateField';
+import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
 import {toast} from 'sonner';
 
 function wrapper({children}: {children: ReactNode}) {
@@ -42,12 +42,12 @@ const saved = {id: 'f1', label: 'Saved'};
 
 beforeEach(() => {
   vi.clearAllMocks();
+  invalidateStructure.mockResolvedValue(undefined);
 });
 
 describe('useUpdateTemplateField', () => {
-  it('updates the field, then republishes, then resolves', async () => {
+  it('saves the field with the write alone and refreshes the caches', async () => {
     updateField.mockResolvedValue({ok: true, data: saved});
-    republish.mockResolvedValue(true);
 
     const {result} = renderHook(() => useUpdateTemplateField('p1', 't1'), {
       wrapper,
@@ -62,35 +62,12 @@ describe('useUpdateTemplateField', () => {
     });
 
     expect(updateField).toHaveBeenCalledWith('f1', {label: 'Saved'});
-    expect(republish).toHaveBeenCalledTimes(1);
     expect(resolved).toEqual(saved);
+    expect(toast.success).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(invalidateStructure).toHaveBeenCalledTimes(1));
   });
 
-  it('stays pending until republish resolves', async () => {
-    updateField.mockResolvedValue({ok: true, data: saved});
-    let releaseRepublish: () => void = () => {};
-    republish.mockImplementation(
-      () =>
-        new Promise<boolean>((resolve) => {
-          releaseRepublish = () => resolve(true);
-        }),
-    );
-
-    const {result} = renderHook(() => useUpdateTemplateField('p1', 't1'), {
-      wrapper,
-    });
-
-    act(() => {
-      result.current.mutate({fieldId: 'f1', updates: {label: 'Saved'}});
-    });
-    await waitFor(() => expect(republish).toHaveBeenCalled());
-    expect(result.current.isPending).toBe(true);
-
-    act(() => releaseRepublish());
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-  });
-
-  it('rejects on a service error without republishing', async () => {
+  it('rejects on a service error without touching the caches', async () => {
     updateField.mockResolvedValue({
       ok: false,
       error: {message: 'row-level security'},
@@ -105,25 +82,8 @@ describe('useUpdateTemplateField', () => {
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(republish).not.toHaveBeenCalled();
-  });
-
-  it('rejects when the republish fails, without a success toast', async () => {
-    updateField.mockResolvedValue({ok: true, data: saved});
-    republish.mockResolvedValue(false);
-
-    const {result} = renderHook(() => useUpdateTemplateField('p1', 't1'), {
-      wrapper,
-    });
-
-    act(() => {
-      result.current.mutate({fieldId: 'f1', updates: {label: 'Saved'}});
-    });
-
-    await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(result.current.error).toBeInstanceOf(RepublishFailedError);
+    expect(invalidateStructure).not.toHaveBeenCalled();
     expect(toast.success).not.toHaveBeenCalled();
-    // republish toasted its own error already — no doubled error toast.
-    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledTimes(1);
   });
 });

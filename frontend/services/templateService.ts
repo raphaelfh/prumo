@@ -22,13 +22,15 @@ import type {components} from '@/types/api/schema';
 export type RepublishTemplateVersionResponse =
   components['schemas']['RepublishTemplateVersionResponse'];
 
+export type TemplateConfigStatus =
+  components['schemas']['TemplateConfigStatusRead'];
+
 /**
  * Publish the live template structure as a new active version.
  *
- * Section/field edits go straight to PostgREST, but article forms render
- * from the run's frozen version snapshot — call this after every
- * structural mutation so the snapshot (and runs still in an editable
- * stage) pick up the edit.
+ * B-4: this is the explicit Publish button's call — config edits are
+ * draft edits (the DB stamps `config_draft_since`) and only this
+ * publish moves snapshots, prompts and editable-stage run pins.
  */
 export async function republishTemplateVersion(
   projectId: string,
@@ -41,6 +43,20 @@ export async function republishTemplateVersion(
         {method: 'POST'},
       ),
     'republishTemplateVersion',
+  );
+}
+
+/** Draft/publish status for the Configuration tab's chip (B-4). */
+export async function loadTemplateConfigStatus(
+  projectId: string,
+  templateId: string,
+): Promise<ErrorResult<TemplateConfigStatus>> {
+  return toResult(
+    async () =>
+      apiClient<TemplateConfigStatus>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/config-status`,
+      ),
+    'loadTemplateConfigStatus',
   );
 }
 

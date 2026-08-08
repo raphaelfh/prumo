@@ -80,12 +80,23 @@ class UpdateTemplateInstructionRequest(BaseModel):
 
 
 class UpdateTemplateInstructionResponse(BaseModel):
+    """B-4: the PUT stages a draft edit — no version fields (nothing
+    republishes until the explicit Publish)."""
+
     project_template_id: UUID
     llm_template_instruction: str | None
-    version_id: UUID
-    version: int
-    changed: bool
-    repinned_run_count: int
+
+
+class TemplateConfigStatusRead(BaseModel):
+    """Draft/publish status for the Configuration tab (slice B-4).
+
+    ``has_pending_changes`` mirrors the trigger-stamped
+    ``config_draft_since``; ``active_version`` is None only for a
+    template that never published (legacy shapes)."""
+
+    project_template_id: UUID
+    has_pending_changes: bool
+    active_version: int | None
 
 
 class TemplateActiveVersionRead(BaseModel):

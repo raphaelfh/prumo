@@ -80,6 +80,12 @@ export const extraction = {
     configImportThisTemplate: 'Import',
     configImportTemplateButton: 'Import Template',
     configHeaderTitle: 'Template configuration',
+    configPublishButton: 'Publish',
+    configPublishTooltip:
+      'Publish these configuration changes so reviewers and AI runs see them',
+    configUnpublishedChanges: 'Unpublished changes',
+    configPublishedVersion: 'Published · v{{n}}',
+    configPublishSuccess: 'Published v{{n}}',
     configSectionsCountOne: '{{n}} section · {{main}} main',
     configSectionsCountOther: '{{n}} sections · {{main}} main',
     configSubSectionsCountOne: '{{n}} sub-section',
@@ -179,7 +185,7 @@ export const extraction = {
     errors_reorderFields: 'Error reordering',
     errors_cloneTemplate: 'Error cloning template',
     errors_republishTemplate:
-      'The change was saved, but publishing it to article forms failed. It will be published with your next configuration change.',
+      'Publishing failed — your changes are still saved as a draft. Try Publish again.',
     errors_createTemplate: 'Error creating template',
     errors_updateTemplateStatus: 'Error updating status',
     templateClonedSuccess: 'Template "{{name}}" cloned successfully!',

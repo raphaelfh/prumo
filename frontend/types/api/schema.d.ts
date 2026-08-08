@@ -691,6 +691,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates/{template_id}/config-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Template Config Status Endpoint
+         * @description Draft/publish status for the Configuration tab's chip (B-4).
+         *
+         *     Manager-gated like the sibling config endpoints — the Configuration
+         *     tab is the only consumer. A template that never published renders as
+         *     ``active_version = null`` (a status, not an error).
+         */
+        get: operations["get_template_config_status_endpoint_api_v1_projects__project_id__templates__template_id__config_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/{template_id}/llm-instruction": {
         parameters: {
             query?: never;
@@ -708,12 +732,12 @@ export interface paths {
         get: operations["get_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_get"];
         /**
          * Update Template Llm Instruction
-         * @description Set/clear the instruction and republish in one transaction.
+         * @description Stage the instruction as a draft edit (slice B-4).
          *
-         *     Whitespace-only normalizes to NULL (nothing injected). Editable-stage
-         *     runs are re-pinned by the republish so open forms and the next AI
-         *     extraction pick the change up; runs from consensus on keep the
-         *     instruction they were assessed under.
+         *     Whitespace-only normalizes to NULL (nothing injected). Nothing
+         *     republishes here — the text reaches snapshots, prompts and
+         *     editable-stage runs when the manager presses Publish
+         *     (``republish-version``).
          */
         put: operations["update_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_put"];
         post?: never;
@@ -1813,6 +1837,23 @@ export interface components {
         ApiResponse_TemplateActiveVersionRead_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["TemplateActiveVersionRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateConfigStatusRead] */
+        ApiResponse_TemplateConfigStatusRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateConfigStatusRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3871,6 +3912,25 @@ export interface components {
              */
             version_id: string;
         };
+        /**
+         * TemplateConfigStatusRead
+         * @description Draft/publish status for the Configuration tab (slice B-4).
+         *
+         *     ``has_pending_changes`` mirrors the trigger-stamped
+         *     ``config_draft_since``; ``active_version`` is None only for a
+         *     template that never published (legacy shapes).
+         */
+        TemplateConfigStatusRead: {
+            /** Active Version */
+            active_version: number | null;
+            /** Has Pending Changes */
+            has_pending_changes: boolean;
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+        };
         /** TemplateInstructionRead */
         TemplateInstructionRead: {
             /** Default Instruction */
@@ -3955,10 +4015,12 @@ export interface components {
             /** Llm Template Instruction */
             llm_template_instruction?: string | null;
         };
-        /** UpdateTemplateInstructionResponse */
+        /**
+         * UpdateTemplateInstructionResponse
+         * @description B-4: the PUT stages a draft edit — no version fields (nothing
+         *     republishes until the explicit Publish).
+         */
         UpdateTemplateInstructionResponse: {
-            /** Changed */
-            changed: boolean;
             /** Llm Template Instruction */
             llm_template_instruction: string | null;
             /**
@@ -3966,15 +4028,6 @@ export interface components {
              * Format: uuid
              */
             project_template_id: string;
-            /** Repinned Run Count */
-            repinned_run_count: number;
-            /** Version */
-            version: number;
-            /**
-             * Version Id
-             * Format: uuid
-             */
-            version_id: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -5194,6 +5247,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_TemplateActiveVersionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_template_config_status_endpoint_api_v1_projects__project_id__templates__template_id__config_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateConfigStatusRead_"];
                 };
             };
             /** @description Validation Error */

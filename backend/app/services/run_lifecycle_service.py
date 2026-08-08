@@ -9,6 +9,7 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import get_logger
 from app.models.article import Article
 from app.models.extraction import (
     ExtractionInstance,
@@ -36,6 +37,8 @@ from app.services.extraction_review_service import ExtractionReviewService
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_config_service import HitlConfigService
 from app.services.value_semantics import is_value_filled
+
+logger = get_logger(__name__)
 
 
 class InvalidStageTransitionError(Exception):
@@ -807,6 +810,27 @@ class RunLifecycleService:
         Marked active so subsequent runs reuse it via the ``is_active`` index.
         """
         snapshot = await build_template_version_snapshot(self.db, project_template_id)
+
+        # B-4: this lazy publish snapshots LIVE rows — including any
+        # pending config draft. It deliberately does NOT clear
+        # ``config_draft_since``: the caller holds the template row FOR
+        # SHARE, and an UPDATE here is an in-place exclusive upgrade —
+        # two concurrent first-runs (the #54/#69 race below) would
+        # deadlock. The marker stays (a no-op Publish clears it); log so
+        # the publish of pending intent is never silent (§IX).
+        pending_draft = (
+            await self.db.execute(
+                select(ProjectExtractionTemplate.config_draft_since).where(
+                    ProjectExtractionTemplate.id == project_template_id
+                )
+            )
+        ).scalar_one_or_none()
+        if pending_draft is not None:
+            logger.warning(
+                "lazy_initial_version_published_pending_draft",
+                project_template_id=str(project_template_id),
+                config_draft_since=str(pending_draft),
+            )
 
         # Upsert v=1 idempotently. Three races to handle:
         #

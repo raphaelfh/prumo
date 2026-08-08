@@ -448,3 +448,72 @@ async def seeded_integration_db() -> AsyncGenerator[IntegrationSeedIds, None]:
         await _seed_minimum_graph(session)
     await engine.dispose()
     yield SEED
+
+
+# =================== SHARED B-4 / CLONE TEST HELPERS ===================
+# The clone-based fixtures and the config draft marker are the pivot of
+# the template-config suites; one home stops per-file copies drifting.
+
+CHARMS_GLOBAL_ID = UUID("000c0000-0000-0000-0000-000000000001")
+
+
+async def clean_project_clones(db: AsyncSession, project_id: UUID) -> None:
+    """Wipe a project's extraction templates (CASCADE clears structure,
+    version snapshots and instances) so a test starts from a clean slate."""
+    await db.execute(
+        text("DELETE FROM public.project_extraction_templates WHERE project_id = :pid"),
+        {"pid": str(project_id)},
+    )
+
+
+async def clone_charms(db: AsyncSession, project_id: UUID, user_id: UUID):
+    """Clone the seeded CHARMS global template into ``project_id``."""
+    from app.models.extraction import TemplateKind
+    from app.services.template_clone_service import TemplateCloneService
+
+    return await TemplateCloneService(db).clone(
+        project_id=project_id,
+        global_template_id=CHARMS_GLOBAL_ID,
+        user_id=user_id,
+        kind=TemplateKind.EXTRACTION,
+    )
+
+
+async def first_entity_type_id(db: AsyncSession, project_template_id: UUID) -> UUID:
+    from sqlalchemy import select
+
+    from app.models.extraction import ExtractionEntityType
+
+    return (
+        await db.execute(
+            select(ExtractionEntityType.id)
+            .where(ExtractionEntityType.project_template_id == project_template_id)
+            .order_by(ExtractionEntityType.sort_order)
+            .limit(1)
+        )
+    ).scalar_one()
+
+
+async def get_config_draft_marker(db: AsyncSession, template_id: UUID):
+    """Read ``config_draft_since`` (the B-4 draft marker)."""
+    return (
+        await db.execute(
+            text(
+                "SELECT config_draft_since FROM public.project_extraction_templates WHERE id = :tid"
+            ),
+            {"tid": str(template_id)},
+        )
+    ).scalar_one()
+
+
+async def set_config_draft_marker(db: AsyncSession, template_id: UUID, value) -> None:
+    """Force the B-4 draft marker (``None`` simulates a lost republish /
+    clean state; a timestamp simulates a pending draft)."""
+    await db.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET config_draft_since = :val WHERE id = :tid"
+        ),
+        {"tid": str(template_id), "val": value},
+    )
+    await db.flush()
