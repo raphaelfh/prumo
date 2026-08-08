@@ -36,10 +36,9 @@ import {
  * Rail + grid + inspector shell for the Configuration tab (slice B-1).
  *
  * Owns only view state — selection, collapse, search, column display. All
- * writes still travel the paths that existed before this slice: the parent
- * keeps its dialogs and its `republish()` call, so the republish cadence
- * per user action is unchanged (see the B-1 plan: inline editing waits for
- * B-4 to stop per-edit republishing).
+ * writes still travel the pre-B-5 paths: the parent keeps its dialogs.
+ * Since B-4, edits are draft edits — they refresh the grid + Draft chip
+ * caches and the explicit Publish button owns versioning.
  */
 
 interface TemplateConfigGridPanelProps {
@@ -60,14 +59,14 @@ export function TemplateConfigGridPanel({
   sectionActions,
   onAddSection,
 }: TemplateConfigGridPanelProps) {
-  // ONE request for the whole structure, TanStack-cached on the key
-  // `useTemplateRepublish` already invalidates after every config mutation —
-  // so the grid refreshes itself and needs no hand-rolled refresh protocol.
+  // ONE request for the whole structure, TanStack-cached on the key every
+  // config mutation invalidates (useTemplateConfigCaches) — so the grid
+  // refreshes itself and needs no hand-rolled refresh protocol.
   // `isLoading` is first-load-only, which keeps the rows (and the user's
   // selection, search and collapse state) on screen during a refetch.
   const {entityTypes, isLoading} = useTemplateEntityTypes(templateId);
   // One mutation for the whole panel — NOT per selection: the inspector's
-  // save composes the PostgREST update with an awaited republish.
+  // save is the PostgREST write (a draft edit; Publish owns versioning).
   const updateField = useUpdateTemplateField(projectId, templateId);
   const [selection, setSelection] = useState<TemplateGridSelection | null>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());

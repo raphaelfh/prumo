@@ -69,13 +69,10 @@ describe('TemplateInstructionRow', () => {
       llm_template_instruction: 'Old text',
       default_instruction: null,
     });
+    // B-4 response shape: a draft edit — no version fields.
     updateTemplateInstruction.mockResolvedValue({
       project_template_id: 't1',
       llm_template_instruction: 'New text',
-      version_id: 'v2',
-      version: 2,
-      changed: true,
-      repinned_run_count: 0,
     });
     renderRow();
     await userEvent.click(

@@ -31,6 +31,7 @@ import {loadProjectArticles} from '@/services/articlesService';
 import {runsKeys} from '@/hooks/runs/types';
 import {
   templateActiveStructureKeys,
+  templateConfigStatusKeys,
   templateEntityTypesKeys,
 } from '@/lib/query-keys/extraction';
 import {toast} from 'sonner';
@@ -569,8 +570,10 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             // live-structure and run-view caches must not keep serving the
             // pre-import shape.
             void queryClient.invalidateQueries({queryKey: templateEntityTypesKeys.all});
-            // Import republishes server-side: the ACTIVE snapshot moved too.
+            // Import republishes server-side: the ACTIVE snapshot moved too,
+            // and the publish cleared the draft marker (B-4 chip).
             void queryClient.invalidateQueries({queryKey: templateActiveStructureKeys.all});
+            void queryClient.invalidateQueries({queryKey: templateConfigStatusKeys.all});
             void queryClient.invalidateQueries({queryKey: runsKeys.all});
             // Refresh templates without reloading the page
           const updatedTemplates = await refreshTemplates() || [];

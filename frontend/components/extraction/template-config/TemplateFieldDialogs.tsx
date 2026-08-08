@@ -15,7 +15,7 @@ import type {ExtractionField, FieldValidationResult} from '@/types/extraction';
  * dialogs that shipped before this slice — reached in one click from a row
  * instead of five through the accordion. This component is mounted ONLY
  * while a dialog is open, so `useFieldManagement` (which fetches the
- * section's fields and owns the republish) never runs idle.
+ * section's fields and owns the cache refresh) never runs idle.
  *
  * Deleted by B-5, when a committed cell stops minting a template version
  * and the grid becomes the editor. The impact pre-fetch below is the third
