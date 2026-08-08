@@ -1838,6 +1838,54 @@
         "title": "ApiResponse[TemplateActiveVersionRead]",
         "type": "object"
       },
+      "ApiResponse_TemplateConfigStatusRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateConfigStatusRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateConfigStatusRead]",
+        "type": "object"
+      },
       "ApiResponse_TemplateInstructionRead_": {
         "properties": {
           "data": {
@@ -6275,6 +6323,38 @@
         "title": "TemplateActiveVersionRead",
         "type": "object"
       },
+      "TemplateConfigStatusRead": {
+        "description": "Draft/publish status for the Configuration tab (slice B-4).\n\n``has_pending_changes`` mirrors the trigger-stamped\n``config_draft_since``; ``active_version`` is None only for a\ntemplate that never published (legacy shapes).",
+        "properties": {
+          "active_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Version"
+          },
+          "has_pending_changes": {
+            "title": "Has Pending Changes",
+            "type": "boolean"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_template_id",
+          "has_pending_changes",
+          "active_version"
+        ],
+        "title": "TemplateConfigStatusRead",
+        "type": "object"
+      },
       "TemplateInstructionRead": {
         "properties": {
           "default_instruction": {
@@ -6480,11 +6560,8 @@
         "type": "object"
       },
       "UpdateTemplateInstructionResponse": {
+        "description": "B-4: the PUT stages a draft edit \u2014 no version fields (nothing\nrepublishes until the explicit Publish).",
         "properties": {
-          "changed": {
-            "title": "Changed",
-            "type": "boolean"
-          },
           "llm_template_instruction": {
             "anyOf": [
               {
@@ -6500,28 +6577,11 @@
             "format": "uuid",
             "title": "Project Template Id",
             "type": "string"
-          },
-          "repinned_run_count": {
-            "title": "Repinned Run Count",
-            "type": "integer"
-          },
-          "version": {
-            "title": "Version",
-            "type": "integer"
-          },
-          "version_id": {
-            "format": "uuid",
-            "title": "Version Id",
-            "type": "string"
           }
         },
         "required": [
           "project_template_id",
-          "llm_template_instruction",
-          "version_id",
-          "version",
-          "changed",
-          "repinned_run_count"
+          "llm_template_instruction"
         ],
         "title": "UpdateTemplateInstructionResponse",
         "type": "object"
@@ -8591,6 +8651,65 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/templates/{template_id}/config-status": {
+      "get": {
+        "description": "Draft/publish status for the Configuration tab's chip (B-4).\n\nManager-gated like the sibling config endpoints \u2014 the Configuration\ntab is the only consumer. A template that never published renders as\n``active_version = null`` (a status, not an error).",
+        "operationId": "get_template_config_status_endpoint_api_v1_projects__project_id__templates__template_id__config_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateConfigStatusRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Template Config Status Endpoint",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/templates/{template_id}/llm-instruction": {
       "get": {
         "description": "Current general AI instruction + the origin global's default.\n\nManager-gated like the sibling endpoints \u2014 the Configuration tab is\nthe only consumer.",
@@ -8650,7 +8769,7 @@
         ]
       },
       "put": {
-        "description": "Set/clear the instruction and republish in one transaction.\n\nWhitespace-only normalizes to NULL (nothing injected). Editable-stage\nruns are re-pinned by the republish so open forms and the next AI\nextraction pick the change up; runs from consensus on keep the\ninstruction they were assessed under.",
+        "description": "Stage the instruction as a draft edit (slice B-4).\n\nWhitespace-only normalizes to NULL (nothing injected). Nothing\nrepublishes here \u2014 the text reaches snapshots, prompts and\neditable-stage runs when the manager presses Publish\n(``republish-version``).",
         "operationId": "update_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_put",
         "parameters": [
           {

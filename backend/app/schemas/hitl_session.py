@@ -87,6 +87,18 @@ class UpdateTemplateInstructionResponse(BaseModel):
     llm_template_instruction: str | None
 
 
+class TemplateConfigStatusRead(BaseModel):
+    """Draft/publish status for the Configuration tab (slice B-4).
+
+    ``has_pending_changes`` mirrors the trigger-stamped
+    ``config_draft_since``; ``active_version`` is None only for a
+    template that never published (legacy shapes)."""
+
+    project_template_id: UUID
+    has_pending_changes: bool
+    active_version: int | None
+
+
 class TemplateActiveVersionRead(BaseModel):
     """The template's ACTIVE version tree — what the worklist/dashboard
     progress and exports render from (B-3a). Never an empty stand-in for a

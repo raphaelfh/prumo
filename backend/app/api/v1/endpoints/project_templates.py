@@ -31,6 +31,7 @@ from app.schemas.hitl_session import (
     CloneTemplateResponse,
     RepublishTemplateVersionResponse,
     TemplateActiveVersionRead,
+    TemplateConfigStatusRead,
     TemplateInstructionRead,
     TemplateKind,
     UpdateTemplateActiveRequest,
@@ -55,6 +56,7 @@ from app.services.template_instruction_service import (
 from app.services.template_version_read_service import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
+    get_template_config_status,
 )
 from app.services.template_version_service import TemplateVersionService
 
@@ -234,6 +236,34 @@ async def republish_template_version(
             changed=result.changed,
             repinned_run_count=result.repinned_run_count,
         ),
+        trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.get(
+    "/{project_id}/templates/{template_id}/config-status",
+)
+async def get_template_config_status_endpoint(
+    project_id: UUID,
+    template_id: UUID,
+    request: Request,
+    db: DbSession,
+    _user_sub: UUID = Depends(require_project_manager),
+) -> ApiResponse[TemplateConfigStatusRead]:
+    """Draft/publish status for the Configuration tab's chip (B-4).
+
+    Manager-gated like the sibling config endpoints — the Configuration
+    tab is the only consumer. A template that never published renders as
+    ``active_version = null`` (a status, not an error).
+    """
+    try:
+        result = await get_template_config_status(
+            db, project_id=project_id, template_id=template_id
+        )
+    except ProjectTemplateNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return ApiResponse.success(
+        result,
         trace_id=getattr(request.state, "trace_id", None),
     )
 
