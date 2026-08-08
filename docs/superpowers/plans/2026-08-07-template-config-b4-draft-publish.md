@@ -110,7 +110,7 @@ FastAPI + ApiResponse envelope, TanStack Query, shadcn.
    DML migration touching the two triggered tables (0039-style
    backfills) stamps EVERY template's marker — such migrations must
    `ALTER TABLE ... DISABLE TRIGGER` or clear markers afterwards.
-7. **Seed safety is the `v_template IS NULL` skip** — the seed writes
+7. **Seed safety is the `v_old`/`v_new` IS NULL skip** — the seed writes
    the SAME two tables in global lineage (`template_id` set,
    `project_template_id` NULL; `seed.py:98/:1364`); a test pins the
    no-stamp guarantee.
@@ -337,7 +337,7 @@ changes", every re-import 409s). Wrap such DML in
 re-ENABLE, or clear the markers afterwards.
 
 Global-lineage rows (template_id set, project_template_id NULL — the
-seed's lineage) resolve v_template to NULL and are skipped.
+seed's lineage) resolve v_old/v_new to NULL and are skipped.
 
 Revision ID: 0048_config_draft_marker
 Revises: 0047_llm_template_instruction

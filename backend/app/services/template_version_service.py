@@ -113,10 +113,7 @@ class TemplateVersionService:
                 )
             ).scalar_one()
             if pending is not None:
-                raise PendingConfigDraftError(
-                    "Template has unpublished configuration changes. "
-                    "Publish them before re-importing."
-                )
+                raise PendingConfigDraftError()
 
         # Publishing makes the live tree the recorded intent — clear the
         # B-4 draft marker under the same locks as the snapshot build.

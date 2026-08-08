@@ -207,8 +207,6 @@ export function useFieldManagement({
     const createdField = result.data;
     setFields(prev => [...prev, createdField]);
     toast.success(t('extraction', 'fieldAddedSuccess').replace('{{label}}', createdField.label));
-    // B-4: edits stay draft — refresh the grid + Draft chip; the
-    // explicit Publish button owns versioning.
     void invalidateStructure();
     return createdField;
   };

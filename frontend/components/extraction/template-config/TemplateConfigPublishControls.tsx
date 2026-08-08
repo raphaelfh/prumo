@@ -47,25 +47,30 @@ export function TemplateConfigPublishControls({
     }
   };
 
+  let chip = null;
+  if (hasPendingChanges) {
+    chip = (
+      <Badge
+        variant="outline"
+        className="border-warning/50 bg-warning/10 text-xs text-warning"
+      >
+        {t('extraction', 'configUnpublishedChanges')}
+      </Badge>
+    );
+  } else if (configStatus?.active_version != null) {
+    chip = (
+      <Badge variant="outline" className="text-xs text-muted-foreground">
+        {t('extraction', 'configPublishedVersion').replace(
+          '{{n}}',
+          String(configStatus.active_version),
+        )}
+      </Badge>
+    );
+  }
+
   return (
     <>
-      {hasPendingChanges ? (
-        <Badge
-          variant="outline"
-          className="border-warning/50 bg-warning/10 text-xs text-warning"
-        >
-          {t('extraction', 'configUnpublishedChanges')}
-        </Badge>
-      ) : (
-        configStatus?.active_version != null && (
-          <Badge variant="outline" className="text-xs text-muted-foreground">
-            {t('extraction', 'configPublishedVersion').replace(
-              '{{n}}',
-              String(configStatus.active_version),
-            )}
-          </Badge>
-        )
-      )}
+      {chip}
       <Tooltip>
         <TooltipTrigger asChild>
           {/* span keeps the tooltip alive while the button is disabled */}

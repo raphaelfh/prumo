@@ -17,20 +17,13 @@ from app.services.template_instruction_service import (
     get_template_instruction,
     set_template_instruction,
 )
-from tests.integration.conftest import SEED
+from tests.integration.conftest import (
+    SEED,
+    get_config_draft_marker,
+    set_config_draft_marker,
+)
 
 _CHARMS_GLOBAL_ID = uuid.UUID("000c0000-0000-0000-0000-000000000001")
-
-
-async def _marker(db: AsyncSession, template_id: uuid.UUID):
-    return (
-        await db.execute(
-            text(
-                "SELECT config_draft_since FROM public.project_extraction_templates WHERE id = :tid"
-            ),
-            {"tid": str(template_id)},
-        )
-    ).scalar_one()
 
 
 async def _version_count(db: AsyncSession, template_id: uuid.UUID) -> int:
@@ -50,13 +43,7 @@ async def test_set_stages_draft_without_republishing(db_session: AsyncSession) -
     """B-4 inversion: the write lands on the column + stamps the draft
     marker; NO version row appears and the active snapshot stays
     untouched until an explicit Publish."""
-    await db_session.execute(
-        text(
-            "UPDATE public.project_extraction_templates "
-            "SET config_draft_since = NULL WHERE id = :tid"
-        ),
-        {"tid": str(SEED.primary_template)},
-    )
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
     versions_before = await _version_count(db_session, SEED.primary_template)
 
     result = await set_template_instruction(
@@ -84,7 +71,7 @@ async def test_set_stages_draft_without_republishing(db_session: AsyncSession) -
         assert active_snapshot.get("llm_template_instruction") != (
             "Report values exactly as stated."
         ), "the draft text must not reach the active snapshot before Publish"
-    assert await _marker(db_session, SEED.primary_template) is not None, (
+    assert await get_config_draft_marker(db_session, SEED.primary_template) is not None, (
         "an instruction edit is a draft edit — it must stamp the marker"
     )
 
@@ -112,7 +99,7 @@ async def test_publish_picks_up_staged_instruction(db_session: AsyncSession) -> 
         template_id=clone.project_template_id,
         llm_template_instruction="Staged guidance.",
     )
-    assert await _marker(db_session, clone.project_template_id) is not None
+    assert await get_config_draft_marker(db_session, clone.project_template_id) is not None
 
     published = await TemplateVersionService(db_session).republish(
         project_id=SEED.secondary_project,
@@ -127,7 +114,7 @@ async def test_publish_picks_up_staged_instruction(db_session: AsyncSession) -> 
         )
     ).scalar_one()
     assert snapshot["llm_template_instruction"] == "Staged guidance."
-    assert await _marker(db_session, clone.project_template_id) is None
+    assert await get_config_draft_marker(db_session, clone.project_template_id) is None
 
     await db_session.rollback()
 
@@ -140,13 +127,7 @@ async def test_same_value_is_noop_and_does_not_stamp(db_session: AsyncSession) -
         template_id=SEED.primary_template,
         llm_template_instruction="Stable text.",
     )
-    await db_session.execute(
-        text(
-            "UPDATE public.project_extraction_templates "
-            "SET config_draft_since = NULL WHERE id = :tid"
-        ),
-        {"tid": str(SEED.primary_template)},
-    )
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
 
     again = await set_template_instruction(
         db_session,
@@ -155,7 +136,7 @@ async def test_same_value_is_noop_and_does_not_stamp(db_session: AsyncSession) -
         llm_template_instruction="Stable text.",
     )
     assert again.llm_template_instruction == "Stable text."
-    assert await _marker(db_session, SEED.primary_template) is None, (
+    assert await get_config_draft_marker(db_session, SEED.primary_template) is None, (
         "a no-op write must not stamp the draft marker"
     )
 

@@ -22,7 +22,8 @@ explicit re-import after deleting the template.
 
 from __future__ import annotations
 
-from uuid import UUID, uuid4
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select, text
@@ -34,19 +35,13 @@ from app.models.extraction import (
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.services.template_clone_service import TemplateCloneService
-from tests.integration.conftest import SEED
-
-CHARMS_GLOBAL_ID = UUID("000c0000-0000-0000-0000-000000000001")
-
-
-async def _clean_project_clones(db: AsyncSession, project_id: UUID) -> None:
-    """Wipe all extraction templates / clones for the test project so each
-    test starts from a clean slate. CASCADE clears entity_types + fields
-    + version snapshots + instances tied to the templates."""
-    await db.execute(
-        text("DELETE FROM public.project_extraction_templates WHERE project_id = :pid"),
-        {"pid": str(project_id)},
-    )
+from tests.integration.conftest import (
+    CHARMS_GLOBAL_ID,
+    SEED,
+    clean_project_clones,
+    get_config_draft_marker,
+    set_config_draft_marker,
+)
 
 
 @pytest.mark.asyncio
@@ -63,7 +58,7 @@ async def test_clone_creates_full_structure_when_fresh(db_session: AsyncSession)
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
 
-    await _clean_project_clones(db_session, project_id)
+    await clean_project_clones(db_session, project_id)
 
     result = await TemplateCloneService(db_session).clone(
         project_id=project_id,
@@ -86,7 +81,7 @@ async def test_clone_copies_llm_template_instruction(db_session: AsyncSession) -
     the v1 snapshot."""
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
-    await _clean_project_clones(db_session, project_id)
+    await clean_project_clones(db_session, project_id)
     await db_session.execute(
         text(
             "UPDATE public.extraction_templates_global "
@@ -145,7 +140,7 @@ async def test_clone_selfheals_snapshot_from_live_on_drift(
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
 
-    await _clean_project_clones(db_session, project_id)
+    await clean_project_clones(db_session, project_id)
     service = TemplateCloneService(db_session)
 
     initial = await service.clone(
@@ -178,14 +173,7 @@ async def test_clone_selfheals_snapshot_from_live_on_drift(
     # B-4: the raw-SQL delete stamped the draft marker; a marker-NULL
     # drift is the LOST-REPUBLISH shape this test simulates (a pending
     # draft now 409s instead — covered separately below).
-    await db_session.execute(
-        text(
-            "UPDATE public.project_extraction_templates "
-            "SET config_draft_since = NULL WHERE id = :tid"
-        ),
-        {"tid": str(project_template_id)},
-    )
-    await db_session.flush()
+    await set_config_draft_marker(db_session, project_template_id, None)
 
     healed = await service.clone(
         project_id=project_id,
@@ -248,7 +236,7 @@ async def test_reclone_selfheals_unsnapshotted_edit_without_wiping(
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
 
-    await _clean_project_clones(db_session, project_id)
+    await clean_project_clones(db_session, project_id)
     service = TemplateCloneService(db_session)
 
     initial = await service.clone(
@@ -278,14 +266,7 @@ async def test_reclone_selfheals_unsnapshotted_edit_without_wiping(
     await db_session.flush()
     # B-4: the raw-SQL insert stamped the draft marker; reset to NULL to
     # simulate the lost-republish shape (marker-set drift 409s instead).
-    await db_session.execute(
-        text(
-            "UPDATE public.project_extraction_templates "
-            "SET config_draft_since = NULL WHERE id = :tid"
-        ),
-        {"tid": str(initial.project_template_id)},
-    )
-    await db_session.flush()
+    await set_config_draft_marker(db_session, initial.project_template_id, None)
 
     recloned = await service.clone(
         project_id=project_id,
@@ -337,7 +318,7 @@ async def test_clone_is_noop_when_aligned(db_session: AsyncSession) -> None:
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
 
-    await _clean_project_clones(db_session, project_id)
+    await clean_project_clones(db_session, project_id)
     service = TemplateCloneService(db_session)
 
     first = await service.clone(
@@ -386,29 +367,6 @@ async def test_clone_is_noop_when_aligned(db_session: AsyncSession) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def _stamp_marker(db: AsyncSession, template_id: UUID) -> None:
-    await db.execute(
-        text(
-            "UPDATE public.project_extraction_templates "
-            "SET config_draft_since = now() WHERE id = :tid"
-        ),
-        {"tid": str(template_id)},
-    )
-    await db.flush()
-
-
-async def _marker_value(db: AsyncSession, template_id: UUID):
-    return (
-        await db.execute(
-            text(
-                "SELECT config_draft_since "
-                "FROM public.project_extraction_templates WHERE id = :tid"
-            ),
-            {"tid": str(template_id)},
-        )
-    ).scalar_one()
-
-
 @pytest.mark.asyncio
 async def test_reimport_with_pending_draft_and_drift_raises(
     db_session: AsyncSession,
@@ -418,7 +376,7 @@ async def test_reimport_with_pending_draft_and_drift_raises(
 
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
-    await _clean_project_clones(db_session, project_id)
+    await clean_project_clones(db_session, project_id)
     service = TemplateCloneService(db_session)
     initial = await service.clone(
         project_id=project_id,
@@ -444,7 +402,7 @@ async def test_reimport_with_pending_draft_and_drift_raises(
         {"id": str(uuid4()), "et": str(et_id)},
     )
     await db_session.flush()
-    assert await _marker_value(db_session, initial.project_template_id) is not None
+    assert await get_config_draft_marker(db_session, initial.project_template_id) is not None
 
     live_fields_before = (
         await db_session.execute(
@@ -497,7 +455,7 @@ async def test_reimport_aligned_with_pending_draft_succeeds(
     draft SURVIVES (nothing publishes on this path)."""
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
-    await _clean_project_clones(db_session, project_id)
+    await clean_project_clones(db_session, project_id)
     service = TemplateCloneService(db_session)
     initial = await service.clone(
         project_id=project_id,
@@ -506,7 +464,7 @@ async def test_reimport_aligned_with_pending_draft_succeeds(
         kind=TemplateKind.EXTRACTION,
     )
 
-    await _stamp_marker(db_session, initial.project_template_id)
+    await set_config_draft_marker(db_session, initial.project_template_id, datetime.now(UTC))
 
     again = await service.clone(
         project_id=project_id,
@@ -516,7 +474,7 @@ async def test_reimport_aligned_with_pending_draft_succeeds(
     )
     assert again.created is False
     assert again.project_template_id == initial.project_template_id
-    assert await _marker_value(db_session, initial.project_template_id) is not None, (
+    assert await get_config_draft_marker(db_session, initial.project_template_id) is not None, (
         "the aligned path publishes nothing — the pending draft must survive"
     )
 
@@ -532,7 +490,7 @@ async def test_reimport_zero_state_with_marker_still_heals(
     publish leaves it NULL."""
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
-    await _clean_project_clones(db_session, project_id)
+    await clean_project_clones(db_session, project_id)
     service = TemplateCloneService(db_session)
     initial = await service.clone(
         project_id=project_id,
@@ -547,7 +505,7 @@ async def test_reimport_zero_state_with_marker_still_heals(
         {"tid": str(initial.project_template_id)},
     )
     await db_session.flush()
-    assert await _marker_value(db_session, initial.project_template_id) is not None
+    assert await get_config_draft_marker(db_session, initial.project_template_id) is not None
 
     healed = await service.clone(
         project_id=project_id,
@@ -557,7 +515,7 @@ async def test_reimport_zero_state_with_marker_still_heals(
     )
     assert healed.project_template_id == initial.project_template_id
     assert healed.entity_type_count > 0, "factory restore must rebuild structure"
-    assert await _marker_value(db_session, initial.project_template_id) is None, (
+    assert await get_config_draft_marker(db_session, initial.project_template_id) is None, (
         "the heal's publish clears the marker"
     )
 
@@ -575,7 +533,7 @@ async def test_locked_recheck_catches_stamp_after_precheck(
 
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
-    await _clean_project_clones(db_session, project_id)
+    await clean_project_clones(db_session, project_id)
     initial = await TemplateCloneService(db_session).clone(
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
@@ -586,7 +544,7 @@ async def test_locked_recheck_catches_stamp_after_precheck(
     # Simulate the TOCTOU: the marker lands AFTER a pre-check would have
     # passed. Calling republish with the flag and the marker set is
     # exactly the state the locked re-check must refuse.
-    await _stamp_marker(db_session, initial.project_template_id)
+    await set_config_draft_marker(db_session, initial.project_template_id, datetime.now(UTC))
     with pytest.raises(PendingConfigDraftError):
         await TemplateVersionService(db_session).republish(
             project_id=project_id,

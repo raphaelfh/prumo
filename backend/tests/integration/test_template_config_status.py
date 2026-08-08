@@ -13,25 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_version_read_service import get_template_config_status
-from tests.integration.conftest import SEED
-
-
-async def _reset_marker(db: AsyncSession) -> None:
-    await db.execute(
-        text(
-            "UPDATE public.project_extraction_templates "
-            "SET config_draft_since = NULL WHERE id = :tid"
-        ),
-        {"tid": str(SEED.primary_template)},
-    )
-    await db.flush()
+from tests.integration.conftest import SEED, set_config_draft_marker
 
 
 @pytest.mark.asyncio
 async def test_status_flips_with_edit_and_publish(db_session: AsyncSession) -> None:
     from app.services.template_version_service import TemplateVersionService
 
-    await _reset_marker(db_session)
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
     clean = await get_template_config_status(
         db_session,
         project_id=SEED.primary_project,

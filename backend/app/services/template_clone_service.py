@@ -30,6 +30,15 @@ class PendingConfigDraftError(Exception):
     already imports from this one — this direction adds no new cycle.
     """
 
+    def __init__(
+        self,
+        msg: str = (
+            "Template has unpublished configuration changes. "
+            "Publish them before re-importing."
+        ),
+    ) -> None:
+        super().__init__(msg)
+
 
 def _snapshot_structure_counts(version: ExtractionTemplateVersion) -> tuple[int, int]:
     """Entity-type and field counts recorded in a version snapshot."""
@@ -117,13 +126,14 @@ class TemplateCloneService:
             #      whenever instances existed). Live is authoritative; true
             #      factory recovery is an explicit delete + re-import.
             zero_state = entity_types == 0 and fields == 0
-            if zero_state:
-                # Local import: template_version_service imports this module
-                # (TemplateNotFoundError), so a top-level import would cycle.
-                from app.services.template_version_service import (
-                    TemplateVersionService,
-                )
+            # Local import: template_version_service imports this module
+            # (TemplateNotFoundError), so a top-level import would cycle.
+            from app.services.template_version_service import (
+                TemplateVersionService,
+            )
 
+            republished = None
+            if zero_state:
                 publisher = TemplateVersionService(self.db)
                 # Locks BEFORE the rebuild: the rebuild's mark-draft trigger
                 # stamps take the template-row lock, and taking republish's
@@ -145,18 +155,7 @@ class TemplateCloneService:
                 )
                 entity_types = len(global_entity_types)
                 fields = field_count
-                version = await self.db.get(ExtractionTemplateVersion, republished.version_id)
-                assert version is not None, (
-                    f"Heal left project_extraction_template {existing.id} "
-                    f"without an active version."
-                )
             elif entity_types != snapshot_et or fields != snapshot_field:
-                # Local import: template_version_service imports this module
-                # (TemplateNotFoundError), so a top-level import would cycle.
-                from app.services.template_version_service import (
-                    TemplateVersionService,
-                )
-
                 if existing.config_draft_since is not None:
                     # B-4: a marker-set drift is a PENDING DRAFT, and this
                     # heal would silently publish it. Fast-fail courtesy —
@@ -164,19 +163,17 @@ class TemplateCloneService:
                     # locks (fail_if_pending_draft), so a stamp landing
                     # after this read still refuses. A marker-NULL drift
                     # is a lost republish and self-heals as before.
-                    raise PendingConfigDraftError(
-                        "Template has unpublished configuration changes. "
-                        "Publish them before re-importing."
-                    )
+                    raise PendingConfigDraftError()
                 republished = await TemplateVersionService(self.db).republish(
                     project_id=project_id,
                     project_template_id=existing.id,
                     user_id=user_id,
                     fail_if_pending_draft=True,
                 )
+            if republished is not None:
                 version = await self.db.get(ExtractionTemplateVersion, republished.version_id)
                 assert version is not None, (
-                    f"Self-heal republish left project_extraction_template "
+                    f"Heal republish left project_extraction_template "
                     f"{existing.id} without an active version."
                 )
             # Re-importing a template re-activates it (user intent: "use

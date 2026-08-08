@@ -6,7 +6,6 @@
  */
 
 import {useEffect, useState} from 'react';
-import {useQueryClient} from '@tanstack/react-query';
 import {useSearchParams} from 'react-router';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
@@ -28,12 +27,7 @@ import {TemplateConfigEditor} from './TemplateConfigEditor';
 import {useAuth} from '@/contexts/AuthContext';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
 import {loadProjectArticles} from '@/services/articlesService';
-import {runsKeys} from '@/hooks/runs/types';
-import {
-  templateActiveStructureKeys,
-  templateConfigStatusKeys,
-  templateEntityTypesKeys,
-} from '@/lib/query-keys/extraction';
+import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 
@@ -43,7 +37,7 @@ interface ExtractionInterfaceProps {
 
 export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
+  const {invalidateAfterImport} = useTemplateConfigCaches(projectId, undefined);
   const [searchParams, setSearchParams] = useSearchParams();
 
     // Read tab from URL or use default
@@ -566,15 +560,9 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         initialTemplateId={importInitialTemplateId}
         onTemplateImported={async (templateId?: string) => {
             setImportInitialTemplateId(null);
-            // Import may have healed/rewritten the clone's structure — the
-            // live-structure and run-view caches must not keep serving the
-            // pre-import shape.
-            void queryClient.invalidateQueries({queryKey: templateEntityTypesKeys.all});
-            // Import republishes server-side: the ACTIVE snapshot moved too,
-            // and the publish cleared the draft marker (B-4 chip).
-            void queryClient.invalidateQueries({queryKey: templateActiveStructureKeys.all});
-            void queryClient.invalidateQueries({queryKey: templateConfigStatusKeys.all});
-            void queryClient.invalidateQueries({queryKey: runsKeys.all});
+            // Import publishes server-side, possibly for a DIFFERENT
+            // template — id-free .all invalidation (shared contract).
+            void invalidateAfterImport();
             // Refresh templates without reloading the page
           const updatedTemplates = await refreshTemplates() || [];
             // Stay on configuration tab

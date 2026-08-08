@@ -91,7 +91,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     }
     toast.success(t('extraction', 'labelUpdatedSuccess'));
     setEditingId(null);
-    // B-4: a rename is a draft edit — refresh the grid + Draft chip.
     void invalidateStructure();
     await loadEntityTypes();
   };
