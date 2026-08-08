@@ -31,6 +31,10 @@ export interface TemplateEntityTypeWithFields {
   cardinality: string | null;
   parent_entity_type_id: string | null;
   sort_order: number;
+  /** Entity-level required flag (B-3b): supplied by the ACTIVE-snapshot
+   * read; the live PostgREST select doesn't carry it (optional so its
+   * consumers keep compiling — progress.ts treats absent as optional). */
+  is_required?: boolean;
   fields: ExtractionField[];
 }
 
