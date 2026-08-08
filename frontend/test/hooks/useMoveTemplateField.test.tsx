@@ -34,7 +34,7 @@ import {republishTemplateVersion} from '@/services/templateService';
 const moveMock = moveField as unknown as ReturnType<typeof vi.fn>;
 const republishMock = republishTemplateVersion as unknown as ReturnType<typeof vi.fn>;
 
-function setup() {
+function setup(opts?: {invalidateOnSuccess?: boolean}) {
   const queryClient = new QueryClient({
     defaultOptions: {queries: {retry: false}, mutations: {retry: false}},
   });
@@ -42,7 +42,7 @@ function setup() {
   const wrapper = ({children}: {children: ReactNode}): ReactElement => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  const {result} = renderHook(() => useMoveTemplateField('p1', 't1'), {wrapper});
+  const {result} = renderHook(() => useMoveTemplateField('p1', 't1', opts), {wrapper});
   return {result, invalidateSpy};
 }
 
@@ -77,6 +77,23 @@ describe('useMoveTemplateField', () => {
     expect(republishMock).not.toHaveBeenCalled();
     // The Undo toast (T5, panel-owned) is the success surface — not here.
     expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('invalidateOnSuccess: false suppresses the hook-level refresh (dispatcher-routed calls)', async () => {
+    // The serialized dispatcher (useMoveFieldTo) awaits its OWN
+    // invalidateStructure per settled move — the hook must not double it.
+    moveMock.mockResolvedValue({
+      ok: true,
+      data: {id: 'f1', entity_type_id: 'sec-2', sort_order: 5},
+    });
+    const {result, invalidateSpy} = setup({invalidateOnSuccess: false});
+
+    act(() => {
+      result.current.mutate({fieldId: 'f1', entityTypeId: 'sec-2', sortOrder: 5});
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(structureInvalidations(invalidateSpy).length).toBe(0);
   });
 
   it('toasts the templateConfig error copy on a refused write — and still never republishes', async () => {

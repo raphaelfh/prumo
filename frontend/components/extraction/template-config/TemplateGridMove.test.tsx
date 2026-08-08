@@ -564,6 +564,69 @@ describe('TemplateConfigGridPanel — moveFieldTo dispatcher', () => {
     );
   });
 
+  it('mounts the T1 hooks with invalidateOnSuccess: false — the dispatcher owns invalidation', () => {
+    renderPanel();
+    expect(vi.mocked(useMoveTemplateField)).toHaveBeenCalledWith('p1', 't1', {
+      invalidateOnSuccess: false,
+    });
+    expect(vi.mocked(useReorderTemplateFields)).toHaveBeenCalledWith('p1', 't1', {
+      invalidateOnSuccess: false,
+    });
+  });
+
+  it('a FAILED write still triggers the structure refetch — a partial batch may have landed', async () => {
+    const invalidateStructure = vi.fn(async () => undefined);
+    vi.mocked(useTemplateConfigCaches).mockReturnValue({
+      invalidateStructure,
+      invalidateAll: vi.fn(async () => undefined),
+      invalidateAfterImport: vi.fn(async () => undefined),
+    });
+    reorderMutateAsync.mockRejectedValueOnce(new Error('rls said no'));
+    renderPanel();
+    const beta = screen.getByRole('button', {name: 'Beta'});
+    focusEl(beta);
+    chord(beta, 'ArrowDown');
+    await flush();
+    expect(invalidateStructure).toHaveBeenCalledTimes(1);
+  });
+
+  it('a FAILED move still nudges focus back onto the target cell', async () => {
+    reorderMutateAsync.mockRejectedValueOnce(new Error('rls said no'));
+    renderPanel();
+    const beta = screen.getByRole('button', {name: 'Beta'});
+    focusEl(beta);
+    chord(beta, 'ArrowDown');
+    // The failure re-render (the order overlay retiring) drops focus to
+    // body — the nudge must run on failure too, not only on success.
+    act(() => beta.blur());
+    await flush();
+    await waitFor(() => expect(document.activeElement).toBe(beta));
+  });
+
+  it('a mid-burst failure skips the queued follow-ups; a fresh dispatch runs', async () => {
+    let rejectFirst!: (err: Error) => void;
+    reorderMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    renderPanel();
+    const beta = screen.getByRole('button', {name: 'Beta'});
+    focusEl(beta);
+    chord(beta, 'ArrowDown'); // write #1 (hung, will fail)
+    chord(beta, 'ArrowUp'); // queued behind it — premised on #1 landing
+    await flush();
+    expect(reorderMutateAsync).toHaveBeenCalledTimes(1);
+    act(() => rejectFirst(new Error('rls said no')));
+    await flush();
+    // The queued execute was skipped: its plan assumed the failed write.
+    expect(reorderMutateAsync).toHaveBeenCalledTimes(1);
+    chord(beta, 'ArrowDown'); // a fresh dispatch AFTER the failure
+    await flush();
+    expect(reorderMutateAsync).toHaveBeenCalledTimes(2);
+  });
+
   it('a repeat chord continues from the OVERLAID order: Beta crosses into the next section', async () => {
     let releaseFirst!: (value?: unknown) => void;
     reorderMutateAsync.mockImplementationOnce(
@@ -645,6 +708,28 @@ describe('TemplateConfigGridPanel — optimistic order overlay (decision 7)', ()
     expect(rowLabels()).toEqual(['Alpha', 'Gamma', 'Beta', 'Delta']);
     await flush();
     expect(rowLabels()).toEqual(['Alpha', 'Beta', 'Gamma', 'Delta']);
+  });
+
+  it('mid-flight, the inspector resolves from the overlay: Section shows the NEW section', async () => {
+    let release!: (value?: unknown) => void;
+    moveMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(screen.getByRole('button', {name: 'Beta'}));
+    await user.selectOptions(screen.getByLabelText('Section'), 'sec2');
+    // The write is still in flight: the Section select must show the
+    // picked destination — never snap back to the old section while the
+    // write+refetch window is open.
+    expect(screen.getByLabelText('Section')).toHaveValue('sec2');
+    act(() => release());
+    await flush();
+    // Settled against this suite's STATIC cache: back to server truth.
+    expect(screen.getByLabelText('Section')).toHaveValue('sec1');
   });
 
   it('the DndContext wrap keeps the roving invariant: EXACTLY ONE tab stop in the grid', () => {

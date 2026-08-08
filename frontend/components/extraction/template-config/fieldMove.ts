@@ -1,5 +1,6 @@
 /**
- * Pure planning layer for field move/reorder writes (B-6 T3).
+ * Pure planning layer for field move/reorder writes (B-6 T3), plus the
+ * T6/decision-7 order overlay (`applySectionOrder`).
  *
  * A landing slot (`toSectionId` + `toIndex` from the cell model's
  * `moveRow` effect, the T4 combobox, or a T5 undo) becomes the exact

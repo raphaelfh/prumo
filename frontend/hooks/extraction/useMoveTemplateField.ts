@@ -29,8 +29,16 @@ export interface MoveTemplateFieldArgs {
 export function useMoveTemplateField(
   projectId: string | undefined,
   templateId: string | undefined,
+  opts?: {
+    /** Default true. The serialized dispatcher (useMoveFieldTo) awaits
+     * its OWN invalidateStructure per settled move and passes false so a
+     * cross-section move never refetches three times; standalone users
+     * keep the built-in refresh. */
+    invalidateOnSuccess?: boolean;
+  },
 ) {
   const {invalidateStructure} = useTemplateConfigCaches(projectId, templateId);
+  const invalidateOnSuccess = opts?.invalidateOnSuccess ?? true;
 
   return useMutation<ExtractionField, Error, MoveTemplateFieldArgs>({
     mutationFn: async ({fieldId, entityTypeId, sortOrder}) => {
@@ -41,7 +49,7 @@ export function useMoveTemplateField(
       return result.data;
     },
     onSuccess: () => {
-      void invalidateStructure();
+      if (invalidateOnSuccess) void invalidateStructure();
     },
     onError: (error) => {
       console.error('[useMoveTemplateField]', error);

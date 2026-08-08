@@ -259,12 +259,14 @@ export function TemplateConfigGridPanel({
     if (retained.size > 0) setRetained(new Set());
   };
 
+  // Selection resolves from displayTree (the decision-7 overlay) so the
+  // inspector tracks a mid-flight move instead of snapping back.
   const selectedField =
-    selection?.kind === 'field' ? findField(tree, selection.id) : null;
+    selection?.kind === 'field' ? findField(displayTree, selection.id) : null;
   const selectedSection =
-    selection?.kind === 'section' ? findSection(tree, selection.id) : null;
+    selection?.kind === 'section' ? findSection(displayTree, selection.id) : null;
   const owningSection = selectedField
-    ? findSection(tree, selectedField.entityTypeId)
+    ? findSection(displayTree, selectedField.entityTypeId)
     : null;
   // A deep-link only travels with ITS field — selecting another row keeps
   // the inspector from stealing focus to a stale group.
@@ -320,8 +322,9 @@ export function TemplateConfigGridPanel({
     pendingInserts.some((p) => p.clientKey === fieldId);
 
   // B-6 T4: the inspector combobox's destinations — the CURRENT
-  // template's sections only (the client-side move guard).
-  const moveTargets = useMemo(() => deriveMoveTargets(tree), [tree]);
+  // template's sections only (the client-side move guard), counted from
+  // the overlay so a mid-flight END pick lands on the planned order.
+  const moveTargets = useMemo(() => deriveMoveTargets(displayTree), [displayTree]);
   /** Combobox pick = END of the destination (filter-independent, so the
    * combobox stays live while the ⌘⇧ chords are filter-gated). Returns
    * the FieldMoveRecord for T5's Undo to capture the inverse. */
@@ -554,12 +557,13 @@ export function TemplateConfigGridPanel({
           toggleInspector();
         }
         // ⌘⇧M opens the Move-to-section dialog for the FOCUSED (else the
-        // selected) field row; no-ops otherwise (B-6 T7). NOTE: Chrome on
-        // macOS claims ⌘⇧M for its profile menu, so the binding may lose
-        // in the real browser — the row ⋯ menu item is the reliable path.
-        if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'm') {
+        // selected) field row; no-ops otherwise (B-6 T7). altKey excluded:
+        // ⌥ variants are distinct chords (and ⌥ can mutate event.key).
+        // NOTE: Chrome on macOS claims ⌘⇧M for its profile menu, so the
+        // binding may lose in the real browser — the ⋯ menu is reliable.
+        if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'm') {
           const holder = (event.target as HTMLElement).closest('[data-cell-row]');
-          const focused = findField(tree, holder?.getAttribute('data-cell-row') ?? '');
+          const focused = findField(displayTree, holder?.getAttribute('data-cell-row') ?? '');
           const field = focused ?? selectedField;
           if (field && !pendingRowIds.has(field.id)) {
             event.preventDefault();
@@ -677,7 +681,7 @@ export function TemplateConfigGridPanel({
       >
           <TemplateOutlineRail
             className="hidden @[52rem]/grid:block"
-            sections={tree}
+            sections={displayTree}
             visibleSectionIds={visibleSectionIds}
             selectedSectionId={selection?.kind === 'section' ? selection.id : null}
             onSelectSection={(sectionId) => setSelection({kind: 'section', id: sectionId})}

@@ -85,8 +85,10 @@ export interface TemplateFieldInput {
 export interface GridField {
   id: string;
   entityTypeId: string;
-  /** Committed per-section position — move/reorder writes (B-6) renumber
-   * from it; absent on the wire defaults to 0 like `bySortOrder`. */
+  /** Committed per-section position as fetched. UNREAD by the B-6
+   * move/reorder writes — renumbering derives new sort_orders from array
+   * INDEX (`fieldMove`), never from this value; absent on the wire
+   * defaults to 0 like `bySortOrder`. */
   sortOrder: number;
   label: string;
   key: string;

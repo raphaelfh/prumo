@@ -11,13 +11,18 @@
  * order accumulated across the burst, so rapid keyboard repeats
  * coalesce instead of re-planning from the stale tree. The working
  * order resets when the chain drains (or a write fails, after which it
- * would lie); the next burst re-derives from the refetched tree.
+ * would lie); the next burst re-derives from the refetched tree. A
+ * failure also refetches (reorderFields is N independent writes — a
+ * partial batch may have landed) and poisons the rest of the burst:
+ * executes already queued behind it skip, since their plans were
+ * premised on the failed write; a fresh dispatch starts clean.
  *
  * `settled` resolves only after the writes AND an awaited structure
  * refetch — the grid's focus nudge and the next burst both need the
  * refetched tree on screen. Success feedback is T5's Undo toast; the
- * only immediate feedback here is the polite live-region announcement
- * (the moved row may re-render far away or inside a collapsed section).
+ * only other feedback is the polite live-region announcement, made on
+ * settle (the moved row may re-render far away or inside a collapsed
+ * section).
  *
  * `displayTree` is the optimistic order overlay (panel decision 7): the
  * working order mirrored into state and applied over the tree, so the
@@ -51,10 +56,21 @@ export interface FieldMoveRecord {
   settled: Promise<boolean>;
 }
 
+export interface MoveFieldOptions {
+  /** T5 undo re-entry: land EXACTLY at `toIndex` — the collapsed-
+   * destination append is a live-gesture affordance (the cell model only
+   * saw zero visible rows), not an undo semantic; the captured index
+   * must be restored as-is. */
+  exactIndex?: boolean;
+}
+
 interface MoveChainState {
   chain: Promise<unknown>;
   order: SectionFieldOrder | null;
   inflight: number;
+  /** Burst poison marker: bumped on a failed write so executes queued
+   * BEHIND the failure (planned on top of it) skip instead of writing. */
+  epoch: number;
 }
 
 export function useMoveFieldTo(args: {
@@ -65,8 +81,14 @@ export function useMoveFieldTo(args: {
   pendingRowIds: ReadonlySet<string>;
 }) {
   const {projectId, templateId, tree, collapsed, pendingRowIds} = args;
-  const moveMutation = useMoveTemplateField(projectId, templateId);
-  const reorderMutation = useReorderTemplateFields(projectId, templateId);
+  // invalidateOnSuccess: false — the dispatcher owns invalidation (ONE
+  // awaited refetch per settled move, not one per underlying write).
+  const moveMutation = useMoveTemplateField(projectId, templateId, {
+    invalidateOnSuccess: false,
+  });
+  const reorderMutation = useReorderTemplateFields(projectId, templateId, {
+    invalidateOnSuccess: false,
+  });
   const {invalidateStructure} = useTemplateConfigCaches(projectId, templateId);
   const [announcement, setAnnouncement] = useState<string | null>(null);
   // The working order mirrored into state — the render-side half of the
@@ -76,12 +98,14 @@ export function useMoveFieldTo(args: {
     chain: Promise.resolve(),
     order: null,
     inflight: 0,
+    epoch: 0,
   });
 
   const moveFieldTo = (
     field: GridField,
     toSectionId: string,
     toIndex: number,
+    opts?: MoveFieldOptions,
   ): FieldMoveRecord | null => {
     // The grid already gates the chord on pending rows; this guard
     // covers every other entry point (T4 combobox, T5 undo).
@@ -92,16 +116,32 @@ export function useMoveFieldTo(args: {
       fieldId: field.id,
       toSectionId,
       toIndex,
-      appendToEnd: collapsed.has(toSectionId),
+      appendToEnd: !opts?.exactIndex && collapsed.has(toSectionId),
       pendingIds: pendingRowIds,
     });
     if (!plan) return null;
     state.order = plan.nextOrder;
     setLocalOrder(plan.nextOrder);
     state.inflight += 1;
+    // Captured at dispatch time: a failed write bumps the epoch, so this
+    // execute knows whether an EARLIER write in the burst failed under it.
+    const epoch = state.epoch;
     const destLabel = findSection(tree, toSectionId)?.label ?? '';
 
     const execute = async (): Promise<boolean> => {
+      // An earlier write in the burst failed — this plan was premised on
+      // it; skip (the failure already refetched, and a fresh dispatch
+      // will re-derive from the refetched tree).
+      if (state.epoch !== epoch) return false;
+      // Failure: refetch fire-and-forget — reorderFields is N independent
+      // writes, so a partial batch may have landed and the screen must
+      // mirror whatever the DB now holds (the awaited success-path
+      // invalidation below is never reached on this path).
+      const fail = (): false => {
+        state.epoch += 1;
+        void invalidateStructure();
+        return false;
+      };
       if (plan.crossSection) {
         const moved = await moveMutation
           .mutateAsync({
@@ -113,7 +153,7 @@ export function useMoveFieldTo(args: {
             () => true,
             () => false, // the hook already toasted the failure
           );
-        if (!moved) return false;
+        if (!moved) return fail();
       }
       if (plan.updates.length > 0) {
         const renumbered = await reorderMutation
@@ -122,10 +162,11 @@ export function useMoveFieldTo(args: {
             () => true,
             () => false,
           );
-        if (!renumbered) return false;
+        if (!renumbered) return fail();
       }
-      // The hooks' own onSuccess invalidation is fire-and-forget; this
-      // awaited one makes `settled` mean "the refetched tree landed".
+      // The T1 hooks mount with invalidateOnSuccess: false — the
+      // dispatcher owns invalidation, and this awaited one makes
+      // `settled` mean "the refetched tree landed".
       await invalidateStructure();
       return true;
     };

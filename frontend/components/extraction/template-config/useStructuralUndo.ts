@@ -19,10 +19,12 @@
  * fresh Undo toast while still inheriting the dispatcher's serialization
  * and live-region announcement. A failed undo write is likewise covered
  * by the hooks' error toast. The inverse SLOT is the record's `from`,
- * captured at gesture time; the field itself is re-resolved BY ID from
- * the LATEST tree at click time (ids survive moves; the object does
- * not) — a field deleted meanwhile downgrades the click to a gentle
- * info toast instead of dispatching against a ghost.
+ * captured at gesture time and restored EXACTLY (`exactIndex`: a source
+ * section collapsed meanwhile must not degrade the restore to
+ * append-to-end); the field itself is re-resolved BY ID from the LATEST
+ * tree at click time (ids survive moves; the object does not) — a field
+ * deleted meanwhile downgrades the click to a gentle info toast instead
+ * of dispatching against a ghost.
  */
 import {useEffect, useRef} from 'react';
 import {toast} from 'sonner';
@@ -30,7 +32,7 @@ import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 
 import {findField, type GridField, type GridSection} from './templateTree';
-import type {FieldMoveRecord} from './useMoveFieldTo';
+import type {FieldMoveRecord, MoveFieldOptions} from './useMoveFieldTo';
 
 /** The ONE toast slot for the whole Configuration surface. */
 export const STRUCTURAL_UNDO_TOAST_ID = 'template-config-structural-undo';
@@ -43,7 +45,14 @@ export type StructuralMoveDispatcher = (
 
 export function useStructuralUndo(args: {
   tree: GridSection[];
-  moveFieldTo: StructuralMoveDispatcher;
+  /** The RAW dispatcher — undo passes `exactIndex` so the captured slot
+   * is restored even into a meanwhile-collapsed section. */
+  moveFieldTo: (
+    field: GridField,
+    toSectionId: string,
+    toIndex: number,
+    opts?: MoveFieldOptions,
+  ) => FieldMoveRecord | null;
 }): {moveFieldWithUndo: StructuralMoveDispatcher} {
   const {tree, moveFieldTo} = args;
   // The Undo click lands SECONDS after the gesture: resolve the field and
@@ -74,7 +83,9 @@ export function useStructuralUndo(args: {
               toast.info(t('templateConfig', 'undoFieldMissing'));
               return;
             }
-            latest.current.moveFieldTo(current, from.sectionId, from.index);
+            latest.current.moveFieldTo(current, from.sectionId, from.index, {
+              exactIndex: true,
+            });
           },
         },
       });

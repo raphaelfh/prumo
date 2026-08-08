@@ -362,6 +362,24 @@ describe('TemplateConfigGridPanel — Move-to-section dialog (T7)', () => {
     );
   });
 
+  it('the field OWN section is absent from the dialog list (a pick there would silently reorder-to-end)', async () => {
+    renderPanel();
+    await openRowMenu('Beta');
+    await userEvent.click(await menuItem(/Move to section/));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByRole('option', {name: 'Basics'})).toBeNull();
+    expect(within(dialog).getByRole('option', {name: 'Outcomes'})).toBeInTheDocument();
+  });
+
+  it('⌘⇧M ignores the ⌥ variant — an altKey chord is a different shortcut', async () => {
+    renderPanel();
+    const beta = screen.getByRole('button', {name: 'Beta'});
+    focusEl(beta);
+    fireEvent.keyDown(beta, {key: 'M', metaKey: true, shiftKey: true, altKey: true});
+    await flush();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('⌘⇧M opens the dialog for the FOCUSED field row', async () => {
     renderPanel();
     const beta = screen.getByRole('button', {name: 'Beta'});

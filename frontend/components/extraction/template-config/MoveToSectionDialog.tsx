@@ -7,7 +7,9 @@
  * ⌘⇧M binding is the other entry. Destinations are `deriveMoveTargets`
  * — the CURRENT template only, which is the client-side guard against
  * the RLS hole (cross-template moves are server-writable today; B-7
- * owns the server fix). A pick moves the field to that section's END
+ * owns the server fix) — minus the field's OWN section (a pick there
+ * would silently reorder-to-end and arm an Undo toast for a "move" the
+ * user didn't make). A pick moves the field to that section's END
  * via the panel's `moveFieldToSectionEnd`, which dispatches through
  * `moveFieldWithUndo` — the live-region announcement and the
  * single-slot Undo toast ride along automatically.
@@ -72,21 +74,23 @@ export function MoveToSectionDialog({
           <CommandList>
             <CommandEmpty>{t('templateConfig', 'moveDialogEmpty')}</CommandEmpty>
             <CommandGroup heading={t('templateConfig', 'moveDialogHeading')}>
-              {targets.map((target) => (
-                <CommandItem
-                  key={target.id}
-                  // The label is also the cmdk match value — ids would
-                  // pollute typed filtering with uuid hex hits.
-                  value={target.label}
-                  onSelect={() => {
-                    if (field) onMove(field, target.id);
-                    onClose();
-                  }}
-                  className={cn('text-xs', target.kind === 'groupChild' && 'pl-6')}
-                >
-                  {target.label}
-                </CommandItem>
-              ))}
+              {targets
+                .filter((target) => target.id !== field?.entityTypeId)
+                .map((target) => (
+                  <CommandItem
+                    key={target.id}
+                    // The label is also the cmdk match value — ids would
+                    // pollute typed filtering with uuid hex hits.
+                    value={target.label}
+                    onSelect={() => {
+                      if (field) onMove(field, target.id);
+                      onClose();
+                    }}
+                    className={cn('text-xs', target.kind === 'groupChild' && 'pl-6')}
+                  >
+                    {target.label}
+                  </CommandItem>
+                ))}
             </CommandGroup>
           </CommandList>
         </Command>

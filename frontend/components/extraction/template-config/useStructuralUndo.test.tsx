@@ -198,11 +198,14 @@ describe('useStructuralUndo — hook contract', () => {
     rerender({tree: treeOf(renamed)});
     clickUndo();
     expect(dispatcher).toHaveBeenCalledTimes(2);
+    // exactIndex: the restore lands at the CAPTURED slot even when the
+    // destination collapsed meanwhile (no append-to-end on undo).
     expect(dispatcher).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({id: 'f2', label: 'Beta v2'}),
       'sec1',
       1,
+      {exactIndex: true},
     );
     await flush();
     // An undo is not a new undoable: the revert armed NO fresh toast.
@@ -336,6 +339,38 @@ describe('TemplateConfigGridPanel — undo wiring', () => {
     chord(beta, 'ArrowDown');
     await flush();
     expect(toast).not.toHaveBeenCalled();
+  });
+
+  it('undo into a meanwhile-collapsed source restores the CAPTURED index — never append-to-end', async () => {
+    const user = userEvent.setup();
+    // The cross-section move "lands": Beta leaves Basics for Outcomes' end.
+    moveMutateAsync.mockImplementationOnce(async () => {
+      currentEntityTypes = entityTypesOf([
+        field('f1', 'sec1', 'k_alpha', 'Alpha', 1),
+        field('f3', 'sec1', 'k_gamma', 'Gamma', 2),
+        field('f4', 'sec2', 'k_delta', 'Delta', 1),
+        field('f2', 'sec2', 'k_beta', 'Beta', 2),
+      ]);
+      return {} as never;
+    });
+    renderPanel();
+    await user.click(screen.getByRole('button', {name: 'Beta'}));
+    await user.selectOptions(screen.getByLabelText('Section'), 'sec2');
+    await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
+    // The SOURCE section collapses before the user reaches for Undo.
+    await user.click(screen.getByRole('button', {name: /Collapse section — Basics/}));
+    clickUndo();
+    await waitFor(() => expect(moveMutateAsync).toHaveBeenCalledTimes(2));
+    // from = {sec1, index 1}: the restore lands at sort_order 2 — the
+    // collapsed-destination append (sort_order 3) must NOT apply to undo.
+    expect(moveMutateAsync).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        fieldId: 'f2',
+        entityTypeId: 'sec1',
+        sortOrder: 2,
+      }),
+    );
   });
 
   it('undo round-trip: the inverse write re-enters the dispatcher and announces — no new toast', async () => {

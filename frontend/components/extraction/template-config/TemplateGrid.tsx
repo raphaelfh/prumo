@@ -318,15 +318,15 @@ export function TemplateGrid({
     else if (coord.column === 'options') onDeepLink(field, 'options');
   };
 
-  /** Once a move's write + refetch settle, the row's DOM node has been
-   * re-parented (focus fell to body) — nudge focus back onto `target`
-   * via setTimeout, which runs after React's scheduled commit (still
+  /** Once a move settles — either way — the row's DOM node may have been
+   * re-parented (success: the awaited refetch; failure: the order overlay
+   * retiring) and focus fell to body — nudge it back onto `target` via
+   * setTimeout, which runs after React's scheduled commit (still
    * handler-originated, never an effect). Skips the nudge when the user
    * moved focus elsewhere meanwhile. Shared by the ⌘⇧ chord and the row
    * menu's Move up/down (T7). */
   const refocusAfterMove = (record: {settled: Promise<boolean>}, target: CellCoord) => {
-    void record.settled.then((ok) => {
-      if (!ok) return;
+    void record.settled.then(() => {
       setTimeout(() => {
         const table = tableRef.current;
         const active = document.activeElement;
