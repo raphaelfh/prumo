@@ -218,6 +218,52 @@ actual 1566 — CANNOT grow by one line), `lib/copy/extraction.ts` (958),
 - **T8 — Lazy Radix (LAST)**: the always-mounted-trigger pattern above;
   re-measure; drop if <1ms.
 
+## T8 outcome (2026-08-08) — measured, then DROPPED: the pattern is refuted, not the saving
+
+**Measurement (decision 12: whole-grid mount, ~82 rows, production
+build).** CHARMS-shaped fixture (14 entity types = 10 roots + 1 group +
+3 children, 66 fields → 80 data rows + 15 ghosts), mounted via
+`createRoot` + `flushSync` in jsdom on production React
+(`NODE_ENV=production`, prod build asserted via the act-throws probe;
+React Compiler pipeline active), interleaved A/B blocks in one process,
+warmup block discarded, n=56 per variant. Current grid (real Radix
+wrappers, closed): **median 29.6-30.9ms**. Prototype (identical
+always-mounted trigger buttons, dropdown-menu/tooltip modules stubbed
+to pass-through): **median 16.6ms**. Saving **~13-14ms median** across
+two runs — far above the ~1ms drop threshold, and far above the stale
+2.2ms figure (the cost is Radix Root/Trigger machinery, ~440 roots, not
+the buttons).
+
+**Why it is dropped anyway: the "always-mounted trigger" premise is
+empirically false.** React cannot preserve a host node across a changed
+component path — wrapping the button in the Radix wrapper on warm
+REMOUNTS the button DOM node, and the frozen suites pin node
+*identity*, not just reachability. Probed with a minimal warm-flip rig
+(dev React, real Radix, userEvent):
+
+- hover-warm: the flip lands mid-`userEvent.click` (the delay-0 flush
+  between move and press), the captured trigger detaches, and the menu
+  NEVER OPENS → every `click(trigger)` menu test on a cold row goes red
+  (TemplateGrid.test.tsx :145, :214; panel :354-609; MoveMenu suite).
+- focus-warm: the flip drops focus to `body` — the roving invariant
+  breaks at runtime, and :134's captured-node `tabindex="0"` assert
+  reads the stale pre-flip `-1`.
+- controlled open (warm+open on pointerdown/Enter — the only
+  interaction-compatible flip; Enter does open in one keypress): the
+  remount still strands :145's post-close captured-node assert, and
+  cold rows would render NO hover tooltip until first open — violating
+  the icon-button tooltip rule in `.claude/rules/frontend.md`.
+
+So every implementable variant breaks "existing tests stay GREEN
+UNTOUCHED" or regresses a11y. Not shipped (map rule: report, don't
+ship risk).
+
+**If the ~13ms is wanted later, it needs a re-decision, not a retry:**
+(a) idle warm-all — mount cold, flip every row warm in one post-paint
+pass (tests see the warm tree; first paint keeps the full saving;
+total work rises), or (b) replace the per-row Radix roots with lighter
+owned primitives. Both are new architecture outside T8's mandate.
+
 ### Verify (slice gate)
 
 Full suites + tsc + lint per task; `make quality-scan` before PR;
