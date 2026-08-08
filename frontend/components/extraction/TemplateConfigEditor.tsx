@@ -18,6 +18,7 @@ import {Badge} from '@/components/ui/badge';
 import {Download, Loader2, Plus, Settings} from 'lucide-react';
 import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructionRow';
 import {TemplateConfigGridPanel} from '@/components/extraction/template-config/TemplateConfigGridPanel';
+import {TemplateConfigPublishControls} from '@/components/extraction/template-config/TemplateConfigPublishControls';
 import {TemplateFieldDialogs} from '@/components/extraction/template-config/TemplateFieldDialogs';
 import type {ExtractionField} from '@/types/extraction';
 import {toast} from 'sonner';
@@ -152,6 +153,10 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
             <Download className="h-4 w-4 mr-2" />
             {t('extraction', 'configImportTemplateButton')}
           </Button>
+          <TemplateConfigPublishControls
+            projectId={projectId}
+            templateId={templateId}
+          />
         </div>
       </div>
 

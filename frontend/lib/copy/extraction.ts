@@ -80,6 +80,12 @@ export const extraction = {
     configImportThisTemplate: 'Import',
     configImportTemplateButton: 'Import Template',
     configHeaderTitle: 'Template configuration',
+    configPublishButton: 'Publish',
+    configPublishTooltip:
+      'Publish these configuration changes so reviewers and AI runs see them',
+    configUnpublishedChanges: 'Unpublished changes',
+    configPublishedVersion: 'Published · v{{n}}',
+    configPublishSuccess: 'Published v{{n}}',
     configSectionsCountOne: '{{n}} section · {{main}} main',
     configSectionsCountOther: '{{n}} sections · {{main}} main',
     configSubSectionsCountOne: '{{n}} sub-section',
