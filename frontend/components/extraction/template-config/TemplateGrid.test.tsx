@@ -1,4 +1,4 @@
-import {render, screen} from '@testing-library/react';
+import {act, render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -57,6 +57,7 @@ function renderGrid(over: Partial<Parameters<typeof TemplateGrid>[0]> = {}) {
     onDeleteField: vi.fn(),
     sectionActions,
     onAddSection: vi.fn(),
+    onEscapeEscalate: vi.fn(),
     collapsed: new Set<string>(),
     onToggleCollapse: vi.fn(),
     showKeyColumn: false,
@@ -66,34 +67,124 @@ function renderGrid(over: Partial<Parameters<typeof TemplateGrid>[0]> = {}) {
   };
   // The app mounts TooltipProvider once at the root (App.tsx); the grid's
   // icon-only triggers carry tooltips, so tests must supply it too.
-  render(
+  const {container} = render(
     <TooltipProvider>
       <TemplateGrid {...props} />
     </TooltipProvider>,
   );
-  return props;
+  return {...props, container};
+}
+
+/** DOM .focus() runs the grid's focusin sync (a state update), so it must
+ * be act-wrapped when called outside a userEvent interaction. */
+function focusEl(el: HTMLElement) {
+  act(() => el.focus());
 }
 
 describe('TemplateGrid accessibility', () => {
-  it('does NOT claim role="grid" — it has no arrow-key cell navigation to back it up', () => {
+  it('claims role="grid" — arrow-key cell navigation now backs the promise', () => {
     renderGrid();
-    expect(screen.queryByRole('grid')).toBeNull();
-    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getByRole('grid')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.getAllByRole('gridcell').length).toBeGreaterThan(0);
   });
 
-  it('exposes every field as a focusable, named control', async () => {
-    // Regression guard: the shell once put a roving tabIndex on the <tr>
-    // that evaluated to -1 for every row while nothing was selected, so a
-    // keyboard user could not reach a single field.
+  it('keeps EXACTLY ONE tabindex="0", defaulting to the first cell', () => {
+    // Regression guard (B-1): the shell once put a roving tabIndex on the
+    // <tr> that evaluated to -1 for every row while nothing was selected,
+    // so a keyboard user could not reach a single field. The invariant is
+    // empirical: exactly one tab stop, and it exists BEFORE any focus.
+    const {container} = renderGrid();
+    const stops = container.querySelectorAll('[tabindex="0"]');
+    expect(stops).toHaveLength(1);
+    // The default entry point is the first row's first cell target — the
+    // first section header's collapse control.
+    expect(stops[0]).toHaveAccessibleName(/gridCollapseSection — Source of Data/);
+  });
+
+  it('keeps exactly one tabindex="0" after arrow moves, and the rover follows', async () => {
+    const {container} = renderGrid();
+    const entry = container.querySelector<HTMLElement>('[tabindex="0"]');
+    focusEl(entry!);
+    await userEvent.keyboard('{ArrowDown}');
+    expect(container.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
+    const field = screen.getByRole('button', {name: 'Study design'});
+    expect(document.activeElement).toBe(field);
+    expect(field).toHaveAttribute('tabindex', '0');
+    await userEvent.keyboard('{ArrowRight}');
+    expect(container.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
+    expect(document.activeElement).toHaveAttribute('data-cell-cols', 'type');
+  });
+
+  it('Tab exits the grid — inner controls are not tab stops (APG one-stop)', async () => {
+    renderGrid();
+    const field = screen.getByRole('button', {name: 'Study design'});
+    focusEl(field);
+    await userEvent.tab();
+    expect(screen.getByRole('grid').contains(document.activeElement)).toBe(false);
+  });
+
+  it('paints the focus ring on the whole cell from MODEL state — mouse clicks included', async () => {
+    renderGrid();
+    const field = screen.getByRole('button', {name: 'Study design'});
+    await userEvent.click(field);
+    expect(field.closest('td')?.className).toContain('outline-ring');
+  });
+
+  it('syncs the roving coordinate when focus arrives by other means', async () => {
+    const {container} = renderGrid();
+    const trigger = screen.getByRole('button', {name: /actionsForFieldAria/});
+    focusEl(trigger); // not reachable by Tab or arrows-from-default alone
+    expect(trigger).toHaveAttribute('tabindex', '0');
+    expect(container.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
+    // …and roving continues FROM the synced coordinate.
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(document.activeElement).toHaveAttribute('data-cell-cols', 'sparkle');
+  });
+
+  it('follows focus back to the trigger when the row menu closes', async () => {
+    const {container, onEscapeEscalate} = renderGrid();
+    const trigger = screen.getByRole('button', {name: /actionsForFieldAria/});
+    await userEvent.click(trigger); // menu opens; focus moves to the portal
+    await userEvent.keyboard('{Escape}'); // Radix closes and refocuses the trigger
+    expect(onEscapeEscalate).not.toHaveBeenCalled(); // the portal Esc is the menu's
+    expect(trigger).toHaveAttribute('tabindex', '0');
+    expect(container.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
+  });
+
+  it('routes Esc in focus mode to the central dispatcher (rungs 2-3)', async () => {
+    const {onEscapeEscalate} = renderGrid();
+    focusEl(screen.getByRole('button', {name: 'Study design'}));
+    await userEvent.keyboard('{Escape}');
+    expect(onEscapeEscalate).toHaveBeenCalledTimes(1);
+  });
+
+  it('Enter on the actions cell opens the row menu (capability parity)', async () => {
+    renderGrid();
+    focusEl(screen.getByRole('button', {name: /actionsForFieldAria/}));
+    await userEvent.keyboard('{Enter}');
+    expect(
+      await screen.findByRole('menuitem', {name: /deleteField/}),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps collapse working from the keyboard: Enter on the collapse cell toggles', async () => {
+    const {onToggleCollapse} = renderGrid();
+    focusEl(
+      screen.getByRole('button', {name: /gridCollapseSection — Source of Data/}),
+    );
+    await userEvent.keyboard('{Enter}');
+    expect(onToggleCollapse).toHaveBeenCalledWith('sec');
+  });
+
+  it('still selects a field on click, with the label control named', async () => {
     const {onSelect} = renderGrid();
     const field = screen.getByRole('button', {name: 'Study design'});
-    field.focus();
-    expect(document.activeElement).toBe(field);
     await userEvent.click(field);
     expect(onSelect).toHaveBeenCalledWith({kind: 'field', id: 'f1'});
   });
 
-  it('exposes the section label as a focusable control that selects it', async () => {
+  it('exposes the section label as a control that selects it', async () => {
     const {onSelect} = renderGrid();
     await userEvent.click(screen.getByRole('button', {name: 'Source of Data'}));
     expect(onSelect).toHaveBeenCalledWith({kind: 'section', id: 'sec'});

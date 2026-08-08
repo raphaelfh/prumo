@@ -23,7 +23,9 @@ export type CellKind = 'text' | 'control' | 'ghost';
 
 export interface GridRowShape {
   rowId: string;
-  kind: 'field' | 'ghost';
+  /** 'section' rows (headers) rove like field rows; only 'ghost' is
+   * special-cased (Enter-chain opens it in edit mode). */
+  kind: 'field' | 'ghost' | 'section';
   sectionId: string;
 }
 
@@ -71,7 +73,13 @@ export type GridEvent =
       rows: GridRowShape[];
       columns?: readonly string[];
     }
-  | {type: 'setGhostDraftEmpty'; empty: boolean};
+  | {type: 'setGhostDraftEmpty'; empty: boolean}
+  /** Focus moved by OTHER means (mouse click on an inner control, Radix
+   * menu close refocusing its trigger): the coordinate must follow. A
+   * same-cell sync is identity — the editor input taking focus must not
+   * kick the model out of edit mode; a cross-cell sync lands in focus
+   * mode (the editor commits on blur BEFORE the sync — Task 3). */
+  | {type: 'focusSync'; coord: CellCoord};
 
 function sameCoord(a: CellCoord | null, b: CellCoord): boolean {
   return a !== null && a.rowId === b.rowId && a.column === b.column;
@@ -130,6 +138,11 @@ export function gridReducer(state: GridModelState, event: GridEvent): GridModelS
 
   if (event.type === 'setGhostDraftEmpty') {
     return {...base, ghostDraftEmpty: event.empty};
+  }
+
+  if (event.type === 'focusSync') {
+    if (sameCoord(state.focus, event.coord)) return state;
+    return {...base, focus: event.coord, mode: 'focus', editSeed: null};
   }
 
   if (event.type === 'click') {

@@ -796,6 +796,7 @@ export const extraction = {
     editLabelButton: 'Edit label',
     removeButton: 'Remove',
     // Template config grid (B-1 shell): columns, section metadata, search
+    gridAria: 'Template fields',
     gridColLabel: 'Label',
     gridColType: 'Type',
     gridColRequired: 'Req.',

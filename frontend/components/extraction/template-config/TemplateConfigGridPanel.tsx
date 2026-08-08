@@ -216,6 +216,9 @@ export function TemplateConfigGridPanel({
               onDeleteField={withRawField(onDeleteField)}
               sectionActions={sectionActions}
               onAddSection={onAddSection}
+              // Esc ladder rungs 2-3: the grid's central dispatcher
+              // escalates here once rung 1 (cancel edit) is resolved.
+              onEscapeEscalate={clearOrDeselect}
               collapsed={collapsed}
               onToggleCollapse={(sectionId) => {
                 const next = new Set(collapsed);

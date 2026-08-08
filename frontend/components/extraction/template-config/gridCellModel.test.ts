@@ -228,6 +228,41 @@ describe('gridCellModel — Esc ladder rung 1 + escalation', () => {
   });
 });
 
+describe('gridCellModel — focusSync (focus moved by other means)', () => {
+  it('adopts the coordinate without emitting effects', () => {
+    const s = gridReducer(initialGridState, {
+      type: 'focusSync',
+      coord: at('f-2', 'actions'),
+    });
+    focused(s, 'f-2', 'actions');
+    expect(s.mode).toBe('focus');
+    expect(s.effects).toEqual([]);
+  });
+
+  it('is identity on the already-focused coordinate (no re-render churn)', () => {
+    const one = gridReducer(initialGridState, {
+      type: 'focusSync',
+      coord: at('f-1', 'label'),
+    });
+    const two = gridReducer(one, {type: 'focusSync', coord: at('f-1', 'label')});
+    expect(two).toBe(one);
+  });
+
+  it('lands in focus mode when focus moves to ANOTHER cell mid-edit (blur must commit first — Task 3 contract)', () => {
+    let s = gridReducer(initialGridState, {
+      type: 'click',
+      coord: at('f-1', 'label'),
+      cellKind: 'text',
+      rows: ROWS,
+    });
+    s = gridReducer(s, {type: 'key', key: 'Enter', cellKind: 'text', rows: ROWS});
+    expect(s.mode).toBe('edit');
+    s = gridReducer(s, {type: 'focusSync', coord: at('f-2', 'label')});
+    expect(s.mode).toBe('focus');
+    focused(s, 'f-2', 'label');
+  });
+});
+
 describe('gridCellModel — focus recovery', () => {
   it("recovers to the dead row's section ghost when it survives", () => {
     const surviving = ROWS.filter((r) => r.rowId !== 'f-2');
