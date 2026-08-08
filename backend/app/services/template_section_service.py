@@ -34,12 +34,16 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionEntityType, ProjectExtractionTemplate
+from app.models.extraction import (
+    ExtractionEntityType,
+    ExtractionInstance,
+    ProjectExtractionTemplate,
+)
 from app.schemas.template_structure import (
     SectionCreateRequest,
     SectionDeleteResponse,
     SectionRead,
-    SectionRenameRequest,
+    SectionUpdateRequest,
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 
@@ -77,6 +81,29 @@ class SectionInUseError(Exception):
     409-class: remap of the 23503 from the RESTRICT FK
     ``extraction_instances_entity_type_id_fkey`` (fires for the section
     itself or, via the parent cascade, for any of its model_sections)."""
+
+
+class SectionEntryLabelRoleError(Exception):
+    """``entry_label`` is only editable on a repeating group.
+
+    422-class: deterministic role rule (B-8, D5) — the entry noun lives
+    on the model_container row and nowhere else; no retry can succeed."""
+
+
+class SectionCardinalityRoleError(Exception):
+    """``cardinality`` is only editable on a per-model section.
+
+    422-class (B-8, D5): roots keep their create-time choice and a
+    group always repeats — only model_section rows may flip."""
+
+
+class SectionCardinalityInUseError(Exception):
+    """many -> one refused: a parent instance already holds 2+ entries.
+
+    409-class (B-8, D5): the run view renders only ``instances[0]`` for
+    cardinality-one sections while the completion gate counts required
+    fields on EVERY instance — flipping would make those runs
+    un-completable. The message names the section label."""
 
 
 def _violates(exc: IntegrityError, constraint_name: str) -> bool:
@@ -157,6 +184,9 @@ async def create_section(
         cardinality=payload.cardinality,
         role=payload.role,
         parent_entity_type_id=payload.parent_entity_type_id,
+        # Post-validator value: 'model'-defaulted for containers, None
+        # for every other role (the schema rejects it there).
+        entry_label=payload.entry_label,
         is_required=payload.is_required,
         sort_order=next_sort_order,
     )
@@ -173,22 +203,65 @@ async def create_section(
     return SectionRead.model_validate(section)
 
 
-async def rename_section(
+async def _has_multi_entry_parent(db: AsyncSession, *, section_id: UUID) -> bool:
+    """True when any parent instance holds 2+ instances of this section."""
+    row = (
+        await db.execute(
+            select(ExtractionInstance.parent_instance_id)
+            .where(ExtractionInstance.entity_type_id == section_id)
+            .group_by(ExtractionInstance.parent_instance_id)
+            .having(func.count() >= 2)
+            .limit(1)
+        )
+    ).first()
+    return row is not None
+
+
+async def update_section(
     db: AsyncSession,
     *,
     project_id: UUID,
     template_id: UUID,
     section_id: UUID,
-    payload: SectionRenameRequest,
+    payload: SectionUpdateRequest,
 ) -> SectionRead:
-    """Rename a section (label only; already trimmed by the schema).
+    """Partial section update (label / entry_label / cardinality).
 
-    A no-op rename (same label) skips the write so the 0048 trigger does
-    not stamp the draft marker (the instruction-service precedent)."""
+    Role rules (B-8, D5): ``entry_label`` only on model_container
+    (SectionEntryLabelRoleError); ``cardinality`` only on model_section
+    (SectionCardinalityRoleError); many -> one refused while any parent
+    instance holds 2+ entries (SectionCardinalityInUseError) — the run
+    view would stop rendering instances the completion gate still
+    counts. Each provided field is applied only when it differs from the
+    row; an all-no-op update skips the flush entirely so the 0048
+    trigger does not stamp the draft marker (extends the old
+    rename-no-op contract)."""
     await _owned_template(db, project_id=project_id, template_id=template_id)
     section = await _owned_section(db, template_id=template_id, section_id=section_id)
-    if payload.label != section.label:
-        section.label = payload.label
+
+    if payload.entry_label is not None and section.role != "model_container":
+        raise SectionEntryLabelRoleError(
+            "entry_label can only be edited on a repeating group (model container)"
+        )
+    if payload.cardinality is not None and section.role != "model_section":
+        raise SectionCardinalityRoleError("cardinality can only be edited on a per-model section")
+    if (
+        payload.cardinality == "one"
+        and section.cardinality == "many"
+        and await _has_multi_entry_parent(db, section_id=section_id)
+    ):
+        raise SectionCardinalityInUseError(
+            f'Section "{section.label}" has an entry with multiple items; '
+            "remove the extra items before switching it to once-per-entry"
+        )
+
+    changed = False
+    for attr in ("label", "entry_label", "cardinality"):
+        value = getattr(payload, attr)
+        if value is not None and value != getattr(section, attr):
+            setattr(section, attr, value)
+            changed = True
+    if changed:
         await db.flush()
     return SectionRead.model_validate(section)
 

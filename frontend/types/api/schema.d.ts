@@ -920,13 +920,16 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Rename Template Section
-         * @description Rename a section (label only).
+         * Update Template Section
+         * @description Partial section update: label, entry_label, cardinality (B-8).
          *
-         *     A real rename stamps the B-4 draft marker via the 0048 trigger; a
-         *     no-op rename skips the write (no stamp).
+         *     Role rules are 422s (entry_label only on the repeating group;
+         *     cardinality only on a per-model section); many -> one with a parent
+         *     instance holding 2+ entries is a 409. A real change stamps the B-4
+         *     draft marker via the 0048 trigger; an all-no-op update skips the
+         *     write (no stamp).
          */
-        patch: operations["rename_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch"];
+        patch: operations["update_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch"];
         trace?: never;
     };
     "/api/v1/runs": {
@@ -3769,6 +3772,8 @@ export interface components {
             cardinality: string;
             /** Description */
             description?: string | null;
+            /** Entry Label */
+            entry_label?: string | null;
             /** Fields */
             fields: components["schemas"]["RunViewField"][];
             /**
@@ -3963,6 +3968,9 @@ export interface components {
          *     frontend's read-then-write race. The ``ck_role_parent`` validator
          *     below mirrors the DB CHECK of the same name; parent OWNERSHIP
          *     (parent belongs to THIS template) is the service's BOLA job.
+         *     ``entry_label`` is the repeating group's entry noun (B-8, D3):
+         *     container-only, defaulting to ``'model'``; containers always repeat
+         *     (``cardinality='many'`` is enforced, never chosen).
          */
         SectionCreateRequest: {
             /**
@@ -3972,6 +3980,8 @@ export interface components {
             cardinality: "one" | "many";
             /** Description */
             description?: string | null;
+            /** Entry Label */
+            entry_label?: string | null;
             /**
              * Is Required
              * @default false
@@ -4109,6 +4119,8 @@ export interface components {
             created_at: string;
             /** Description */
             description?: string | null;
+            /** Entry Label */
+            entry_label?: string | null;
             /**
              * Id
              * Format: uuid
@@ -4136,13 +4148,22 @@ export interface components {
             sort_order: number;
         };
         /**
-         * SectionRenameRequest
-         * @description Rename a section: the label is the only client-editable attribute
-         *     after creation (structure changes are create/delete operations).
+         * SectionUpdateRequest
+         * @description Partial section update: ``label`` (any role), ``entry_label``
+         *     (repeating groups only) and ``cardinality`` (per-model sections
+         *     only) — the role rules live in the service, which owns the row
+         *     (B-8, D5). At least one field must be provided, and explicit nulls
+         *     are rejected (omit instead) so a smuggled ``{"label": null}`` can
+         *     never blank a column. Replaces the label-only SectionRenameRequest;
+         *     the pre-B-8 label-only body stays valid.
          */
-        SectionRenameRequest: {
+        SectionUpdateRequest: {
+            /** Cardinality */
+            cardinality?: ("one" | "many") | null;
+            /** Entry Label */
+            entry_label?: string | null;
             /** Label */
-            label: string;
+            label?: string | null;
         };
         /**
          * SkippedFileEntry
@@ -6234,7 +6255,7 @@ export interface operations {
             };
         };
     };
-    rename_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch: {
+    update_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -6247,7 +6268,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SectionRenameRequest"];
+                "application/json": components["schemas"]["SectionUpdateRequest"];
             };
         };
         responses: {

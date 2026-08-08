@@ -544,6 +544,26 @@ class TestRunViewEntityType:
         assert isinstance(et.fields[0], RunViewField)
         assert et.fields[0].name == "age"
 
+    def test_entry_label_absent_in_old_snapshot_is_none(self) -> None:
+        """Pre-B-8 snapshot dicts lack the ``entry_label`` key entirely —
+        parsing must default it to None (consumers fall back to 'model')."""
+        old_snapshot_entity = {
+            "id": str(uuid4()),
+            "name": "prediction_models",
+            "label": "Prediction Models",
+            "cardinality": "many",
+            "role": "model_container",
+            "sort_order": 0,
+            "is_required": True,
+            "fields": [],
+        }
+        et = RunViewEntityType.model_validate(old_snapshot_entity)
+        assert et.entry_label is None
+
+    def test_entry_label_round_trips_when_present(self) -> None:
+        et = RunViewEntityType.model_validate(self._ns(entry_label="algorithm"))
+        assert et.entry_label == "algorithm"
+
 
 # --------------------------------------------------------------------------- #
 # RunViewCurrentValue (no from_attributes)

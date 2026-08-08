@@ -5687,6 +5687,17 @@
             ],
             "title": "Description"
           },
+          "entry_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Label"
+          },
           "fields": {
             "items": {
               "$ref": "#/components/schemas/RunViewField"
@@ -6090,7 +6101,7 @@
       },
       "SectionCreateRequest": {
         "additionalProperties": false,
-        "description": "Create a section (entity type) in the path template.\n\n``role`` is REQUIRED with no default \u2014 the column deliberately has no\nserver_default (migration 0016 step 4) so an insert that omits the\nstructural role fails loudly instead of silently becoming a\nstudy_section. ``sort_order`` is deliberately ABSENT: the server\ncomputes max+1 template-wide inside the INSERT itself, killing the\nfrontend's read-then-write race. The ``ck_role_parent`` validator\nbelow mirrors the DB CHECK of the same name; parent OWNERSHIP\n(parent belongs to THIS template) is the service's BOLA job.",
+        "description": "Create a section (entity type) in the path template.\n\n``role`` is REQUIRED with no default \u2014 the column deliberately has no\nserver_default (migration 0016 step 4) so an insert that omits the\nstructural role fails loudly instead of silently becoming a\nstudy_section. ``sort_order`` is deliberately ABSENT: the server\ncomputes max+1 template-wide inside the INSERT itself, killing the\nfrontend's read-then-write race. The ``ck_role_parent`` validator\nbelow mirrors the DB CHECK of the same name; parent OWNERSHIP\n(parent belongs to THIS template) is the service's BOLA job.\n``entry_label`` is the repeating group's entry noun (B-8, D3):\ncontainer-only, defaulting to ``'model'``; containers always repeat\n(``cardinality='many'`` is enforced, never chosen).",
         "properties": {
           "cardinality": {
             "enum": [
@@ -6111,6 +6122,18 @@
               }
             ],
             "title": "Description"
+          },
+          "entry_label": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Label"
           },
           "is_required": {
             "default": false,
@@ -6391,6 +6414,17 @@
             ],
             "title": "Description"
           },
+          "entry_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Label"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -6453,21 +6487,53 @@
         "title": "SectionRead",
         "type": "object"
       },
-      "SectionRenameRequest": {
+      "SectionUpdateRequest": {
         "additionalProperties": false,
-        "description": "Rename a section: the label is the only client-editable attribute\nafter creation (structure changes are create/delete operations).",
+        "description": "Partial section update: ``label`` (any role), ``entry_label``\n(repeating groups only) and ``cardinality`` (per-model sections\nonly) \u2014 the role rules live in the service, which owns the row\n(B-8, D5). At least one field must be provided, and explicit nulls\nare rejected (omit instead) so a smuggled ``{\"label\": null}`` can\nnever blank a column. Replaces the label-only SectionRenameRequest;\nthe pre-B-8 label-only body stays valid.",
         "properties": {
+          "cardinality": {
+            "anyOf": [
+              {
+                "enum": [
+                  "one",
+                  "many"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cardinality"
+          },
+          "entry_label": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Label"
+          },
           "label": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Label",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
           }
         },
-        "required": [
-          "label"
-        ],
-        "title": "SectionRenameRequest",
+        "title": "SectionUpdateRequest",
         "type": "object"
       },
       "SkippedFileEntry": {
@@ -10492,8 +10558,8 @@
         ]
       },
       "patch": {
-        "description": "Rename a section (label only).\n\nA real rename stamps the B-4 draft marker via the 0048 trigger; a\nno-op rename skips the write (no stamp).",
-        "operationId": "rename_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch",
+        "description": "Partial section update: label, entry_label, cardinality (B-8).\n\nRole rules are 422s (entry_label only on the repeating group;\ncardinality only on a per-model section); many -> one with a parent\ninstance holding 2+ entries is a 409. A real change stamps the B-4\ndraft marker via the 0048 trigger; an all-no-op update skips the\nwrite (no stamp).",
+        "operationId": "update_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -10530,7 +10596,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SectionRenameRequest"
+                "$ref": "#/components/schemas/SectionUpdateRequest"
               }
             }
           },
@@ -10563,7 +10629,7 @@
             "Supabase JWT": []
           }
         ],
-        "summary": "Rename Template Section",
+        "summary": "Update Template Section",
         "tags": [
           "project-templates"
         ]

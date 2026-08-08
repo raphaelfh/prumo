@@ -363,6 +363,7 @@ class TemplateCloneService:
                     ),
                     cardinality=et.cardinality,
                     role=et.role,
+                    entry_label=et.entry_label,
                     sort_order=et.sort_order,
                     is_required=et.is_required,
                 )

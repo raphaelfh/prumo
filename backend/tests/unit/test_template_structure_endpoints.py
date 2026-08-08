@@ -23,7 +23,7 @@ from app.schemas.template_structure import (
     SectionCreateRequest,
     SectionDeleteResponse,
     SectionRead,
-    SectionRenameRequest,
+    SectionUpdateRequest,
     TemplateFieldCreateRequest,
     TemplateFieldDeleteResponse,
     TemplateFieldMoveRequest,
@@ -44,6 +44,9 @@ from app.services.template_field_service import (
 )
 from app.services.template_section_service import (
     OneContainerError,
+    SectionCardinalityInUseError,
+    SectionCardinalityRoleError,
+    SectionEntryLabelRoleError,
     SectionInUseError,
     SectionNotFoundError,
     SectionParentRoleError,
@@ -258,14 +261,14 @@ async def test_create_section_wraps_commits_and_scopes(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_rename_section_wraps_commits_and_scopes(monkeypatch) -> None:
+async def test_update_section_wraps_commits_and_scopes(monkeypatch) -> None:
     project_id, template_id, section_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-    body = SectionRenameRequest(label="Renamed")
+    body = SectionUpdateRequest(label="Renamed")
     read = _section_read(template_id)
     service = AsyncMock(return_value=read)
-    monkeypatch.setattr(endpoint_module, "rename_section", service)
+    monkeypatch.setattr(endpoint_module, "update_section", service)
     db = AsyncMock()
-    response = await endpoint_module.rename_template_section(
+    response = await endpoint_module.update_template_section(
         project_id=project_id,
         template_id=template_id,
         section_id=section_id,
@@ -382,12 +385,12 @@ async def _call_create_section(db: AsyncMock) -> Any:
     )
 
 
-async def _call_rename_section(db: AsyncMock) -> Any:
-    return await endpoint_module.rename_template_section(
+async def _call_update_section(db: AsyncMock) -> Any:
+    return await endpoint_module.update_template_section(
         project_id=uuid.uuid4(),
         template_id=uuid.uuid4(),
         section_id=uuid.uuid4(),
-        body=SectionRenameRequest(label="Renamed"),
+        body=SectionUpdateRequest(label="Renamed"),
         request=_request(),
         db=db,
         _user_sub=uuid.uuid4(),
@@ -427,8 +430,11 @@ _ERROR_CASES: list[tuple[str, _Caller, Exception, int]] = [
     ("create_section", _call_create_section, SectionNotFoundError("nope"), 404),
     ("create_section", _call_create_section, SectionParentRoleError("bad parent"), 400),
     ("create_section", _call_create_section, OneContainerError("second"), 409),
-    ("rename_section", _call_rename_section, ProjectTemplateNotFoundError("nope"), 404),
-    ("rename_section", _call_rename_section, SectionNotFoundError("nope"), 404),
+    ("update_section", _call_update_section, ProjectTemplateNotFoundError("nope"), 404),
+    ("update_section", _call_update_section, SectionNotFoundError("nope"), 404),
+    ("update_section", _call_update_section, SectionEntryLabelRoleError("group only"), 422),
+    ("update_section", _call_update_section, SectionCardinalityRoleError("per-model only"), 422),
+    ("update_section", _call_update_section, SectionCardinalityInUseError("in use"), 409),
     ("delete_section", _call_delete_section, ProjectTemplateNotFoundError("nope"), 404),
     ("delete_section", _call_delete_section, SectionNotFoundError("nope"), 404),
     ("delete_section", _call_delete_section, SectionInUseError("has data"), 409),

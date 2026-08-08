@@ -120,6 +120,44 @@ async def test_clone_copies_llm_template_instruction(db_session: AsyncSession) -
 
 
 @pytest.mark.asyncio
+async def test_clone_carries_entry_label(db_session: AsyncSession) -> None:
+    """B-8: the container's entry noun survives the global -> project
+    copy and is frozen into the v1 snapshot."""
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await clean_project_clones(db_session, project_id)
+
+    result = await TemplateCloneService(db_session).clone(
+        project_id=project_id,
+        global_template_id=CHARMS_GLOBAL_ID,
+        user_id=user_id,
+        kind=TemplateKind.EXTRACTION,
+    )
+
+    container = (
+        await db_session.execute(
+            select(ExtractionEntityType).where(
+                ExtractionEntityType.project_template_id == result.project_template_id,
+                ExtractionEntityType.role == "model_container",
+            )
+        )
+    ).scalar_one()
+    assert container.entry_label == "model", "clone must carry the global's entry_label"
+
+    v1_schema = (
+        await db_session.execute(
+            text("SELECT schema FROM public.extraction_template_versions WHERE id = :vid"),
+            {"vid": str(result.version_id)},
+        )
+    ).scalar_one()
+    snapshot_container = next(
+        et for et in v1_schema["entity_types"] if et["role"] == "model_container"
+    )
+    assert snapshot_container["entry_label"] == "model"
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
 async def test_clone_selfheals_snapshot_from_live_on_drift(
     db_session: AsyncSession,
 ) -> None:
