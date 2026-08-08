@@ -34,6 +34,7 @@ import {Info, Loader2, Plus} from 'lucide-react';
 import {createSection} from '@/services/templateService';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
+import {generateSnakeCaseName} from '@/lib/extraction/slug';
 
 // =================== SCHEMAS ===================
 
@@ -68,21 +69,6 @@ interface AddSectionDialogProps {
   onOpenChange: (open: boolean) => void;
   onSectionAdded: () => void;
 }
-
-// =================== UTILS ===================
-
-/**
- * Convert label to snake_case
- */
-const generateSnakeCaseName = (label: string): string => {
-  return label
-    .toLowerCase()
-    .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '') // Remove accents
-      .replace(/[^a-z0-9\s]/g, '') // Remove special characters
-    .trim()
-      .replace(/\s+/g, '_'); // Replace spaces with _
-};
 
 // =================== COMPONENT ===================
 

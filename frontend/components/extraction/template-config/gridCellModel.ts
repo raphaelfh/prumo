@@ -121,8 +121,9 @@ function moveHorizontal(
 }
 
 /** Commit the current edit, then advance DOWN in the same column —
- * chaining into a ghost row (which opens in edit mode) when the next
- * row is one. */
+ * chaining into a FIELD ghost row (which opens in edit mode) when the
+ * next row is one. The template-level add-section ghost (empty
+ * sectionId) has no inline editor, so landing there stays focus mode. */
 function commitAndAdvance(state: GridModelState, rows: GridRowShape[]): GridModelState {
   if (!state.focus) return state;
   const effects: GridEffect[] = [{kind: 'commit', coord: state.focus}];
@@ -132,7 +133,7 @@ function commitAndAdvance(state: GridModelState, rows: GridRowShape[]): GridMode
     return {...state, mode: 'focus', editSeed: null, effects};
   }
   const focus = {rowId: next.rowId, column: state.focus.column};
-  if (next.kind === 'ghost') {
+  if (next.kind === 'ghost' && next.sectionId !== '') {
     return {...state, focus, mode: 'edit', editSeed: null, ghostDraftEmpty: true, effects};
   }
   return {...state, focus, mode: 'focus', editSeed: null, effects};
@@ -142,6 +143,9 @@ export function gridReducer(state: GridModelState, event: GridEvent): GridModelS
   const base: GridModelState = {...state, effects: []};
 
   if (event.type === 'setGhostDraftEmpty') {
+    // Identity when unchanged: the ghost editor reports on every
+    // keystroke, but only the empty↔non-empty flip is a transition.
+    if (state.ghostDraftEmpty === event.empty) return state;
     return {...base, ghostDraftEmpty: event.empty};
   }
 
@@ -170,6 +174,17 @@ export function gridReducer(state: GridModelState, event: GridEvent): GridModelS
         effects: [{kind: 'activateControl', coord: event.coord}],
       };
     }
+    if (event.cellKind === 'ghost') {
+      // A ghost is an ADD affordance, not a data cell: the first click
+      // already opens its editor (Task 4 Enter-chain entry point).
+      return {
+        ...base,
+        focus: event.coord,
+        mode: 'edit',
+        editSeed: null,
+        ghostDraftEmpty: true,
+      };
+    }
     // Second click on the already-focused text cell edits; first click
     // only focuses/selects.
     if (sameCoord(state.focus, event.coord) && state.mode === 'focus') {
@@ -191,9 +206,20 @@ export function gridReducer(state: GridModelState, event: GridEvent): GridModelS
       };
     }
     if (event.key === 'Enter') {
-      if (event.cellKind === 'ghost' && state.ghostDraftEmpty) {
-        // Empty ghost: exit the chain — no commit, stay focused.
-        return {...base, mode: 'focus', editSeed: null};
+      if (event.cellKind === 'ghost') {
+        if (state.ghostDraftEmpty) {
+          // Empty ghost: exit the chain — no commit, stay focused.
+          return {...base, mode: 'focus', editSeed: null};
+        }
+        // The chain: commit the drafted field and REOPEN the same ghost
+        // empty — the new row renders above it, the editor keeps focus.
+        return {
+          ...base,
+          mode: 'edit',
+          editSeed: null,
+          ghostDraftEmpty: true,
+          effects: state.focus ? [{kind: 'commit', coord: state.focus}] : [],
+        };
       }
       return commitAndAdvance(base, event.rows);
     }
@@ -211,7 +237,13 @@ export function gridReducer(state: GridModelState, event: GridEvent): GridModelS
           effects: state.focus ? [{kind: 'activateControl', coord: state.focus}] : [],
         };
       }
-      return {...base, mode: 'edit', editSeed: null};
+      // A ghost editor always opens on a FRESH empty draft.
+      return {
+        ...base,
+        mode: 'edit',
+        editSeed: null,
+        ghostDraftEmpty: event.cellKind === 'ghost' ? true : state.ghostDraftEmpty,
+      };
     case 'Escape':
       return {...base, effects: [{kind: 'escalateEsc'}]};
     case 'Tab':
@@ -232,13 +264,24 @@ export function gridReducer(state: GridModelState, event: GridEvent): GridModelS
         event.key !== 'Dead' &&
         event.key.length === 1
       ) {
-        // Typing replaces: open the editor seeded with the typed key.
-        return {...base, mode: 'edit', editSeed: event.key};
+        // Typing replaces: open the editor seeded with the typed key —
+        // a seeded ghost draft is born NON-empty.
+        return {
+          ...base,
+          mode: 'edit',
+          editSeed: event.key,
+          ghostDraftEmpty: event.cellKind === 'ghost' ? false : state.ghostDraftEmpty,
+        };
       }
       if (event.printable && event.cellKind !== 'control') {
         // IME/dead-key composition: open WITHOUT seeding (the composed
         // character would be lost — fall back to focus-then-edit).
-        return {...base, mode: 'edit', editSeed: null};
+        return {
+          ...base,
+          mode: 'edit',
+          editSeed: null,
+          ghostDraftEmpty: event.cellKind === 'ghost' ? true : state.ghostDraftEmpty,
+        };
       }
       return base;
   }

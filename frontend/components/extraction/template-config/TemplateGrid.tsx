@@ -50,8 +50,17 @@ import type {GridField, GridSection, TemplateMatchHint} from './templateTree';
  * replaces), Enter commits and advances DOWN, blur commits in place, Esc
  * reverts with focus staying on the cell. Commits surface through
  * `onCommitField`; the row menu still raises `onEditField` for the
- * dialog's other properties (absorbed by the inspector in Task 5). Ghost
- * rows keep their button behavior until Task 4.
+ * dialog's other properties (absorbed by the inspector in Task 5).
+ *
+ * B-5 Task 4: GHOST rows (every section, child sections included) edit
+ * inline — click/Enter/typing opens the ghost editor, Enter commits the
+ * drafted field through `onInsertField` and REOPENS the same editor (the
+ * Enter-chain), Enter on an empty draft exits, a never-typed ghost
+ * auto-discards on blur, a typed one commits. The `＋ ▾` New-field item
+ * focuses the section's ghost editor instead of the old add dialog. The
+ * panel owns the optimistic pending rows; `rowIdRemaps` keeps the focus
+ * coordinate alive when a confirmed pending row swaps its client key for
+ * the server id.
  */
 
 export interface TemplateGridSelection {
@@ -72,6 +81,8 @@ export interface TemplateSectionActions {
   onCommitRename: (sectionId: string) => void;
   onCancelRename: () => void;
   onDelete: (section: GridSection) => void;
+  /** Unused since Task 4 — the ghost editor owns "New field" (both the
+   * ghost rows and the `＋ ▾` item). Deleted with the dialogs in Task 8. */
   onAddField: (sectionId: string) => void;
 }
 
@@ -87,6 +98,12 @@ interface TemplateGridProps {
   /** Inline text-cell commit — label/key writes belong to the panel. Only
    * called with a CHANGED, non-empty, trimmed value. */
   onCommitField: (field: GridField, column: TextCellColumn, value: string) => void;
+  /** Ghost-row commit (Task 4): the panel owns the optimistic insert
+   * queue. Only called with a non-empty, trimmed label. */
+  onInsertField: (sectionId: string, label: string) => void;
+  /** Client key → server id for pending rows the panel reconciled: the
+   * focus coordinate follows the row identity across the drain refetch. */
+  rowIdRemaps?: ReadonlyMap<string, string>;
   sectionActions: TemplateSectionActions;
   onAddSection: () => void;
   /** Esc pressed in focus mode: rungs 2-3 of the ladder belong to the
@@ -137,10 +154,10 @@ const ADD_SECTION_ROW_ID = 'ghost:template';
 
 const ghostRowId = (sectionId: string) => `ghost:${sectionId}`;
 
-/** Keys the grid routes through the cell model on EVERY cell. Text cells
- * additionally route Enter/F2/printables (they open the inline editor);
- * on control cells those stay native — activation happens on the focused
- * inner control itself. */
+/** Keys the grid routes through the cell model on EVERY cell. Text and
+ * ghost cells additionally route Enter/F2/printables (they open the
+ * inline editor); on control cells those stay native — activation
+ * happens on the focused inner control itself. */
 const ROVING_KEYS = new Set([
   'ArrowUp',
   'ArrowDown',
@@ -150,13 +167,16 @@ const ROVING_KEYS = new Set([
   'Tab',
 ]);
 
-/** Which cells edit as free text in this slice: the label/key columns of
- * FIELD rows. Ghost rows stay 'control' until Task 4 lands their editor
- * (typing on them must be inert, not a crash); section rows keep native
+/** Which cells edit as free text: the label/key columns of FIELD rows,
+ * plus every FIELD ghost row ('ghost' — Task 4's Enter-chain). The
+ * template-level add-section ghost (empty sectionId) keeps native button
+ * activation until sections go inline (B-8); section rows keep native
  * activation (rename ownership is Task 6). */
 function cellKindAt(coord: CellCoord, rows: GridRowShape[]): CellKind {
   const row = rows.find((r) => r.rowId === coord.rowId);
-  if (!row || row.kind !== 'field') return 'control';
+  if (!row) return 'control';
+  if (row.kind === 'ghost') return row.sectionId === '' ? 'control' : 'ghost';
+  if (row.kind !== 'field') return 'control';
   return coord.column === 'label' || coord.column === 'key' ? 'text' : 'control';
 }
 
@@ -234,8 +254,8 @@ function findFocusTarget(
 }
 
 /** The visible rows in DOM order — the model's vertical axis. Must mirror
- * the JSX exactly (collapse hides fields/children, filtering hides ghosts,
- * child sections have no ghost row until Task 4). */
+ * the JSX exactly (collapse hides fields/children, filtering hides
+ * ghosts; every section — child sections included — carries a ghost). */
 function buildRowShapes(
   sections: GridSection[],
   collapsed: ReadonlySet<string>,
@@ -257,6 +277,9 @@ function buildRowShapes(
       for (const field of child.fields) {
         rows.push({rowId: field.id, kind: 'field', sectionId: child.id});
       }
+      if (!isFiltering) {
+        rows.push({rowId: ghostRowId(child.id), kind: 'ghost', sectionId: child.id});
+      }
     }
   }
   if (!isFiltering) {
@@ -274,6 +297,7 @@ function resolveFocusCoord(
   focus: CellCoord | null,
   rows: GridRowShape[],
   columns: readonly string[],
+  rowIdRemaps: ReadonlyMap<string, string> | undefined,
 ): CellCoord | null {
   if (rows.length === 0) return null;
   const fallback: CellCoord = {rowId: rows[0].rowId, column: columns[0]};
@@ -281,6 +305,12 @@ function resolveFocusCoord(
   const column = columns.includes(focus.column) ? focus.column : columns[0];
   if (rows.some((row) => row.rowId === focus.rowId)) {
     return {rowId: focus.rowId, column};
+  }
+  // Rule 5 (focus remap): a confirmed pending row now renders under its
+  // server id — follow the row's identity instead of "recovering".
+  const remapped = rowIdRemaps?.get(focus.rowId);
+  if (remapped && rows.some((row) => row.rowId === remapped)) {
+    return {rowId: remapped, column};
   }
   return recoverFocus({rowId: focus.rowId, column}, null, rows) ?? fallback;
 }
@@ -576,6 +606,8 @@ function SectionHeaderRow({
   spanCols,
   onToggle,
   onSelect,
+  onNewField,
+  newFieldDisabled,
   actions,
 }: {
   section: GridSection;
@@ -588,8 +620,20 @@ function SectionHeaderRow({
   spanCols: string;
   onToggle: () => void;
   onSelect: () => void;
+  /** Task 4: focuses the section's ghost editor (the old add dialog dies
+   * in Task 8). Disabled while filtering — the ghost rows are hidden. */
+  onNewField: () => void;
+  newFieldDisabled: boolean;
   actions: TemplateSectionActions;
 }) {
+  // New-field mounts the ghost editor (autoFocus). It must NOT open from
+  // onSelect: the menu's FocusScope is still trapping at that point and
+  // yanks focus straight back off the fresh editor — whose never-typed
+  // blur is an auto-discard. So onSelect only FLAGS the intent and the
+  // open runs in onCloseAutoFocus, after the trap is torn down, with the
+  // default trigger-refocus prevented for that one hand-off. Every other
+  // close keeps the a11y default.
+  const newFieldClaimedFocus = useRef(false);
   const isRenaming = actions.renamingId === section.id;
   const Chevron = collapsed ? ChevronRight : ChevronDown;
   const meta = [
@@ -693,8 +737,23 @@ function SectionHeaderRow({
             </TooltipTrigger>
             <TooltipContent>{t('extraction', 'gridAddMenu')}</TooltipContent>
           </Tooltip>
-          <DropdownMenuContent align="end" className="text-xs">
-            <DropdownMenuItem onSelect={() => actions.onAddField(section.id)}>
+          <DropdownMenuContent
+            align="end"
+            className="text-xs"
+            onCloseAutoFocus={(event) => {
+              if (newFieldClaimedFocus.current) {
+                newFieldClaimedFocus.current = false;
+                event.preventDefault();
+                onNewField();
+              }
+            }}
+          >
+            <DropdownMenuItem
+              onSelect={() => {
+                newFieldClaimedFocus.current = true;
+              }}
+              disabled={newFieldDisabled}
+            >
               <Plus className="mr-2 size-3.5" aria-hidden />
               {t('extraction', 'gridNewField')}
             </DropdownMenuItem>
@@ -716,6 +775,65 @@ function SectionHeaderRow({
   );
 }
 
+/**
+ * Inline editor for a ghost row — the Enter-chain's input. Unlike
+ * TextCellEditor it SURVIVES its own Enter-commit (the chain reopens the
+ * same ghost, so the component clears its draft instead of unmounting)
+ * and reports the empty↔non-empty flip so the model can distinguish
+ * "Enter commits the next field" from "Enter exits the chain". Same
+ * compiler-safe recipe: `autoFocus`, draft seeded from the typed key,
+ * zero refs/effects.
+ */
+function GhostCellEditor({
+  rowId,
+  seed,
+  onCommit,
+  onCancel,
+  onDraftEmptyChange,
+}: {
+  rowId: string;
+  seed: string | null;
+  onCommit: (draft: string, via: 'enter' | 'blur') => void;
+  onCancel: () => void;
+  onDraftEmptyChange: (empty: boolean) => void;
+}) {
+  const [draft, setDraft] = useState(seed ?? '');
+  return (
+    <Input
+      value={draft}
+      autoFocus
+      aria-label={t('extraction', 'gridNewFieldAria')}
+      placeholder={t('extraction', 'gridNewFieldPlaceholder')}
+      data-cell-row={rowId}
+      data-cell-cols="*"
+      onChange={(event) => {
+        const value = event.target.value;
+        const wasEmpty = draft.trim() === '';
+        const isEmpty = value.trim() === '';
+        setDraft(value);
+        if (wasEmpty !== isEmpty) onDraftEmptyChange(isEmpty);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+          event.preventDefault();
+          onCommit(draft, 'enter');
+          // The chain reopens this SAME editor — start the next field
+          // empty. (On an exit the editor unmounts; the set is inert.)
+          setDraft('');
+        }
+        if (event.key === 'Escape') {
+          // Rung 1 belongs to the editor (see TextCellEditor).
+          event.preventDefault();
+          event.stopPropagation();
+          onCancel();
+        }
+      }}
+      onBlur={() => onCommit(draft, 'blur')}
+      className="h-6 text-xs"
+    />
+  );
+}
+
 function GhostRow({
   rowId,
   columnCount,
@@ -723,6 +841,7 @@ function GhostRow({
   label,
   focus,
   onClick,
+  editor,
   testId,
 }: {
   rowId: string;
@@ -731,6 +850,14 @@ function GhostRow({
   label: string;
   focus: CellFocus;
   onClick: () => void;
+  /** Inline-editing support (field ghosts only — the add-section ghost
+   * keeps its button until sections go inline in B-8). */
+  editor?: {
+    editing: {seed: string | null} | null;
+    onCommit: (draft: string, via: 'enter' | 'blur') => void;
+    onCancel: () => void;
+    onDraftEmptyChange: (empty: boolean) => void;
+  };
   testId: string;
 }) {
   return (
@@ -741,18 +868,28 @@ function GhostRow({
         colSpan={columnCount - 1}
         className={cn('px-2', indent, ringClass(focus, rowId, '*'))}
       >
-        <button
-          type="button"
-          data-testid={testId}
-          data-cell-row={rowId}
-          data-cell-cols="*"
-          tabIndex={rovingTabIndex(focus, rowId, '*')}
-          onClick={onClick}
-          className="inline-flex items-center gap-1 rounded italic text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Plus className="size-3" aria-hidden />
-          {label}
-        </button>
+        {editor?.editing ? (
+          <GhostCellEditor
+            rowId={rowId}
+            seed={editor.editing.seed}
+            onCommit={editor.onCommit}
+            onCancel={editor.onCancel}
+            onDraftEmptyChange={editor.onDraftEmptyChange}
+          />
+        ) : (
+          <button
+            type="button"
+            data-testid={testId}
+            data-cell-row={rowId}
+            data-cell-cols="*"
+            tabIndex={rovingTabIndex(focus, rowId, '*')}
+            onClick={onClick}
+            className="inline-flex items-center gap-1 rounded italic text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Plus className="size-3" aria-hidden />
+            {label}
+          </button>
+        )}
       </td>
     </tr>
   );
@@ -765,6 +902,8 @@ export function TemplateGrid({
   onEditField,
   onDeleteField,
   onCommitField,
+  onInsertField,
+  rowIdRemaps,
   sectionActions,
   onAddSection,
   onEscapeEscalate,
@@ -796,7 +935,7 @@ export function TemplateGrid({
   const [gridState, setGridState] = useState(initialGridState);
   const [focusWithin, setFocusWithin] = useState(false);
   const focus: CellFocus = {
-    coord: resolveFocusCoord(gridState.focus, rowShapes, columns),
+    coord: resolveFocusCoord(gridState.focus, rowShapes, columns, rowIdRemaps),
     within: focusWithin,
   };
 
@@ -812,10 +951,10 @@ export function TemplateGrid({
     const coord = coordFromTarget(holder, gridState.focus, columns);
     const cellKind = cellKindAt(coord, rowShapes);
     const printable = isPrintableKey(event) || event.key === 'Dead';
-    const opensTextEditor =
-      cellKind === 'text' &&
+    const opensEditor =
+      (cellKind === 'text' || cellKind === 'ghost') &&
       (event.key === 'Enter' || event.key === 'F2' || printable);
-    if (!ROVING_KEYS.has(event.key) && !opensTextEditor) return;
+    if (!ROVING_KEYS.has(event.key) && !opensEditor) return;
     let state = gridState;
     if (!state.focus || state.focus.rowId !== coord.rowId || state.focus.column !== coord.column) {
       state = gridReducer(state, {type: 'focusSync', coord});
@@ -851,9 +990,10 @@ export function TemplateGrid({
         findFocusTarget(tableRef.current, next.focus)?.focus();
       }
     }
-    if (opensTextEditor && next.mode === 'edit') {
+    if (opensEditor && next.mode === 'edit') {
       // The editor mounts with the seed — the typed character must not
-      // ALSO land natively, and Enter/Space must not click the button.
+      // ALSO land natively, and Enter/Space must not click the button
+      // (on a ghost row, Enter would otherwise ALSO fire its button).
       event.preventDefault();
     }
     setGridState(next);
@@ -916,42 +1056,48 @@ export function TemplateGrid({
     queueMicrotask(() => findFocusTarget(tableRef.current, coord)?.focus());
   };
 
+  /** What a commit effect writes to: a field's text cell, or a ghost row
+   * drafting a NEW field. ONE interpreter for both — the model decides
+   * when a commit happens; the target decides what it means. */
+  type CommitTarget =
+    | {kind: 'field'; field: GridField; column: TextCellColumn}
+    | {kind: 'ghost'; sectionId: string};
+
   const handleEditorCommit = (
-    field: GridField,
-    column: TextCellColumn,
+    target: CommitTarget,
     draft: string,
     via: 'enter' | 'blur',
   ) => {
-    let next =
+    const next =
       via === 'enter'
         ? gridReducer(gridState, {
             type: 'key',
             key: 'Enter',
-            cellKind: 'text',
+            cellKind: target.kind === 'ghost' ? 'ghost' : 'text',
             rows: rowShapes,
             columns,
           })
         : gridReducer(gridState, {type: 'blurCommit'});
     for (const effect of next.effects) {
-      if (effect.kind === 'commit') {
-        const value = draft.trim();
-        const current = column === 'label' ? field.label : field.key;
+      if (effect.kind !== 'commit') continue;
+      const value = draft.trim();
+      if (target.kind === 'field') {
+        const current = target.column === 'label' ? target.field.label : target.field.key;
         // A no-change (or emptied) draft is a revert, never a write.
-        if (value !== '' && value !== current) onCommitField(field, column, value);
-      }
-    }
-    if (next.mode === 'edit') {
-      const landed = rowShapes.find((r) => r.rowId === next.focus?.rowId);
-      if (landed?.kind === 'ghost') {
-        // The Enter-chain opens the ghost editor in Task 4; until then the
-        // chain parks on the ghost row in focus mode (Enter there still
-        // opens the add dialog natively).
-        next = {...next, mode: 'focus'};
+        if (value !== '' && value !== current) {
+          onCommitField(target.field, target.column, value);
+        }
+      } else if (value !== '') {
+        // Ghost commit: the panel enqueues the optimistic insert; the
+        // chain keeps this editor mounted (a never-typed blur is a
+        // discard — the empty value never reaches here as a write).
+        onInsertField(target.sectionId, value);
       }
     }
     setGridState(next);
-    // On Enter the commit owns where focus goes (down); on blur the world
-    // already moved it — stealing it back would fight the user.
+    // On Enter the commit owns where focus goes (down — or back onto the
+    // reopened ghost editor); on blur the world already moved it —
+    // stealing it back would fight the user.
     if (via === 'enter' && next.focus) focusCellSoon(next.focus);
   };
 
@@ -966,6 +1112,44 @@ export function TemplateGrid({
     setGridState(next);
     // Esc keeps focus ON the cell: refocus its control once it remounts.
     if (next.focus) focusCellSoon(next.focus);
+  };
+
+  /** `＋ ▾` New-field and ghost-button clicks land here: open the
+   * section's ghost editor (expanding a collapsed section first — the
+   * editor mounts with autoFocus once the ghost row renders). */
+  const openGhostEditor = (sectionId: string) => {
+    if (collapsed.has(sectionId)) onToggleCollapse(sectionId);
+    setGridState(
+      gridReducer(gridState, {
+        type: 'click',
+        coord: {rowId: ghostRowId(sectionId), column: columns[0]},
+        cellKind: 'ghost',
+        rows: rowShapes,
+      }),
+    );
+  };
+
+  /** The ghost editor reports the empty↔non-empty flip so the model can
+   * tell "Enter chains" from "Enter exits" (`setGhostDraftEmpty`). */
+  const handleGhostDraftEmpty = (empty: boolean) => {
+    const next = gridReducer(gridState, {type: 'setGhostDraftEmpty', empty});
+    if (next !== gridState) setGridState(next);
+  };
+
+  /** Editor wiring for a section's ghost row (any column — the ghost
+   * cell spans them all). */
+  const ghostEditorFor = (sectionId: string) => {
+    const rowId = ghostRowId(sectionId);
+    return {
+      editing:
+        gridState.mode === 'edit' && focus.coord?.rowId === rowId
+          ? {seed: gridState.editSeed}
+          : null,
+      onCommit: (draft: string, via: 'enter' | 'blur') =>
+        handleEditorCommit({kind: 'ghost', sectionId}, draft, via),
+      onCancel: handleEditorCancel,
+      onDraftEmptyChange: handleGhostDraftEmpty,
+    };
   };
 
   const renderFields = (fields: GridField[], indent: string) =>
@@ -991,7 +1175,7 @@ export function TemplateGrid({
           onEdit={() => onEditField(field)}
           onDelete={() => onDeleteField(field)}
           onEditorCommit={(column, draft, via) =>
-            handleEditorCommit(field, column, draft, via)
+            handleEditorCommit({kind: 'field', field, column}, draft, via)
           }
           onEditorCancel={handleEditorCancel}
           showKeyColumn={showKeyColumn}
@@ -1057,6 +1241,8 @@ export function TemplateGrid({
               spanCols={spanCols}
               onToggle={() => onToggleCollapse(section.id)}
               onSelect={() => onSelect({kind: 'section', id: section.id})}
+              onNewField={() => openGhostEditor(section.id)}
+              newFieldDisabled={isFiltering}
               actions={sectionActions}
             />
             {!isCollapsed && (
@@ -1072,7 +1258,8 @@ export function TemplateGrid({
                     indent={isGroup ? INDENT.identityField : INDENT.rootField}
                     label={t('extraction', 'gridNewField')}
                     focus={focus}
-                    onClick={() => sectionActions.onAddField(section.id)}
+                    onClick={() => openGhostEditor(section.id)}
+                    editor={ghostEditorFor(section.id)}
                     testId={`template-grid-add-field-${section.id}`}
                   />
                 )}
@@ -1090,9 +1277,27 @@ export function TemplateGrid({
                         spanCols={spanCols}
                         onToggle={() => onToggleCollapse(child.id)}
                         onSelect={() => onSelect({kind: 'section', id: child.id})}
+                        onNewField={() => openGhostEditor(child.id)}
+                        newFieldDisabled={isFiltering}
                         actions={sectionActions}
                       />
-                      {!childCollapsed && renderFields(child.fields, INDENT.childField)}
+                      {!childCollapsed && (
+                        <>
+                          {renderFields(child.fields, INDENT.childField)}
+                          {!isFiltering && (
+                            <GhostRow
+                              rowId={ghostRowId(child.id)}
+                              columnCount={columnCount}
+                              indent={INDENT.childField}
+                              label={t('extraction', 'gridNewField')}
+                              focus={focus}
+                              onClick={() => openGhostEditor(child.id)}
+                              editor={ghostEditorFor(child.id)}
+                              testId={`template-grid-add-field-${child.id}`}
+                            />
+                          )}
+                        </>
+                      )}
                     </Fragment>
                   );
                 })}

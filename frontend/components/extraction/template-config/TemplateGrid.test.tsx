@@ -56,6 +56,7 @@ function renderGrid(over: Partial<Parameters<typeof TemplateGrid>[0]> = {}) {
     onEditField: vi.fn(),
     onDeleteField: vi.fn(),
     onCommitField: vi.fn(),
+    onInsertField: vi.fn(),
     sectionActions,
     onAddSection: vi.fn(),
     onEscapeEscalate: vi.fn(),
@@ -231,6 +232,7 @@ describe('TemplateGrid accessibility', () => {
   it('hides ghost add-rows while a search filter is active', () => {
     renderGrid({isFiltering: true});
     expect(screen.queryByTestId('template-grid-add-section')).toBeNull();
+    expect(screen.queryByTestId('template-grid-add-field-sec')).toBeNull();
   });
 });
 
@@ -280,9 +282,10 @@ describe('TemplateGrid inline text editing (B-5 Task 3)', () => {
       'label',
       'Renamed field',
     );
-    // The row below f1 is the section's ghost row.
+    // The row below f1 is the section's ghost row — the chain opens its
+    // EDITOR (Task 4), not the button.
     expect(document.activeElement).toBe(
-      screen.getByTestId('template-grid-add-field-sec'),
+      screen.getByRole('textbox', {name: 'gridNewFieldAria'}),
     );
   });
 
@@ -316,22 +319,15 @@ describe('TemplateGrid inline text editing (B-5 Task 3)', () => {
     );
   });
 
-  it('a no-change commit fires NO write but still advances', async () => {
+  it('a no-change commit fires NO write but still advances into the ghost editor', async () => {
     const {onCommitField} = renderGrid();
     focusEl(screen.getByRole('button', {name: 'Study design'}));
     await userEvent.keyboard('{Enter}');
     await userEvent.keyboard('{Enter}');
     expect(onCommitField).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(
-      screen.getByTestId('template-grid-add-field-sec'),
+      screen.getByRole('textbox', {name: 'gridNewFieldAria'}),
     );
-  });
-
-  it('typing on a ghost row neither crashes nor opens an editor (Task 4 owns ghosts)', async () => {
-    renderGrid();
-    focusEl(screen.getByTestId('template-grid-add-field-sec'));
-    await userEvent.keyboard('a');
-    expect(screen.queryByRole('textbox')).toBeNull();
   });
 
   it('edits the key cell when the column is shown, committing the key', async () => {
@@ -353,5 +349,147 @@ describe('TemplateGrid inline text editing (B-5 Task 3)', () => {
       'key',
       'new_key',
     );
+  });
+});
+
+describe('TemplateGrid ghost-row Enter-chain (B-5 Task 4)', () => {
+  const ghostEditor = () =>
+    screen.getByRole<HTMLInputElement>('textbox', {name: 'gridNewFieldAria'});
+  const queryGhostEditor = () =>
+    screen.queryByRole<HTMLInputElement>('textbox', {name: 'gridNewFieldAria'});
+
+  /** Group + child tree: child sections get ghost rows too in Task 4. */
+  const groupTree = buildTemplateTree(
+    [
+      {
+        id: 'grp',
+        name: 'models',
+        label: 'Models',
+        description: null,
+        role: 'model_container',
+        cardinality: 'one',
+        parent_entity_type_id: null,
+        sort_order: 1,
+      },
+      {
+        id: 'child',
+        name: 'model_a',
+        label: 'Model A',
+        description: null,
+        role: 'model_section',
+        cardinality: 'one',
+        parent_entity_type_id: 'grp',
+        sort_order: 1,
+      },
+    ],
+    [
+      {
+        id: 'cf1',
+        entity_type_id: 'child',
+        name: 'auc',
+        label: 'AUC',
+        description: null,
+        field_type: 'number',
+        is_required: false,
+        allowed_values: null,
+        llm_description: null,
+        sort_order: 1,
+      },
+    ],
+  );
+
+  it('renders a ghost row for CHILD sections too', () => {
+    renderGrid({sections: groupTree});
+    expect(screen.getByTestId('template-grid-add-field-grp')).toBeInTheDocument();
+    expect(screen.getByTestId('template-grid-add-field-child')).toBeInTheDocument();
+  });
+
+  it('clicking the ghost row opens its editor on the FIRST click', async () => {
+    renderGrid();
+    await userEvent.click(screen.getByTestId('template-grid-add-field-sec'));
+    expect(document.activeElement).toBe(ghostEditor());
+    expect(ghostEditor()).toHaveValue('');
+  });
+
+  it('typing on the focused ghost row opens the editor seeded (typing replaces)', async () => {
+    renderGrid();
+    focusEl(screen.getByTestId('template-grid-add-field-sec'));
+    await userEvent.keyboard('a');
+    expect(ghostEditor()).toHaveValue('a');
+  });
+
+  it('ghost Enter inserts the field and keeps the chain open with a cleared editor', async () => {
+    const {onInsertField} = renderGrid();
+    await userEvent.click(screen.getByTestId('template-grid-add-field-sec'));
+    await userEvent.keyboard('Peso');
+    await userEvent.keyboard('{Enter}');
+    expect(onInsertField).toHaveBeenCalledTimes(1);
+    expect(onInsertField).toHaveBeenCalledWith('sec', 'Peso');
+    // The chain reopens the SAME ghost editor, emptied, still focused.
+    expect(ghostEditor()).toHaveValue('');
+    expect(document.activeElement).toBe(ghostEditor());
+  });
+
+  it('Enter on an EMPTY ghost exits the chain back to the ghost button', async () => {
+    const {onInsertField} = renderGrid();
+    await userEvent.click(screen.getByTestId('template-grid-add-field-sec'));
+    await userEvent.keyboard('{Enter}');
+    expect(onInsertField).not.toHaveBeenCalled();
+    expect(queryGhostEditor()).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByTestId('template-grid-add-field-sec'),
+    );
+  });
+
+  it('a never-typed ghost auto-discards on blur', async () => {
+    const {onInsertField} = renderGrid();
+    await userEvent.click(screen.getByTestId('template-grid-add-field-sec'));
+    expect(ghostEditor()).toBeInTheDocument();
+    await userEvent.tab();
+    expect(onInsertField).not.toHaveBeenCalled();
+    expect(queryGhostEditor()).toBeNull();
+  });
+
+  it('blur on a TYPED ghost commits the insert in place', async () => {
+    const {onInsertField} = renderGrid();
+    await userEvent.click(screen.getByTestId('template-grid-add-field-sec'));
+    await userEvent.keyboard('Altura');
+    await userEvent.tab();
+    expect(onInsertField).toHaveBeenCalledTimes(1);
+    expect(onInsertField).toHaveBeenCalledWith('sec', 'Altura');
+    expect(queryGhostEditor()).toBeNull();
+  });
+
+  it('Esc on the ghost editor discards without an insert, focus back on the ghost', async () => {
+    const {onInsertField} = renderGrid();
+    await userEvent.click(screen.getByTestId('template-grid-add-field-sec'));
+    await userEvent.keyboard('zzz');
+    await userEvent.keyboard('{Escape}');
+    expect(onInsertField).not.toHaveBeenCalled();
+    expect(queryGhostEditor()).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByTestId('template-grid-add-field-sec'),
+    );
+  });
+
+  it('the ＋ ▾ New-field item opens the section ghost editor, not the dialog', async () => {
+    const {sectionActions} = renderGrid();
+    await userEvent.click(
+      screen.getByRole('button', {name: /gridAddMenu — Source of Data/}),
+    );
+    await userEvent.click(
+      await screen.findByRole('menuitem', {name: /gridNewField/}),
+    );
+    expect(ghostEditor()).toBeInTheDocument();
+    expect(sectionActions.onAddField).not.toHaveBeenCalled();
+  });
+
+  it('the ＋ ▾ New-field item is disabled while filtering (ghosts are hidden)', async () => {
+    renderGrid({isFiltering: true});
+    await userEvent.click(
+      screen.getByRole('button', {name: /gridAddMenu — Source of Data/}),
+    );
+    const item = await screen.findByRole('menuitem', {name: /gridNewField/});
+    expect(item).toHaveAttribute('aria-disabled', 'true');
   });
 });

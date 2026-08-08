@@ -228,6 +228,88 @@ describe('gridCellModel — Esc ladder rung 1 + escalation', () => {
   });
 });
 
+describe('gridCellModel — ghost transitions (Task 4: the Enter-chain)', () => {
+  it('click on a field ghost opens its editor IMMEDIATELY (an affordance, not a data cell)', () => {
+    const s = gridReducer(initialGridState, {
+      type: 'click',
+      coord: at('ghost:s-1', 'label'),
+      cellKind: 'ghost',
+      rows: ROWS,
+    });
+    focused(s, 'ghost:s-1', 'label');
+    expect(s.mode).toBe('edit');
+    expect(s.editSeed).toBeNull();
+    expect(s.ghostDraftEmpty).toBe(true);
+  });
+
+  it('Enter on a NON-empty ghost commits and REOPENS the same ghost empty (the chain)', () => {
+    let s: GridModelState = {
+      ...initialGridState,
+      focus: at('ghost:s-1', 'label'),
+      mode: 'edit',
+      ghostDraftEmpty: false,
+    };
+    s = gridReducer(s, {type: 'key', key: 'Enter', cellKind: 'ghost', rows: ROWS});
+    expect(s.effects).toContainEqual({kind: 'commit', coord: at('ghost:s-1', 'label')});
+    focused(s, 'ghost:s-1', 'label');
+    expect(s.mode).toBe('edit');
+    expect(s.ghostDraftEmpty).toBe(true);
+  });
+
+  it('typing on a focused ghost seeds the editor and marks the draft NON-empty', () => {
+    let s = gridReducer(initialGridState, {
+      type: 'focusSync',
+      coord: at('ghost:s-1', 'label'),
+    });
+    s = gridReducer(s, {
+      type: 'key',
+      key: 'p',
+      printable: true,
+      cellKind: 'ghost',
+      rows: ROWS,
+    });
+    expect(s.mode).toBe('edit');
+    expect(s.editSeed).toBe('p');
+    expect(s.ghostDraftEmpty).toBe(false);
+  });
+
+  it('Enter on a focused ghost opens the editor with an EMPTY draft', () => {
+    let s = gridReducer(initialGridState, {
+      type: 'focusSync',
+      coord: at('ghost:s-1', 'label'),
+    });
+    // A previous chain may have left ghostDraftEmpty false.
+    s = {...s, ghostDraftEmpty: false};
+    s = gridReducer(s, {type: 'key', key: 'Enter', cellKind: 'ghost', rows: ROWS});
+    expect(s.mode).toBe('edit');
+    expect(s.editSeed).toBeNull();
+    expect(s.ghostDraftEmpty).toBe(true);
+  });
+
+  it('a field commit landing on the ADD-SECTION ghost does NOT open an editor', () => {
+    const rows: GridRowShape[] = [
+      {rowId: 'f-9', kind: 'field', sectionId: 's-9'},
+      {rowId: 'ghost:template', kind: 'ghost', sectionId: ''},
+    ];
+    let s: GridModelState = {
+      ...initialGridState,
+      focus: at('f-9', 'label'),
+      mode: 'edit',
+    };
+    s = gridReducer(s, {type: 'key', key: 'Enter', cellKind: 'text', rows});
+    focused(s, 'ghost:template', 'label');
+    expect(s.mode).toBe('focus');
+  });
+
+  it('setGhostDraftEmpty is identity when the flag is unchanged (no per-keystroke churn)', () => {
+    const s = gridReducer(initialGridState, {
+      type: 'setGhostDraftEmpty',
+      empty: true,
+    });
+    expect(s).toBe(initialGridState);
+  });
+});
+
 describe('gridCellModel — blurCommit (editor lost focus to the world)', () => {
   it('commits in edit mode WITHOUT moving focus — the blur already decided where focus goes', () => {
     let s = gridReducer(initialGridState, {
