@@ -33,9 +33,17 @@ from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_session_service import HITLSessionService
-from app.services.template_clone_service import TemplateNotFoundError
+from app.services.template_clone_service import (
+    PendingConfigDraftError,
+    TemplateNotFoundError,
+)
 
-__all__ = ["RepublishResult", "TemplateNotFoundError", "TemplateVersionService"]
+__all__ = [
+    "PendingConfigDraftError",
+    "RepublishResult",
+    "TemplateNotFoundError",
+    "TemplateVersionService",
+]
 
 _EDITABLE_STAGES = (
     ExtractionRunStage.PENDING.value,
@@ -72,6 +80,7 @@ class TemplateVersionService:
         project_id: UUID,
         project_template_id: UUID,
         user_id: UUID,
+        fail_if_pending_draft: bool = False,
     ) -> RepublishResult:
         # BOLA defense (unlocked read): validate ownership before taking any
         # lock, so a caller who is only a manager elsewhere can never lock —
@@ -88,6 +97,26 @@ class TemplateVersionService:
             raise TemplateNotFoundError(f"Template {project_template_id} not found")
 
         run_pairs = await self.acquire_publish_locks(project_template_id)
+
+        if fail_if_pending_draft:
+            # Authoritative pending-draft check, UNDER the row FOR UPDATE:
+            # callers' unlocked pre-checks are TOCTOU-racy — a stamp that
+            # committed after their read is visible here and must refuse
+            # rather than be silently published (B-4). Callers whose own
+            # transaction deliberately stamped (clone fresh/zero-state
+            # rebuilds) must NOT pass this flag.
+            pending = (
+                await self.db.execute(
+                    select(ProjectExtractionTemplate.config_draft_since).where(
+                        ProjectExtractionTemplate.id == project_template_id
+                    )
+                )
+            ).scalar_one()
+            if pending is not None:
+                raise PendingConfigDraftError(
+                    "Template has unpublished configuration changes. "
+                    "Publish them before re-importing."
+                )
 
         # Publishing makes the live tree the recorded intent — clear the
         # B-4 draft marker under the same locks as the snapshot build.

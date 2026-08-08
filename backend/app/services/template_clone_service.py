@@ -20,6 +20,17 @@ class TemplateNotFoundError(Exception):
     """The supplied global template id does not exist or has the wrong kind."""
 
 
+class PendingConfigDraftError(Exception):
+    """Publish-adjacent operation refused: unpublished config edits.
+
+    Raised only where the operation would silently PUBLISH a pending
+    draft (the drift heal). Zero-state rebuilds regardless of marker
+    (documented factory recovery); the aligned path publishes nothing.
+    Defined here (not in template_version_service) because that module
+    already imports from this one — this direction adds no new cycle.
+    """
+
+
 def _snapshot_structure_counts(version: ExtractionTemplateVersion) -> tuple[int, int]:
     """Entity-type and field counts recorded in a version snapshot."""
     entity_types = (version.schema_ or {}).get("entity_types", [])
@@ -146,10 +157,22 @@ class TemplateCloneService:
                     TemplateVersionService,
                 )
 
+                if existing.config_draft_since is not None:
+                    # B-4: a marker-set drift is a PENDING DRAFT, and this
+                    # heal would silently publish it. Fast-fail courtesy —
+                    # the AUTHORITATIVE re-check runs under republish's
+                    # locks (fail_if_pending_draft), so a stamp landing
+                    # after this read still refuses. A marker-NULL drift
+                    # is a lost republish and self-heals as before.
+                    raise PendingConfigDraftError(
+                        "Template has unpublished configuration changes. "
+                        "Publish them before re-importing."
+                    )
                 republished = await TemplateVersionService(self.db).republish(
                     project_id=project_id,
                     project_template_id=existing.id,
                     user_id=user_id,
+                    fail_if_pending_draft=True,
                 )
                 version = await self.db.get(ExtractionTemplateVersion, republished.version_id)
                 assert version is not None, (

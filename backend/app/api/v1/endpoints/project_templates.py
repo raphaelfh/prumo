@@ -44,6 +44,7 @@ from app.services.project_template_active_service import (
     set_template_active,
 )
 from app.services.template_clone_service import (
+    PendingConfigDraftError,
     TemplateCloneService,
     TemplateNotFoundError,
 )
@@ -87,6 +88,11 @@ async def clone_template_into_project(
         )
     except TemplateNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except PendingConfigDraftError as e:
+        # B-4: re-importing over a pending draft would silently publish
+        # it via the drift heal — refuse; Publish (or factory-restore by
+        # deleting everything) is the exit.
+        raise HTTPException(status_code=409, detail=str(e)) from e
     await db.commit()
     return ApiResponse.success(
         CloneTemplateResponse(
