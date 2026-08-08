@@ -1,15 +1,28 @@
-import {render, screen} from '@testing-library/react';
+import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
+import {render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {describe, expect, it, vi} from 'vitest';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
+vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
+// The section pane's immediate-commit path (B-8 T6) goes through the
+// service; the hook's cache refresh needs only a QueryClient.
+vi.mock('@/services/templateService', () => ({
+  updateSection: vi.fn(),
+  republishTemplateVersion: vi.fn(),
+}));
+
+import {toast} from 'sonner';
+
+import {PgError} from '@/lib/error-utils';
+import {updateSection} from '@/services/templateService';
 
 import {
   TemplateInspector,
   type MoveTargetSection,
   type SaveFieldHandler,
 } from './TemplateInspector';
-import {buildTemplateTree} from './templateTree';
+import {buildTemplateTree, type GridSection} from './templateTree';
 
 const tree = buildTemplateTree(
   [
@@ -102,9 +115,12 @@ function renderInspector(
   over: Partial<Parameters<typeof TemplateInspector>[0]> = {},
 ) {
   const props = {
+    projectId: 'p1',
+    templateId: 't1',
     field: selectField,
     section: null,
     owningSection: section,
+    parentGroupLabel: null,
     onSaveField: vi.fn() as SaveFieldHandler,
     saving: false,
     focusGroup: null,
@@ -114,6 +130,68 @@ function renderInspector(
     ...over,
   };
   const view = render(<TemplateInspector {...props} />);
+  return {props, view};
+}
+
+/** Group + per-model child tree for the section-pane variants (B-8 T6). */
+const groupTree = buildTemplateTree(
+  [
+    {
+      id: 'grp',
+      name: 'prediction_models',
+      label: 'Prediction models',
+      description: null,
+      role: 'model_container',
+      cardinality: 'many',
+      entry_label: 'algorithm',
+      parent_entity_type_id: null,
+      sort_order: 1,
+    },
+    {
+      id: 'perf',
+      name: 'performance',
+      label: 'Performance',
+      description: null,
+      role: 'model_section',
+      cardinality: 'one',
+      parent_entity_type_id: 'grp',
+      sort_order: 2,
+    },
+  ],
+  [],
+);
+const groupSection = groupTree[0];
+const childSection = groupSection.children[0];
+
+/** Section-pane render: the pane owns the immediate-commit mutation, so
+ * it mounts under a QueryClient (queries/mutations never retry here). */
+function renderSection(
+  selected: GridSection,
+  over: Partial<Parameters<typeof TemplateInspector>[0]> = {},
+) {
+  const client = new QueryClient({
+    defaultOptions: {queries: {retry: false}, mutations: {retry: false}},
+  });
+  const props = {
+    projectId: 'p1',
+    templateId: 't1',
+    field: null,
+    section: selected,
+    owningSection: null,
+    parentGroupLabel: selected.kind === 'groupChild' ? 'Prediction models' : null,
+    onSaveField: vi.fn() as SaveFieldHandler,
+    saving: false,
+    focusGroup: null,
+    sections: moveTargets,
+    onMoveField: vi.fn(),
+    moveDisabled: false,
+    ...over,
+  };
+  const view = render(
+    <QueryClientProvider client={client}>
+      <TemplateInspector {...props} />
+    </QueryClientProvider>,
+  );
   return {props, view};
 }
 
@@ -442,5 +520,164 @@ describe('TemplateInspector Section combobox (B-6 T4)', () => {
   it('is disabled on pending rows (no server id to move yet)', () => {
     renderInspector({moveDisabled: true});
     expect(screen.getByLabelText('inspectorSectionLabel')).toBeDisabled();
+  });
+});
+
+describe('TemplateInspector section pane — group (B-8 T6, D10)', () => {
+  beforeEach(() => {
+    vi.mocked(updateSection).mockReset();
+    vi.mocked(updateSection).mockResolvedValue({ok: true, data: {} as never});
+    vi.mocked(toast.error).mockClear();
+  });
+
+  it('shows the kind line and the LOCKED Repeats row (no select)', () => {
+    renderSection(groupSection);
+    expect(screen.getByText('inspectorGroupKindLine')).toBeInTheDocument();
+    expect(screen.getByText('inspectorGroupAlwaysRepeats')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  it('entry-label input commits IMMEDIATELY on blur via updateSection', async () => {
+    const user = userEvent.setup();
+    renderSection(groupSection);
+    const input = screen.getByLabelText('entryLabelLabel');
+    expect(input).toHaveValue('algorithm');
+
+    await user.clear(input);
+    await user.type(input, ' scenario ');
+    await user.tab();
+
+    await waitFor(() =>
+      expect(updateSection).toHaveBeenCalledWith('p1', 't1', 'grp', {
+        entry_label: 'scenario',
+      }),
+    );
+    expect(updateSection).toHaveBeenCalledTimes(1);
+  });
+
+  it('Enter commits once (blur path), not twice', async () => {
+    const user = userEvent.setup();
+    renderSection(groupSection);
+    const input = screen.getByLabelText('entryLabelLabel');
+    await user.clear(input);
+    await user.type(input, 'scenario{Enter}');
+    await user.tab();
+
+    await waitFor(() => expect(updateSection).toHaveBeenCalledTimes(1));
+  });
+
+  it('an unchanged value is a no-op — no call', async () => {
+    const user = userEvent.setup();
+    renderSection(groupSection);
+    await user.click(screen.getByLabelText('entryLabelLabel'));
+    await user.tab();
+    expect(updateSection).not.toHaveBeenCalled();
+  });
+
+  it('an emptied value reverts the display and does not call', async () => {
+    const user = userEvent.setup();
+    renderSection(groupSection);
+    const input = screen.getByLabelText('entryLabelLabel');
+    await user.clear(input);
+    await user.tab();
+
+    expect(updateSection).not.toHaveBeenCalled();
+    expect(input).toHaveValue('algorithm');
+  });
+
+  it('a failed commit reverts the display', async () => {
+    vi.mocked(updateSection).mockResolvedValue({
+      ok: false,
+      error: new PgError('boom', '500'),
+    });
+    const user = userEvent.setup();
+    renderSection(groupSection);
+    const input = screen.getByLabelText('entryLabelLabel');
+    await user.clear(input);
+    await user.type(input, 'scenario');
+    await user.tab();
+
+    await waitFor(() => expect(input).toHaveValue('algorithm'));
+  });
+});
+
+describe('TemplateInspector section pane — per-model section (B-8 T6, D10)', () => {
+  beforeEach(() => {
+    vi.mocked(updateSection).mockReset();
+    vi.mocked(updateSection).mockResolvedValue({ok: true, data: {} as never});
+    vi.mocked(toast.error).mockClear();
+  });
+
+  it('shows the locked placement line inside the parent group', () => {
+    renderSection(childSection);
+    expect(screen.getByText('inspectorInsideGroup')).toBeInTheDocument();
+  });
+
+  it('Repeats select commits cardinality IMMEDIATELY', async () => {
+    const user = userEvent.setup();
+    renderSection(childSection);
+    const select = screen.getByLabelText('inspectorRepeatsLabel');
+    expect(select).toHaveValue('one');
+
+    await user.selectOptions(select, 'many');
+
+    await waitFor(() =>
+      expect(updateSection).toHaveBeenCalledWith('p1', 't1', 'perf', {
+        cardinality: 'many',
+      }),
+    );
+  });
+
+  it('the D5 many→one 409 surfaces the friendly copy and reverts the select', async () => {
+    vi.mocked(updateSection).mockResolvedValue({
+      ok: false,
+      error: new PgError('templateConfig.errors_cardinalityInUse', '23503'),
+    });
+    const user = userEvent.setup();
+    renderSection(childSection);
+    const select = screen.getByLabelText('inspectorRepeatsLabel');
+
+    await user.selectOptions(select, 'many');
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'templateConfig.errors_cardinalityInUse',
+      ),
+    );
+    expect(select).toHaveValue('one');
+  });
+
+  it('has no entry-label input (groups only)', () => {
+    renderSection(childSection);
+    expect(screen.queryByLabelText('entryLabelLabel')).toBeNull();
+  });
+});
+
+describe('TemplateInspector section pane — root section (B-8 T6, D10)', () => {
+  it('Repeats line is READ-ONLY: one per article', () => {
+    renderSection(section);
+    expect(screen.getByText('repeatsOncePerArticle')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByLabelText('entryLabelLabel')).toBeNull();
+  });
+
+  it('Repeats line is READ-ONLY: repeats per article', () => {
+    const manyTree = buildTemplateTree(
+      [
+        {
+          id: 'authors',
+          name: 'authors',
+          label: 'Authors',
+          description: null,
+          role: 'study_section',
+          cardinality: 'many',
+          parent_entity_type_id: null,
+          sort_order: 1,
+        },
+      ],
+      [],
+    );
+    renderSection(manyTree[0]);
+    expect(screen.getByText('repeatsPerArticle')).toBeInTheDocument();
   });
 });

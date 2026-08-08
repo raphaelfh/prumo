@@ -263,6 +263,14 @@ export function TemplateConfigGridPanel({
   const owningSection = selectedField
     ? findSection(displayTree, selectedField.entityTypeId)
     : null;
+  // B-8 T6: the locked Placement line for a selected per-model section —
+  // the label of the group whose children hold it.
+  const parentGroupLabel =
+    selectedSection?.kind === 'groupChild'
+      ? (displayTree.find((s) =>
+          s.children.some((c) => c.id === selectedSection.id),
+        )?.label ?? null)
+      : null;
   // A deep-link only travels with ITS field — selecting another row keeps
   // the inspector from stealing focus to a stale group.
   const inspectorFocusGroup: InspectorFocusGroup | null =
@@ -669,9 +677,12 @@ export function TemplateConfigGridPanel({
               </SheetHeader>
               <TemplateInspector
                 className="block h-full w-full border-l-0 pt-10"
+                projectId={projectId}
+                templateId={templateId}
                 field={selectedField}
                 section={selectedSection}
                 owningSection={owningSection}
+                parentGroupLabel={parentGroupLabel}
                 onSaveField={saveFieldUpdates}
                 saving={updateField.isPending}
                 sections={moveTargets}
@@ -684,9 +695,12 @@ export function TemplateConfigGridPanel({
         ) : (
           dockedOpen && (
             <TemplateInspector
+              projectId={projectId}
+              templateId={templateId}
               field={selectedField}
               section={selectedSection}
               owningSection={owningSection}
+              parentGroupLabel={parentGroupLabel}
               onSaveField={saveFieldUpdates}
               saving={updateField.isPending}
               sections={moveTargets}

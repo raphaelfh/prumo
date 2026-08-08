@@ -41,6 +41,12 @@ export const templateConfig = {
     'A field with this name already exists in this section.',
   errors_moveField: 'Error moving field',
   errors_reorderFields: 'Error reordering fields',
+  errors_updateSection: 'Error updating section',
+  inspectorGroupAlwaysRepeats: 'A group always repeats',
+  inspectorGroupKindLine: 'Repeating group — reviewers add one entry per {{noun}}',
+  inspectorInsideGroup: 'Inside {{group}}',
+  inspectorPlacementLabel: 'Placement',
+  inspectorRepeatsLabel: 'Repeats',
   menuMoveDown: 'Move down',
   menuMoveToSection: 'Move to section…',
   menuMoveUp: 'Move up',
@@ -52,6 +58,11 @@ export const templateConfig = {
   newPerModelSection: 'New per-{{noun}} section',
   perModelDialogDesc:
     'Lives inside {{group}} — reviewers fill it once for each {{noun}}.',
+  // Capitalized inspector variants — the extraction-namespace meta keys
+  // ('repeats per article') are lowercase inline-meta styling.
+  repeatsOncePerArticle: 'One per article',
+  repeatsPerArticle: 'Repeats per article',
+  sectionUpdatedSuccess: 'Section updated',
   shortcutMoveDown: '⌘⇧↓',
   shortcutMoveToSection: '⌘⇧M',
   shortcutMoveUp: '⌘⇧↑',

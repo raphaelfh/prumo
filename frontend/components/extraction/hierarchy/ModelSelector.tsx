@@ -1,16 +1,15 @@
 /**
  * Model Selector Component
  *
- * Prediction model selector for hierarchical extraction.
- * Lets the user pick a model via dropdown, add new ones, and remove the active one.
+ * Repeating-group entry selector for hierarchical extraction.
+ * Lets the user pick an entry via dropdown, add new ones, and remove the
+ * active one.
  *
- * Features:
- * - Clean, minimalist dropdown
- * - Badge with progress per model
- * - Button to add new model
- * - Button to remove active model
- * - Automatic AI extraction
- * 
+ * B-8 D6: the entry noun is DATA — the container's `entry_label` arrives
+ * as the `entryLabel` prop (default 'model') and interpolates the
+ * `{{noun}}` copy at render time; `title` carries the container's LABEL
+ * (better than a pluralized noun for the heading).
+ *
  * @component
  */
 
@@ -65,6 +64,10 @@ interface ModelSelectorProps {
   projectId?: string;
   articleId?: string;
   templateId?: string;
+  /** Entry noun for `{{noun}}` copy interpolation (B-8 D6). */
+  entryLabel?: string;
+  /** Heading — the container's label; falls back to noun-generic copy. */
+  title?: string;
 }
 
 // =================== COMPONENT ===================
@@ -82,11 +85,16 @@ export function ModelSelector({
   extractingAllSections = false,
   onExtractAllSectionsForAllModels,
   extractingAllSectionsForAllModels = false,
+  entryLabel = 'model',
+  title,
 }: ModelSelectorProps) {
   // Read-only run: add/remove/AI-extract affordances hide (published view).
   // Hook stays above the conditional loading/empty returns (rules of hooks).
   const { readOnly } = useRunEditability();
   const activeModel = models.find(m => m.instanceId === activeModelId);
+  // {{noun}} resolves inline at each call site (D7); the heading's
+  // fallback capitalizes the noun.
+  const nounCap = entryLabel.charAt(0).toUpperCase() + entryLabel.slice(1);
 
   // Renderizar badge de progresso (semantic tokens; flips correctly in dark mode)
   const renderProgressBadge = (progress?: Model['progress']) => {
@@ -129,10 +137,10 @@ export function ModelSelector({
       <div className="rounded-lg border-2 border-dashed border-info/30 bg-info/5 p-6">
         <div className="text-center">
           <h3 className="text-base font-semibold text-foreground mb-2">
-              {t('extraction', 'noModelsAdded')}
+              {t('extraction', 'noModelsAdded').replace('{{noun}}', entryLabel)}
           </h3>
           <p className="text-sm text-muted-foreground mb-4">
-            {t('extraction', 'noModelsAddedDesc')}
+            {t('extraction', 'noModelsAddedDesc').replace('{{noun}}', entryLabel)}
           </p>
           <div className="flex flex-col sm:flex-row gap-2 justify-center">
             {!readOnly && onExtractModels && (
@@ -151,7 +159,7 @@ export function ModelSelector({
                 ) : (
                   <>
                     <Sparkles className="h-4 w-4" />
-                      Extract with AI
+                      {t('extraction', 'modelExtractAIShort')}
                   </>
                 )}
               </Button>
@@ -174,9 +182,11 @@ export function ModelSelector({
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold text-foreground">{t('extraction', 'modelSelectorTitle')}</h3>
+            <h3 className="text-sm font-semibold text-foreground">
+              {title ?? t('extraction', 'modelSelectorTitle').replace('{{noun}}', nounCap)}
+            </h3>
           <p className="text-xs text-muted-foreground mt-1">
-              {t('extraction', 'modelSelectorDesc')}
+              {t('extraction', 'modelSelectorDesc').replace('{{noun}}', entryLabel)}
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
@@ -188,7 +198,7 @@ export function ModelSelector({
                   variant="default"
                   className="gap-2"
                   disabled={extractingModels || extractingAllSectionsForAllModels}
-                  title={t('extraction', 'modelExtractAITitle')}
+                  title={t('extraction', 'modelExtractAITitle').replace('{{noun}}', entryLabel)}
                 >
                   {extractingModels || extractingAllSectionsForAllModels ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -204,14 +214,14 @@ export function ModelSelector({
                   onClick={onExtractModels}
                   disabled={extractingModels || extractingAllSectionsForAllModels}
                 >
-                    {t('extraction', 'modelExtractModelsOnly')}
+                    {t('extraction', 'modelExtractModelsOnly').replace('{{noun}}', entryLabel)}
                 </DropdownMenuItem>
                 {onExtractAllSectionsForAllModels && (
                   <DropdownMenuItem 
                     onClick={onExtractAllSectionsForAllModels}
                     disabled={extractingModels || extractingAllSectionsForAllModels || models.length === 0}
                   >
-                      {t('extraction', 'modelExtractAllSections')}
+                      {t('extraction', 'modelExtractAllSections').replace('{{noun}}', entryLabel)}
                   </DropdownMenuItem>
                 )}
               </DropdownMenuContent>
@@ -223,7 +233,7 @@ export function ModelSelector({
               size="sm"
               variant="outline"
               className="gap-2"
-              title={t('extraction', 'modelAddManuallyTitle')}
+              title={t('extraction', 'modelAddManuallyTitle').replace('{{noun}}', entryLabel)}
             >
               <Plus className="h-4 w-4" />
                 <span className="hidden sm:inline">{t('extraction', 'modelNewShort')}</span>
@@ -236,7 +246,7 @@ export function ModelSelector({
       <div className="flex items-center gap-2">
         <Select value={activeModelId || undefined} onValueChange={onSelectModel}>
           <SelectTrigger className="flex-1">
-              <SelectValue placeholder={t('extraction', 'selectModelPlaceholder')}/>
+              <SelectValue placeholder={t('extraction', 'selectModelPlaceholder').replace('{{noun}}', entryLabel)}/>
           </SelectTrigger>
           <SelectContent>
             {models.map((model) => (
@@ -255,7 +265,7 @@ export function ModelSelector({
             size="sm"
             variant="ghost"
             onClick={() => onRemoveModel(activeModelId)}
-            title={t('extraction', 'modelRemoveActiveTitle')}
+            title={t('extraction', 'modelRemoveActiveTitle').replace('{{noun}}', entryLabel)}
             className="shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
           >
             <Trash2 className="h-4 w-4" />
@@ -268,7 +278,7 @@ export function ModelSelector({
         <div className="rounded-lg border border-border/40 bg-muted/40 p-3">
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
-                <p className="text-xs text-muted-foreground">{t('extraction', 'modelActiveLabel')}</p>
+                <p className="text-xs text-muted-foreground">{t('extraction', 'modelActiveLabel').replace('{{noun}}', entryLabel)}</p>
               <p className="font-medium text-foreground mt-0.5 truncate">{activeModel.modelName}</p>
             </div>
             <div className="flex items-center gap-2 shrink-0">

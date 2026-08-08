@@ -1,7 +1,6 @@
 import {useState} from 'react';
 import {Sparkles} from 'lucide-react';
 
-import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Switch} from '@/components/ui/switch';
@@ -12,6 +11,11 @@ import type {ExtractionFieldUpdate} from '@/types/extraction';
 
 import {AllowedUnitsList} from '../dialogs/AllowedUnitsList';
 import {AllowedValuesList} from '../dialogs/AllowedValuesList';
+import {Label, ReadOnlyValue} from './inspectorShared';
+import {
+  SectionInspectorForm,
+  sectionContentKey,
+} from './TemplateInspectorSectionPane';
 import {
   FIELD_TYPE_OPTIONS,
   type GridField,
@@ -35,6 +39,12 @@ export type {MoveTargetSection} from './templateTree';
  * in the grid. Exception (B-6 T4): the field pane's Section row is the
  * accessible MOVE combobox — an immediate structural action through the
  * panel's move dispatcher, never part of the draft.
+ *
+ * B-8 T6 (D10): the SECTION pane grows the spec's edit affordances —
+ * entry label (groups) and Repeats (per-model sections) — as
+ * IMMEDIATE-commit controls through `useUpdateTemplateSection` (the
+ * Section-combobox semantics: structural, no draft/Save row). Root
+ * sections stay read-only (cardinality is a create-time choice).
  */
 
 /** Deep-link target from the grid's ✨/Options cells: remounts the form
@@ -53,20 +63,21 @@ export type SaveFieldHandler = (
   onSaved: () => void,
 ) => void;
 
-const KIND_COPY = {
-  root: 'inspectorKindRoot',
-  group: 'inspectorKindGroup',
-  groupChild: 'inspectorKindGroupChild',
-} as const;
-
 const PANEL_CLASS =
   'w-[300px] shrink-0 overflow-y-auto border-l bg-muted/20 px-3.5 py-3 text-xs';
 
 interface TemplateInspectorProps {
+  /** Section-pane commit context (B-8 T6) — the immediate PATCH needs
+   * the route ids the panel already holds. */
+  projectId: string;
+  templateId: string;
   field: GridField | null;
   section: GridSection | null;
   /** The section that owns the selected field — the combobox's value. */
   owningSection: GridSection | null;
+  /** Label of the group owning a selected groupChild — the locked
+   * Placement line (null for roots/groups/fields). */
+  parentGroupLabel: string | null;
   onSaveField: SaveFieldHandler;
   /** True while the panel's update mutation is in flight. */
   saving: boolean;
@@ -82,35 +93,6 @@ interface TemplateInspectorProps {
   /** Deep-link from the grid; only forwarded when it targets `field`. */
   focusGroup?: InspectorFocusGroup | null;
   className?: string;
-}
-
-function Label({children, htmlFor}: {children: React.ReactNode; htmlFor?: string}) {
-  const cls =
-    'mb-[3px] mt-[9px] block text-[9.5px] uppercase tracking-[0.05em] text-muted-foreground';
-  if (htmlFor) {
-    return (
-      <label htmlFor={htmlFor} className={cls}>
-        {children}
-      </label>
-    );
-  }
-  return <div className={cls}>{children}</div>;
-}
-
-function ReadOnlyValue({
-  children,
-  muted,
-}: {
-  children: React.ReactNode;
-  muted?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-md border bg-background px-2 py-1 ${muted ? 'text-muted-foreground' : ''}`}
-    >
-      {children}
-    </div>
-  );
 }
 
 /** Compact switch row for the boolean toggles (dispositions, allow-other). */
@@ -546,9 +528,12 @@ function FieldInspectorForm({
 }
 
 export function TemplateInspector({
+  projectId,
+  templateId,
   field,
   section,
   owningSection,
+  parentGroupLabel,
   onSaveField,
   saving,
   sections,
@@ -597,25 +582,15 @@ export function TemplateInspector({
       data-testid="template-inspector"
       className={cn(PANEL_CLASS, className)}
     >
-      <div className="flex items-center gap-1.5">
-        <strong className="min-w-0 flex-1 truncate">{selectedSection.label}</strong>
-        <Badge variant="secondary" className="shrink-0 text-[10px]">
-          {t('extraction', KIND_COPY[selectedSection.kind])}
-        </Badge>
-      </div>
-
-      <Label>{t('extraction', 'inspectorKeyLabel')}</Label>
-      <ReadOnlyValue muted>
-        <span className="font-mono text-[10px]">{selectedSection.key}</span>
-      </ReadOnlyValue>
-
-      <Label>{t('extraction', 'fieldsCountLabel')}</Label>
-      <ReadOnlyValue>{selectedSection.totalFieldCount}</ReadOnlyValue>
-
-      <Label>{t('extraction', 'inspectorDescriptionLabel')}</Label>
-      <ReadOnlyValue muted={!selectedSection.description}>
-        {selectedSection.description ?? t('extraction', 'inspectorDescriptionEmpty')}
-      </ReadOnlyValue>
+      <SectionInspectorForm
+        // Content-keyed remount (B-8 T6): an external edit re-derives
+        // the entry-label/Repeats controls, like fieldContentKey above.
+        key={sectionContentKey(selectedSection)}
+        projectId={projectId}
+        templateId={templateId}
+        section={selectedSection}
+        parentGroupLabel={parentGroupLabel}
+      />
     </aside>
   );
 }

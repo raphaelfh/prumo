@@ -133,6 +133,26 @@ describe('buildTemplateTree', () => {
     expect(tree[2].children[1].metaKeys).toEqual(['sectionMetaRepeatsPerModel']);
   });
 
+  it('projects cardinality onto every section (the inspector edits it)', () => {
+    const tree = buildTemplateTree(
+      [
+        section({id: 'plain', sort_order: 1}),
+        section({id: 'grp', role: 'model_container', cardinality: 'many', sort_order: 2}),
+        section({
+          id: 'childOnce',
+          role: 'model_section',
+          parent_entity_type_id: 'grp',
+          sort_order: 3,
+        }),
+      ],
+      [],
+    );
+
+    expect(tree[0].cardinality).toBe('one');
+    expect(tree[1].cardinality).toBe('many');
+    expect(tree[1].children[0].cardinality).toBe('one');
+  });
+
   it('flags a description dot and an AI instruction per field', () => {
     const tree = buildTemplateTree(
       [section({id: 'a', description: 'Where the data came from'})],

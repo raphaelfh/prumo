@@ -129,6 +129,9 @@ export interface GridSection {
    * PARENT group's resolved noun; roots carry the 'model' fallback
    * (unused but total). */
   entryNoun: string;
+  /** Raw cardinality ('one' | 'many' on the wire, absent → 'one') — the
+   * inspector's Repeats affordances read and edit it (B-8 T6). */
+  cardinality: string;
   fields: GridField[];
   children: GridSection[];
   /** Fields owned directly by this section. */
@@ -238,6 +241,7 @@ function toGridSection(
     hasDescription: description !== null,
     metaKeys: metaKeysFor(kind, entityType.cardinality),
     entryNoun,
+    cardinality: entityType.cardinality ?? 'one',
     fields,
     children,
     fieldCount: fields.length,

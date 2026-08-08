@@ -36,6 +36,8 @@ interface AddModelDialogProps {
   onConfirm: (modelName: string, modellingMethod: string) => Promise<void>;
   onCancel: () => void;
   existingModels: string[];
+  /** Entry noun for `{{noun}}` copy interpolation (B-8 D6). */
+  entryLabel?: string;
 }
 
 // =================== COMPONENT ===================
@@ -44,12 +46,16 @@ export function AddModelDialog({
   open,
   onConfirm,
   onCancel,
-  existingModels
+  existingModels,
+  entryLabel = 'model'
 }: AddModelDialogProps) {
   const [modelName, setModelName] = useState('');
   const [modellingMethod, setModellingMethod] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // {{noun}} resolves inline at each call site (D7); labels and
+  // sentence-initial messages use the capitalized form.
+  const nounCap = entryLabel.charAt(0).toUpperCase() + entryLabel.slice(1);
 
     // Reset on close — adjusted during render instead of via effect.
   const [prevOpen, setPrevOpen] = useState(open);
@@ -65,25 +71,25 @@ export function AddModelDialog({
 
     // Validation
   const validate = (): boolean => {
-    // Nome vazio
+    // Empty name
     if (!modelName.trim()) {
-        setError(t('extraction', 'modelNameEmpty'));
+        setError(t('extraction', 'modelNameEmpty').replace('{{noun}}', nounCap));
       return false;
     }
 
       // Name too short
     if (modelName.trim().length < 3) {
-        setError(t('extraction', 'modelNameMinLength'));
+        setError(t('extraction', 'modelNameMinLength').replace('{{noun}}', nounCap));
       return false;
     }
 
-    // Nome duplicado (case-insensitive)
+    // Duplicate name (case-insensitive)
     const isDuplicate = existingModels.some(
       existing => existing.toLowerCase() === modelName.trim().toLowerCase()
     );
 
     if (isDuplicate) {
-        setError(t('extraction', 'modelNameDuplicate'));
+        setError(t('extraction', 'modelNameDuplicate').replace('{{noun}}', entryLabel));
       return false;
     }
 
@@ -105,7 +111,10 @@ export function AddModelDialog({
         // Dialog will be closed by parent component
     } catch (err: any) {
         console.error('Error creating model:', err);
-        setError(err.message || t('extraction', 'modelCreateError'));
+        setError(
+            err.message ||
+            t('extraction', 'modelCreateError').replace('{{noun}}', entryLabel),
+        );
       setLoading(false);
     }
   };
@@ -125,10 +134,10 @@ export function AddModelDialog({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" />
-                {t('extraction', 'addNewModel')}
+                {t('extraction', 'addNewModel').replace('{{noun}}', entryLabel)}
             </DialogTitle>
             <DialogDescription>
-                {t('extraction', 'addNewModelDesc')}
+                {t('extraction', 'addNewModelDesc').replace('{{noun}}', entryLabel)}
             </DialogDescription>
           </DialogHeader>
 
@@ -136,12 +145,12 @@ export function AddModelDialog({
             {/* Campo: Model Name */}
             <div className="space-y-2">
               <Label htmlFor="model-name" className="flex items-center gap-1">
-                  {t('extraction', 'modelNameLabel')}
+                  {t('extraction', 'modelNameLabel').replace('{{noun}}', nounCap)}
                 <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="model-name"
-                placeholder={t('extraction', 'modelNamePlaceholder')}
+                placeholder={t('extraction', 'modelNamePlaceholder').replace('{{noun}}', entryLabel)}
                 value={modelName}
                 onChange={(e) => setModelName(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -150,7 +159,7 @@ export function AddModelDialog({
                 className={error ? 'border-destructive' : ''}
               />
               <p className="text-xs text-muted-foreground">
-                  {t('extraction', 'modelNameHint')}
+                  {t('extraction', 'modelNameHint').replace('{{noun}}', entryLabel)}
               </p>
             </div>
 
@@ -218,7 +227,7 @@ export function AddModelDialog({
                     {t('extraction', 'creating')}
                 </>
               ) : (
-                  t('extraction', 'createModel')
+                  t('extraction', 'createModel').replace('{{noun}}', entryLabel)
               )}
             </Button>
           </DialogFooter>
