@@ -37,13 +37,31 @@ from app.services.template_clone_service import (
     PendingConfigDraftError,
     TemplateNotFoundError,
 )
+from app.services.template_section_service import has_multi_entry_parent
 
 __all__ = [
     "PendingConfigDraftError",
+    "PublishBlockedByMultiEntryError",
     "RepublishResult",
     "TemplateNotFoundError",
     "TemplateVersionService",
 ]
+
+
+class PublishBlockedByMultiEntryError(Exception):
+    """Publish refused: a cardinality-one model_section still has a
+    parent entry holding 2+ instances.
+
+    409-class (B-8 review): the many->one flip is validated at PATCH
+    time, but a reviewer on a run still pinned to the old 'many'
+    snapshot can add a second entry between PATCH and Publish (the
+    pinned frontend skips the cardinality check and no DB constraint
+    guards article-less rows). Publishing would re-pin those runs to
+    the 'one' snapshot, whose run view renders only ``instances[0]``
+    while the completion gate counts every instance — leaving the run
+    permanently un-completable. Re-checked under the template row FOR
+    UPDATE; the message names the section label."""
+
 
 _EDITABLE_STAGES = (
     ExtractionRunStage.PENDING.value,
@@ -114,6 +132,15 @@ class TemplateVersionService:
             ).scalar_one()
             if pending is not None:
                 raise PendingConfigDraftError()
+
+        # Publish-time re-validation of the many->one rule (B-8 review),
+        # under the same locks as the snapshot build and BEFORE anything
+        # is written, so it guards BOTH branches below (changed and
+        # unchanged-but-repinned). The PATCH-time check in
+        # template_section_service saw the instances that existed THEN;
+        # reviewers on runs still pinned to the old 'many' snapshot can
+        # add entries until this publish re-pins them.
+        await self._refuse_if_one_section_has_multi_entries(project_template_id)
 
         # Publishing makes the live tree the recorded intent — clear the
         # B-4 draft marker under the same locks as the snapshot build.
@@ -234,6 +261,28 @@ class TemplateVersionService:
             .with_for_update()
         )
         return run_pairs
+
+    async def _refuse_if_one_section_has_multi_entries(self, project_template_id: UUID) -> None:
+        """Raise ``PublishBlockedByMultiEntryError`` when any live
+        cardinality-one model_section still has a parent entry holding
+        2+ instances (the shared ``has_multi_entry_parent`` query — the
+        exact predicate the PATCH-time check enforces)."""
+        one_sections = (
+            await self.db.execute(
+                select(ExtractionEntityType.id, ExtractionEntityType.label).where(
+                    ExtractionEntityType.project_template_id == project_template_id,
+                    ExtractionEntityType.role == "model_section",
+                    ExtractionEntityType.cardinality == "one",
+                )
+            )
+        ).all()
+        for section_id, section_label in one_sections:
+            if await has_multi_entry_parent(self.db, section_id=section_id):
+                raise PublishBlockedByMultiEntryError(
+                    f'Cannot publish: section "{section_label}" is set to repeat '
+                    "once per entry, but an entry already has multiple items. "
+                    "Remove the extra items and publish again."
+                )
 
     async def _repin_editable_runs(self, project_template_id: UUID, version_id: UUID) -> int:
         result = await self.db.execute(

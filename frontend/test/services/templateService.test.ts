@@ -39,6 +39,7 @@ import {PgError} from '@/lib/error-utils';
 import {
   createSection,
   deleteSection,
+  republishTemplateVersion,
   updateEntityTypeLabel,
   updateSection,
 } from '@/services/templateService';
@@ -206,6 +207,39 @@ describe('updateSection — partial PATCH on the typed endpoint (B-8 D5)', () =>
     if (result.ok) return;
     expect(result.error).not.toBeInstanceOf(PgError);
     expect(result.error.message).toContain('Section not found');
+  });
+});
+
+describe('republishTemplateVersion — publish-blocked 409 (B-8 review)', () => {
+  it("maps the 409 to PgError('409') carrying the server message VERBATIM", async () => {
+    // The server message names the offending section — no static copy
+    // key can carry that, so it must survive to the toast untouched.
+    apiClientMock.mockRejectedValue(
+      new ApiError(
+        'HTTP_ERROR',
+        'Cannot publish: section "Final predictors" is set to repeat once per entry',
+        409,
+      ),
+    );
+
+    const result = await republishTemplateVersion('p1', 't1');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeInstanceOf(PgError);
+    expect((result.error as PgError).code).toBe('409');
+    expect(result.error.message).toContain('Final predictors');
+  });
+
+  it('passes a non-409 error through untouched (no PgError wrap)', async () => {
+    apiClientMock.mockRejectedValue(new ApiError('HTTP_ERROR', 'Template not found', 404));
+
+    const result = await republishTemplateVersion('p1', 't1');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).not.toBeInstanceOf(PgError);
+    expect(result.error.message).toContain('Template not found');
   });
 });
 

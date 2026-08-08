@@ -599,6 +599,36 @@ describe('TemplateInspector section pane — group (B-8 T6, D10)', () => {
 
     await waitFor(() => expect(input).toHaveValue('algorithm'));
   });
+
+  it('commit then immediate revert PATCHes BOTH (own-save baseline, not the stale prop)', async () => {
+    // Between a successful commit and the refetch-driven remount the
+    // `section` prop still carries the OLD noun — a revert edit must
+    // compare against the last COMMITTED value, or it silently sends
+    // nothing and snaps back (B-8 review finding 3).
+    const user = userEvent.setup();
+    renderSection(groupSection);
+    const input = screen.getByLabelText('entryLabelLabel');
+    await user.clear(input);
+    await user.type(input, 'scenario');
+    await user.tab();
+    await waitFor(() =>
+      expect(updateSection).toHaveBeenCalledWith('p1', 't1', 'grp', {
+        entry_label: 'scenario',
+      }),
+    );
+
+    await user.click(input);
+    await user.clear(input);
+    await user.type(input, 'algorithm');
+    await user.tab();
+
+    await waitFor(() =>
+      expect(updateSection).toHaveBeenCalledWith('p1', 't1', 'grp', {
+        entry_label: 'algorithm',
+      }),
+    );
+    expect(updateSection).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('TemplateInspector section pane — per-model section (B-8 T6, D10)', () => {
@@ -650,6 +680,33 @@ describe('TemplateInspector section pane — per-model section (B-8 T6, D10)', (
   it('has no entry-label input (groups only)', () => {
     renderSection(childSection);
     expect(screen.queryByLabelText('entryLabelLabel')).toBeNull();
+  });
+
+  it('commit then immediate revert PATCHes BOTH (own-save baseline, not the stale prop)', async () => {
+    // After a successful many-commit the prop still says 'one' until
+    // the refetch remounts the pane; picking 'one' again must PATCH —
+    // the stale-prop guard used to swallow it and snap the select back
+    // (B-8 review finding 3).
+    const user = userEvent.setup();
+    renderSection(childSection);
+    const select = screen.getByLabelText('inspectorRepeatsLabel');
+
+    await user.selectOptions(select, 'many');
+    await waitFor(() =>
+      expect(updateSection).toHaveBeenCalledWith('p1', 't1', 'perf', {
+        cardinality: 'many',
+      }),
+    );
+
+    await user.selectOptions(select, 'one');
+
+    await waitFor(() =>
+      expect(updateSection).toHaveBeenCalledWith('p1', 't1', 'perf', {
+        cardinality: 'one',
+      }),
+    );
+    expect(updateSection).toHaveBeenCalledTimes(2);
+    expect(select).toHaveValue('one');
   });
 });
 

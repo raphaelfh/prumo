@@ -34,7 +34,7 @@ export const templateConfig = {
   entryLabelMax50: 'Entry label must have at most 50 characters',
   entryLabelPlaceholder: 'model',
   errors_cardinalityInUse:
-    'This section cannot be set to repeat once: at least one model already has multiple entries of it. Remove the extra entries first.',
+    'This section cannot be set to repeat once: it already has multiple entries under at least one group entry. Remove the extra entries first.',
   errors_deleteSectionInUse:
     'This section cannot be deleted: extraction work (proposals, decisions, or published values) already references its fields.',
   errors_duplicateFieldName:

@@ -43,19 +43,30 @@ type SectionCardinality = NonNullable<
  * B-4: this is the explicit Publish button's call — config edits are
  * draft edits (the DB stamps `config_draft_since`) and only this
  * publish moves snapshots, prompts and editable-stage run pins.
+ *
+ * A 409 is the publish-time many→one cardinality re-check (B-8 review):
+ * its server message names the offending section, which no static copy
+ * key can carry — re-wrapped as PgError('409') with the message
+ * VERBATIM so useTemplateRepublish toasts it instead of the generic
+ * failure copy.
  */
 export async function republishTemplateVersion(
   projectId: string,
   templateId: string,
 ): Promise<ErrorResult<RepublishTemplateVersionResponse>> {
-  return toResult(
-    async () =>
-      apiClient<RepublishTemplateVersionResponse>(
+  return toResult(async () => {
+    try {
+      return await apiClient<RepublishTemplateVersionResponse>(
         `/api/v1/projects/${projectId}/templates/${templateId}/republish-version`,
         {method: 'POST'},
-      ),
-    'republishTemplateVersion',
-  );
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        throw new PgError(error.message, '409');
+      }
+      throw error;
+    }
+  }, 'republishTemplateVersion');
 }
 
 /** Draft/publish status for the Configuration tab's chip (B-4). */

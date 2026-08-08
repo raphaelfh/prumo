@@ -55,30 +55,48 @@ export function SectionInspectorForm({
   const update = useUpdateTemplateSection(projectId, templateId);
   const [entryLabel, setEntryLabel] = useState(section.entryNoun);
   const [cardinality, setCardinality] = useState(section.cardinality);
+  // Own-save baseline (the field pane's contract): between a successful
+  // commit and the refetch-driven remount the `section` prop is STALE —
+  // comparing against it would swallow an immediate revert edit as a
+  // no-op and snap the control back. Guards and error-reverts compare
+  // against the last COMMITTED values instead; the remount on
+  // sectionContentKey still reconciles external changes.
+  const [lastCommitted, setLastCommitted] = useState({
+    entryLabel: section.entryNoun,
+    cardinality: section.cardinality,
+  });
   const saving = update.isPending;
 
   const commitEntryLabel = () => {
     const next = entryLabel.trim();
-    if (next === '' || next === section.entryNoun) {
+    if (next === '' || next === lastCommitted.entryLabel) {
       // No-op commit: revert the display, never call (mirrors the
       // grid header's rename revert rule).
-      setEntryLabel(section.entryNoun);
+      setEntryLabel(lastCommitted.entryLabel);
       return;
     }
     update.mutate(
       {sectionId: section.id, changes: {entry_label: next}},
-      // The hook toasted; an immediate-commit control shows server truth.
-      {onError: () => setEntryLabel(section.entryNoun)},
+      {
+        onSuccess: () =>
+          setLastCommitted((prev) => ({...prev, entryLabel: next})),
+        // The hook toasted; an immediate-commit control shows server truth.
+        onError: () => setEntryLabel(lastCommitted.entryLabel),
+      },
     );
   };
 
   const commitCardinality = (value: string) => {
     const next = value === 'many' ? 'many' : 'one';
-    if (next === section.cardinality) return;
+    if (next === lastCommitted.cardinality) return;
     setCardinality(next);
     update.mutate(
       {sectionId: section.id, changes: {cardinality: next}},
-      {onError: () => setCardinality(section.cardinality)},
+      {
+        onSuccess: () =>
+          setLastCommitted((prev) => ({...prev, cardinality: next})),
+        onError: () => setCardinality(lastCommitted.cardinality),
+      },
     );
   };
 

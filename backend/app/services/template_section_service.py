@@ -203,8 +203,13 @@ async def create_section(
     return SectionRead.model_validate(section)
 
 
-async def _has_multi_entry_parent(db: AsyncSession, *, section_id: UUID) -> bool:
-    """True when any parent instance holds 2+ instances of this section."""
+async def has_multi_entry_parent(db: AsyncSession, *, section_id: UUID) -> bool:
+    """True when any parent instance holds 2+ instances of this section.
+
+    Shared with ``TemplateVersionService.republish``, which re-runs the
+    many->one rule under its publish locks (B-8 review): a reviewer on a
+    run still pinned to the old 'many' snapshot can add entries between
+    the PATCH-time check below and Publish."""
     row = (
         await db.execute(
             select(ExtractionInstance.parent_instance_id)
@@ -248,7 +253,7 @@ async def update_section(
     if (
         payload.cardinality == "one"
         and section.cardinality == "many"
-        and await _has_multi_entry_parent(db, section_id=section_id)
+        and await has_multi_entry_parent(db, section_id=section_id)
     ):
         raise SectionCardinalityInUseError(
             f'Section "{section.label}" has an entry with multiple items; '
