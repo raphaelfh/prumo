@@ -237,3 +237,43 @@ of the cell contract — B-9 candidate with the publish sheet.
   `entry_label`, per-model section creation, sections-born-inline,
   header-menu Duplicate, no-match `＋ New field "<query>"` → B-8.
   Draft diff/lock/History/Discard; deletes-never-confirm → B-9.
+
+## B-5b (follow-up slice) — SHIPPED
+
+The AI-dispatch re-point sketched above, as landed. The bug: the
+backend extracts from the run's pinned snapshot, but the run form
+decided WHICH sections to loop over from LIVE
+`extraction_entity_types` rows (`getModelChildSections` →
+`queryEntityTypesWithFallback`) — post-B-4 a manager's unpublished
+draft section got dispatched (the backend cannot extract it) and a
+published-but-since-deleted one was skipped. The loop and the prompt
+disagreed.
+
+What shipped:
+
+- Optional `sections` param on both batch entry points:
+  `useBatchSectionExtractionChunked.extractAllSections`
+  (`BatchSectionExtractionParams`; the list is stripped off before the
+  request reaches the service) and
+  `useBatchAllModelsSectionsExtraction.extractAllSectionsForAllModels`
+  (`AllModelsSectionsParams`; sections are entity-type-level, so one
+  list serves every model — including the freshly-created-models
+  chain).
+- The run form threads the run-pinned list: `runDetail` →
+  `entityTypesFromRunView` → `useEntityTypePartition.modelChildren` →
+  `ExtractionFormView` → new `sections` prop on
+  `useExtractionFormAIActions` → all three dispatch paths (per-model,
+  cross-model, created-models chain).
+- The worklist Full-AI path (`ArticleExtractionTable` →
+  `useFullAIExtraction`) KEEPS the live fallback — it dispatches with
+  no run view loaded. The fallback is CHAINED, never swapped: a
+  missing OR EMPTY provided list falls through to
+  `getModelChildSections` (an empty list must not "succeed" against an
+  empty tree). `getModelChildSections` is NOT deleted.
+
+Tests: `frontend/test/hooks/batchExtractionSectionSource.test.tsx`
+(provided-list / fallback / empty-is-absent / no-leak-into-request for
+both hooks) + threading specs in `useExtractionFormAIActions.test.tsx`
+and `ExtractionFormView.test.tsx` (spy-mock pins the view →
+hook prop). The existing partial-failure / spinner / form-view mocks
+needed no changes — the fallback path is byte-identical.

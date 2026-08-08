@@ -10,6 +10,7 @@
  * any new AI action just plugs into the same callback chain.
  */
 
+import type {ModelChildSection} from './helpers/getModelChildSections';
 import {useBatchAllModelsSectionsExtraction} from './useBatchAllModelsSectionsExtraction';
 import {useBatchSectionExtractionChunked} from './useBatchSectionExtractionChunked';
 import {useModelExtraction} from './useModelExtraction';
@@ -25,6 +26,15 @@ export interface UseExtractionFormAIActionsProps {
    * only before the session resolves — the buttons are gated on it upstream.
    */
   runId?: string | null;
+  /**
+   * Run-pinned model child sections, derived from the run view (B-5b).
+   * Threaded into both batch entry points so the dispatch loop matches the
+   * snapshot the backend extracts from — live rows can carry a manager's
+   * unpublished draft section (undispatchable) or miss a
+   * published-but-since-deleted one. Absent/empty → the batch hooks keep
+   * their live fallback (the worklist path has no run view loaded).
+   */
+  sections?: ModelChildSection[];
   activeModelId: string | null;
   models: Array<{instanceId: string; modelName: string}>;
   onRefreshModels: () => Promise<void>;
@@ -38,6 +48,7 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
     articleId,
     templateId,
     runId,
+    sections,
     activeModelId,
     models,
     onRefreshModels,
@@ -67,6 +78,9 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
             // Chained sections land on the SAME session run as the models —
             // omitting this would fork a shadow run (the orphaning bug).
             runId: sessionRunId,
+            // Sections are entity-type-level, so the run-pinned list applies
+            // to freshly created models too (B-5b).
+            sections,
           });
         })
         .catch((error: unknown) => {
@@ -123,6 +137,7 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
       parentInstanceId: activeModelId,
       runId: sessionRunId,
       extractAllSections: true,
+      sections,
     }).catch((error: unknown) => {
       console.error('[useExtractionFormAIActions] extractAllSections failed:', error);
     });
@@ -139,6 +154,7 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
       templateId,
       models: models.map(m => ({instanceId: m.instanceId, modelName: m.modelName})),
       runId: sessionRunId,
+      sections,
     }).catch((error: unknown) => {
       console.error('[useExtractionFormAIActions] extractAllSectionsForAllModels failed:', error);
     });
