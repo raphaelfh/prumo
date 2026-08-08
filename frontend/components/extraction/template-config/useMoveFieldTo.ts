@@ -18,15 +18,28 @@
  * refetched tree on screen. Success feedback is T5's Undo toast; the
  * only immediate feedback here is the polite live-region announcement
  * (the moved row may re-render far away or inside a collapsed section).
+ *
+ * `displayTree` is the optimistic order overlay (panel decision 7): the
+ * working order mirrored into state and applied over the tree, so the
+ * grid renders the PLANNED order the moment a move dispatches — a
+ * dropped or chorded row never snaps back while the write flies. It
+ * clears with the working order: on drain (the awaited refetch is on
+ * screen — same order, no flicker) and on failure (the overlay must
+ * never lie about a write that did not land).
  */
-import {useRef, useState} from 'react';
+import {useMemo, useRef, useState} from 'react';
 
 import {useMoveTemplateField} from '@/hooks/extraction/useMoveTemplateField';
 import {useReorderTemplateFields} from '@/hooks/extraction/useReorderTemplateFields';
 import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
 import {t} from '@/lib/copy';
 
-import {deriveSectionOrder, planFieldMove, type SectionFieldOrder} from './fieldMove';
+import {
+  applySectionOrder,
+  deriveSectionOrder,
+  planFieldMove,
+  type SectionFieldOrder,
+} from './fieldMove';
 import {findSection, type GridField, type GridSection} from './templateTree';
 
 export interface FieldMoveRecord {
@@ -56,6 +69,9 @@ export function useMoveFieldTo(args: {
   const reorderMutation = useReorderTemplateFields(projectId, templateId);
   const {invalidateStructure} = useTemplateConfigCaches(projectId, templateId);
   const [announcement, setAnnouncement] = useState<string | null>(null);
+  // The working order mirrored into state — the render-side half of the
+  // overlay (the ref stays authoritative for planning).
+  const [localOrder, setLocalOrder] = useState<SectionFieldOrder | null>(null);
   const stateRef = useRef<MoveChainState>({
     chain: Promise.resolve(),
     order: null,
@@ -81,6 +97,7 @@ export function useMoveFieldTo(args: {
     });
     if (!plan) return null;
     state.order = plan.nextOrder;
+    setLocalOrder(plan.nextOrder);
     state.inflight += 1;
     const destLabel = findSection(tree, toSectionId)?.label ?? '';
 
@@ -120,8 +137,12 @@ export function useMoveFieldTo(args: {
     state.chain = settled.then((ok) => {
       state.inflight -= 1;
       // Drain — or a failed write, after which the working order lies:
-      // the next dispatch re-derives from the (refetched) tree.
-      if (!ok || state.inflight === 0) state.order = null;
+      // the next dispatch re-derives from the (refetched) tree, and the
+      // display overlay retires with it.
+      if (!ok || state.inflight === 0) {
+        state.order = null;
+        setLocalOrder(null);
+      }
       if (ok) {
         setAnnouncement(
           t('templateConfig', 'moveAnnouncement')
@@ -139,5 +160,10 @@ export function useMoveFieldTo(args: {
     };
   };
 
-  return {moveFieldTo, announcement};
+  const displayTree = useMemo(
+    () => (localOrder ? applySectionOrder(tree, localOrder) : tree),
+    [tree, localOrder],
+  );
+
+  return {moveFieldTo, announcement, displayTree};
 }

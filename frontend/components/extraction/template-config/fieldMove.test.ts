@@ -9,8 +9,8 @@
  */
 import {describe, expect, it} from 'vitest';
 
-import {deriveSectionOrder, planFieldMove} from './fieldMove';
-import {buildTemplateTree} from './templateTree';
+import {applySectionOrder, deriveSectionOrder, planFieldMove} from './fieldMove';
+import {buildTemplateTree, findSection} from './templateTree';
 
 const none: ReadonlySet<string> = new Set();
 
@@ -169,5 +169,92 @@ describe('planFieldMove — pending rows and unknowns', () => {
   it('an unknown field or destination section plans nothing', () => {
     expect(plan('ghost', 'sec1', 0)).toBeNull();
     expect(plan('a', 'nowhere', 0)).toBeNull();
+  });
+});
+
+describe('applySectionOrder — the optimistic order overlay (panel decision 7)', () => {
+  const overlayTree = () =>
+    buildTemplateTree(
+      [
+        {id: 's1', name: 's', label: 'S', sort_order: 1},
+        {id: 'g1', name: 'g', label: 'G', role: 'model_container', sort_order: 2},
+        {id: 'c1', name: 'c', label: 'C', parent_entity_type_id: 'g1', sort_order: 1},
+      ],
+      [
+        {id: 'f1', entity_type_id: 's1', name: 'k1', label: 'A', field_type: 'text', sort_order: 1},
+        {id: 'f2', entity_type_id: 's1', name: 'k2', label: 'B', field_type: 'text', sort_order: 2},
+        {id: 'f3', entity_type_id: 'c1', name: 'k3', label: 'C', field_type: 'text', sort_order: 1},
+      ],
+    );
+
+  const fieldIds = (tree: ReturnType<typeof overlayTree>, sectionId: string) =>
+    findSection(tree, sectionId)?.fields.map((f) => f.id);
+
+  it('re-slots fields within a section to the planned order', () => {
+    const next = applySectionOrder(
+      overlayTree(),
+      new Map([
+        ['s1', ['f2', 'f1']],
+        ['g1', []],
+        ['c1', ['f3']],
+      ]),
+    );
+    expect(fieldIds(next, 's1')).toEqual(['f2', 'f1']);
+    expect(fieldIds(next, 'c1')).toEqual(['f3']);
+  });
+
+  it('re-homes a field across sections — entityTypeId and both counts follow', () => {
+    const next = applySectionOrder(
+      overlayTree(),
+      new Map([
+        ['s1', ['f1']],
+        ['g1', []],
+        ['c1', ['f3', 'f2']],
+      ]),
+    );
+    expect(fieldIds(next, 's1')).toEqual(['f1']);
+    expect(fieldIds(next, 'c1')).toEqual(['f3', 'f2']);
+    const child = findSection(next, 'c1');
+    expect(child?.fields[1].entityTypeId).toBe('c1');
+    expect(findSection(next, 's1')?.fieldCount).toBe(1);
+    expect(child?.fieldCount).toBe(2);
+    // The group's rollup counts its re-homed descendant.
+    expect(findSection(next, 'g1')?.totalFieldCount).toBe(2);
+  });
+
+  it('drops order ids the tree no longer serves (deleted mid-flight)', () => {
+    const next = applySectionOrder(
+      overlayTree(),
+      new Map([
+        ['s1', ['f1', 'gone', 'f2']],
+        ['g1', []],
+        ['c1', ['f3']],
+      ]),
+    );
+    expect(fieldIds(next, 's1')).toEqual(['f1', 'f2']);
+  });
+
+  it('keeps tree fields the order does not know, after the ordered rows', () => {
+    // e.g. a pending insert confirmed mid-flight: the refetch serves it
+    // before the working order ever saw it.
+    const next = applySectionOrder(
+      overlayTree(),
+      new Map([
+        ['s1', ['f2']],
+        ['g1', []],
+        ['c1', ['f3']],
+      ]),
+    );
+    expect(fieldIds(next, 's1')).toEqual(['f2', 'f1']);
+  });
+
+  it('a section absent from the order never duplicates a field another section claims', () => {
+    const next = applySectionOrder(
+      overlayTree(),
+      // c1 has no entry, yet s1's entry claims its field.
+      new Map([['s1', ['f1', 'f2', 'f3']]]),
+    );
+    expect(fieldIds(next, 's1')).toEqual(['f1', 'f2', 'f3']);
+    expect(fieldIds(next, 'c1')).toEqual([]);
   });
 });

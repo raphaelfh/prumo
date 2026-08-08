@@ -17,7 +17,7 @@
  * Copy is deliberately NOT mocked here — the announcement test pins the
  * real interpolated string.
  */
-import {act, fireEvent, render, screen, waitFor} from '@testing-library/react';
+import {act, fireEvent, render, renderHook, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -50,6 +50,8 @@ vi.mock('sonner', () => ({
   toast: Object.assign(vi.fn(), {error: vi.fn(), success: vi.fn(), info: vi.fn()}),
 }));
 
+import {MouseSensor, TouchSensor, type DragEndEvent} from '@dnd-kit/core';
+
 import {TooltipProvider} from '@/components/ui/tooltip';
 import {useInsertTemplateField} from '@/hooks/extraction/useInsertTemplateField';
 import {useMoveTemplateField} from '@/hooks/extraction/useMoveTemplateField';
@@ -60,6 +62,7 @@ import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField'
 
 import {TemplateConfigGridPanel} from './TemplateConfigGridPanel';
 import {TemplateGrid, type TemplateSectionActions} from './TemplateGrid';
+import {useGridDrag, type GridDragArgs} from './gridDrag';
 import {buildTemplateTree} from './templateTree';
 
 const field = (
@@ -222,6 +225,132 @@ describe('TemplateGrid move chord contract', () => {
 });
 
 // ---------------------------------------------------------------------------
+// T6 — drag handle contract (jsdom half; the gesture itself is the
+// real-browser pass)
+// ---------------------------------------------------------------------------
+
+describe('TemplateGrid drag handle contract (T6)', () => {
+  const handleOfRow = (label: string) => {
+    const row = screen
+      .getAllByTestId('template-grid-field-row')
+      .find((tr) => within(tr).queryByRole('button', {name: label}) !== null);
+    if (!row) throw new Error(`no field row labelled ${label}`);
+    return row.querySelector('td');
+  };
+  const allHandles = () =>
+    screen.getAllByTestId('template-grid-field-row').map((tr) => tr.querySelector('td'));
+
+  it('the ⠿ handle stays NON-roving: no tabIndex, no role=button injection', () => {
+    // useSortable's `attributes` would inject tabIndex=0 + role="button"
+    // — a second tab stop that breaks the one-tab-stop invariant. The
+    // handle must render as a plain gridcell.
+    renderGrid();
+    for (const handle of allHandles()) {
+      expect(handle).not.toHaveAttribute('tabindex');
+      expect(handle).toHaveAttribute('role', 'gridcell');
+      expect(handle).not.toHaveAttribute('data-drag-locked');
+    }
+  });
+
+  it('filtering locks EVERY handle with the clear-search reason', () => {
+    renderGrid({isFiltering: true});
+    for (const handle of allHandles()) {
+      expect(handle).toHaveAttribute('data-drag-locked', 'filtering');
+    }
+  });
+
+  it('a pending row locks ITS handle only', () => {
+    renderGrid({pendingRowIds: new Set(['f2'])});
+    expect(handleOfRow('Beta')).toHaveAttribute('data-drag-locked', 'pending');
+    expect(handleOfRow('Alpha')).not.toHaveAttribute('data-drag-locked');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T6 — useGridDrag: sensors + the onDragEnd → dropSlot → onMoveField
+// translation, driven with CONSTRUCTED DragEndEvents (no gesture syn-
+// thesis — jsdom cannot drag; the browser pass owns the real gesture).
+// ---------------------------------------------------------------------------
+
+const dragEnd = (activeId: string, overId: string | null) =>
+  ({
+    active: {id: activeId},
+    over: overId === null ? null : {id: overId},
+  }) as unknown as DragEndEvent;
+
+function renderDrag(over: Partial<GridDragArgs> = {}) {
+  const onMoveField = vi.fn();
+  const {result} = renderHook(() =>
+    useGridDrag({
+      sections: gridTree,
+      collapsed: new Set<string>(),
+      isFiltering: false,
+      pendingRowIds: new Set<string>(),
+      onMoveField,
+      ...over,
+    }),
+  );
+  return {result, onMoveField};
+}
+
+describe('useGridDrag — drop translation (T6)', () => {
+  it('a drop over another row dispatches onMoveField with the resolved slot', () => {
+    const {result, onMoveField} = renderDrag();
+    act(() => result.current.onDragEnd(dragEnd('f1', 'f3')));
+    expect(onMoveField).toHaveBeenCalledTimes(1);
+    expect(onMoveField).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'f1'}),
+      'sec1',
+      2,
+    );
+  });
+
+  it('a drop on a COLLAPSED section header appends to that section END', () => {
+    const {result, onMoveField} = renderDrag({collapsed: new Set(['sec2'])});
+    act(() => result.current.onDragEnd(dragEnd('f1', 'sec2')));
+    expect(onMoveField).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'f1'}),
+      'sec2',
+      1,
+    );
+  });
+
+  it('no-op drops dispatch nothing: outside, own position, filtering, pending', () => {
+    const outside = renderDrag();
+    act(() => outside.result.current.onDragEnd(dragEnd('f1', null)));
+    expect(outside.onMoveField).not.toHaveBeenCalled();
+
+    const own = renderDrag();
+    act(() => own.result.current.onDragEnd(dragEnd('f1', 'f1')));
+    expect(own.onMoveField).not.toHaveBeenCalled();
+
+    const filtering = renderDrag({isFiltering: true});
+    act(() => filtering.result.current.onDragEnd(dragEnd('f1', 'f3')));
+    expect(filtering.onMoveField).not.toHaveBeenCalled();
+
+    const pending = renderDrag({pendingRowIds: new Set(['f1'])});
+    act(() => pending.result.current.onDragEnd(dragEnd('f1', 'f3')));
+    expect(pending.onMoveField).not.toHaveBeenCalled();
+  });
+
+  it('sensors: mouse activates at 6px, touch long-presses — and NO KeyboardSensor', () => {
+    // KeyboardSensor would fight the grid's roving handler; the a11y
+    // paths are the ⌘⇧ chords + the Section combobox (panel decision 5).
+    const {result} = renderDrag();
+    expect(result.current.sensors.map((s) => s.sensor)).toEqual([
+      MouseSensor,
+      TouchSensor,
+    ]);
+    expect(result.current.sensors[0].options).toEqual({
+      activationConstraint: {distance: 6},
+    });
+    expect(result.current.sensors[1].options).toEqual({
+      activationConstraint: {delay: 250, tolerance: 8},
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Layer 2 — panel dispatcher (TemplateConfigGridPanel + mocked write hooks)
 // ---------------------------------------------------------------------------
 
@@ -289,7 +418,10 @@ beforeEach(() => {
 });
 
 function renderPanel() {
-  render(
+  // dnd-kit's DndContext contributes its own role="status" live region
+  // (portaled to document.body), so panel-region queries scope to the
+  // render container.
+  return render(
     <TooltipProvider>
       <TemplateConfigGridPanel
         projectId="p1"
@@ -352,12 +484,12 @@ describe('TemplateConfigGridPanel — moveFieldTo dispatcher', () => {
   });
 
   it('announces the completed move through the polite live region', async () => {
-    renderPanel();
+    const {container} = renderPanel();
     const beta = screen.getByRole('button', {name: 'Beta'});
     focusEl(beta);
     chord(beta, 'ArrowDown');
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(
+      expect(within(container).getByRole('status')).toHaveTextContent(
         'Moved Beta to Basics, position 3 of 3',
       ),
     );
@@ -378,7 +510,10 @@ describe('TemplateConfigGridPanel — moveFieldTo dispatcher', () => {
     const beta = screen.getByRole('button', {name: 'Beta'});
     focusEl(beta);
     chord(beta, 'ArrowDown'); // [A,B,C] -> [A,C,B]
-    chord(beta, 'ArrowUp'); // planned from the latest order: [A,C,B] -> [B,A,C]
+    // The order overlay (decision 7) already re-rendered [A,C,B], so the
+    // grid asks to move Beta (now last) UP one slot; the dispatcher plans
+    // it from the same working order: back to [A,B,C].
+    chord(beta, 'ArrowUp');
     await flush();
     expect(reorderMutateAsync).toHaveBeenCalledTimes(1);
     expect(reorderMutateAsync).toHaveBeenNthCalledWith(1, {
@@ -390,11 +525,10 @@ describe('TemplateConfigGridPanel — moveFieldTo dispatcher', () => {
     });
     act(() => releaseFirst());
     await waitFor(() => expect(reorderMutateAsync).toHaveBeenCalledTimes(2));
-    // Post-first order [A,C,B], Beta to slot 0 -> [B,A,C].
     expect(reorderMutateAsync).toHaveBeenNthCalledWith(2, {
       updates: [
-        {id: 'f2', sort_order: 1},
-        {id: 'f1', sort_order: 2},
+        {id: 'f1', sort_order: 1},
+        {id: 'f2', sort_order: 2},
         {id: 'f3', sort_order: 3},
       ],
     });
@@ -402,7 +536,7 @@ describe('TemplateConfigGridPanel — moveFieldTo dispatcher', () => {
 
   it('combobox path (T4): a pick moves to the END of the destination and announces', async () => {
     const user = userEvent.setup();
-    renderPanel();
+    const {container} = renderPanel();
     // Click selects the row; the docked inspector opens on Beta.
     await user.click(screen.getByRole('button', {name: 'Beta'}));
     await user.selectOptions(screen.getByLabelText('Section'), 'sec2');
@@ -424,13 +558,13 @@ describe('TemplateConfigGridPanel — moveFieldTo dispatcher', () => {
     // The announcement rides the DISPATCHER, so the combobox affordance
     // announces exactly like the chord does.
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(
+      expect(within(container).getByRole('status')).toHaveTextContent(
         'Moved Beta to Outcomes, position 2 of 2',
       ),
     );
   });
 
-  it('coalesces a rapid REPEAT: the second identical chord plans to nothing', async () => {
+  it('a repeat chord continues from the OVERLAID order: Beta crosses into the next section', async () => {
     let releaseFirst!: (value?: unknown) => void;
     reorderMutateAsync.mockImplementationOnce(
       () =>
@@ -441,12 +575,82 @@ describe('TemplateConfigGridPanel — moveFieldTo dispatcher', () => {
     renderPanel();
     const beta = screen.getByRole('button', {name: 'Beta'});
     focusEl(beta);
-    chord(beta, 'ArrowDown'); // [A,B,C] -> [A,C,B] (B now last)
-    chord(beta, 'ArrowDown'); // stale grid re-asks for slot 2 — already there
-    await flush();
-    act(() => releaseFirst());
+    chord(beta, 'ArrowDown'); // [A,B,C] -> [A,C,B] (B now visibly last)
+    // The overlay re-rendered before the repeat, so the second ⌘⇧↓ sees
+    // Beta at the section's edge and asks for the NEXT section's first
+    // slot — a held-down chord walks the field through the template.
+    chord(beta, 'ArrowDown');
     await flush();
     expect(reorderMutateAsync).toHaveBeenCalledTimes(1);
-    expect(moveMutateAsync).not.toHaveBeenCalled();
+    act(() => releaseFirst());
+    await waitFor(() => expect(moveMutateAsync).toHaveBeenCalledTimes(1));
+    expect(moveMutateAsync).toHaveBeenCalledWith({
+      fieldId: 'f2',
+      entityTypeId: 'sec2',
+      sortOrder: 1,
+    });
+    await waitFor(() => expect(reorderMutateAsync).toHaveBeenCalledTimes(2));
+    expect(reorderMutateAsync).toHaveBeenNthCalledWith(2, {
+      updates: [
+        {id: 'f1', sort_order: 1},
+        {id: 'f3', sort_order: 2},
+        {id: 'f4', sort_order: 2},
+      ],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T6/decision 7 — the optimistic order overlay + the DndContext wrap
+// ---------------------------------------------------------------------------
+
+describe('TemplateConfigGridPanel — optimistic order overlay (decision 7)', () => {
+  /** Field labels in DOM order — each row's first button is its label. */
+  const rowLabels = () =>
+    screen
+      .getAllByTestId('template-grid-field-row')
+      .map((tr) => within(tr).getAllByRole('button')[0].textContent);
+
+  it('a move renders the planned order IMMEDIATELY — no snap-back while the write flies', async () => {
+    let releaseFirst!: (value?: unknown) => void;
+    reorderMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseFirst = resolve;
+        }),
+    );
+    renderPanel();
+    const beta = screen.getByRole('button', {name: 'Beta'});
+    focusEl(beta);
+    chord(beta, 'ArrowDown');
+    // The overlay renders the planned order on the SAME flush as the
+    // dispatch — before any write settles.
+    expect(rowLabels()).toEqual(['Alpha', 'Gamma', 'Beta', 'Delta']);
+    await flush(); // the serialized chain reaches the (hung) write
+    expect(rowLabels()).toEqual(['Alpha', 'Gamma', 'Beta', 'Delta']);
+    act(() => releaseFirst());
+    await flush();
+    // Drain clears the overlay: this suite's cache mock is static, so the
+    // order snaps back — proving the overlay never outlives the refetch
+    // (at rest the grid always renders server truth).
+    expect(rowLabels()).toEqual(['Alpha', 'Beta', 'Gamma', 'Delta']);
+  });
+
+  it('a FAILED write clears the overlay at once — back to server truth', async () => {
+    reorderMutateAsync.mockRejectedValueOnce(new Error('rls said no'));
+    renderPanel();
+    const beta = screen.getByRole('button', {name: 'Beta'});
+    focusEl(beta);
+    chord(beta, 'ArrowDown');
+    expect(rowLabels()).toEqual(['Alpha', 'Gamma', 'Beta', 'Delta']);
+    await flush();
+    expect(rowLabels()).toEqual(['Alpha', 'Beta', 'Gamma', 'Delta']);
+  });
+
+  it('the DndContext wrap keeps the roving invariant: EXACTLY ONE tab stop in the grid', () => {
+    const {container} = renderPanel();
+    const grid = container.querySelector('[role="grid"]');
+    expect(grid).not.toBeNull();
+    expect(grid!.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
   });
 });

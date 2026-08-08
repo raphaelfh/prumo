@@ -1,3 +1,5 @@
+import {useSortable} from '@dnd-kit/sortable';
+import {CSS} from '@dnd-kit/utilities';
 import {
   Check,
   GripVertical,
@@ -44,6 +46,16 @@ const MATCH_HINT_COPY: Record<TemplateMatchHint, MatchHintCopyKey | null> = {
   options: 'matchHintOptions',
 };
 
+/** Why a row cannot be dragged right now — doubles as the handle's
+ * hover copy (B-6 T6: the reason surfaces where the affordance is). */
+export type DragLockReason = 'filtering' | 'pending';
+
+const DRAG_HINT_COPY = {
+  enabled: 'dragHandleHint',
+  filtering: 'dragLockedFiltering',
+  pending: 'dragLockedPending',
+} as const;
+
 function TypePill({field}: {field: GridField}) {
   const label =
     field.optionCount > 0 ? `${field.fieldType} · ${field.optionCount}` : field.fieldType;
@@ -77,6 +89,7 @@ export function FieldRow({
   onSelect,
   onDelete,
   deleteDisabled,
+  dragLocked,
   onEditorCommit,
   onEditorCancel,
   onToggleRequired,
@@ -96,6 +109,8 @@ export function FieldRow({
   onDelete: () => void;
   /** True on pending optimistic rows — see `pendingRowIds`. */
   deleteDisabled: boolean;
+  /** Non-null disables the drag handle, naming why (B-6 T6). */
+  dragLocked: DragLockReason | null;
   onEditorCommit: (column: TextCellColumn, draft: string, via: 'enter' | 'blur') => void;
   onEditorCancel: () => void;
   onToggleRequired: (isRequired: boolean) => void;
@@ -106,17 +121,46 @@ export function FieldRow({
 }) {
   const hintKey = field.matchHint ? MATCH_HINT_COPY[field.matchHint] : null;
   const rowId = field.id;
+  // B-6 T6: the row is a sortable item and the ⠿ td its ONLY activator.
+  // useSortable's `attributes` is deliberately NOT destructured — it
+  // injects tabIndex=0 + role="button" on the activator: a second tab
+  // stop that breaks the grid's one-tab-stop roving invariant. The
+  // handle stays a pointer-only affordance; keyboard moves are the ⌘⇧
+  // chords + the inspector Section combobox. Inert (empty listeners,
+  // null transform) outside a DndContext, so grid-only hosts and the
+  // frozen tests render unchanged.
+  const {isDragging, listeners, setActivatorNodeRef, setNodeRef, transform, transition} =
+    useSortable({id: rowId, disabled: dragLocked !== null});
   return (
     <tr
+      ref={setNodeRef}
       data-testid="template-grid-field-row"
+      style={{transform: CSS.Transform.toString(transform), transition}}
       className={cn(
         'group/row h-[30px] border-b border-border/50 hover:bg-muted/40',
         selected && 'bg-muted/60',
+        isDragging && 'relative z-10 opacity-60',
       )}
     >
-      <td role="gridcell" className="w-3.5 px-2 text-muted-foreground/60">
-        <GripVertical className="size-3" aria-hidden />
-      </td>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <td
+            role="gridcell"
+            ref={setActivatorNodeRef}
+            {...(dragLocked === null ? listeners : undefined)}
+            data-drag-locked={dragLocked ?? undefined}
+            className={cn(
+              'w-3.5 px-2 text-muted-foreground/60',
+              dragLocked === null && 'cursor-grab touch-none active:cursor-grabbing',
+            )}
+          >
+            <GripVertical className="size-3" aria-hidden />
+          </td>
+        </TooltipTrigger>
+        <TooltipContent>
+          {t('templateConfig', DRAG_HINT_COPY[dragLocked ?? 'enabled'])}
+        </TooltipContent>
+      </Tooltip>
       <td
         role="gridcell"
         className={cn('min-w-0 px-2', indent, ringClass(focus, rowId, ['label']))}

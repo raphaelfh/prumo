@@ -23,7 +23,7 @@ vi.mock('@/hooks/extraction/useInsertTemplateField', () => ({
 }));
 vi.mock('@/hooks/shared/useContainerNarrow', () => ({useContainerNarrow: vi.fn(() => false)}));
 // B-6: the move dispatcher is stubbed inert here — TemplateGridMove.test.tsx owns it.
-vi.mock('./useMoveFieldTo', () => ({useMoveFieldTo: () => ({moveFieldTo: () => null, announcement: null})}));
+vi.mock('./useMoveFieldTo', () => ({useMoveFieldTo: ({tree}: {tree: unknown}) => ({moveFieldTo: () => null, announcement: null, displayTree: tree})}));
 vi.mock('@/services/extractionFieldService', () => ({
   validateFieldImpact: vi.fn(),
 }));

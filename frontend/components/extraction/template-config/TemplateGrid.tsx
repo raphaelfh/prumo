@@ -1,4 +1,5 @@
 import {Fragment, useRef, useState} from 'react';
+import {SortableContext, verticalListSortingStrategy} from '@dnd-kit/sortable';
 
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
@@ -20,9 +21,7 @@ import {
 } from './TemplateGridSectionHeaderRow';
 import {findField, type GridField, type GridSection} from './templateTree';
 
-// The row components and the shared focus helpers live in sibling modules
-// (B-6 T0 split); these types are re-exported so existing import sites —
-// the panel and the frozen tests — keep importing them from here.
+// Re-exported (B-6 T0 split) so existing import sites keep working.
 export type {TextCellColumn} from './TemplateGridFieldRow';
 export type {TemplateSectionActions} from './TemplateGridSectionHeaderRow';
 
@@ -620,40 +619,45 @@ export function TemplateGrid({
     };
   };
 
-  const renderFields = (fields: GridField[], indent: string) =>
-    fields.map((field) => {
-      const editing =
-        gridState.mode === 'edit' &&
-        focus.coord?.rowId === field.id &&
-        (focus.coord.column === 'label' || focus.coord.column === 'key')
-          ? {
-              column: focus.coord.column as TextCellColumn,
-              seed: gridState.editSeed,
+  // One SortableContext PER SECTION (B-6 T6): items mirror the rendered rows.
+  const renderFields = (fields: GridField[], indent: string) => (
+    <SortableContext items={fields} strategy={verticalListSortingStrategy}>
+      {fields.map((field) => {
+        const editing =
+          gridState.mode === 'edit' &&
+          focus.coord?.rowId === field.id &&
+          (focus.coord.column === 'label' || focus.coord.column === 'key')
+            ? {
+                column: focus.coord.column as TextCellColumn,
+                seed: gridState.editSeed,
+              }
+            : null;
+        return (
+          <FieldRow
+            key={field.id}
+            field={field}
+            indent={indent}
+            selected={isSelected('field', field.id)}
+            focus={focus}
+            editing={editing}
+            onSelect={() => onSelect({kind: 'field', id: field.id})}
+            onDelete={() => onDeleteField(field)}
+            deleteDisabled={pendingRowIds?.has(field.id) ?? false}
+            dragLocked={isFiltering ? 'filtering' : pendingRowIds?.has(field.id) ? 'pending' : null}
+            onEditorCommit={(column, draft, via) =>
+              handleEditorCommit({kind: 'field', field, column}, draft, via)
             }
-          : null;
-      return (
-        <FieldRow
-          key={field.id}
-          field={field}
-          indent={indent}
-          selected={isSelected('field', field.id)}
-          focus={focus}
-          editing={editing}
-          onSelect={() => onSelect({kind: 'field', id: field.id})}
-          onDelete={() => onDeleteField(field)}
-          deleteDisabled={pendingRowIds?.has(field.id) ?? false}
-          onEditorCommit={(column, draft, via) =>
-            handleEditorCommit({kind: 'field', field, column}, draft, via)
-          }
-          onEditorCancel={handleEditorCancel}
-          onToggleRequired={(isRequired) => onToggleRequired(field, isRequired)}
-          onChangeType={(fieldType) => onChangeType(field, fieldType)}
-          onDeepLink={(group) => onDeepLink(field, group)}
-          showKeyColumn={showKeyColumn}
-          showOptionsColumn={showOptionsColumn}
-        />
-      );
-    });
+            onEditorCancel={handleEditorCancel}
+            onToggleRequired={(isRequired) => onToggleRequired(field, isRequired)}
+            onChangeType={(fieldType) => onChangeType(field, fieldType)}
+            onDeepLink={(group) => onDeepLink(field, group)}
+            showKeyColumn={showKeyColumn}
+            showOptionsColumn={showOptionsColumn}
+          />
+        );
+      })}
+    </SortableContext>
+  );
 
   return (
     <table

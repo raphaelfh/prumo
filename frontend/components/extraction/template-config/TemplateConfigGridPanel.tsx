@@ -39,6 +39,7 @@ import {
 } from './TemplateGrid';
 import {TemplateInspector, type InspectorFocusGroup} from './TemplateInspector';
 import {TemplateOutlineRail} from './TemplateOutlineRail';
+import {GridDndContext} from './gridDrag';
 import {useMoveFieldTo} from './useMoveFieldTo';
 import {useStructuralUndo} from './useStructuralUndo';
 import {
@@ -255,13 +256,32 @@ export function TemplateConfigGridPanel({
     () => buildTemplateTree(entityTypes, mergedFields),
     [entityTypes, mergedFields],
   );
-  const filtered = useMemo(() => filterTemplateTree(tree, query), [tree, query]);
+  // Rows still client-keyed: the grid disables their row-menu Delete (a
+  // queued insert has no cancel API — Task 7) and every move path skips them.
+  const pendingRowIds = useMemo(
+    () => new Set(pendingInserts.map((p) => p.clientKey)),
+    [pendingInserts],
+  );
+  // B-6 T3: the serialized move/reorder dispatcher — the single chokepoint
+  // every structural move (chord, combobox, T6 drag, undo) routes through.
+  // Announcements surface via the live region below; `displayTree` carries
+  // the optimistic order overlay (decision 7), so the grid renders from it.
+  const {moveFieldTo, announcement: moveAnnouncement, displayTree} =
+    useMoveFieldTo({projectId, templateId, tree, collapsed, pendingRowIds});
+  // B-6 T5: the single-slot Undo wrapper. EVERY chokepoint (the grid's
+  // chord + drag via onMoveField, the combobox via moveFieldToSectionEnd)
+  // dispatches through it; Undo itself re-enters through the RAW moveFieldTo.
+  const {moveFieldWithUndo} = useStructuralUndo({tree, moveFieldTo});
+  const filtered = useMemo(
+    () => filterTemplateTree(displayTree, query),
+    [displayTree, query],
+  );
   const visibleSections = useMemo(
     () =>
       filtered.isFiltering
-        ? applyRetentionToFilter(tree, filtered.sections, retained)
+        ? applyRetentionToFilter(displayTree, filtered.sections, retained)
         : filtered.sections,
-    [tree, filtered.isFiltering, filtered.sections, retained],
+    [displayTree, filtered.isFiltering, filtered.sections, retained],
   );
   const visibleSectionIds = useMemo(
     () => collectSectionIds(visibleSections),
@@ -332,28 +352,6 @@ export function TemplateConfigGridPanel({
 
   const isPendingRow = (fieldId: string) =>
     pendingInserts.some((p) => p.clientKey === fieldId);
-
-  // Rows still client-keyed: the grid disables their row-menu Delete
-  // (a queued insert has no cancel API — Task 7).
-  const pendingRowIds = useMemo(
-    () => new Set(pendingInserts.map((p) => p.clientKey)),
-    [pendingInserts],
-  );
-
-  // B-6 T3: the serialized move/reorder dispatcher — the single
-  // chokepoint every structural move (chord, combobox, undo) routes
-  // through. Announcements surface via the live region below.
-  const {moveFieldTo, announcement: moveAnnouncement} = useMoveFieldTo({
-    projectId,
-    templateId,
-    tree,
-    collapsed,
-    pendingRowIds,
-  });
-  // B-6 T5: the single-slot Undo wrapper. EVERY chokepoint (chord below,
-  // combobox via moveFieldToSectionEnd, T6's drag onDragEnd) dispatches
-  // through it; Undo itself re-enters through the RAW moveFieldTo.
-  const {moveFieldWithUndo} = useStructuralUndo({tree, moveFieldTo});
 
   // B-6 T4: the inspector combobox's destinations — the CURRENT
   // template's sections only (the client-side move guard).
@@ -709,37 +707,45 @@ export function TemplateConfigGridPanel({
               )}
             </p>
           ) : (
-            <TemplateGrid
+            <GridDndContext
               sections={visibleSections}
-              selection={selection}
-              onSelect={setSelection}
-              onDeleteField={withRawField(onDeleteField)}
-              onCommitField={handleCommitField}
-              onInsertField={handleInsertField}
-              onToggleRequired={(field, isRequired) =>
-                saveFieldUpdates(field, {is_required: isRequired})
-              }
-              onChangeType={handleChangeType}
-              onDeepLink={handleDeepLink}
-              onMoveField={moveFieldWithUndo}
-              rowIdRemaps={rowIdRemaps}
-              pendingRowIds={pendingRowIds}
-              sectionActions={sectionActions}
-              onAddSection={onAddSection}
-              // Esc ladder rungs 2-3: the grid escalates here once
-              // rung 1 (cancel edit) is resolved in the editors.
-              onEscapeEscalate={handleEscapeEscalate}
               collapsed={collapsed}
-              onToggleCollapse={(sectionId) => {
-                const next = new Set(collapsed);
-                if (next.has(sectionId)) next.delete(sectionId);
-                else next.add(sectionId);
-                setCollapsed(next);
-              }}
-              showKeyColumn={showKeyColumn}
-              showOptionsColumn={showOptionsColumn}
               isFiltering={filtered.isFiltering}
-            />
+              pendingRowIds={pendingRowIds}
+              onMoveField={moveFieldWithUndo}
+            >
+              <TemplateGrid
+                sections={visibleSections}
+                selection={selection}
+                onSelect={setSelection}
+                onDeleteField={withRawField(onDeleteField)}
+                onCommitField={handleCommitField}
+                onInsertField={handleInsertField}
+                onToggleRequired={(field, isRequired) =>
+                  saveFieldUpdates(field, {is_required: isRequired})
+                }
+                onChangeType={handleChangeType}
+                onDeepLink={handleDeepLink}
+                onMoveField={moveFieldWithUndo}
+                rowIdRemaps={rowIdRemaps}
+                pendingRowIds={pendingRowIds}
+                sectionActions={sectionActions}
+                onAddSection={onAddSection}
+                // Esc ladder rungs 2-3: the grid escalates here once
+                // rung 1 (cancel edit) is resolved in the editors.
+                onEscapeEscalate={handleEscapeEscalate}
+                collapsed={collapsed}
+                onToggleCollapse={(sectionId) => {
+                  const next = new Set(collapsed);
+                  if (next.has(sectionId)) next.delete(sectionId);
+                  else next.add(sectionId);
+                  setCollapsed(next);
+                }}
+                showKeyColumn={showKeyColumn}
+                showOptionsColumn={showOptionsColumn}
+                isFiltering={filtered.isFiltering}
+              />
+            </GridDndContext>
           )}
         </div>
 

@@ -7,6 +7,11 @@
  * ceiling and must not grow.
  */
 export const templateConfig = {
+  dragCancelled: 'Move cancelled — {{field}} stays where it was',
+  dragHandleHint: 'Drag to reorder',
+  dragLockedFiltering: 'Clear search to reorder',
+  dragLockedPending: 'Wait for the new field to finish saving',
+  dragPickedUp: 'Picked up {{field}}',
   errors_moveField: 'Error moving field',
   errors_reorderFields: 'Error reordering fields',
   moveAnnouncement: 'Moved {{field}} to {{section}}, position {{position}} of {{count}}',

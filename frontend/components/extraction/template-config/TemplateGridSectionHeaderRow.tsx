@@ -1,4 +1,5 @@
 import {useRef, useState} from 'react';
+import {useDroppable} from '@dnd-kit/core';
 import {ChevronDown, ChevronRight, GripVertical, Pencil, Plus, Trash2} from 'lucide-react';
 
 import {
@@ -98,6 +99,12 @@ export function SectionHeaderRow({
     focusLabelSoon();
   };
 
+  // B-6 T6: the header row is a drop target keyed by the section id —
+  // dropping a dragged field on it lands at the section's END when
+  // collapsed (its rows are invisible; panel decision 4) and the TOP
+  // slot when expanded (see resolveDropSlot). Inert without a DndContext.
+  const {setNodeRef: setDropRef, isOver} = useDroppable({id: section.id});
+
   const Chevron = collapsed ? ChevronRight : ChevronDown;
   const meta = [
     ...section.metaKeys.map((key) => t('extraction', key)),
@@ -111,8 +118,12 @@ export function SectionHeaderRow({
   const cellCols = ['label', ...spanColList];
   return (
     <tr
+      ref={setDropRef}
       data-testid="template-grid-section-row"
-      className="h-8 border-b border-border/50 bg-muted/50"
+      className={cn(
+        'h-8 border-b border-border/50 bg-muted/50',
+        isOver && 'bg-primary/10',
+      )}
     >
       <td role="gridcell" className="w-3.5 px-2 text-muted-foreground/60">
         <GripVertical className="size-3" aria-hidden />

@@ -18,7 +18,7 @@
  *
  * Copy is deliberately NOT mocked — the tests pin the real strings.
  */
-import {act, fireEvent, render, renderHook, screen, waitFor} from '@testing-library/react';
+import {act, fireEvent, render, renderHook, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -291,7 +291,10 @@ beforeEach(() => {
 });
 
 function renderPanel() {
-  render(
+  // dnd-kit's DndContext (T6) contributes its own role="status" live
+  // region portaled to document.body — panel-region queries scope to
+  // the render container.
+  return render(
     <TooltipProvider>
       <TemplateConfigGridPanel
         projectId="p1"
@@ -345,14 +348,14 @@ describe('TemplateConfigGridPanel — undo wiring', () => {
         field('f4', 'sec2', 'k_delta', 'Delta', 1),
       ]);
     });
-    renderPanel();
+    const {container} = renderPanel();
     const beta = screen.getByRole('button', {name: 'Beta'});
     focusEl(beta);
     chord(beta, 'ArrowDown');
     await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
     // The announcement re-render served the refetched (moved) tree.
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(
+      expect(within(container).getByRole('status')).toHaveTextContent(
         'Moved Beta to Basics, position 3 of 3',
       ),
     );
@@ -370,11 +373,11 @@ describe('TemplateConfigGridPanel — undo wiring', () => {
     // The undo announces through the SAME single live region (an undo is
     // a move — it rides the dispatcher's announcement, nothing doubles).
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(
+      expect(within(container).getByRole('status')).toHaveTextContent(
         'Moved Beta to Basics, position 2 of 3',
       ),
     );
-    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(within(container).getAllByRole('status')).toHaveLength(1);
     // And it armed NO fresh undo toast — an undo is not a new undoable.
     expect(toast).toHaveBeenCalledTimes(1);
   });

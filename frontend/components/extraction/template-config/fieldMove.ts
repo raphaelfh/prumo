@@ -22,7 +22,7 @@
  */
 import type {FieldSortOrderUpdate} from '@/services/extractionFieldService';
 
-import type {GridSection} from './templateTree';
+import type {GridField, GridSection} from './templateTree';
 
 /** Per-section field ids in visible order (pending rows included). */
 export type SectionFieldOrder = ReadonlyMap<string, readonly string[]>;
@@ -36,6 +36,60 @@ export function deriveSectionOrder(sections: GridSection[]): SectionFieldOrder {
     }
   }
   return order;
+}
+
+/**
+ * Apply a working order to a built tree — the optimistic order overlay
+ * (panel decision 7): while structural writes are in flight the grid
+ * renders the PLANNED order, so a dropped or chorded row never snaps
+ * back between the gesture and the awaited refetch. Purely
+ * presentational: fields are re-slotted (and re-homed across sections)
+ * by id, with `entityTypeId` and the section counts following. Fields
+ * the order does not know (e.g. a pending insert confirmed mid-flight)
+ * stay in their section after the ordered rows; order ids the tree no
+ * longer serves (deleted mid-flight) drop out.
+ */
+export function applySectionOrder(
+  sections: GridSection[],
+  order: SectionFieldOrder,
+): GridSection[] {
+  const byId = new Map<string, GridField>();
+  for (const section of sections.flatMap((s) => [s, ...s.children])) {
+    for (const field of section.fields) byId.set(field.id, field);
+  }
+  const homes = new Map<string, string>();
+  for (const [sectionId, ids] of order) {
+    for (const id of ids) homes.set(id, sectionId);
+  }
+
+  const apply = (section: GridSection): GridSection => {
+    const children = section.children.map(apply);
+    const ids = order.get(section.id);
+    const fields = ids
+      ? [
+          ...ids.flatMap((id) => {
+            const field = byId.get(id);
+            if (!field) return [];
+            return [field.entityTypeId === section.id ? field : {...field, entityTypeId: section.id}];
+          }),
+          ...section.fields.filter((f) => !homes.has(f.id)),
+        ]
+      : // No entry for this section: keep only fields no OTHER section's
+        // entry claims (a claim without a matching entry here cannot
+        // happen through planFieldMove, which rewrites both sides — this
+        // guards a refetch racing new sections in mid-flight).
+        section.fields.filter((f) => !homes.has(f.id));
+    return {
+      ...section,
+      fields,
+      children,
+      fieldCount: fields.length,
+      totalFieldCount:
+        fields.length + children.reduce((sum, child) => sum + child.totalFieldCount, 0),
+    };
+  };
+
+  return sections.map(apply);
 }
 
 export interface FieldMovePlan {
