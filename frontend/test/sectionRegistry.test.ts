@@ -18,7 +18,8 @@ function entity(id: string, role: ExtractionEntityTypeWithFields['role'], cardin
   return {
     id, template_id: 't', name: id, label: `Label ${id}`, description: null,
     parent_entity_type_id: null, cardinality, role, sort_order: 0,
-    is_required: true, created_at: '', fields: fields.map(f => ({ ...f, entity_type_id: id })),
+    is_required: true, entry_label: null, created_at: '',
+    fields: fields.map(f => ({ ...f, entity_type_id: id })),
   };
 }
 function instance(id: string, entity_type_id: string, parent_instance_id: string | null = null): ExtractionInstance {

@@ -164,6 +164,70 @@ describe('buildTemplateTree', () => {
     expect(tree[0].totalFieldCount).toBe(3);
   });
 
+  it('resolves entryNoun from the group own entry_label and children inherit it (B-8 D7)', () => {
+    const tree = buildTemplateTree(
+      [
+        section({
+          id: 'grp',
+          role: 'model_container',
+          cardinality: 'many',
+          entry_label: 'algorithm',
+          sort_order: 1,
+        }),
+        section({
+          id: 'child',
+          role: 'model_section',
+          parent_entity_type_id: 'grp',
+          sort_order: 2,
+        }),
+      ],
+      [],
+    );
+
+    expect(tree[0].entryNoun).toBe('algorithm');
+    expect(tree[0].children[0].entryNoun).toBe('algorithm');
+  });
+
+  it('falls back entryNoun to "model" when entry_label is null or absent', () => {
+    const tree = buildTemplateTree(
+      [
+        section({
+          id: 'grpNull',
+          role: 'model_container',
+          cardinality: 'many',
+          entry_label: null,
+          sort_order: 1,
+        }),
+        section({
+          id: 'grpAbsent',
+          role: 'model_container',
+          cardinality: 'many',
+          sort_order: 2,
+        }),
+        section({
+          id: 'child',
+          role: 'model_section',
+          parent_entity_type_id: 'grpNull',
+          sort_order: 3,
+        }),
+      ],
+      [],
+    );
+
+    expect(tree[0].entryNoun).toBe('model');
+    expect(tree[0].children[0].entryNoun).toBe('model');
+    expect(tree[1].entryNoun).toBe('model');
+  });
+
+  it('gives root sections the total fallback entryNoun "model" (unused but total)', () => {
+    const tree = buildTemplateTree(
+      [section({id: 'root', entry_label: null, sort_order: 1})],
+      [],
+    );
+
+    expect(tree[0].entryNoun).toBe('model');
+  });
+
   it('treats an orphaned child (parent missing) as a root rather than dropping it', () => {
     const tree = buildTemplateTree(
       [section({id: 'lost', role: 'model_section', parent_entity_type_id: 'gone'})],
