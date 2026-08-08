@@ -55,6 +55,7 @@ function renderGrid(over: Partial<Parameters<typeof TemplateGrid>[0]> = {}) {
     onSelect: vi.fn(),
     onEditField: vi.fn(),
     onDeleteField: vi.fn(),
+    onCommitField: vi.fn(),
     sectionActions,
     onAddSection: vi.fn(),
     onEscapeEscalate: vi.fn(),
@@ -230,5 +231,127 @@ describe('TemplateGrid accessibility', () => {
   it('hides ghost add-rows while a search filter is active', () => {
     renderGrid({isFiltering: true});
     expect(screen.queryByTestId('template-grid-add-section')).toBeNull();
+  });
+});
+
+describe('TemplateGrid inline text editing (B-5 Task 3)', () => {
+  const labelEditor = () =>
+    screen.getByRole<HTMLInputElement>('textbox', {name: 'gridEditLabelAria'});
+
+  it('Enter opens the label editor seeded with the current value, text selected, height-capped', async () => {
+    renderGrid();
+    focusEl(screen.getByRole('button', {name: 'Study design'}));
+    await userEvent.keyboard('{Enter}');
+    const editor = labelEditor();
+    expect(editor).toHaveValue('Study design');
+    expect(document.activeElement).toBe(editor);
+    // focus-then-edit selects everything, so typing replaces.
+    expect(editor.selectionStart).toBe(0);
+    expect(editor.selectionEnd).toBe('Study design'.length);
+    // 30px rows: editors are capped like the h-6 rename input.
+    expect(editor.className).toContain('h-6');
+  });
+
+  it('typing on the focused label cell opens the editor seeded with the typed key (typing replaces)', async () => {
+    renderGrid();
+    focusEl(screen.getByRole('button', {name: 'Study design'}));
+    await userEvent.keyboard('x');
+    expect(labelEditor()).toHaveValue('x');
+  });
+
+  it('a second click inline-edits the label instead of opening the dialog', async () => {
+    const {onEditField} = renderGrid();
+    const label = screen.getByRole('button', {name: 'Study design'});
+    await userEvent.click(label);
+    await userEvent.click(label);
+    expect(labelEditor()).toHaveValue('Study design');
+    expect(onEditField).not.toHaveBeenCalled();
+  });
+
+  it('commit on Enter fires exactly one write and advances focus DOWN', async () => {
+    const {onCommitField} = renderGrid();
+    focusEl(screen.getByRole('button', {name: 'Study design'}));
+    await userEvent.keyboard('{Enter}');
+    await userEvent.keyboard('Renamed field');
+    await userEvent.keyboard('{Enter}');
+    expect(onCommitField).toHaveBeenCalledTimes(1);
+    expect(onCommitField).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'f1'}),
+      'label',
+      'Renamed field',
+    );
+    // The row below f1 is the section's ghost row.
+    expect(document.activeElement).toBe(
+      screen.getByTestId('template-grid-add-field-sec'),
+    );
+  });
+
+  it('blur commits the draft exactly once', async () => {
+    const {onCommitField} = renderGrid();
+    focusEl(screen.getByRole('button', {name: 'Study design'}));
+    await userEvent.keyboard('{Enter}');
+    await userEvent.keyboard('Blurred value');
+    await userEvent.tab();
+    expect(onCommitField).toHaveBeenCalledTimes(1);
+    expect(onCommitField).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'f1'}),
+      'label',
+      'Blurred value',
+    );
+    expect(screen.queryByRole('textbox', {name: 'gridEditLabelAria'})).toBeNull();
+  });
+
+  it('Esc reverts without a write and focus stays on the cell', async () => {
+    const {onCommitField, onEscapeEscalate} = renderGrid();
+    focusEl(screen.getByRole('button', {name: 'Study design'}));
+    await userEvent.keyboard('{Enter}');
+    await userEvent.keyboard('zzz');
+    await userEvent.keyboard('{Escape}');
+    expect(onCommitField).not.toHaveBeenCalled();
+    // Rung 1 resolved in the editor: the panel rungs must not fire.
+    expect(onEscapeEscalate).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox', {name: 'gridEditLabelAria'})).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', {name: 'Study design'}),
+    );
+  });
+
+  it('a no-change commit fires NO write but still advances', async () => {
+    const {onCommitField} = renderGrid();
+    focusEl(screen.getByRole('button', {name: 'Study design'}));
+    await userEvent.keyboard('{Enter}');
+    await userEvent.keyboard('{Enter}');
+    expect(onCommitField).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(
+      screen.getByTestId('template-grid-add-field-sec'),
+    );
+  });
+
+  it('typing on a ghost row neither crashes nor opens an editor (Task 4 owns ghosts)', async () => {
+    renderGrid();
+    focusEl(screen.getByTestId('template-grid-add-field-sec'));
+    await userEvent.keyboard('a');
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('edits the key cell when the column is shown, committing the key', async () => {
+    const {container, onCommitField} = renderGrid({showKeyColumn: true});
+    const keyCell = container.querySelector<HTMLElement>(
+      '[data-cell-row="f1"][data-cell-cols="key"]',
+    );
+    focusEl(keyCell!);
+    await userEvent.keyboard('{Enter}');
+    const editor = screen.getByRole<HTMLInputElement>('textbox', {
+      name: 'gridEditKeyAria',
+    });
+    expect(editor).toHaveValue('study_design');
+    await userEvent.keyboard('new_key');
+    await userEvent.keyboard('{Enter}');
+    expect(onCommitField).toHaveBeenCalledTimes(1);
+    expect(onCommitField).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'f1'}),
+      'key',
+      'new_key',
+    );
   });
 });

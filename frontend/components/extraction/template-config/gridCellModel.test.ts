@@ -228,6 +228,35 @@ describe('gridCellModel — Esc ladder rung 1 + escalation', () => {
   });
 });
 
+describe('gridCellModel — blurCommit (editor lost focus to the world)', () => {
+  it('commits in edit mode WITHOUT moving focus — the blur already decided where focus goes', () => {
+    let s = gridReducer(initialGridState, {
+      type: 'click',
+      coord: at('f-1', 'label'),
+      cellKind: 'text',
+      rows: ROWS,
+    });
+    s = gridReducer(s, {type: 'key', key: 'Enter', cellKind: 'text', rows: ROWS});
+    expect(s.mode).toBe('edit');
+    s = gridReducer(s, {type: 'blurCommit'});
+    expect(s.mode).toBe('focus');
+    focused(s, 'f-1', 'label');
+    expect(s.effects).toContainEqual({kind: 'commit', coord: at('f-1', 'label')});
+  });
+
+  it('is a no-op in focus mode (no stray commit)', () => {
+    let s = gridReducer(initialGridState, {
+      type: 'click',
+      coord: at('f-1', 'label'),
+      cellKind: 'text',
+      rows: ROWS,
+    });
+    s = gridReducer(s, {type: 'blurCommit'});
+    expect(s.mode).toBe('focus');
+    expect(s.effects).toEqual([]);
+  });
+});
+
 describe('gridCellModel — focusSync (focus moved by other means)', () => {
   it('adopts the coordinate without emitting effects', () => {
     const s = gridReducer(initialGridState, {

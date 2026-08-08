@@ -27,6 +27,7 @@ import {
   initialGridState,
   recoverFocus,
   type CellCoord,
+  type CellKind,
   type GridRowShape,
 } from './gridCellModel';
 import type {GridField, GridSection, TemplateMatchHint} from './templateTree';
@@ -43,11 +44,14 @@ import type {GridField, GridSection, TemplateMatchHint} from './templateTree';
  * `:focus-visible` misses mouse clicks and `:focus-within` drops during
  * portals.
  *
- * Editing is unchanged in this slice of the work: a double-click or the row
- * menu still raises `onEditField`, which the parent bridges to the existing
- * dialog. Tasks 3-5 replace that bridge with inline editors, at which point
- * cells start dispatching real cellKinds ('text'/'ghost') instead of
- * relying on native activation of the cell's inner control.
+ * B-5 Task 3: TEXT cells (Label; Key when shown) edit inline per the
+ * Airtable contract — second-click/Enter/F2 open the editor on the current
+ * value (selected), typing opens it seeded with the typed key (typing
+ * replaces), Enter commits and advances DOWN, blur commits in place, Esc
+ * reverts with focus staying on the cell. Commits surface through
+ * `onCommitField`; the row menu still raises `onEditField` for the
+ * dialog's other properties (absorbed by the inspector in Task 5). Ghost
+ * rows keep their button behavior until Task 4.
  */
 
 export interface TemplateGridSelection {
@@ -71,12 +75,18 @@ export interface TemplateSectionActions {
   onAddField: (sectionId: string) => void;
 }
 
+/** Columns that edit inline as free text. */
+export type TextCellColumn = 'label' | 'key';
+
 interface TemplateGridProps {
   sections: GridSection[];
   selection: TemplateGridSelection | null;
   onSelect: (selection: TemplateGridSelection) => void;
   onEditField: (field: GridField) => void;
   onDeleteField: (field: GridField) => void;
+  /** Inline text-cell commit — label/key writes belong to the panel. Only
+   * called with a CHANGED, non-empty, trimmed value. */
+  onCommitField: (field: GridField, column: TextCellColumn, value: string) => void;
   sectionActions: TemplateSectionActions;
   onAddSection: () => void;
   /** Esc pressed in focus mode: rungs 2-3 of the ladder belong to the
@@ -127,9 +137,10 @@ const ADD_SECTION_ROW_ID = 'ghost:template';
 
 const ghostRowId = (sectionId: string) => `ghost:${sectionId}`;
 
-/** Keys the grid routes through the cell model. Everything else (Enter,
- * Space, F2, printables) stays native in this slice: activation happens on
- * the focused inner control itself. */
+/** Keys the grid routes through the cell model on EVERY cell. Text cells
+ * additionally route Enter/F2/printables (they open the inline editor);
+ * on control cells those stay native — activation happens on the focused
+ * inner control itself. */
 const ROVING_KEYS = new Set([
   'ArrowUp',
   'ArrowDown',
@@ -138,6 +149,23 @@ const ROVING_KEYS = new Set([
   'Escape',
   'Tab',
 ]);
+
+/** Which cells edit as free text in this slice: the label/key columns of
+ * FIELD rows. Ghost rows stay 'control' until Task 4 lands their editor
+ * (typing on them must be inert, not a crash); section rows keep native
+ * activation (rename ownership is Task 6). */
+function cellKindAt(coord: CellCoord, rows: GridRowShape[]): CellKind {
+  const row = rows.find((r) => r.rowId === coord.rowId);
+  if (!row || row.kind !== 'field') return 'control';
+  return coord.column === 'label' || coord.column === 'key' ? 'text' : 'control';
+}
+
+/** A key that types a character. Ctrl/Cmd chords are commands, never
+ * seeds; Option-composed characters (pt-BR accents via dead keys are the
+ * `isComposing`/'Dead' branch) still count. */
+function isPrintableKey(event: React.KeyboardEvent): boolean {
+  return event.key.length === 1 && !event.ctrlKey && !event.metaKey;
+}
 
 interface CellFocus {
   /** Resolved roving coordinate — never a dead row (see resolveFocusCoord). */
@@ -281,14 +309,67 @@ function RequiredBox({checked}: {checked: boolean}) {
   );
 }
 
+/**
+ * Inline editor for a text cell — the compiler-safe recipe (plan Global
+ * Constraints): `autoFocus` + `onFocus` select() for focus-then-edit, the
+ * draft seeded from the typed key for typing-replaces, zero refs/effects
+ * for focus. Mounted only while the model is in edit mode on this cell,
+ * so `useState` re-seeds per edit session. Height-capped like the h-6
+ * rename input to preserve the 30px rows.
+ */
+function TextCellEditor({
+  initialValue,
+  selectOnFocus,
+  ariaLabel,
+  onCommit,
+  onCancel,
+}: {
+  initialValue: string;
+  selectOnFocus: boolean;
+  ariaLabel: string;
+  onCommit: (draft: string, via: 'enter' | 'blur') => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(initialValue);
+  return (
+    <Input
+      value={draft}
+      autoFocus
+      aria-label={ariaLabel}
+      onFocus={(event) => {
+        if (selectOnFocus) event.currentTarget.select();
+      }}
+      onChange={(event) => setDraft(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+          event.preventDefault();
+          onCommit(draft, 'enter');
+        }
+        if (event.key === 'Escape') {
+          // Rung 1 belongs to the editor: without stopPropagation the
+          // panel's Esc listener would also clear the search/selection.
+          event.preventDefault();
+          event.stopPropagation();
+          onCancel();
+        }
+      }}
+      onBlur={() => onCommit(draft, 'blur')}
+      className="h-6 text-xs"
+    />
+  );
+}
+
 function FieldRow({
   field,
   indent,
   selected,
   focus,
+  editing,
   onSelect,
   onEdit,
   onDelete,
+  onEditorCommit,
+  onEditorCancel,
   showKeyColumn,
   showOptionsColumn,
 }: {
@@ -296,9 +377,14 @@ function FieldRow({
   indent: string;
   selected: boolean;
   focus: CellFocus;
+  /** Non-null while the model is in edit mode on one of this row's text
+   * cells; `seed` carries the typed key for typing-replaces. */
+  editing: {column: TextCellColumn; seed: string | null} | null;
   onSelect: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onEditorCommit: (column: TextCellColumn, draft: string, via: 'enter' | 'blur') => void;
+  onEditorCancel: () => void;
   showKeyColumn: boolean;
   showOptionsColumn: boolean;
 }) {
@@ -320,49 +406,71 @@ function FieldRow({
         className={cn('min-w-0 px-2', indent, ringClass(focus, rowId, ['label']))}
       >
         {/* The roving target is the button, not the td: Enter/Space select
-            natively. Double-click (mouse) edits; from the keyboard, select
-            then use the inspector's Edit — until Task 3 lands the inline
-            editor. */}
+            natively; a second click / Enter / F2 / typing swaps it for the
+            inline editor (the model's text-cell transitions). */}
         {/* The row itself carries no handlers: a click target that also lives
             on the <tr> fires twice for nested controls, and `stopPropagation`
             on `click` does NOT stop `dblclick` — double-clicking the ⋯ menu
             used to open the edit dialog behind it. */}
-        <button
-          type="button"
-          onClick={onSelect}
-          onDoubleClick={onEdit}
-          aria-current={selected ? 'true' : undefined}
-          data-cell-row={rowId}
-          data-cell-cols="label"
-          tabIndex={rovingTabIndex(focus, rowId, ['label'])}
-          className={cn(
-            'flex w-full max-w-full items-baseline gap-1.5 rounded text-left',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            selected && 'outline outline-2 -outline-offset-2 outline-ring',
-          )}
-        >
-          <span className={cn('truncate', field.isRequired && 'font-medium')}>
-            {field.label}
-          </span>
-          {hintKey && (
-            <span className="shrink-0 text-[10.5px] text-muted-foreground">
-              · {t('extraction', hintKey)}
+        {editing?.column === 'label' ? (
+          <TextCellEditor
+            initialValue={editing.seed ?? field.label}
+            selectOnFocus={editing.seed === null}
+            ariaLabel={t('extraction', 'gridEditLabelAria')}
+            onCommit={(draft, via) => onEditorCommit('label', draft, via)}
+            onCancel={onEditorCancel}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={onSelect}
+            aria-current={selected ? 'true' : undefined}
+            data-cell-row={rowId}
+            data-cell-cols="label"
+            tabIndex={rovingTabIndex(focus, rowId, ['label'])}
+            className={cn(
+              'flex w-full max-w-full items-baseline gap-1.5 rounded text-left',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              selected && 'outline outline-2 -outline-offset-2 outline-ring',
+            )}
+          >
+            <span className={cn('truncate', field.isRequired && 'font-medium')}>
+              {field.label}
             </span>
-          )}
-        </button>
+            {hintKey && (
+              <span className="shrink-0 text-[10.5px] text-muted-foreground">
+                · {t('extraction', hintKey)}
+              </span>
+            )}
+          </button>
+        )}
       </td>
       {showKeyColumn && (
         <td
           role="gridcell"
           data-cell-row={rowId}
           data-cell-cols="key"
-          tabIndex={rovingTabIndex(focus, rowId, ['key'])}
+          // While the editor (an implicit tab stop) is inside, the td
+          // steps out of the roving order — one tab stop at all times.
+          tabIndex={
+            editing?.column === 'key' ? -1 : rovingTabIndex(focus, rowId, ['key'])
+          }
           className={cn(
             'max-w-[160px] truncate px-2 font-mono text-[10px] text-muted-foreground',
             ringClass(focus, rowId, ['key']),
           )}
         >
-          {field.key}
+          {editing?.column === 'key' ? (
+            <TextCellEditor
+              initialValue={editing.seed ?? field.key}
+              selectOnFocus={editing.seed === null}
+              ariaLabel={t('extraction', 'gridEditKeyAria')}
+              onCommit={(draft, via) => onEditorCommit('key', draft, via)}
+              onCancel={onEditorCancel}
+            />
+          ) : (
+            field.key
+          )}
         </td>
       )}
       <td
@@ -656,6 +764,7 @@ export function TemplateGrid({
   onSelect,
   onEditField,
   onDeleteField,
+  onCommitField,
   sectionActions,
   onAddSection,
   onEscapeEscalate,
@@ -698,10 +807,15 @@ export function TemplateGrid({
     if (event.defaultPrevented) return; // e.g. Radix trigger opened on ArrowDown
     const target = event.target as HTMLElement;
     if (target.closest('input, textarea, [contenteditable="true"]')) return;
-    if (!ROVING_KEYS.has(event.key)) return;
     const holder = target.closest<HTMLElement>('[data-cell-row]');
     if (!holder) return; // portal content (open menus) is not a cell
     const coord = coordFromTarget(holder, gridState.focus, columns);
+    const cellKind = cellKindAt(coord, rowShapes);
+    const printable = isPrintableKey(event) || event.key === 'Dead';
+    const opensTextEditor =
+      cellKind === 'text' &&
+      (event.key === 'Enter' || event.key === 'F2' || printable);
+    if (!ROVING_KEYS.has(event.key) && !opensTextEditor) return;
     let state = gridState;
     if (!state.focus || state.focus.rowId !== coord.rowId || state.focus.column !== coord.column) {
       state = gridReducer(state, {type: 'focusSync', coord});
@@ -709,22 +823,24 @@ export function TemplateGrid({
     const next = gridReducer(state, {
       type: 'key',
       key: event.key,
-      cellKind: 'control',
+      printable,
+      composing: event.nativeEvent.isComposing,
+      cellKind,
       rows: rowShapes,
       columns,
     });
     for (const effect of next.effects) {
       if (effect.kind === 'escalateEsc') {
         // The central Esc dispatcher: rung 1 (cancelEdit) resolves in the
-        // model once Task 3 lands editors; rungs 2-3 are the panel's.
-        // stopPropagation keeps the panel's own listener from double-firing.
+        // editor itself; rungs 2-3 are the panel's. stopPropagation keeps
+        // the panel's own listener from double-firing.
         event.stopPropagation();
         onEscapeEscalate();
       }
       // 'exitGrid' (Tab): deliberately NOT preventDefault-ed — the grid has
       // one tab stop, so native Tab already leaves it (APG).
-      // 'activateControl' / 'commit' / 'cancelEdit': unreachable until the
-      // cells dispatch real cellKinds (Tasks 3-5).
+      // 'commit' / 'cancelEdit' surface via the editor's own handlers;
+      // 'activateControl' stays native until Task 5.
     }
     if (event.key.startsWith('Arrow')) {
       event.preventDefault();
@@ -734,6 +850,11 @@ export function TemplateGrid({
       ) {
         findFocusTarget(tableRef.current, next.focus)?.focus();
       }
+    }
+    if (opensTextEditor && next.mode === 'edit') {
+      // The editor mounts with the seed — the typed character must not
+      // ALSO land natively, and Enter/Space must not click the button.
+      event.preventDefault();
     }
     setGridState(next);
   };
@@ -762,28 +883,122 @@ export function TemplateGrid({
   // themselves. Inner controls keep their native mousedown focus.
   const handleMouseDown = (event: React.MouseEvent<HTMLTableElement>) => {
     const target = event.target as HTMLElement;
-    if (target.closest('button, input, textarea, a, [contenteditable="true"]')) return;
     const holder = target.closest<HTMLElement>('[data-cell-row]');
+    // Second click on the already-focused text cell edits (the model's
+    // second-click transition). Detected at MOUSEDOWN time: by the click
+    // event this gesture's own focusin has already synced the coordinate,
+    // which would make every first click look like a second one.
+    if (holder && document.activeElement === holder && gridState.mode === 'focus') {
+      const coord = coordFromTarget(holder, gridState.focus, columns);
+      if (cellKindAt(coord, rowShapes) === 'text') {
+        event.preventDefault();
+        setGridState(
+          gridReducer(gridState, {
+            type: 'click',
+            coord,
+            cellKind: 'text',
+            rows: rowShapes,
+          }),
+        );
+        return;
+      }
+    }
+    if (target.closest('button, input, textarea, a, [contenteditable="true"]')) return;
     if (!(holder instanceof HTMLTableCellElement)) return;
     event.preventDefault();
     holder.focus();
   };
 
+  /** The target may not exist until React flushes the state just set (the
+   * editor unmounts, the cell's control remounts) — a microtask runs after
+   * that flush. Still handler-originated: never an effect. */
+  const focusCellSoon = (coord: CellCoord) => {
+    queueMicrotask(() => findFocusTarget(tableRef.current, coord)?.focus());
+  };
+
+  const handleEditorCommit = (
+    field: GridField,
+    column: TextCellColumn,
+    draft: string,
+    via: 'enter' | 'blur',
+  ) => {
+    let next =
+      via === 'enter'
+        ? gridReducer(gridState, {
+            type: 'key',
+            key: 'Enter',
+            cellKind: 'text',
+            rows: rowShapes,
+            columns,
+          })
+        : gridReducer(gridState, {type: 'blurCommit'});
+    for (const effect of next.effects) {
+      if (effect.kind === 'commit') {
+        const value = draft.trim();
+        const current = column === 'label' ? field.label : field.key;
+        // A no-change (or emptied) draft is a revert, never a write.
+        if (value !== '' && value !== current) onCommitField(field, column, value);
+      }
+    }
+    if (next.mode === 'edit') {
+      const landed = rowShapes.find((r) => r.rowId === next.focus?.rowId);
+      if (landed?.kind === 'ghost') {
+        // The Enter-chain opens the ghost editor in Task 4; until then the
+        // chain parks on the ghost row in focus mode (Enter there still
+        // opens the add dialog natively).
+        next = {...next, mode: 'focus'};
+      }
+    }
+    setGridState(next);
+    // On Enter the commit owns where focus goes (down); on blur the world
+    // already moved it — stealing it back would fight the user.
+    if (via === 'enter' && next.focus) focusCellSoon(next.focus);
+  };
+
+  const handleEditorCancel = () => {
+    const next = gridReducer(gridState, {
+      type: 'key',
+      key: 'Escape',
+      cellKind: 'text',
+      rows: rowShapes,
+      columns,
+    });
+    setGridState(next);
+    // Esc keeps focus ON the cell: refocus its control once it remounts.
+    if (next.focus) focusCellSoon(next.focus);
+  };
+
   const renderFields = (fields: GridField[], indent: string) =>
-    fields.map((field) => (
-      <FieldRow
-        key={field.id}
-        field={field}
-        indent={indent}
-        selected={isSelected('field', field.id)}
-        focus={focus}
-        onSelect={() => onSelect({kind: 'field', id: field.id})}
-        onEdit={() => onEditField(field)}
-        onDelete={() => onDeleteField(field)}
-        showKeyColumn={showKeyColumn}
-        showOptionsColumn={showOptionsColumn}
-      />
-    ));
+    fields.map((field) => {
+      const editing =
+        gridState.mode === 'edit' &&
+        focus.coord?.rowId === field.id &&
+        (focus.coord.column === 'label' || focus.coord.column === 'key')
+          ? {
+              column: focus.coord.column as TextCellColumn,
+              seed: gridState.editSeed,
+            }
+          : null;
+      return (
+        <FieldRow
+          key={field.id}
+          field={field}
+          indent={indent}
+          selected={isSelected('field', field.id)}
+          focus={focus}
+          editing={editing}
+          onSelect={() => onSelect({kind: 'field', id: field.id})}
+          onEdit={() => onEditField(field)}
+          onDelete={() => onDeleteField(field)}
+          onEditorCommit={(column, draft, via) =>
+            handleEditorCommit(field, column, draft, via)
+          }
+          onEditorCancel={handleEditorCancel}
+          showKeyColumn={showKeyColumn}
+          showOptionsColumn={showOptionsColumn}
+        />
+      );
+    });
 
   return (
     <table

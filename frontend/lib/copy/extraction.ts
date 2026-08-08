@@ -814,6 +814,8 @@ export const extraction = {
     gridDisplayKeyColumn: 'Key column',
     gridDisplayOptionsColumn: 'Options column',
     gridEditFieldTooltip: 'Edit field',
+    gridEditLabelAria: 'Edit label',
+    gridEditKeyAria: 'Edit key',
     gridRowActions: 'Field actions',
     gridEmptyTemplate: 'This template has no sections yet.',
     gridCollapseSection: 'Collapse section',

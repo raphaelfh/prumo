@@ -74,6 +74,11 @@ export type GridEvent =
       columns?: readonly string[];
     }
   | {type: 'setGhostDraftEmpty'; empty: boolean}
+  /** The editor lost focus to the world (click elsewhere, Tab): commit
+   * WITHOUT moving the coordinate — the blur already decided where focus
+   * goes, and the commit must land BEFORE any cross-cell focusSync. A
+   * no-op in focus mode, so a stray blur can never double-commit. */
+  | {type: 'blurCommit'}
   /** Focus moved by OTHER means (mouse click on an inner control, Radix
    * menu close refocusing its trigger): the coordinate must follow. A
    * same-cell sync is identity — the editor input taking focus must not
@@ -138,6 +143,16 @@ export function gridReducer(state: GridModelState, event: GridEvent): GridModelS
 
   if (event.type === 'setGhostDraftEmpty') {
     return {...base, ghostDraftEmpty: event.empty};
+  }
+
+  if (event.type === 'blurCommit') {
+    if (state.mode !== 'edit' || !state.focus) return base;
+    return {
+      ...base,
+      mode: 'focus',
+      editSeed: null,
+      effects: [{kind: 'commit', coord: state.focus}],
+    };
   }
 
   if (event.type === 'focusSync') {
