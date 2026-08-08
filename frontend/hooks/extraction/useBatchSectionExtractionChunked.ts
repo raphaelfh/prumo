@@ -22,7 +22,7 @@ import {toast} from "sonner";
 import {t} from "@/lib/copy";
 import type {BatchSectionExtractionRequest} from "@/types/ai-extraction";
 import {AuthenticationError, getErrorCode, getErrorMessage, PDFNotFoundError,} from "@/lib/ai-extraction/errors";
-import {getModelChildSections} from "./helpers/getModelChildSections";
+import {getModelChildSections, type ModelChildSection} from "./helpers/getModelChildSections";
 import {processSectionsInChunks} from "./helpers/processSectionsInChunks";
 
 /**
@@ -37,10 +37,25 @@ export interface ExtractionProgress {
 }
 
 /**
+ * Batch extraction params: the base request plus an optional run-pinned
+ * section list (B-5b). When provided (non-empty), the list replaces the
+ * live entity-type read so the dispatch loop matches the snapshot the
+ * backend extracts from — live rows can carry a manager's unpublished
+ * draft (undispatchable) or miss a published-but-since-deleted section.
+ * Absent or EMPTY → chained fallback to the live read (the worklist
+ * Full-AI path dispatches with no run view loaded; an empty list must
+ * not "succeed" against an empty tree).
+ */
+export type BatchSectionExtractionParams =
+  Omit<BatchSectionExtractionRequest, 'sectionIds' | 'pdfText'> & {
+    sections?: ModelChildSection[];
+  };
+
+/**
  * Tipo de retorno do hook
  */
 export interface UseBatchSectionExtractionChunkedReturn {
-  extractAllSections: (request: Omit<BatchSectionExtractionRequest, 'sectionIds' | 'pdfText'>) => Promise<void>;
+  extractAllSections: (request: BatchSectionExtractionParams) => Promise<void>;
   loading: boolean;
   error: string | null;
   progress: ExtractionProgress | null;
@@ -84,21 +99,25 @@ export function useBatchSectionExtractionChunked(options?: {
   /**
    * Extracts all sections of a model using chunking
    *
-   * @param request - Extraction params (sectionIds and pdfText are generated)
+   * @param request - Extraction params (sectionIds and pdfText are generated);
+   *   ``sections`` is stripped off before the request reaches the service.
    */
-  const extractAllSections = async (request: Omit<BatchSectionExtractionRequest, 'sectionIds' | 'pdfText'>) => {
+  const extractAllSections = async ({sections: pinnedSections, ...request}: BatchSectionExtractionParams) => {
         console.warn('[useBatchSectionExtractionChunked] Starting extraction with chunking', request);
       setLoading(true);
       setError(null);
       setProgress(null);
 
       const doExtract = async () => {
-          // 1. Fetch model section list
-          console.warn('[useBatchSectionExtractionChunked] Fetching model sections...');
-        const sections = await getModelChildSections(
-          request.parentInstanceId,
-          request.templateId,
-        );
+          // 1. Resolve the section list: prefer the run-pinned list; a missing
+          // OR empty list chains into the live read (never swap on empty).
+        const sections =
+          pinnedSections && pinnedSections.length > 0
+            ? pinnedSections
+            : await getModelChildSections(
+                request.parentInstanceId,
+                request.templateId,
+              );
 
         if (sections.length === 0) {
             toast.warning(t('extraction', 'noSectionsForModel'));
