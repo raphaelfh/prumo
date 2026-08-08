@@ -8,11 +8,13 @@ import type {CellFocus} from './gridCellFocus';
 import {
   gridReducer,
   initialGridState,
+  nextMoveSlot,
   recoverFocus,
   type CellCoord,
   type CellKind,
   type GridRowShape,
 } from './gridCellModel';
+import {ADD_SECTION_ROW_ID, buildRowShapes, ghostRowId} from './gridRowShapes';
 import {FieldRow, type TextCellColumn} from './TemplateGridFieldRow';
 import {GhostRow} from './TemplateGridGhostRow';
 import {
@@ -114,6 +116,9 @@ interface TemplateGridProps {
     toSectionId: string,
     toIndex: number,
   ) => {settled: Promise<boolean>} | null;
+  /** Requests the panel-hosted "Move to section…" dialog for a row (B-6
+   * T7) — ONE dialog instance lives at panel level; the row menu asks. */
+  onOpenMoveDialog?: (field: GridField) => void;
   /** Client key → server id for pending rows the panel reconciled: the
    * focus coordinate follows the row identity across the drain refetch. */
   rowIdRemaps?: ReadonlyMap<string, string>;
@@ -144,10 +149,6 @@ const INDENT = {
   childHeader: 'pl-[14px]',
   childField: 'pl-[36px]',
 } as const;
-
-const ADD_SECTION_ROW_ID = 'ghost:template';
-
-const ghostRowId = (sectionId: string) => `ghost:${sectionId}`;
 
 /** Keys the grid routes through the cell model on EVERY cell. Text and
  * ghost cells additionally route Enter/F2/printables (they open the
@@ -228,41 +229,6 @@ function findFocusTarget(
   return null;
 }
 
-/** The visible rows in DOM order — the model's vertical axis. Must mirror
- * the JSX exactly (collapse hides fields/children, filtering hides
- * ghosts; every section — child sections included — carries a ghost). */
-function buildRowShapes(
-  sections: GridSection[],
-  collapsed: ReadonlySet<string>,
-  isFiltering: boolean,
-): GridRowShape[] {
-  const rows: GridRowShape[] = [];
-  for (const section of sections) {
-    rows.push({rowId: section.id, kind: 'section', sectionId: section.id});
-    if (collapsed.has(section.id)) continue;
-    for (const field of section.fields) {
-      rows.push({rowId: field.id, kind: 'field', sectionId: section.id});
-    }
-    if (!isFiltering) {
-      rows.push({rowId: ghostRowId(section.id), kind: 'ghost', sectionId: section.id});
-    }
-    for (const child of section.children) {
-      rows.push({rowId: child.id, kind: 'section', sectionId: child.id});
-      if (collapsed.has(child.id)) continue;
-      for (const field of child.fields) {
-        rows.push({rowId: field.id, kind: 'field', sectionId: child.id});
-      }
-      if (!isFiltering) {
-        rows.push({rowId: ghostRowId(child.id), kind: 'ghost', sectionId: child.id});
-      }
-    }
-  }
-  if (!isFiltering) {
-    rows.push({rowId: ADD_SECTION_ROW_ID, kind: 'ghost', sectionId: ''});
-  }
-  return rows;
-}
-
 /** The invariant lives here: this never returns a coordinate without a
  * live row while the grid has rows, so EXACTLY ONE target renders
  * tabIndex=0 — defaulting to the first cell (the B-1 regression), and
@@ -301,6 +267,7 @@ export function TemplateGrid({
   onChangeType,
   onDeepLink,
   onMoveField,
+  onOpenMoveDialog,
   rowIdRemaps,
   pendingRowIds,
   sectionActions,
@@ -350,6 +317,44 @@ export function TemplateGrid({
     else if (coord.column === 'sparkle') onDeepLink(field, 'ai');
     else if (coord.column === 'options') onDeepLink(field, 'options');
   };
+
+  /** Once a move's write + refetch settle, the row's DOM node has been
+   * re-parented (focus fell to body) — nudge focus back onto `target`
+   * via setTimeout, which runs after React's scheduled commit (still
+   * handler-originated, never an effect). Skips the nudge when the user
+   * moved focus elsewhere meanwhile. Shared by the ⌘⇧ chord and the row
+   * menu's Move up/down (T7). */
+  const refocusAfterMove = (record: {settled: Promise<boolean>}, target: CellCoord) => {
+    void record.settled.then((ok) => {
+      if (!ok) return;
+      setTimeout(() => {
+        const table = tableRef.current;
+        const active = document.activeElement;
+        if (!table) return;
+        if (active && active !== document.body && !table.contains(active)) return;
+        const el =
+          findFocusTarget(table, target) ??
+          table.querySelector<HTMLElement>('[tabindex="0"]');
+        el?.focus();
+      }, 0);
+    });
+  };
+
+  /** Row-menu Move up/down (T7, panel decision 5): the visible,
+   * single-pointer counterpart of the chord — same boundary-aware slot,
+   * same chokepoint. Radix refocuses the ⋯ trigger on menu close, so the
+   * nudge targets the row's actions cell. */
+  const moveFieldStep = (field: GridField, delta: 1 | -1) => {
+    const slot = nextMoveSlot(rowShapes, field.id, delta);
+    if (!slot) return;
+    const record = onMoveField?.(field, slot.toSectionId, slot.toIndex);
+    if (record) refocusAfterMove(record, {rowId: field.id, column: 'actions'});
+  };
+  const moveStepDisabled = (fieldId: string, delta: 1 | -1) =>
+    !onMoveField ||
+    isFiltering ||
+    (pendingRowIds?.has(fieldId) ?? false) ||
+    nextMoveSlot(rowShapes, fieldId, delta) === null;
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTableElement>) => {
     if (event.defaultPrevented) return; // e.g. Radix trigger opened on ArrowDown
@@ -412,30 +417,13 @@ export function TemplateGrid({
         // B-6 T3: pending rows have no server id yet — the chord no-ops.
         // The Arrow branch below preventDefaults either way (a consumed
         // chord must never scroll). The model keeps the SAME coordinate;
-        // once the write + refetch settle, the row's DOM node has been
-        // re-parented (focus fell to body), so nudge focus back — via
-        // setTimeout, which runs after React's scheduled commit; still
-        // handler-originated, never an effect. Skip the nudge when the
-        // user moved focus elsewhere meanwhile.
+        // refocusAfterMove nudges DOM focus back once the write settles.
         const moved = findField(sections, effect.fieldRowId);
         const record = moved
           ? onMoveField?.(moved, effect.toSectionId, effect.toIndex)
           : null;
         if (record) {
-          const target: CellCoord = {rowId: effect.fieldRowId, column: coord.column};
-          void record.settled.then((ok) => {
-            if (!ok) return;
-            setTimeout(() => {
-              const table = tableRef.current;
-              const active = document.activeElement;
-              if (!table) return;
-              if (active && active !== document.body && !table.contains(active)) return;
-              const el =
-                findFocusTarget(table, target) ??
-                table.querySelector<HTMLElement>('[tabindex="0"]');
-              el?.focus();
-            }, 0);
-          });
+          refocusAfterMove(record, {rowId: effect.fieldRowId, column: coord.column});
         }
       }
       // 'exitGrid' (Tab): deliberately NOT preventDefault-ed — the grid has
@@ -644,6 +632,16 @@ export function TemplateGrid({
             onDelete={() => onDeleteField(field)}
             deleteDisabled={pendingRowIds?.has(field.id) ?? false}
             dragLocked={isFiltering ? 'filtering' : pendingRowIds?.has(field.id) ? 'pending' : null}
+            move={{
+              upDisabled: moveStepDisabled(field.id, -1),
+              downDisabled: moveStepDisabled(field.id, 1),
+              // Filter-independent (the combobox rule): a pick lands at
+              // the destination's END, so only pending rows disable it.
+              toSectionDisabled:
+                !onOpenMoveDialog || (pendingRowIds?.has(field.id) ?? false),
+              onStep: (delta) => moveFieldStep(field, delta),
+              onToSection: () => onOpenMoveDialog?.(field),
+            }}
             onEditorCommit={(column, draft, via) =>
               handleEditorCommit({kind: 'field', field, column}, draft, via)
             }

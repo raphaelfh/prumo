@@ -1,7 +1,11 @@
+import {useRef} from 'react';
 import {useSortable} from '@dnd-kit/sortable';
 import {CSS} from '@dnd-kit/utilities';
 import {
+  ArrowDown,
+  ArrowUp,
   Check,
+  FolderInput,
   GripVertical,
   MoreHorizontal,
   Sparkles,
@@ -14,6 +18,8 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
@@ -56,6 +62,21 @@ const DRAG_HINT_COPY = {
   pending: 'dragLockedPending',
 } as const;
 
+/** Row-menu move affordances (B-6 T7, panel decision 5): the visible,
+ * single-pointer (WCAG 2.5.7) counterpart of the invisible ⌘⇧ chords.
+ * The GRID computes the disabled matrix — template edges via
+ * `nextMoveSlot`, filtering, pending rows — and routes dispatch through
+ * the panel's `moveFieldWithUndo` chokepoint. */
+export interface FieldRowMoveActions {
+  upDisabled: boolean;
+  downDisabled: boolean;
+  toSectionDisabled: boolean;
+  onStep: (delta: 1 | -1) => void;
+  /** Requests the panel-hosted "Move to section…" dialog (ONE instance
+   * for the whole grid) — dispatched via the menu's focus hand-off. */
+  onToSection: () => void;
+}
+
 function TypePill({field}: {field: GridField}) {
   const label =
     field.optionCount > 0 ? `${field.fieldType} · ${field.optionCount}` : field.fieldType;
@@ -90,6 +111,7 @@ export function FieldRow({
   onDelete,
   deleteDisabled,
   dragLocked,
+  move,
   onEditorCommit,
   onEditorCancel,
   onToggleRequired,
@@ -111,6 +133,8 @@ export function FieldRow({
   deleteDisabled: boolean;
   /** Non-null disables the drag handle, naming why (B-6 T6). */
   dragLocked: DragLockReason | null;
+  /** The ⋯ menu's Move up/down/to-section items (B-6 T7). */
+  move: FieldRowMoveActions;
   onEditorCommit: (column: TextCellColumn, draft: string, via: 'enter' | 'blur') => void;
   onEditorCancel: () => void;
   onToggleRequired: (isRequired: boolean) => void;
@@ -121,6 +145,14 @@ export function FieldRow({
 }) {
   const hintKey = field.matchHint ? MATCH_HINT_COPY[field.matchHint] : null;
   const rowId = field.id;
+  // Panel decision 9 (the SectionHeaderRow hand-off, replicated here):
+  // the "Move to section…" dialog must NOT open from onSelect — the
+  // menu's FocusScope is still trapping at that point and would yank
+  // focus off (and fight) the fresh dialog's own trap. So onSelect only
+  // FLAGS the intent and the open runs in onCloseAutoFocus, after the
+  // trap is torn down, with the default trigger-refocus prevented for
+  // that one hand-off. Every other close keeps the a11y default.
+  const menuClaimedFocus = useRef<'moveToSection' | null>(null);
   // B-6 T6: the row is a sortable item and the ⠿ td its ONLY activator.
   // useSortable's `attributes` is deliberately NOT destructured — it
   // injects tabIndex=0 + role="button" on the activator: a second tab
@@ -374,7 +406,51 @@ export function FieldRow({
             </TooltipTrigger>
             <TooltipContent>{t('extraction', 'gridRowActions')}</TooltipContent>
           </Tooltip>
-          <DropdownMenuContent align="end" className="text-xs">
+          <DropdownMenuContent
+            align="end"
+            className="text-xs"
+            onCloseAutoFocus={(event) => {
+              const claimed = menuClaimedFocus.current;
+              menuClaimedFocus.current = null;
+              if (claimed === 'moveToSection') {
+                event.preventDefault();
+                move.onToSection();
+              }
+            }}
+          >
+            <DropdownMenuItem
+              onSelect={() => move.onStep(-1)}
+              disabled={move.upDisabled}
+            >
+              <ArrowUp className="mr-2 size-3.5" aria-hidden />
+              {t('templateConfig', 'menuMoveUp')}
+              <DropdownMenuShortcut>
+                {t('templateConfig', 'shortcutMoveUp')}
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => move.onStep(1)}
+              disabled={move.downDisabled}
+            >
+              <ArrowDown className="mr-2 size-3.5" aria-hidden />
+              {t('templateConfig', 'menuMoveDown')}
+              <DropdownMenuShortcut>
+                {t('templateConfig', 'shortcutMoveDown')}
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => {
+                menuClaimedFocus.current = 'moveToSection';
+              }}
+              disabled={move.toSectionDisabled}
+            >
+              <FolderInput className="mr-2 size-3.5" aria-hidden />
+              {t('templateConfig', 'menuMoveToSection')}
+              <DropdownMenuShortcut>
+                {t('templateConfig', 'shortcutMoveToSection')}
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               onSelect={onDelete}
               disabled={deleteDisabled}
