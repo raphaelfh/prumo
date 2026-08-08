@@ -135,6 +135,12 @@ interface TemplateGridProps {
   /** Client key → server id for pending rows the panel reconciled: the
    * focus coordinate follows the row identity across the drain refetch. */
   rowIdRemaps?: ReadonlyMap<string, string>;
+  /** Rows still living under a client key (Task 7). Their queued insert
+   * has no cancel API, so the row menu's Delete DISABLES until the drain
+   * swaps the row to its server id — the simpler of the two options
+   * (deleting a field right after creating it is rare enough not to buy
+   * a queue-cancel path). */
+  pendingRowIds?: ReadonlySet<string>;
   sectionActions: TemplateSectionActions;
   onAddSection: () => void;
   /** Esc pressed in focus mode: rungs 2-3 of the ladder belong to the
@@ -493,6 +499,7 @@ function FieldRow({
   onSelect,
   onEdit,
   onDelete,
+  deleteDisabled,
   onEditorCommit,
   onEditorCancel,
   onToggleRequired,
@@ -511,6 +518,8 @@ function FieldRow({
   onSelect: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  /** True on pending optimistic rows — see `pendingRowIds`. */
+  deleteDisabled: boolean;
   onEditorCommit: (column: TextCellColumn, draft: string, via: 'enter' | 'blur') => void;
   onEditorCancel: () => void;
   onToggleRequired: (isRequired: boolean) => void;
@@ -752,6 +761,7 @@ function FieldRow({
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={onDelete}
+              disabled={deleteDisabled}
               className="text-destructive focus:text-destructive"
             >
               <Trash2 className="mr-2 size-3.5" aria-hidden />
@@ -1106,6 +1116,7 @@ export function TemplateGrid({
   onChangeType,
   onDeepLink,
   rowIdRemaps,
+  pendingRowIds,
   sectionActions,
   onAddSection,
   onEscapeEscalate,
@@ -1400,6 +1411,7 @@ export function TemplateGrid({
           onSelect={() => onSelect({kind: 'field', id: field.id})}
           onEdit={() => onEditField(field)}
           onDelete={() => onDeleteField(field)}
+          deleteDisabled={pendingRowIds?.has(field.id) ?? false}
           onEditorCommit={(column, draft, via) =>
             handleEditorCommit({kind: 'field', field, column}, draft, via)
           }

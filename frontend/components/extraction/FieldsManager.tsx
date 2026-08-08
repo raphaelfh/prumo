@@ -65,7 +65,6 @@ export function FieldsManager({ entityTypeId, sectionName, templateId }: FieldsM
     showEditDialog,
     fieldToEdit,
     fieldToDelete,
-    deleteValidation,
     validatingDelete,
   } = state;
 
@@ -225,8 +224,7 @@ export function FieldsManager({ entityTypeId, sectionName, templateId }: FieldsM
         open={!!fieldToDelete}
         onOpenChange={dialogHandlers.deleteDialog}
         onConfirm={handleConfirmDelete}
-        validation={deleteValidation}
-        loading={!!validatingDelete}
+        onValidate={validateField}
       />
     </div>
   );

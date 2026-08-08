@@ -2,13 +2,18 @@
  * Confirmation dialog to delete field
  *
  * Features:
+ * - Owns its impact pre-fetch through `onValidate` (B-5 Task 7 folded
+ *   the third copy of that flow in here; the shape EditFieldDialog uses)
  * - Shows impact of deletion (extracted values, affected articles)
- * - Blocks deletion if there is data
+ * - Blocks deletion if there is data — ADVISORY: the DB's RESTRICT FKs
+ *   (mapped to friendly copy in the service) are the real invariant
  * - Clear visual warnings with appropriate colors
  * - Loading state during operation
  *
  * @component
  */
+
+import {useEffect, useState} from 'react';
 
 import {
   AlertDialog,
@@ -30,8 +35,9 @@ interface DeleteFieldConfirmProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: (fieldId: string) => Promise<boolean>;
-  validation: FieldValidationResult | null;
-  loading: boolean;
+  /** Impact pre-fetch. Contract: must RESOLVE (never reject) — on a
+   * probe failure, resolve a cannot-delete result with its message. */
+  onValidate: (fieldId: string) => Promise<FieldValidationResult>;
 }
 
 export function DeleteFieldConfirm({
@@ -39,9 +45,32 @@ export function DeleteFieldConfirm({
   open,
   onOpenChange,
   onConfirm,
-  validation,
-  loading,
+  onValidate,
 }: DeleteFieldConfirmProps) {
+  const [validation, setValidation] = useState<FieldValidationResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const fieldId = field?.id ?? null;
+
+  useEffect(() => {
+    if (!fieldId) return;
+    let cancelled = false;
+    // Microtask so the state writes land in an async callback — the
+    // pattern the sibling loaders use (react-hooks/set-state-in-effect).
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setValidation(null);
+      void onValidate(fieldId).then((result) => {
+        if (cancelled) return;
+        setValidation(result);
+        setLoading(false);
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fieldId, onValidate]);
+
   if (!field) return null;
 
   const canDelete = validation?.canDelete ?? false;
@@ -148,7 +177,13 @@ export function DeleteFieldConfirm({
           </AlertDialogCancel>
           {canDelete && (
             <AlertDialogAction
-              onClick={handleConfirm}
+              // preventDefault stops Radix's auto-close: the dialog only
+              // closes when onConfirm reports success — a refused delete
+              // keeps the impact context on screen.
+              onClick={(event) => {
+                event.preventDefault();
+                void handleConfirm();
+              }}
               disabled={loading}
               className="bg-destructive hover:bg-destructive/90"
             >

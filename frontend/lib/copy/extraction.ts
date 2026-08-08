@@ -182,6 +182,8 @@ export const extraction = {
     errors_addField: 'Error adding field',
     errors_updateField: 'Error updating field',
     errors_removeField: 'Error removing field',
+    errors_deleteFieldInUse:
+      'This field cannot be deleted: extraction work (proposals, decisions, or published values) already references it.',
     errors_reorderFields: 'Error reordering',
     errors_cloneTemplate: 'Error cloning template',
     errors_republishTemplate:

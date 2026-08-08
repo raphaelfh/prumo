@@ -11,7 +11,8 @@
  */
 
 import {supabase} from '@/integrations/supabase/client';
-import {toResult, type ErrorResult} from '@/lib/error-utils';
+import {t} from '@/lib/copy';
+import {PgError, toResult, type ErrorResult} from '@/lib/error-utils';
 import type {
   ExtractionField,
   ExtractionFieldInsert,
@@ -91,8 +92,14 @@ export interface FieldValidationResult {
 }
 
 /**
- * Count reviewer decisions (non-reject) for a field, grouped by article.
+ * Count workflow rows referencing a field — reviewer decisions
+ * (non-reject, grouped by article) plus AI/human proposal records.
  * Used to determine whether a field can be deleted or its type changed.
+ *
+ * ADVISORY only (B-5 Task 7): reject-only decisions and consensus/
+ * published rows RESTRICT at the DB yet count 0 here — the SQLSTATE
+ * 23503 mapping in `deleteField` is the real invariant. This probe just
+ * explains the common in-use cases before the database refuses.
  */
 export function validateFieldImpact(
   fieldId: string,
@@ -100,15 +107,27 @@ export function validateFieldImpact(
   inUseMessage: (count: number, articles: number) => string,
 ): Promise<ErrorResult<FieldValidationResult>> {
   return toResult(async () => {
-    const {data: decisionRows, error: decisionsError} = await supabase
-      .from('extraction_reviewer_decisions')
-      .select('id, decision, run:run_id(article_id)')
-      .eq('field_id', fieldId)
-      .neq('decision', 'reject');
+    // Honest debt: the proposal-records count is a direct workflow-table
+    // read from the frontend — parked at B-7 with the typed-endpoint
+    // consolidation (same as the reviewer-decisions read above it).
+    const [decisionsResult, proposalsResult] = await Promise.all([
+      supabase
+        .from('extraction_reviewer_decisions')
+        .select('id, decision, run:run_id(article_id)')
+        .eq('field_id', fieldId)
+        .neq('decision', 'reject'),
+      supabase
+        .from('extraction_proposal_records')
+        .select('id', {count: 'exact', head: true})
+        .eq('field_id', fieldId),
+    ]);
 
-    if (decisionsError) throw decisionsError;
+    if (decisionsResult.error) throw decisionsResult.error;
+    if (proposalsResult.error) throw proposalsResult.error;
 
-    const extractedCount = decisionRows?.length ?? 0;
+    const decisionRows = decisionsResult.data;
+    const proposalCount = proposalsResult.count ?? 0;
+    const extractedCount = (decisionRows?.length ?? 0) + proposalCount;
     const affectedArticles = Array.from(
       new Set(
         (decisionRows ?? [])
@@ -178,6 +197,12 @@ export function updateField(
 
 /**
  * Delete a field by id.
+ *
+ * A RESTRICT foreign key (proposal records, reviewer decisions/states,
+ * consensus decisions, published states) refuses the delete with
+ * SQLSTATE 23503. The advisory probe above can miss those rows, so THIS
+ * mapping is the real invariant: re-wrap as a typed PgError carrying the
+ * friendly copy — the raw Postgres FK message must never reach a toast.
  */
 export function deleteField(fieldId: string): Promise<ErrorResult<void>> {
   return toResult(async () => {
@@ -186,6 +211,9 @@ export function deleteField(fieldId: string): Promise<ErrorResult<void>> {
       .delete()
       .eq('id', fieldId);
 
+    if (error?.code === '23503') {
+      throw new PgError(t('extraction', 'errors_deleteFieldInUse'), error.code);
+    }
     if (error) throw error;
   }, 'deleteField');
 }

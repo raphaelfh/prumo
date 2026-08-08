@@ -20,12 +20,15 @@ import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructio
 import {TemplateConfigGridPanel} from '@/components/extraction/template-config/TemplateConfigGridPanel';
 import {TemplateConfigPublishControls} from '@/components/extraction/template-config/TemplateConfigPublishControls';
 import {TemplateFieldDialogs} from '@/components/extraction/template-config/TemplateFieldDialogs';
-import type {ExtractionField} from '@/types/extraction';
+import type {ExtractionField, FieldValidationResult} from '@/types/extraction';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {AddSectionDialog, ImportTemplateDialog, RemoveSectionDialog} from './dialogs';
+import {DeleteFieldConfirm} from './dialogs/DeleteFieldConfirm';
 import {ExtractionEntityType} from '@/types/extraction';
+import {useDeleteTemplateField} from '@/hooks/extraction/useDeleteTemplateField';
 import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
+import {validateFieldImpact} from '@/services/extractionFieldService';
 
 interface TemplateConfigEditorProps {
   projectId: string;
@@ -45,15 +48,57 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   const [showImportDialog, setShowImportDialog] = useState(false);
   // Grid editing bridge (B-1): the grid selects, the existing dialogs edit.
   const [fieldDialog, setFieldDialog] = useState<{
-    mode: 'add' | 'edit' | 'delete';
+    mode: 'add' | 'edit';
     entityTypeId: string;
     sectionName: string;
     field: ExtractionField | null;
   } | null>(null);
+  // Delete confirm (B-5 Task 7): hosted HERE, outside the grid panel's
+  // React subtree — a Radix dialog inside the panel would bubble its
+  // dismiss-Esc (portals propagate through the REACT tree) into the
+  // panel's Esc ladder and close the inspector as a side effect.
+  const [deletingField, setDeletingField] = useState<ExtractionField | null>(null);
+  const deleteFieldMutation = useDeleteTemplateField(projectId, templateId);
   const {invalidateStructure, invalidateAfterImport} = useTemplateConfigCaches(
     projectId,
     templateId,
   );
+
+  /** Impact pre-fetch for DeleteFieldConfirm. Never rejects: a probe
+   * failure resolves as a cannot-delete result (the dialog's contract).
+   * The probe is ADVISORY — the service's 23503 mapping is the real
+   * invariant. */
+  const validateForDelete = async (fieldId: string): Promise<FieldValidationResult> => {
+    const result = await validateFieldImpact(
+      fieldId,
+      t('extraction', 'fieldSafeToModifyMessage'),
+      (count, articles) =>
+        t('extraction', 'fieldExtractedValuesMessage')
+          .replace('{{count}}', String(count))
+          .replace('{{n}}', String(articles)),
+    );
+    if (result.ok) return result.data;
+    console.error('Error validating field impact:', result.error);
+    return {
+      canDelete: false,
+      canUpdate: false,
+      canChangeType: false,
+      extractedValuesCount: 0,
+      affectedArticles: [],
+      message: t('extraction', 'errors_validateField'),
+    };
+  };
+
+  /** Confirm-time delete: the SMALL dedicated mutation (service +
+   * invalidateStructure) — resolves a boolean for the dialog without
+   * throwing across a component body. */
+  const confirmDeleteField = (fieldId: string) =>
+    new Promise<boolean>((resolve) => {
+      deleteFieldMutation.mutate(
+        {fieldId},
+        {onSuccess: () => resolve(true), onError: () => resolve(false)},
+      );
+    });
 
   const loadEntityTypes = async () => {
 
@@ -185,15 +230,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
             });
           },
         }}
-        onDeleteField={(field) => {
-          const section = entityTypes.find((et) => et.id === field.entity_type_id);
-          setFieldDialog({
-            mode: 'delete',
-            entityTypeId: field.entity_type_id,
-            sectionName: section?.label ?? '',
-            field,
-          });
-        }}
+        onDeleteField={setDeletingField}
         onAddSection={() => setShowAddSectionDialog(true)}
       />
       )}
@@ -265,6 +302,20 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
           templateId={templateId}
           field={fieldDialog.field}
           onClose={() => setFieldDialog(null)}
+        />
+      )}
+
+      {/* Mounted per open so the dialog's impact pre-fetch runs fresh.
+          Kept OUTSIDE the grid panel subtree (see deletingField above). */}
+      {deletingField && (
+        <DeleteFieldConfirm
+          field={deletingField}
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeletingField(null);
+          }}
+          onConfirm={confirmDeleteField}
+          onValidate={validateForDelete}
         />
       )}
 

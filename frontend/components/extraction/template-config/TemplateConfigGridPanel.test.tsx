@@ -346,6 +346,27 @@ describe('TemplateConfigGridPanel — optimistic ghost inserts (B-5 Task 4)', ()
     expect(screen.getByRole('button', {name: 'Peso corporal'})).toBeInTheDocument();
   });
 
+  it('disables the row-menu Delete on a PENDING row (Task 7: the queued insert cannot be cancelled)', async () => {
+    stubInsertQueue();
+    mockMutation();
+    mockEntityTypes();
+    render(panel());
+    await insertPeso();
+
+    // Pending row renders last — its actions trigger is the third one.
+    const triggers = screen.getAllByRole('button', {name: /actionsForFieldAria/});
+    await userEvent.click(triggers[triggers.length - 1]);
+    const deleteItem = await screen.findByRole('menuitem', {name: /deleteField/});
+    expect(deleteItem).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.keyboard('{Escape}');
+
+    // A REAL row keeps its Delete enabled.
+    await userEvent.click(triggers[0]);
+    expect(
+      await screen.findByRole('menuitem', {name: /deleteField/}),
+    ).not.toHaveAttribute('aria-disabled');
+  });
+
   it('keeps ONE row across confirm + drain, reconciled by client key to the server id', async () => {
     const hookArgs: Partial<UseInsertTemplateFieldArgs> = {};
     const enqueueInsert = vi.fn(() => ({clientKey: 'pending-1', name: 'peso'}));

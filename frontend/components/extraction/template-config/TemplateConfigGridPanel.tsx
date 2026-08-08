@@ -314,6 +314,13 @@ export function TemplateConfigGridPanel({
   const isPendingRow = (fieldId: string) =>
     pendingInserts.some((p) => p.clientKey === fieldId);
 
+  // Rows still client-keyed: the grid disables their row-menu Delete
+  // (a queued insert has no cancel API — Task 7).
+  const pendingRowIds = useMemo(
+    () => new Set(pendingInserts.map((p) => p.clientKey)),
+    [pendingInserts],
+  );
+
   // Edit on a STILL-PENDING row: update the optimistic copy and queue the
   // write behind the row's insert by client key (concurrency rule 5).
   const applyPendingUpdate = (clientKey: string, updates: ExtractionFieldUpdate) => {
@@ -610,6 +617,7 @@ export function TemplateConfigGridPanel({
               onChangeType={handleChangeType}
               onDeepLink={handleDeepLink}
               rowIdRemaps={rowIdRemaps}
+              pendingRowIds={pendingRowIds}
               sectionActions={sectionActions}
               onAddSection={onAddSection}
               // Esc ladder rungs 2-3: the grid escalates here once

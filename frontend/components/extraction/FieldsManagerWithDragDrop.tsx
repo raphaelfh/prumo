@@ -339,7 +339,7 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [fieldToEdit, setFieldToEdit] = useState<ExtractionField | null>(null);
   const [fieldToDelete, setFieldToDelete] = useState<ExtractionField | null>(null);
-  const [deleteValidation, setDeleteValidation] = useState<FieldValidationResult | null>(null);
+  const [_deleteValidation, setDeleteValidation] = useState<FieldValidationResult | null>(null);
     const [_validatingDelete, setValidatingDelete] = useState(false);
 
   // Drag and drop
@@ -594,8 +594,7 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
           }
         }}
         onConfirm={handleConfirmDelete}
-        validation={deleteValidation}
-        loading={false}
+        onValidate={validateField}
       />
     </div>
   );
