@@ -427,6 +427,24 @@ class ModelExtractionService(LoggerMixin):
 
         return None
 
+    async def _pinned_entry_noun(self, run: Any) -> str:
+        """Title-cased label stem from the run-PINNED container's
+        ``entry_label`` (B-8) — the fallback name for models the LLM left
+        unnamed. Snapshots predating 0051 carry no key, and a tree may have
+        no container at all; both fall back to ``"model"`` (-> "Model", the
+        legacy stem). The identification prompt does NOT read this — it
+        keeps ``model_entity.label`` (prompt generalization is C-track).
+        """
+        pinned_tree = await entity_types_for_version(
+            self.db, version_id=run.version_id, template_id=run.template_id
+        )
+        container = next(
+            (et for et in pinned_tree if et.role == ExtractionEntityRole.MODEL_CONTAINER.value),
+            None,
+        )
+        entry_label = container.entry_label if container else None
+        return (entry_label or "model").title()
+
     async def _get_child_entity_types(
         self,
         parent_entity_type_id: str,
@@ -530,6 +548,8 @@ class ModelExtractionService(LoggerMixin):
 
         created: list[ExtractionInstance] = []
         total_children_created = 0
+        # B-8: unnamed models are labelled with the container's entry noun.
+        label_stem = await self._pinned_entry_noun(run)
 
         for idx, model_data in enumerate(models):
             # 1. Criar instance do modelo (parent). The label comes from
@@ -540,7 +560,7 @@ class ModelExtractionService(LoggerMixin):
                 article_id=article_id,
                 template_id=template_id,
                 entity_type_id=UUID(entity_type_id),
-                label=model_data.get("name") or f"Model {idx + 1}",
+                label=model_data.get("name") or f"{label_stem} {idx + 1}",
                 sort_order=idx,
                 metadata_={
                     "ai_extracted": True,

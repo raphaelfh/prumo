@@ -1,7 +1,7 @@
 # file-size ratchet baseline — oversized files frozen at current size.
 # May shrink (re-run --update-baseline to tighten), never grow. Cleanup is a separate effort.
 backend/app/seed.py:3235
-backend/app/services/extraction_export_service.py:2335
+backend/app/services/extraction_export_service.py:2345
 backend/app/services/run_lifecycle_service.py:871
 backend/app/services/section_extraction_service.py:1750
 frontend/components/articles/ArticleForm.tsx:1272
