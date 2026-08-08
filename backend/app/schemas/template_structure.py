@@ -19,8 +19,12 @@ Deliberate scope cuts:
   duplicate-id rejection and template-membership verification are the
   SERVICE's job (panel 4) — multi-section batches are legal (a
   cross-section move renumbers two sections in one batch).
-- Section request schemas live with the section service (panel 15),
-  not here.
+- Section request/response schemas (B-7 task 3) are APPENDED at the end
+  of this module — the section-name rules mirror the AddSectionDialog
+  Zod (looser than ``FieldName``: uppercase and a leading underscore are
+  legal), and ``SectionCreateRequest`` mirrors the DB's
+  ``ck_extraction_entity_types_role_parent`` CHECK so an invalid
+  role/parent combination never reaches the service.
 """
 
 from datetime import datetime
@@ -223,3 +227,99 @@ class TemplateFieldReorderResponse(BaseModel):
     renumbered (equals the request batch size on success)."""
 
     updated_count: int
+
+
+# =================== SECTION SCHEMAS (B-7 task 3) ===================
+
+# Re-declared from ExtractionCardinality / ExtractionEntityRole
+# (app.models.extraction) — see the layering note in the module docstring.
+SectionCardinality = Literal["one", "many"]
+SectionRole = Literal["study_section", "model_container", "model_section"]
+
+# Mirrors the AddSectionDialog Zod rules (frontend/components/extraction/
+# dialogs/AddSectionDialog.tsx): section names are looser than field
+# names — uppercase letters and a leading underscore are legal.
+SectionName = Annotated[
+    str,
+    StringConstraints(pattern=r"^[a-zA-Z_][a-zA-Z0-9_]*$", min_length=2, max_length=50),
+]
+
+# Trimmed server-side so a whitespace-only label can never rename a
+# section into invisibility (the rename path's "non-empty trimmed" rule).
+SectionLabel = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
+]
+
+
+class SectionCreateRequest(BaseModel):
+    """Create a section (entity type) in the path template.
+
+    ``role`` is REQUIRED with no default — the column deliberately has no
+    server_default (migration 0016 step 4) so an insert that omits the
+    structural role fails loudly instead of silently becoming a
+    study_section. ``sort_order`` is deliberately ABSENT: the server
+    computes max+1 template-wide inside the INSERT itself, killing the
+    frontend's read-then-write race. The ``ck_role_parent`` validator
+    below mirrors the DB CHECK of the same name; parent OWNERSHIP
+    (parent belongs to THIS template) is the service's BOLA job.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: SectionName
+    label: SectionLabel
+    description: str | None = Field(default=None, max_length=500)
+    cardinality: SectionCardinality
+    role: SectionRole
+    parent_entity_type_id: UUID | None = None
+    is_required: bool = False
+
+    @model_validator(mode="after")
+    def _enforce_role_parent(self) -> "SectionCreateRequest":
+        """Mirror ck_extraction_entity_types_role_parent: roots carry no
+        parent; a model_section always names one."""
+        if self.role == "model_section":
+            if self.parent_entity_type_id is None:
+                raise ValueError("model_section requires parent_entity_type_id")
+        elif self.parent_entity_type_id is not None:
+            raise ValueError(f"{self.role} must not set parent_entity_type_id")
+        return self
+
+
+class SectionRenameRequest(BaseModel):
+    """Rename a section: the label is the only client-editable attribute
+    after creation (structure changes are create/delete operations)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: SectionLabel
+
+
+class SectionRead(BaseModel):
+    """The full section row the config editor renders. Built from the
+    ORM row via ``model_validate`` — the create/rename response payload.
+
+    ``project_template_id`` is non-optional: the section service writes
+    only project-lineage rows (global-lineage sections are seed-owned)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    project_template_id: UUID
+    name: str
+    label: str
+    description: str | None = None
+    cardinality: SectionCardinality
+    role: SectionRole
+    parent_entity_type_id: UUID | None = None
+    sort_order: int
+    is_required: bool
+    created_at: datetime
+
+
+class SectionDeleteResponse(BaseModel):
+    """Payload of the section DELETE endpoint."""
+
+    id: UUID
+    deleted: bool
