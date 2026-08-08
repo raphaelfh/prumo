@@ -280,6 +280,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
           }}
           onConfirm={confirmDeleteField}
           onValidate={validateForDelete}
+          confirmPending={deleteFieldMutation.isPending}
         />
       )}
 

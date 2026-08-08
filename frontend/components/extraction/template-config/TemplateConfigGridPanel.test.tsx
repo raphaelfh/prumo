@@ -392,10 +392,55 @@ describe('TemplateConfigGridPanel — optimistic ghost inserts (B-5 Task 4)', ()
     // must be pruned — ONE row, no duplicate.
     mockEntityTypes([field('srv-9', 'sec', 'peso', 'Peso', 3)]);
     act(() => {
-      hookArgs.onDrained?.();
+      hookArgs.onDrained?.(new Map([['pending-1', 'srv-9']]));
     });
     rerender(panel());
     expect(screen.getAllByRole('button', {name: 'Peso'})).toHaveLength(1);
+  });
+
+  it('remaps the selection + inspector across the drain — a Save targets the SERVER id', async () => {
+    const hookArgs: Partial<UseInsertTemplateFieldArgs> = {};
+    const enqueueInsert = vi.fn(() => ({clientKey: 'pending-1', name: 'peso'}));
+    vi.mocked(useInsertTemplateField).mockImplementation((args) => {
+      hookArgs.onConfirmed = args.onConfirmed;
+      hookArgs.onDrained = args.onDrained;
+      return {enqueueInsert, enqueueUpdate: vi.fn()};
+    });
+    const mutate = mockMutation();
+    mockEntityTypes();
+
+    const {rerender} = render(panel());
+    await insertPeso();
+
+    // Select the pending row: the inspector opens on its form.
+    await userEvent.click(screen.getByRole('button', {name: 'Peso'}));
+    expect(screen.getByLabelText('inspectorLabelLabel')).toHaveValue('Peso');
+
+    act(() => {
+      hookArgs.onConfirmed?.(
+        'pending-1',
+        field('srv-9', 'sec', 'peso', 'Peso', 3) as unknown as ExtractionField,
+      );
+    });
+    mockEntityTypes([field('srv-9', 'sec', 'peso', 'Peso', 3)]);
+    act(() => {
+      hookArgs.onDrained?.(new Map([['pending-1', 'srv-9']]));
+    });
+    rerender(panel());
+
+    // The inspector must NOT empty mid-edit: the selection followed the
+    // row's identity from the client key to the server id.
+    expect(screen.getByLabelText('inspectorLabelLabel')).toHaveValue('Peso');
+    expect(screen.getByRole('button', {name: 'Peso'})).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+
+    // And a Save now targets the server row, not the pruned client key.
+    await userEvent.type(screen.getByLabelText('inspectorLabelLabel'), ' 2');
+    await userEvent.click(screen.getByRole('button', {name: 'inspectorSave'}));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0][0]).toMatchObject({fieldId: 'srv-9'});
   });
 });
 
@@ -532,6 +577,28 @@ describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', 
     expect(mutate).not.toHaveBeenCalled();
   });
 
+  it('refuses a type change when the probe FAILS — probe-failed copy, not the has-data diagnosis', async () => {
+    vi.mocked(validateFieldImpact).mockResolvedValue({
+      ok: false,
+      error: new Error('boom'),
+    } as never);
+    const mutate = mockMutation();
+    mockEntityTypes();
+    render(panel());
+
+    await userEvent.click(
+      screen.getAllByRole('button', {name: /gridTypeMenuAria/})[0],
+    );
+    await userEvent.click(
+      await screen.findByRole('menuitemradio', {name: 'fieldTypeNumber'}),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('errors_typeChangeProbeFailed'),
+    );
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
   it('skips the probe for type changes on PENDING rows — the queue serializes them', async () => {
     const {enqueueUpdate} = stubInsertQueue();
     const mutate = mockMutation();
@@ -572,6 +639,136 @@ describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', 
       expect.objectContaining({label: 'Peso corporal'}),
     );
     expect(mutate).not.toHaveBeenCalled();
+  });
+});
+
+describe('TemplateConfigGridPanel — key-cell commit validation (B-5 review fix)', () => {
+  const makeEntityTypes = () => [
+    {
+      id: 'sec',
+      name: 'sec_a',
+      label: 'Section A',
+      description: null,
+      role: 'study_section',
+      cardinality: 'one',
+      parent_entity_type_id: null,
+      sort_order: 1,
+      fields: [
+        field('f1', 'sec', 'q1', 'Study design', 1),
+        field('f2', 'sec', 'q2', 'Sample size', 2),
+      ],
+    },
+  ];
+
+  const panel = () => (
+    <TooltipProvider>
+      <TemplateConfigGridPanel
+        projectId="p1"
+        templateId="t1"
+        onDeleteField={vi.fn()}
+        sectionActions={sectionActions}
+        onAddSection={vi.fn()}
+      />
+    </TooltipProvider>
+  );
+
+  const mockEntityTypes = () => {
+    vi.mocked(useTemplateEntityTypes).mockReturnValue({
+      entityTypes: makeEntityTypes() as never,
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+  };
+
+  const mockMutation = () => {
+    const mutate = vi.fn();
+    vi.mocked(useUpdateTemplateField).mockReturnValue({
+      mutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useUpdateTemplateField>);
+    return mutate;
+  };
+
+  /** Show the key column and open f1's key editor from the keyboard. */
+  async function openKeyEditor(container: HTMLElement) {
+    await userEvent.click(screen.getByRole('button', {name: 'gridDisplayMenu'}));
+    await userEvent.click(
+      await screen.findByRole('menuitemcheckbox', {name: 'gridDisplayKeyColumn'}),
+    );
+    const keyCell = container.querySelector<HTMLElement>(
+      '[data-cell-row="f1"][data-cell-cols="key"]',
+    );
+    act(() => keyCell?.focus());
+    await userEvent.keyboard('{Enter}');
+  }
+
+  it('refuses a key that breaks the schema name rules — toast, no write, editor stays open', async () => {
+    const mutate = mockMutation();
+    mockEntityTypes();
+    const {container} = render(panel());
+
+    await openKeyEditor(container);
+    await userEvent.keyboard('1abc');
+    await userEvent.keyboard('{Enter}');
+
+    expect(toast.error).toHaveBeenCalledWith('errors_validationPrefix');
+    expect(mutate).not.toHaveBeenCalled();
+    // The editor keeps the draft so the user can fix it in place.
+    const editor = screen.getByRole('textbox', {name: 'gridEditKeyAria'});
+    expect(editor).toHaveValue('1abc');
+    expect(document.activeElement).toBe(editor);
+  });
+
+  it('refuses a key already used by a COMMITTED sibling in the section', async () => {
+    const mutate = mockMutation();
+    mockEntityTypes();
+    const {container} = render(panel());
+
+    await openKeyEditor(container);
+    await userEvent.keyboard('q2');
+    await userEvent.keyboard('{Enter}');
+
+    expect(toast.error).toHaveBeenCalledWith('errors_validationPrefix');
+    expect(mutate).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox', {name: 'gridEditKeyAria'})).toBeInTheDocument();
+  });
+
+  it('refuses a key already claimed by a PENDING ghost insert in the section', async () => {
+    stubInsertQueue(); // enqueueInsert echoes name 'peso'
+    const mutate = mockMutation();
+    mockEntityTypes();
+    const {container} = render(panel());
+
+    await userEvent.click(screen.getByTestId('template-grid-add-field-sec'));
+    await userEvent.keyboard('Peso');
+    await userEvent.keyboard('{Enter}');
+    await userEvent.keyboard('{Escape}');
+
+    await openKeyEditor(container);
+    await userEvent.keyboard('peso');
+    await userEvent.keyboard('{Enter}');
+
+    expect(toast.error).toHaveBeenCalledWith('errors_validationPrefix');
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it('writes a VALID, unique key through the mutation', async () => {
+    const mutate = mockMutation();
+    mockEntityTypes();
+    const {container} = render(panel());
+
+    await openKeyEditor(container);
+    await userEvent.keyboard('new_key');
+    await userEvent.keyboard('{Enter}');
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate).toHaveBeenCalledWith(
+      {fieldId: 'f1', updates: {name: 'new_key'}},
+      undefined,
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox', {name: 'gridEditKeyAria'})).toBeNull();
   });
 });
 
@@ -786,13 +983,32 @@ describe('TemplateConfigGridPanel — 3-rung Esc ladder (B-5 Task 6)', () => {
 
     const search = screen.getByRole('textbox', {name: 'gridSearchPlaceholder'});
     await userEvent.type(search, 'design');
+    // The ladder dispatches from the GRID (the search input is exempt).
+    await userEvent.click(screen.getByRole('button', {name: 'Study design'}));
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByText('inspectorEmptyTitle')).toBeNull();
+    expect(screen.queryByLabelText('inspectorLabelLabel')).toBeNull();
     expect(search).toHaveValue('design');
 
     // Second Esc: the inspector is closed now — the query clears.
     await userEvent.keyboard('{Escape}');
     expect(search).toHaveValue('');
+  });
+
+  it('Esc typed in the SEARCH INPUT clears the query — never closes the inspector or steals focus', async () => {
+    mockMutation();
+    mockEntityTypes();
+    render(panel());
+
+    const search = screen.getByRole('textbox', {name: 'gridSearchPlaceholder'});
+    await userEvent.type(search, 'design');
+    await userEvent.keyboard('{Escape}');
+
+    // Rung 3 semantics for the search input itself: the query clears…
+    expect(search).toHaveValue('');
+    // …the inspector stays open, and focus stays in the search box.
+    expect(screen.getByText('inspectorEmptyTitle')).toBeInTheDocument();
+    expect(document.activeElement).toBe(search);
   });
 
   it('rung 3: with the inspector closed and no query, Esc clears the selection', async () => {

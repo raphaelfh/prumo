@@ -114,8 +114,14 @@ interface TemplateGridProps {
   onSelect: (selection: TemplateGridSelection) => void;
   onDeleteField: (field: GridField) => void;
   /** Inline text-cell commit — label/key writes belong to the panel. Only
-   * called with a CHANGED, non-empty, trimmed value. */
-  onCommitField: (field: GridField, column: TextCellColumn, value: string) => void;
+   * called with a CHANGED, non-empty, trimmed value. An explicit `false`
+   * REFUSES the commit (invalid key): the grid stays in edit mode so the
+   * user can fix the draft in place. */
+  onCommitField: (
+    field: GridField,
+    column: TextCellColumn,
+    value: string,
+  ) => boolean | void;
   /** Ghost-row commit (Task 4): the panel owns the optimistic insert
    * queue. Only called with a non-empty, trimmed label. */
   onInsertField: (sectionId: string, label: string) => void;
@@ -1304,6 +1310,7 @@ export function TemplateGrid({
             columns,
           })
         : gridReducer(gridState, {type: 'blurCommit'});
+    let refused = false;
     for (const effect of next.effects) {
       if (effect.kind !== 'commit') continue;
       const value = draft.trim();
@@ -1311,7 +1318,7 @@ export function TemplateGrid({
         const current = target.column === 'label' ? target.field.label : target.field.key;
         // A no-change (or emptied) draft is a revert, never a write.
         if (value !== '' && value !== current) {
-          onCommitField(target.field, target.column, value);
+          refused = onCommitField(target.field, target.column, value) === false;
         }
       } else if (value !== '') {
         // Ghost commit: the panel enqueues the optimistic insert; the
@@ -1319,6 +1326,11 @@ export function TemplateGrid({
         // discard — the empty value never reaches here as a write).
         onInsertField(target.sectionId, value);
       }
+    }
+    if (refused) {
+      // The panel refused the write (invalid key): stay in edit mode —
+      // the mounted editor keeps the draft for an in-place fix.
+      return;
     }
     setGridState(next);
     // On Enter the commit owns where focus goes (down — or back onto the

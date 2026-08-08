@@ -1,4 +1,4 @@
-import {act, render, screen} from '@testing-library/react';
+import {act, fireEvent, render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -333,6 +333,20 @@ describe('TemplateGrid inline text editing (B-5 Task 3)', () => {
     );
   });
 
+  it('a REFUSED commit (onCommitField → false) keeps the editor open with the draft', async () => {
+    // The panel refuses invalid key commits (schema rules + sibling
+    // uniqueness); the grid's side of the contract is to stay in edit
+    // mode so the user can fix the value in place.
+    renderGrid({onCommitField: vi.fn(() => false)});
+    focusEl(screen.getByRole('button', {name: 'Study design'}));
+    await userEvent.keyboard('{Enter}');
+    await userEvent.keyboard('Rejected value');
+    await userEvent.keyboard('{Enter}');
+    const editor = labelEditor();
+    expect(editor).toHaveValue('Rejected value');
+    expect(document.activeElement).toBe(editor);
+  });
+
   it('edits the key cell when the column is shown, committing the key', async () => {
     const {container, onCommitField} = renderGrid({showKeyColumn: true});
     const keyCell = container.querySelector<HTMLElement>(
@@ -352,6 +366,58 @@ describe('TemplateGrid inline text editing (B-5 Task 3)', () => {
       'key',
       'new_key',
     );
+  });
+});
+
+describe('TemplateGrid keydown fired ON the roving button target (real-browser contract)', () => {
+  // Regression pins for the B-5 manual pass: in a real browser the
+  // keydown's target is the focused inner BUTTON (not the table or a
+  // td), and the grid must open the editor from there — preventDefault
+  // BEFORE the button's native Enter activation (a keyboard-activated
+  // click fires no mousedown, so the second-click path could never
+  // promote to edit). fireEvent dispatches the raw DOM event with no
+  // user-event activation simulation — the closest jsdom gets to the
+  // browser's sequencing. (Verified against real Chrome: Enter/F2/
+  // printables all mount the editor from the button target.)
+  it('Enter on the label BUTTON opens the editor and preventDefaults native activation', () => {
+    renderGrid();
+    const button = screen.getByRole('button', {name: 'Study design'});
+    focusEl(button);
+    const notPrevented = fireEvent.keyDown(button, {key: 'Enter'});
+    expect(notPrevented).toBe(false); // preventDefault beat native activation
+    expect(
+      screen.getByRole('textbox', {name: 'gridEditLabelAria'}),
+    ).toHaveValue('Study design');
+  });
+
+  it('F2 on the label BUTTON opens the editor', () => {
+    renderGrid();
+    const button = screen.getByRole('button', {name: 'Study design'});
+    focusEl(button);
+    fireEvent.keyDown(button, {key: 'F2'});
+    expect(
+      screen.getByRole('textbox', {name: 'gridEditLabelAria'}),
+    ).toHaveValue('Study design');
+  });
+
+  it('a printable on the label BUTTON opens the editor seeded (typing replaces)', () => {
+    renderGrid();
+    const button = screen.getByRole('button', {name: 'Study design'});
+    focusEl(button);
+    const notPrevented = fireEvent.keyDown(button, {key: 'x'});
+    expect(notPrevented).toBe(false); // the char must not ALSO land natively
+    expect(screen.getByRole('textbox', {name: 'gridEditLabelAria'})).toHaveValue('x');
+  });
+
+  it('Enter on the ghost BUTTON opens the ghost editor', () => {
+    renderGrid();
+    const button = screen.getByTestId('template-grid-add-field-sec');
+    focusEl(button);
+    const notPrevented = fireEvent.keyDown(button, {key: 'Enter'});
+    expect(notPrevented).toBe(false);
+    expect(
+      screen.getByRole('textbox', {name: 'gridNewFieldAria'}),
+    ).toBeInTheDocument();
   });
 });
 

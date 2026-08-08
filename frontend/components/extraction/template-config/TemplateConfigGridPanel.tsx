@@ -25,7 +25,11 @@ import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField'
 import {useContainerNarrow} from '@/hooks/shared/useContainerNarrow';
 import {t} from '@/lib/copy';
 import {validateFieldImpact} from '@/services/extractionFieldService';
-import type {ExtractionField, ExtractionFieldUpdate} from '@/types/extraction';
+import {
+  ExtractionFieldSchema,
+  type ExtractionField,
+  type ExtractionFieldUpdate,
+} from '@/types/extraction';
 
 import {
   TemplateGrid,
@@ -193,10 +197,24 @@ export function TemplateConfigGridPanel({
     onFailed: (clientKey) => {
       setPendingInserts((prev) => prev.filter((p) => p.clientKey !== clientKey));
     },
-    onDrained: () => {
+    onDrained: (confirmed) => {
       // The drain invalidation awaited its refetch: confirmed rows are
-      // served by the cache now — drop the optimistic copies.
+      // served by the cache now — drop the optimistic copies, and follow
+      // the row identity (client key → server id) wherever the panel
+      // still points at it. Without the remap the inspector EMPTIES
+      // mid-edit and a Save at drain time targets a nonexistent id (the
+      // grid's focus coordinate already follows via rowIdRemaps).
       setPendingInserts((prev) => prev.filter((p) => p.serverId === null));
+      setSelection((prev) => {
+        if (prev?.kind !== 'field') return prev;
+        const serverId = confirmed.get(prev.id);
+        return serverId ? {kind: 'field', id: serverId} : prev;
+      });
+      setFocusGroup((prev) => {
+        if (!prev) return prev;
+        const serverId = confirmed.get(prev.fieldId);
+        return serverId ? {...prev, fieldId: serverId} : prev;
+      });
     },
   });
 
@@ -376,7 +394,13 @@ export function TemplateConfigGridPanel({
             .replace('{{count}}', String(count))
             .replace('{{n}}', String(articles)),
       );
-      if (!probe.ok || !probe.data.canChangeType) {
+      if (!probe.ok) {
+        // The probe itself failed — an honest "could not verify", not
+        // the has-extracted-data diagnosis.
+        toast.error(t('extraction', 'errors_typeChangeProbeFailed'));
+        return;
+      }
+      if (!probe.data.canChangeType) {
         toast.error(t('extraction', 'errors_cannotChangeFieldType'));
         return;
       }
@@ -387,15 +411,49 @@ export function TemplateConfigGridPanel({
     })();
   };
 
+  /**
+   * KEY commits are validated BEFORE the write: `extraction_fields.name`
+   * has NO db constraint, and field keys feed the prompt/value mapping —
+   * a malformed or duplicate key corrupts it silently. The rules are the
+   * insert path's: `ExtractionFieldSchema` name rules (snake_case regex +
+   * length caps) plus uniqueness against the section's committed AND
+   * pending sibling names. Returns the refusal message, or null when the
+   * key is acceptable.
+   */
+  const validateKeyCommit = (field: GridField, value: string): string | null => {
+    const parsed = ExtractionFieldSchema.shape.name.safeParse(value);
+    if (!parsed.success) return parsed.error.errors[0].message;
+    const siblings = entityTypes.find((et) => et.id === field.entityTypeId)?.fields ?? [];
+    const taken = new Set([
+      ...siblings.filter((f) => f.id !== field.id).map((f) => f.name),
+      ...pendingInserts
+        .filter((p) => p.entityTypeId === field.entityTypeId && p.clientKey !== field.id)
+        .map((p) => p.name),
+    ]);
+    if (taken.has(value)) return t('extraction', 'errors_duplicateFieldKey');
+    return null;
+  };
+
   // Inline text-cell commits (grid Task 3): label edits update `label`,
-  // key-column edits update `name`. The grid already filtered out
-  // no-change commits; retention is registered BEFORE the write so the
-  // row survives the refetch even if it no longer matches the query.
+  // key-column edits update `name` — validated first; a refusal returns
+  // false so the grid keeps the editor open for an in-place fix. The
+  // grid already filtered out no-change commits; retention is registered
+  // BEFORE the write so the row survives the refetch even if it no
+  // longer matches the query.
   const handleCommitField = (
     field: GridField,
     column: TextCellColumn,
     value: string,
-  ) => {
+  ): boolean => {
+    if (column === 'key') {
+      const problem = validateKeyCommit(field, value);
+      if (problem) {
+        toast.error(
+          t('extraction', 'errors_validationPrefix').replace('{{message}}', problem),
+        );
+        return false;
+      }
+    }
     if (filtered.isFiltering) {
       setRetained((prev) => {
         const next = new Set(prev);
@@ -404,6 +462,7 @@ export function TemplateConfigGridPanel({
       });
     }
     saveFieldUpdates(field, column === 'label' ? {label: value} : {name: value});
+    return true;
   };
 
   /** Type menu pick (Task 5): dependent groups clear with the NEW type —
@@ -501,6 +560,15 @@ export function TemplateConfigGridPanel({
           <Input
             value={query}
             onChange={(event) => changeQuery(event.target.value)}
+            onKeyDown={(event) => {
+              // Esc in the search box is the box's OWN rung 3: clear the
+              // query and stop there — the ladder dispatcher must not
+              // close the inspector or steal focus from typing.
+              if (event.key === 'Escape') {
+                event.stopPropagation();
+                if (query) changeQuery('');
+              }
+            }}
             placeholder={t('extraction', 'gridSearchPlaceholder')}
             aria-label={t('extraction', 'gridSearchPlaceholder')}
             className="h-8 pl-7 text-xs"

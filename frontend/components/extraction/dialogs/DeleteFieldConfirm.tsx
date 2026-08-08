@@ -38,6 +38,9 @@ interface DeleteFieldConfirmProps {
   /** Impact pre-fetch. Contract: must RESOLVE (never reject) — on a
    * probe failure, resolve a cannot-delete result with its message. */
   onValidate: (fieldId: string) => Promise<FieldValidationResult>;
+  /** True while the host's delete mutation is in flight: disables the
+   * confirm action so a double-click cannot fire the delete twice. */
+  confirmPending?: boolean;
 }
 
 export function DeleteFieldConfirm({
@@ -46,6 +49,7 @@ export function DeleteFieldConfirm({
   onOpenChange,
   onConfirm,
   onValidate,
+  confirmPending = false,
 }: DeleteFieldConfirmProps) {
   const [validation, setValidation] = useState<FieldValidationResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -145,6 +149,11 @@ export function DeleteFieldConfirm({
                     <AlertCircle className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
                     <div className="flex-1">
                         <p className="font-medium text-destructive">{t('extraction', 'impossibleToDelete')}</p>
+                      {validation?.message && (
+                        <p className="mt-1 text-sm text-destructive/90">
+                          {validation.message}
+                        </p>
+                      )}
                       <ul className="mt-2 list-disc list-inside space-y-1 text-sm text-destructive/90">
                         <li>
                             {t('extraction', 'cannotDeleteReason').replace('{{count}}', String(extractedCount))}
@@ -184,10 +193,12 @@ export function DeleteFieldConfirm({
                 event.preventDefault();
                 void handleConfirm();
               }}
-              disabled={loading}
+              disabled={loading || confirmPending}
               className="bg-destructive hover:bg-destructive/90"
             >
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {(loading || confirmPending) && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
                 {t('extraction', 'deleteField')}
             </AlertDialogAction>
           )}

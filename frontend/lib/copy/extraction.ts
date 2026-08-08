@@ -269,7 +269,9 @@ export const extraction = {
     errors_extractionAuth: 'Authentication error',
     errors_noPermissionAddField: 'You do not have permission to add fields',
     errors_validationPrefix: 'Validation: {{message}}',
+    errors_duplicateFieldKey: 'A field with this key already exists in this section',
     errors_cannotChangeFieldType: 'Cannot change field type when it already has extracted data',
+    errors_typeChangeProbeFailed: 'Could not verify the field’s extracted data — the type was not changed',
     // ExtractionErrorBoundary
     errorBoundaryTitle: 'Extraction error',
     errorBoundaryDescription: 'An unexpected error occurred. You can try to recover or go back to the home page.',
@@ -782,7 +784,7 @@ export const extraction = {
     inspectorUnitsHint: 'The first unit is the default reviewers see.',
     inspectorDispositionsLabel: 'Dispositions',
     inspectorTypeChangeHint: 'Type changes are blocked once the field holds extracted data.',
-    inspectorToggle: 'Show or hide the inspector (⌘.)',
+    inspectorToggle: 'Show or hide the inspector (⌘./Ctrl+.)',
     inspectorSheetTitle: 'Field inspector',
     // TemplateInstructionRow (general AI instruction, config row zero)
     instructionTitle: 'General AI instruction',

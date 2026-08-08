@@ -78,6 +78,38 @@ describe('DeleteFieldConfirm — onValidate flow', () => {
     expect(screen.queryByRole('button', {name: /deleteField/})).toBeNull();
   });
 
+  it('shows the validation MESSAGE in the blocked branch — the probe explains itself', async () => {
+    // The message carries the probe's actual diagnosis (including the
+    // probe-failed fallback copy) — hiding it leaves the user guessing.
+    render(
+      <DeleteFieldConfirm
+        field={FIELD}
+        open
+        onOpenChange={vi.fn()}
+        onConfirm={vi.fn(async () => true)}
+        onValidate={vi.fn(async () => validation(false))}
+      />,
+    );
+
+    expect(await screen.findByText('in-use')).toBeInTheDocument();
+  });
+
+  it('disables the confirm button while the delete mutation is in flight', async () => {
+    render(
+      <DeleteFieldConfirm
+        field={FIELD}
+        open
+        onOpenChange={vi.fn()}
+        onConfirm={vi.fn(async () => true)}
+        onValidate={vi.fn(async () => validation(true))}
+        confirmPending
+      />,
+    );
+
+    const confirm = await screen.findByRole('button', {name: /deleteField/});
+    expect(confirm).toBeDisabled();
+  });
+
   it('confirm resolves through onConfirm and closes on success', async () => {
     const onConfirm = vi.fn(async () => true);
     const onOpenChange = vi.fn();

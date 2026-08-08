@@ -242,6 +242,29 @@ describe('useInsertTemplateField — collision suffix (rule 4)', () => {
     expect(insertMock.mock.calls[1][0]).toMatchObject({name: 'sample_size_3'});
     expect(toast.error).not.toHaveBeenCalled();
   });
+
+  it('a key edit on a still-pending row joins takenNames — later ghost inserts still suffix', async () => {
+    const {result, onDrained} = setup();
+    const first = result.current.enqueueInsert({
+      entityTypeId: 'sec',
+      label: 'Peso',
+      existingNames: [],
+      baseSortOrder: 0,
+    });
+    // The user renames the pending row's KEY through the key cell.
+    result.current.enqueueUpdate(first.clientKey, {name: 'peso_final'});
+    // A later ghost insert whose slug collides with the EDITED key must
+    // still get a collision suffix — the session's takenNames saw it.
+    const second = result.current.enqueueInsert({
+      entityTypeId: 'sec',
+      label: 'Peso final',
+      existingNames: [],
+      baseSortOrder: 0,
+    });
+
+    expect(second.name).toBe('peso_final_2');
+    await waitFor(() => expect(onDrained).toHaveBeenCalledTimes(1));
+  });
 });
 
 describe('useInsertTemplateField — reconcile + drain (rules 1, 2)', () => {
@@ -258,6 +281,21 @@ describe('useInsertTemplateField — reconcile + drain (rules 1, 2)', () => {
     expect(onConfirmed).toHaveBeenCalledWith(
       enqueued.clientKey,
       expect.objectContaining({id: 'srv-peso', name: 'peso'}),
+    );
+  });
+
+  it('hands onDrained the confirmed clientKey → serverId map, so the panel can remap its selection', async () => {
+    const {result, onDrained} = setup();
+    const enqueued = result.current.enqueueInsert({
+      entityTypeId: 'sec',
+      label: 'Peso',
+      existingNames: [],
+      baseSortOrder: 0,
+    });
+
+    await waitFor(() => expect(onDrained).toHaveBeenCalledTimes(1));
+    expect(onDrained).toHaveBeenCalledWith(
+      new Map([[enqueued.clientKey, 'srv-peso']]),
     );
   });
 
@@ -379,6 +417,49 @@ describe('useInsertTemplateField — failure paths', () => {
       expect.objectContaining({name: 'altura'}),
     );
     expect(toast.error).toHaveBeenCalledTimes(1);
+  });
+
+  it('a task that REJECTS (thrown, not ok:false) drops its row, drains, and the tail is not poisoned', async () => {
+    // Services return ErrorResult and shouldn't throw — but if one DOES,
+    // the queue must not strand activeTasks nor chain later enqueues onto
+    // a rejected promise (silent data loss until reload).
+    insertMock.mockRejectedValueOnce(new Error('network boom'));
+    const {result, onConfirmed, onFailed, onDrained} = setup();
+
+    const first = result.current.enqueueInsert({
+      entityTypeId: 'sec',
+      label: 'Peso',
+      existingNames: [],
+      baseSortOrder: 0,
+    });
+    // Queued in the SAME chain, behind the rejecting task.
+    result.current.enqueueInsert({
+      entityTypeId: 'sec',
+      label: 'Altura',
+      existingNames: [],
+      baseSortOrder: 0,
+    });
+
+    await waitFor(() => expect(onDrained).toHaveBeenCalledTimes(1));
+    expect(onFailed).toHaveBeenCalledWith(first.clientKey);
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(onConfirmed).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({name: 'altura'}),
+    );
+
+    // A NEW enqueue after the drain still runs (the tail recovered).
+    result.current.enqueueInsert({
+      entityTypeId: 'sec',
+      label: 'Idade',
+      existingNames: [],
+      baseSortOrder: 0,
+    });
+    await waitFor(() => expect(onDrained).toHaveBeenCalledTimes(2));
+    expect(onConfirmed).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({name: 'idade'}),
+    );
   });
 
   it('a denied permission probe fails every queued insert with ONE toast and no writes', async () => {

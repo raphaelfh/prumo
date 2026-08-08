@@ -74,8 +74,12 @@ export interface UseInsertTemplateFieldArgs {
   /** The insert failed (permission, validation, RLS): drop the row. */
   onFailed: (clientKey: string) => void;
   /** The queue drained AND the one structure refetch landed: confirmed
-   * pending rows are now served by the cache and can be pruned. */
-  onDrained: () => void;
+   * pending rows are now served by the cache and can be pruned.
+   * `confirmed` maps client key → server id for every insert this
+   * session landed, so the panel can remap its selection/inspector
+   * focus to the row's new identity (the grid's focus coordinate
+   * already follows via `rowIdRemaps`). */
+  onDrained: (confirmed: ReadonlyMap<string, string>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,8 +101,14 @@ interface QueueSession {
   /** Hoisted ONCE per session — resolves to canCreate. */
   permissionProbe: Promise<boolean>;
   permissionToastShown: boolean;
+  /** ONE toast per session for tasks that THREW (services return
+   * ErrorResult, so a rejection is an unexpected bug/network wedge). */
+  taskErrorToastShown: boolean;
   /** Names queued or committed this session, per section (rule 4). */
   takenNames: Map<string, Set<string>>;
+  /** Which section each queued insert targets — a key EDIT on a
+   * still-pending row must land in that section's takenNames (rule 4). */
+  sectionByClientKey: Map<string, string>;
   /** Committed max sort_order per section, frozen at first enqueue. */
   sortBase: Map<string, number>;
   /** Inserts committed this session, per section (rule 3). */
@@ -128,7 +138,9 @@ function ensureSession(deps: SessionDeps): QueueSession {
     deps,
     permissionProbe: probePermission(deps),
     permissionToastShown: false,
+    taskErrorToastShown: false,
     takenNames: new Map(),
+    sectionByClientKey: new Map(),
     sortBase: new Map(),
     committedCount: new Map(),
     serverIdByClientKey: new Map(),
@@ -138,9 +150,35 @@ function ensureSession(deps: SessionDeps): QueueSession {
   return opened;
 }
 
-function enqueueTask(s: QueueSession, task: () => Promise<void>): void {
+/**
+ * A task THREW (services return ErrorResult, so this is unexpected):
+ * swallow the rejection so the tail chain recovers — an unhandled
+ * rejection here would strand `activeTasks`, kill the drain, and chain
+ * every later enqueue onto a rejected promise (silent data loss until
+ * reload). Insert tasks carry their client key so the panel drops the
+ * orphaned optimistic row; update tasks pass null (their row survives).
+ */
+function failTask(s: QueueSession, clientKey: string | null, error: unknown): void {
+  console.error('[useInsertTemplateField] queued task threw:', error);
+  if (!s.taskErrorToastShown) {
+    s.taskErrorToastShown = true;
+    const message = error instanceof Error ? error.message : String(error);
+    const copyKey = clientKey ? 'errors_addField' : 'errors_updateField';
+    toast.error(`${t('extraction', copyKey)}: ${message}`);
+  }
+  if (clientKey) s.deps.onFailed(clientKey);
+}
+
+function enqueueTask(
+  s: QueueSession,
+  clientKey: string | null,
+  task: () => Promise<void>,
+): void {
   s.activeTasks += 1;
-  queueTail = queueTail.then(task).then(() => finishTask(s));
+  queueTail = queueTail
+    .then(task)
+    .catch((error: unknown) => failTask(s, clientKey, error))
+    .then(() => finishTask(s));
 }
 
 async function finishTask(s: QueueSession): Promise<void> {
@@ -152,7 +190,7 @@ async function finishTask(s: QueueSession): Promise<void> {
   await s.deps.invalidateStructure();
   if (s.activeTasks > 0) return; // new work joined while the refetch ran
   if (session === s) session = null;
-  s.deps.onDrained();
+  s.deps.onDrained(new Map(s.serverIdByClientKey));
 }
 
 async function runInsert(
@@ -254,8 +292,9 @@ function enqueueInsertTask(args: EnqueueInsertArgs, deps: SessionDeps): Enqueued
   taken.add(name);
   clientKeySeq += 1;
   const clientKey = `pending-field-${clientKeySeq}`;
+  s.sectionByClientKey.set(clientKey, args.entityTypeId);
   const {entityTypeId, label} = args;
-  enqueueTask(s, () => runInsert(s, clientKey, entityTypeId, name, label));
+  enqueueTask(s, clientKey, () => runInsert(s, clientKey, entityTypeId, name, label));
   return {clientKey, name};
 }
 
@@ -269,9 +308,16 @@ function enqueueUpdateTask(
   if (!session) return;
   const s = session;
   s.deps = deps;
+  // A key EDIT on the still-pending row renames it: later ghost inserts
+  // must suffix against the NEW name too (rule 4). The old name stays
+  // taken — reusing it mid-session risks a silent duplicate.
+  if (typeof updates.name === 'string') {
+    const sectionId = s.sectionByClientKey.get(clientKey);
+    if (sectionId) s.takenNames.get(sectionId)?.add(updates.name);
+  }
   // Rule 5: same FIFO as the inserts — the update runs BEHIND the insert
   // that creates its row, then resolves the client key to the server id.
-  enqueueTask(s, () => runUpdate(s, clientKey, updates));
+  enqueueTask(s, null, () => runUpdate(s, clientKey, updates));
 }
 
 /** Test seam: the queue is module state, so suites must reset it. */
