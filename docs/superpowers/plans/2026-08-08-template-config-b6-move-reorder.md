@@ -112,6 +112,64 @@ actual 1566 — CANNOT grow by one line), `lib/copy/extraction.ts` (958),
   drag-between-sections Playwright (spec:417-419) — the harness is new
   work; keep it a stated known gap unless T6 proves unstable.
 
+## Panel decisions (2026-08-08 — apply verbatim)
+
+1. **Undo re-enters through the T1 move/reorder mutation hooks**, NOT
+   saveFieldUpdates (it cannot express multi-row renumbers and must not
+   carry entity_type_id). The invert closure captures
+   `(sourceSectionId, sourceIndex)` AT GESTURE TIME (onDragStart /
+   keypress) — never by reading state in onSuccess (the tree already
+   moved). The inverse move re-renumbers both sections itself — no
+   other-section capture needed. **Single-slot undo** (a new structural
+   mutation dismisses the prior toast) — not a stack.
+2. **The Section combobox commits IMMEDIATELY as its own move action**
+   (mirroring the Type menu's immediate semantics) — FieldDraft stays
+   untouched; only `fieldContentKey` grows entityTypeId (grid-side move
+   remounts the form). Deletes most of the previously-listed T4
+   plumbing.
+3. **Serialize structural writes**: a small in-flight chain (or
+   coalesced keyboard repeats) so two renumbering writes never
+   interleave; each move computes from the LATEST local order.
+4. **Landing rules (pinned)**: ⌘⇧↓ from a section's last field → FIRST
+   slot of the next VISIBLE section; ⌘⇧↑ from a first field → END of
+   the previous visible section (symmetric inverse: up-then-down
+   returns). Template first/last → no-op. Collapsed target section →
+   append to its END, announced (live region covers the row going
+   invisible). **⌘⇧ moves DISABLED while isFiltering** (visible indices
+   ≠ true indices; matches the drag rule); the combobox stays live
+   (end-of-destination is filter-independent).
+5. **"Move up" / "Move down" items in the row ⋯ menu are REQUIRED**
+   (WCAG 2.5.7 single-pointer non-drag positioning + the only visible
+   affordance for the invisible chords). With them + combobox,
+   disabling dnd-kit's KeyboardSensor is defensible.
+6. **T6**: suppress useSortable's `attributes`/tabIndex on the ⠿ handle
+   (they inject tabIndex=0 + role=button — breaks the pinned
+   one-tab-stop invariant); extract drop-slot resolution (over-row →
+   section+index; collapsed-header → end) into a PURE module with unit
+   tests — the DOM gesture alone goes to the browser pass.
+7. Optimistic reorder: panel-local order overlay (mergedFields
+   pattern) — no snap-back flicker between onDragEnd and refetch.
+8. RLS note for the PR (three sentences): entity_type_id is ALREADY
+   server-writable today via PostgREST (B-6 adds UI, zero new server
+   surface); WITH CHECK cannot reference OLD so no policy can express
+   "same template as before" — a trigger is the only DB fix, handed to
+   the tracked RLS-hardening task; the member-not-manager gate is that
+   same task. Do NOT frame the multi-line supabase style as a fitness
+   control — the honest guard is the PR statement + B-7's typed
+   endpoints.
+9. T7: REPLICATE the SectionHeaderRow menuClaimedFocus/onCloseAutoFocus
+   hand-off in FieldRow (it does not exist there). ⌘⇧M is Chrome/macOS's
+   profile-menu chord — verify in a real browser; the ⋯ items are the
+   fallback path.
+10. New test files: T1 service tests (extractionFieldService has none);
+    a NEW grid-behavior file for T3/T6/T8 (TemplateGrid.test.tsx has 64
+    lines of headroom); T5's panel file; T6's pure drop-slot tests.
+11. T0: extract a named shared sibling module for
+    CellFocus/ringClass/rovingTabIndex/CELL_RING; TemplateGrid.tsx
+    re-exports TemplateSectionActions/TextCellColumn so frozen tests'
+    imports stay valid.
+12. T8 metric: whole-grid mount at ~82 rows, production build.
+
 ## Tasks
 
 - **T0 — Split TemplateGrid.tsx + copy headroom (mechanical, zero
