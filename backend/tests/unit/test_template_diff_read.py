@@ -414,6 +414,12 @@ def _one_row(scenario: Callable[[], _Pair]) -> TemplateChangeRow:
 #: ``(kind, node_kind)`` pairs the engine provably never constructs: no write
 #: path re-parents an entity type, and the template node has a single
 #: instruction attribute with no children to reorder.
+#:
+#: This is an assumption pinned by test, not something CI verifies against the
+#: engine: if a future write path ever made the engine emit one of these
+#: pairs, no test here would fail. The runtime guard is
+#: :func:`~app.services.template_diff_read._variant_of` raising ``KeyError``
+#: on the ``VARIANT_BY_KIND`` lookup at request time, not this set.
 _UNREACHABLE_KIND_PAIRS = frozenset(
     {
         (ChangeKind.MOVED, NodeKind.TEMPLATE),
@@ -496,7 +502,7 @@ def test_entity_type_modified_row_names_the_attribute_and_both_values() -> None:
 
 def test_entity_type_reordered_row_moves_the_count_out_of_after() -> None:
     row = _one_row(_entity_type_reordered)
-    assert row.variant is ChangeVariant.ENTITY_TYPE_REORDERED
+    assert row.variant is ChangeVariant.ENTITY_TYPE_FIELDS_REORDERED
     assert row.reorder_count == 2
     assert (row.before, row.after) == (None, None)
 
@@ -545,6 +551,9 @@ def test_field_options_reordered_row_moves_the_count_out_of_after() -> None:
     assert row.variant is ChangeVariant.FIELD_OPTIONS_REORDERED
     assert row.reorder_count == 3
     assert (row.before, row.after) == (None, None)
+    # Pins the asymmetry with the section-reorder variant, whose attribute is
+    # None: only an options reorder carries which attribute was reordered.
+    assert row.attribute == "allowed_values"
 
 
 # --------------------------------------------------------------------------
@@ -573,7 +582,9 @@ def test_validation_schema_ships_a_summary_not_the_blob() -> None:
 
     row = _only(_rows(base, curr))
     assert row.attribute == "validation_schema"
-    assert (row.before, row.after) == (None, "maximum, minimum")
+    # A present-but-empty {} is not the same state as an absent (None) value,
+    # so it must not collapse to None on the wire.
+    assert (row.before, row.after) == ("empty", "maximum, minimum")
 
 
 def test_allowed_units_ships_the_unit_list_as_one_string() -> None:

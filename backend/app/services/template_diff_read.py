@@ -38,7 +38,7 @@ class ChangeVariant(StrEnum):
     ENTITY_TYPE_ADDED = "entity_type_added"
     ENTITY_TYPE_REMOVED = "entity_type_removed"
     ENTITY_TYPE_MODIFIED = "entity_type_modified"
-    ENTITY_TYPE_REORDERED = "entity_type_reordered"
+    ENTITY_TYPE_FIELDS_REORDERED = "entity_type_fields_reordered"
     FIELD_ADDED = "field_added"
     FIELD_REMOVED = "field_removed"
     FIELD_MOVED = "field_moved"
@@ -63,7 +63,7 @@ VARIANT_BY_KIND: dict[tuple[ChangeKind, NodeKind], ChangeVariant] = {
     (ChangeKind.ADDED, NodeKind.ENTITY_TYPE): ChangeVariant.ENTITY_TYPE_ADDED,
     (ChangeKind.REMOVED, NodeKind.ENTITY_TYPE): ChangeVariant.ENTITY_TYPE_REMOVED,
     (ChangeKind.MODIFIED, NodeKind.ENTITY_TYPE): ChangeVariant.ENTITY_TYPE_MODIFIED,
-    (ChangeKind.REORDERED, NodeKind.ENTITY_TYPE): ChangeVariant.ENTITY_TYPE_REORDERED,
+    (ChangeKind.REORDERED, NodeKind.ENTITY_TYPE): ChangeVariant.ENTITY_TYPE_FIELDS_REORDERED,
     (ChangeKind.ADDED, NodeKind.FIELD): ChangeVariant.FIELD_ADDED,
     (ChangeKind.REMOVED, NodeKind.FIELD): ChangeVariant.FIELD_REMOVED,
     (ChangeKind.MOVED, NodeKind.FIELD): ChangeVariant.FIELD_MOVED,
@@ -115,18 +115,44 @@ SCALAR_ATTRIBUTES = frozenset(
 #: the snapshot stored off-contract.
 _OPAQUE_PRESENT = "set"
 
+#: Stand-in for a present-but-empty container (``{}`` or ``[]``). Never
+#: collapsed to ``None``: ``None`` means the attribute is absent, and an empty
+#: container is a distinct, reachable state (e.g. a field's ``validation_schema``
+#: starting as ``{}``) that must not be presented as if nothing were there.
+_OPAQUE_EMPTY = "empty"
+
 
 @dataclass(frozen=True, slots=True)
 class TemplateChangeRow:
     """One :class:`~app.services.template_diff.TemplateChange` on the wire."""
 
+    #: The composite id (D2): ``kind:node_kind:node_id:attribute:option_code``.
     id: str
+    #: The row's discriminator (D1) — tells the client which shape it got.
     variant: ChangeVariant
+    #: Severity tier, passed through from the engine unchanged.
     tier: ChangeTier
+    #: Section → field labels for display; empty for the template instruction.
     label_path: tuple[str, ...]
+    #: The changed key, or ``None`` for a row with no single attribute (a
+    #: section add/remove, a field move, or a reorder).
     attribute: str | None = None
+    #: The prior display value. ``None`` for an added row or a reorder.
     before: str | bool | None = None
+    #: The new display value. ``None`` for a removed row or a reorder.
     after: str | bool | None = None
+    #: Sibling count for a reorder row, pulled out of the engine's overloaded
+    #: ``after`` (see :func:`_to_row`). ``None`` for every other row.
+    #:
+    #: The two reorder variants count **different populations** and the copy
+    #: layer must not write one sentence for both: a section's count
+    #: (``ENTITY_TYPE_FIELDS_REORDERED``) EXCLUDES fields added in the same
+    #: diff — the engine's ``after_seq`` keeps only ids that also existed
+    #: under the same parent in the baseline (``template_diff.py``,
+    #: ``_diff_field_order``). A field's option count
+    #: (``FIELD_OPTIONS_REORDERED``) INCLUDES options added in the same diff —
+    #: the engine reports ``len(new)`` over the full new option list
+    #: (``template_diff.py``, ``_diff_options``).
     reorder_count: int | None = None
 
 
@@ -235,11 +261,18 @@ def _wire_value(attribute: str | None, raw: object) -> str | bool | None:
 
 
 def _render_opaque(value: object) -> str | None:
-    """A one-line stand-in for a blob or an id — never the raw value."""
+    """A one-line stand-in for a blob or an id — never the raw value.
+
+    ``None`` means absent — it must stay reserved for that, so a
+    present-but-empty container renders as :data:`_OPAQUE_EMPTY` rather than
+    falling through to ``None``. Collapsing the two would make an empty
+    ``validation_schema`` (present) indistinguishable on the wire from a
+    ``validation_schema`` that was never set (absent).
+    """
     if value is None:
         return None
     if isinstance(value, list):
-        return ", ".join(str(item) for item in value) or None
+        return ", ".join(str(item) for item in value) or _OPAQUE_EMPTY
     if isinstance(value, dict):
-        return ", ".join(sorted(str(key) for key in value)) or None
+        return ", ".join(sorted(str(key) for key in value)) or _OPAQUE_EMPTY
     return _OPAQUE_PRESENT

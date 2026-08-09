@@ -43,7 +43,7 @@ triggers only fire on entity-type/field rows.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -198,8 +198,12 @@ class TemplateChange:
     tier: ChangeTier
     label_path: tuple[str, ...]
     node_id: UUID | None = None
-    #: Empty only for the template-level instruction change, which has no node.
-    raw_node_id: str = ""
+    #: Keyword-only and undefaulted (not merely ``""``) so a construction site
+    #: that forgets it fails loudly instead of silently minting a colliding id
+    #: (e.g. ``modified:field::label:-``, indistinguishable from every other
+    #: forgetful call). Empty only for the template-level instruction change,
+    #: which has no node and must pass ``raw_node_id=""`` explicitly.
+    raw_node_id: str = field(kw_only=True)
     attribute: str | None = None
     before: Any = None
     after: Any = None
@@ -356,6 +360,10 @@ def _diff_instruction(baseline: dict[str, Any], current: dict[str, Any]) -> list
             node_kind=NodeKind.TEMPLATE,
             tier=ChangeTier.SEMANTIC,
             label_path=(),
+            # No node backs the template-level instruction (see the class
+            # docstring); pass the empty id explicitly rather than relying on
+            # a default that no longer exists.
+            raw_node_id="",
             attribute=TEMPLATE_INSTRUCTION_KEY,
             before=before,
             after=after,
