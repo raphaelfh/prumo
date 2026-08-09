@@ -151,6 +151,12 @@ while the first's contract is still moving.
   `FIELD_ATTRIBUTE_DEFAULTS` `:117-132` hold `str | bool | None` only).
   **Ruling: the counts travel in a named `reorder_count: int | None`
   field**, and the attribute-value slot narrows to `str | bool | None`.
+  **Ruling (T1 implementation, 2026-08-09): ONE `before`/`after` pair, not
+  two.** `before_display`/`after_display` named the *rendering*, not extra
+  fields: the opaque three arrive pre-rendered to a string in the same slot
+  a scalar uses. A second pair would force the client to pick a pair per
+  attribute — reinstating precisely the overloading T1's per-variant
+  renderer case exists to remove.
 - **D4 — A new module for the read model.** `template_diff.py` has no
   room; the wire enum, the renderers, the post-pass and (in B-9b2b) the
   fingerprint live in a sibling (`template_diff_read.py`), importing the
