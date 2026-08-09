@@ -1,4 +1,4 @@
-import {useEffect, useState} from 'react';
+import {useState} from 'react';
 import {RotateCcw, UploadCloud} from 'lucide-react';
 import {toast} from 'sonner';
 
@@ -11,7 +11,6 @@ import {useTemplateConfigStatus} from '@/hooks/extraction/useTemplateConfigStatu
 import {useTemplateInstruction} from '@/hooks/extraction/useTemplateInstruction';
 import {useTemplateRepublish} from '@/hooks/extraction/useTemplateRepublish';
 import {t} from '@/lib/copy';
-import {useTemplateConfigOverlayStore} from '@/stores/useTemplateConfigOverlayStore';
 
 /**
  * The B-4 Draft chip + explicit Publish button (command-bar cluster),
@@ -29,11 +28,18 @@ import {useTemplateConfigOverlayStore} from '@/stores/useTemplateConfigOverlaySt
 interface TemplateConfigPublishControlsProps {
   projectId: string;
   templateId: string;
+  /** True while the read-only diff sheet is open. Owned by the editor, not
+   * here: the grid panel — our sibling — has to close its own inspector
+   * Sheet rather than let two modal sheets stack. */
+  diffSheetOpen: boolean;
+  onDiffSheetOpenChange: (open: boolean) => void;
 }
 
 export function TemplateConfigPublishControls({
   projectId,
   templateId,
+  diffSheetOpen,
+  onDiffSheetOpenChange,
 }: TemplateConfigPublishControlsProps) {
   const {data: configStatus} = useTemplateConfigStatus(projectId, templateId);
   const {republish} = useTemplateRepublish(projectId, templateId);
@@ -43,13 +49,6 @@ export function TemplateConfigPublishControls({
   const {data: instruction} = useTemplateInstruction(projectId, templateId);
   const [publishing, setPublishing] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
-  // B-9b2a: the diff sheet's open flag lives in a module singleton so the
-  // grid panel can close its own inspector Sheet rather than let two
-  // modal sheets stack. Cleared on unmount — a stale `true` left behind
-  // would suppress the inspector for the rest of the session.
-  const diffOpen = useTemplateConfigOverlayStore((s) => s.diffSheetOpen);
-  const setDiffOpen = useTemplateConfigOverlayStore((s) => s.setDiffSheetOpen);
-  useEffect(() => () => setDiffOpen(false), [setDiffOpen]);
 
   const hasPendingChanges = configStatus?.has_pending_changes === true;
   // B-9a/D9: the count qualifies the chip only when it is a POSITIVE
@@ -123,7 +122,7 @@ export function TemplateConfigPublishControls({
             variant="ghost"
             size="sm"
             className="h-6 rounded-full border border-warning/50 bg-warning/10 px-2.5 text-xs font-semibold text-warning hover:bg-warning/20 hover:text-warning"
-            onClick={() => setDiffOpen(true)}
+            onClick={() => onDiffSheetOpenChange(true)}
           >
             {draftChangeCount == null
               ? t('extraction', 'configUnpublishedChanges')
@@ -206,11 +205,11 @@ export function TemplateConfigPublishControls({
       )}
       {/* Mounted per open, same as the Discard dialog: the diff read dies
           with the sheet, so the next open asks the server again. */}
-      {diffOpen && (
+      {diffSheetOpen && (
         <TemplateConfigDiffSheet
           projectId={projectId}
           templateId={templateId}
-          onClose={() => setDiffOpen(false)}
+          onClose={() => onDiffSheetOpenChange(false)}
         />
       )}
     </>

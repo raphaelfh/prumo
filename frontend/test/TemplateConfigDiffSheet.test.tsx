@@ -14,45 +14,17 @@
  * the tests pin the real strings.
  */
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
-import {act, render, screen, within} from '@testing-library/react';
+import {render, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type {ReactNode} from 'react';
+import {useState, type ReactNode} from 'react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
-const loadTemplateConfigDiff = vi.fn();
-const loadTemplateConfigStatus = vi.fn();
-vi.mock('@/services/templateService', () => {
-  // Defined INSIDE the factory: the real module pulls in the supabase
-  // client, which throws on import when env is absent (CI).
-  class TemplatePublishRefusal extends Error {
-    constructor(
-      message: string,
-      public readonly code: string,
-      public readonly sectionLabels: readonly string[] = [],
-    ) {
-      super(message);
-      this.name = 'TemplatePublishRefusal';
-    }
-  }
-  class TemplateDiscardRefusal extends Error {
-    constructor(
-      message: string,
-      public readonly code: string,
-    ) {
-      super(message);
-      this.name = 'TemplateDiscardRefusal';
-    }
-  }
-  return {
-    loadTemplateConfigDiff: (...a: unknown[]) => loadTemplateConfigDiff(...a),
-    loadTemplateConfigStatus: (...a: unknown[]) =>
-      loadTemplateConfigStatus(...a),
-    republishTemplateVersion: vi.fn(),
-    discardTemplateDraft: vi.fn(),
-    updateSection: vi.fn(),
-    TemplateDiscardRefusal,
-    TemplatePublishRefusal,
-  };
+// The factory (spies + both refusal classes) is shared with
+// TemplateConfigPublish.test.tsx — see frontend/test/mocks/templateService.ts
+// for the hoisting contract behind the async/dynamic-import shape.
+vi.mock('@/services/templateService', async () => {
+  const {templateServiceMock} = await import('./mocks/templateService');
+  return templateServiceMock();
 });
 vi.mock('@/services/templateInstructionService', () => ({
   getTemplateInstruction: vi.fn(async () => ({ok: true, data: null})),
@@ -94,11 +66,16 @@ import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes'
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
 import {useContainerNarrow} from '@/hooks/shared/useContainerNarrow';
 import {extraction, templateConfig} from '@/lib/copy';
-import {useTemplateConfigOverlayStore} from '@/stores/useTemplateConfigOverlayStore';
 import type {components} from '@/types/api/schema';
+
+import {
+  loadTemplateConfigDiff,
+  loadTemplateConfigStatus,
+} from './mocks/templateService';
 
 type Tier = 'additive' | 'cosmetic' | 'semantic' | 'destructive';
 type Variant = components['schemas']['ChangeVariant'];
+type OpaqueState = components['schemas']['OpaqueValueState'];
 
 interface RowSeed {
   id: string;
@@ -108,6 +85,9 @@ interface RowSeed {
   attribute?: string | null;
   before?: string | boolean | null;
   after?: string | boolean | null;
+  /** Set INSTEAD of `before`/`after` when the value is opaque (D3). */
+  before_opaque_state?: OpaqueState | null;
+  after_opaque_state?: OpaqueState | null;
   reorder_count?: number | null;
   affects_recorded_data?: boolean;
 }
@@ -118,6 +98,8 @@ function row(seed: RowSeed) {
     attribute: null,
     before: null,
     after: null,
+    before_opaque_state: null,
+    after_opaque_state: null,
     reorder_count: null,
     affects_recorded_data: false,
     ...seed,
@@ -136,9 +118,7 @@ function diffOk(rows: RowSeed[]) {
     ok: true,
     data: {
       project_template_id: 't1',
-      diff_available: true,
-      initial_version: false,
-      unavailable_reason: null,
+      status: 'available',
       changes,
     },
   };
@@ -438,31 +418,47 @@ function mockGridDeps() {
 }
 
 /** The Configuration tab as the manager sees it: the command-bar chip and
- * the grid, siblings under one provider — the same shape the editor
- * mounts, so the sheets really can collide. */
+ * the grid, siblings under an owner that holds the diff-sheet flag — the
+ * same shape TemplateConfigEditor mounts, so the sheets really can collide.
+ *
+ * `forceDiffOpen` is OR-ed into that state for the one case that cannot
+ * reach the chip (see below); everything else drives it through the UI. */
+function ConfigSurface({forceDiffOpen = false}: {forceDiffOpen?: boolean}) {
+  const [diffSheetOpen, setDiffSheetOpen] = useState(false);
+  const diffOpen = diffSheetOpen || forceDiffOpen;
+  return (
+    <TooltipProvider delayDuration={0}>
+      <TemplateConfigPublishControls
+        projectId="p1"
+        templateId="t1"
+        diffSheetOpen={diffOpen}
+        onDiffSheetOpenChange={setDiffSheetOpen}
+      />
+      <TemplateConfigGridPanel
+        projectId="p1"
+        templateId="t1"
+        diffSheetOpen={diffOpen}
+        onDeleteField={vi.fn()}
+        sectionActions={{
+          onCommitRename: vi.fn(),
+          onDelete: vi.fn(),
+          onAddPerModelSection: vi.fn(),
+        }}
+        onAddSection={vi.fn()}
+        onAddGroup={vi.fn()}
+      />
+    </TooltipProvider>
+  );
+}
+
 function renderConfigSurface() {
   const queryClient = new QueryClient({
     defaultOptions: {queries: {retry: false}},
   });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider delayDuration={0}>
-        <TemplateConfigPublishControls projectId="p1" templateId="t1" />
-        <TemplateConfigGridPanel
-          projectId="p1"
-          templateId="t1"
-          onDeleteField={vi.fn()}
-          sectionActions={{
-            onCommitRename: vi.fn(),
-            onDelete: vi.fn(),
-            onAddPerModelSection: vi.fn(),
-          }}
-          onAddSection={vi.fn()}
-          onAddGroup={vi.fn()}
-        />
-      </TooltipProvider>
-    </QueryClientProvider>,
+  const wrapper = ({children}: {children: ReactNode}) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
+  return render(<ConfigSurface />, {wrapper});
 }
 
 describe('TemplateConfigDiffSheet — the draft chip is the trigger (D7)', () => {
@@ -493,7 +489,7 @@ describe('TemplateConfigDiffSheet — the draft chip is the trigger (D7)', () =>
 
   it('closes the inspector sheet instead of stacking on top of it', async () => {
     vi.mocked(useContainerNarrow).mockReturnValue(true);
-    renderConfigSurface();
+    const {rerender} = renderConfigSurface();
 
     // ⌘. opens the narrow-container inspector — a modal Sheet.
     await userEvent.click(
@@ -506,15 +502,13 @@ describe('TemplateConfigDiffSheet — the draft chip is the trigger (D7)', () =>
       }),
     ).toBeInTheDocument();
 
-    // Opened through the store rather than the chip ON PURPOSE: the open
-    // inspector Sheet is modal, so Radix marks the command bar
-    // aria-hidden and inert and the chip cannot be clicked through it.
-    // This is the same call the chip's onClick makes — the click path is
-    // covered by the test above; what is under test here is that the
-    // grid yields when the flag flips, whatever flipped it.
-    act(() => {
-      useTemplateConfigOverlayStore.getState().setDiffSheetOpen(true);
-    });
+    // Flipped through the owner's prop rather than the chip ON PURPOSE: the
+    // open inspector Sheet is modal, so Radix marks the command bar
+    // aria-hidden and inert and the chip cannot be clicked through it. This
+    // is the same value the chip's onClick produces — the click path is
+    // covered by the test above; what is under test here is that the grid
+    // yields when the flag flips, whatever flipped it.
+    rerender(<ConfigSurface forceDiffOpen />);
 
     expect(
       await screen.findByRole('dialog', {name: templateConfig.diffSheetTitle}),
@@ -527,22 +521,19 @@ describe('TemplateConfigDiffSheet — the draft chip is the trigger (D7)', () =>
 });
 
 describe('TemplateConfigDiffSheet — the shapes that cannot diff (D8)', () => {
-  const notDiffable = (overrides: Record<string, unknown>) => ({
+  /** Neither non-available status carries rows: the buckets stay at their
+   * empty default, and `status` is the only thing that distinguishes them. */
+  const notDiffable = (status: 'initial_version' | 'baseline_too_old') => ({
     ok: true,
     data: {
       project_template_id: 't1',
-      diff_available: false,
-      initial_version: false,
-      unavailable_reason: null,
+      status,
       changes: {additive: [], cosmetic: [], semantic: [], destructive: []},
-      ...overrides,
     },
   });
 
   it('explains a baseline too old to compare against', async () => {
-    loadTemplateConfigDiff.mockResolvedValue(
-      notDiffable({unavailable_reason: 'baseline_too_old'}),
-    );
+    loadTemplateConfigDiff.mockResolvedValue(notDiffable('baseline_too_old'));
     renderSheet();
 
     expect(
@@ -552,9 +543,7 @@ describe('TemplateConfigDiffSheet — the shapes that cannot diff (D8)', () => {
   });
 
   it('explains a template that has never published', async () => {
-    loadTemplateConfigDiff.mockResolvedValue(
-      notDiffable({initial_version: true}),
-    );
+    loadTemplateConfigDiff.mockResolvedValue(notDiffable('initial_version'));
     renderSheet();
 
     expect(
@@ -632,8 +621,10 @@ describe('TemplateConfigDiffSheet — attribute rows', () => {
           tier: 'destructive',
           label_path: ['Section A', 'Notes'],
           attribute: 'validation_schema',
-          before: 'set',
-          after: 'empty',
+          // D3: an opaque attribute ships a STATE, never the blob and never
+          // an English word — the copy layer picks the word.
+          before_opaque_state: 'present',
+          after_opaque_state: 'empty',
         },
       ]),
     );
@@ -650,10 +641,89 @@ describe('TemplateConfigDiffSheet — attribute rows', () => {
         templateConfig.changeFieldModified,
         'Section A › Notes',
         templateConfig.diffAttrValidationSchema,
-        'set',
+        templateConfig.diffValueSet,
         '→',
-        'empty',
+        templateConfig.diffValueEmpty,
       ].join(''),
     );
+  });
+
+  it('renders a joined opaque value as data, not as a state word', async () => {
+    loadTemplateConfigDiff.mockResolvedValue(
+      diffOk([
+        {
+          id: 'units',
+          variant: 'field_modified',
+          tier: 'destructive',
+          label_path: ['Section A', 'Dose'],
+          attribute: 'allowed_units',
+          // A non-empty list arrives pre-joined in `before`/`after`, with no
+          // state — the sheet must print the data rather than "set".
+          before: 'mg, ml',
+          after: 'mg',
+        },
+      ]),
+    );
+    renderSheet();
+
+    const rowEl = within(await group('destructive')).getByTestId(
+      'template-diff-row-units',
+    );
+    expect(rowEl).toHaveTextContent('mg, ml');
+    expect(rowEl).not.toHaveTextContent(templateConfig.diffValueSet);
+  });
+});
+
+describe('TemplateConfigDiffSheet — every open reads fresh', () => {
+  /** The sheet is mounted per open; this is the same mount/unmount. */
+  function OpenableDiffSheet({open}: {open: boolean}) {
+    return open ? (
+      <TemplateConfigDiffSheet
+        projectId="p1"
+        templateId="t1"
+        onClose={vi.fn()}
+      />
+    ) : null;
+  }
+
+  const removedField = (id: string, label: string) => ({
+    id,
+    variant: 'field_removed',
+    tier: 'destructive' as const,
+    label_path: ['Section A', label],
+  });
+
+  it('lists the edits made since the last open, not the cached diff', async () => {
+    // The client mirrors App.tsx: a 5-minute global staleTime, and NOTHING
+    // invalidates templateDiffKeys. A sheet that trusted that cache would
+    // replay the first answer — claiming a publish that no longer matches
+    // the draft, which is the failure this sheet exists to prevent.
+    const queryClient = new QueryClient({
+      defaultOptions: {queries: {retry: false, staleTime: 5 * 60 * 1000}},
+    });
+    const wrapper = ({children}: {children: ReactNode}) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    loadTemplateConfigDiff.mockResolvedValue(
+      diffOk([removedField('r1', 'First edit')]),
+    );
+    const {rerender} = render(<OpenableDiffSheet open />, {wrapper});
+    expect(
+      within(await group('destructive')).getByText('Section A › First edit'),
+    ).toBeInTheDocument();
+
+    // Close the sheet, delete another field, reopen.
+    rerender(<OpenableDiffSheet open={false} />);
+    loadTemplateConfigDiff.mockResolvedValue(
+      diffOk([removedField('r2', 'Second edit')]),
+    );
+    rerender(<OpenableDiffSheet open />);
+
+    expect(
+      await screen.findByText('Section A › Second edit'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Section A › First edit')).toBeNull();
+    expect(loadTemplateConfigDiff).toHaveBeenCalledTimes(2);
   });
 });

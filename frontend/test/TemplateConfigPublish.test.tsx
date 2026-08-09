@@ -14,42 +14,12 @@ import userEvent from '@testing-library/user-event';
 import type {ReactNode} from 'react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
-const loadTemplateConfigStatus = vi.fn();
-const republishTemplateVersion = vi.fn();
-const discardTemplateDraft = vi.fn();
-vi.mock('@/services/templateService', () => {
-  // The refusal class is defined INSIDE the factory (the real module pulls
-  // in the supabase client). The test imports it back from the mocked
-  // module, so `instanceof` in the dialog matches what the test throws.
-  class TemplateDiscardRefusal extends Error {
-    constructor(
-      message: string,
-      public readonly code: string,
-      public readonly orphans: readonly {nodeId: string | null; label: string}[] = [],
-    ) {
-      super(message);
-      this.name = 'TemplateDiscardRefusal';
-    }
-  }
-  // Same reason for the publish refusal (B-9b0 D4): useTemplateRepublish
-  // reads this binding on EVERY failed publish, typed or not.
-  class TemplatePublishRefusal extends Error {
-    constructor(
-      message: string,
-      public readonly code: string,
-      public readonly sectionLabels: readonly string[] = [],
-    ) {
-      super(message);
-      this.name = 'TemplatePublishRefusal';
-    }
-  }
-  return {
-    loadTemplateConfigStatus: (...a: unknown[]) => loadTemplateConfigStatus(...a),
-    republishTemplateVersion: (...a: unknown[]) => republishTemplateVersion(...a),
-    discardTemplateDraft: (...a: unknown[]) => discardTemplateDraft(...a),
-    TemplateDiscardRefusal,
-    TemplatePublishRefusal,
-  };
+// The factory (spies + both refusal classes) is shared with
+// TemplateConfigDiffSheet.test.tsx — see frontend/test/mocks/templateService.ts
+// for the hoisting contract behind the async/dynamic-import shape.
+vi.mock('@/services/templateService', async () => {
+  const {templateServiceMock} = await import('./mocks/templateService');
+  return templateServiceMock();
 });
 const getTemplateInstruction = vi.fn();
 vi.mock('@/services/templateInstructionService', () => ({
@@ -69,6 +39,12 @@ import {
 } from '@/services/templateService';
 import {toast} from 'sonner';
 
+import {
+  discardTemplateDraft,
+  loadTemplateConfigStatus,
+  republishTemplateVersion,
+} from './mocks/templateService';
+
 function renderControls() {
   const queryClient = new QueryClient({
     defaultOptions: {queries: {retry: false}},
@@ -80,7 +56,14 @@ function renderControls() {
     </QueryClientProvider>
   );
   return render(
-    <TemplateConfigPublishControls projectId="p1" templateId="t1" />,
+    // The diff sheet is never opened here — the editor owns that flag now,
+    // and this suite is about the chip, Publish and Discard.
+    <TemplateConfigPublishControls
+      projectId="p1"
+      templateId="t1"
+      diffSheetOpen={false}
+      onDiffSheetOpenChange={vi.fn()}
+    />,
     {wrapper},
   );
 }

@@ -15,7 +15,6 @@ import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField'
 import {useContainerNarrow} from '@/hooks/shared/useContainerNarrow';
 import {t} from '@/lib/copy';
 import {validateFieldImpact} from '@/services/extractionFieldService';
-import {useTemplateConfigOverlayStore} from '@/stores/useTemplateConfigOverlayStore';
 import {
   ExtractionFieldSchema,
   type ExtractionField,
@@ -99,6 +98,9 @@ interface TemplateConfigGridPanelProps {
   /** Bottom `＋▾` menu's "Add repeating group…" (B-8 D8) — the editor
    * opens AddSectionDialog in group mode. */
   onAddGroup: () => void;
+  /** True while the command bar's diff sheet is open (B-9b2a). Read-only
+   * here — the editor owns the flag and the sibling command bar sets it. */
+  diffSheetOpen?: boolean;
 }
 
 export function TemplateConfigGridPanel({
@@ -108,6 +110,11 @@ export function TemplateConfigGridPanel({
   sectionActions,
   onAddSection,
   onAddGroup,
+  // B-9b2a: the command bar's diff sheet is modal and full-height. Two
+  // modal sheets must never stack, so the inspector yields while it is
+  // open — derived, not an effect, so `sheetOpen` survives and the
+  // inspector comes back when the diff sheet closes.
+  diffSheetOpen = false,
 }: TemplateConfigGridPanelProps) {
   // ONE request for the whole structure, TanStack-cached on the key every
   // config mutation invalidates (useTemplateConfigCaches) — so the grid
@@ -146,11 +153,6 @@ export function TemplateConfigGridPanel({
   >(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isNarrow = useContainerNarrow(containerRef, INSPECTOR_NARROW_PX);
-  // B-9b2a: the command bar's diff sheet is modal and full-height. Two
-  // modal sheets must never stack, so the inspector yields while it is
-  // open — derived, not an effect, so `sheetOpen` survives and the
-  // inspector comes back when the diff sheet closes.
-  const diffSheetOpen = useTemplateConfigOverlayStore((s) => s.diffSheetOpen);
 
   const insertQueue = useInsertTemplateField({
     projectId,

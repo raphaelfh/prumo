@@ -115,6 +115,12 @@ export const templateConfig = {
   diffTierDestructive: 'Removes or replaces',
   diffTierSemantic: 'Changes meaning',
   diffTriggerTooltip: 'See what this draft would publish',
+  // D3: an opaque value (a blob or an id) has nothing listable to print, so
+  // the wire ships a STATE and the word is chosen here — the server no
+  // longer sends English. `empty` is a present-but-empty container; an
+  // attribute that was never set ships no state at all and prints nothing.
+  diffValueEmpty: 'empty',
+  diffValueSet: 'set',
   // --- B-9c2: Discard the unpublished draft (button + four-phase dialog) ---
   discardAckAction: 'Discard anyway',
   discardAckBody:

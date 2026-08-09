@@ -33,9 +33,10 @@ import type {templateConfig} from '@/lib/copy';
 import type {
   ChangeTier,
   ChangeVariant,
+  DiffStatus,
+  OpaqueValueState,
   TemplateChangeRow,
   TemplateConfigDiff,
-  TemplateDiffUnavailableReason,
 } from '@/services/templateService';
 
 type CopyKey = keyof typeof templateConfig;
@@ -113,13 +114,24 @@ const TIER_COPY = {
 const DEFAULT_OPEN: ChangeTier[] = ['destructive'];
 
 /**
- * Why the diff could not be computed. Exhaustive over the generated enum;
- * the `??` covers a server that learned a new reason before this bundle
- * did — still an explanation, never "no changes".
+ * Why there are no rows to list. Keyed off the generated union MINUS the
+ * one status that carries rows, so a status added to the wire fails the
+ * typecheck here instead of rendering a blank sheet. Neither line may read
+ * as "no changes" — the draft has them, they just cannot be listed.
  */
-const UNAVAILABLE_COPY = {
+const STATUS_NOTICE = {
   baseline_too_old: 'diffBaselineTooOld',
-} satisfies Record<TemplateDiffUnavailableReason, CopyKey>;
+  initial_version: 'diffInitialVersion',
+} satisfies Record<Exclude<DiffStatus, 'available'>, CopyKey>;
+
+/**
+ * An opaque value has nothing listable to print, so the wire ships a state
+ * and the word is chosen here rather than by the server (D3).
+ */
+const OPAQUE_STATE_COPY = {
+  empty: 'diffValueEmpty',
+  present: 'diffValueSet',
+} satisfies Record<OpaqueValueState, CopyKey>;
 
 interface TemplateConfigDiffSheetProps {
   projectId: string;
@@ -145,16 +157,26 @@ function sentenceOf(row: TemplateChangeRow): string {
     : t('templateConfig', 'changeReorderPlain');
 }
 
-/** Opaque values arrive pre-rendered; only booleans need words. */
-function valueText(value: string | boolean): string {
+/**
+ * One side of the before/after pair, or `null` when the attribute was
+ * absent. A state and a value never arrive together: a joined list or dict
+ * comes through as data, anything else the snapshot could not print comes
+ * through as a state whose word this layer owns.
+ */
+function slotText(
+  value: string | boolean | null | undefined,
+  state: OpaqueValueState | null | undefined,
+): string | null {
+  if (state != null) return t('templateConfig', OPAQUE_STATE_COPY[state]);
+  if (value == null) return null;
   return typeof value === 'boolean'
     ? t('extraction', value ? 'yes' : 'no')
     : value;
 }
 
 function DiffRow({row, tier}: {row: TemplateChangeRow; tier: ChangeTier}) {
-  const before = row.before ?? null;
-  const after = row.after ?? null;
+  const before = slotText(row.before, row.before_opaque_state);
+  const after = slotText(row.after, row.after_opaque_state);
   // D6: the server computes `affects_recorded_data` for every node kind,
   // but only a destructive row is allowed to wear it.
   const flagged = tier === 'destructive' && row.affects_recorded_data;
@@ -191,7 +213,7 @@ function DiffRow({row, tier}: {row: TemplateChangeRow; tier: ChangeTier}) {
           <span className="text-muted-foreground">{attributeLabel}</span>
           {before != null && (
             <span className="rounded bg-muted px-1 py-0.5 font-mono text-[0.6875rem] line-through decoration-muted-foreground/60">
-              {valueText(before)}
+              {before}
             </span>
           )}
           {before != null && after != null && (
@@ -201,7 +223,7 @@ function DiffRow({row, tier}: {row: TemplateChangeRow; tier: ChangeTier}) {
           )}
           {after != null && (
             <span className="rounded bg-muted px-1 py-0.5 font-mono text-[0.6875rem]">
-              {valueText(after)}
+              {after}
             </span>
           )}
         </p>
@@ -233,25 +255,10 @@ function DiffBody({
 }) {
   if (isPending) return <DiffNotice copyKey="diffLoading" />;
   if (diff == null) return <DiffNotice copyKey="diffLoadFailed" />;
-  if (!diff.diff_available) {
-    // The contract: `diff_available === false` implies exactly one of
-    // these. `initial_version` first, because it is the shape with its
-    // own story ("everything is new"), not a failure to compare.
-    if (diff.initial_version) return <DiffNotice copyKey="diffInitialVersion" />;
-    const reason = diff.unavailable_reason;
-    // A `diff_available: false` payload with neither `initial_version` nor
-    // `unavailable_reason` set violates its own contract — that is an
-    // unreadable payload, not a specific cause, so it falls back to
-    // diffLoadFailed rather than asserting a baseline-too-old story that
-    // was never reported.
-    return (
-      <DiffNotice
-        copyKey={
-          (reason == null ? undefined : UNAVAILABLE_COPY[reason]) ??
-          'diffLoadFailed'
-        }
-      />
-    );
+  // One closed discriminator: only `available` carries rows, and the other
+  // two each own an explanation.
+  if (diff.status !== 'available') {
+    return <DiffNotice copyKey={STATUS_NOTICE[diff.status]} />;
   }
   const populated = TIER_ORDER.filter((tier) => rowsOf(diff, tier).length > 0);
   if (populated.length === 0) return <DiffNotice copyKey="diffEmpty" />;

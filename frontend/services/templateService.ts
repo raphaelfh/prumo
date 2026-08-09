@@ -39,8 +39,9 @@ export type ChangeTier = components['schemas']['ChangeTier'];
 
 export type ChangeVariant = components['schemas']['ChangeVariant'];
 
-export type TemplateDiffUnavailableReason =
-  components['schemas']['TemplateDiffUnavailableReason'];
+export type DiffStatus = components['schemas']['DiffStatus'];
+
+export type OpaqueValueState = components['schemas']['OpaqueValueState'];
 
 export type DiscardDraftResponse = components['schemas']['DiscardDraftResponse'];
 
