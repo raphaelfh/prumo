@@ -406,6 +406,7 @@ beforeEach(() => {
   vi.mocked(useTemplateConfigCaches).mockReturnValue({
     invalidateStructure: vi.fn(async () => undefined),
     invalidateAll: vi.fn(async () => undefined),
+    invalidateAfterDiscard: vi.fn(async () => undefined),
     invalidateAfterImport: vi.fn(async () => undefined),
   });
   vi.mocked(useTemplateEntityTypes).mockReturnValue({
@@ -587,6 +588,7 @@ describe('TemplateConfigGridPanel — moveFieldTo dispatcher', () => {
     vi.mocked(useTemplateConfigCaches).mockReturnValue({
       invalidateStructure,
       invalidateAll: vi.fn(async () => undefined),
+      invalidateAfterDiscard: vi.fn(async () => undefined),
       invalidateAfterImport: vi.fn(async () => undefined),
     });
     reorderMutateAsync.mockRejectedValueOnce(new Error('rls said no'));

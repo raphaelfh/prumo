@@ -27,6 +27,7 @@ import {
   templateActiveStructureKeys,
   templateConfigStatusKeys,
   templateEntityTypesKeys,
+  templateInstructionKeys,
 } from '@/lib/query-keys/extraction';
 import {toast} from 'sonner';
 
@@ -124,6 +125,42 @@ describe('useTemplateConfigCaches', () => {
     );
   });
 
+  it('invalidateAfterDiscard refreshes grid + chip + INSTRUCTION, and nothing else (B-9c2 D7)', async () => {
+    const {queryClient, wrapper} = createWrapper();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const {result} = renderHook(() => useTemplateConfigCaches('p1', 't1'), {
+      wrapper,
+    });
+
+    await result.current.invalidateAfterDiscard();
+
+    expect(invalidate).toHaveBeenCalledWith(
+      expect.objectContaining({queryKey: templateEntityTypesKeys.byTemplate('t1')}),
+    );
+    expect(invalidate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryKey: templateConfigStatusKeys.byTemplate('p1', 't1'),
+      }),
+    );
+    // Discard can reset the general AI instruction to its published text
+    // (DiscardDraftResponse.instruction_reset) — the cached row must re-read.
+    expect(invalidate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryKey: templateInstructionKeys.byTemplate('p1', 't1'),
+      }),
+    );
+    // A discard leaves the ACTIVE version untouched, so these stay correct;
+    // refetching the runs tree would be pure waste.
+    expect(invalidate).not.toHaveBeenCalledWith(
+      expect.objectContaining({queryKey: runsKeys.all}),
+    );
+    expect(invalidate).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryKey: templateActiveStructureKeys.byTemplate('p1', 't1'),
+      }),
+    );
+  });
+
   it('is inert without ids', async () => {
     const {queryClient, wrapper} = createWrapper();
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
@@ -134,6 +171,7 @@ describe('useTemplateConfigCaches', () => {
 
     await result.current.invalidateStructure();
     await result.current.invalidateAll();
+    await result.current.invalidateAfterDiscard();
 
     expect(invalidate).not.toHaveBeenCalled();
 

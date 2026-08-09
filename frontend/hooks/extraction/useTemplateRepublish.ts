@@ -8,6 +8,9 @@
  * run-scoped and ACTIVE-snapshot caches too (`invalidateAll`). Import
  * flows invalidate the `.all` families (`invalidateAfterImport`) because
  * an import may target a DIFFERENT template than the current selection.
+ * Discard (`invalidateAfterDiscard`) rewinds the draft without minting a
+ * version, so it refreshes the structure caches plus the instruction and
+ * leaves the ACTIVE-snapshot and run caches alone.
  *
  * @module hooks/extraction/useTemplateRepublish
  */
@@ -21,6 +24,7 @@ import {
   templateActiveStructureKeys,
   templateConfigStatusKeys,
   templateEntityTypesKeys,
+  templateInstructionKeys,
 } from '@/lib/query-keys/extraction';
 import {
   republishTemplateVersion,
@@ -58,6 +62,27 @@ export function useTemplateConfigCaches(
     ]);
   };
 
+  /**
+   * After a Discard (B-9c2 D7): the live structure rewound to the published
+   * version, so the grid + the Draft chip must re-read — and the general AI
+   * instruction with them, since Discard can reset it
+   * (`DiscardDraftResponse.instruction_reset`).
+   *
+   * Deliberately NOT `runsKeys.all` or `templateActiveStructureKeys`: a
+   * discard never mints a version, so the ACTIVE snapshot and every
+   * run-scoped read are still correct — refetching the runs tree would be
+   * pure waste.
+   */
+  const invalidateAfterDiscard = async (): Promise<void> => {
+    if (!projectId || !templateId) return;
+    await Promise.all([
+      invalidateStructure(),
+      queryClient.invalidateQueries({
+        queryKey: templateInstructionKeys.byTemplate(projectId, templateId),
+      }),
+    ]);
+  };
+
   /** After an import (server-side publish, possibly of ANOTHER template):
    * id-free `.all` invalidation. */
   const invalidateAfterImport = async (): Promise<void> => {
@@ -69,7 +94,12 @@ export function useTemplateConfigCaches(
     ]);
   };
 
-  return {invalidateStructure, invalidateAll, invalidateAfterImport};
+  return {
+    invalidateStructure,
+    invalidateAll,
+    invalidateAfterDiscard,
+    invalidateAfterImport,
+  };
 }
 
 export function useTemplateRepublish(
