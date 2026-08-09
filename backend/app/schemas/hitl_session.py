@@ -69,17 +69,21 @@ class DiscardDraftRequest(BaseModel):
 class DiscardKeptNode(BaseModel):
     """One node Discard could NOT undo, and why (B-9c1 D4).
 
-    Deleting it would break a RESTRICT reference to real run data, so the
-    draft shrinks around it instead of failing wholesale."""
+    Either deleting it would break a RESTRICT reference to real run data, or
+    restoring it would collide with something that does — so the draft
+    shrinks around it instead of failing wholesale."""
 
     node_id: UUID
     node_kind: Literal["entity_type", "field"]
     label: str
-    reason: Literal["has_recorded_data", "related_to_kept_node"]
+    reason: Literal["has_recorded_data", "related_to_kept_node", "name_taken_by_kept_node"]
     """``has_recorded_data`` — this node itself owns extraction instances or
     is referenced by the review workflow. ``related_to_kept_node`` — it is
     an ancestor or a subtree member of one that does, and deleting it would
-    cascade that node away."""
+    cascade that node away. ``name_taken_by_kept_node`` — a PUBLISHED field
+    that stayed as the draft left it because a kept field holds its name in
+    that section (the per-section unique index is immediate); rename the
+    kept field and discard again to get it back."""
 
 
 class DiscardDraftResponse(BaseModel):

@@ -29,6 +29,29 @@ refuses to know:
   stack; one structured event per call makes an accidental Discard
   reconstructable.
 
+**Lock order (D9), and why it is the established one.** Discard takes
+``acquire_publish_locks`` first — the editable-stage advisory locks, then
+the template row ``FOR UPDATE`` — and only then writes
+``extraction_entity_types`` / ``extraction_fields``. That is the clone
+service's order, not a new one: its zero-state rebuild takes the same locks
+*before* inserting live rows, precisely because the 0048 AFTER-ROW trigger
+stamps ``config_draft_since`` and therefore write-locks the template row on
+every live-row write. ``republish``, ``open_or_resume`` and ``create_run``
+never write live rows at all (versions, instances and runs only), so no
+cycle runs through them.
+
+The one counter-order writer is the single-row edit path (the B-7
+section/field services and any direct PostgREST write): it locks its row
+first and reaches the template row through the trigger. A multi-row writer
+can therefore deadlock with a concurrent editor — but that is a property of
+the trigger, not of this service, and it predates it (the clone rebuild has
+the same exposure). Dropping the ``FOR UPDATE`` would not remove it either:
+the first live-row write would take the template lock through the trigger
+anyway, leaving "holds row A, wants the template" against "holds row B,
+wants the template". So the order stays, and the 40P01 that a lost race
+produces is absorbed by D8 into ``DiscardRacedError`` (409, "try again")
+rather than a 500.
+
 Known gap (T1's finding, folded into the endpoint docstring): a baseline
 that predates ``allows_not_applicable`` normalizes the flag to ``False``
 rather than "leave alone", so restoring it silently rewrites those
@@ -265,11 +288,20 @@ async def discard_draft(
         _reraise_if_raced(exc, project_id=project_id, template_id=template_id, user_id=user_id)
         raise
 
+    # A kept field owns its per-section name for good, so the baseline
+    # fields aimed at that name stayed as the draft left them. They are part
+    # of what Discard could not undo, so they join ``kept`` — and, like any
+    # other kept node, they hold the marker open.
+    kept_nodes = (
+        *blocked.kept,
+        *_name_conflicted_nodes(baseline, outcome.name_conflicted_field_ids),
+    )
+
     # D7 — the marker, last and by Core UPDATE: the 0048 AFTER-ROW triggers
     # re-stamp it on every row the writer touched, and an ORM attribute set
     # could be flushed before them. Cleared only when the live tree now
     # matches the published version exactly.
-    marker_cleared = not blocked.kept
+    marker_cleared = not kept_nodes
     if marker_cleared:
         await db.execute(
             update(ProjectExtractionTemplate)
@@ -294,9 +326,17 @@ async def discard_draft(
         marker_cleared=marker_cleared,
         kept=[
             {"node_id": str(node.node_id), "node_kind": node.node_kind, "reason": node.reason}
-            for node in blocked.kept
+            for node in kept_nodes
         ],
-        discarded_changes_by_tier=_tier_summary(discarded),
+        # Re-filtered against the FINAL kept set: the pre-write diff counted
+        # the name conflicts, which only the writer can resolve, as discarded.
+        discarded_changes_by_tier=_tier_summary(
+            [
+                change
+                for change in discarded
+                if change.node_id not in outcome.name_conflicted_field_ids
+            ]
+        ),
     )
 
     return DiscardDraftResponse(
@@ -309,8 +349,31 @@ async def discard_draft(
         deleted_fields=outcome.deleted_fields,
         updated_fields=outcome.updated_fields,
         instruction_reset=outcome.instruction_reset,
-        kept=list(blocked.kept),
+        kept=list(kept_nodes),
     )
+
+
+def _name_conflicted_nodes(
+    baseline: dict[str, Any], field_ids: frozenset[UUID]
+) -> list[DiscardKeptNode]:
+    """Report the baseline fields the writer could not restore because a
+    kept field holds their per-section name (see
+    :func:`template_restore_service._name_conflicted`).
+
+    Labelled from the BASELINE: the node may not exist live at all (the
+    "delete the field, re-add it with the same name to change its type"
+    workaround), and when it does, its live label is the draft's."""
+    return [
+        DiscardKeptNode(
+            node_id=UUID(str(raw["id"])),
+            node_kind="field",
+            label=raw.get("label") or raw["name"],
+            reason="name_taken_by_kept_node",
+        )
+        for entity in baseline.get("entity_types") or []
+        for raw in entity.get("fields") or []
+        if UUID(str(raw["id"])) in field_ids
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -466,6 +529,14 @@ def _closed_over_the_tree(
       Only walked from nodes blocked by their own instances: a section kept
       merely to spare one field of its own has no claim on its child
       sections.
+
+    One hop down IS the whole subtree: ``ck_extraction_entity_types_role_parent``
+    forces ``study_section``/``model_container`` to be roots and
+    ``model_section`` to have a parent, and the deferred
+    ``trg_check_model_section_parent_role`` forces that parent to be a
+    ``model_container`` — so the live tree is exactly two levels deep and
+    has no grandchildren. Should that ever change, this walk needs a
+    fixpoint; today one would be unreachable code.
     """
     skip = set(seed)
     stack = list(seed)

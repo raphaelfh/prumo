@@ -230,6 +230,21 @@ async def _set_label(db: AsyncSession, table: str, node_id: UUID, label: str) ->
     await db.flush()
 
 
+async def _set_field_name(db: AsyncSession, field_id: UUID, name: str) -> None:
+    await db.execute(
+        text("UPDATE public.extraction_fields SET name = :name, label = :name WHERE id = :id"),
+        {"id": str(field_id), "name": name},
+    )
+    await db.flush()
+
+
+async def _delete_field(db: AsyncSession, field_id: UUID) -> None:
+    await db.execute(
+        text("DELETE FROM public.extraction_fields WHERE id = :id"), {"id": str(field_id)}
+    )
+    await db.flush()
+
+
 async def _delete_section(db: AsyncSession, entity_id: UUID) -> None:
     await db.execute(
         text("DELETE FROM public.extraction_entity_types WHERE id = :id"), {"id": str(entity_id)}
@@ -275,12 +290,18 @@ async def _assert_matches_baseline(
     baseline: dict[str, Any],
     extra_entity_ids: frozenset[UUID] = frozenset(),
     extra_field_ids: frozenset[UUID] = frozenset(),
+    unrestorable_field_ids: frozenset[UUID] = frozenset(),
 ) -> None:
     """T1's structural check, reduced to what T2 owns: everything outside
-    the KEPT set is back on the baseline."""
+    the KEPT set is back on the baseline.
+
+    ``unrestorable_field_ids`` are BASELINE fields the restore had to leave
+    alone because a kept node holds their per-section name slot: they drop
+    out of both sides of every comparison, so the rest of the tree is still
+    asserted exactly."""
     await db.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
     rebuilt = await build_template_version_snapshot(db, template_id)
-    extras = extra_entity_ids | extra_field_ids
+    extras = extra_entity_ids | extra_field_ids | unrestorable_field_ids
     unexplained = [
         c
         for c in diff_snapshots(baseline, rebuilt, fields_with_values=frozenset()).changes
@@ -291,9 +312,11 @@ async def _assert_matches_baseline(
     base_entity_ids = {UUID(et["id"]) for et in baseline["entity_types"]}
     base_field_ids = {
         UUID(f["id"]) for et in baseline["entity_types"] for f in et.get("fields") or []
-    }
+    } - unrestorable_field_ids
     assert await _live_entity_ids(db, template_id) == base_entity_ids | extra_entity_ids
-    assert await _live_field_ids(db, template_id) == base_field_ids | extra_field_ids
+    assert (
+        await _live_field_ids(db, template_id)
+    ) - unrestorable_field_ids == base_field_ids | extra_field_ids
 
 
 async def _discard(
@@ -509,6 +532,182 @@ async def test_draft_added_ancestor_of_a_blocked_node_is_kept(
     )
 
 
+@pytest.mark.asyncio
+async def test_instance_blocked_section_keeps_its_draft_added_children(
+    db_session: AsyncSession,
+) -> None:
+    """The DOWN half of the closure: a section kept because it owns
+    instances keeps its draft-added children too (D4's "plus their
+    subtrees"), so the manager is left with a coherent branch instead of a
+    decapitated container.
+
+    ``ck_extraction_entity_types_role_parent`` plus
+    ``trg_check_model_section_parent_role`` cap the live tree at two levels
+    (a ``model_section``'s parent must be a ``model_container``; the other
+    two roles must have none), so a container and its sections ARE the
+    whole subtree — there are no grandchildren to walk to."""
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    clone = await clone_charms(db_session, project_id, SEED.primary_profile)
+    template_id = clone.project_template_id
+    # Drain the deferred role/parent queue while the tree is still whole
+    # (see the ancestor test above), then restore deferral.
+    await db_session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+    await db_session.execute(text("SET CONSTRAINTS ALL DEFERRED"))
+    await _delete_section(
+        db_session, await _entity_id(db_session, template_id, "prediction_models")
+    )
+    await TemplateVersionService(db_session).republish(
+        project_id=project_id, project_template_id=template_id, user_id=SEED.primary_profile
+    )
+    baseline = await _active_schema(db_session, template_id)
+
+    container = await _add_section(
+        db_session,
+        template_id,
+        "b9c1_parent_container",
+        role="model_container",
+        cardinality="many",
+        entry_label="model",
+        sort_order=98,
+    )
+    child = await _add_section(
+        db_session,
+        template_id,
+        "b9c1_subtree_child",
+        role="model_section",
+        parent_id=container,
+        sort_order=99,
+    )
+    await db_session.execute(
+        text(
+            "INSERT INTO public.articles (id, project_id, title, row_version) "
+            "VALUES (:id, :pid, 'B-9c1 discard article', 1) ON CONFLICT (id) DO NOTHING"
+        ),
+        {"id": str(_ARTICLE_ID), "pid": str(project_id)},
+    )
+    # Only the CONTAINER owns run data; the child is deletable on its own.
+    await _add_instance(
+        db_session, project_id=project_id, template_id=template_id, entity_type_id=container
+    )
+
+    result = await _discard(db_session, project_id=project_id, template_id=template_id)
+
+    kept = {k.node_id: k.reason for k in result.kept}
+    assert kept == {container: "has_recorded_data", child: "related_to_kept_node"}
+    assert result.deleted_entity_types == 0
+    await _assert_matches_baseline(
+        db_session,
+        template_id=template_id,
+        baseline=baseline,
+        extra_entity_ids=frozenset({container, child}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_baseline_field_whose_name_a_kept_field_took_is_reported(
+    db_session: AsyncSession,
+) -> None:
+    """The standard "change a field's type" workaround — delete the field,
+    re-add one under the same name — puts a KEPT node in the exact slot the
+    baseline field wants back.
+
+    ``uq_extraction_fields_entity_type_name`` is immediate and
+    non-deferrable, so re-creating the baseline field aborts the
+    transaction with a 23505 the D8 backstop does not recognise: an
+    untyped 500, and Discard permanently impossible for the template. D4's
+    philosophy extends instead — the baseline field is left alone and
+    REPORTED."""
+    project_id, template_id, baseline = await _fresh_charms(db_session)
+    owner = await _entity_id(db_session, template_id, "sample_size")
+    victim = await _field_id(db_session, template_id, "sample_size", "epv_epp")
+    await _delete_field(db_session, victim)
+    replacement = await _add_field(db_session, owner, "epv_epp")
+    session = await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=_ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=UUID(session.instances_by_entity_type[str(owner)]),
+        field_id=replacement,
+        user_id=SEED.primary_profile,
+    )
+
+    result = await _discard(db_session, project_id=project_id, template_id=template_id)
+
+    assert [(k.node_id, k.node_kind, k.reason) for k in result.kept] == [
+        (replacement, "field", "has_recorded_data"),
+        (victim, "field", "name_taken_by_kept_node"),
+    ]
+    assert result.created_fields == 0
+    assert victim not in await _live_field_ids(db_session, template_id)
+    await _assert_matches_baseline(
+        db_session,
+        template_id=template_id,
+        baseline=baseline,
+        extra_field_ids=frozenset({replacement}),
+        unrestorable_field_ids=frozenset({victim}),
+    )
+    # Something could not be undone, so the template is still in draft.
+    assert await get_config_draft_marker(db_session, template_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_baseline_rename_blocked_by_a_kept_field_is_reported(
+    db_session: AsyncSession,
+) -> None:
+    """The same collision on the UPDATE path (phase 6): the draft renamed a
+    baseline field out of the way and gave its old name to a field that now
+    holds recorded data. The rename back is skipped and reported, and the
+    field keeps its draft name rather than aborting the whole Discard."""
+    project_id, template_id, baseline = await _fresh_charms(db_session)
+    owner = await _entity_id(db_session, template_id, "sample_size")
+    renamed = await _field_id(db_session, template_id, "sample_size", "number_of_events")
+    await _set_field_name(db_session, renamed, "b9c1_renamed_away")
+    replacement = await _add_field(db_session, owner, "number_of_events")
+    session = await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=_ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=UUID(session.instances_by_entity_type[str(owner)]),
+        field_id=replacement,
+        user_id=SEED.primary_profile,
+    )
+
+    result = await _discard(db_session, project_id=project_id, template_id=template_id)
+
+    assert [(k.node_id, k.reason) for k in result.kept] == [
+        (replacement, "has_recorded_data"),
+        (renamed, "name_taken_by_kept_node"),
+    ]
+    still_named = (
+        await db_session.execute(
+            text("SELECT name FROM public.extraction_fields WHERE id = :id"),
+            {"id": str(renamed)},
+        )
+    ).scalar_one()
+    assert still_named == "b9c1_renamed_away"
+    await _assert_matches_baseline(
+        db_session,
+        template_id=template_id,
+        baseline=baseline,
+        extra_field_ids=frozenset({replacement}),
+        unrestorable_field_ids=frozenset({renamed}),
+    )
+    assert await get_config_draft_marker(db_session, template_id) is not None
+
+
 # ==========================================================================
 # D5 — refusals
 # ==========================================================================
@@ -569,6 +768,38 @@ async def test_container_swap_is_refused(db_session: AsyncSession) -> None:
         role="model_container",
         cardinality="many",
         entry_label="model",
+    )
+
+    with pytest.raises(ContainerSwapUnsupportedError):
+        await _discard(db_session, project_id=project_id, template_id=template_id)
+
+
+@pytest.mark.asyncio
+async def test_container_swap_is_refused_even_when_the_new_container_is_kept(
+    db_session: AsyncSession,
+) -> None:
+    """D3's guard read the delete set AFTER D4 had filtered the skip set out
+    of it, so a draft-added container that owns instances never set the
+    flag: the refusal did not fire, phase 1 re-inserted the baseline
+    container, and ``uq_extraction_entity_types_one_container_per_project``
+    turned the actionable 409 into an untyped 500.
+
+    The guard must read the PRE-skip view — every live container absent
+    from the baseline counts, kept or not."""
+    project_id, template_id, _ = await _fresh_charms(db_session)
+    await _delete_section(
+        db_session, await _entity_id(db_session, template_id, "prediction_models")
+    )
+    new_container = await _add_section(
+        db_session,
+        template_id,
+        "b9c1_kept_container",
+        role="model_container",
+        cardinality="many",
+        entry_label="model",
+    )
+    await _add_instance(
+        db_session, project_id=project_id, template_id=template_id, entity_type_id=new_container
     )
 
     with pytest.raises(ContainerSwapUnsupportedError):

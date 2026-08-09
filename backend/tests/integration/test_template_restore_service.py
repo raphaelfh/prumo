@@ -243,10 +243,14 @@ async def _assert_restored(
     touched_field_ids: frozenset[UUID] = frozenset(),
     extra_entity_ids: frozenset[UUID] = frozenset(),
     extra_field_ids: frozenset[UUID] = frozenset(),
+    unrestorable_field_ids: frozenset[UUID] = frozenset(),
 ) -> None:
     """Assertions 1-5 of plan T1. ``extra_*`` are nodes a partial restore
     deliberately KEPT (the ``skip_entity_type_ids`` path); ``touched_*``
-    are rows the restore was supposed to rewrite."""
+    are rows the restore was supposed to rewrite;
+    ``unrestorable_field_ids`` are BASELINE fields a kept node's name slot
+    put out of reach — they drop out of both sides of every comparison, so
+    the rest of the tree is still asserted exactly."""
     # (5) — forces the deferred role/parent trigger and the active-version
     # trigger to run now, exactly as commit would.
     await db.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
@@ -254,16 +258,22 @@ async def _assert_restored(
     # (1) — structural equality via the diff, never == on the raw JSON.
     rebuilt = await build_template_version_snapshot(db, template_id)
     diff = diff_snapshots(baseline, rebuilt, fields_with_values=frozenset())
-    extras = extra_entity_ids | extra_field_ids
+    extras = extra_entity_ids | extra_field_ids | unrestorable_field_ids
     unexplained = [c for c in diff.changes if c.node_id not in extras]
     assert not unexplained, f"restore left {len(unexplained)} change(s): {unexplained}"
 
     # (2) — the full (id, sort_order) map, both node kinds. The diff cannot
     # see entity-type order at all and ignores field sort_order by design.
     base_entity_orders = _baseline_entity_orders(baseline)
-    base_field_orders = _baseline_field_orders(baseline)
+    base_field_orders = {
+        k: v for k, v in _baseline_field_orders(baseline).items() if k not in unrestorable_field_ids
+    }
     live_entity_orders = await _live_entity_orders(db, template_id)
-    live_field_orders = await _live_field_orders(db, template_id)
+    live_field_orders = {
+        k: v
+        for k, v in (await _live_field_orders(db, template_id)).items()
+        if k not in unrestorable_field_ids
+    }
     assert {
         k: v for k, v in live_entity_orders.items() if k not in extra_entity_ids
     } == base_entity_orders
@@ -1008,6 +1018,81 @@ async def test_skip_entity_type_ids_keeps_the_node(db_session: AsyncSession) -> 
         extra_entity_ids=frozenset({kept}),
         extra_field_ids=frozenset({kept_field}),
     )
+
+
+@pytest.mark.asyncio
+async def test_kept_field_name_makes_a_baseline_field_unrestorable(
+    db_session: AsyncSession,
+) -> None:
+    """A kept field owns its ``(entity_type_id, name)`` slot forever, and
+    ``uq_extraction_fields_entity_type_name`` is immediate — so the baseline
+    field that wants the slot back cannot be re-created. Skipping and
+    reporting it is the writer's job, not a 23505 the caller cannot type.
+
+    The shape is ordinary: deleting a field and re-adding it under the same
+    name is the standard way to change a field's type."""
+    project_id, template_id, baseline = await _fresh_charms(db_session)
+    owner = await _entity_id(db_session, template_id, "sample_size")
+    victim = await _field_id(db_session, template_id, "sample_size", "epv_epp")
+    await _delete_field(db_session, victim)
+    replacement = await _add_field(db_session, owner, "epv_epp")
+    capture = await _capture(db_session, template_id)
+
+    outcome = await _restore(
+        db_session,
+        project_id=project_id,
+        template_id=template_id,
+        baseline=baseline,
+        skip_entity_type_ids=frozenset({owner}),
+    )
+
+    assert outcome.name_conflicted_field_ids == frozenset({victim})
+    assert (outcome.created_fields, outcome.deleted_fields) == (0, 0)
+    assert set(await _live_field_orders(db_session, template_id)) == (
+        set(_baseline_field_orders(baseline)) - {victim}
+    ) | {replacement}
+    await _assert_restored(
+        db_session,
+        template_id=template_id,
+        baseline=baseline,
+        capture=capture,
+        extra_field_ids=frozenset({replacement}),
+        unrestorable_field_ids=frozenset({victim}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_container_swap_is_refused_when_the_new_container_is_skipped(
+    db_session: AsyncSession,
+) -> None:
+    """The D3 guard reads the PRE-skip view. A draft-added container the
+    caller kept is still the incumbent on
+    ``uq_extraction_entity_types_one_container_per_project``, so dropping it
+    from the delete set must not silence the refusal."""
+    project_id, template_id, baseline = await _fresh_charms(db_session)
+    await _delete_section(
+        db_session, await _entity_id(db_session, template_id, "prediction_models")
+    )
+    kept_container = await _add_section(
+        db_session,
+        template_id,
+        "b9c1_kept_container",
+        role="model_container",
+        cardinality="many",
+        entry_label="model",
+    )
+    capture = await _capture(db_session, template_id)
+
+    with pytest.raises(ContainerSwapUnsupportedError):
+        await _restore(
+            db_session,
+            project_id=project_id,
+            template_id=template_id,
+            baseline=baseline,
+            skip_entity_type_ids=frozenset({kept_container}),
+        )
+
+    assert await _capture(db_session, template_id) == capture, "refusal must write nothing"
 
 
 @pytest.mark.asyncio

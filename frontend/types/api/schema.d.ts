@@ -731,7 +731,11 @@ export interface paths {
          *     Partial by design (B-9c1 D4): a draft-added section that already owns
          *     extraction instances — or a draft-added field the review workflow
          *     references — cannot be deleted, so it is KEPT and reported in
-         *     ``kept`` while the rest of the draft is undone. The draft marker
+         *     ``kept`` while the rest of the draft is undone. A PUBLISHED field whose
+         *     per-section name a kept field took over is reported the same way
+         *     (``name_taken_by_kept_node``): it stays as the draft left it, because
+         *     ``uq_extraction_fields_entity_type_name`` is immediate and restoring it
+         *     would abort the request instead of shrinking the draft. The draft marker
          *     survives whenever anything was kept.
          *
          *     Refuses (409) when restoring would corrupt rather than merely fail: a
@@ -2856,8 +2860,9 @@ export interface components {
          * DiscardKeptNode
          * @description One node Discard could NOT undo, and why (B-9c1 D4).
          *
-         *     Deleting it would break a RESTRICT reference to real run data, so the
-         *     draft shrinks around it instead of failing wholesale.
+         *     Either deleting it would break a RESTRICT reference to real run data, or
+         *     restoring it would collide with something that does — so the draft
+         *     shrinks around it instead of failing wholesale.
          */
         DiscardKeptNode: {
             /** Label */
@@ -2876,7 +2881,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "has_recorded_data" | "related_to_kept_node";
+            reason: "has_recorded_data" | "related_to_kept_node" | "name_taken_by_kept_node";
         };
         /**
          * DownloadAttachmentResponse

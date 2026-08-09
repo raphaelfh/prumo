@@ -69,6 +69,7 @@ _PARK_PREFIX = "__restore_"
 
 _PARENT_KEY = "parent_entity_type_id"
 _OWNER_KEY = "entity_type_id"
+_NAME_KEY = "name"
 
 #: The D1 projection: exactly what ``template_diff``'s normalizers emit,
 #: plus the two columns they omit. Kept as tuples so the live side is read
@@ -101,6 +102,10 @@ class RestoreOutcome:
     deleted_fields: int = 0
     updated_fields: int = 0
     instruction_reset: bool = False
+    name_conflicted_field_ids: frozenset[UUID] = frozenset()
+    """Baseline fields left exactly as the draft had them because a KEPT
+    node holds their ``(entity_type_id, name)`` slot. The caller reports
+    them; the marker must stay set while any of them exist."""
 
 
 # --------------------------------------------------------------------------
@@ -245,6 +250,13 @@ async def restore_snapshot(
     include every descendant AND every ancestor of a blocked node, since
     deleting an ancestor would cascade the blocked node away.
 
+    Keeping a node can make part of the baseline unrestorable, and that is
+    the writer's problem, not the caller's: a kept field holds its
+    ``(entity_type_id, name)`` slot forever, so every baseline field aimed
+    at it is skipped and returned in
+    :attr:`RestoreOutcome.name_conflicted_field_ids` rather than crashing
+    the transaction on the immediate unique index.
+
     There is deliberately no "no draft open ⇒ no-op" short-circuit (D7):
     Restore-vN runs on clean templates, and a marker-NULL template whose
     live tree drifted is a real state. A genuinely identical tree costs
@@ -289,19 +301,31 @@ async def restore_snapshot(
         baseline_entities=baseline_entities,
         live_entities=live_entities,
         create_entity_ids=create_entity_ids,
-        delete_entity_ids=delete_entity_ids,
     )
 
-    create_field_ids = [fid for fid in baseline_fields if fid not in live_fields]
     delete_field_ids = [
         fid
         for fid, row in live_fields.items()
         if fid not in baseline_fields and row.entity_type_id not in skip_entity_type_ids
     ]
+    # A kept field occupies its ``(entity_type_id, name)`` slot for good, so
+    # any baseline field aimed at that slot is unrestorable (see
+    # ``_name_conflicted``). Resolved BEFORE the create/update sets so those
+    # fields are never parked, created or renamed.
+    name_conflicted = _name_conflicted(
+        baseline_fields=baseline_fields,
+        live_fields=live_fields,
+        kept_field_ids=frozenset(live_fields) - frozenset(baseline_fields) - set(delete_field_ids),
+    )
+    create_field_ids = [
+        fid for fid in baseline_fields if fid not in live_fields and fid not in name_conflicted
+    ]
     update_field_ids = [
         fid
         for fid, columns in baseline_fields.items()
-        if fid in live_fields and _live_columns(live_fields[fid], _FIELD_KEYS) != columns
+        if fid in live_fields
+        and fid not in name_conflicted
+        and _live_columns(live_fields[fid], _FIELD_KEYS) != columns
     ]
 
     # Phase 0 — park the name of every field in the update set, INCLUDING
@@ -397,7 +421,45 @@ async def restore_snapshot(
         deleted_fields=len(delete_field_ids),
         updated_fields=len(update_field_ids),
         instruction_reset=instruction_reset,
+        name_conflicted_field_ids=name_conflicted,
     )
+
+
+def _name_conflicted(
+    *,
+    baseline_fields: dict[UUID, dict[str, Any]],
+    live_fields: dict[UUID, ExtractionField],
+    kept_field_ids: frozenset[UUID],
+) -> frozenset[UUID]:
+    """Baseline fields whose ``(entity_type_id, name)`` slot a KEPT field
+    holds, so the reconcile must leave them exactly as the draft did.
+
+    ``uq_extraction_fields_entity_type_name`` (0050) is immediate and
+    non-deferrable, and a kept field is by definition never deleted — so
+    re-creating (phase 5) or renaming into (phase 6) its slot aborts the
+    whole transaction with a 23505 no caller can tell apart from a bug.
+    Skipping and reporting instead is the same bargain D4 already strikes
+    for the nodes the RESTRICT FKs refuse to delete: something was kept, so
+    the draft shrinks around it and the marker stays set.
+
+    The walk is a fixpoint because an excluded field keeps its DRAFT slot,
+    which can in turn be the slot a second baseline field is aimed at (a
+    draft that renamed two fields around one kept name).
+    """
+    taken = {(live_fields[fid].entity_type_id, live_fields[fid].name) for fid in kept_field_ids}
+    conflicted: set[UUID] = set()
+    pending = True
+    while pending:
+        pending = False
+        for field_id, columns in baseline_fields.items():
+            if field_id in conflicted or (columns[_OWNER_KEY], columns[_NAME_KEY]) not in taken:
+                continue
+            conflicted.add(field_id)
+            pending = True
+            live = live_fields.get(field_id)
+            if live is not None:
+                taken.add((live.entity_type_id, live.name))
+    return frozenset(conflicted)
 
 
 def _refuse_container_swap(
@@ -405,17 +467,25 @@ def _refuse_container_swap(
     baseline_entities: dict[UUID, dict[str, Any]],
     live_entities: dict[UUID, ExtractionEntityType],
     create_entity_ids: list[UUID],
-    delete_entity_ids: list[UUID],
 ) -> None:
-    """D3, checked before anything is written so the refusal is inert."""
+    """D3, checked before anything is written so the refusal is inert.
+
+    The delete side is read PRE-skip — every live container absent from the
+    baseline, whether or not D4 kept it. A kept container is still an
+    incumbent on ``uq_extraction_entity_types_one_container_per_project``,
+    so reading the filtered delete set would silence the refusal and let
+    phase 1 collide instead.
+    """
     container = ExtractionEntityRole.MODEL_CONTAINER.value
     creates_container = any(
         baseline_entities[entity_id]["role"] == container for entity_id in create_entity_ids
     )
-    deletes_container = any(
-        live_entities[entity_id].role == container for entity_id in delete_entity_ids
+    live_has_an_unpublished_container = any(
+        row.role == container
+        for entity_id, row in live_entities.items()
+        if entity_id not in baseline_entities
     )
-    if creates_container and deletes_container:
+    if creates_container and live_has_an_unpublished_container:
         raise ContainerSwapUnsupportedError(
             "Cannot restore: the draft replaced the template's model container. "
             "Delete the new container first, then try again."
