@@ -208,9 +208,11 @@ function DiffRow({row, tier}: {row: TemplateChangeRow; tier: ChangeTier}) {
           {row.label_path.join(' › ')}
         </p>
       )}
-      {attributeLabel != null && (
+      {(attributeLabel != null || before != null || after != null) && (
         <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-          <span className="text-muted-foreground">{attributeLabel}</span>
+          {attributeLabel != null && (
+            <span className="text-muted-foreground">{attributeLabel}</span>
+          )}
           {before != null && (
             <span className="rounded bg-muted px-1 py-0.5 font-mono text-[0.6875rem] line-through decoration-muted-foreground/60">
               {before}
@@ -249,12 +251,18 @@ function DiffNotice({copyKey}: {copyKey: CopyKey}) {
 function DiffBody({
   diff,
   isPending,
+  isError,
 }: {
   diff: TemplateConfigDiff | undefined;
   isPending: boolean;
+  isError: boolean;
 }) {
   if (isPending) return <DiffNotice copyKey="diffLoading" />;
-  if (diff == null) return <DiffNotice copyKey="diffLoadFailed" />;
+  // `isError` is checked ahead of `diff == null`: with `gcTime: 0` a failed
+  // refetch already clears `data`, but this is belt and braces against a
+  // future cache-lifetime change reintroducing a stale-but-populated `diff`
+  // during an in-flight or failed read.
+  if (isError || diff == null) return <DiffNotice copyKey="diffLoadFailed" />;
   // One closed discriminator: only `available` carries rows, and the other
   // two each own an explanation.
   if (diff.status !== 'available') {
@@ -302,7 +310,11 @@ export function TemplateConfigDiffSheet({
   templateId,
   onClose,
 }: TemplateConfigDiffSheetProps) {
-  const {data: diff, isPending} = useTemplateConfigDiff(projectId, templateId);
+  const {
+    data: diff,
+    isPending,
+    isError,
+  } = useTemplateConfigDiff(projectId, templateId);
 
   return (
     <Sheet
@@ -322,7 +334,7 @@ export function TemplateConfigDiffSheet({
           </SheetDescription>
         </SheetHeader>
         <ScrollArea className="min-h-0 flex-1">
-          <DiffBody diff={diff} isPending={isPending} />
+          <DiffBody diff={diff} isPending={isPending} isError={isError} />
         </ScrollArea>
       </SheetContent>
     </Sheet>

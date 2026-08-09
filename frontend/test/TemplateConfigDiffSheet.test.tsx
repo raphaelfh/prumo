@@ -672,6 +672,33 @@ describe('TemplateConfigDiffSheet — attribute rows', () => {
     expect(rowEl).toHaveTextContent('mg, ml');
     expect(rowEl).not.toHaveTextContent(templateConfig.diffValueSet);
   });
+
+  it('names both parent sections for a field move, which has no attribute', async () => {
+    // The engine ships a field move with `attribute: null` and the ORIGIN
+    // section in `before`, the DESTINATION in `after`
+    // (backend/app/services/template_diff.py:478-489). Gating the whole
+    // before/after paragraph on the attribute word being present would drop
+    // both labels, leaving no way to see where the field came from.
+    loadTemplateConfigDiff.mockResolvedValue(
+      diffOk([
+        {
+          id: 'mv',
+          variant: 'field_moved',
+          tier: 'destructive',
+          label_path: ['Section B', 'Study design'],
+          before: 'Section A',
+          after: 'Section B',
+        },
+      ]),
+    );
+    renderSheet();
+
+    const rowEl = within(await group('destructive')).getByTestId(
+      'template-diff-row-mv',
+    );
+    expect(rowEl).toHaveTextContent('Section A');
+    expect(rowEl).toHaveTextContent('Section B');
+  });
 });
 
 describe('TemplateConfigDiffSheet — every open reads fresh', () => {
@@ -725,5 +752,39 @@ describe('TemplateConfigDiffSheet — every open reads fresh', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('Section A › First edit')).toBeNull();
     expect(loadTemplateConfigDiff).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a failed reopen instead of replaying the previous diff', async () => {
+    // Mirrors App.tsx's real cache lifetime (`gcTime: 10 * 60 * 1000`) rather
+    // than leaving it unset, so a regression in the hook's own `gcTime: 0`
+    // override would actually reproduce here instead of being masked by
+    // TanStack's built-in default.
+    const queryClient = new QueryClient({
+      defaultOptions: {queries: {retry: false, gcTime: 10 * 60 * 1000}},
+    });
+    const wrapper = ({children}: {children: ReactNode}) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    loadTemplateConfigDiff.mockResolvedValue(
+      diffOk([removedField('r1', 'First edit')]),
+    );
+    const {rerender} = render(<OpenableDiffSheet open />, {wrapper});
+    expect(
+      within(await group('destructive')).getByText('Section A › First edit'),
+    ).toBeInTheDocument();
+
+    // Close the sheet, then the reopen's read fails outright.
+    rerender(<OpenableDiffSheet open={false} />);
+    loadTemplateConfigDiff.mockResolvedValue({
+      ok: false,
+      error: {message: 'boom'},
+    });
+    rerender(<OpenableDiffSheet open />);
+
+    expect(
+      await screen.findByText(templateConfig.diffLoadFailed),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Section A › First edit')).toBeNull();
   });
 });
