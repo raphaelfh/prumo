@@ -8,186 +8,224 @@ owner: '@raphaelfh'
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use
 > superpowers:subagent-driven-development task-by-task. Built from a
-> structural map (Explore, 2026-08-09) against dev @ `4feee638`
-> (B-9c1 merged — the Discard backend exists). Spec: §1 of
+> structural map (Explore) + a 3-lens adversarial panel (**17 findings,
+> 4 blocking**, all folded) against dev @ `4feee638` (B-9c1 merged).
+> Spec: §1 of
 > `docs/superpowers/specs/2026-08-05-template-config-ux-redesign-design.md`.
 
-## Why this slice needs a backend addendum
+## Why this slice opens with a backend addendum
 
-B-9c1 shipped `POST .../discard-draft` with a partial-discard policy, a
-refusal taxonomy and an orphan-acknowledgement gate. The UI cannot render
-any of it truthfully today:
+B-9c1 shipped the Discard backend. The UI cannot render it truthfully:
 
-- **The orphan list exists only as prose.** `OrphanAcknowledgementRequiredError`
-  interpolates `label [uuid]` pairs and the literal string
-  `acknowledge_orphans=true` into a message
-  (`template_discard_service.py:600-606`); the endpoint raises
-  `HTTPException(409, detail=str(e))` (`project_templates.py:322`), and
-  `http_exception_handler` (`core/error_handler.py:221-243`) **never writes
-  a `details` key**. The client pipe is fine — `ApiError` carries
-  `.status/.code/.details` (`integrations/api/client.ts:31-36`, `:58-69`)
-  and `normalizeError` passes subclasses through untouched
-  (`lib/error-utils.ts:52-62`) — the backend simply never fills it.
-- **All five 409s share `code: "HTTP_ERROR"`**, so "re-ask with the ack"
-  and "hard refusal" are indistinguishable without sniffing backend prose.
+- **The orphan list exists only as prose** — `OrphanAcknowledgementRequiredError`
+  interpolates `label [uuid]` pairs and the literal `acknowledge_orphans=true`
+  (`template_discard_service.py:600-606`); the endpoint re-raises
+  `HTTPException(409, detail=str(e))` (`project_templates.py:314-322`) and
+  `http_exception_handler` (`core/error_handler.py:221-243`) **never writes a
+  `details` key**.
+- **All five 409s share `code: "HTTP_ERROR"`**, so "re-ask with the ack" and
+  "hard refusal" are indistinguishable without sniffing English.
 
-Shipping the dialog on top of that means either leaking an API parameter
-name and raw UUIDs to a manager, or branching control flow on English
-strings. So this slice includes a tightly-scoped backend addendum first.
+The client pipe is fine (`ApiError` carries `.status/.code/.details`,
+`integrations/api/client.ts:31-36`, `:58-69`; `normalizeError` passes
+subclasses through, `lib/error-utils.ts:52-62`) — the backend just never
+fills it.
 
-## Load-bearing facts (verified 2026-08-09)
+## Load-bearing facts (map + panel, verified 2026-08-09)
 
-- `TemplateConfigPublishControls.tsx` (117 lines) takes only
-  `{projectId, templateId}` (`:24-27`), returns a **bare fragment**
-  (`:94-116`) inside the command bar's `gap-2` right cluster
-  (`TemplateConfigEditor.tsx:178-201`) — a Discard button slots in as a
-  sibling before the Publish tooltip with no wrapper. It already holds
-  `useTemplateConfigStatus` (`:33`) and `useTemplateRepublish` (`:34`).
-- `DiscardDraftResponse` (`backend/app/schemas/hitl_session.py:89-107`)
-  carries six counts, `draft_was_open`, `instruction_reset`, and `kept[]`
-  — and each kept node **has a `label`** (`:78`), so no UUID ever needs to
-  reach the screen. **`kept` non-empty ⇒ the marker survives and the
-  template is still in draft** (`:106-107`).
-- **There is no preview endpoint.** Before the click the client knows only
-  `has_pending_changes`, `pending_change_count`, `active_version`,
-  `discard_available`. `pending_change_count` can legitimately be `null`
-  (`hitl_session.py:148-152`).
-- `discard_available` (`template_version_read_service.py:68`) is the same
-  gate the endpoint refuses on, and **carries no draft-marker term** — it
-  is `true` on a clean published template.
-- `useTemplateRepublish`'s helpers import three key factories
-  (`:20-24`); **`templateInstructionKeys` is in none of them**. The single
-  stale consumer after `instruction_reset` is
-  `TemplateInstructionRow.tsx` (`:37`, `:47-50`, `:80`) via
-  `useTemplateInstruction.ts:15-21`. Publish has no functional equivalent
-  of this gap (republish never writes the instruction).
-- `templateInstructionKeys` (`lib/query-keys/extraction.ts:56-59`) is the
-  only factory in the file with **no `.all` member**.
-- `TemplateConfigEditor`'s imperative `entityTypes` (`:39`, loader
-  `:104-120`) is read in exactly three trivial places (`:159`, `:179-186`,
-  `:206`/`:241`) and refreshed at five (`:125`, `:141`, `:147`, `:155`,
-  `:334`) — **every refresh already sits next to an invalidation of
-  `templateEntityTypesKeys.byTemplate`**. `TemplateConfigGridPanel.tsx:116`
-  already runs `useTemplateEntityTypes(templateId)` for the same id, so
-  the tab performs two overlapping reads. `TemplateConfigEditor.test.tsx`
-  already mocks **both**.
-- Dialog precedents: `DeleteFieldConfirm.tsx` (AlertDialog, impact block,
-  **`event.preventDefault()` on the action so a refusal keeps the dialog
-  mounted** `:189-195`) and `ReopenExtractionDialog.tsx:32-69` (body and
-  action label switch on a count).
-- Copy goes in `frontend/lib/copy/templateConfig.ts`; `extraction.ts` is
-  pinned at 958 in the file-size baseline and may not grow. Plural
-  precedent `draftChangeCountOne/Other` (`templateConfig.ts:29-30`).
-- `frontend/test/TemplateConfigPublish.test.tsx` (12 cases) is the suite;
-  its `status()` fixture (`:46-56`) omits `discard_available`, so existing
-  cases will render Discard disabled (a safe default).
-- **No E2E touches the Publish button at all**; the only config-tab spec
-  is `template-import.ui.e2e.ts`.
+- **`app_error_handler` does NOT `jsonable_encoder` its details**
+  (`core/error_handler.py:207-218` hands `exc.details` to a bare
+  `JSONResponse`, whose render is plain `json.dumps`). A `UUID` in
+  `details` raises **inside the handler** → 500, and a service-level
+  `pytest.raises` cannot see it: the exception object is well formed, only
+  the wire breaks.
+- **No endpoint in the repo declares `responses=`** — the committed
+  `openapi.json` response keys are exactly `200/201/202/422`. And
+  `ErrorDetail.details` is `dict[str, Any] | None`
+  (`schemas/common.py:70-74`) → generates as `unknown`. So regenerating
+  types buys **nothing** for a refusal payload unless the model is
+  declared and attached.
+- **Every refusal test calls the service directly** (`_discard` helper,
+  `test_template_discard_draft.py:320-333`); the only ASGI tests are the
+  200 (`:1158`) and the 403 (`:1180`).
+- `AppError.__init__` calls `super().__init__(message)`
+  (`error_handler.py:39`), so `str(exc)` stays the message and existing
+  `pytest.raises(...)` assertions survive the conversion.
+- **Orphans can duplicate per field**: `allowed_values` is diffed per
+  option code (`template_diff.py:92`, `:137-138`), and the orphan set is a
+  flat list of destructive changes.
+- `_pending_change_count` returns `None` when
+  `snapshot_is_narrow(entity_types)` — which is **true for an empty
+  baseline by design** — while `discard_available` uses
+  `baseline_is_restorable`. The two gates disagree exactly on the empty
+  baseline (`template_version_read_service.py:68` vs the count helper).
+- `useTemplateEntityTypes` returns `entityTypes: query.data ?? []` and
+  `isLoading` (`:75-83`) — **a failed fetch is indistinguishable from zero
+  rows**, and the editor gates its empty state on `entityTypes.length`.
+  The imperative loader it replaces toasts on failure
+  (`TemplateConfigEditor.tsx:110-115`).
+- Widening `useTemplateConfigCaches`'s return breaks **five** test files
+  that pass a strictly-typed `mockReturnValue` (tsconfig.app.json includes
+  the whole `frontend` tree).
+- `t()` returns `''` for a missing key (`lib/copy/index.ts:74`).
+- `TemplateConfigEditor.tsx:312-323` already uses the **mount-per-open**
+  pattern for `DeleteFieldConfirm`.
+- Service-boundary discipline: every 409 in `templateService.ts` is
+  re-wrapped (`PgError`) so the transport type never escapes (`:60-70`,
+  `:199-205`, `:296-302`); `instanceof ApiError` appears only inside
+  `frontend/services/`. `PgError` carries `code` only — **no `details`**.
+- `DiscardKeptNode` carries a **`label`** (`hitl_session.py:78`), so no
+  UUID needs to reach the screen; `kept` non-empty ⇒ the marker survives
+  (`:106-107`).
+- Dialog precedent `DeleteFieldConfirm.tsx:189-195` (`preventDefault` on
+  the action keeps the dialog mounted through a refusal).
+- Copy goes in `templateConfig.ts`; `extraction.ts` is pinned at 958.
 
-## Decisions (proposed; panel to ratify)
+## Decisions (panel-ratified)
 
-- **D1 — Backend addendum: structured refusals.** Convert the discard
-  409s to typed `AppError` subclasses with **stable codes**
-  (`app_error_handler` already serializes `details`,
-  `core/error_handler.py:186-218`): `ORPHAN_ACK_REQUIRED` carrying
-  `details={"orphans": [{"node_id", "label"}]}`, plus distinct codes for
-  cardinality, container-swap, narrow-baseline and raced. Server messages
-  stay user-grade and are still rendered verbatim for hard refusals; the
-  client branches on **code**, never on prose. Regenerate the API types.
-  The orphan message stops interpolating `acknowledge_orphans=true`.
-- **D2 — A four-state dialog** (mirroring `DeleteFieldConfirm`, using its
-  `preventDefault` mechanism so the pane switches without a remount):
-  1. **Confirm** — "Undo N unpublished changes and go back to vX", plus a
-     third copy variant for `pending_change_count === null`, and the
-     instruction warning. No promise of a precise inventory (see D7).
-  2. **Orphan ack** — reached on `ORPHAN_ACK_REQUIRED`; lists the orphaned
-     fields **by label** from `details`; destructive action re-posts with
-     `acknowledge_orphans: true`.
-  3. **Hard refusal** — server message verbatim, dismiss only
-     (reuse `extraction.understood`).
-  4. **Result** — rendered only when `kept.length > 0`: lists each kept
-     node by label with its reason as a human sentence, and states that
-     the template is **still in draft**. A bland "discarded" toast next to
-     a still-lit Draft chip reads as a bug.
-  When `kept` is empty: close and toast.
-- **D3 — Enabled predicate is `discard_available && has_pending_changes`**,
-  with three tooltips: available; "nothing to discard"; "the published
-  version is too old to restore from" (the B-9x case). Never enable on
-  `discard_available` alone.
-- **D4 — A new `invalidateAfterDiscard`**, not an extension of
-  `invalidateAll`: `invalidateStructure()` + `templateInstructionKeys.byTemplate`.
-  Discard must **not** touch `runsKeys.all` or `templateActiveStructureKeys`
-  — the active version is untouched by a discard, so those caches stay
-  correct and invalidating them would refetch the whole runs tree for
-  nothing.
-- **D5 — Migrate the editor's imperative `entityTypes` to
-  `useTemplateEntityTypes` (the map's option b), not a callback prop.**
-  Net ~35 lines deleted, one duplicate network read removed, no new props,
-  and the publish-controls child then needs nothing threaded into it.
-  `loadTemplateEntityTypes` and `EntityTypeWithCount` become dead and are
-  deleted. Without one of the two fixes the header's section count is
-  stale after a Discard that deleted a section — a visible lie.
-- **D6 — `kept` reasons render as sentences, never codes**
-  (`has_recorded_data`, `related_to_kept_node`,
-  `name_taken_by_kept_node`), including the "not restored, rename it and
-  discard again" wording for the last one.
-- **D7 — Honest copy.** A known backend gap (documented in
-  `project_templates.py:299-303`) means a wide-but-older baseline can
-  rewrite columns the diff does not count, so the confirm must not promise
-  "exactly these N things and nothing else". Say "N unpublished changes"
-  and let the result pane report what happened.
-- **D8 — No new E2E.** There is no existing safety net for the command
-  bar, and a Discard E2E needs a fixture with an instance-owning kept
-  node. Vitest plus B-9c1's integration suite carry it; recorded as a gap.
+- **D1 — Structured refusals, on the wire.**
+  - A slice-local `TemplateDiscardRefusalCode(StrEnum)` in
+    `schemas/hitl_session.py` (following the `ExtractionErrorCode`
+    precedent, **not** added to the global `ApiErrorCode`).
+  - The five refusals become `AppError` subclasses whose `__init__`
+    forwards to `AppError` **by keyword**, preserving `str(e) == message`
+    so existing assertions keep passing.
+  - **The `except (NarrowBaselineError, …)` block at
+    `project_templates.py:314-322` is DELETED** so they propagate to
+    `app_error_handler` (precedent: `ExportColumnLimitError`). The 404
+    block stays. Without this deletion the addendum ships nothing.
+  - `details` is built from a Pydantic model's `model_dump(mode="json")`
+    — **JSON primitives only**, never a raw `UUID`.
+  - **Orphans are deduped by `node_id`** (insertion-ordered), because a
+    field losing two options yields two destructive changes; the ack pane
+    counts fields, not changes.
+  - The orphan message drops the `acknowledge_orphans=true` leak and the
+    UUIDs (they now ride in `details`).
+  - `TemplateDiscardRefusalDetails` is declared as a real model and
+    attached via `responses={409: {"model": ApiResponse[...]}}` on the
+    route, so the payload reaches `schema.d.ts` as a typed union instead
+    of `unknown`.
+- **D2 — Fold the count-gate fix.** `_pending_change_count` gates on
+  `not baseline_is_restorable(...)` instead of `snapshot_is_narrow(...)`,
+  so an empty baseline yields a real count. Consequence:
+  **`discard_available ⇒ pending_change_count is an int`**, and the UI
+  drops the "unknown count" copy variant entirely.
+- **D3 — Client error type, not the transport type.** T2 defines a
+  slice-local `TemplateDiscardRefusal extends Error` exported from
+  `templateService.ts` (mirroring `PgError`'s discipline — a plain `Error`
+  subclass passes through `toResult` untouched) carrying `code` and a
+  **runtime-validated** `orphans: {nodeId, label}[]`. `ApiError` stays
+  inside the service. Malformed entries are dropped, never rendered.
+- **D4 — Four-state dialog, mounted per open.** The host keeps only
+  `discardOpen` and renders `{discardOpen && <TemplateDiscardDialog … />}`
+  (the pattern already used at `TemplateConfigEditor.tsx:312-323`), so the
+  phase and every server payload are local and cannot survive a close —
+  otherwise the next open reopens on the stale result pane. Inside:
+  `phase: 'confirm' | 'ack' | 'refused' | 'result'`, one shared
+  `submitting` flag, `preventDefault` on the action so a refusal switches
+  pane without a remount. `kept` empty ⇒ close + toast; `kept` non-empty ⇒
+  the result pane, which must say the template is **still in draft**.
+- **D5 — Branch on code, with a fifth outcome.** Each known refusal maps
+  to a **local copy key**; an unknown code, a non-409 status, or a
+  transport failure renders a generic `discardFailedGeneric` and stays on
+  the confirm pane, with the server message only in `console.error`.
+  Server prose is a last-resort fallback, never the contract — a 500 or an
+  offline fetch must not be framed as a deliberate policy refusal.
+- **D6 — Four-way tooltip, resolved in order**: (1) status still loading →
+  the neutral action description, never a reason; (2) `!has_pending_changes`
+  → "nothing to discard"; (3) `!discard_available && active_version == null`
+  → "nothing has been published yet"; (4) `!discard_available` → "the
+  published version is too old to restore from". Enabled predicate stays
+  `discard_available && has_pending_changes`.
+- **D7 — `invalidateAfterDiscard`** = `invalidateStructure()` +
+  `templateInstructionKeys.byTemplate`. **Not** `runsKeys.all` or
+  `templateActiveStructureKeys` — a discard leaves the active version
+  untouched, so those stay correct and refetching the runs tree would be
+  waste. Added as a fourth member of `useTemplateConfigCaches`, and T2
+  **updates the five test files** that mock its return.
+- **D8 — The editor migration keeps three branches.** `useTemplateEntityTypes`
+  gains `isPending` (matching `useActiveTemplateStructure`); the editor
+  renders spinner / **explicit error surface** / grid, and **never** the
+  "no sections configured" empty state unless the query actually succeeded
+  with zero rows. The imperative loader's `toast.error` behaviour must not
+  be silently dropped.
+- **D9 — Kept reasons are exhaustive at compile time and defensive at
+  runtime**: `const KEPT_REASON = {…} satisfies Record<DiscardKeptNode['reason'], string>`
+  (so regenerating types breaks the build on a new reason) plus a
+  `?? discardKeptReasonOther` fallback. Each row also renders `node_kind`
+  as a section/field marker.
+- **D10 — The instruction warning is conditional**, gated on the cached
+  `useTemplateInstruction` value being non-empty (`TemplateInstructionRow`
+  already mounts that query on the same screen with the same key — a free
+  cache read). Warning of a loss that will not happen is exactly what the
+  confirm pane exists to avoid.
+- **D11 — Honest copy.** A documented backend gap
+  (`project_templates.py:299-303`) means a wide-but-older baseline can
+  rewrite columns the diff does not count, so the confirm says "N
+  unpublished changes" and never promises a precise inventory; the result
+  pane reports what happened.
 
 ## Tasks (subagent-driven, TDD per task)
 
-**T1 — Structured refusals (backend, D1)**
-Typed `AppError` subclasses + stable codes + `details.orphans`; endpoint
-maps them; the orphan message drops the API-parameter leak. Extend
-`backend/tests/integration/test_template_discard_draft.py`: every refusal
-asserts its `code`, and the orphan case asserts `details.orphans` carries
-`{node_id, label}` for each. Regenerate
-`frontend/types/api/{openapi.json,schema.d.ts}`.
+**T1 — Structured refusals + the count gate (backend)**
+D1 + D2. Delete the 409 `except` block; convert the five refusals to
+`AppError` subclasses with the new enum; declare
+`TemplateDiscardRefusalDetails` + attach `responses={409: …}`; dedupe
+orphans by `node_id`; drop the parameter leak from the message (update the
+one assertion that reads `str(field)` to read the label);
+`_pending_change_count` gates on `baseline_is_restorable`.
+Tests — **at the ASGI level, not just the service**: one orphan case
+asserting `status == 409`, `error.code == "ORPHAN_ACK_REQUIRED"` and
+`error.details.orphans` non-empty with **string** `node_id` + `label`; one
+hard refusal asserting its distinct code and `details is None`; one case
+proving a field with two removed recorded options yields **one** orphan
+entry; one proving an empty baseline now returns an integer count.
+Regenerate `frontend/types/api/{openapi.json,schema.d.ts}`.
 
-**T2 — Service, hook, cache contract (frontend, D4)**
-`discardTemplateDraft(projectId, templateId, {acknowledge_orphans})` in
-`templateService.ts` returning `ErrorResult<DiscardDraftResponse>` and
-preserving the typed `ApiError` (code + details) across the boundary;
-`invalidateAfterDiscard` in `useTemplateRepublish.ts`; a focused hook test
-for the invalidation pair (no such test file exists today — mirror
-`frontend/test/hooks/useTemplateInstruction.test.tsx:72`).
+**T2 — Service + cache contract (frontend)**
+D3 + D7. `discardTemplateDraft(projectId, templateId, {acknowledgeOrphans})`
+returning `ErrorResult<DiscardDraftResponse>`, mapping a 409 to
+`TemplateDiscardRefusal` with runtime-validated orphans;
+`invalidateAfterDiscard` **plus the five `useTemplateConfigCaches` mock
+sites**; a focused hook test for the invalidation pair (no such test file
+exists — mirror `frontend/test/hooks/useTemplateInstruction.test.tsx:72`).
 
-**T3 — Editor state migration (frontend, D5)**
-Replace the imperative `entityTypes` with `useTemplateEntityTypes`; delete
-the loader, the five hand-refreshes and the now-dead service fn; drop the
-`loadTemplateEntityTypes` mock from `TemplateConfigEditor.test.tsx`.
+**T3 — Editor state migration (frontend)**
+D8. Replace the imperative `entityTypes` with `useTemplateEntityTypes`
+(+ `isPending`), delete the loader, the five hand-refreshes and the dead
+`loadTemplateEntityTypes`/`EntityTypeWithCount`. RED tests: a failed
+entity-types query must **not** render "No sections configured"; and one
+case with a real `QueryClient` asserting the header badge recomputes after
+`templateEntityTypesKeys.byTemplate` is invalidated (the claim D8 rests
+on, currently unasserted anywhere).
 
-**T4 — Button + dialog (frontend, D2/D3/D6/D7)**
-The Discard button in the chip cluster and the four-state dialog, all copy
-in `templateConfig.ts`. Extend `TemplateConfigPublish.test.tsx`: the three
-tooltip/disabled states, the happy path, **the two-POST ack round trip**
-(second body `{acknowledge_orphans: true}`), each hard refusal keeping the
-dialog open with the verbatim message, and `kept` non-empty rendering the
-result pane with the chip still reading Draft.
+**T4 — Button + dialog (frontend)**
+D4, D5, D6, D9, D10, D11; all copy in `templateConfig.ts`. Extend
+`TemplateConfigPublish.test.tsx` (its `status()` fixture at `:46-56` must
+gain `discard_available`): the **four** tooltip/disabled states, the happy
+path, the two-POST ack round trip (second body `{acknowledge_orphans: true}`),
+each hard refusal keeping the dialog open with its **local** copy, the
+generic fifth outcome on a 500, `kept` non-empty rendering the result pane
+with the chip still reading Draft, and reopening after a result pane
+landing on `confirm`.
 
 **T5 — Slice close**
 Adversarial review (pinned to commits) → fixer → `make quality-scan` +
-`make test-backend` (serial) → browser pass (create a draft, Discard,
-watch the chip return to "Published · vN"; then a kept-node case if one
-can be staged cheaply) → PR + auto-merge + watcher + memory.
+`make test-backend` (serial) → browser pass (draft → Discard → chip back
+to "Published · vN") → PR + auto-merge + watcher + memory.
 
 ## Verification gates
 
 RED before GREEN; ruff/eslint/tsc clean; no new fitness offenders; backend
-suites never concurrent. **Run the frontend suite with the worktree `.env`
-moved aside** (CI parity). **Backend tests must not assume
-`python -m app.seed` ran** — the autouse SEED fixture does not run
-`backfill_llm_template_instructions` (this cost a CI cycle in B-9c1).
+suites never concurrent. **Frontend suite with the worktree `.env` moved
+aside** (CI parity). **Backend tests must not assume `python -m app.seed`
+ran** — the autouse SEED fixture skips
+`backfill_llm_template_instructions` (cost a CI cycle in B-9c1).
 
 ## Non-goals
 
 The Publish sheet (B-9b); History/Restore (B-9e); the editor lock (B-9f);
-§6 reopen (B-9g); backfilling narrow snapshots (B-9x); a preview endpoint
-for the discard inventory (the result pane reports after the fact);
-localising server messages.
+§6 reopen (B-9g); narrow-snapshot backfill (B-9x); a preview endpoint for
+the discard inventory; localising server messages; **a Discard E2E** —
+there is no existing safety net for the command bar and the fixture would
+need an instance-owning kept node; recorded as a gap.
