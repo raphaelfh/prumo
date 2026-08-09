@@ -1982,6 +1982,54 @@
         "title": "ApiResponse[TemplateActiveVersionRead]",
         "type": "object"
       },
+      "ApiResponse_TemplateConfigDiffRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateConfigDiffRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateConfigDiffRead]",
+        "type": "object"
+      },
       "ApiResponse_TemplateConfigStatusRead_": {
         "properties": {
           "data": {
@@ -3009,6 +3057,38 @@
         ],
         "title": "ArticleRunRef",
         "type": "object"
+      },
+      "ChangeTier": {
+        "description": "Severity tier (D2) \u2014 what a reviewer stands to lose.",
+        "enum": [
+          "additive",
+          "cosmetic",
+          "semantic",
+          "destructive"
+        ],
+        "title": "ChangeTier",
+        "type": "string"
+      },
+      "ChangeVariant": {
+        "description": "The shape of one row \u2014 the client's discriminator (D1).\n\nOne member per reachable ``(kind, node_kind[, option polarity])`` the\nengine can emit, so a renderer never has to re-derive which of the\nengine's overloaded fields are meaningful.",
+        "enum": [
+          "template_instruction_added",
+          "template_instruction_removed",
+          "template_instruction_modified",
+          "entity_type_added",
+          "entity_type_removed",
+          "entity_type_modified",
+          "entity_type_fields_reordered",
+          "field_added",
+          "field_removed",
+          "field_moved",
+          "field_modified",
+          "field_option_added",
+          "field_option_removed",
+          "field_options_reordered"
+        ],
+        "title": "ChangeVariant",
+        "type": "string"
       },
       "CloneTemplateRequest": {
         "properties": {
@@ -6989,6 +7069,164 @@
         "title": "TemplateActiveVersionRead",
         "type": "object"
       },
+      "TemplateChangeRowRead": {
+        "description": "One diff row on the wire \u2014 the read model's ``TemplateChangeRow``.\n\nMirrors ``app.services.template_diff_read.TemplateChangeRow`` field for\nfield (``from_attributes`` copies it straight across). Nothing here is\ntyped ``Any``: the baseline side of a diff is raw stored JSONB, and an\nopaque value is summarized server-side rather than shipped.",
+        "properties": {
+          "affects_recorded_data": {
+            "default": false,
+            "title": "Affects Recorded Data",
+            "type": "boolean"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "attribute": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribute"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label_path": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Path",
+            "type": "array"
+          },
+          "reorder_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reorder Count"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/ChangeTier"
+          },
+          "variant": {
+            "$ref": "#/components/schemas/ChangeVariant"
+          }
+        },
+        "required": [
+          "id",
+          "variant",
+          "tier",
+          "label_path"
+        ],
+        "title": "TemplateChangeRowRead",
+        "type": "object"
+      },
+      "TemplateConfigDiffBuckets": {
+        "description": "The rows grouped by severity tier \u2014 one field per ``ChangeTier``.\n\nNamed fields rather than a map keyed by the enum, so the generated\nclient gets four exhaustive keys instead of an open ``Record``. A unit\ntest pins the field names to the enum's values, because a client that\nbuckets by ``row.tier`` has to find a bucket under that exact name.",
+        "properties": {
+          "additive": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeRowRead"
+            },
+            "title": "Additive",
+            "type": "array"
+          },
+          "cosmetic": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeRowRead"
+            },
+            "title": "Cosmetic",
+            "type": "array"
+          },
+          "destructive": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeRowRead"
+            },
+            "title": "Destructive",
+            "type": "array"
+          },
+          "semantic": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeRowRead"
+            },
+            "title": "Semantic",
+            "type": "array"
+          }
+        },
+        "title": "TemplateConfigDiffBuckets",
+        "type": "object"
+      },
+      "TemplateConfigDiffRead": {
+        "description": "What the open draft would publish (slice B-9b2a).\n\nThree shapes, all HTTP 200 \u2014 an un-diffable template is a state the\nsheet explains, not an error:\n\n* ``diff_available`` \u2014 the ordinary computed diff;\n* ``initial_version`` \u2014 nothing published yet, so there is no baseline\n  to compare against and every node is new by definition;\n* ``unavailable_reason`` \u2014 a baseline the diff engine cannot be trusted\n  with (see :class:`TemplateDiffUnavailableReason`).\n\n``diff_available is False`` therefore implies exactly one of\n``initial_version`` or ``unavailable_reason``, and the buckets are\nempty: a shape that cannot diff must not ship rows.",
+        "properties": {
+          "changes": {
+            "$ref": "#/components/schemas/TemplateConfigDiffBuckets"
+          },
+          "diff_available": {
+            "title": "Diff Available",
+            "type": "boolean"
+          },
+          "initial_version": {
+            "default": false,
+            "title": "Initial Version",
+            "type": "boolean"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateDiffUnavailableReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "project_template_id",
+          "diff_available"
+        ],
+        "title": "TemplateConfigDiffRead",
+        "type": "object"
+      },
       "TemplateConfigStatusRead": {
         "description": "Draft/publish status for the Configuration tab (slice B-4).\n\n``has_pending_changes`` mirrors the trigger-stamped\n``config_draft_since``; ``active_version`` is None only for a\ntemplate that never published (legacy shapes).",
         "properties": {
@@ -7036,6 +7274,14 @@
         ],
         "title": "TemplateConfigStatusRead",
         "type": "object"
+      },
+      "TemplateDiffUnavailableReason": {
+        "description": "Why a config diff could not be computed (slice B-9b2a D9).\n\nOne member, and an enum rather than a bare literal so the generated\nclient already branches on a closed set. The OTHER unavailable shape \u2014\na template that never published \u2014 is named by ``initial_version``\ninstead, because the sheet renders it as its own first-publish state\nrather than as a failure to compare.",
+        "enum": [
+          "baseline_too_old"
+        ],
+        "title": "TemplateDiffUnavailableReason",
+        "type": "string"
       },
       "TemplateDiscardRefusalCode": {
         "description": "Why ``POST .../discard-draft`` returned 409 (B-9c2 D1).\n\nDeliberately NOT part of :class:`app.schemas.common.ApiErrorCode`: that\nenum is the cross-cutting vocabulary every client branches on, and these\nfive are one endpoint's private outcomes. Same call as\n``ExtractionErrorCode`` \u2014 slice-local codes stay slice-local, so the\nglobal contract does not grow a member per feature.\n\nThe split that matters to the caller: ``ORPHAN_ACK_REQUIRED`` is a\n*question* (re-post with ``acknowledge_orphans``), the other four are\nrefusals no retry of the same request can satisfy.",
@@ -10171,6 +10417,65 @@
           }
         ],
         "summary": "Get Template Active Version",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/config-diff": {
+      "get": {
+        "description": "What the open draft would publish, for the Publish sheet (B-9b2a).\n\nManager-gated like the sibling config endpoints. A template that never\npublished, and one whose baseline predates the wide snapshot builder,\nare both 200 with empty buckets and a flag saying why \u2014 never a 404 and\nnever a fabricated change list. 404 is reserved for a foreign or missing\ntemplate, exactly as ``config-status`` does it.\n\nRead-only, and takes no locks: a row that moves under it is a re-fetch,\nnot a corruption. Nothing here acknowledges or publishes anything.",
+        "operationId": "get_template_config_diff_endpoint_api_v1_projects__project_id__templates__template_id__config_diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateConfigDiffRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Template Config Diff Endpoint",
         "tags": [
           "project-templates"
         ]

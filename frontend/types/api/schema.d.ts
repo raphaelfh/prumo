@@ -691,6 +691,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates/{template_id}/config-diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Template Config Diff Endpoint
+         * @description What the open draft would publish, for the Publish sheet (B-9b2a).
+         *
+         *     Manager-gated like the sibling config endpoints. A template that never
+         *     published, and one whose baseline predates the wide snapshot builder,
+         *     are both 200 with empty buckets and a flag saying why — never a 404 and
+         *     never a fabricated change list. 404 is reserved for a foreign or missing
+         *     template, exactly as ``config-status`` does it.
+         *
+         *     Read-only, and takes no locks: a row that moves under it is a re-fetch,
+         *     not a corruption. Nothing here acknowledges or publishes anything.
+         */
+        get: operations["get_template_config_diff_endpoint_api_v1_projects__project_id__templates__template_id__config_diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/{template_id}/config-status": {
         parameters: {
             query?: never;
@@ -2114,6 +2143,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[TemplateConfigDiffRead] */
+        ApiResponse_TemplateConfigDiffRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateConfigDiffRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[TemplateConfigStatusRead] */
         ApiResponse_TemplateConfigStatusRead_: {
             /** @description Dados da resposta */
@@ -2514,6 +2560,22 @@ export interface components {
             /** Run Id */
             run_id: string | null;
         };
+        /**
+         * ChangeTier
+         * @description Severity tier (D2) — what a reviewer stands to lose.
+         * @enum {string}
+         */
+        ChangeTier: "additive" | "cosmetic" | "semantic" | "destructive";
+        /**
+         * ChangeVariant
+         * @description The shape of one row — the client's discriminator (D1).
+         *
+         *     One member per reachable ``(kind, node_kind[, option polarity])`` the
+         *     engine can emit, so a renderer never has to re-derive which of the
+         *     engine's overloaded fields are meaningful.
+         * @enum {string}
+         */
+        ChangeVariant: "template_instruction_added" | "template_instruction_removed" | "template_instruction_modified" | "entity_type_added" | "entity_type_removed" | "entity_type_modified" | "entity_type_fields_reordered" | "field_added" | "field_removed" | "field_moved" | "field_modified" | "field_option_added" | "field_option_removed" | "field_options_reordered";
         /** CloneTemplateRequest */
         CloneTemplateRequest: {
             /**
@@ -4418,6 +4480,88 @@ export interface components {
             version_id: string;
         };
         /**
+         * TemplateChangeRowRead
+         * @description One diff row on the wire — the read model's ``TemplateChangeRow``.
+         *
+         *     Mirrors ``app.services.template_diff_read.TemplateChangeRow`` field for
+         *     field (``from_attributes`` copies it straight across). Nothing here is
+         *     typed ``Any``: the baseline side of a diff is raw stored JSONB, and an
+         *     opaque value is summarized server-side rather than shipped.
+         */
+        TemplateChangeRowRead: {
+            /**
+             * Affects Recorded Data
+             * @default false
+             */
+            affects_recorded_data: boolean;
+            /** After */
+            after?: string | boolean | null;
+            /** Attribute */
+            attribute?: string | null;
+            /** Before */
+            before?: string | boolean | null;
+            /** Id */
+            id: string;
+            /** Label Path */
+            label_path: string[];
+            /** Reorder Count */
+            reorder_count?: number | null;
+            tier: components["schemas"]["ChangeTier"];
+            variant: components["schemas"]["ChangeVariant"];
+        };
+        /**
+         * TemplateConfigDiffBuckets
+         * @description The rows grouped by severity tier — one field per ``ChangeTier``.
+         *
+         *     Named fields rather than a map keyed by the enum, so the generated
+         *     client gets four exhaustive keys instead of an open ``Record``. A unit
+         *     test pins the field names to the enum's values, because a client that
+         *     buckets by ``row.tier`` has to find a bucket under that exact name.
+         */
+        TemplateConfigDiffBuckets: {
+            /** Additive */
+            additive?: components["schemas"]["TemplateChangeRowRead"][];
+            /** Cosmetic */
+            cosmetic?: components["schemas"]["TemplateChangeRowRead"][];
+            /** Destructive */
+            destructive?: components["schemas"]["TemplateChangeRowRead"][];
+            /** Semantic */
+            semantic?: components["schemas"]["TemplateChangeRowRead"][];
+        };
+        /**
+         * TemplateConfigDiffRead
+         * @description What the open draft would publish (slice B-9b2a).
+         *
+         *     Three shapes, all HTTP 200 — an un-diffable template is a state the
+         *     sheet explains, not an error:
+         *
+         *     * ``diff_available`` — the ordinary computed diff;
+         *     * ``initial_version`` — nothing published yet, so there is no baseline
+         *       to compare against and every node is new by definition;
+         *     * ``unavailable_reason`` — a baseline the diff engine cannot be trusted
+         *       with (see :class:`TemplateDiffUnavailableReason`).
+         *
+         *     ``diff_available is False`` therefore implies exactly one of
+         *     ``initial_version`` or ``unavailable_reason``, and the buckets are
+         *     empty: a shape that cannot diff must not ship rows.
+         */
+        TemplateConfigDiffRead: {
+            changes?: components["schemas"]["TemplateConfigDiffBuckets"];
+            /** Diff Available */
+            diff_available: boolean;
+            /**
+             * Initial Version
+             * @default false
+             */
+            initial_version: boolean;
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+            unavailable_reason?: components["schemas"]["TemplateDiffUnavailableReason"] | null;
+        };
+        /**
          * TemplateConfigStatusRead
          * @description Draft/publish status for the Configuration tab (slice B-4).
          *
@@ -4443,6 +4587,18 @@ export interface components {
              */
             project_template_id: string;
         };
+        /**
+         * TemplateDiffUnavailableReason
+         * @description Why a config diff could not be computed (slice B-9b2a D9).
+         *
+         *     One member, and an enum rather than a bare literal so the generated
+         *     client already branches on a closed set. The OTHER unavailable shape —
+         *     a template that never published — is named by ``initial_version``
+         *     instead, because the sheet renders it as its own first-publish state
+         *     rather than as a failure to compare.
+         * @enum {string}
+         */
+        TemplateDiffUnavailableReason: "baseline_too_old";
         /**
          * TemplateDiscardRefusalCode
          * @description Why ``POST .../discard-draft`` returned 409 (B-9c2 D1).
@@ -6125,6 +6281,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_TemplateActiveVersionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_template_config_diff_endpoint_api_v1_projects__project_id__templates__template_id__config_diff_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateConfigDiffRead_"];
                 };
             };
             /** @description Validation Error */

@@ -10,8 +10,15 @@
 * B-9a: that same status calibrates the chip with a change count —
   ``template_diff.diff_snapshots`` of the stored active snapshot against
   a fresh build of the live rows, run ONLY while the draft marker is set.
+* B-9b2a: ``get_template_config_diff`` serves the Publish sheet the rows
+  behind that count. Same engine, same restorability gate — but it
+  resolves the REAL recorded-value set, because it ships tiers and an
+  ``affects_recorded_data`` flag rather than a bare integer. Unlike the
+  count it runs for a clean template too: a marker-NULL tree that drifted
+  (a lost republish) has real changes to show.
 """
 
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
@@ -19,17 +26,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ProjectExtractionTemplate
 from app.models.extraction_versioning import ExtractionTemplateVersion
+from app.repositories.extraction_field_reference_repository import (
+    ExtractionFieldReferenceRepository,
+)
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
-from app.schemas.hitl_session import TemplateActiveVersionRead, TemplateConfigStatusRead
+from app.schemas.hitl_session import (
+    TemplateActiveVersionRead,
+    TemplateChangeRowRead,
+    TemplateConfigDiffBuckets,
+    TemplateConfigDiffRead,
+    TemplateConfigStatusRead,
+    TemplateDiffUnavailableReason,
+)
 from app.services.extraction_snapshot import (
     baseline_is_restorable,
     build_template_version_snapshot,
     entity_types_for_version,
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_diff import diff_snapshots
+from app.services.template_diff import ChangeTier, diff_snapshots
+from app.services.template_diff_read import TemplateChangeRow, with_recorded_data
 
 
 class NoActiveTemplateVersionError(Exception):
@@ -97,6 +115,92 @@ async def _pending_change_count(
     # A count consumes no tiers, so it needs no value lookup — B-9b's diff
     # endpoint resolves the real set for the Publish sheet's warnings (D3).
     return diff_snapshots(baseline, current, fields_with_values=frozenset()).total
+
+
+async def get_template_config_diff(
+    db: AsyncSession, *, project_id: UUID, template_id: UUID
+) -> TemplateConfigDiffRead:
+    """What the open draft would publish (B-9b2a), BOLA-scoped by (id, project_id).
+
+    Three shapes, all 200 — an un-diffable template is a state the Publish
+    sheet explains, never an error (D9):
+
+    * no active version ⇒ ``initial_version``. Nothing published, so there
+      is no baseline and every node is new by definition;
+    * a baseline the diff engine cannot be trusted with ⇒
+      ``baseline_too_old``, gated on ``baseline_is_restorable`` — the SAME
+      predicate ``discard_available`` and the pending count already use.
+      That gate is not a nicety: ``role`` defaults to ``None`` in the engine
+      but is non-nullable live, so diffing a pre-0026 baseline manufactures
+      at least one phantom SEMANTIC row per entity type, deterministically —
+      a sheet full of changes beside a chip that shows no count at all;
+    * otherwise the computed diff, bucketed by tier.
+
+    Unlike the chip's count, this read resolves the REAL recorded set (D3):
+    the tiers it buckets by depend on it (a ``field_type`` change is
+    semantic on an empty field and destructive on one holding answers), and
+    every row carries ``affects_recorded_data``. Takes no locks — it is a
+    read, and a stale row is a re-fetch, not a corruption.
+    """
+    template = await db.get(ProjectExtractionTemplate, template_id)
+    if template is None or template.project_id != project_id:
+        raise ProjectTemplateNotFoundError(f"Template {template_id} not found")
+
+    active = await ExtractionTemplateVersionRepository(db).get_active(template_id)
+    if active is None:
+        return TemplateConfigDiffRead(
+            project_template_id=template_id, diff_available=False, initial_version=True
+        )
+    baseline: dict[str, Any] = active.schema_ or {}
+    if not baseline_is_restorable(baseline):
+        return TemplateConfigDiffRead(
+            project_template_id=template_id,
+            diff_available=False,
+            unavailable_reason=TemplateDiffUnavailableReason.BASELINE_TOO_OLD,
+        )
+
+    current = await build_template_version_snapshot(db, template_id)
+    children = _field_ids_by_parent(current)
+    # LIVE field ids only, and that is correct rather than lucky: every
+    # workflow ``field_id`` FK is RESTRICT, so a field absent from the live
+    # tree provably holds no recorded work.
+    recorded = await ExtractionFieldReferenceRepository(db).fields_with_recorded_work(
+        sorted({field_id for owned in children.values() for field_id in owned})
+    )
+    diff = diff_snapshots(baseline, current, fields_with_values=recorded)
+    return TemplateConfigDiffRead(
+        project_template_id=template_id,
+        diff_available=True,
+        changes=_bucket_by_tier(with_recorded_data(diff.changes, children, recorded)),
+    )
+
+
+def _field_ids_by_parent(snapshot: dict[str, Any]) -> dict[UUID, frozenset[UUID]]:
+    """Each CURRENT entity type → the field ids it owns.
+
+    The post-pass needs this because a section add/remove absorbs its child
+    rows, so the change list alone cannot say which fields a section-level
+    row is about.
+    """
+    return {
+        UUID(str(entity["id"])): frozenset(
+            UUID(str(raw["id"])) for raw in entity.get("fields") or []
+        )
+        for entity in snapshot.get("entity_types") or []
+    }
+
+
+def _bucket_by_tier(rows: Sequence[TemplateChangeRow]) -> TemplateConfigDiffBuckets:
+    """Group the rows by severity, preserving the engine's order within each."""
+    by_tier: dict[ChangeTier, list[TemplateChangeRowRead]] = {tier: [] for tier in ChangeTier}
+    for row in rows:
+        by_tier[row.tier].append(TemplateChangeRowRead.model_validate(row))
+    return TemplateConfigDiffBuckets(
+        additive=by_tier[ChangeTier.ADDITIVE],
+        cosmetic=by_tier[ChangeTier.COSMETIC],
+        semantic=by_tier[ChangeTier.SEMANTIC],
+        destructive=by_tier[ChangeTier.DESTRUCTIVE],
+    )
 
 
 async def get_active_version_tree(

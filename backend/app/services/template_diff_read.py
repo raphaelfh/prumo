@@ -11,8 +11,10 @@ Pure: dataclasses in, dataclasses out. No DB, no IO, no HTTP.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from enum import StrEnum
+from uuid import UUID
 
 from app.services.template_diff import (
     OPTION_KEY,
@@ -154,11 +156,80 @@ class TemplateChangeRow:
     #: the engine reports ``len(new)`` over the full new option list
     #: (``template_diff.py``, ``_diff_options``).
     reorder_count: int | None = None
+    #: Whether this row touches work a human or the AI already recorded (D6).
+    #: Resolved by :func:`with_recorded_data`; ``False`` on every row
+    #: :func:`to_rows` builds, which has no value information to claim it.
+    affects_recorded_data: bool = False
 
 
 def to_rows(diff: TemplateDiff) -> tuple[TemplateChangeRow, ...]:
-    """Project a diff onto its wire rows, preserving the engine's order."""
-    return tuple(_to_row(change) for change in diff.changes)
+    """Project a diff onto its wire rows, preserving the engine's order.
+
+    Every row reads ``affects_recorded_data = False``: a caller with no
+    value information cannot claim otherwise. Callers that resolved the
+    recorded set use :func:`with_recorded_data` instead.
+    """
+    return with_recorded_data(diff.changes, {}, frozenset())
+
+
+def with_recorded_data(
+    changes: Sequence[TemplateChange],
+    parent_children_field_ids: Mapping[UUID, frozenset[UUID]],
+    recorded: frozenset[UUID],
+) -> tuple[TemplateChangeRow, ...]:
+    """The wire rows, with ``affects_recorded_data`` resolved (D6).
+
+    ONE post-pass over the finished rows rather than a flag each differ
+    computes for itself, because the differs do not all have the answer:
+    ``_diff_options`` takes no value information at all and would ship
+    ``False`` for a destructive option removal on a field full of recorded
+    answers.
+
+    ``parent_children_field_ids`` maps each CURRENT entity type to the field
+    ids it owns. It is needed because a section add/remove absorbs its child
+    rows (``template_diff._diff_entity_types``), so the change list alone
+    cannot tell which fields a section-level row is really about.
+    """
+    return tuple(
+        replace(
+            _to_row(change),
+            affects_recorded_data=_affects_recorded_data(
+                change, parent_children_field_ids, recorded
+            ),
+        )
+        for change in changes
+    )
+
+
+def _affects_recorded_data(
+    change: TemplateChange,
+    parent_children_field_ids: Mapping[UUID, frozenset[UUID]],
+    recorded: frozenset[UUID],
+) -> bool:
+    """Does publishing this change touch work someone already recorded?
+
+    A REMOVED node is structurally always ``False``, and not merely as a
+    side effect of ``recorded`` being resolved from live ids: every
+    workflow ``field_id`` FK is ON DELETE RESTRICT, so a node that left the
+    live tree provably held no recorded work — the delete would have been
+    refused. Stated here rather than left to the caller's id set, so a
+    future caller resolving a wider set cannot turn it into a lie.
+
+    A section is answered from its child fields. That is deliberately NOT
+    the predicate Discard's section gate uses (instance ownership,
+    ``template_discard_service._entity_types_with_instances``): a section
+    owning instances but no field values reads "no recorded work" here and
+    would still be refused by Discard. Reconciling the two is a later
+    slice's problem; this flag is field-derived and says so.
+    """
+    if change.kind is ChangeKind.REMOVED or change.node_id is None:
+        return False
+    if change.node_kind is NodeKind.FIELD:
+        return change.node_id in recorded
+    if change.node_kind is NodeKind.ENTITY_TYPE:
+        return not parent_children_field_ids.get(change.node_id, frozenset()).isdisjoint(recorded)
+    # The template-level instruction belongs to no node and owns no values.
+    return False
 
 
 def _to_row(change: TemplateChange) -> TemplateChangeRow:

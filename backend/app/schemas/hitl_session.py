@@ -4,13 +4,20 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Re-export TemplateKind so endpoints can convert request.kind into the
 # canonical enum value without importing directly from app.models.* —
 # enforced by scripts/fitness/check_layered_arch.py.
 from app.models.extraction_versioning import TemplateKind  # noqa: E402,F401
 from app.schemas.extraction_run import RunViewEntityType, RunViewResponse
+
+# The diff vocabulary is defined where the diff is computed; the wire model
+# below references those enums rather than restating them, so the generated
+# client's unions cannot drift from the engine's. Neither module imports
+# schemas, so this cannot cycle.
+from app.services.template_diff import ChangeTier
+from app.services.template_diff_read import ChangeVariant
 
 
 class OpenHITLSessionRequest(BaseModel):
@@ -267,6 +274,82 @@ class TemplateConfigStatusRead(BaseModel):
     button is disabled with the right tooltip instead of discovering the
     refusal by clicking. False without a published baseline, and false for a
     pre-0026 narrow one (restoring it would wipe columns project-wide)."""
+
+
+class TemplateDiffUnavailableReason(StrEnum):
+    """Why a config diff could not be computed (slice B-9b2a D9).
+
+    One member, and an enum rather than a bare literal so the generated
+    client already branches on a closed set. The OTHER unavailable shape —
+    a template that never published — is named by ``initial_version``
+    instead, because the sheet renders it as its own first-publish state
+    rather than as a failure to compare."""
+
+    BASELINE_TOO_OLD = "baseline_too_old"
+
+
+class TemplateChangeRowRead(BaseModel):
+    """One diff row on the wire — the read model's ``TemplateChangeRow``.
+
+    Mirrors ``app.services.template_diff_read.TemplateChangeRow`` field for
+    field (``from_attributes`` copies it straight across). Nothing here is
+    typed ``Any``: the baseline side of a diff is raw stored JSONB, and an
+    opaque value is summarized server-side rather than shipped."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    """``kind:node_kind:node_id:attribute:option_code`` — content-derived and
+    stable across runs, so a client can key rows by it."""
+    variant: ChangeVariant
+    tier: ChangeTier
+    label_path: list[str]
+    attribute: str | None = None
+    before: str | bool | None = None
+    after: str | bool | None = None
+    reorder_count: int | None = None
+    affects_recorded_data: bool = False
+    """Whether this row touches work a human or the AI already recorded.
+    Field-derived: a section answers from the fields it owns, and a REMOVED
+    node is always false (every workflow ``field_id`` FK is RESTRICT, so the
+    delete would have been refused)."""
+
+
+class TemplateConfigDiffBuckets(BaseModel):
+    """The rows grouped by severity tier — one field per ``ChangeTier``.
+
+    Named fields rather than a map keyed by the enum, so the generated
+    client gets four exhaustive keys instead of an open ``Record``. A unit
+    test pins the field names to the enum's values, because a client that
+    buckets by ``row.tier`` has to find a bucket under that exact name."""
+
+    additive: list[TemplateChangeRowRead] = Field(default_factory=list)
+    cosmetic: list[TemplateChangeRowRead] = Field(default_factory=list)
+    semantic: list[TemplateChangeRowRead] = Field(default_factory=list)
+    destructive: list[TemplateChangeRowRead] = Field(default_factory=list)
+
+
+class TemplateConfigDiffRead(BaseModel):
+    """What the open draft would publish (slice B-9b2a).
+
+    Three shapes, all HTTP 200 — an un-diffable template is a state the
+    sheet explains, not an error:
+
+    * ``diff_available`` — the ordinary computed diff;
+    * ``initial_version`` — nothing published yet, so there is no baseline
+      to compare against and every node is new by definition;
+    * ``unavailable_reason`` — a baseline the diff engine cannot be trusted
+      with (see :class:`TemplateDiffUnavailableReason`).
+
+    ``diff_available is False`` therefore implies exactly one of
+    ``initial_version`` or ``unavailable_reason``, and the buckets are
+    empty: a shape that cannot diff must not ship rows."""
+
+    project_template_id: UUID
+    diff_available: bool
+    unavailable_reason: TemplateDiffUnavailableReason | None = None
+    initial_version: bool = False
+    changes: TemplateConfigDiffBuckets = Field(default_factory=TemplateConfigDiffBuckets)
 
 
 class TemplateActiveVersionRead(BaseModel):

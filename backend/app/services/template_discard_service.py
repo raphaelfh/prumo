@@ -68,7 +68,7 @@ from typing import Any, NoReturn
 from uuid import UUID
 
 from fastapi import status
-from sqlalchemy import select, union, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -80,12 +80,8 @@ from app.models.extraction import (
     ExtractionInstance,
     ProjectExtractionTemplate,
 )
-from app.models.extraction_workflow import (
-    ExtractionConsensusDecision,
-    ExtractionProposalRecord,
-    ExtractionPublishedState,
-    ExtractionReviewerDecision,
-    ExtractionReviewerState,
+from app.repositories.extraction_field_reference_repository import (
+    ExtractionFieldReferenceRepository,
 )
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
@@ -136,17 +132,6 @@ _RESTRICT_FKS = frozenset(
 
 _FK_VIOLATION = "23503"
 _DEADLOCK = "40P01"
-
-#: Tables whose ``field_id`` means "a human or the AI recorded something for
-#: this field". The same set answers both D4 (which draft-added fields
-#: cannot be deleted) and D6 (which fields an update would orphan).
-_WORKFLOW_TABLES = (
-    ExtractionProposalRecord,
-    ExtractionReviewerDecision,
-    ExtractionReviewerState,
-    ExtractionConsensusDecision,
-    ExtractionPublishedState,
-)
 
 
 class _DiscardRefusal(AppError):
@@ -468,27 +453,6 @@ async def _entity_types_with_instances(
     return frozenset(rows.scalars().all())
 
 
-async def _fields_referenced_by_the_workflow(
-    db: AsyncSession, field_ids: list[UUID]
-) -> frozenset[UUID]:
-    """Which of these fields the review workflow already references.
-
-    One UNION over the five ``field_id`` RESTRICT tables — the same set
-    answers "this field cannot be deleted" (D4) and "this field holds
-    values" (D6), so the two gates can never disagree."""
-    if not field_ids:
-        return frozenset()
-    rows = await db.execute(
-        union(
-            *(
-                select(model.field_id).where(model.field_id.in_(field_ids))
-                for model in _WORKFLOW_TABLES
-            )
-        )
-    )
-    return frozenset(rows.scalars().all())
-
-
 async def _analyze(
     db: AsyncSession,
     *,
@@ -507,7 +471,12 @@ async def _analyze(
     added_field_ids = {fid for fid in live_fields if fid not in baseline_field_ids}
 
     with_instances = await _entity_types_with_instances(db, sorted(added_entity_ids))
-    referenced = await _fields_referenced_by_the_workflow(db, sorted(live_fields))
+    # B-9b2a D5: the same repository the config-diff read resolves
+    # ``affects_recorded_data`` from, so the two can never disagree about
+    # which fields already hold recorded work.
+    referenced = await ExtractionFieldReferenceRepository(db).fields_with_recorded_work(
+        sorted(live_fields)
+    )
     blocked_fields = referenced & added_field_ids
 
     # The writer's skip set is entity-type-granular: a blocked FIELD is

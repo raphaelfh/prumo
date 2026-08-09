@@ -28,9 +28,11 @@ from app.services.template_diff_read import (
     ChangeVariant,
     TemplateChangeRow,
     to_rows,
+    with_recorded_data,
 )
 
 NO_VALUES: frozenset[UUID] = frozenset()
+NO_CHILDREN: dict[UUID, frozenset[UUID]] = {}
 
 
 # --------------------------------------------------------------------------
@@ -639,6 +641,7 @@ def test_no_read_model_field_is_typed_any() -> None:
         "before",
         "after",
         "reorder_count",
+        "affects_recorded_data",
     }
     assert [name for name, hint in annotations.items() if re.search(r"\bAny\b", hint)] == []
 
@@ -651,3 +654,113 @@ def test_opaque_and_scalar_attributes_partition_the_snapshot_attributes() -> Non
         set(template_diff.ENTITY_ATTRIBUTE_DEFAULTS) | set(template_diff.FIELD_ATTRIBUTE_DEFAULTS)
     )
     assert not opaque & scalar
+
+
+# --------------------------------------------------------------------------
+# D6 — the affects_recorded_data post-pass
+# --------------------------------------------------------------------------
+
+
+def _recorded_rows(
+    baseline: dict[str, Any],
+    current: dict[str, Any],
+    *,
+    recorded: frozenset[UUID],
+    children: dict[UUID, frozenset[UUID]] = NO_CHILDREN,
+) -> tuple[TemplateChangeRow, ...]:
+    diff = diff_snapshots(baseline, current, fields_with_values=recorded)
+    return with_recorded_data(diff.changes, children, recorded)
+
+
+def test_field_row_is_flagged_when_the_field_holds_recorded_work() -> None:
+    section_id, field_id = uuid4(), uuid4()
+    base = _snapshot(_entity(section_id, _field(field_id)))
+    curr = _snapshot(_entity(section_id, _field(field_id, label="Age (years)")))
+
+    assert _only(_recorded_rows(base, curr, recorded=frozenset({field_id}))).affects_recorded_data
+    assert not _only(_recorded_rows(base, curr, recorded=NO_VALUES)).affects_recorded_data
+
+
+def test_option_removal_is_flagged_even_though_the_option_differ_is_value_blind() -> None:
+    """The reason this is ONE post-pass and not per-differ (D6).
+
+    ``_diff_options`` receives no value information at all, so a
+    per-differ flag would ship ``false`` for a destructive option removal
+    on a field full of recorded answers."""
+    section_id, field_id = uuid4(), uuid4()
+    base = _snapshot(_entity(section_id, _select(field_id, ["yes", "no"])))
+    curr = _snapshot(_entity(section_id, _select(field_id, ["yes"])))
+
+    row = _only(_recorded_rows(base, curr, recorded=frozenset({field_id})))
+    assert row.variant is ChangeVariant.FIELD_OPTION_REMOVED
+    assert row.affects_recorded_data is True
+
+
+def test_entity_type_row_is_flagged_from_its_live_child_fields() -> None:
+    """A section carries no values itself; it inherits the answer from the
+    fields it owns in the CURRENT tree."""
+    section_id, field_id = uuid4(), uuid4()
+    base = _snapshot(_entity(section_id, _field(field_id)))
+    curr = _snapshot(_entity(section_id, _field(field_id), label="Population"))
+    children = {section_id: frozenset({field_id})}
+
+    flagged = _only(_recorded_rows(base, curr, recorded=frozenset({field_id}), children=children))
+    assert flagged.variant is ChangeVariant.ENTITY_TYPE_MODIFIED
+    assert flagged.affects_recorded_data is True
+
+
+def test_entity_type_row_ignores_recorded_fields_of_other_sections() -> None:
+    section_id, field_id, elsewhere = uuid4(), uuid4(), uuid4()
+    base = _snapshot(_entity(section_id, _field(field_id)))
+    curr = _snapshot(_entity(section_id, _field(field_id), label="Population"))
+    children = {section_id: frozenset({field_id})}
+
+    row = _only(_recorded_rows(base, curr, recorded=frozenset({elsewhere}), children=children))
+    assert row.affects_recorded_data is False
+
+
+def test_template_instruction_row_is_never_flagged() -> None:
+    """The template-level instruction belongs to no node, so no recorded
+    set can make it true."""
+    section_id, field_id = uuid4(), uuid4()
+    entity = _entity(section_id, _field(field_id))
+    base, curr = _snapshot(entity), _snapshot(entity, instruction="Read tables too.")
+
+    row = _only(
+        _recorded_rows(
+            base,
+            curr,
+            recorded=frozenset({field_id}),
+            children={section_id: frozenset({field_id})},
+        )
+    )
+    assert row.variant is ChangeVariant.TEMPLATE_INSTRUCTION_ADDED
+    assert row.affects_recorded_data is False
+
+
+def test_removed_row_is_never_flagged_even_if_the_caller_claims_otherwise() -> None:
+    """Structural, not accidental (the RESTRICT argument).
+
+    Every workflow ``field_id`` FK is ON DELETE RESTRICT, so a field that
+    left the live tree provably held no recorded work — the delete would
+    have been refused. The flag says so even when handed a ``recorded``
+    set that names the departed id, which is the only way to tell the
+    guard apart from the coincidence that the diff read resolves LIVE
+    ids only."""
+    section_id, gone = uuid4(), uuid4()
+    base = _snapshot(_entity(section_id, _field(gone)))
+    curr = _snapshot(_entity(section_id))
+
+    row = _only(_recorded_rows(base, curr, recorded=frozenset({gone})))
+    assert row.variant is ChangeVariant.FIELD_REMOVED
+    assert row.affects_recorded_data is False
+
+
+def test_to_rows_never_claims_recorded_work() -> None:
+    """The no-value-information entry point: every row reads ``false``,
+    because a caller that resolved nothing cannot claim otherwise."""
+    section_id, field_id = uuid4(), uuid4()
+    base = _snapshot(_entity(section_id, _field(field_id)))
+    curr = _snapshot(_entity(section_id, _field(field_id, label="Age (years)")))
+
+    assert [row.affects_recorded_data for row in _rows(base, curr)] == [False]
