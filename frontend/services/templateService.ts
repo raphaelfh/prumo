@@ -30,6 +30,18 @@ export type RepublishTemplateVersionResponse =
 export type TemplateConfigStatus =
   components['schemas']['TemplateConfigStatusRead'];
 
+export type TemplateConfigDiff =
+  components['schemas']['TemplateConfigDiffRead'];
+
+export type TemplateChangeRow = components['schemas']['TemplateChangeRowRead'];
+
+export type ChangeTier = components['schemas']['ChangeTier'];
+
+export type ChangeVariant = components['schemas']['ChangeVariant'];
+
+export type TemplateDiffUnavailableReason =
+  components['schemas']['TemplateDiffUnavailableReason'];
+
 export type DiscardDraftResponse = components['schemas']['DiscardDraftResponse'];
 
 export type TemplateDiscardRefusalCode =
@@ -221,6 +233,26 @@ export async function loadTemplateConfigStatus(
         `/api/v1/projects/${projectId}/templates/${templateId}/config-status`,
       ),
     'loadTemplateConfigStatus',
+  );
+}
+
+/**
+ * What the open draft would publish, bucketed by severity tier (B-9b2a).
+ *
+ * All three shapes are HTTP 200 — an un-diffable template is a state the
+ * sheet explains, not an error — so only transport failures reach the
+ * ErrorResult branch.
+ */
+export async function loadTemplateConfigDiff(
+  projectId: string,
+  templateId: string,
+): Promise<ErrorResult<TemplateConfigDiff>> {
+  return toResult(
+    async () =>
+      apiClient<TemplateConfigDiff>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/config-diff`,
+      ),
+    'loadTemplateConfigDiff',
   );
 }
 

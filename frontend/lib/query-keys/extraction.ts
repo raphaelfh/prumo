@@ -64,3 +64,10 @@ export const templateConfigStatusKeys = {
   byTemplate: (projectId: string, templateId: string) =>
     ['template-config-status', projectId, templateId] as const,
 };
+
+/** What the open draft would publish, bucketed by tier (B-9b2a). */
+export const templateDiffKeys = {
+  all: ['template-config-diff'] as const,
+  byTemplate: (projectId: string, templateId: string) =>
+    ['template-config-diff', projectId, templateId] as const,
+};

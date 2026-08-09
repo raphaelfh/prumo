@@ -15,6 +15,7 @@ import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField'
 import {useContainerNarrow} from '@/hooks/shared/useContainerNarrow';
 import {t} from '@/lib/copy';
 import {validateFieldImpact} from '@/services/extractionFieldService';
+import {useTemplateConfigOverlayStore} from '@/stores/useTemplateConfigOverlayStore';
 import {
   ExtractionFieldSchema,
   type ExtractionField,
@@ -145,6 +146,11 @@ export function TemplateConfigGridPanel({
   >(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isNarrow = useContainerNarrow(containerRef, INSPECTOR_NARROW_PX);
+  // B-9b2a: the command bar's diff sheet is modal and full-height. Two
+  // modal sheets must never stack, so the inspector yields while it is
+  // open — derived, not an effect, so `sheetOpen` survives and the
+  // inspector comes back when the diff sheet closes.
+  const diffSheetOpen = useTemplateConfigOverlayStore((s) => s.diffSheetOpen);
 
   const insertQueue = useInsertTemplateField({
     projectId,
@@ -667,7 +673,7 @@ export function TemplateConfigGridPanel({
             below the breakpoint — the FORM component is the same, so
             every capability stays editable on narrow containers. */}
         {isNarrow ? (
-          <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+          <Sheet open={sheetOpen && !diffSheetOpen} onOpenChange={setSheetOpen}>
             <SheetContent side="right" className="w-[320px] p-0 sm:max-w-[320px]">
               <SheetHeader className="sr-only">
                 <SheetTitle>{t('extraction', 'inspectorSheetTitle')}</SheetTitle>
