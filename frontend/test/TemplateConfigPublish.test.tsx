@@ -62,7 +62,7 @@ vi.mock('sonner', () => ({
 
 import {TemplateConfigPublishControls} from '@/components/extraction/template-config/TemplateConfigPublishControls';
 import {TooltipProvider} from '@/components/ui/tooltip';
-import {common, templateConfig} from '@/lib/copy';
+import {common, extraction, templateConfig} from '@/lib/copy';
 import {
   TemplateDiscardRefusal,
   type TemplateDiscardRefusalCode,
@@ -130,8 +130,13 @@ function discardResult(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** The Discard trigger keeps a CONSTANT accessible name so the existing
- * `/publish/i` queries stay unambiguous (its tooltip carries the state). */
+/** The Discard trigger keeps a CONSTANT accessible name so a by-name lookup
+ * stays unambiguous (its tooltip carries the state). The Publish lookups
+ * below use the full `configPublishTooltip` aria-label rather than a
+ * `/publish/i` regex: the draft chip's own fallback text
+ * (`extraction.configUnpublishedChanges`, "Unpublished changes") contains
+ * "publish" as a substring now that the chip's accessible name comes from
+ * its visible text instead of a dedicated aria-label. */
 const DISCARD_TRIGGER = templateConfig.discardButtonAria;
 
 function discardButton() {
@@ -159,7 +164,7 @@ describe('TemplateConfigPublishControls', () => {
 
     expect(await screen.findByText('Unpublished changes')).toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByRole('button', {name: /publish/i})).toBeEnabled(),
+      expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeEnabled(),
     );
   });
 
@@ -168,7 +173,7 @@ describe('TemplateConfigPublishControls', () => {
     renderControls();
 
     expect(await screen.findByText('Published · v3')).toBeInTheDocument();
-    expect(screen.getByRole('button', {name: /publish/i})).toBeDisabled();
+    expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeDisabled();
   });
 
   it('never-published template → no version chip, never "vundefined"', async () => {
@@ -176,7 +181,7 @@ describe('TemplateConfigPublishControls', () => {
     renderControls();
 
     await waitFor(() =>
-      expect(screen.getByRole('button', {name: /publish/i})).toBeDisabled(),
+      expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeDisabled(),
     );
     expect(screen.queryByText(/vundefined/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Published/)).not.toBeInTheDocument();
@@ -186,7 +191,7 @@ describe('TemplateConfigPublishControls', () => {
     loadTemplateConfigStatus.mockImplementation(() => new Promise(() => {}));
     renderControls();
 
-    expect(screen.getByRole('button', {name: /publish/i})).toBeDisabled();
+    expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeDisabled();
     expect(screen.queryByText('Unpublished changes')).not.toBeInTheDocument();
   });
 
@@ -198,7 +203,7 @@ describe('TemplateConfigPublishControls', () => {
     renderControls();
 
     await waitFor(() =>
-      expect(screen.getByRole('button', {name: /publish/i})).toBeDisabled(),
+      expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeDisabled(),
     );
     expect(screen.queryByText('Unpublished changes')).not.toBeInTheDocument();
   });
@@ -211,7 +216,7 @@ describe('TemplateConfigPublishControls', () => {
     });
     renderControls();
 
-    const button = await screen.findByRole('button', {name: /publish/i});
+    const button = await screen.findByRole('button', {name: extraction.configPublishTooltip});
     await waitFor(() => expect(button).toBeEnabled());
     await userEvent.click(button);
 
@@ -258,7 +263,7 @@ describe('TemplateConfigPublishControls', () => {
     expect(await screen.findByText('Unpublished changes')).toBeInTheDocument();
     expect(screen.queryByText(/Draft ·/)).not.toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByRole('button', {name: /publish/i})).toBeEnabled(),
+      expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeEnabled(),
     );
   });
 
@@ -287,7 +292,7 @@ describe('TemplateConfigPublishControls', () => {
     renderControls();
 
     await waitFor(() =>
-      expect(screen.getByRole('button', {name: /publish/i})).toBeDisabled(),
+      expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeDisabled(),
     );
     expect(screen.queryByText(/Draft ·/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Published/)).not.toBeInTheDocument();
@@ -302,7 +307,7 @@ describe('TemplateConfigPublishControls', () => {
     });
     renderControls();
 
-    const button = await screen.findByRole('button', {name: /publish/i});
+    const button = await screen.findByRole('button', {name: extraction.configPublishTooltip});
     await waitFor(() => expect(button).toBeEnabled());
     await userEvent.click(button);
 

@@ -16,13 +16,17 @@ import {
 } from '@/services/templateService';
 
 export function useTemplateConfigDiff(projectId: string, templateId: string) {
-  return useQuery<TemplateConfigDiff, Error>({
+  const enabled = Boolean(projectId && templateId);
+  const query = useQuery<TemplateConfigDiff, Error>({
     queryKey: templateDiffKeys.byTemplate(projectId, templateId),
     queryFn: async () => {
       const result = await loadTemplateConfigDiff(projectId, templateId);
       if (!result.ok) throw new Error(result.error.message);
       return result.data;
     },
-    enabled: Boolean(projectId && templateId),
+    enabled,
   });
+  // TanStack keeps `isPending` true for a disabled query — with no id it
+  // would never fire, so "Reading the changes…" must not render forever.
+  return {...query, isPending: enabled && query.isPending};
 }

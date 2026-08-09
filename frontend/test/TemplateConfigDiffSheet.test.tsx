@@ -325,6 +325,25 @@ describe('TemplateConfigDiffSheet — variant copy (D8)', () => {
     expect(fieldsRow).toHaveTextContent(String(FIELDS_REORDER_COUNT));
     expect(optionsRow).toHaveTextContent(String(OPTIONS_REORDER_COUNT));
   });
+
+  it('does not claim the fields-reorder count is a count of things that moved', async () => {
+    loadTemplateConfigDiff.mockResolvedValue(diffOk(ALL_VARIANTS));
+    renderSheet();
+
+    // template_diff._diff_field_order ships len(after_seq) — every field
+    // that SURVIVED in the section on both sides, not the ones that
+    // actually swapped places (backend/app/services/template_diff.py:638-646).
+    // A single swap among N survivors still reports N, so the sentence
+    // must name the population, never assert that N fields moved.
+    const scope = await group('destructive');
+    const fieldsRow = within(scope).getByTestId(
+      'template-diff-row-row-entity_type_fields_reordered',
+    );
+    expect(fieldsRow).not.toHaveTextContent(/\d+ fields? (reordered|moved)/i);
+    expect(fieldsRow).toHaveTextContent(
+      `Order changed among ${FIELDS_REORDER_COUNT} fields`,
+    );
+  });
 });
 
 describe('TemplateConfigDiffSheet — recorded-work badge (D6)', () => {
@@ -460,8 +479,10 @@ describe('TemplateConfigDiffSheet — the draft chip is the trigger (D7)', () =>
     renderConfigSurface();
 
     // The chip used to be a bare Badge — no role, no name, not a control.
+    // The accessible name comes from the visible text itself (no
+    // aria-label override) — Label in Name (WCAG 2.5.3).
     const trigger = await screen.findByRole('button', {
-      name: templateConfig.diffTriggerAria,
+      name: templateConfig.draftChangeCountOther.replace('{{n}}', '2'),
     });
     await userEvent.click(trigger);
 

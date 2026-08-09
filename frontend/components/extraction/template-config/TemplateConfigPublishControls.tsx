@@ -124,7 +124,6 @@ export function TemplateConfigPublishControls({
             size="sm"
             className="h-6 rounded-full border border-warning/50 bg-warning/10 px-2.5 text-xs font-semibold text-warning hover:bg-warning/20 hover:text-warning"
             onClick={() => setDiffOpen(true)}
-            aria-label={t('templateConfig', 'diffTriggerAria')}
           >
             {draftChangeCount == null
               ? t('extraction', 'configUnpublishedChanges')

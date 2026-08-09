@@ -27,12 +27,16 @@ export const templateConfig = {
   // so a wire change breaks the typecheck instead of shipping a blank row.
   changeEntityTypeAdded: 'Section added',
   // D8: fields reordered INSIDE a section. Entity types themselves never
-  // reorder, so this must never say "sections were reordered". The count
-  // EXCLUDES fields added in the same diff (template_diff._diff_field_order
-  // keeps only ids that existed under the same parent), so every counted
-  // field genuinely moved — which is why this sentence and
-  // `changeFieldOptionsReordered` cannot be one shared string.
-  changeEntityTypeFieldsReordered: '{{n}} fields reordered inside this section',
+  // reorder, so this must never say "sections were reordered". The count is
+  // the POPULATION of fields that survived in the section on both sides
+  // (template_diff._diff_field_order excludes ids that were added, removed,
+  // or re-parented) — NOT the number that swapped places. A single swap
+  // among five survivors still reports 5, so the sentence names the
+  // population, never the movers — which is also why this and
+  // `changeFieldOptionsReordered` cannot be one shared string (this one
+  // excludes just-added fields; the options one includes just-added
+  // options).
+  changeEntityTypeFieldsReordered: 'Order changed among {{n}} fields in this section',
   changeEntityTypeModified: 'Section changed',
   changeEntityTypeRemoved: 'Section removed',
   changeFieldAdded: 'Field added',
@@ -55,6 +59,9 @@ export const templateConfig = {
   // Runtime `??` fallback for a server ahead of this bundle — t() answers
   // an unknown key with '', which would render a row with no sentence.
   changeUnknown: 'Changed',
+  deleteGroupCascadeWarning:
+    'Deleting this repeating group also deletes {{children}} per-{{noun}} section(s) inside it and their {{fields}} field(s)',
+  deleteRepeatingGroup: 'Delete repeating group…',
   // Attribute names, so a row says "Required" instead of "is_required".
   // Descriptive only: NO row claims a downstream effect, which is what
   // `validation_schema` requires (it has no functional reader anywhere in
@@ -101,22 +108,13 @@ export const templateConfig = {
     'What this draft would publish. Read-only — nothing here changes the template.',
   diffSheetTitle: 'Unpublished changes',
   diffTierAdditive: 'New items',
-  diffTierCosmetic: 'Wording only',
+  // Both reorder variants land in this tier (template_diff.py:601,:649), and
+  // reordering is not wording — so this cannot say "Wording only" without
+  // misdescribing every reorder row grouped under it.
+  diffTierCosmetic: 'Wording and order',
   diffTierDestructive: 'Removes or replaces',
   diffTierSemantic: 'Changes meaning',
-  // Same rule as discardButtonAria: deliberately free of the word
-  // "publish", so a by-name lookup for the sibling Publish button can
-  // never match the chip. (The tooltip is a description, not a name, so
-  // it may say it plainly.)
-  diffTriggerAria: 'Review draft changes',
   diffTriggerTooltip: 'See what this draft would publish',
-  deleteGroupCascadeWarning:
-    'Deleting this repeating group also deletes {{children}} per-{{noun}} section(s) inside it and their {{fields}} field(s)',
-  deleteRepeatingGroup: 'Delete repeating group…',
-  // B-9a: shown only for a POSITIVE server-computed count; 0 and null both
-  // fall back to extraction.configUnpublishedChanges (D9).
-  draftChangeCountOne: 'Draft · {{n}} change',
-  draftChangeCountOther: 'Draft · {{n}} changes',
   // --- B-9c2: Discard the unpublished draft (button + four-phase dialog) ---
   discardAckAction: 'Discard anyway',
   discardAckBody:
@@ -173,6 +171,10 @@ export const templateConfig = {
   discardTooltipNeverPublished:
     'Nothing has been published yet, so there is no version to go back to',
   discardTooltipNothing: 'Nothing to discard — there are no draft changes',
+  // B-9a: shown only for a POSITIVE server-computed count; 0 and null both
+  // fall back to extraction.configUnpublishedChanges (D9).
+  draftChangeCountOne: 'Draft · {{n}} change',
+  draftChangeCountOther: 'Draft · {{n}} changes',
   dragCancelled: 'Move cancelled — {{field}} stays where it was',
   dragHandleHint: 'Drag to reorder',
   dragLockedFiltering: 'Clear search to reorder',

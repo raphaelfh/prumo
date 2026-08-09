@@ -239,11 +239,16 @@ function DiffBody({
     // own story ("everything is new"), not a failure to compare.
     if (diff.initial_version) return <DiffNotice copyKey="diffInitialVersion" />;
     const reason = diff.unavailable_reason;
+    // A `diff_available: false` payload with neither `initial_version` nor
+    // `unavailable_reason` set violates its own contract — that is an
+    // unreadable payload, not a specific cause, so it falls back to
+    // diffLoadFailed rather than asserting a baseline-too-old story that
+    // was never reported.
     return (
       <DiffNotice
         copyKey={
           (reason == null ? undefined : UNAVAILABLE_COPY[reason]) ??
-          'diffBaselineTooOld'
+          'diffLoadFailed'
         }
       />
     );
