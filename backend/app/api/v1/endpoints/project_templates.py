@@ -41,6 +41,7 @@ from app.schemas.hitl_session import (
     TemplateDiscardRefusalResponse,
     TemplateInstructionRead,
     TemplateKind,
+    TemplatePublishRefusalResponse,
     UpdateTemplateActiveRequest,
     UpdateTemplateActiveResponse,
     UpdateTemplateInstructionRequest,
@@ -109,6 +110,12 @@ async def clone_template_into_project(
     except PublishBlockedByMultiEntryError as e:
         # B-8 review: the drift-heal republish inside clone re-checks the
         # many->one cardinality rule; refuse like the pending-draft case.
+        #
+        # B-9b0 D3: kept ON PURPOSE, even though ``republish-version`` now
+        # lets this very error through typed. Clone has no client branching on
+        # the code, so here it stays a flat ``HTTP_ERROR`` 409. The asymmetry
+        # (same domain error, two renderings) is accepted, not an oversight —
+        # don't "fix" it until the import dialog actually needs the labels.
         raise HTTPException(status_code=409, detail=str(e)) from e
     await db.commit()
     return ApiResponse.success(
@@ -217,6 +224,10 @@ async def update_template_llm_instruction(
 
 @router.post(
     "/{project_id}/templates/{template_id}/republish-version",
+    # B-9b0 D1: the 409 body is a contract, not prose. Declared so the
+    # generated client types ``error.details.section_labels`` instead of the
+    # ``unknown`` that ``ErrorDetail.details: dict[str, Any]`` produces.
+    responses={status.HTTP_409_CONFLICT: {"model": TemplatePublishRefusalResponse}},
 )
 async def republish_template_version(
     project_id: UUID,
@@ -233,6 +244,13 @@ async def republish_template_version(
     article forms render the edit; runs from ``consensus`` on keep the
     version they were assessed under. Manager-gated like the sibling
     endpoints — section/field editing is project-wide configuration.
+
+    The single 409 (B-9b0 D1) is the publish-time re-check of the many->one
+    cardinality rule: ``error.code`` is a ``TemplatePublishRefusalCode`` and
+    ``error.details.section_labels`` names EVERY offending section, ordered
+    by ``sort_order``, so the Publish button composes its own sentence
+    instead of echoing English prose — and the manager fixes all of them in
+    one pass rather than rediscovering the next on each retry.
     """
     service = TemplateVersionService(db)
     try:
@@ -243,11 +261,15 @@ async def republish_template_version(
         )
     except TemplateNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
-    except PublishBlockedByMultiEntryError as e:
-        # B-8 review: publish-time re-check of the many->one cardinality
-        # rule (TOCTOU vs reviewers on the old 'many' snapshot). The
-        # message names the section; the Publish button toasts it.
-        raise HTTPException(status_code=409, detail=str(e)) from e
+    # The publish-time many->one re-check (TOCTOU vs reviewers on the old
+    # 'many' snapshot) raises ``PublishBlockedByMultiEntryError``, an
+    # ``AppError`` since B-9b0 D1, and is deliberately NOT caught:
+    # ``app_error_handler`` renders its ``TemplatePublishRefusalCode`` and the
+    # offending section labels, both of which ``HTTPException(409, str(e))``
+    # collapsed onto ``HTTP_ERROR`` with no ``details`` at all.
+    # ``PendingConfigDraftError`` cannot reach here — ``republish`` raises it
+    # only under ``fail_if_pending_draft=True``, passed from exactly one place
+    # (``template_clone_service``), never from this endpoint.
     await db.commit()
     return ApiResponse.success(
         RepublishTemplateVersionResponse(

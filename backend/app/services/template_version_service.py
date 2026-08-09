@@ -20,9 +20,11 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
 
+from fastapi import status
 from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_handler import AppError
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionRun,
@@ -30,6 +32,10 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
+from app.schemas.hitl_session import (
+    TemplatePublishRefusalCode,
+    TemplatePublishRefusalDetails,
+)
 from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_session_service import HITLSessionService
@@ -48,7 +54,7 @@ __all__ = [
 ]
 
 
-class PublishBlockedByMultiEntryError(Exception):
+class PublishBlockedByMultiEntryError(AppError):
     """Publish refused: a cardinality-one model_section still has a
     parent entry holding 2+ instances.
 
@@ -60,7 +66,23 @@ class PublishBlockedByMultiEntryError(Exception):
     the 'one' snapshot, whose run view renders only ``instances[0]``
     while the completion gate counts every instance — leaving the run
     permanently un-completable. Re-checked under the template row FOR
-    UPDATE; the message names the section label."""
+    UPDATE; the message names every offending section.
+
+    An ``AppError`` since B-9b0 D1 so the republish endpoint can let it
+    reach ``app_error_handler`` instead of flattening it to
+    ``HTTPException(409, str(e))``, which dropped the code and the labels
+    the Publish button needs to compose its own sentence."""
+
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+        # By keyword, so ``AppError.__init__``'s ``super().__init__(message)``
+        # still runs and ``str(exc)`` stays the message every existing
+        # assertion reads (the ``_DiscardRefusal`` precedent).
+        super().__init__(
+            code=TemplatePublishRefusalCode.PUBLISH_BLOCKED_BY_MULTI_ENTRY,
+            message=message,
+            status_code=status.HTTP_409_CONFLICT,
+            details=details,
+        )
 
 
 _EDITABLE_STAGES = (
@@ -263,26 +285,47 @@ class TemplateVersionService:
         return run_pairs
 
     async def _refuse_if_one_section_has_multi_entries(self, project_template_id: UUID) -> None:
-        """Raise ``PublishBlockedByMultiEntryError`` when any live
-        cardinality-one model_section still has a parent entry holding
-        2+ instances (the shared ``has_multi_entry_parent`` query — the
-        exact predicate the PATCH-time check enforces)."""
+        """Raise ``PublishBlockedByMultiEntryError`` naming EVERY live
+        cardinality-one model_section that still has a parent entry
+        holding 2+ instances (the shared ``has_multi_entry_parent``
+        query — the exact predicate the PATCH-time check enforces).
+
+        B-9b0 D2: ordered, and raised once AFTER the loop. The select had
+        no ``ORDER BY`` and the raise sat inside the loop, so with two
+        flipped sections the manager was told about whichever one the heap
+        yielded first — and only learned about the second by fixing that
+        one and publishing again.
+        """
         one_sections = (
             await self.db.execute(
-                select(ExtractionEntityType.id, ExtractionEntityType.label).where(
+                select(ExtractionEntityType.id, ExtractionEntityType.label)
+                .where(
                     ExtractionEntityType.project_template_id == project_template_id,
                     ExtractionEntityType.role == "model_section",
                     ExtractionEntityType.cardinality == "one",
                 )
+                .order_by(ExtractionEntityType.sort_order, ExtractionEntityType.id)
             )
         ).all()
-        for section_id, section_label in one_sections:
-            if await has_multi_entry_parent(self.db, section_id=section_id):
-                raise PublishBlockedByMultiEntryError(
-                    f'Cannot publish: section "{section_label}" is set to repeat '
-                    "once per entry, but an entry already has multiple items. "
-                    "Remove the extra items and publish again."
-                )
+        offenders = [
+            section_label
+            for section_id, section_label in one_sections
+            if await has_multi_entry_parent(self.db, section_id=section_id)
+        ]
+        if not offenders:
+            return
+
+        noun, verb = ("section", "is") if len(offenders) == 1 else ("sections", "are")
+        listed = "; ".join(f'"{label}"' for label in offenders)
+        raise PublishBlockedByMultiEntryError(
+            f"Cannot publish: {noun} {listed} {verb} set to repeat once per "
+            "entry, but an entry already has multiple items. Remove the extra "
+            "items and publish again.",
+            # JSON primitives only: ``app_error_handler`` renders ``details``
+            # through a bare ``JSONResponse``, so anything else would raise
+            # INSIDE the handler and reach the client as a 500.
+            details=TemplatePublishRefusalDetails(section_labels=offenders).model_dump(mode="json"),
+        )
 
     async def _repin_editable_runs(self, project_template_id: UUID, version_id: UUID) -> int:
         result = await self.db.execute(
