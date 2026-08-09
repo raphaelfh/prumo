@@ -15,6 +15,7 @@ import pytest
 from fastapi import HTTPException
 
 import app.api.v1.endpoints.project_templates as endpoint_module
+from app.core.error_handler import AppError
 from app.schemas.hitl_session import (
     DiscardDraftRequest,
     DiscardDraftResponse,
@@ -85,28 +86,52 @@ async def test_discard_wraps_the_result_and_commits(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("error", "status_code"),
+    "error",
     [
-        (ProjectTemplateNotFoundError("gone"), 404),
-        (NoActiveTemplateVersionError("never published"), 404),
-        (NarrowBaselineError("legacy"), 409),
-        (DiscardBlockedByCardinalityError("two entries"), 409),
-        (ContainerSwapUnsupportedError("swapped"), 409),
-        (OrphanAcknowledgementRequiredError("orphans"), 409),
-        (DiscardRacedError("raced"), 409),
+        ProjectTemplateNotFoundError("gone"),
+        NoActiveTemplateVersionError("never published"),
     ],
 )
-async def test_typed_errors_map_to_status_codes(
-    monkeypatch, error: Exception, status_code: int
-) -> None:
+async def test_missing_template_maps_to_404(monkeypatch, error: Exception) -> None:
     monkeypatch.setattr(endpoint_module, "discard_draft", AsyncMock(side_effect=error))
     db = AsyncMock()
 
     with pytest.raises(HTTPException) as exc:
         await _call(db)
 
-    assert exc.value.status_code == status_code
+    assert exc.value.status_code == 404
     assert exc.value.detail == str(error)
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (NarrowBaselineError("legacy"), "NARROW_BASELINE"),
+        (DiscardBlockedByCardinalityError("two entries"), "CARDINALITY_DOWNGRADE_BLOCKED"),
+        (ContainerSwapUnsupportedError("swapped"), "CONTAINER_SWAP_UNSUPPORTED"),
+        (OrphanAcknowledgementRequiredError("orphans"), "ORPHAN_ACK_REQUIRED"),
+        (DiscardRacedError("raced"), "DISCARD_RACED"),
+    ],
+)
+async def test_refusals_propagate_as_coded_409s(monkeypatch, error: AppError, code: str) -> None:
+    """B-9c2 D1: the endpoint no longer catches these. They reach
+    ``app_error_handler``, which is the only thing that can write
+    ``error.code`` and ``error.details`` — the old
+    ``HTTPException(409, str(e))`` produced ``HTTP_ERROR`` for all five."""
+    monkeypatch.setattr(endpoint_module, "discard_draft", AsyncMock(side_effect=error))
+    db = AsyncMock()
+
+    with pytest.raises(AppError) as exc:
+        await _call(db)
+
+    assert exc.value is error
+    assert exc.value.status_code == 409
+    assert exc.value.code == code
+    # ``AppError.__init__`` keeps ``super().__init__(message)``, so the
+    # service-level ``pytest.raises`` assertions still read the message.
+    assert str(exc.value) == exc.value.message
     # A refusal must never commit — most of them leave the transaction
     # deliberately unusable (D8).
     db.commit.assert_not_awaited()

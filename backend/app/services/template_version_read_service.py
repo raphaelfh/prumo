@@ -27,7 +27,6 @@ from app.services.extraction_snapshot import (
     baseline_is_restorable,
     build_template_version_snapshot,
     entity_types_for_version,
-    snapshot_is_narrow,
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_diff import diff_snapshots
@@ -79,13 +78,20 @@ async def _pending_change_count(
     it means the question has no answer here, either because nothing was
     ever published (D8) or because the stored baseline predates the wide
     snapshot builder and would manufacture phantom changes (D5).
+
+    B-9c2 D2 — the gate is ``baseline_is_restorable``, the same one
+    ``discard_available`` uses, and not ``snapshot_is_narrow`` directly.
+    The two disagree on exactly one shape: an EMPTY published baseline,
+    which ``snapshot_is_narrow`` calls narrow by design (so the run view
+    falls back to live rows) but which is a perfectly honest diff baseline
+    — every live node reads as added, because it was. Sharing the gate is
+    what makes ``discard_available`` ⇒ an integer count, so the Discard
+    dialog never has to render an "unknown count" variant.
     """
     if active is None:
         return None
     baseline: dict[str, Any] = active.schema_ or {}
-    # snapshot_is_narrow takes the entity-types LIST; the snapshot dict
-    # reads narrow for every template (it iterates keys).
-    if snapshot_is_narrow(baseline.get("entity_types", [])):
+    if not baseline_is_restorable(baseline):
         return None
     current = await build_template_version_snapshot(db, template_id)
     # A count consumes no tiers, so it needs no value lookup — B-9b's diff

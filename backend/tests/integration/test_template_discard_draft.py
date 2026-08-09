@@ -872,8 +872,13 @@ async def test_foreign_project_is_not_found(db_session: AsyncSession) -> None:
 # ==========================================================================
 
 
-async def _option_orphan_setup(db_session: AsyncSession) -> tuple[UUID, UUID, UUID]:
-    """A draft that added a select option a reviewer then picked."""
+async def _option_orphan_setup(
+    db_session: AsyncSession, *, options: tuple[str, ...] = ("draft_option",)
+) -> tuple[UUID, UUID, UUID]:
+    """A draft that added select options a reviewer then picked one of.
+
+    ``options`` is the whole draft list; the baseline has none, so every
+    entry is a separate destructive change on the SAME field."""
     project_id, template_id, _ = await _fresh_charms(db_session)
     owner = await _entity_id(db_session, template_id, "sample_size")
     field = await _field_id(db_session, template_id, "sample_size", "number_of_participants")
@@ -887,9 +892,9 @@ async def _option_orphan_setup(db_session: AsyncSession) -> tuple[UUID, UUID, UU
     await db_session.execute(
         text(
             "UPDATE public.extraction_fields "
-            "SET allowed_values = CAST('[\"draft_option\"]' AS jsonb) WHERE id = :id"
+            "SET allowed_values = CAST(:opts AS jsonb) WHERE id = :id"
         ),
-        {"id": str(field)},
+        {"id": str(field), "opts": _json.dumps(list(options))},
     )
     await db_session.flush()
     await make_proposal(
@@ -898,9 +903,19 @@ async def _option_orphan_setup(db_session: AsyncSession) -> tuple[UUID, UUID, UU
         instance_id=UUID(session.instances_by_entity_type[str(owner)]),
         field_id=field,
         user_id=SEED.primary_profile,
-        value="draft_option",
+        value=options[0],
     )
     return project_id, template_id, field
+
+
+async def _field_label(db: AsyncSession, field_id: UUID) -> str:
+    label: str = (
+        await db.execute(
+            text("SELECT label FROM public.extraction_fields WHERE id = :id"),
+            {"id": str(field_id)},
+        )
+    ).scalar_one()
+    return label
 
 
 @pytest.mark.asyncio
@@ -913,7 +928,9 @@ async def test_orphaning_change_without_the_ack_is_refused(db_session: AsyncSess
     with pytest.raises(OrphanAcknowledgementRequiredError) as exc:
         await _discard(db_session, project_id=project_id, template_id=template_id)
 
-    assert str(field) in str(exc.value)
+    # B-9c2 D1: the prose names the field; the id rides in ``details``.
+    assert await _field_label(db_session, field) in str(exc.value)
+    assert str(field) not in str(exc.value)
     still_there = (
         await db_session.execute(
             text("SELECT allowed_values FROM public.extraction_fields WHERE id = :id"),
@@ -1173,6 +1190,88 @@ async def test_endpoint_discards_through_the_asgi_stack(
     assert envelope["ok"] is True
     assert envelope["data"]["deleted_fields"] == 1
     assert envelope["data"]["kept"] == []
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_endpoint_refusal_carries_the_orphans_as_structured_details(
+    db_session: AsyncSession, db_client: AsyncClient, auth_as_manager: UUID
+) -> None:
+    """B-9c2 D1, at the level that matters: the dialog branches on
+    ``error.code`` and renders ``error.details.orphans``, neither of which
+    a service-level ``pytest.raises`` can see. A raw ``UUID`` in ``details``
+    would 500 *inside* ``app_error_handler`` (bare ``JSONResponse``), so the
+    node ids must arrive as strings."""
+    assert auth_as_manager == SEED.primary_profile
+    project_id, template_id, field = await _option_orphan_setup(db_session)
+    label = await _field_label(db_session, field)
+
+    res = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/{template_id}/discard-draft",
+        json={"acknowledge_orphans": False},
+    )
+
+    assert res.status_code == 409, res.text
+    error = res.json()["error"]
+    assert error["code"] == "ORPHAN_ACK_REQUIRED"
+    orphans = error["details"]["orphans"]
+    assert len(orphans) == 1
+    assert orphans[0]["node_id"] == str(field)
+    assert isinstance(orphans[0]["node_id"], str)
+    assert label in orphans[0]["label"]
+    # The prose lost the parameter leak and the ids (they ride in details).
+    assert "acknowledge_orphans" not in error["message"]
+    assert str(field) not in error["message"]
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_endpoint_dedupes_orphans_by_field(
+    db_session: AsyncSession, db_client: AsyncClient, auth_as_manager: UUID
+) -> None:
+    """``allowed_values`` is diffed per option code, so one field losing two
+    recorded options is TWO destructive changes — and one orphan."""
+    assert auth_as_manager == SEED.primary_profile
+    project_id, template_id, field = await _option_orphan_setup(
+        db_session, options=("draft_option", "second_option")
+    )
+
+    res = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/{template_id}/discard-draft",
+        json={"acknowledge_orphans": False},
+    )
+
+    assert res.status_code == 409, res.text
+    orphans = res.json()["error"]["details"]["orphans"]
+    assert [o["node_id"] for o in orphans] == [str(field)]
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_endpoint_hard_refusal_has_its_own_code_and_no_details(
+    db_session: AsyncSession, db_client: AsyncClient, auth_as_manager: UUID
+) -> None:
+    """A hard refusal is not the ack question: a distinct code, so the
+    dialog cannot re-ask with ``acknowledge_orphans`` and get the same 409
+    forever."""
+    assert auth_as_manager == SEED.primary_profile
+    project_id, template_id, _ = await _fresh_charms(db_session)
+    section = await _entity_id(db_session, template_id, "participants")
+    await _force_active_schema(
+        db_session,
+        template_id,
+        {"entity_types": [{"id": str(section), "label": "Participants", "fields": []}]},
+    )
+
+    res = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/{template_id}/discard-draft",
+        json={"acknowledge_orphans": False},
+    )
+
+    assert res.status_code == 409, res.text
+    error = res.json()["error"]
+    assert error["code"] == "NARROW_BASELINE"
+    assert error["details"] is None
     await db_session.rollback()
 
 

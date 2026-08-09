@@ -33,15 +33,18 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
 
+from fastapi import status
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_handler import AppError
 from app.models.extraction import (
     ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionField,
     ProjectExtractionTemplate,
 )
+from app.schemas.hitl_session import TemplateDiscardRefusalCode
 from app.services.template_clone_service import TemplateCloneService, TemplateNotFoundError
 from app.services.template_diff import (
     ENTITY_ATTRIBUTE_DEFAULTS,
@@ -78,16 +81,25 @@ _ENTITY_KEYS: tuple[str, ...] = (*ENTITY_ATTRIBUTE_DEFAULTS, ORDER_KEY)
 _FIELD_KEYS: tuple[str, ...] = (*FIELD_ATTRIBUTE_DEFAULTS, OPTION_KEY, _OWNER_KEY, ORDER_KEY)
 
 
-class ContainerSwapUnsupportedError(Exception):
+class ContainerSwapUnsupportedError(AppError):
     """The draft replaced the template's ``model_container`` (D3).
 
     ``uq_extraction_entity_types_one_container_per_project`` is a partial
     unique index, so the create pass would collide with the container the
     delete pass has not reached yet. Solving it would need a third pass
-    that parks the live container's role — deliberately out of scope; T2
-    maps this to 409 (the plan's D5 calls the same condition
-    ``DiscardBlockedByContainerSwapError``).
+    that parks the live container's role — deliberately out of scope.
+
+    An ``AppError`` since B-9c2 D1, so the endpoint lets it propagate to
+    ``app_error_handler`` with its own code instead of flattening it into a
+    ``HTTP_ERROR`` no client can tell from the ack question.
     """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            code=TemplateDiscardRefusalCode.CONTAINER_SWAP_UNSUPPORTED,
+            message=message,
+            status_code=status.HTTP_409_CONFLICT,
+        )
 
 
 @dataclass(frozen=True, slots=True)

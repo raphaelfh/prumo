@@ -67,10 +67,12 @@ from dataclasses import dataclass
 from typing import Any, NoReturn
 from uuid import UUID
 
+from fastapi import status
 from sqlalchemy import select, union, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_handler import AppError
 from app.core.logging import get_logger
 from app.models.extraction import (
     ExtractionEntityType,
@@ -88,7 +90,13 @@ from app.models.extraction_workflow import (
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
-from app.schemas.hitl_session import DiscardDraftResponse, DiscardKeptNode
+from app.schemas.hitl_session import (
+    DiscardDraftResponse,
+    DiscardKeptNode,
+    TemplateDiscardRefusalCode,
+    TemplateDiscardRefusalDetails,
+    TemplateDiscardRefusalOrphan,
+)
 from app.services.extraction_snapshot import (
     baseline_is_restorable,
     build_template_version_snapshot,
@@ -141,7 +149,28 @@ _WORKFLOW_TABLES = (
 )
 
 
-class DiscardBlockedByCardinalityError(Exception):
+class _DiscardRefusal(AppError):
+    """Base for the D5/D6/D8 refusals: HTTP 409 with a slice-local code.
+
+    B-9c2 D1 — the endpoint lets these propagate to ``app_error_handler``
+    (the ``ExportColumnLimitError`` precedent) instead of re-raising
+    ``HTTPException(409, str(e))``, which collapsed all five onto
+    ``HTTP_ERROR`` and dropped ``details`` entirely. Forwarding by keyword
+    keeps ``AppError.__init__``'s ``super().__init__(message)``, so
+    ``str(exc)`` is still the message every existing assertion reads."""
+
+    _code: TemplateDiscardRefusalCode
+
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+        super().__init__(
+            code=self._code,
+            message=message,
+            status_code=status.HTTP_409_CONFLICT,
+            details=details,
+        )
+
+
+class DiscardBlockedByCardinalityError(_DiscardRefusal):
     """Restoring would lower ``cardinality`` from ``many`` to ``one`` while a
     parent instance still holds 2+ entries.
 
@@ -152,28 +181,39 @@ class DiscardBlockedByCardinalityError(Exception):
     is the third door into it, and it aborts rather than partially applies
     because the offending node is a *survivor*, not a draft addition."""
 
+    _code = TemplateDiscardRefusalCode.CARDINALITY_DOWNGRADE_BLOCKED
 
-class NarrowBaselineError(Exception):
+
+class NarrowBaselineError(_DiscardRefusal):
     """The published baseline predates the wide snapshot builder (0026).
 
     409-class (D5). Writing it back would null ``llm_description`` /
     ``allow_other`` project-wide, because absent keys normalize to their
     column defaults rather than to "leave alone"."""
 
+    _code = TemplateDiscardRefusalCode.NARROW_BASELINE
 
-class OrphanAcknowledgementRequiredError(Exception):
+
+class OrphanAcknowledgementRequiredError(_DiscardRefusal):
     """Destructive-tier changes touch fields that already hold values (D6).
 
-    409-class. The client re-posts with ``acknowledge_orphans=true``."""
+    409-class, and the only refusal a retry can satisfy: the client re-posts
+    with ``acknowledge_orphans``. The fields it names ride in ``details``
+    (see :func:`_orphan_refusal`) so the dialog can list them without
+    parsing English."""
+
+    _code = TemplateDiscardRefusalCode.ORPHAN_ACK_REQUIRED
 
 
-class DiscardRacedError(Exception):
+class DiscardRacedError(_DiscardRefusal):
     """The database refused a delete the detection pass had cleared (D8).
 
     409-class. Between detection and the write, a concurrent writer gave a
     draft-added node recorded work (23503 on a RESTRICT FK) or the
     transaction deadlocked (40P01). Retrying recomputes the blocked set and
     keeps the node."""
+
+    _code = TemplateDiscardRefusalCode.DISCARD_RACED
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,7 +307,7 @@ async def discard_draft(
     ]
     if orphans and not acknowledge_orphans:
         _refuse(
-            OrphanAcknowledgementRequiredError(_orphan_message(orphans)),
+            _orphan_refusal(orphans),
             project_id=project_id,
             template_id=template_id,
             user_id=user_id,
@@ -597,12 +637,35 @@ async def _refuse_cardinality_downgrade(
 # --------------------------------------------------------------------------
 
 
-def _orphan_message(orphans: list[TemplateChange]) -> str:
-    listed = "; ".join(f"{change.label} [{change.node_id}]" for change in orphans)
-    return (
+def _orphan_refusal(orphans: list[TemplateChange]) -> OrphanAcknowledgementRequiredError:
+    """The D6 question, with the fields it is about (B-9c2 D1).
+
+    Deduped by ``node_id``, insertion-ordered: ``allowed_values`` is diffed
+    per option code, so a field losing two recorded options produces two
+    destructive changes and would otherwise be listed — and counted — twice.
+
+    The prose names labels only. The ids ride in ``details``, as JSON
+    primitives: ``app_error_handler`` renders ``details`` through a bare
+    ``JSONResponse``, so a raw ``UUID`` there raises INSIDE the handler and
+    the refusal reaches the client as a 500. The ``acknowledge_orphans``
+    parameter name is gone too — the dialog re-posts on the code, and API
+    parameters are not user-facing copy."""
+    deduped: dict[UUID | None, TemplateChange] = {}
+    for change in orphans:
+        deduped.setdefault(change.node_id, change)
+    listed = "; ".join(change.label for change in deduped.values())
+    return OrphanAcknowledgementRequiredError(
         "Discarding would remove options or change the type of fields that "
-        f"already hold recorded answers: {listed}. Re-send with "
-        "acknowledge_orphans=true to discard anyway."
+        f"already hold recorded answers: {listed}.",
+        details=TemplateDiscardRefusalDetails(
+            orphans=[
+                TemplateDiscardRefusalOrphan(
+                    node_id=str(change.node_id) if change.node_id is not None else None,
+                    label=change.label,
+                )
+                for change in deduped.values()
+            ]
+        ).model_dump(mode="json"),
     )
 
 
