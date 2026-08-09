@@ -44,6 +44,7 @@ import {
   discardTemplateDraft,
   republishTemplateVersion,
   TemplateDiscardRefusal,
+  TemplatePublishRefusal,
   updateEntityTypeLabel,
   updateSection,
 } from '@/services/templateService';
@@ -214,15 +215,16 @@ describe('updateSection — partial PATCH on the typed endpoint (B-8 D5)', () =>
   });
 });
 
-describe('republishTemplateVersion — publish-blocked 409 (B-8 review)', () => {
-  it("maps the 409 to PgError('409') carrying the server message VERBATIM", async () => {
-    // The server message names the offending section — no static copy
-    // key can carry that, so it must survive to the toast untouched.
+describe('republishTemplateVersion — typed publish refusal (B-9b0 D4)', () => {
+  it('maps the 409 to TemplatePublishRefusal carrying the code and EVERY section label', async () => {
     apiClientMock.mockRejectedValue(
       new ApiError(
-        'HTTP_ERROR',
-        'Cannot publish: section "Final predictors" is set to repeat once per entry',
+        'PUBLISH_BLOCKED_BY_MULTI_ENTRY',
+        'Cannot publish: sections "Final predictors"; "Model results" are set to ' +
+          'repeat once per entry, but an entry already has multiple items.',
         409,
+        'trace-1',
+        {section_labels: ['Final predictors', 'Model results']},
       ),
     );
 
@@ -230,20 +232,62 @@ describe('republishTemplateVersion — publish-blocked 409 (B-8 review)', () => 
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toBeInstanceOf(PgError);
-    expect((result.error as PgError).code).toBe('409');
-    expect(result.error.message).toContain('Final predictors');
+    expect(result.error).toBeInstanceOf(TemplatePublishRefusal);
+    const refusal = result.error as TemplatePublishRefusal;
+    expect(refusal.code).toBe('PUBLISH_BLOCKED_BY_MULTI_ENTRY');
+    // Every offender, in the server's sort_order — the copy layer names
+    // them all so the manager fixes them in one pass.
+    expect(refusal.sectionLabels).toEqual(['Final predictors', 'Model results']);
   });
 
-  it('passes a non-409 error through untouched (no PgError wrap)', async () => {
-    apiClientMock.mockRejectedValue(new ApiError('HTTP_ERROR', 'Template not found', 404));
+  it('degrades a missing or malformed details payload to [] (never undefined reaching the UI)', async () => {
+    const malformed: (Record<string, unknown> | undefined)[] = [
+      undefined,
+      {},
+      {section_labels: null},
+      {section_labels: 'Final predictors'},
+    ];
+
+    for (const details of malformed) {
+      apiClientMock.mockRejectedValue(
+        new ApiError('PUBLISH_BLOCKED_BY_MULTI_ENTRY', 'refused', 409, undefined, details),
+      );
+
+      const result = await republishTemplateVersion('p1', 't1');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toBeInstanceOf(TemplatePublishRefusal);
+      expect((result.error as TemplatePublishRefusal).sectionLabels).toEqual([]);
+    }
+  });
+
+  it('drops non-string entries rather than surfacing them', async () => {
+    apiClientMock.mockRejectedValue(
+      new ApiError('PUBLISH_BLOCKED_BY_MULTI_ENTRY', 'refused', 409, undefined, {
+        section_labels: ['Final predictors', 7, null, {label: 'nope'}],
+      }),
+    );
 
     const result = await republishTemplateVersion('p1', 't1');
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
+    expect((result.error as TemplatePublishRefusal).sectionLabels).toEqual([
+      'Final predictors',
+    ]);
+  });
+
+  it('leaves a 500 alone — a server fault is never framed as a policy refusal', async () => {
+    apiClientMock.mockRejectedValue(new ApiError('HTTP_ERROR', 'Internal error', 500));
+
+    const result = await republishTemplateVersion('p1', 't1');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).not.toBeInstanceOf(TemplatePublishRefusal);
     expect(result.error).not.toBeInstanceOf(PgError);
-    expect(result.error.message).toContain('Template not found');
+    expect(result.error.message).toContain('Internal error');
   });
 });
 

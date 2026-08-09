@@ -175,6 +175,71 @@ async def _flip_final_predictors_with_raced_extra(
     return section.label, extra
 
 
+async def _two_one_sections_with_raced_extras(
+    db: AsyncSession, project_template_id: UUID
+) -> list[str]:
+    """Two cardinality-one model_sections that each already hold 2+ entries
+    under the same parent, with their ``sort_order`` deliberately INVERTED
+    against the order an un-ordered select hands them back in (B-9b0 D2).
+
+    The two ``sort_order`` writes go out as raw SQL, HIGHEST value first:
+    an UPDATE writes a new heap tuple, so a scan with no ``ORDER BY``
+    follows the order the two writes were issued in. Mutating the ORM
+    objects instead leaves that order to SQLAlchemy, which flushes
+    persistent UPDATEs in primary-key order — and the clone assigns primary
+    keys with ``uuid4()``, which made the un-ordered order (and therefore
+    the ordering assertion resting on it) a coin flip. The inversion is
+    asserted below rather than assumed, so that a future storage change
+    surfaces as a fixture failure instead of a silently passing test.
+
+    Returns the labels in ascending ``sort_order`` — the order the refusal
+    must name them in, and the reverse of the un-ordered one."""
+    container = await _section_by_name(db, project_template_id, "prediction_models")
+    by_sort_order = [
+        (900, await _section_by_name(db, project_template_id, "model_performance")),
+        (901, await _section_by_name(db, project_template_id, "model_development")),
+    ]
+    for sort_order, section in reversed(by_sort_order):
+        await db.execute(
+            text("UPDATE public.extraction_entity_types SET sort_order = :so WHERE id = :id"),
+            {"so": sort_order, "id": str(section.id)},
+        )
+
+    targets = [section.id for _, section in by_sort_order]
+    scanned = (
+        # The refusal's own query, minus its ORDER BY.
+        await db.execute(
+            select(ExtractionEntityType.id).where(
+                ExtractionEntityType.project_template_id == project_template_id,
+                ExtractionEntityType.role == "model_section",
+                ExtractionEntityType.cardinality == "one",
+            )
+        )
+    ).scalars()
+    assert [row_id for row_id in scanned if row_id in targets] == list(reversed(targets)), (
+        "fixture precondition: without an ORDER BY the two sections must come "
+        "back in the REVERSE of their sort_order, or this test cannot tell an "
+        "ordered refusal from an unordered one"
+    )
+
+    parent = await _insert_instance_raw(
+        db,
+        template_id=project_template_id,
+        entity_type_id=container.id,
+        label="Model A",
+    )
+    for _, section in by_sort_order:
+        for order in (0, 1):
+            await _insert_instance_raw(
+                db,
+                template_id=project_template_id,
+                entity_type_id=section.id,
+                parent_instance_id=parent,
+                sort_order=order,
+            )
+    return [section.label for _, section in by_sort_order]
+
+
 @pytest.mark.asyncio
 async def test_republish_creates_new_active_version_and_preserves_old(
     db_session: AsyncSession,
@@ -618,6 +683,9 @@ async def test_republish_blocked_by_multi_entry_under_one_section(
             user_id=user_id,
         )
     assert section_label in str(exc.value), "error must name the section"
+    assert exc.value.details == {"section_labels": [section_label]}, (
+        "one offender is still a LIST of labels (B-9b0 D2)"
+    )
 
     versions = (
         (
@@ -662,6 +730,42 @@ async def test_republish_blocked_by_multi_entry_under_one_section(
     ).scalar_one()
     assert str(repinned_version) == str(result.version_id), (
         "removing the extra entry must unblock publish and re-pin the run"
+    )
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_republish_names_every_offending_section_in_sort_order(
+    db_session: AsyncSession,
+) -> None:
+    """B-9b0 D2: two offending sections ⇒ BOTH are named, in ``sort_order``.
+
+    The pre-B-9b0 select had no ``ORDER BY`` and raised on the first hit, so
+    a manager with two flipped sections was told about whichever one the
+    heap happened to yield — and had to publish, read, fix, publish again to
+    discover the second. Here the two sections' ``sort_order`` is inverted
+    against their physical order, so heap order would produce the reverse
+    list."""
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await _clean_project_clones(db_session, project_id)
+    clone = await _clone_charms(db_session, project_id, user_id)
+
+    expected = await _two_one_sections_with_raced_extras(db_session, clone.project_template_id)
+
+    with pytest.raises(PublishBlockedByMultiEntryError) as exc:
+        await TemplateVersionService(db_session).republish(
+            project_id=project_id,
+            project_template_id=clone.project_template_id,
+            user_id=user_id,
+        )
+
+    message = str(exc.value)
+    assert all(label in message for label in expected), f"the prose must name both: {message!r}"
+    assert exc.value.details == {"section_labels": expected}
+    assert message.index(expected[0]) < message.index(expected[1]), (
+        "the prose must follow sort_order too"
     )
 
     await db_session.rollback()
@@ -736,8 +840,12 @@ async def test_republish_endpoint_409_when_publish_blocked(
     db_client: AsyncClient,
     auth_as_profile: UUID,
 ) -> None:
-    """The typed publish-block maps to a 409 whose ``error.message``
-    names the section — the Publish button toasts it verbatim."""
+    """B-9b0 D1, at the level that matters: the Publish button branches on
+    ``error.code`` and composes its own sentence from
+    ``error.details.section_labels`` — neither of which a service-level
+    ``pytest.raises`` can see. ``details`` must be JSON primitives: the
+    handler writes them through a bare ``JSONResponse``, so anything else
+    would 500 *inside* ``app_error_handler``."""
     project_id = SEED.secondary_project
     await _clean_project_clones(db_session, project_id)
     clone = await _clone_charms(db_session, project_id, auth_as_profile)
@@ -749,6 +857,11 @@ async def test_republish_endpoint_409_when_publish_blocked(
         f"/api/v1/projects/{project_id}/templates/{clone.project_template_id}/republish-version"
     )
     assert res.status_code == 409, res.text
-    assert section_label in res.json()["error"]["message"]
+    error = res.json()["error"]
+    assert error["code"] == "PUBLISH_BLOCKED_BY_MULTI_ENTRY"
+    labels = error["details"]["section_labels"]
+    assert labels == [section_label]
+    assert all(isinstance(label, str) for label in labels)
+    assert section_label in error["message"]
 
     await db_session.rollback()

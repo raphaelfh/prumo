@@ -100,6 +100,16 @@ export const templateConfig = {
   errors_duplicateFieldName:
     'A field with this name already exists in this section.',
   errors_moveField: 'Error moving field',
+  // B-9b0 D4: the publish refusal, composed here from the server's CODE and
+  // its section labels — never its prose. The nameless variant is the
+  // degenerate payload (labels missing or malformed): still a policy
+  // refusal, so it must not read like a server fault.
+  errors_publishBlockedOne:
+    'Cannot publish: the section {{sections}} is set to appear once per entry, but an entry still holds several. Remove the extra entries first.',
+  errors_publishBlockedOther:
+    'Cannot publish: the sections {{sections}} are set to appear once per entry, but an entry still holds several. Remove the extra entries first.',
+  errors_publishBlockedPlain:
+    'Cannot publish: a section is set to appear once per entry, but an entry still holds several. Remove the extra entries first.',
   errors_reorderFields: 'Error reordering fields',
   errors_updateSection: 'Error updating section',
   inspectorGroupAlwaysRepeats: 'A group always repeats',

@@ -31,11 +31,24 @@ vi.mock('@/services/templateService', () => {
       this.name = 'TemplateDiscardRefusal';
     }
   }
+  // Same reason for the publish refusal (B-9b0 D4): useTemplateRepublish
+  // reads this binding on EVERY failed publish, typed or not.
+  class TemplatePublishRefusal extends Error {
+    constructor(
+      message: string,
+      public readonly code: string,
+      public readonly sectionLabels: readonly string[] = [],
+    ) {
+      super(message);
+      this.name = 'TemplatePublishRefusal';
+    }
+  }
   return {
     loadTemplateConfigStatus: (...a: unknown[]) => loadTemplateConfigStatus(...a),
     republishTemplateVersion: (...a: unknown[]) => republishTemplateVersion(...a),
     discardTemplateDraft: (...a: unknown[]) => discardTemplateDraft(...a),
     TemplateDiscardRefusal,
+    TemplatePublishRefusal,
   };
 });
 const getTemplateInstruction = vi.fn();

@@ -12,7 +12,7 @@ import pytest
 from fastapi import HTTPException
 
 import app.api.v1.endpoints.project_templates as endpoint_module
-from app.schemas.hitl_session import CloneTemplateRequest
+from app.schemas.hitl_session import CloneTemplateRequest, TemplatePublishRefusalCode
 from app.services.template_clone_service import (
     PendingConfigDraftError,
     TemplateNotFoundError,
@@ -126,16 +126,25 @@ async def test_clone_maps_publish_blocked_to_409(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_republish_maps_publish_blocked_to_409(monkeypatch) -> None:
-    """B-8 review: the publish-time cardinality re-check surfaces as a
-    409 whose detail carries the section-naming message; no commit."""
+async def test_republish_propagates_the_typed_publish_refusal(monkeypatch) -> None:
+    """B-9b0 D1: the endpoint no longer flattens the publish-time
+    cardinality re-check to ``HTTPException(409, str(e))`` — it lets the
+    ``AppError`` through so ``app_error_handler`` renders its code and the
+    offending section labels. Still commits nothing.
+
+    Kept as a direct endpoint-coroutine call: the ASGI-level envelope test
+    in ``tests/integration/test_template_version_republish.py`` does not
+    register in diff-cover."""
     service = MagicMock()
     service.republish = AsyncMock(
-        side_effect=PublishBlockedByMultiEntryError('Cannot publish: section "Final predictors"')
+        side_effect=PublishBlockedByMultiEntryError(
+            'Cannot publish: section "Final predictors" is set to repeat once per entry',
+            details={"section_labels": ["Final predictors"]},
+        )
     )
     monkeypatch.setattr(endpoint_module, "TemplateVersionService", MagicMock(return_value=service))
     db = AsyncMock()
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(PublishBlockedByMultiEntryError) as exc:
         await endpoint_module.republish_template_version(
             project_id=uuid.uuid4(),
             template_id=uuid.uuid4(),
@@ -143,6 +152,10 @@ async def test_republish_maps_publish_blocked_to_409(monkeypatch) -> None:
             db=db,
             current_user_sub=uuid.uuid4(),
         )
+    assert exc.value.code == TemplatePublishRefusalCode.PUBLISH_BLOCKED_BY_MULTI_ENTRY
     assert exc.value.status_code == 409
-    assert "Final predictors" in str(exc.value.detail)
+    assert exc.value.details == {"section_labels": ["Final predictors"]}
+    # Forwarded by keyword, so ``AppError.__init__``'s ``super().__init__``
+    # keeps ``str(e)`` equal to the message.
+    assert "Final predictors" in str(exc.value)
     db.commit.assert_not_awaited()

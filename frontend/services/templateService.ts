@@ -35,6 +35,9 @@ export type DiscardDraftResponse = components['schemas']['DiscardDraftResponse']
 export type TemplateDiscardRefusalCode =
   components['schemas']['TemplateDiscardRefusalCode'];
 
+export type TemplatePublishRefusalCode =
+  components['schemas']['TemplatePublishRefusalCode'];
+
 /** One field whose recorded answers a Discard would strand, already
  * human-readable (`Section → Field`); `nodeId` is a hint for keys/tests,
  * never something the screen shows. */
@@ -51,17 +54,55 @@ type SectionCardinality = NonNullable<
 >;
 
 /**
+ * A `POST .../republish-version` the server deliberately refused (409, B-9b0 D1).
+ *
+ * Same discipline as `TemplateDiscardRefusal` below: a plain `Error`
+ * subclass survives `normalizeError`/`toResult` untouched, so the hook
+ * branches on `instanceof` and `ApiError` never escapes this directory.
+ * Carries the labels because the toast names every offending section.
+ */
+export class TemplatePublishRefusal extends Error {
+  constructor(
+    message: string,
+    /** The server's refusal code — typed as the generated union because
+     * that is the contract. The message is diagnostic only; the copy
+     * layer composes what the manager reads. */
+    public readonly code: TemplatePublishRefusalCode,
+    public readonly sectionLabels: readonly string[] = [],
+  ) {
+    super(message);
+    this.name = 'TemplatePublishRefusal';
+  }
+}
+
+/**
+ * Runtime-validate `error.details.section_labels`.
+ *
+ * The generated type says what the server *should* send; this guard is what
+ * makes rendering safe. A missing or non-array payload yields `[]` (the copy
+ * layer then falls back to the nameless sentence) and non-string entries are
+ * dropped rather than interpolated as `undefined`.
+ */
+function parsePublishSectionLabels(details: unknown): string[] {
+  if (!details || typeof details !== 'object') return [];
+  const raw = (details as {section_labels?: unknown}).section_labels;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((label): label is string => typeof label === 'string');
+}
+
+/**
  * Publish the live template structure as a new active version.
  *
  * B-4: this is the explicit Publish button's call — config edits are
  * draft edits (the DB stamps `config_draft_since`) and only this
  * publish moves snapshots, prompts and editable-stage run pins.
  *
- * A 409 is the publish-time many→one cardinality re-check (B-8 review):
- * its server message names the offending section, which no static copy
- * key can carry — re-wrapped as PgError('409') with the message
- * VERBATIM so useTemplateRepublish toasts it instead of the generic
- * failure copy.
+ * A 409 is the publish-time many→one cardinality re-check (B-8 review),
+ * typed since B-9b0: the code and `section_labels` are the contract, so
+ * the refusal travels as data and `useTemplateRepublish` composes its own
+ * sentence instead of echoing server prose. Only a 409 maps to it —
+ * every other failure stays a plain error so a server fault can never be
+ * framed as a policy decision.
  */
 export async function republishTemplateVersion(
   projectId: string,
@@ -75,7 +116,11 @@ export async function republishTemplateVersion(
       );
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
-        throw new PgError(error.message, '409');
+        throw new TemplatePublishRefusal(
+          error.message,
+          error.code as TemplatePublishRefusalCode,
+          parsePublishSectionLabels(error.details),
+        );
       }
       throw error;
     }

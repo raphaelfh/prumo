@@ -914,6 +914,13 @@ export interface paths {
          *     article forms render the edit; runs from ``consensus`` on keep the
          *     version they were assessed under. Manager-gated like the sibling
          *     endpoints — section/field editing is project-wide configuration.
+         *
+         *     The single 409 (B-9b0 D1) is the publish-time re-check of the many->one
+         *     cardinality rule: ``error.code`` is a ``TemplatePublishRefusalCode`` and
+         *     ``error.details.section_labels`` names EVERY offending section, ordered
+         *     by ``sort_order``, so the Publish button composes its own sentence
+         *     instead of echoing English prose — and the manager fixes all of them in
+         *     one pass rather than rediscovering the next on each retry.
          */
         post: operations["republish_template_version_api_v1_projects__project_id__templates__template_id__republish_version_post"];
         delete?: never;
@@ -4759,6 +4766,62 @@ export interface components {
             project_template_id: string;
         };
         /**
+         * TemplatePublishRefusalCode
+         * @description Why ``POST .../republish-version`` returned 409 (B-9b0 D1).
+         *
+         *     Deliberately NOT part of :class:`app.schemas.common.ApiErrorCode`, for
+         *     the same reason as :class:`TemplateDiscardRefusalCode`: that enum is the
+         *     cross-cutting vocabulary every client branches on, and this is one
+         *     endpoint's private outcome. Slice-local codes stay slice-local so the
+         *     global contract does not grow a member per feature.
+         *
+         *     One member today, and an enum rather than a bare literal so the
+         *     generated client already branches on a closed set — Publish has exactly
+         *     one refusal that can reach it (``PendingConfigDraftError`` fires only
+         *     under ``fail_if_pending_draft``, which only the clone service passes).
+         * @enum {string}
+         */
+        TemplatePublishRefusalCode: "PUBLISH_BLOCKED_BY_MULTI_ENTRY";
+        /**
+         * TemplatePublishRefusalDetails
+         * @description The ``error.details`` payload of a publish refusal (B-9b0 D2).
+         *
+         *     EVERY offending section, ordered by ``sort_order`` — never a single
+         *     ``section_label``: the un-ordered select behind it raised on the first
+         *     heap row, so one name out of several was reported at random and the
+         *     manager had to publish-read-fix-publish to find the rest.
+         */
+        TemplatePublishRefusalDetails: {
+            /** Section Labels */
+            section_labels?: string[];
+        };
+        /** TemplatePublishRefusalError */
+        TemplatePublishRefusalError: {
+            code: components["schemas"]["TemplatePublishRefusalCode"];
+            details?: components["schemas"]["TemplatePublishRefusalDetails"] | null;
+            /** Message */
+            message: string;
+        };
+        /**
+         * TemplatePublishRefusalResponse
+         * @description The 409 body, declared so the payload reaches ``schema.d.ts`` typed.
+         *
+         *     Documents what ``app_error_handler`` actually writes — ``details`` under
+         *     ``error``, never a ``data`` slot, so this is NOT an ``ApiResponse[T]``.
+         *     Without it the generated client sees ``ErrorDetail.details:
+         *     dict[str, Any] | None`` and types the labels as ``unknown``.
+         */
+        TemplatePublishRefusalResponse: {
+            error: components["schemas"]["TemplatePublishRefusalError"];
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /** Trace Id */
+            trace_id?: string | null;
+        };
+        /**
          * TestConnectionResponse
          * @description Response de teste de conexao.
          */
@@ -6418,6 +6481,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_RepublishTemplateVersionResponse_"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplatePublishRefusalResponse"];
                 };
             };
             /** @description Validation Error */

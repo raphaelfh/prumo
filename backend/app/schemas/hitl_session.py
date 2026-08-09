@@ -168,6 +168,54 @@ class TemplateDiscardRefusalResponse(BaseModel):
     trace_id: str | None = None
 
 
+class TemplatePublishRefusalCode(StrEnum):
+    """Why ``POST .../republish-version`` returned 409 (B-9b0 D1).
+
+    Deliberately NOT part of :class:`app.schemas.common.ApiErrorCode`, for
+    the same reason as :class:`TemplateDiscardRefusalCode`: that enum is the
+    cross-cutting vocabulary every client branches on, and this is one
+    endpoint's private outcome. Slice-local codes stay slice-local so the
+    global contract does not grow a member per feature.
+
+    One member today, and an enum rather than a bare literal so the
+    generated client already branches on a closed set — Publish has exactly
+    one refusal that can reach it (``PendingConfigDraftError`` fires only
+    under ``fail_if_pending_draft``, which only the clone service passes).
+    """
+
+    PUBLISH_BLOCKED_BY_MULTI_ENTRY = "PUBLISH_BLOCKED_BY_MULTI_ENTRY"
+
+
+class TemplatePublishRefusalDetails(BaseModel):
+    """The ``error.details`` payload of a publish refusal (B-9b0 D2).
+
+    EVERY offending section, ordered by ``sort_order`` — never a single
+    ``section_label``: the un-ordered select behind it raised on the first
+    heap row, so one name out of several was reported at random and the
+    manager had to publish-read-fix-publish to find the rest."""
+
+    section_labels: list[str] = Field(default_factory=list)
+
+
+class TemplatePublishRefusalError(BaseModel):
+    code: TemplatePublishRefusalCode
+    message: str
+    details: TemplatePublishRefusalDetails | None = None
+
+
+class TemplatePublishRefusalResponse(BaseModel):
+    """The 409 body, declared so the payload reaches ``schema.d.ts`` typed.
+
+    Documents what ``app_error_handler`` actually writes — ``details`` under
+    ``error``, never a ``data`` slot, so this is NOT an ``ApiResponse[T]``.
+    Without it the generated client sees ``ErrorDetail.details:
+    dict[str, Any] | None`` and types the labels as ``unknown``."""
+
+    ok: bool = False
+    error: TemplatePublishRefusalError
+    trace_id: str | None = None
+
+
 class UpdateTemplateActiveRequest(BaseModel):
     is_active: bool
 

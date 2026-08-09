@@ -7840,6 +7840,84 @@
         "title": "TemplateInstructionRead",
         "type": "object"
       },
+      "TemplatePublishRefusalCode": {
+        "description": "Why ``POST .../republish-version`` returned 409 (B-9b0 D1).\n\nDeliberately NOT part of :class:`app.schemas.common.ApiErrorCode`, for\nthe same reason as :class:`TemplateDiscardRefusalCode`: that enum is the\ncross-cutting vocabulary every client branches on, and this is one\nendpoint's private outcome. Slice-local codes stay slice-local so the\nglobal contract does not grow a member per feature.\n\nOne member today, and an enum rather than a bare literal so the\ngenerated client already branches on a closed set \u2014 Publish has exactly\none refusal that can reach it (``PendingConfigDraftError`` fires only\nunder ``fail_if_pending_draft``, which only the clone service passes).",
+        "enum": [
+          "PUBLISH_BLOCKED_BY_MULTI_ENTRY"
+        ],
+        "title": "TemplatePublishRefusalCode",
+        "type": "string"
+      },
+      "TemplatePublishRefusalDetails": {
+        "description": "The ``error.details`` payload of a publish refusal (B-9b0 D2).\n\nEVERY offending section, ordered by ``sort_order`` \u2014 never a single\n``section_label``: the un-ordered select behind it raised on the first\nheap row, so one name out of several was reported at random and the\nmanager had to publish-read-fix-publish to find the rest.",
+        "properties": {
+          "section_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Section Labels",
+            "type": "array"
+          }
+        },
+        "title": "TemplatePublishRefusalDetails",
+        "type": "object"
+      },
+      "TemplatePublishRefusalError": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/TemplatePublishRefusalCode"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplatePublishRefusalDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "TemplatePublishRefusalError",
+        "type": "object"
+      },
+      "TemplatePublishRefusalResponse": {
+        "description": "The 409 body, declared so the payload reaches ``schema.d.ts`` typed.\n\nDocuments what ``app_error_handler`` actually writes \u2014 ``details`` under\n``error``, never a ``data`` slot, so this is NOT an ``ApiResponse[T]``.\nWithout it the generated client sees ``ErrorDetail.details:\ndict[str, Any] | None`` and types the labels as ``unknown``.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/TemplatePublishRefusalError"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "TemplatePublishRefusalResponse",
+        "type": "object"
+      },
       "TestConnectionResponse": {
         "description": "Response de teste de conexao.",
         "properties": {
@@ -10727,7 +10805,7 @@
     },
     "/api/v1/projects/{project_id}/templates/{template_id}/republish-version": {
       "post": {
-        "description": "Publish the live template structure as a new active version.\n\nIdempotent when nothing changed (returns the current active version\nwithout spawning rows). Runs still in an editable stage\n(``pending``/``extract``) are re-pinned to the new version so open\narticle forms render the edit; runs from ``consensus`` on keep the\nversion they were assessed under. Manager-gated like the sibling\nendpoints \u2014 section/field editing is project-wide configuration.",
+        "description": "Publish the live template structure as a new active version.\n\nIdempotent when nothing changed (returns the current active version\nwithout spawning rows). Runs still in an editable stage\n(``pending``/``extract``) are re-pinned to the new version so open\narticle forms render the edit; runs from ``consensus`` on keep the\nversion they were assessed under. Manager-gated like the sibling\nendpoints \u2014 section/field editing is project-wide configuration.\n\nThe single 409 (B-9b0 D1) is the publish-time re-check of the many->one\ncardinality rule: ``error.code`` is a ``TemplatePublishRefusalCode`` and\n``error.details.section_labels`` names EVERY offending section, ordered\nby ``sort_order``, so the Publish button composes its own sentence\ninstead of echoing English prose \u2014 and the manager fixes all of them in\none pass rather than rediscovering the next on each retry.",
         "operationId": "republish_template_version_api_v1_projects__project_id__templates__template_id__republish_version_post",
         "parameters": [
           {
@@ -10761,6 +10839,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplatePublishRefusalResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
