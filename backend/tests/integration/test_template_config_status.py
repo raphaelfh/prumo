@@ -213,6 +213,50 @@ async def test_noop_edit_chain_counts_zero(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
+async def test_discard_available_tracks_the_restorability_gate(
+    db_session: AsyncSession,
+) -> None:
+    """B-9c1 D12: the Discard button has to know before the click.
+
+    True for a wide baseline (with or without an open draft — a drifted
+    marker-NULL template is discardable), false for the pre-0026 narrow
+    baseline the endpoint refuses with 409."""
+    await _publish_primary(db_session)
+    assert (await _status(db_session)).discard_available is True
+
+    await _edit_primary_field_label(db_session, " (b9c1)")
+    assert (await _status(db_session)).discard_available is True
+
+    active = await ExtractionTemplateVersionRepository(db_session).get_active(SEED.primary_template)
+    assert active is not None
+    active.schema_ = {
+        "entity_types": [
+            {"id": str(SEED.primary_entity_type), "label": "Participants", "fields": []}
+        ]
+    }
+    await db_session.flush()
+
+    assert (await _status(db_session)).discard_available is False
+
+
+@pytest.mark.asyncio
+async def test_discard_unavailable_without_a_published_version(
+    db_session: AsyncSession,
+) -> None:
+    """No baseline, nothing to discard back to — the endpoint 404s (D12)."""
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_template_versions SET is_active = false "
+            "WHERE project_template_id = :tid"
+        ),
+        {"tid": str(SEED.primary_template)},
+    )
+    await db_session.flush()
+
+    assert (await _status(db_session)).discard_available is False
+
+
+@pytest.mark.asyncio
 async def test_instruction_only_draft_counts_one(db_session: AsyncSession) -> None:
     """The instruction PUT stamps the marker without touching a single
     structural row; the diff still sees it (D4's exception)."""

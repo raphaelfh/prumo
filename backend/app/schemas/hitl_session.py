@@ -59,6 +59,50 @@ class RepublishTemplateVersionResponse(BaseModel):
     repinned_run_count: int
 
 
+class DiscardDraftRequest(BaseModel):
+    acknowledge_orphans: bool = False
+    """Confirms the caller saw the 409 listing the recorded values this
+    Discard will orphan or re-interpret (B-9c1 D6). Never defaulted true:
+    the first POST is the question, the second is the answer."""
+
+
+class DiscardKeptNode(BaseModel):
+    """One node Discard could NOT undo, and why (B-9c1 D4).
+
+    Deleting it would break a RESTRICT reference to real run data, so the
+    draft shrinks around it instead of failing wholesale."""
+
+    node_id: UUID
+    node_kind: Literal["entity_type", "field"]
+    label: str
+    reason: Literal["has_recorded_data", "related_to_kept_node"]
+    """``has_recorded_data`` — this node itself owns extraction instances or
+    is referenced by the review workflow. ``related_to_kept_node`` — it is
+    an ancestor or a subtree member of one that does, and deleting it would
+    cascade that node away."""
+
+
+class DiscardDraftResponse(BaseModel):
+    """What Discard actually undid (B-9c1 D11). No diff payload — B-9b owns
+    that shape."""
+
+    project_template_id: UUID
+    draft_was_open: bool
+    """Whether the marker was set when the request arrived. ``False`` is a
+    real, supported case: a template whose live rows drifted from its
+    published version with no marker (a lost republish) is repairable."""
+    created_entity_types: int
+    deleted_entity_types: int
+    updated_entity_types: int
+    created_fields: int
+    deleted_fields: int
+    updated_fields: int
+    instruction_reset: bool
+    kept: list[DiscardKeptNode]
+    """Non-empty ⇒ the template is STILL in draft: the marker is only
+    cleared when the live tree matches the published version exactly."""
+
+
 class UpdateTemplateActiveRequest(BaseModel):
     is_active: bool
 
@@ -102,6 +146,11 @@ class TemplateConfigStatusRead(BaseModel):
     is unknowable: no draft, no published baseline, or a pre-0026 narrow
     snapshot. ``0`` is a real value — a marker-set-but-identical tree
     (A→B→A) still needs a Publish to clear the marker."""
+    discard_available: bool = False
+    """Whether ``POST .../discard-draft`` can run at all (B-9c1 D12), so the
+    button is disabled with the right tooltip instead of discovering the
+    refusal by clicking. False without a published baseline, and false for a
+    pre-0026 narrow one (restoring it would wipe columns project-wide)."""
 
 
 class TemplateActiveVersionRead(BaseModel):

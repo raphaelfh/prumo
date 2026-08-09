@@ -715,6 +715,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates/{template_id}/discard-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard Template Draft
+         * @description Throw the unpublished config draft away, back to the active version.
+         *
+         *     Partial by design (B-9c1 D4): a draft-added section that already owns
+         *     extraction instances — or a draft-added field the review workflow
+         *     references — cannot be deleted, so it is KEPT and reported in
+         *     ``kept`` while the rest of the draft is undone. The draft marker
+         *     survives whenever anything was kept.
+         *
+         *     Refuses (409) when restoring would corrupt rather than merely fail: a
+         *     ``many`` -> ``one`` cardinality downgrade under a multi-entry parent, a
+         *     replaced model container, a pre-0026 "narrow" baseline (B-9x), and
+         *     destructive changes to fields already holding values unless
+         *     ``acknowledge_orphans`` is set. 404 when the template is foreign or has
+         *     never published.
+         *
+         *     Known gap: a wide-but-older baseline that predates a column
+         *     (``allows_not_applicable``, #462) normalizes the absent key to the
+         *     column default rather than "leave alone", so a restore rewrites those
+         *     flags — and ``diff_snapshots`` reports ``total == 0`` while it happens.
+         *     Only whole-era (narrow) baselines are detectable here.
+         */
+        post: operations["discard_template_draft_api_v1_projects__project_id__templates__template_id__discard_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/{template_id}/fields": {
         parameters: {
             query?: never;
@@ -1621,6 +1660,23 @@ export interface components {
         ApiResponse_DeleteAPIKeyResult_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["DeleteAPIKeyResult"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[DiscardDraftResponse] */
+        ApiResponse_DiscardDraftResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["DiscardDraftResponse"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2757,6 +2813,70 @@ export interface components {
             deleted: boolean;
             /** Id */
             id: string;
+        };
+        /** DiscardDraftRequest */
+        DiscardDraftRequest: {
+            /**
+             * Acknowledge Orphans
+             * @default false
+             */
+            acknowledge_orphans: boolean;
+        };
+        /**
+         * DiscardDraftResponse
+         * @description What Discard actually undid (B-9c1 D11). No diff payload — B-9b owns
+         *     that shape.
+         */
+        DiscardDraftResponse: {
+            /** Created Entity Types */
+            created_entity_types: number;
+            /** Created Fields */
+            created_fields: number;
+            /** Deleted Entity Types */
+            deleted_entity_types: number;
+            /** Deleted Fields */
+            deleted_fields: number;
+            /** Draft Was Open */
+            draft_was_open: boolean;
+            /** Instruction Reset */
+            instruction_reset: boolean;
+            /** Kept */
+            kept: components["schemas"]["DiscardKeptNode"][];
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+            /** Updated Entity Types */
+            updated_entity_types: number;
+            /** Updated Fields */
+            updated_fields: number;
+        };
+        /**
+         * DiscardKeptNode
+         * @description One node Discard could NOT undo, and why (B-9c1 D4).
+         *
+         *     Deleting it would break a RESTRICT reference to real run data, so the
+         *     draft shrinks around it instead of failing wholesale.
+         */
+        DiscardKeptNode: {
+            /** Label */
+            label: string;
+            /**
+             * Node Id
+             * Format: uuid
+             */
+            node_id: string;
+            /**
+             * Node Kind
+             * @enum {string}
+             */
+            node_kind: "entity_type" | "field";
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "has_recorded_data" | "related_to_kept_node";
         };
         /**
          * DownloadAttachmentResponse
@@ -4291,6 +4411,11 @@ export interface components {
         TemplateConfigStatusRead: {
             /** Active Version */
             active_version: number | null;
+            /**
+             * Discard Available
+             * @default false
+             */
+            discard_available: boolean;
             /** Has Pending Changes */
             has_pending_changes: boolean;
             /** Pending Change Count */
@@ -5896,6 +6021,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_TemplateConfigStatusRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_template_draft_api_v1_projects__project_id__templates__template_id__discard_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscardDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_DiscardDraftResponse_"];
                 };
             };
             /** @description Validation Error */

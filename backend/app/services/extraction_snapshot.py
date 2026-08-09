@@ -173,6 +173,25 @@ def snapshot_is_narrow(entity_types: list[dict[str, Any]]) -> bool:
     return False
 
 
+def baseline_is_restorable(schema_: dict[str, Any] | None) -> bool:
+    """Can this published snapshot be written back over the live rows (B-9c1)?
+
+    The gate is ``entity_types and snapshot_is_narrow(entity_types)`` and the
+    leading truthiness test is load-bearing in the opposite direction from
+    every other caller: :func:`snapshot_is_narrow` calls an EMPTY list narrow
+    *by design*, so the run view falls back to live rows — but an empty
+    published baseline is perfectly restorable, the restore being a plain
+    delete-all. Only a pre-0026 baseline with actual content is unrestorable:
+    writing it back would wipe ``llm_description``/``allow_other``
+    project-wide (that era gets Discard in B-9x).
+
+    Shared so the endpoint's refusal and the Configuration tab's
+    ``discard_available`` flag can never disagree about the same template.
+    """
+    entity_types = (schema_ or {}).get("entity_types") or []
+    return not (entity_types and snapshot_is_narrow(entity_types))
+
+
 async def entity_types_for_version(
     db: AsyncSession, *, version_id: UUID, template_id: UUID
 ) -> list[RunViewEntityType]:
