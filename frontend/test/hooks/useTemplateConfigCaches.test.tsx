@@ -10,8 +10,24 @@ import type {ReactNode} from 'react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 const republishTemplateVersion = vi.fn();
+// The refusal class comes from the MOCKED module, so the `instanceof`
+// branch in the hook matches exactly what these tests hand it.
+const {TemplatePublishRefusal} = vi.hoisted(() => {
+  class TemplatePublishRefusal extends Error {
+    constructor(
+      message: string,
+      public readonly code: string,
+      public readonly sectionLabels: readonly string[] = [],
+    ) {
+      super(message);
+      this.name = 'TemplatePublishRefusal';
+    }
+  }
+  return {TemplatePublishRefusal};
+});
 vi.mock('@/services/templateService', () => ({
   republishTemplateVersion: (...a: unknown[]) => republishTemplateVersion(...a),
+  TemplatePublishRefusal,
 }));
 vi.mock('sonner', () => ({
   toast: {success: vi.fn(), error: vi.fn()},
@@ -22,7 +38,7 @@ import {
   useTemplateRepublish,
 } from '@/hooks/extraction/useTemplateRepublish';
 import {runsKeys} from '@/hooks/runs/types';
-import {PgError} from '@/lib/error-utils';
+import {extraction, templateConfig} from '@/lib/copy';
 import {
   templateActiveStructureKeys,
   templateConfigStatusKeys,
@@ -210,7 +226,7 @@ describe('useTemplateRepublish (the Publish path)', () => {
     );
   });
 
-  it('returns null and toasts on failure, touching no caches', async () => {
+  it('keeps the GENERIC copy for a failure that is not the typed refusal', async () => {
     republishTemplateVersion.mockResolvedValue({
       ok: false,
       error: {message: 'boom'},
@@ -225,17 +241,20 @@ describe('useTemplateRepublish (the Publish path)', () => {
 
     expect(outcome).toBeNull();
     expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error).toHaveBeenCalledWith(extraction.errors_republishTemplate);
     expect(invalidate).not.toHaveBeenCalled();
   });
 
-  it("surfaces the publish-blocked 409 (PgError '409') message VERBATIM", async () => {
-    // The backend 409 names the offending section (B-8 review); the
-    // generic errors_republishTemplate fallback must not swallow it.
-    const blocked =
-      'Cannot publish: section "Final predictors" is set to repeat once per entry';
+  it('composes the local copy from the refusal, naming EVERY section (B-9b0 D4)', async () => {
+    // The server prose is diagnostic, not the contract: the code and the
+    // labels are, and the sentence the manager reads is ours.
     republishTemplateVersion.mockResolvedValue({
       ok: false,
-      error: new PgError(blocked, '409'),
+      error: new TemplatePublishRefusal(
+        'SERVER PROSE the UI must not echo',
+        'PUBLISH_BLOCKED_BY_MULTI_ENTRY',
+        ['Final predictors', 'Model results'],
+      ),
     });
     const {queryClient, wrapper} = createWrapper();
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
@@ -246,7 +265,48 @@ describe('useTemplateRepublish (the Publish path)', () => {
     const outcome = await result.current.republish();
 
     expect(outcome).toBeNull();
-    expect(toast.error).toHaveBeenCalledWith(blocked);
+    expect(toast.error).toHaveBeenCalledWith(
+      templateConfig.errors_publishBlockedOther.replace(
+        '{{sections}}',
+        '“Final predictors”, “Model results”',
+      ),
+    );
+    expect(vi.mocked(toast.error).mock.calls[0][0]).not.toContain('SERVER PROSE');
     expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it('reads as a singular sentence for one offending section', async () => {
+    republishTemplateVersion.mockResolvedValue({
+      ok: false,
+      error: new TemplatePublishRefusal('prose', 'PUBLISH_BLOCKED_BY_MULTI_ENTRY', [
+        'Final predictors',
+      ]),
+    });
+    const {wrapper} = createWrapper();
+    const {result} = renderHook(() => useTemplateRepublish('p1', 't1'), {wrapper});
+
+    await result.current.republish();
+
+    expect(toast.error).toHaveBeenCalledWith(
+      templateConfig.errors_publishBlockedOne.replace(
+        '{{sections}}',
+        '“Final predictors”',
+      ),
+    );
+  });
+
+  it('falls back to the nameless refusal copy when the payload carried no labels', async () => {
+    // Still a policy refusal, so it must not read like a server fault —
+    // it just cannot name names (the discardConfirmBodyPlain precedent).
+    republishTemplateVersion.mockResolvedValue({
+      ok: false,
+      error: new TemplatePublishRefusal('prose', 'PUBLISH_BLOCKED_BY_MULTI_ENTRY', []),
+    });
+    const {wrapper} = createWrapper();
+    const {result} = renderHook(() => useTemplateRepublish('p1', 't1'), {wrapper});
+
+    await result.current.republish();
+
+    expect(toast.error).toHaveBeenCalledWith(templateConfig.errors_publishBlockedPlain);
   });
 });

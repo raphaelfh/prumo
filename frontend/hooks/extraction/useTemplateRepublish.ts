@@ -18,7 +18,6 @@
 import {useQueryClient} from '@tanstack/react-query';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
-import {PgError} from '@/lib/error-utils';
 import {runsKeys} from '@/hooks/runs/types';
 import {
   templateActiveStructureKeys,
@@ -28,8 +27,34 @@ import {
 } from '@/lib/query-keys/extraction';
 import {
   republishTemplateVersion,
+  TemplatePublishRefusal,
   type RepublishTemplateVersionResponse,
 } from '@/services/templateService';
+
+/**
+ * The sentence for a failed publish (B-9b0 D4).
+ *
+ * A typed refusal is a policy outcome, so it gets its own copy with every
+ * offending section named; anything else — 500, timeout, offline — keeps
+ * the generic failure copy. The server's prose is never rendered: it is
+ * diagnostic, the code and the labels are the contract.
+ */
+function publishFailureMessage(error: Error): string {
+  if (!(error instanceof TemplatePublishRefusal)) {
+    return t('extraction', 'errors_republishTemplate');
+  }
+  const {sectionLabels} = error;
+  if (sectionLabels.length === 0) {
+    return t('templateConfig', 'errors_publishBlockedPlain');
+  }
+  // Labels are user-authored and may contain commas, so each is quoted
+  // before the join — the list has to stay readable with several sections.
+  const listed = sectionLabels.map((label) => `“${label}”`).join(', ');
+  return t(
+    'templateConfig',
+    sectionLabels.length === 1 ? 'errors_publishBlockedOne' : 'errors_publishBlockedOther',
+  ).replace('{{sections}}', listed);
+}
 
 export function useTemplateConfigCaches(
   projectId: string | undefined,
@@ -119,14 +144,7 @@ export function useTemplateRepublish(
     const result = await republishTemplateVersion(projectId, templateId);
     if (!result.ok) {
       console.error('[useTemplateRepublish] publish failed:', result.error);
-      // PgError('409') is the publish-time cardinality re-check (B-8
-      // review): the server message names the offending section — show
-      // it verbatim instead of the generic failure copy.
-      toast.error(
-        result.error instanceof PgError && result.error.code === '409'
-          ? result.error.message
-          : t('extraction', 'errors_republishTemplate'),
-      );
+      toast.error(publishFailureMessage(result.error));
       return null;
     }
 
