@@ -16,6 +16,9 @@ import {t} from '@/lib/copy';
  * changes — loading and error states never enable a publish. The failure
  * toast lives in useTemplateRepublish; only the success toast is here
  * (it needs the returned version number).
+ *
+ * B-9a adds the server-computed draft change count to the pending chip;
+ * see the D9 note on `draftChangeCount` below for the null/zero rule.
  */
 
 interface TemplateConfigPublishControlsProps {
@@ -32,6 +35,17 @@ export function TemplateConfigPublishControls({
   const [publishing, setPublishing] = useState(false);
 
   const hasPendingChanges = configStatus?.has_pending_changes === true;
+  // B-9a/D9: the count qualifies the chip only when it is a POSITIVE
+  // integer. `null` (unreliable or absent baseline) and `0` (a no-op draft
+  // — the 0048 triggers stamp the marker even when the snapshot is
+  // identical) both fall back to the bare badge; "Draft · 0 changes" would
+  // be nonsense. Publish is never coupled to the count: publishing clears
+  // the marker in the zero case too.
+  const rawCount = configStatus?.pending_change_count;
+  const draftChangeCount =
+    typeof rawCount === 'number' && Number.isInteger(rawCount) && rawCount > 0
+      ? rawCount
+      : null;
 
   const handlePublish = () => {
     setPublishing(true);
@@ -58,7 +72,12 @@ export function TemplateConfigPublishControls({
         variant="outline"
         className="border-warning/50 bg-warning/10 text-xs text-warning"
       >
-        {t('extraction', 'configUnpublishedChanges')}
+        {draftChangeCount == null
+          ? t('extraction', 'configUnpublishedChanges')
+          : (draftChangeCount === 1
+              ? t('templateConfig', 'draftChangeCountOne')
+              : t('templateConfig', 'draftChangeCountOther')
+            ).replace('{{n}}', String(draftChangeCount))}
       </Badge>
     );
   } else if (configStatus?.active_version != null) {

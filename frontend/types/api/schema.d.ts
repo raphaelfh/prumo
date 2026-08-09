@@ -4293,6 +4293,8 @@ export interface components {
             active_version: number | null;
             /** Has Pending Changes */
             has_pending_changes: boolean;
+            /** Pending Change Count */
+            pending_change_count?: number | null;
             /**
              * Project Template Id
              * Format: uuid

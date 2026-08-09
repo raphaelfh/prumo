@@ -23,6 +23,10 @@ export const templateConfig = {
   deleteGroupCascadeWarning:
     'Deleting this repeating group also deletes {{children}} per-{{noun}} section(s) inside it and their {{fields}} field(s)',
   deleteRepeatingGroup: 'Delete repeating group…',
+  // B-9a: shown only for a POSITIVE server-computed count; 0 and null both
+  // fall back to extraction.configUnpublishedChanges (D9).
+  draftChangeCountOne: 'Draft · {{n}} change',
+  draftChangeCountOther: 'Draft · {{n}} changes',
   dragCancelled: 'Move cancelled — {{field}} stays where it was',
   dragHandleHint: 'Drag to reorder',
   dragLockedFiltering: 'Clear search to reorder',

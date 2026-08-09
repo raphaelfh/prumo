@@ -135,6 +135,72 @@ describe('TemplateConfigPublishControls', () => {
     );
   });
 
+  // B-9a / D9 — the server-computed draft change count on the chip.
+  it('pending changes with count 1 → singular draft chip', async () => {
+    loadTemplateConfigStatus.mockResolvedValue(
+      status({has_pending_changes: true, pending_change_count: 1}),
+    );
+    renderControls();
+
+    expect(await screen.findByText('Draft · 1 change')).toBeInTheDocument();
+    expect(screen.queryByText('Unpublished changes')).not.toBeInTheDocument();
+  });
+
+  it('pending changes with count 6 → plural draft chip', async () => {
+    loadTemplateConfigStatus.mockResolvedValue(
+      status({has_pending_changes: true, pending_change_count: 6}),
+    );
+    renderControls();
+
+    expect(await screen.findByText('Draft · 6 changes')).toBeInTheDocument();
+    expect(screen.queryByText('Unpublished changes')).not.toBeInTheDocument();
+  });
+
+  it('count 0 (no-op draft) → bare badge, Publish still enabled', async () => {
+    loadTemplateConfigStatus.mockResolvedValue(
+      status({has_pending_changes: true, pending_change_count: 0}),
+    );
+    renderControls();
+
+    expect(await screen.findByText('Unpublished changes')).toBeInTheDocument();
+    expect(screen.queryByText(/Draft ·/)).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('button', {name: /publish/i})).toBeEnabled(),
+    );
+  });
+
+  it('count null (unreliable baseline) → bare badge', async () => {
+    loadTemplateConfigStatus.mockResolvedValue(
+      status({has_pending_changes: true, pending_change_count: null}),
+    );
+    renderControls();
+
+    expect(await screen.findByText('Unpublished changes')).toBeInTheDocument();
+    expect(screen.queryByText(/Draft ·/)).not.toBeInTheDocument();
+  });
+
+  it('published and clean → version chip, never a draft chip', async () => {
+    loadTemplateConfigStatus.mockResolvedValue(status({pending_change_count: 4}));
+    renderControls();
+
+    expect(await screen.findByText('Published · v3')).toBeInTheDocument();
+    expect(screen.queryByText(/Draft ·/)).not.toBeInTheDocument();
+  });
+
+  it('unpublished and clean → no chip at all', async () => {
+    loadTemplateConfigStatus.mockResolvedValue(
+      status({active_version: null, pending_change_count: null}),
+    );
+    renderControls();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', {name: /publish/i})).toBeDisabled(),
+    );
+    expect(screen.queryByText(/Draft ·/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Published/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Unpublished changes')).not.toBeInTheDocument();
+  });
+
   it('publish failure → error toast (from the hook), button re-enabled', async () => {
     loadTemplateConfigStatus.mockResolvedValue(status({has_pending_changes: true}));
     republishTemplateVersion.mockResolvedValue({
