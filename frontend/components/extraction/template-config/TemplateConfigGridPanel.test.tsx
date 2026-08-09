@@ -11,6 +11,11 @@ import {act, render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
+// The panel mounts TemplateInspector, whose section pane reaches
+// templateService -> apiClient -> the supabase client, which throws on
+// import when env is absent (CI). Mocking the service keeps the module
+// tree out of these grid tests.
+vi.mock('@/services/templateService', () => ({updateSection: vi.fn()}));
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 vi.mock('@/hooks/extraction/useTemplateEntityTypes', () => ({
   useTemplateEntityTypes: vi.fn(),
