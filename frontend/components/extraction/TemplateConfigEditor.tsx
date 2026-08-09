@@ -43,6 +43,15 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   // with zero sections. `isError` must be answered before the empty state,
   // or a dropped connection reads as "your configuration is gone".
   const {entityTypes, isPending, isError} = useTemplateEntityTypes(templateId);
+  // …but only while there is nothing cached. TanStack flips `status` to
+  // error on a BACKGROUND failure and KEEPS the rows, and with staleTime at
+  // 5min and refetch-on-focus off, that is the realistic error on this
+  // screen: the invalidation that follows a mutation which already
+  // succeeded (rename, add/remove section, delete field, Discard). Blanking
+  // then discards a structure we still hold — along with the grid's
+  // selection/search/collapse state and the Discard result pane, which is
+  // mounted inside the publish controls in the success branch below.
+  const structureRefreshFailed = isError && entityTypes.length > 0;
   // Which AddSectionDialog variant is open (B-8 D3); null = closed.
   const [addSectionMode, setAddSectionMode] = useState<AddSectionMode | null>(null);
   const [removingSectionId, setRemovingSectionId] = useState<string | null>(null);
@@ -144,10 +153,12 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     );
   }
 
-  if (isError) {
-    // Replaces the imperative loader's toast.error: a failure the user can
-    // still see (and retry) after the toast would have expired. Retrying is
-    // the same invalidation every mutation performs.
+  if (isError && entityTypes.length === 0) {
+    // Nothing cached: the only case where taking the screen is honest, and
+    // the only one D8 is about. Replaces the imperative loader's
+    // toast.error — a failure the user can still see (and retry) after the
+    // toast would have expired. Retrying is the same invalidation every
+    // mutation performs.
     return (
       <Card>
         <CardContent className="pt-6">
@@ -202,6 +213,31 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
           />
         </div>
       </div>
+
+      {/* Degraded, not broken: the rows below are the last good read. An
+          inline strip rather than a toast — the same reason the blocking
+          card replaced one, and a toast would expire while the stale grid
+          stayed on screen. */}
+      {structureRefreshFailed && (
+        <div
+          role="alert"
+          data-testid="template-config-refresh-failed"
+          className="flex items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-xs text-warning"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden />
+          <span className="min-w-0 flex-1">
+            {t('templateConfig', 'sectionsRefreshFailedBody')}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 hover:bg-warning/20 hover:text-warning"
+            onClick={() => void invalidateStructure()}
+          >
+            {t('common', 'tryAgain')}
+          </Button>
+        </div>
+      )}
 
       <TemplateInstructionRow projectId={projectId} templateId={templateId} />
 

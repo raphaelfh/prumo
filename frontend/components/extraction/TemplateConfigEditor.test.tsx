@@ -65,8 +65,13 @@ vi.mock('@/hooks/shared/useContainerNarrow', () => ({
 vi.mock('@/components/extraction/TemplateInstructionRow', () => ({
   TemplateInstructionRow: () => null,
 }));
+// A text marker, NOT `null`: the Discard dialog is mounted inside these
+// controls, so "did the controls survive this re-render" is the observable
+// standing in for "did the Discard result pane survive". (The end-to-end
+// version, with the real controls and the real dialog, lives in
+// TemplateConfigEditor.discardMount.test.tsx.)
 vi.mock('@/components/extraction/template-config/TemplateConfigPublishControls', () => ({
-  TemplateConfigPublishControls: () => null,
+  TemplateConfigPublishControls: () => 'publish-controls',
 }));
 vi.mock('./dialogs', () => ({
   AddSectionDialog: () => null,
@@ -286,6 +291,49 @@ describe('TemplateConfigEditor — entity types come from the query (B-9c2 T3, D
 
     expect(await screen.findByText('noSectionsConfigured')).toBeInTheDocument();
     expect(screen.queryByText('sectionsLoadFailedTitle')).toBeNull();
+  });
+
+  it('a refetch failure with rows ALREADY cached keeps the tab mounted and says so non-blockingly', async () => {
+    // The realistic way into `status: "error"` on this screen is not a first
+    // load at all (staleTime 5min, no refetch-on-focus): it is the
+    // invalidation every successful mutation performs — rename, add/remove
+    // section, delete field, Discard. TanStack v5 flips the status to error
+    // while RETAINING the cached rows, so blanking the tab here throws away
+    // a structure we still hold, along with the panel's selection/search/
+    // collapse state and the host of the Discard result pane.
+    await useRealEntityTypesHook();
+    pgrst.rows = [ROW_A, ROW_B];
+
+    const {queryClient} = renderEditor();
+    expect(await screen.findByText('configSectionsCountOther')).toBeInTheDocument();
+
+    // The mutation already committed; only the follow-up read dies.
+    pgrst.fail = true;
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: templateEntityTypesKeys.byTemplate('t1'),
+      });
+    });
+
+    // The failure IS said — non-blockingly, next to the data it qualifies.
+    // (The observer notification is a macrotask, so this is the await that
+    // proves the editor has actually reacted to the error state.)
+    const banner = await screen.findByTestId('template-config-refresh-failed');
+    expect(banner).toHaveAttribute('role', 'alert');
+    expect(within(banner).getByText('sectionsRefreshFailedBody')).toBeInTheDocument();
+
+    // The blocking surfaces are both reserved for "we have nothing".
+    expect(screen.queryByText('sectionsLoadFailedTitle')).toBeNull();
+    expect(screen.queryByText('noSectionsConfigured')).toBeNull();
+
+    // The cached structure is still on screen…
+    expect(screen.getByText('configSectionsCountOther')).toBeInTheDocument();
+    expect(screen.queryAllByText('Section B').length).toBeGreaterThan(0);
+    // …including the command-bar cluster that hosts the Discard dialog.
+    expect(screen.getByText('publish-controls')).toBeInTheDocument();
+
+    await userEvent.click(within(banner).getByRole('button', {name: 'tryAgain'}));
+    expect(invalidateStructure).toHaveBeenCalled();
   });
 
   it('the header badge recomputes when templateEntityTypesKeys.byTemplate is invalidated (no hand-refresh)', async () => {

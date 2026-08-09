@@ -124,9 +124,15 @@ export const templateConfig = {
   repeatsPerArticle: 'Repeats per article',
   // B-9c2 T3 (D8): the editor's THIRD render branch. A failed structure
   // read must never be dressed up as "this template has no sections".
+  // Reserved for a read that returned NOTHING — with rows cached the copy
+  // below is the honest one (the sections ARE shown, just not refreshed).
   sectionsLoadFailedBody:
     'The template structure could not be read, so the sections are not shown. Check your connection and try again.',
   sectionsLoadFailedTitle: 'Couldn’t load the sections',
+  // The non-blocking counterpart: the refresh failed but the structure is
+  // still cached, so the tab keeps working and only says it may be behind.
+  sectionsRefreshFailedBody:
+    'The sections could not be refreshed, so they may not include your latest changes. Check your connection and try again.',
   sectionUpdatedSuccess: 'Section updated',
   shortcutMoveDown: '⌘⇧↓',
   shortcutMoveToSection: '⌘⇧M',
