@@ -2892,6 +2892,19 @@ export interface components {
             /** Id */
             id: string;
         };
+        /**
+         * DiffStatus
+         * @description Whether a config diff could be computed, and when not, why (D9).
+         *
+         *     One closed 3-way choice rather than a pair of booleans plus a reason: an
+         *     un-diffable template is a state the Publish sheet renders, never an
+         *     error, and only :attr:`AVAILABLE` can carry rows. Encoding it as
+         *     independent fields would make "no diff, yet here are some changes"
+         *     expressible, which is exactly the payload no client should have to
+         *     defend against.
+         * @enum {string}
+         */
+        DiffStatus: "available" | "initial_version" | "baseline_too_old";
         /** DiscardDraftRequest */
         DiscardDraftRequest: {
             /**
@@ -3571,6 +3584,16 @@ export interface components {
              */
             parentInstanceId: string;
         };
+        /**
+         * OpaqueValueState
+         * @description A summarized opaque value that has no listable content (D3).
+         *
+         *     The wire row ships this instead of a server-rendered English word, so the
+         *     copy layer owns the sentence (``.claude/rules/frontend.md``) and a stored
+         *     value that happens to read like the marker cannot be mistaken for it.
+         * @enum {string}
+         */
+        OpaqueValueState: "present" | "empty";
         /** OpenHITLSessionRequest */
         OpenHITLSessionRequest: {
             /**
@@ -4481,12 +4504,11 @@ export interface components {
         };
         /**
          * TemplateChangeRowRead
-         * @description One diff row on the wire — the read model's ``TemplateChangeRow``.
+         * @description One diff row on the wire, built by ``app.services.template_diff_read``.
          *
-         *     Mirrors ``app.services.template_diff_read.TemplateChangeRow`` field for
-         *     field (``from_attributes`` copies it straight across). Nothing here is
-         *     typed ``Any``: the baseline side of a diff is raw stored JSONB, and an
-         *     opaque value is summarized server-side rather than shipped.
+         *     Nothing here is typed ``Any``: the baseline side of a diff is raw stored
+         *     JSONB, and an opaque value is summarized server-side rather than
+         *     shipped.
          */
         TemplateChangeRowRead: {
             /**
@@ -4496,10 +4518,12 @@ export interface components {
             affects_recorded_data: boolean;
             /** After */
             after?: string | boolean | null;
+            after_opaque_state?: components["schemas"]["OpaqueValueState"] | null;
             /** Attribute */
             attribute?: string | null;
             /** Before */
             before?: string | boolean | null;
+            before_opaque_state?: components["schemas"]["OpaqueValueState"] | null;
             /** Id */
             id: string;
             /** Label Path */
@@ -4532,34 +4556,20 @@ export interface components {
          * TemplateConfigDiffRead
          * @description What the open draft would publish (slice B-9b2a).
          *
-         *     Three shapes, all HTTP 200 — an un-diffable template is a state the
-         *     sheet explains, not an error:
-         *
-         *     * ``diff_available`` — the ordinary computed diff;
-         *     * ``initial_version`` — nothing published yet, so there is no baseline
-         *       to compare against and every node is new by definition;
-         *     * ``unavailable_reason`` — a baseline the diff engine cannot be trusted
-         *       with (see :class:`TemplateDiffUnavailableReason`).
-         *
-         *     ``diff_available is False`` therefore implies exactly one of
-         *     ``initial_version`` or ``unavailable_reason``, and the buckets are
-         *     empty: a shape that cannot diff must not ship rows.
+         *     ``status`` names which of :class:`~app.domain.template_change.DiffStatus`'s
+         *     three shapes this is; all three are HTTP 200, because an un-diffable
+         *     template is a state the sheet explains rather than an error. Only
+         *     ``available`` carries rows — the other two leave the buckets at their
+         *     empty default.
          */
         TemplateConfigDiffRead: {
             changes?: components["schemas"]["TemplateConfigDiffBuckets"];
-            /** Diff Available */
-            diff_available: boolean;
-            /**
-             * Initial Version
-             * @default false
-             */
-            initial_version: boolean;
             /**
              * Project Template Id
              * Format: uuid
              */
             project_template_id: string;
-            unavailable_reason?: components["schemas"]["TemplateDiffUnavailableReason"] | null;
+            status: components["schemas"]["DiffStatus"];
         };
         /**
          * TemplateConfigStatusRead
@@ -4587,18 +4597,6 @@ export interface components {
              */
             project_template_id: string;
         };
-        /**
-         * TemplateDiffUnavailableReason
-         * @description Why a config diff could not be computed (slice B-9b2a D9).
-         *
-         *     One member, and an enum rather than a bare literal so the generated
-         *     client already branches on a closed set. The OTHER unavailable shape —
-         *     a template that never published — is named by ``initial_version``
-         *     instead, because the sheet renders it as its own first-publish state
-         *     rather than as a failure to compare.
-         * @enum {string}
-         */
-        TemplateDiffUnavailableReason: "baseline_too_old";
         /**
          * TemplateDiscardRefusalCode
          * @description Why ``POST .../discard-draft`` returned 409 (B-9c2 D1).

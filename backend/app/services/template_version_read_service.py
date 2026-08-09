@@ -18,13 +18,13 @@
   (a lost republish) has real changes to show.
 """
 
-from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.template_change import ChangeTier
+from app.domain.template_change import ChangeTier, DiffStatus
 from app.models.extraction import ProjectExtractionTemplate
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.repositories.extraction_field_reference_repository import (
@@ -35,11 +35,9 @@ from app.repositories.extraction_template_version_repository import (
 )
 from app.schemas.hitl_session import (
     TemplateActiveVersionRead,
-    TemplateChangeRowRead,
     TemplateConfigDiffBuckets,
     TemplateConfigDiffRead,
     TemplateConfigStatusRead,
-    TemplateDiffUnavailableReason,
 )
 from app.services.extraction_snapshot import (
     baseline_is_restorable,
@@ -47,12 +45,103 @@ from app.services.extraction_snapshot import (
     entity_types_for_version,
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_diff import diff_snapshots
-from app.services.template_diff_read import TemplateChangeRow, with_recorded_data
+from app.services.template_diff import TemplateDiff, diff_snapshots
+from app.services.template_diff_read import with_recorded_data
 
 
 class NoActiveTemplateVersionError(Exception):
     """The template exists but has no active version to render from."""
+
+
+async def _scoped_template(
+    db: AsyncSession, *, project_id: UUID, template_id: UUID
+) -> ProjectExtractionTemplate:
+    """The template, BOLA-scoped by ``(id, project_id)``.
+
+    ONE owner for the comparison every read in this module has to make: a
+    template owned elsewhere 404s rather than leaking that it exists, and
+    BOLA is a named recurring incident class here.
+    """
+    template = await db.get(ProjectExtractionTemplate, template_id)
+    if template is None or template.project_id != project_id:
+        raise ProjectTemplateNotFoundError(f"Template {template_id} not found")
+    return template
+
+
+@dataclass(frozen=True, slots=True)
+class _DiffOutcome:
+    """What :func:`_resolve_template_diff` found, gate included.
+
+    ``diff`` stays empty for anything but :attr:`DiffStatus.AVAILABLE`, so a
+    caller that renders it unconditionally still cannot ship rows for a
+    template the gate refused to diff.
+    """
+
+    status: DiffStatus
+    diff: TemplateDiff = TemplateDiff()
+    #: Each CURRENT entity type → the field ids it owns. The
+    #: ``affects_recorded_data`` post-pass needs it because a section
+    #: add/remove absorbs its child rows, so the change list alone cannot say
+    #: which fields a section-level row is about.
+    children: dict[UUID, frozenset[UUID]] = field(default_factory=dict)
+    #: The field ids that already hold recorded work — empty unless the
+    #: caller asked for it (D3).
+    recorded: frozenset[UUID] = frozenset()
+
+
+async def _resolve_template_diff(
+    db: AsyncSession,
+    *,
+    template_id: UUID,
+    active: ExtractionTemplateVersion | None,
+    resolve_values: bool,
+) -> _DiffOutcome:
+    """The ONLY path to ``diff_snapshots`` in this module — gate included.
+
+    The gate is ``baseline_is_restorable``, the same predicate
+    ``discard_available`` uses, and not ``snapshot_is_narrow`` directly. The
+    two disagree on exactly one shape: an EMPTY published baseline, which
+    ``snapshot_is_narrow`` calls narrow by design (so the run view falls back
+    to live rows) but which is a perfectly honest diff baseline — every live
+    node reads as added, because it was. Sharing it is what makes
+    ``discard_available`` ⇒ an integer count, so the Discard dialog never has
+    to render an "unknown count" variant (B-9c2 D2).
+
+    Owning the gate here rather than restating it per caller is not ordinary
+    de-duplication: ``role`` defaults to ``None`` in the engine but is
+    non-nullable live, so diffing a pre-0026 baseline manufactures at least
+    one phantom SEMANTIC row per entity type, deterministically — and the
+    caller that forgets the check gets those rows with nothing failing.
+
+    A refused or absent baseline pays for neither the snapshot build nor the
+    walk. ``resolve_values`` is the one thing callers still choose (D3): the
+    chip's count consumes no tiers, so it must not pay for the five-table
+    union the Publish sheet's warnings need.
+    """
+    if active is None:
+        return _DiffOutcome(DiffStatus.INITIAL_VERSION)
+    baseline: dict[str, Any] = active.schema_ or {}
+    if not baseline_is_restorable(baseline):
+        return _DiffOutcome(DiffStatus.BASELINE_TOO_OLD)
+
+    current = await build_template_version_snapshot(db, template_id)
+    children = _field_ids_by_parent(current)
+    # LIVE field ids only, and that is correct rather than lucky: every
+    # workflow ``field_id`` FK is RESTRICT, so a field absent from the live
+    # tree provably holds no recorded work.
+    recorded = (
+        await ExtractionFieldReferenceRepository(db).fields_with_recorded_work(
+            sorted({field_id for owned in children.values() for field_id in owned})
+        )
+        if resolve_values
+        else frozenset()
+    )
+    return _DiffOutcome(
+        DiffStatus.AVAILABLE,
+        diff=diff_snapshots(baseline, current, fields_with_values=recorded),
+        children=children,
+        recorded=recorded,
+    )
 
 
 async def get_template_config_status(
@@ -64,10 +153,7 @@ async def get_template_config_status(
     (legacy shapes) — unlike the tree read above, that is a renderable
     status here, not an error.
     """
-    template = await db.get(ProjectExtractionTemplate, template_id)
-    if template is None or template.project_id != project_id:
-        raise ProjectTemplateNotFoundError(f"Template {template_id} not found")
-
+    template = await _scoped_template(db, project_id=project_id, template_id=template_id)
     active = await ExtractionTemplateVersionRepository(db).get_active(template_id)
     has_pending_changes = template.config_draft_since is not None
     return TemplateConfigStatusRead(
@@ -96,26 +182,16 @@ async def _pending_change_count(
     not pay for the extra snapshot build (B-9a D7). ``None`` is not zero:
     it means the question has no answer here, either because nothing was
     ever published (D8) or because the stored baseline predates the wide
-    snapshot builder and would manufacture phantom changes (D5).
+    snapshot builder and would manufacture phantom changes (D5). Both of
+    those are :func:`_resolve_template_diff`'s non-``AVAILABLE`` statuses.
 
-    B-9c2 D2 — the gate is ``baseline_is_restorable``, the same one
-    ``discard_available`` uses, and not ``snapshot_is_narrow`` directly.
-    The two disagree on exactly one shape: an EMPTY published baseline,
-    which ``snapshot_is_narrow`` calls narrow by design (so the run view
-    falls back to live rows) but which is a perfectly honest diff baseline
-    — every live node reads as added, because it was. Sharing the gate is
-    what makes ``discard_available`` ⇒ an integer count, so the Discard
-    dialog never has to render an "unknown count" variant.
+    A count consumes no tiers, so it needs no value lookup — B-9b's diff
+    endpoint resolves the real set for the Publish sheet's warnings (D3).
     """
-    if active is None:
-        return None
-    baseline: dict[str, Any] = active.schema_ or {}
-    if not baseline_is_restorable(baseline):
-        return None
-    current = await build_template_version_snapshot(db, template_id)
-    # A count consumes no tiers, so it needs no value lookup — B-9b's diff
-    # endpoint resolves the real set for the Publish sheet's warnings (D3).
-    return diff_snapshots(baseline, current, fields_with_values=frozenset()).total
+    outcome = await _resolve_template_diff(
+        db, template_id=template_id, active=active, resolve_values=False
+    )
+    return outcome.diff.total if outcome.status is DiffStatus.AVAILABLE else None
 
 
 async def get_template_config_diff(
@@ -123,19 +199,10 @@ async def get_template_config_diff(
 ) -> TemplateConfigDiffRead:
     """What the open draft would publish (B-9b2a), BOLA-scoped by (id, project_id).
 
-    Three shapes, all 200 — an un-diffable template is a state the Publish
-    sheet explains, never an error (D9):
-
-    * no active version ⇒ ``initial_version``. Nothing published, so there
-      is no baseline and every node is new by definition;
-    * a baseline the diff engine cannot be trusted with ⇒
-      ``baseline_too_old``, gated on ``baseline_is_restorable`` — the SAME
-      predicate ``discard_available`` and the pending count already use.
-      That gate is not a nicety: ``role`` defaults to ``None`` in the engine
-      but is non-nullable live, so diffing a pre-0026 baseline manufactures
-      at least one phantom SEMANTIC row per entity type, deterministically —
-      a sheet full of changes beside a chip that shows no count at all;
-    * otherwise the computed diff, bucketed by tier.
+    Every :class:`DiffStatus` is a 200 — an un-diffable template is a state
+    the Publish sheet explains, never an error (D9), and only ``available``
+    carries rows. The gate behind the other two lives in
+    :func:`_resolve_template_diff`.
 
     Unlike the chip's count, this read resolves the REAL recorded set (D3):
     the tiers it buckets by depend on it (a ``field_type`` change is
@@ -143,36 +210,15 @@ async def get_template_config_diff(
     every row carries ``affects_recorded_data``. Takes no locks — it is a
     read, and a stale row is a re-fetch, not a corruption.
     """
-    template = await db.get(ProjectExtractionTemplate, template_id)
-    if template is None or template.project_id != project_id:
-        raise ProjectTemplateNotFoundError(f"Template {template_id} not found")
-
+    await _scoped_template(db, project_id=project_id, template_id=template_id)
     active = await ExtractionTemplateVersionRepository(db).get_active(template_id)
-    if active is None:
-        return TemplateConfigDiffRead(
-            project_template_id=template_id, diff_available=False, initial_version=True
-        )
-    baseline: dict[str, Any] = active.schema_ or {}
-    if not baseline_is_restorable(baseline):
-        return TemplateConfigDiffRead(
-            project_template_id=template_id,
-            diff_available=False,
-            unavailable_reason=TemplateDiffUnavailableReason.BASELINE_TOO_OLD,
-        )
-
-    current = await build_template_version_snapshot(db, template_id)
-    children = _field_ids_by_parent(current)
-    # LIVE field ids only, and that is correct rather than lucky: every
-    # workflow ``field_id`` FK is RESTRICT, so a field absent from the live
-    # tree provably holds no recorded work.
-    recorded = await ExtractionFieldReferenceRepository(db).fields_with_recorded_work(
-        sorted({field_id for owned in children.values() for field_id in owned})
+    outcome = await _resolve_template_diff(
+        db, template_id=template_id, active=active, resolve_values=True
     )
-    diff = diff_snapshots(baseline, current, fields_with_values=recorded)
     return TemplateConfigDiffRead(
         project_template_id=template_id,
-        diff_available=True,
-        changes=_bucket_by_tier(with_recorded_data(diff.changes, children, recorded)),
+        status=outcome.status,
+        changes=_buckets(outcome),
     )
 
 
@@ -191,16 +237,22 @@ def _field_ids_by_parent(snapshot: dict[str, Any]) -> dict[UUID, frozenset[UUID]
     }
 
 
-def _bucket_by_tier(rows: Sequence[TemplateChangeRow]) -> TemplateConfigDiffBuckets:
-    """Group the rows by severity, preserving the engine's order within each."""
-    by_tier: dict[ChangeTier, list[TemplateChangeRowRead]] = {tier: [] for tier in ChangeTier}
-    for row in rows:
-        by_tier[row.tier].append(TemplateChangeRowRead.model_validate(row))
+def _buckets(outcome: _DiffOutcome) -> TemplateConfigDiffBuckets:
+    """The engine's own tier partition, projected onto wire rows.
+
+    ``TemplateDiff.by_tier`` already ships every tier — empty ones included —
+    in the engine's emission order, so there is no second partition here to
+    drift from it.
+    """
+    rows = {
+        tier: list(with_recorded_data(changes, outcome.children, outcome.recorded))
+        for tier, changes in outcome.diff.by_tier.items()
+    }
     return TemplateConfigDiffBuckets(
-        additive=by_tier[ChangeTier.ADDITIVE],
-        cosmetic=by_tier[ChangeTier.COSMETIC],
-        semantic=by_tier[ChangeTier.SEMANTIC],
-        destructive=by_tier[ChangeTier.DESTRUCTIVE],
+        additive=rows[ChangeTier.ADDITIVE],
+        cosmetic=rows[ChangeTier.COSMETIC],
+        semantic=rows[ChangeTier.SEMANTIC],
+        destructive=rows[ChangeTier.DESTRUCTIVE],
     )
 
 
@@ -214,10 +266,7 @@ async def get_active_version_tree(
     no active version exists — NEVER an empty tree, which the worklist
     would compute as 100 % complete.
     """
-    template = await db.get(ProjectExtractionTemplate, template_id)
-    if template is None or template.project_id != project_id:
-        raise ProjectTemplateNotFoundError(f"Template {template_id} not found")
-
+    await _scoped_template(db, project_id=project_id, template_id=template_id)
     active = await ExtractionTemplateVersionRepository(db).get_active(template_id)
     if active is None:
         raise NoActiveTemplateVersionError(

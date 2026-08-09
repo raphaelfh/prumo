@@ -4,14 +4,19 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 # The diff vocabulary lives in app.domain rather than the diff engine: the
 # wire model below references those enums rather than restating them, so the
 # generated client's unions cannot drift from the engine's, and importing
 # from app.domain (not app.services) means this schema module cannot form a
 # package-level cycle with the six services that import this one.
-from app.domain.template_change import ChangeTier, ChangeVariant
+from app.domain.template_change import (
+    ChangeTier,
+    ChangeVariant,
+    DiffStatus,
+    OpaqueValueState,
+)
 
 # Re-export TemplateKind so endpoints can convert request.kind into the
 # canonical enum value without importing directly from app.models.* —
@@ -276,38 +281,46 @@ class TemplateConfigStatusRead(BaseModel):
     pre-0026 narrow one (restoring it would wipe columns project-wide)."""
 
 
-class TemplateDiffUnavailableReason(StrEnum):
-    """Why a config diff could not be computed (slice B-9b2a D9).
-
-    One member, and an enum rather than a bare literal so the generated
-    client already branches on a closed set. The OTHER unavailable shape —
-    a template that never published — is named by ``initial_version``
-    instead, because the sheet renders it as its own first-publish state
-    rather than as a failure to compare."""
-
-    BASELINE_TOO_OLD = "baseline_too_old"
-
-
 class TemplateChangeRowRead(BaseModel):
-    """One diff row on the wire — the read model's ``TemplateChangeRow``.
+    """One diff row on the wire, built by ``app.services.template_diff_read``.
 
-    Mirrors ``app.services.template_diff_read.TemplateChangeRow`` field for
-    field (``from_attributes`` copies it straight across). Nothing here is
-    typed ``Any``: the baseline side of a diff is raw stored JSONB, and an
-    opaque value is summarized server-side rather than shipped."""
-
-    model_config = ConfigDict(from_attributes=True)
+    Nothing here is typed ``Any``: the baseline side of a diff is raw stored
+    JSONB, and an opaque value is summarized server-side rather than
+    shipped."""
 
     id: str
     """``kind:node_kind:node_id:attribute:option_code`` — content-derived and
     stable across runs, so a client can key rows by it."""
     variant: ChangeVariant
+    """The row's discriminator (D1) — tells the client which shape it got."""
     tier: ChangeTier
     label_path: list[str]
+    """Section → field labels for display; empty for the template instruction."""
     attribute: str | None = None
+    """The changed key, or ``None`` for a row with no single attribute (a
+    section add/remove, a field move, or a reorder)."""
     before: str | bool | None = None
+    """The prior display value. ``None`` for an added row or a reorder."""
     after: str | bool | None = None
+    """The new display value. ``None`` for a removed row or a reorder."""
+    before_opaque_state: OpaqueValueState | None = None
+    """Set instead of ``before`` when the prior value is an opaque blob or id
+    with no listable content — the copy layer renders the word (D3). ``None``
+    means the value slot carries the answer, absent value included."""
+    after_opaque_state: OpaqueValueState | None = None
+    """The ``after`` side of :attr:`before_opaque_state`."""
     reorder_count: int | None = None
+    """Sibling count for a reorder row, pulled out of the engine's overloaded
+    ``after``. ``None`` for every other row.
+
+    The two reorder variants count **different populations** and the copy
+    layer must not write one sentence for both: a section's count
+    (``ENTITY_TYPE_FIELDS_REORDERED``) EXCLUDES fields added in the same diff
+    — the engine's ``after_seq`` keeps only ids that also existed under the
+    same parent in the baseline (``template_diff._diff_field_order``). A
+    field's option count (``FIELD_OPTIONS_REORDERED``) INCLUDES options added
+    in the same diff — the engine reports ``len(new)`` over the full new
+    option list (``template_diff._diff_options``)."""
     affects_recorded_data: bool = False
     """Whether this row touches work a human or the AI already recorded.
     Field-derived: a section answers from the fields it owns, and a REMOVED
@@ -332,23 +345,14 @@ class TemplateConfigDiffBuckets(BaseModel):
 class TemplateConfigDiffRead(BaseModel):
     """What the open draft would publish (slice B-9b2a).
 
-    Three shapes, all HTTP 200 — an un-diffable template is a state the
-    sheet explains, not an error:
-
-    * ``diff_available`` — the ordinary computed diff;
-    * ``initial_version`` — nothing published yet, so there is no baseline
-      to compare against and every node is new by definition;
-    * ``unavailable_reason`` — a baseline the diff engine cannot be trusted
-      with (see :class:`TemplateDiffUnavailableReason`).
-
-    ``diff_available is False`` therefore implies exactly one of
-    ``initial_version`` or ``unavailable_reason``, and the buckets are
-    empty: a shape that cannot diff must not ship rows."""
+    ``status`` names which of :class:`~app.domain.template_change.DiffStatus`'s
+    three shapes this is; all three are HTTP 200, because an un-diffable
+    template is a state the sheet explains rather than an error. Only
+    ``available`` carries rows — the other two leave the buckets at their
+    empty default."""
 
     project_template_id: UUID
-    diff_available: bool
-    unavailable_reason: TemplateDiffUnavailableReason | None = None
-    initial_version: bool = False
+    status: DiffStatus
     changes: TemplateConfigDiffBuckets = Field(default_factory=TemplateConfigDiffBuckets)
 
 

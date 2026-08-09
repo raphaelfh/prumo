@@ -2,20 +2,26 @@
 
 Pure: hand-built snapshot dicts go through ``diff_snapshots`` and the
 resulting ``TemplateChange`` stream is turned into wire rows — no DB, no
-HTTP. The snapshot builders mirror ``SNAPSHOT_SQL``'s key set exactly and
-are lifted from the sibling ``test_template_diff`` module, whose private
-helpers this file deliberately does not import.
+HTTP. The snapshot builders are shared with the sibling ``test_template_diff``
+module, whose ``_snapshot_sql_keys()`` drift guard is what keeps them honest
+against ``SNAPSHOT_SQL``.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import fields
 from typing import Any
 from uuid import UUID, uuid4
 
-from app.domain.template_change import ChangeTier, ChangeVariant
+import pytest
+
+from app.domain.template_change import ChangeTier, ChangeVariant, DiffStatus, OpaqueValueState
+from app.schemas.hitl_session import (
+    TemplateChangeRowRead,
+    TemplateConfigDiffBuckets,
+    TemplateConfigDiffRead,
+)
 from app.services import template_diff, template_diff_read
 from app.services.template_diff import (
     ChangeKind,
@@ -25,80 +31,26 @@ from app.services.template_diff import (
 )
 from app.services.template_diff_read import (
     VARIANT_BY_KIND,
-    TemplateChangeRow,
     with_recorded_data,
 )
+from tests.unit.helpers.snapshot_builders import entity_node as _entity
+from tests.unit.helpers.snapshot_builders import field_node as _field
+from tests.unit.helpers.snapshot_builders import snapshot as _snapshot
 
 NO_VALUES: frozenset[UUID] = frozenset()
 NO_CHILDREN: dict[UUID, frozenset[UUID]] = {}
-
-
-# --------------------------------------------------------------------------
-# Snapshot builders (mirror SNAPSHOT_SQL's key set exactly)
-# --------------------------------------------------------------------------
-
-
-def _field(field_id: UUID, **over: Any) -> dict[str, Any]:
-    node: dict[str, Any] = {
-        "id": str(field_id),
-        "name": "age",
-        "label": "Age",
-        "description": None,
-        "field_type": "text",
-        "is_required": False,
-        "validation_schema": {},
-        "allowed_values": None,
-        "unit": None,
-        "allowed_units": None,
-        "sort_order": 0,
-        "llm_description": None,
-        "allow_other": False,
-        "other_label": None,
-        "other_placeholder": None,
-        "allows_not_applicable": False,
-        "allows_not_evaluated": False,
-    }
-    node.update(over)
-    return node
-
-
-def _entity(entity_id: UUID, *fields: dict[str, Any], **over: Any) -> dict[str, Any]:
-    node: dict[str, Any] = {
-        "id": str(entity_id),
-        "name": "participants",
-        "label": "Participants",
-        "description": None,
-        "entry_label": None,
-        "parent_entity_type_id": None,
-        "cardinality": "one",
-        "role": "study_section",
-        "sort_order": 0,
-        "is_required": False,
-        "fields": [dict(f, sort_order=i) for i, f in enumerate(fields)],
-    }
-    node.update(over)
-    return node
-
-
-def _snapshot(*entity_types: dict[str, Any], instruction: str | None = None) -> dict[str, Any]:
-    snapshot: dict[str, Any] = {
-        "entity_types": [dict(et, sort_order=i) for i, et in enumerate(entity_types)]
-    }
-    if instruction is not None:
-        snapshot["llm_template_instruction"] = instruction
-    return snapshot
 
 
 def _select(field_id: UUID, allowed: Any, **over: Any) -> dict[str, Any]:
     return _field(field_id, field_type="select", allowed_values=allowed, **over)
 
 
-def _rows(baseline: dict[str, Any], current: dict[str, Any]) -> tuple[TemplateChangeRow, ...]:
+def _rows(baseline: dict[str, Any], current: dict[str, Any]) -> tuple[TemplateChangeRowRead, ...]:
     diff: TemplateDiff = diff_snapshots(baseline, current, fields_with_values=NO_VALUES)
     return with_recorded_data(diff.changes, {}, frozenset())
 
 
-def _only(rows: tuple[TemplateChangeRow, ...]) -> TemplateChangeRow:
+def _only(rows: tuple[TemplateChangeRowRead, ...]) -> TemplateChangeRowRead:
     assert len(rows) == 1, [row.id for row in rows]
     return rows[0]
 
@@ -385,25 +337,171 @@ def _field_options_reordered() -> _Pair:
     )
 
 
-_SCENARIOS = (
-    _instruction_added,
-    _instruction_removed,
-    _instruction_modified,
-    _entity_type_added,
-    _entity_type_removed,
-    _entity_type_modified,
-    _entity_type_reordered,
-    _field_added,
-    _field_removed,
-    _field_moved,
-    _field_modified,
-    _field_option_added,
-    _field_option_removed,
-    _field_options_reordered,
+#: One renderer-facing expectation per reachable variant:
+#: ``(scenario, variant, before, after, attribute, reorder_count, label_path, tier)``.
+#: Every row is pinned in full, so the columns document what ``before``/``after``
+#: mean per variant — and pin that a reorder's sibling COUNT never squats in
+#: ``after``. The asymmetry between the two reorder variants is deliberate and
+#: visible here: only the options reorder names an attribute.
+_RENDERER_CASES: tuple[
+    tuple[
+        Callable[[], _Pair],
+        ChangeVariant,
+        str | bool | None,
+        str | bool | None,
+        str | None,
+        int | None,
+        list[str],
+        ChangeTier,
+    ],
+    ...,
+] = (
+    (
+        _instruction_added,
+        ChangeVariant.TEMPLATE_INSTRUCTION_ADDED,
+        None,
+        "Read tables too.",
+        "llm_template_instruction",
+        None,
+        [],
+        ChangeTier.SEMANTIC,
+    ),
+    (
+        _instruction_removed,
+        ChangeVariant.TEMPLATE_INSTRUCTION_REMOVED,
+        "Read tables too.",
+        None,
+        "llm_template_instruction",
+        None,
+        [],
+        ChangeTier.SEMANTIC,
+    ),
+    (
+        _instruction_modified,
+        ChangeVariant.TEMPLATE_INSTRUCTION_MODIFIED,
+        "Old.",
+        "New.",
+        "llm_template_instruction",
+        None,
+        [],
+        ChangeTier.SEMANTIC,
+    ),
+    (
+        _entity_type_added,
+        ChangeVariant.ENTITY_TYPE_ADDED,
+        None,
+        None,
+        None,
+        None,
+        ["New"],
+        ChangeTier.ADDITIVE,
+    ),
+    (
+        _entity_type_removed,
+        ChangeVariant.ENTITY_TYPE_REMOVED,
+        None,
+        None,
+        None,
+        None,
+        ["Gone"],
+        ChangeTier.DESTRUCTIVE,
+    ),
+    (
+        _entity_type_modified,
+        ChangeVariant.ENTITY_TYPE_MODIFIED,
+        "Participants",
+        "Population",
+        "label",
+        None,
+        ["Population"],
+        ChangeTier.COSMETIC,
+    ),
+    (
+        _entity_type_reordered,
+        ChangeVariant.ENTITY_TYPE_FIELDS_REORDERED,
+        None,
+        None,
+        None,
+        2,
+        ["Participants"],
+        ChangeTier.COSMETIC,
+    ),
+    (
+        _field_added,
+        ChangeVariant.FIELD_ADDED,
+        None,
+        None,
+        None,
+        None,
+        ["Participants", "New"],
+        ChangeTier.ADDITIVE,
+    ),
+    (
+        _field_removed,
+        ChangeVariant.FIELD_REMOVED,
+        None,
+        None,
+        None,
+        None,
+        ["Participants", "Gone"],
+        ChangeTier.DESTRUCTIVE,
+    ),
+    (
+        _field_moved,
+        ChangeVariant.FIELD_MOVED,
+        "Section A",
+        "Section B",
+        None,
+        None,
+        ["Section B", "Moved"],
+        ChangeTier.SEMANTIC,
+    ),
+    (
+        _field_modified,
+        ChangeVariant.FIELD_MODIFIED,
+        "Age",
+        "Age (years)",
+        "label",
+        None,
+        ["Participants", "Age (years)"],
+        ChangeTier.COSMETIC,
+    ),
+    (
+        _field_option_added,
+        ChangeVariant.FIELD_OPTION_ADDED,
+        None,
+        "unclear",
+        "allowed_values",
+        None,
+        ["Participants", "Age"],
+        ChangeTier.ADDITIVE,
+    ),
+    (
+        _field_option_removed,
+        ChangeVariant.FIELD_OPTION_REMOVED,
+        "unclear",
+        None,
+        "allowed_values",
+        None,
+        ["Participants", "Age"],
+        ChangeTier.DESTRUCTIVE,
+    ),
+    (
+        _field_options_reordered,
+        ChangeVariant.FIELD_OPTIONS_REORDERED,
+        None,
+        None,
+        "allowed_values",
+        3,
+        ["Participants", "Age"],
+        ChangeTier.COSMETIC,
+    ),
 )
 
+_SCENARIOS = tuple(case[0] for case in _RENDERER_CASES)
 
-def _one_row(scenario: Callable[[], _Pair]) -> TemplateChangeRow:
+
+def _one_row(scenario: Callable[[], _Pair]) -> TemplateChangeRowRead:
     return _only(_rows(*scenario()))
 
 
@@ -461,99 +559,34 @@ def test_every_variant_is_reachable_from_a_real_diff() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_instruction_added_row_ships_the_new_text() -> None:
-    row = _one_row(_instruction_added)
-    assert row.variant is ChangeVariant.TEMPLATE_INSTRUCTION_ADDED
-    assert (row.before, row.after) == (None, "Read tables too.")
-    assert (row.attribute, row.reorder_count) == ("llm_template_instruction", None)
+@pytest.mark.parametrize(
+    ("scenario", "variant", "before", "after", "attribute", "reorder_count", "label_path", "tier"),
+    _RENDERER_CASES,
+    ids=[case[1].value for case in _RENDERER_CASES],
+)
+def test_each_variant_ships_its_own_renderer_facing_shape(
+    scenario: Callable[[], _Pair],
+    variant: ChangeVariant,
+    before: str | bool | None,
+    after: str | bool | None,
+    attribute: str | None,
+    reorder_count: int | None,
+    label_path: list[str],
+    tier: ChangeTier,
+) -> None:
+    """Every reachable variant, pinned in full.
 
+    ``before``/``after`` must mean the same thing in every row, so a reorder's
+    sibling count lives in ``reorder_count`` and never squats in ``after``.
+    The two reorder rows also pin their asymmetry: only the options reorder
+    names the attribute it reordered.
+    """
+    row = _one_row(scenario)
 
-def test_instruction_removed_row_ships_the_text_that_went_away() -> None:
-    row = _one_row(_instruction_removed)
-    assert row.variant is ChangeVariant.TEMPLATE_INSTRUCTION_REMOVED
-    assert (row.before, row.after) == ("Read tables too.", None)
-
-
-def test_instruction_modified_row_ships_both_texts() -> None:
-    row = _one_row(_instruction_modified)
-    assert row.variant is ChangeVariant.TEMPLATE_INSTRUCTION_MODIFIED
-    assert (row.before, row.after) == ("Old.", "New.")
-
-
-def test_entity_type_added_row_has_no_values_only_a_path() -> None:
-    row = _one_row(_entity_type_added)
-    assert row.variant is ChangeVariant.ENTITY_TYPE_ADDED
-    assert (row.before, row.after, row.attribute, row.reorder_count) == (None, None, None, None)
-    assert (row.label_path, row.tier) == (("New",), ChangeTier.ADDITIVE)
-
-
-def test_entity_type_removed_row_has_no_values_only_a_path() -> None:
-    row = _one_row(_entity_type_removed)
-    assert row.variant is ChangeVariant.ENTITY_TYPE_REMOVED
-    assert (row.before, row.after) == (None, None)
-    assert (row.label_path, row.tier) == (("Gone",), ChangeTier.DESTRUCTIVE)
-
-
-def test_entity_type_modified_row_names_the_attribute_and_both_values() -> None:
-    row = _one_row(_entity_type_modified)
-    assert row.variant is ChangeVariant.ENTITY_TYPE_MODIFIED
-    assert (row.attribute, row.before, row.after) == ("label", "Participants", "Population")
-
-
-def test_entity_type_reordered_row_moves_the_count_out_of_after() -> None:
-    row = _one_row(_entity_type_reordered)
-    assert row.variant is ChangeVariant.ENTITY_TYPE_FIELDS_REORDERED
-    assert row.reorder_count == 2
-    assert (row.before, row.after) == (None, None)
-
-
-def test_field_added_row_carries_the_full_label_path() -> None:
-    row = _one_row(_field_added)
-    assert row.variant is ChangeVariant.FIELD_ADDED
-    assert row.label_path == ("Participants", "New")
-    assert (row.before, row.after) == (None, None)
-
-
-def test_field_removed_row_carries_the_full_label_path() -> None:
-    row = _one_row(_field_removed)
-    assert row.variant is ChangeVariant.FIELD_REMOVED
-    assert row.label_path == ("Participants", "Gone")
-    assert (row.before, row.after) == (None, None)
-
-
-def test_field_moved_row_ships_the_two_parent_labels() -> None:
-    row = _one_row(_field_moved)
-    assert row.variant is ChangeVariant.FIELD_MOVED
-    assert (row.before, row.after) == ("Section A", "Section B")
-    assert row.attribute is None
-
-
-def test_field_modified_row_names_the_attribute_and_both_values() -> None:
-    row = _one_row(_field_modified)
-    assert row.variant is ChangeVariant.FIELD_MODIFIED
-    assert (row.attribute, row.before, row.after) == ("label", "Age", "Age (years)")
-
-
-def test_field_option_added_row_ships_the_code_in_after() -> None:
-    row = _one_row(_field_option_added)
-    assert row.variant is ChangeVariant.FIELD_OPTION_ADDED
-    assert (row.attribute, row.before, row.after) == ("allowed_values", None, "unclear")
-
-
-def test_field_option_removed_row_ships_the_code_in_before() -> None:
-    row = _one_row(_field_option_removed)
-    assert row.variant is ChangeVariant.FIELD_OPTION_REMOVED
-    assert (row.attribute, row.before, row.after) == ("allowed_values", "unclear", None)
-
-
-def test_field_options_reordered_row_moves_the_count_out_of_after() -> None:
-    row = _one_row(_field_options_reordered)
-    assert row.variant is ChangeVariant.FIELD_OPTIONS_REORDERED
-    assert row.reorder_count == 3
-    assert (row.before, row.after) == (None, None)
-    # Pins the asymmetry with the section-reorder variant, whose attribute is
-    # None: only an options reorder carries which attribute was reordered.
-    assert row.attribute == "allowed_values"
+    assert row.variant is variant
+    assert (row.before, row.after) == (before, after)
+    assert (row.attribute, row.reorder_count) == (attribute, reorder_count)
+    assert (row.label_path, row.tier) == (label_path, tier)
 
 
 # --------------------------------------------------------------------------
@@ -583,8 +616,40 @@ def test_validation_schema_ships_a_summary_not_the_blob() -> None:
     row = _only(_rows(base, curr))
     assert row.attribute == "validation_schema"
     # A present-but-empty {} is not the same state as an absent (None) value,
-    # so it must not collapse to None on the wire.
-    assert (row.before, row.after) == ("empty", "maximum, minimum")
+    # so it reports a typed EMPTY rather than collapsing to None.
+    assert (row.before, row.before_opaque_state) == (None, OpaqueValueState.EMPTY)
+    assert (row.after, row.after_opaque_state) == ("maximum, minimum", None)
+
+
+def test_emptiness_is_decided_on_the_container_not_the_joined_string() -> None:
+    """A stored key that reads like the marker is still real content.
+
+    ``", ".join(...) or EMPTY`` would call a ``validation_schema`` whose only
+    key is ``""`` empty, and would do the same to ``allowed_units == [""]``.
+    """
+    section_id, first_id, second_id = uuid4(), uuid4(), uuid4()
+    base = _snapshot(
+        _entity(
+            section_id,
+            _field(first_id, validation_schema={}, allowed_units=[]),
+            _field(second_id, name="mass", label="Mass", validation_schema={}, allowed_units=[]),
+        )
+    )
+    curr = _snapshot(
+        _entity(
+            section_id,
+            _field(first_id, validation_schema={"": 1}, allowed_units=[]),
+            _field(second_id, name="mass", label="Mass", validation_schema={}, allowed_units=[""]),
+        )
+    )
+
+    rows = {row.attribute: row for row in _rows(base, curr)}
+    assert (rows["validation_schema"].before, rows["validation_schema"].after) == (None, "")
+    assert rows["validation_schema"].before_opaque_state is OpaqueValueState.EMPTY
+    assert rows["validation_schema"].after_opaque_state is None
+    assert (rows["allowed_units"].before, rows["allowed_units"].after) == (None, "")
+    assert rows["allowed_units"].before_opaque_state is OpaqueValueState.EMPTY
+    assert rows["allowed_units"].after_opaque_state is None
 
 
 def test_allowed_units_ships_the_unit_list_as_one_string() -> None:
@@ -594,16 +659,23 @@ def test_allowed_units_ships_the_unit_list_as_one_string() -> None:
 
     row = _only(_rows(base, curr))
     assert (row.before, row.after) == (None, "kg, lb")
+    assert (row.before_opaque_state, row.after_opaque_state) == (None, None)
 
 
 def test_parent_entity_type_id_never_puts_an_id_on_the_wire() -> None:
+    """An id has no listable content, so it ships as typed state only — the
+    copy layer writes the word, and no server-authored English crosses."""
     section_id, parent_id = uuid4(), uuid4()
     base = _snapshot(_entity(section_id))
     curr = _snapshot(_entity(section_id, parent_entity_type_id=str(parent_id)))
 
     row = _only(_rows(base, curr))
     assert row.attribute == "parent_entity_type_id"
-    assert (row.before, row.after) == (None, "set")
+    assert (row.before, row.after) == (None, None)
+    assert (row.before_opaque_state, row.after_opaque_state) == (
+        None,
+        OpaqueValueState.PRESENT,
+    )
     assert str(parent_id) not in row.id
 
 
@@ -625,10 +697,38 @@ def test_a_scalar_attribute_holding_a_stored_blob_is_summarized_not_shipped() ->
 # Guards — the wire types, and the attribute partition behind them
 # --------------------------------------------------------------------------
 
+#: The complement of ``template_diff_read.OPAQUE_ATTRIBUTES``: attributes that
+#: ship typed for the copy layer to render. Listed literally rather than
+#: derived, so adding a snapshot key to ``ENTITY_ATTRIBUTE_DEFAULTS`` /
+#: ``FIELD_ATTRIBUTE_DEFAULTS`` breaks the partition test below instead of
+#: silently defaulting into the scalar arm. Lives here rather than in app code
+#: because the partition assertion is its only reader.
+_SCALAR_ATTRIBUTES = frozenset(
+    {
+        "name",
+        "label",
+        "description",
+        "entry_label",
+        "cardinality",
+        "role",
+        "is_required",
+        "field_type",
+        "unit",
+        "llm_description",
+        "allow_other",
+        "other_label",
+        "other_placeholder",
+        "allows_not_applicable",
+        "allows_not_evaluated",
+    }
+)
+
 
 def test_no_read_model_field_is_typed_any() -> None:
     """``Any`` on the wire is how raw JSONB leaks to the client (D3)."""
-    annotations = {f.name: str(f.type) for f in fields(TemplateChangeRow)}
+    annotations = {
+        name: str(info.annotation) for name, info in TemplateChangeRowRead.model_fields.items()
+    }
     # Guards the guard: a renamed or dropped field must not pass vacuously.
     assert set(annotations) == {
         "id",
@@ -638,6 +738,8 @@ def test_no_read_model_field_is_typed_any() -> None:
         "attribute",
         "before",
         "after",
+        "before_opaque_state",
+        "after_opaque_state",
         "reorder_count",
         "affects_recorded_data",
     }
@@ -647,11 +749,30 @@ def test_no_read_model_field_is_typed_any() -> None:
 def test_opaque_and_scalar_attributes_partition_the_snapshot_attributes() -> None:
     """A future JSONB snapshot key cannot silently land in the scalar arm."""
     opaque = template_diff_read.OPAQUE_ATTRIBUTES
-    scalar = template_diff_read.SCALAR_ATTRIBUTES
-    assert opaque | scalar == (
+    assert opaque | _SCALAR_ATTRIBUTES == (
         set(template_diff.ENTITY_ATTRIBUTE_DEFAULTS) | set(template_diff.FIELD_ATTRIBUTE_DEFAULTS)
     )
-    assert not opaque & scalar
+    assert not opaque & _SCALAR_ATTRIBUTES
+
+
+def test_every_tier_has_a_bucket_named_after_its_wire_value() -> None:
+    """A client buckets by ``row.tier``, so the bucket keys must BE the tier
+    values. Renaming one field silently breaks that lookup."""
+    assert set(TemplateConfigDiffBuckets.model_fields) == {tier.value for tier in ChangeTier}
+
+
+def test_an_unavailable_diff_ships_empty_buckets_by_default() -> None:
+    """The default is the safe one: a shape that cannot diff must not be able
+    to ship rows by omission."""
+    read = TemplateConfigDiffRead(project_template_id=uuid4(), status=DiffStatus.BASELINE_TOO_OLD)
+
+    buckets = read.changes
+    assert (buckets.additive, buckets.cosmetic, buckets.semantic, buckets.destructive) == (
+        [],
+        [],
+        [],
+        [],
+    )
 
 
 # --------------------------------------------------------------------------
@@ -665,7 +786,7 @@ def _recorded_rows(
     *,
     recorded: frozenset[UUID],
     children: dict[UUID, frozenset[UUID]] = NO_CHILDREN,
-) -> tuple[TemplateChangeRow, ...]:
+) -> tuple[TemplateChangeRowRead, ...]:
     diff = diff_snapshots(baseline, current, fields_with_values=recorded)
     return with_recorded_data(diff.changes, children, recorded)
 

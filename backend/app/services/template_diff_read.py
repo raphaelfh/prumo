@@ -6,16 +6,16 @@ because the engine is at its file-size ceiling, and because the vocabulary
 here — row ids, wire variants, display strings — is presentation, which the
 pure comparison must not learn.
 
-Pure: dataclasses in, dataclasses out. No DB, no IO, no HTTP.
+Pure: dataclasses in, wire models out. No DB, no IO, no HTTP.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
 from uuid import UUID
 
-from app.domain.template_change import ChangeTier, ChangeVariant
+from app.domain.template_change import ChangeVariant, OpaqueValueState
+from app.schemas.hitl_session import TemplateChangeRowRead
 from app.services.template_diff import (
     OPTION_KEY,
     ChangeKind,
@@ -46,9 +46,9 @@ VARIANT_BY_KIND: dict[tuple[ChangeKind, NodeKind], ChangeVariant] = {
     (ChangeKind.REORDERED, NodeKind.FIELD): ChangeVariant.FIELD_OPTIONS_REORDERED,
 }
 
-#: Reserved :attr:`TemplateChangeRow.id` node component for the one change
-#: that belongs to no node: the template-level instruction (``_diff_instruction``
-#: constructs without an id at all).
+#: Reserved :func:`_row_id` node component for the one change that belongs to
+#: no node: the template-level instruction (``_diff_instruction`` constructs
+#: without an id at all).
 TEMPLATE_NODE_ID = "template"
 
 _ID_SEPARATOR = ":"
@@ -56,90 +56,22 @@ _ID_SEPARATOR = ":"
 _ID_ABSENT = "-"
 
 #: Attributes whose stored value is opaque JSONB or an id. These are the only
-#: ones rendered server-side (D3): a blob has no client-side rendering, and an
-#: entity id must never reach the screen. Rendering *everything* here would
+#: ones summarized server-side (D3): a blob has no client-side rendering, and
+#: an entity id must never reach the screen. Summarizing *everything* would
 #: also satisfy the no-``Any`` rule, but it would fork the i18n boundary —
 #: user-facing text belongs in ``frontend/lib/copy`` (``.claude/rules/frontend.md``).
+#: Even here the summary is either real data (a joined key/unit list) or a
+#: typed :class:`~app.domain.template_change.OpaqueValueState`, never a
+#: server-authored English word. ``test_template_diff_read`` pins the
+#: complement, so a new JSONB snapshot key cannot land in the scalar arm.
 OPAQUE_ATTRIBUTES = frozenset({"validation_schema", "allowed_units", "parent_entity_type_id"})
-
-#: The complement: attributes that ship typed for the copy layer to render.
-#: Listed literally rather than derived, so that adding a snapshot key to
-#: ``ENTITY_ATTRIBUTE_DEFAULTS`` / ``FIELD_ATTRIBUTE_DEFAULTS`` breaks the
-#: partition test instead of silently defaulting into this arm.
-SCALAR_ATTRIBUTES = frozenset(
-    {
-        "name",
-        "label",
-        "description",
-        "entry_label",
-        "cardinality",
-        "role",
-        "is_required",
-        "field_type",
-        "unit",
-        "llm_description",
-        "allow_other",
-        "other_label",
-        "other_placeholder",
-        "allows_not_applicable",
-        "allows_not_evaluated",
-    }
-)
-
-#: Stand-in for an opaque value with no listable content — an id, or a scalar
-#: the snapshot stored off-contract.
-_OPAQUE_PRESENT = "set"
-
-#: Stand-in for a present-but-empty container (``{}`` or ``[]``). Never
-#: collapsed to ``None``: ``None`` means the attribute is absent, and an empty
-#: container is a distinct, reachable state (e.g. a field's ``validation_schema``
-#: starting as ``{}``) that must not be presented as if nothing were there.
-_OPAQUE_EMPTY = "empty"
-
-
-@dataclass(frozen=True, slots=True)
-class TemplateChangeRow:
-    """One :class:`~app.services.template_diff.TemplateChange` on the wire."""
-
-    #: The composite id (D2): ``kind:node_kind:node_id:attribute:option_code``.
-    id: str
-    #: The row's discriminator (D1) — tells the client which shape it got.
-    variant: ChangeVariant
-    #: Severity tier, passed through from the engine unchanged.
-    tier: ChangeTier
-    #: Section → field labels for display; empty for the template instruction.
-    label_path: tuple[str, ...]
-    #: The changed key, or ``None`` for a row with no single attribute (a
-    #: section add/remove, a field move, or a reorder).
-    attribute: str | None = None
-    #: The prior display value. ``None`` for an added row or a reorder.
-    before: str | bool | None = None
-    #: The new display value. ``None`` for a removed row or a reorder.
-    after: str | bool | None = None
-    #: Sibling count for a reorder row, pulled out of the engine's overloaded
-    #: ``after`` (see :func:`_to_row`). ``None`` for every other row.
-    #:
-    #: The two reorder variants count **different populations** and the copy
-    #: layer must not write one sentence for both: a section's count
-    #: (``ENTITY_TYPE_FIELDS_REORDERED``) EXCLUDES fields added in the same
-    #: diff — the engine's ``after_seq`` keeps only ids that also existed
-    #: under the same parent in the baseline (``template_diff.py``,
-    #: ``_diff_field_order``). A field's option count
-    #: (``FIELD_OPTIONS_REORDERED``) INCLUDES options added in the same diff —
-    #: the engine reports ``len(new)`` over the full new option list
-    #: (``template_diff.py``, ``_diff_options``).
-    reorder_count: int | None = None
-    #: Whether this row touches work a human or the AI already recorded (D6).
-    #: Resolved by :func:`with_recorded_data`; ``False`` when called with an
-    #: empty recorded set, which has no value information to claim it.
-    affects_recorded_data: bool = False
 
 
 def with_recorded_data(
     changes: Sequence[TemplateChange],
     parent_children_field_ids: Mapping[UUID, frozenset[UUID]],
     recorded: frozenset[UUID],
-) -> tuple[TemplateChangeRow, ...]:
+) -> tuple[TemplateChangeRowRead, ...]:
     """The wire rows, with ``affects_recorded_data`` resolved (D6).
 
     ONE post-pass over the finished rows rather than a flag each differ
@@ -154,8 +86,8 @@ def with_recorded_data(
     cannot tell which fields a section-level row is really about.
     """
     return tuple(
-        replace(
-            _to_row(change),
+        _to_row(
+            change,
             affects_recorded_data=_affects_recorded_data(
                 change, parent_children_field_ids, recorded
             ),
@@ -195,7 +127,7 @@ def _affects_recorded_data(
     return False
 
 
-def _to_row(change: TemplateChange) -> TemplateChangeRow:
+def _to_row(change: TemplateChange, *, affects_recorded_data: bool) -> TemplateChangeRowRead:
     """One change, with the engine's overloaded slots pulled apart (D3).
 
     A reorder is the whole reason ``before``/``after`` cannot be passed
@@ -203,15 +135,21 @@ def _to_row(change: TemplateChange) -> TemplateChangeRow:
     neither a before-value nor a display string.
     """
     reordered = change.kind is ChangeKind.REORDERED
-    return TemplateChangeRow(
+    empty: tuple[str | bool | None, OpaqueValueState | None] = (None, None)
+    before, before_state = empty if reordered else _wire_value(change.attribute, change.before)
+    after, after_state = empty if reordered else _wire_value(change.attribute, change.after)
+    return TemplateChangeRowRead(
         id=_row_id(change),
         variant=_variant_of(change),
         tier=change.tier,
-        label_path=change.label_path,
+        label_path=list(change.label_path),
         attribute=change.attribute,
-        before=None if reordered else _wire_value(change.attribute, change.before),
-        after=None if reordered else _wire_value(change.attribute, change.after),
+        before=before,
+        after=after,
+        before_opaque_state=before_state,
+        after_opaque_state=after_state,
         reorder_count=int(change.after) if reordered else None,
+        affects_recorded_data=affects_recorded_data,
     )
 
 
@@ -280,8 +218,13 @@ def _option_code(change: TemplateChange) -> str | None:
 # --------------------------------------------------------------------------
 
 
-def _wire_value(attribute: str | None, raw: object) -> str | bool | None:
+def _wire_value(
+    attribute: str | None, raw: object
+) -> tuple[str | bool | None, OpaqueValueState | None]:
     """Narrow one engine value to the wire types (D3).
+
+    Returns the display value and, when there is nothing listable to display,
+    the typed state the copy layer renders instead — never both.
 
     Two arms, and the second is a fail-safe rather than a fallthrough: the
     baseline side is raw stored JSONB, so a value that is not already a
@@ -291,22 +234,30 @@ def _wire_value(attribute: str | None, raw: object) -> str | bool | None:
     """
     if attribute in OPAQUE_ATTRIBUTES or not isinstance(raw, bool | str | None):
         return _render_opaque(raw)
-    return raw
+    return raw, None
 
 
-def _render_opaque(value: object) -> str | None:
+def _render_opaque(value: object) -> tuple[str | None, OpaqueValueState | None]:
     """A one-line stand-in for a blob or an id — never the raw value.
 
-    ``None`` means absent — it must stay reserved for that, so a
-    present-but-empty container renders as :data:`_OPAQUE_EMPTY` rather than
-    falling through to ``None``. Collapsing the two would make an empty
-    ``validation_schema`` (present) indistinguishable on the wire from a
-    ``validation_schema`` that was never set (absent).
+    ``None`` with no state means absent, and that pairing stays reserved for
+    it: a present-but-empty container reports
+    :attr:`~app.domain.template_change.OpaqueValueState.EMPTY` instead.
+    Collapsing the two would make an empty ``validation_schema`` (present)
+    indistinguishable on the wire from one that was never set (absent).
+
+    Emptiness is decided on the CONTAINER, not on the joined string, so a
+    ``validation_schema`` whose only key is ``""`` — or an ``allowed_units``
+    of ``[""]`` — is not mistaken for an empty one.
     """
     if value is None:
-        return None
+        return None, None
     if isinstance(value, list):
-        return ", ".join(str(item) for item in value) or _OPAQUE_EMPTY
+        if not value:
+            return None, OpaqueValueState.EMPTY
+        return ", ".join(str(item) for item in value), None
     if isinstance(value, dict):
-        return ", ".join(sorted(str(key) for key in value)) or _OPAQUE_EMPTY
-    return _OPAQUE_PRESENT
+        if not value:
+            return None, OpaqueValueState.EMPTY
+        return ", ".join(sorted(str(key) for key in value)), None
+    return None, OpaqueValueState.PRESENT

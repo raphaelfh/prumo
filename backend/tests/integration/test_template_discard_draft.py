@@ -59,6 +59,7 @@ from tests.integration.conftest import (
 # B-9b2a: the multi-tier fixture machinery this suite built first now lives
 # in a shared module, so the config-diff suite exercises the SAME tree. Kept
 # under their module-private names here to leave the ~40 call sites untouched.
+from tests.integration.helpers import template_fixtures
 from tests.integration.helpers.template_fixtures import (
     ARTICLE_ID as _ARTICLE_ID,
 )
@@ -92,6 +93,12 @@ from tests.integration.helpers.template_fixtures import (
 from tests.integration.helpers.template_fixtures import (
     set_label as _set_label,
 )
+
+#: Every template-config endpoint is manager-gated, so this fixture is shared
+#: with ``test_template_config_diff``. Bound by assignment rather than imported
+#: by name: an import binding collides with the identically named parameter in
+#: every test that requests it (ruff F811).
+auth_as_manager = template_fixtures.auth_as_manager
 
 
 async def _force_active_schema(db: AsyncSession, template_id: UUID, schema: dict[str, Any]) -> None:
@@ -980,21 +987,6 @@ async def test_refusal_emits_a_warning_naming_the_blocking_node(
 # ==========================================================================
 # HTTP surface — routing, auth, envelope
 # ==========================================================================
-
-
-@pytest_asyncio.fixture
-async def auth_as_manager(db_session: AsyncSession) -> AsyncGenerator[UUID, None]:
-    """JWT sub = a manager of both seeded projects."""
-    del db_session  # fixture ordering only: the seed must run first
-
-    async def _override() -> TokenPayload:
-        return TokenPayload(
-            sub=str(SEED.primary_profile), email="t@example.com", role="authenticated", aal="aal1"
-        )
-
-    app.dependency_overrides[get_current_user] = _override
-    yield SEED.primary_profile
-    app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.mark.asyncio

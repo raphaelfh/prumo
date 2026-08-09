@@ -43,7 +43,7 @@ triggers only fire on entity-type/field rows.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -176,29 +176,36 @@ class TemplateChange:
     :attr:`ChangeKind.MOVED` field ("Section A" → "Section B"). For
     :attr:`ChangeKind.REORDERED`, ``after`` is how many siblings the reorder
     covers.
-
-    :attr:`node_id` and :attr:`raw_node_id` are the same id twice: the parsed
-    one for callers that key off a real ``UUID``, and the **raw string**
-    :func:`_index` keyed the node by for callers that must stay
-    round-trippable. They diverge exactly where :func:`_as_uuid` gives up — a
-    junk or absent id parses to ``None`` while the raw string survives, so two
-    unparseable ids cannot be confused for each other downstream.
     """
 
     kind: ChangeKind
     node_kind: NodeKind
     tier: ChangeTier
     label_path: tuple[str, ...]
-    node_id: UUID | None = None
-    #: Keyword-only and undefaulted (not merely ``""``) so a construction site
-    #: that forgets it fails loudly instead of silently minting a colliding id
-    #: (e.g. ``modified:field::label:-``, indistinguishable from every other
+    #: The id **exactly as** :func:`_index` keyed the node by, so a caller
+    #: that must stay round-trippable never loses one: a junk or absent id
+    #: survives here verbatim where :attr:`node_id` gives up on it.
+    #: Undefaulted (not merely ``""``) so a construction site that forgets it
+    #: fails loudly instead of silently minting a colliding id (e.g.
+    #: ``modified:field::label:-``, indistinguishable from every other
     #: forgetful call). Empty only for the template-level instruction change,
     #: which has no node and must pass ``raw_node_id=""`` explicitly.
-    raw_node_id: str = field(kw_only=True)
+    raw_node_id: str
     attribute: str | None = None
     before: Any = None
     after: Any = None
+
+    @property
+    def node_id(self) -> UUID | None:
+        """The parsed id for callers that key off a real ``UUID``.
+
+        Derived rather than stored: it is a pure function of
+        :attr:`raw_node_id`, and storing both invited a construction site to
+        pass an id that disagreed with itself. ``None`` where
+        :func:`_as_uuid` gives up — a junk or absent id — which is why the
+        row-id builder keys off the raw string instead.
+        """
+        return _as_uuid(self.raw_node_id)
 
     @property
     def label(self) -> str:
@@ -395,7 +402,6 @@ def _diff_entity_types(
                 node_kind=NodeKind.ENTITY_TYPE,
                 tier=ChangeTier.SEMANTIC if has_required else ChangeTier.ADDITIVE,
                 label_path=(node.label,),
-                node_id=_as_uuid(entity_id),
                 raw_node_id=entity_id,
             )
         )
@@ -409,7 +415,6 @@ def _diff_entity_types(
                 node_kind=NodeKind.ENTITY_TYPE,
                 tier=ChangeTier.DESTRUCTIVE,
                 label_path=(node.label,),
-                node_id=_as_uuid(entity_id),
                 raw_node_id=entity_id,
             )
         )
@@ -424,7 +429,6 @@ def _diff_entity_types(
                 node_kind=NodeKind.ENTITY_TYPE,
                 tier=_attribute_tier(key, before.data[key], node.data[key], has_values=False),
                 label_path=(node.label,),
-                node_id=_as_uuid(entity_id),
                 raw_node_id=entity_id,
                 attribute=key,
                 before=before.data[key],
@@ -464,7 +468,6 @@ def _diff_fields(
                             ChangeTier.SEMANTIC if node.data["is_required"] else ChangeTier.ADDITIVE
                         ),
                         label_path=(node.parent_label, node.label),
-                        node_id=_as_uuid(field_id),
                         raw_node_id=field_id,
                     )
                 )
@@ -480,7 +483,6 @@ def _diff_fields(
                     # strands them on the old section's instances.
                     tier=(ChangeTier.DESTRUCTIVE if has_values else MOVED_WITHOUT_VALUES_TIER),
                     label_path=(node.parent_label, node.label),
-                    node_id=_as_uuid(field_id),
                     raw_node_id=field_id,
                     before=before.parent_label,
                     after=node.parent_label,
@@ -500,7 +502,6 @@ def _diff_fields(
                     node_kind=NodeKind.FIELD,
                     tier=ChangeTier.DESTRUCTIVE,
                     label_path=(node.parent_label, node.label),
-                    node_id=_as_uuid(field_id),
                     raw_node_id=field_id,
                 )
             )
@@ -517,7 +518,6 @@ def _diff_field_attributes(
             node_kind=NodeKind.FIELD,
             tier=_attribute_tier(key, before.data[key], after.data[key], has_values=has_values),
             label_path=(after.parent_label, after.label),
-            node_id=_as_uuid(after.node_id),
             raw_node_id=after.node_id,
             attribute=key,
             before=before.data[key],
@@ -560,7 +560,6 @@ def _diff_options(before: _Node, after: _Node) -> list[TemplateChange]:
         return []
 
     path = (after.parent_label, after.label)
-    node_id = _as_uuid(after.node_id)
     old_set, new_set = set(old), set(new)
     changes = [
         TemplateChange(
@@ -568,7 +567,6 @@ def _diff_options(before: _Node, after: _Node) -> list[TemplateChange]:
             node_kind=NodeKind.FIELD,
             tier=ChangeTier.DESTRUCTIVE,
             label_path=path,
-            node_id=node_id,
             raw_node_id=after.node_id,
             attribute=OPTION_KEY,
             before=code,
@@ -582,7 +580,6 @@ def _diff_options(before: _Node, after: _Node) -> list[TemplateChange]:
             node_kind=NodeKind.FIELD,
             tier=ChangeTier.ADDITIVE,
             label_path=path,
-            node_id=node_id,
             raw_node_id=after.node_id,
             attribute=OPTION_KEY,
             after=code,
@@ -600,7 +597,6 @@ def _diff_options(before: _Node, after: _Node) -> list[TemplateChange]:
                 node_kind=NodeKind.FIELD,
                 tier=ChangeTier.COSMETIC,
                 label_path=path,
-                node_id=node_id,
                 raw_node_id=after.node_id,
                 attribute=OPTION_KEY,
                 after=len(new),
@@ -649,7 +645,6 @@ def _diff_field_order(
                     node_kind=NodeKind.ENTITY_TYPE,
                     tier=ChangeTier.COSMETIC,
                     label_path=(node.label,),
-                    node_id=_as_uuid(entity_id),
                     raw_node_id=entity_id,
                     after=len(after_seq),
                 )

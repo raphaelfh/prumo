@@ -15,6 +15,7 @@ import pytest
 from fastapi import HTTPException
 
 import app.api.v1.endpoints.project_templates as endpoint_module
+from app.domain.template_change import DiffStatus
 from app.schemas.hitl_session import TemplateConfigDiffRead
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 
@@ -28,7 +29,7 @@ def _request() -> MagicMock:
 @pytest.mark.asyncio
 async def test_config_diff_wraps_service_result(monkeypatch) -> None:
     template_id = uuid.uuid4()
-    read = TemplateConfigDiffRead(project_template_id=template_id, diff_available=True)
+    read = TemplateConfigDiffRead(project_template_id=template_id, status=DiffStatus.AVAILABLE)
     monkeypatch.setattr(endpoint_module, "get_template_config_diff", AsyncMock(return_value=read))
 
     response = await endpoint_module.get_template_config_diff_endpoint(

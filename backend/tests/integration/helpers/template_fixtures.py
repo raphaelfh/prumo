@@ -14,12 +14,19 @@ and trigger-materialized instances.
 from __future__ import annotations
 
 import json as _json
+from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import UUID, uuid4
 
+import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import TokenPayload, get_current_user
+from app.main import app
+from app.repositories.extraction_template_version_repository import (
+    ExtractionTemplateVersionRepository,
+)
 from app.services.template_version_service import TemplateVersionService
 from tests.integration.conftest import (
     SEED,
@@ -32,6 +39,34 @@ from tests.integration.conftest import (
 #: The article every fixture below materializes instances against. Lives in
 #: the cross-project seed, which ships no articles of its own.
 ARTICLE_ID = UUID("ffffffff-9999-0002-0000-0000000009c1")
+
+
+# --------------------------------------------------------------------------
+# HTTP auth
+# --------------------------------------------------------------------------
+
+
+async def authenticated_as(user_id: UUID, email: str) -> AsyncGenerator[UUID, None]:
+    """Override ``get_current_user`` for the body of a fixture, then pop it."""
+
+    async def _override() -> TokenPayload:
+        return TokenPayload(sub=str(user_id), email=email, role="authenticated", aal="aal1")
+
+    app.dependency_overrides[get_current_user] = _override
+    yield user_id
+    app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest_asyncio.fixture
+async def auth_as_manager(db_session: AsyncSession) -> AsyncGenerator[UUID, None]:
+    """JWT sub = a manager of both seeded projects.
+
+    Imported by name into the suites that need it — every template-config
+    endpoint is manager-gated, so the two suites that exercise them were
+    declaring the same fixture twice."""
+    del db_session  # fixture ordering only: the seed must run first
+    async for user_id in authenticated_as(SEED.primary_profile, "t@example.com"):
+        yield user_id
 
 
 # --------------------------------------------------------------------------
@@ -67,6 +102,22 @@ async def fresh_charms(db: AsyncSession) -> tuple[UUID, UUID, dict[str, Any]]:
         user_id=SEED.primary_profile,
     )
     return project_id, template_id, await active_schema(db, template_id)
+
+
+async def force_narrow_baseline(db: AsyncSession, template_id: UUID, section: UUID) -> None:
+    """Rewrite the active version's schema into the pre-0017 "narrow" shape.
+
+    The entity type carries no ``role``, so ``snapshot_is_narrow`` calls it
+    narrow and ``baseline_is_restorable`` refuses it — which is exactly what
+    the count, the Discard gate and the config-diff read all key off. One
+    owner because this shape is a GATE INPUT: a copy that drifted would
+    quietly stop being narrow, and its suite would keep passing while
+    testing nothing.
+    """
+    active = await ExtractionTemplateVersionRepository(db).get_active(template_id)
+    assert active is not None
+    active.schema_ = {"entity_types": [{"id": str(section), "label": "Narrow", "fields": []}]}
+    await db.flush()
 
 
 async def active_schema(db: AsyncSession, template_id: UUID) -> dict[str, Any]:

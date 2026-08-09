@@ -1,12 +1,12 @@
 """GET config-diff (slice B-9b2a): the Publish sheet's read model.
 
-Three response shapes, and the third is the one this slice exists to get
-right:
+Three response shapes — one per ``DiffStatus`` — and the third is the one
+this slice exists to get right:
 
-1. an ordinary computed diff, bucketed by tier;
-2. a template that never published — ``initial_version``, 200, never 404;
-3. a pre-0026 "narrow" baseline — ``diff_available: false``, and the diff
-   engine is never called at all, because diffing an unrestorable baseline
+1. ``available``: an ordinary computed diff, bucketed by tier;
+2. ``initial_version``: a template that never published — 200, never 404;
+3. ``baseline_too_old``: a pre-0026 "narrow" baseline, where the diff engine
+   is never called at all, because diffing an unrestorable baseline
    fabricates rows (``role`` defaults to ``None`` in the engine but is
    non-nullable live, so every entity type manufactures a phantom SEMANTIC
    row) beside a chip that renders no count at all.
@@ -29,16 +29,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import TokenPayload, get_current_user
-from app.domain.template_change import ChangeVariant
-from app.main import app
-from app.repositories.extraction_template_version_repository import (
-    ExtractionTemplateVersionRepository,
-)
-from app.schemas.hitl_session import (
-    TemplateConfigDiffRead,
-    TemplateDiffUnavailableReason,
-)
+from app.domain.template_change import ChangeVariant, DiffStatus
+from app.schemas.hitl_session import TemplateConfigDiffRead
 from app.services import template_version_read_service
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_version_read_service import (
@@ -46,13 +38,16 @@ from app.services.template_version_read_service import (
     get_template_config_status,
 )
 from tests.integration.conftest import SEED, make_proposal, open_session
+from tests.integration.helpers import template_fixtures
 from tests.integration.helpers.template_fixtures import (
     ARTICLE_ID,
     add_field,
     add_section,
+    authenticated_as,
     delete_field,
     entity_id,
     field_id,
+    force_narrow_baseline,
     fresh_charms,
     set_label,
 )
@@ -61,30 +56,19 @@ from tests.integration.helpers.template_fixtures import (
 # Helpers
 # --------------------------------------------------------------------------
 
-
-@pytest_asyncio.fixture
-async def auth_as_manager(db_session: AsyncSession) -> AsyncGenerator[UUID, None]:
-    """JWT sub = a manager of both seeded projects."""
-    del db_session  # fixture ordering only: the seed must run first
-    async for user_id in _authenticated_as(SEED.primary_profile, "t@example.com"):
-        yield user_id
+#: Every template-config endpoint is manager-gated, so this fixture is shared
+#: with ``test_template_discard_draft``. Bound by assignment rather than
+#: imported by name: an import binding collides with the identically named
+#: parameter in every test that requests it (ruff F811).
+auth_as_manager = template_fixtures.auth_as_manager
 
 
 @pytest_asyncio.fixture
 async def auth_as_reviewer(db_session: AsyncSession) -> AsyncGenerator[UUID, None]:
     """JWT sub = a member of the primary project who is NOT a manager."""
-    del db_session
-    async for user_id in _authenticated_as(SEED.reviewer_profile, "r@example.com"):
+    del db_session  # fixture ordering only: the seed must run first
+    async for user_id in authenticated_as(SEED.reviewer_profile, "r@example.com"):
         yield user_id
-
-
-async def _authenticated_as(user_id: UUID, email: str) -> AsyncGenerator[UUID, None]:
-    async def _override() -> TokenPayload:
-        return TokenPayload(sub=str(user_id), email=email, role="authenticated", aal="aal1")
-
-    app.dependency_overrides[get_current_user] = _override
-    yield user_id
-    app.dependency_overrides.pop(get_current_user, None)
 
 
 async def _diff(db: AsyncSession, project_id: UUID, template_id: UUID) -> TemplateConfigDiffRead:
@@ -109,16 +93,6 @@ async def _set_field_type(db: AsyncSession, target: UUID, field_type: str) -> No
         text("UPDATE public.extraction_fields SET field_type = :t WHERE id = :id"),
         {"id": str(target), "t": field_type},
     )
-    await db.flush()
-
-
-async def _force_narrow_baseline(db: AsyncSession, template_id: UUID, section: UUID) -> None:
-    """The pre-0017 shape ``test_template_config_status`` manufactures: the
-    entity type carries no ``role``, so the whole snapshot is untrustworthy
-    as a diff baseline."""
-    active = await ExtractionTemplateVersionRepository(db).get_active(template_id)
-    assert active is not None
-    active.schema_ = {"entity_types": [{"id": str(section), "label": "Sample size", "fields": []}]}
     await db.flush()
 
 
@@ -178,9 +152,7 @@ async def test_a_four_tier_draft_lands_in_four_buckets(db_session: AsyncSession)
 
     diff = await _diff(db_session, project_id, template_id)
 
-    assert diff.diff_available is True
-    assert diff.initial_version is False
-    assert diff.unavailable_reason is None
+    assert diff.status is DiffStatus.AVAILABLE
     assert [r.id for r in diff.changes.additive] == [f"added:field:{added}:-:-"]
     assert [r.id for r in diff.changes.cosmetic] == [f"modified:field:{renamed}:label:-"]
     assert [r.id for r in diff.changes.semantic] == [f"modified:field:{relaxed}:is_required:-"]
@@ -290,9 +262,7 @@ async def test_a_template_that_never_published_reports_the_initial_version_shape
 
     diff = await _diff(db_session, project_id, template_id)
 
-    assert diff.initial_version is True
-    assert diff.diff_available is False
-    assert diff.unavailable_reason is None
+    assert diff.status is DiffStatus.INITIAL_VERSION
     assert _all_rows(diff) == []
 
 
@@ -311,13 +281,11 @@ async def test_a_narrow_baseline_reports_no_rows(db_session: AsyncSession) -> No
     to ``None`` in the engine but is non-nullable live."""
     project_id, template_id, _ = await fresh_charms(db_session)
     section = await entity_id(db_session, template_id, "sample_size")
-    await _force_narrow_baseline(db_session, template_id, section)
+    await force_narrow_baseline(db_session, template_id, section)
 
     diff = await _diff(db_session, project_id, template_id)
 
-    assert diff.diff_available is False
-    assert diff.unavailable_reason is TemplateDiffUnavailableReason.BASELINE_TOO_OLD
-    assert diff.initial_version is False
+    assert diff.status is DiffStatus.BASELINE_TOO_OLD
     rows = _all_rows(diff)
     assert rows == [], f"unrestorable baseline fabricated {len(rows)} row(s): {rows}"
 
@@ -331,7 +299,7 @@ async def test_a_narrow_baseline_never_reaches_the_diff_engine(
     snapshot build nor the walk."""
     project_id, template_id, _ = await fresh_charms(db_session)
     section = await entity_id(db_session, template_id, "sample_size")
-    await _force_narrow_baseline(db_session, template_id, section)
+    await force_narrow_baseline(db_session, template_id, section)
 
     def _forbidden(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("an unrestorable baseline must never be diffed")
@@ -343,7 +311,7 @@ async def test_a_narrow_baseline_never_reaches_the_diff_engine(
 
     diff = await _diff(db_session, project_id, template_id)
 
-    assert diff.unavailable_reason is TemplateDiffUnavailableReason.BASELINE_TOO_OLD
+    assert diff.status is DiffStatus.BASELINE_TOO_OLD
 
 
 # ==========================================================================
@@ -441,7 +409,7 @@ async def test_endpoint_serves_the_envelope(
     envelope = res.json()
     assert envelope["ok"] is True
     data = envelope["data"]
-    assert data["diff_available"] is True
+    assert data["status"] == "available"
     assert [r["id"] for r in data["changes"]["additive"]] == [f"added:field:{added}:-:-"]
     assert data["changes"]["additive"][0]["affects_recorded_data"] is False
     await db_session.rollback()
@@ -456,14 +424,14 @@ async def test_endpoint_serves_200_for_both_unavailable_shapes(
     assert auth_as_manager == SEED.primary_profile
     project_id, template_id, _ = await fresh_charms(db_session)
     section = await entity_id(db_session, template_id, "sample_size")
-    await _force_narrow_baseline(db_session, template_id, section)
+    await force_narrow_baseline(db_session, template_id, section)
 
     narrow = await db_client.get(
         f"/api/v1/projects/{project_id}/templates/{template_id}/config-diff"
     )
 
     assert narrow.status_code == 200, narrow.text
-    assert narrow.json()["data"]["unavailable_reason"] == "baseline_too_old"
+    assert narrow.json()["data"]["status"] == "baseline_too_old"
 
     await _unpublish(db_session, template_id)
     initial = await db_client.get(
@@ -471,7 +439,7 @@ async def test_endpoint_serves_200_for_both_unavailable_shapes(
     )
 
     assert initial.status_code == 200, initial.text
-    assert initial.json()["data"]["initial_version"] is True
+    assert initial.json()["data"]["status"] == "initial_version"
     await db_session.rollback()
 
 
