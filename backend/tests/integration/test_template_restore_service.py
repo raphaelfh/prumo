@@ -60,18 +60,28 @@ from tests.integration.conftest import (
 # --------------------------------------------------------------------------
 
 
-async def _fresh_charms(db: AsyncSession) -> tuple[UUID, UUID, dict[str, Any]]:
+async def _fresh_charms(
+    db: AsyncSession, *, instruction: str | None = None
+) -> tuple[UUID, UUID, dict[str, Any]]:
     """A real WIDE baseline: clone CHARMS into the secondary project and
     publish the live tree.
 
     Never the bare seeded template version — its snapshot is
     ``{"entity_types": []}``, which is a different (and separately
     interesting) case, not a restorable baseline.
+
+    ``instruction`` is written onto the clone *before* the publish, so the
+    baseline carries it. Pass it rather than relying on whatever the global
+    CHARMS row happens to hold: ``backfill_llm_template_instructions`` runs
+    in ``python -m app.seed``, not in the autouse SEED fixture, so a
+    long-lived local database has an instruction where CI does not.
     """
     project_id = SEED.secondary_project
     await clean_project_clones(db, project_id)
     clone = await clone_charms(db, project_id, SEED.primary_profile)
     template_id = clone.project_template_id
+    if instruction is not None:
+        await _set_instruction(db, template_id, instruction)
     await TemplateVersionService(db).republish(
         project_id=project_id,
         project_template_id=template_id,
@@ -765,8 +775,10 @@ async def test_instruction_set_by_the_draft_is_cleared(db_session: AsyncSession)
 
 @pytest.mark.asyncio
 async def test_instruction_cleared_by_the_draft_is_restored(db_session: AsyncSession) -> None:
-    project_id, template_id, baseline = await _fresh_charms(db_session)
-    assert baseline.get("llm_template_instruction"), "CHARMS seeds a template instruction"
+    project_id, template_id, baseline = await _fresh_charms(
+        db_session, instruction="Judge strictly from the reported conduct."
+    )
+    assert baseline.get("llm_template_instruction"), "the published baseline carries it"
     await _set_instruction(db_session, template_id, "   ")
     capture = await _capture(db_session, template_id)
 
