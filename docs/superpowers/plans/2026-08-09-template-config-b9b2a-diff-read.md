@@ -193,12 +193,20 @@ while the first's contract is still moving.
   the wire model on screen before anything mutates. The recorded-work
   badge is **destructive-only**: the post-pass computes the flag for
   every node kind, but no additive/cosmetic/semantic row renders it.
-- **D8 — Honest copy for what the engine cannot say.** Reorder rows say
-  only "N items reordered" and the two variants must not share a
-  sentence that implies the same arithmetic — and the option variant's N
-  **includes just-added codes**, so its copy must not imply all N moved
-  ("order changed among N options", not "N options reordered").
-  `validation_schema` rows
+- **D8 — Honest copy for what the engine cannot say.** **Corrected
+  2026-08-09 (T3 review): NEITHER reorder count is a count of things that
+  moved — both are populations.** `_diff_field_order` ships
+  `len(after_seq)`, every field that survived in the section
+  (`template_diff.py:638-646`), and `_diff_options` ships `len(new)`, every
+  current option including just-added ones (`:601`). So
+  `[A,B,C,D,E] → [B,A,C,D,E]` is "5", not "2". Copy for both must **name
+  the population, never the movers** — "Order changed among N fields in
+  this section" / "Order changed among N options" — and the two must not
+  share a sentence implying the same arithmetic (they count different
+  populations: the section's excludes just-added fields, the option one
+  includes just-added options). An earlier draft of this decision said
+  "N items reordered", which is the exact false-claim class this decision
+  exists to prevent. `validation_schema` rows
   must not claim a downstream effect. No per-option claim, and never the
   word "answers" — the union includes AI and system proposals, so the
   honest phrase is "recorded extraction work".
