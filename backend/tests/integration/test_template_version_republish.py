@@ -180,25 +180,55 @@ async def _two_one_sections_with_raced_extras(
 ) -> list[str]:
     """Two cardinality-one model_sections that each already hold 2+ entries
     under the same parent, with their ``sort_order`` deliberately INVERTED
-    against clone order (B-9b0 D2).
+    against the order an un-ordered select hands them back in (B-9b0 D2).
 
-    ``model_development`` is seeded (and therefore cloned) before
-    ``model_performance``, so an un-ordered select hands them back in the
-    opposite order to the one asserted here — which is the point: the
-    refusal must follow ``sort_order``, not the heap. Returns the labels in
-    the expected order."""
+    The two ``sort_order`` writes go out as raw SQL, HIGHEST value first:
+    an UPDATE writes a new heap tuple, so a scan with no ``ORDER BY``
+    follows the order the two writes were issued in. Mutating the ORM
+    objects instead leaves that order to SQLAlchemy, which flushes
+    persistent UPDATEs in primary-key order — and the clone assigns primary
+    keys with ``uuid4()``, which made the un-ordered order (and therefore
+    the ordering assertion resting on it) a coin flip. The inversion is
+    asserted below rather than assumed, so that a future storage change
+    surfaces as a fixture failure instead of a silently passing test.
+
+    Returns the labels in ascending ``sort_order`` — the order the refusal
+    must name them in, and the reverse of the un-ordered one."""
     container = await _section_by_name(db, project_template_id, "prediction_models")
-    first = await _section_by_name(db, project_template_id, "model_performance")
-    second = await _section_by_name(db, project_template_id, "model_development")
-    first.sort_order = 900
-    second.sort_order = 901
+    by_sort_order = [
+        (900, await _section_by_name(db, project_template_id, "model_performance")),
+        (901, await _section_by_name(db, project_template_id, "model_development")),
+    ]
+    for sort_order, section in reversed(by_sort_order):
+        await db.execute(
+            text("UPDATE public.extraction_entity_types SET sort_order = :so WHERE id = :id"),
+            {"so": sort_order, "id": str(section.id)},
+        )
+
+    targets = [section.id for _, section in by_sort_order]
+    scanned = (
+        # The refusal's own query, minus its ORDER BY.
+        await db.execute(
+            select(ExtractionEntityType.id).where(
+                ExtractionEntityType.project_template_id == project_template_id,
+                ExtractionEntityType.role == "model_section",
+                ExtractionEntityType.cardinality == "one",
+            )
+        )
+    ).scalars()
+    assert [row_id for row_id in scanned if row_id in targets] == list(reversed(targets)), (
+        "fixture precondition: without an ORDER BY the two sections must come "
+        "back in the REVERSE of their sort_order, or this test cannot tell an "
+        "ordered refusal from an unordered one"
+    )
+
     parent = await _insert_instance_raw(
         db,
         template_id=project_template_id,
         entity_type_id=container.id,
         label="Model A",
     )
-    for section in (second, first):
+    for _, section in by_sort_order:
         for order in (0, 1):
             await _insert_instance_raw(
                 db,
@@ -207,8 +237,7 @@ async def _two_one_sections_with_raced_extras(
                 parent_instance_id=parent,
                 sort_order=order,
             )
-    await db.flush()
-    return [first.label, second.label]
+    return [section.label for _, section in by_sort_order]
 
 
 @pytest.mark.asyncio
