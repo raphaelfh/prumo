@@ -74,6 +74,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
 from app.core.logging import get_logger
+from app.domain.template_change import ChangeTier
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
@@ -98,7 +99,7 @@ from app.services.extraction_snapshot import (
     build_template_version_snapshot,
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_diff import ChangeTier, TemplateChange, diff_snapshots
+from app.services.template_diff import TemplateChange, diff_snapshots
 from app.services.template_restore_service import ContainerSwapUnsupportedError, restore_snapshot
 from app.services.template_section_service import has_multi_entry_parent
 from app.services.template_version_read_service import NoActiveTemplateVersionError

@@ -48,6 +48,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
+from app.domain.template_change import ChangeTier
 from app.llm.claim_value import normalize_options
 
 _PATH_SEPARATOR = " → "
@@ -69,15 +70,6 @@ class NodeKind(StrEnum):
     TEMPLATE = "template"
     ENTITY_TYPE = "entity_type"
     FIELD = "field"
-
-
-class ChangeTier(StrEnum):
-    """Severity tier (D2) — what a reviewer stands to lose."""
-
-    ADDITIVE = "additive"
-    COSMETIC = "cosmetic"
-    SEMANTIC = "semantic"
-    DESTRUCTIVE = "destructive"
 
 
 # --- The canonical key set (D4), partitioned by how each key is compared -----

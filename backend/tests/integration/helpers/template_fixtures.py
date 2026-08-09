@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.template_version_service import TemplateVersionService
 from tests.integration.conftest import (
     SEED,
     clean_project_clones,
@@ -43,12 +44,15 @@ async def fresh_charms(db: AsyncSession) -> tuple[UUID, UUID, dict[str, Any]]:
 
     Also materializes an article there: every partial-discard case needs a
     HITL session, and the cross-project seed ships none."""
-    from app.services.template_version_service import TemplateVersionService
-
     project_id = SEED.secondary_project
     await clean_project_clones(db, project_id)
     await db.execute(
         text(
+            # Title only, never asserted on — ON CONFLICT DO NOTHING keys off
+            # the fixed id above. Renamed from the original 'B-9c1 discard
+            # article' when this helper moved here, because it is now shared
+            # by more than the discard suite; do not assume byte-identity
+            # with the pre-move fixture.
             "INSERT INTO public.articles (id, project_id, title, row_version) "
             "VALUES (:id, :pid, 'Template-config fixture article', 1) "
             "ON CONFLICT (id) DO NOTHING"

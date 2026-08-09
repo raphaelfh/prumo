@@ -13,42 +13,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from enum import StrEnum
 from uuid import UUID
 
+from app.domain.template_change import ChangeTier, ChangeVariant
 from app.services.template_diff import (
     OPTION_KEY,
     ChangeKind,
-    ChangeTier,
     NodeKind,
     TemplateChange,
-    TemplateDiff,
 )
-
-
-class ChangeVariant(StrEnum):
-    """The shape of one row — the client's discriminator (D1).
-
-    One member per reachable ``(kind, node_kind[, option polarity])`` the
-    engine can emit, so a renderer never has to re-derive which of the
-    engine's overloaded fields are meaningful.
-    """
-
-    TEMPLATE_INSTRUCTION_ADDED = "template_instruction_added"
-    TEMPLATE_INSTRUCTION_REMOVED = "template_instruction_removed"
-    TEMPLATE_INSTRUCTION_MODIFIED = "template_instruction_modified"
-    ENTITY_TYPE_ADDED = "entity_type_added"
-    ENTITY_TYPE_REMOVED = "entity_type_removed"
-    ENTITY_TYPE_MODIFIED = "entity_type_modified"
-    ENTITY_TYPE_FIELDS_REORDERED = "entity_type_fields_reordered"
-    FIELD_ADDED = "field_added"
-    FIELD_REMOVED = "field_removed"
-    FIELD_MOVED = "field_moved"
-    FIELD_MODIFIED = "field_modified"
-    FIELD_OPTION_ADDED = "field_option_added"
-    FIELD_OPTION_REMOVED = "field_option_removed"
-    FIELD_OPTIONS_REORDERED = "field_options_reordered"
-
 
 #: Every ``(kind, node_kind)`` the engine can construct. Exhaustive by test,
 #: with no catch-all: a new pair must fail loudly rather than land in a
@@ -157,19 +130,9 @@ class TemplateChangeRow:
     #: (``template_diff.py``, ``_diff_options``).
     reorder_count: int | None = None
     #: Whether this row touches work a human or the AI already recorded (D6).
-    #: Resolved by :func:`with_recorded_data`; ``False`` on every row
-    #: :func:`to_rows` builds, which has no value information to claim it.
+    #: Resolved by :func:`with_recorded_data`; ``False`` when called with an
+    #: empty recorded set, which has no value information to claim it.
     affects_recorded_data: bool = False
-
-
-def to_rows(diff: TemplateDiff) -> tuple[TemplateChangeRow, ...]:
-    """Project a diff onto its wire rows, preserving the engine's order.
-
-    Every row reads ``affects_recorded_data = False``: a caller with no
-    value information cannot claim otherwise. Callers that resolved the
-    recorded set use :func:`with_recorded_data` instead.
-    """
-    return with_recorded_data(diff.changes, {}, frozenset())
 
 
 def with_recorded_data(

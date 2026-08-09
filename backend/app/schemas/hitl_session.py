@@ -6,18 +6,18 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+# The diff vocabulary lives in app.domain rather than the diff engine: the
+# wire model below references those enums rather than restating them, so the
+# generated client's unions cannot drift from the engine's, and importing
+# from app.domain (not app.services) means this schema module cannot form a
+# package-level cycle with the six services that import this one.
+from app.domain.template_change import ChangeTier, ChangeVariant
+
 # Re-export TemplateKind so endpoints can convert request.kind into the
 # canonical enum value without importing directly from app.models.* —
 # enforced by scripts/fitness/check_layered_arch.py.
 from app.models.extraction_versioning import TemplateKind  # noqa: E402,F401
 from app.schemas.extraction_run import RunViewEntityType, RunViewResponse
-
-# The diff vocabulary is defined where the diff is computed; the wire model
-# below references those enums rather than restating them, so the generated
-# client's unions cannot drift from the engine's. Neither module imports
-# schemas, so this cannot cycle.
-from app.services.template_diff import ChangeTier
-from app.services.template_diff_read import ChangeVariant
 
 
 class OpenHITLSessionRequest(BaseModel):

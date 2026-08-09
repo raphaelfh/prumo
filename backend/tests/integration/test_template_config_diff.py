@@ -30,6 +30,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
+from app.domain.template_change import ChangeVariant
 from app.main import app
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
@@ -40,7 +41,6 @@ from app.schemas.hitl_session import (
 )
 from app.services import template_version_read_service
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_diff_read import ChangeVariant
 from app.services.template_version_read_service import (
     get_template_config_diff,
     get_template_config_status,
@@ -337,6 +337,9 @@ async def test_a_narrow_baseline_never_reaches_the_diff_engine(
         raise AssertionError("an unrestorable baseline must never be diffed")
 
     monkeypatch.setattr(template_version_read_service, "diff_snapshots", _forbidden)
+    monkeypatch.setattr(
+        template_version_read_service, "build_template_version_snapshot", _forbidden
+    )
 
     diff = await _diff(db_session, project_id, template_id)
 

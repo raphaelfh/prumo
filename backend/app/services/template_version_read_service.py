@@ -24,6 +24,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.template_change import ChangeTier
 from app.models.extraction import ProjectExtractionTemplate
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.repositories.extraction_field_reference_repository import (
@@ -46,7 +47,7 @@ from app.services.extraction_snapshot import (
     entity_types_for_version,
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_diff import ChangeTier, diff_snapshots
+from app.services.template_diff import diff_snapshots
 from app.services.template_diff_read import TemplateChangeRow, with_recorded_data
 
 

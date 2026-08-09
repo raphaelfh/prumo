@@ -15,19 +15,17 @@ from dataclasses import fields
 from typing import Any
 from uuid import UUID, uuid4
 
+from app.domain.template_change import ChangeTier, ChangeVariant
 from app.services import template_diff, template_diff_read
 from app.services.template_diff import (
     ChangeKind,
-    ChangeTier,
     NodeKind,
     TemplateDiff,
     diff_snapshots,
 )
 from app.services.template_diff_read import (
     VARIANT_BY_KIND,
-    ChangeVariant,
     TemplateChangeRow,
-    to_rows,
     with_recorded_data,
 )
 
@@ -97,7 +95,7 @@ def _select(field_id: UUID, allowed: Any, **over: Any) -> dict[str, Any]:
 
 def _rows(baseline: dict[str, Any], current: dict[str, Any]) -> tuple[TemplateChangeRow, ...]:
     diff: TemplateDiff = diff_snapshots(baseline, current, fields_with_values=NO_VALUES)
-    return to_rows(diff)
+    return with_recorded_data(diff.changes, {}, frozenset())
 
 
 def _only(rows: tuple[TemplateChangeRow, ...]) -> TemplateChangeRow:

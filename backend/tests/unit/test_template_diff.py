@@ -19,11 +19,11 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.domain.template_change import ChangeTier
 from app.services import template_diff
 from app.services.extraction_snapshot import SNAPSHOT_SQL
 from app.services.template_diff import (
     ChangeKind,
-    ChangeTier,
     NodeKind,
     diff_snapshots,
 )

@@ -2,12 +2,12 @@
 
 from uuid import uuid4
 
+from app.domain.template_change import ChangeTier
 from app.schemas.hitl_session import (
     TemplateChangeRowRead,
     TemplateConfigDiffBuckets,
     TemplateConfigDiffRead,
 )
-from app.services.template_diff import ChangeTier
 from app.services.template_diff_read import TemplateChangeRow
 
 
