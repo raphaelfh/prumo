@@ -78,6 +78,12 @@ export function useTemplateEntityTypes(templateId: string | null | undefined) {
     // which is exactly the "skeleton once, then keep the rows" rule the
     // editor needs to preserve selection/search across a refresh.
     isLoading: query.isLoading,
+    // isPending is "no data yet" and, unlike isLoading, survives a query
+    // TanStack has PAUSED (networkMode 'online' + a refused connection ends
+    // in status pending / fetchStatus paused, where isLoading is false).
+    // Callers that must never render an empty tree as a real result — the
+    // config editor's three-branch render — gate on this one.
+    isPending: query.isPending,
     isError: query.isError,
     error: query.error,
   };

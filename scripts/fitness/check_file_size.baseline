@@ -7,7 +7,7 @@ backend/app/services/section_extraction_service.py:1750
 frontend/components/articles/ArticleForm.tsx:1272
 frontend/components/articles/ArticlesList.tsx:1360
 frontend/components/extraction/ArticleExtractionTable.tsx:1134
-frontend/components/extraction/template-config/TemplateConfigGridPanel.test.tsx:1032
+frontend/components/extraction/template-config/TemplateConfigGridPanel.test.tsx:1038
 frontend/lib/copy/extraction.ts:958
 frontend/pages/ExtractionFullScreen.tsx:1371
 frontend/pages/QualityAssessmentFullScreen.tsx:893

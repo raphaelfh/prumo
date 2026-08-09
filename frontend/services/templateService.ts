@@ -179,22 +179,6 @@ export async function loadTemplateConfigStatus(
   );
 }
 
-export interface EntityTypeWithCount {
-  id: string;
-  template_id: string;
-  name: string;
-  label: string;
-  description?: string | null;
-  cardinality: 'one' | 'many';
-  sort_order: number;
-  parent_entity_type_id?: string | null;
-  role?: string;
-  is_required?: boolean;
-  created_at?: string;
-  fieldsCount: number;
-  [key: string]: unknown;
-}
-
 export interface SectionImpact {
   fieldsCount: number;
   instancesCount: number;
@@ -203,39 +187,10 @@ export interface SectionImpact {
   warnings: string[];
 }
 
-// --- Entity type loading ---
-
-/**
- * Load all entity types for a template with their field counts.
- * Single-query relocation: no test needed.
- */
-export async function loadTemplateEntityTypes(
-  templateId: string,
-): Promise<ErrorResult<EntityTypeWithCount[]>> {
-  return toResult(async () => {
-    const {data: entityTypesData, error: entityTypesError} = await supabase
-      .from('extraction_entity_types')
-      .select('*, extraction_fields(count)')
-      .eq('project_template_id', templateId)
-      .order('sort_order', {ascending: true});
-
-    if (entityTypesError) throw entityTypesError;
-
-    // The embedded `extraction_fields(count)` above already carries the
-    // per-section count; the old code fired one extra HEAD request per
-    // entity type (14 on CHARMS) and discarded the value it already had.
-    const entityTypesWithCounts = (entityTypesData ?? []).map((et) => {
-      const embedded = (et as {extraction_fields?: {count: number}[]})
-        .extraction_fields;
-      return {
-        ...et,
-        fieldsCount: embedded?.[0]?.count ?? 0,
-      } as EntityTypeWithCount;
-    });
-
-    return entityTypesWithCounts;
-  }, 'loadTemplateEntityTypes');
-}
+// Entity-type LOADING lives in `useTemplateEntityTypes` (one cached
+// PostgREST read, shared by the editor and the grid panel). The imperative
+// `loadTemplateEntityTypes` this file used to export was its last caller's
+// private reload protocol and went with the B-9c2 editor migration.
 
 // --- Entity type label update ---
 

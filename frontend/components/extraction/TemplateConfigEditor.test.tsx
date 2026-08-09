@@ -9,14 +9,37 @@
  * mutation path (service + invalidateStructure) and that Esc regression.
  */
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
-import {render, screen, waitFor, within} from '@testing-library/react';
+import {act, render, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
+// PostgREST stub for the ONE test that runs the REAL useTemplateEntityTypes
+// (the invalidation→render path). Hoisted so the module factory below can
+// read it lazily, per call.
+const pgrst = vi.hoisted(() => ({
+  rows: [] as Record<string, unknown>[],
+  fail: false,
+}));
+
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 vi.mock('sonner', () => ({toast: {error: vi.fn(), success: vi.fn()}}));
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          order: () =>
+            Promise.resolve(
+              pgrst.fail
+                ? {data: null, error: {message: 'entity types unavailable'}}
+                : {data: pgrst.rows, error: null},
+            ),
+        }),
+      }),
+    }),
+  },
+}));
 vi.mock('@/services/templateService', () => ({
-  loadTemplateEntityTypes: vi.fn(),
   updateEntityTypeLabel: vi.fn(),
 }));
 vi.mock('@/services/extractionFieldService', () => ({
@@ -56,8 +79,8 @@ import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes'
 import {useInsertTemplateField} from '@/hooks/extraction/useInsertTemplateField';
 import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
+import {templateEntityTypesKeys} from '@/lib/query-keys/extraction';
 import {deleteField, validateFieldImpact} from '@/services/extractionFieldService';
-import {loadTemplateEntityTypes} from '@/services/templateService';
 import type {FieldValidationResult} from '@/types/extraction';
 
 import {TemplateConfigEditor} from './TemplateConfigEditor';
@@ -88,35 +111,53 @@ const FIELDS = [
   },
 ];
 
+/** PostgREST-shaped rows for the real-hook test (embedded `fields` alias). */
+const ROW_A = {...SECTION, entry_label: null, fields: FIELDS};
+const ROW_B = {
+  id: 'sec-b',
+  name: 'sec_b',
+  label: 'Section B',
+  description: null,
+  role: 'study_section',
+  cardinality: 'one',
+  parent_entity_type_id: null,
+  entry_label: null,
+  sort_order: 2,
+  fields: [],
+};
+
 function renderEditor() {
   const queryClient = new QueryClient({
-    defaultOptions: {mutations: {retry: false}},
+    defaultOptions: {queries: {retry: false}, mutations: {retry: false}},
   });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <TemplateConfigEditor projectId="p1" templateId="t1" />
-      </TooltipProvider>
-    </QueryClientProvider>,
-  );
+  return {
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <TemplateConfigEditor projectId="p1" templateId="t1" />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    ),
+    queryClient,
+  };
 }
 
 const invalidateStructure = vi.fn(async () => {});
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(loadTemplateEntityTypes).mockResolvedValue({
-    ok: true,
-    data: [SECTION] as never,
-  });
+  pgrst.fail = false;
+  pgrst.rows = [];
   vi.mocked(useTemplateConfigCaches).mockReturnValue({
     invalidateStructure,
     invalidateAll: vi.fn(async () => {}),
+    invalidateAfterDiscard: vi.fn(async () => {}),
     invalidateAfterImport: vi.fn(async () => {}),
   });
   vi.mocked(useTemplateEntityTypes).mockReturnValue({
     entityTypes: [{...SECTION, fields: FIELDS}] as never,
     isLoading: false,
+    isPending: false,
     isError: false,
     error: null,
   } as never);
@@ -187,5 +228,92 @@ describe('TemplateConfigEditor — delete-field hosting (B-5 Task 7)', () => {
     // rung 2 of the ladder and closed the inspector.
     expect(screen.getByLabelText('inspectorLabelLabel')).toBeInTheDocument();
     expect(deleteField).not.toHaveBeenCalled();
+  });
+});
+
+/** Swap the module mock for the REAL hook, so the query (and the PostgREST
+ * stub above) drives the render instead of a hand-written return shape. */
+async function useRealEntityTypesHook() {
+  const actual = await vi.importActual<
+    typeof import('@/hooks/extraction/useTemplateEntityTypes')
+  >('@/hooks/extraction/useTemplateEntityTypes');
+  vi.mocked(useTemplateEntityTypes).mockImplementation(actual.useTemplateEntityTypes);
+}
+
+describe('TemplateConfigEditor — entity types come from the query (B-9c2 T3, D8)', () => {
+  it('renders the spinner while the query is pending — never the empty state', () => {
+    vi.mocked(useTemplateEntityTypes).mockReturnValue({
+      entityTypes: [],
+      isPending: true,
+      isLoading: true,
+      isError: false,
+      error: null,
+    } as never);
+
+    renderEditor();
+
+    expect(screen.getByText('loadingConfiguration')).toBeInTheDocument();
+    expect(screen.queryByText('noSectionsConfigured')).toBeNull();
+  });
+
+  it('a FAILED entity-types query surfaces the failure and NEVER claims "no sections configured"', async () => {
+    // The trap this branch exists for: the hook returns `query.data ?? []`,
+    // so a network failure is byte-identical to a template with zero
+    // sections. Rendering the empty state here would tell the user their
+    // configuration is gone. Driven through the REAL hook so the []-on-error
+    // shape is the one under test, not a hand-written stand-in.
+    await useRealEntityTypesHook();
+    pgrst.fail = true;
+
+    renderEditor();
+
+    expect(await screen.findByText('sectionsLoadFailedTitle')).toBeInTheDocument();
+    expect(screen.queryByText('noSectionsConfigured')).toBeNull();
+
+    // …and the failure is recoverable without a page reload: the retry
+    // affordance re-invalidates the entity-types key.
+    await userEvent.click(screen.getByRole('button', {name: 'tryAgain'}));
+    expect(invalidateStructure).toHaveBeenCalled();
+  });
+
+  it('a SUCCESSFUL query with zero rows still renders the empty state', async () => {
+    // The counterpart that keeps the assertion above honest: "no sections
+    // configured" is not dead copy, it is reserved for a real empty result.
+    await useRealEntityTypesHook();
+    pgrst.rows = [];
+
+    renderEditor();
+
+    expect(await screen.findByText('noSectionsConfigured')).toBeInTheDocument();
+    expect(screen.queryByText('sectionsLoadFailedTitle')).toBeNull();
+  });
+
+  it('the header badge recomputes when templateEntityTypesKeys.byTemplate is invalidated (no hand-refresh)', async () => {
+    // The claim the whole migration rests on: deleting the imperative
+    // reloads is safe ONLY because every config mutation already
+    // invalidates this key, and the query re-renders the header from it.
+    await useRealEntityTypesHook();
+    pgrst.rows = [ROW_A, ROW_B];
+
+    const {queryClient} = renderEditor();
+
+    // Two sections → the plural count key.
+    expect(await screen.findByText('configSectionsCountOther')).toBeInTheDocument();
+    expect(screen.queryAllByText('Section B').length).toBeGreaterThan(0);
+
+    // A Discard (or any other mutation) removes a section server-side and
+    // invalidates the key — nothing else.
+    pgrst.rows = [ROW_A];
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: templateEntityTypesKeys.byTemplate('t1'),
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText('configSectionsCountOne')).toBeInTheDocument(),
+    );
+    expect(screen.queryByText('configSectionsCountOther')).toBeNull();
+    expect(screen.queryAllByText('Section B')).toHaveLength(0);
   });
 });

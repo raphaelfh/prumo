@@ -66,6 +66,11 @@ export const templateConfig = {
   // ('repeats per article') are lowercase inline-meta styling.
   repeatsOncePerArticle: 'One per article',
   repeatsPerArticle: 'Repeats per article',
+  // B-9c2 T3 (D8): the editor's THIRD render branch. A failed structure
+  // read must never be dressed up as "this template has no sections".
+  sectionsLoadFailedBody:
+    'The template structure could not be read, so the sections are not shown. Check your connection and try again.',
+  sectionsLoadFailedTitle: 'Couldn’t load the sections',
   sectionUpdatedSuccess: 'Section updated',
   shortcutMoveDown: '⌘⇧↓',
   shortcutMoveToSection: '⌘⇧M',
