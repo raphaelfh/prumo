@@ -184,6 +184,13 @@ class TemplateChange:
     :attr:`ChangeKind.MOVED` field ("Section A" → "Section B"). For
     :attr:`ChangeKind.REORDERED`, ``after`` is how many siblings the reorder
     covers.
+
+    :attr:`node_id` and :attr:`raw_node_id` are the same id twice: the parsed
+    one for callers that key off a real ``UUID``, and the **raw string**
+    :func:`_index` keyed the node by for callers that must stay
+    round-trippable. They diverge exactly where :func:`_as_uuid` gives up — a
+    junk or absent id parses to ``None`` while the raw string survives, so two
+    unparseable ids cannot be confused for each other downstream.
     """
 
     kind: ChangeKind
@@ -191,6 +198,8 @@ class TemplateChange:
     tier: ChangeTier
     label_path: tuple[str, ...]
     node_id: UUID | None = None
+    #: Empty only for the template-level instruction change, which has no node.
+    raw_node_id: str = ""
     attribute: str | None = None
     before: Any = None
     after: Any = None
@@ -387,6 +396,7 @@ def _diff_entity_types(
                 tier=ChangeTier.SEMANTIC if has_required else ChangeTier.ADDITIVE,
                 label_path=(node.label,),
                 node_id=_as_uuid(entity_id),
+                raw_node_id=entity_id,
             )
         )
 
@@ -400,6 +410,7 @@ def _diff_entity_types(
                 tier=ChangeTier.DESTRUCTIVE,
                 label_path=(node.label,),
                 node_id=_as_uuid(entity_id),
+                raw_node_id=entity_id,
             )
         )
 
@@ -414,6 +425,7 @@ def _diff_entity_types(
                 tier=_attribute_tier(key, before.data[key], node.data[key], has_values=False),
                 label_path=(node.label,),
                 node_id=_as_uuid(entity_id),
+                raw_node_id=entity_id,
                 attribute=key,
                 before=before.data[key],
                 after=node.data[key],
@@ -453,6 +465,7 @@ def _diff_fields(
                         ),
                         label_path=(node.parent_label, node.label),
                         node_id=_as_uuid(field_id),
+                        raw_node_id=field_id,
                     )
                 )
             continue
@@ -468,6 +481,7 @@ def _diff_fields(
                     tier=(ChangeTier.DESTRUCTIVE if has_values else MOVED_WITHOUT_VALUES_TIER),
                     label_path=(node.parent_label, node.label),
                     node_id=_as_uuid(field_id),
+                    raw_node_id=field_id,
                     before=before.parent_label,
                     after=node.parent_label,
                 )
@@ -487,6 +501,7 @@ def _diff_fields(
                     tier=ChangeTier.DESTRUCTIVE,
                     label_path=(node.parent_label, node.label),
                     node_id=_as_uuid(field_id),
+                    raw_node_id=field_id,
                 )
             )
 
@@ -503,6 +518,7 @@ def _diff_field_attributes(
             tier=_attribute_tier(key, before.data[key], after.data[key], has_values=has_values),
             label_path=(after.parent_label, after.label),
             node_id=_as_uuid(after.node_id),
+            raw_node_id=after.node_id,
             attribute=key,
             before=before.data[key],
             after=after.data[key],
@@ -553,6 +569,7 @@ def _diff_options(before: _Node, after: _Node) -> list[TemplateChange]:
             tier=ChangeTier.DESTRUCTIVE,
             label_path=path,
             node_id=node_id,
+            raw_node_id=after.node_id,
             attribute=OPTION_KEY,
             before=code,
         )
@@ -566,6 +583,7 @@ def _diff_options(before: _Node, after: _Node) -> list[TemplateChange]:
             tier=ChangeTier.ADDITIVE,
             label_path=path,
             node_id=node_id,
+            raw_node_id=after.node_id,
             attribute=OPTION_KEY,
             after=code,
         )
@@ -583,6 +601,7 @@ def _diff_options(before: _Node, after: _Node) -> list[TemplateChange]:
                 tier=ChangeTier.COSMETIC,
                 label_path=path,
                 node_id=node_id,
+                raw_node_id=after.node_id,
                 attribute=OPTION_KEY,
                 after=len(new),
             )
@@ -631,6 +650,7 @@ def _diff_field_order(
                     tier=ChangeTier.COSMETIC,
                     label_path=(node.label,),
                     node_id=_as_uuid(entity_id),
+                    raw_node_id=entity_id,
                     after=len(after_seq),
                 )
             )
