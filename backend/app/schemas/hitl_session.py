@@ -6,6 +6,18 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
+# The diff vocabulary lives in app.domain rather than the diff engine: the
+# wire model below references those enums rather than restating them, so the
+# generated client's unions cannot drift from the engine's, and importing
+# from app.domain (not app.services) means this schema module cannot form a
+# package-level cycle with the six services that import this one.
+from app.domain.template_change import (
+    ChangeTier,
+    ChangeVariant,
+    DiffStatus,
+    OpaqueValueState,
+)
+
 # Re-export TemplateKind so endpoints can convert request.kind into the
 # canonical enum value without importing directly from app.models.* —
 # enforced by scripts/fitness/check_layered_arch.py.
@@ -267,6 +279,81 @@ class TemplateConfigStatusRead(BaseModel):
     button is disabled with the right tooltip instead of discovering the
     refusal by clicking. False without a published baseline, and false for a
     pre-0026 narrow one (restoring it would wipe columns project-wide)."""
+
+
+class TemplateChangeRowRead(BaseModel):
+    """One diff row on the wire, built by ``app.services.template_diff_read``.
+
+    Nothing here is typed ``Any``: the baseline side of a diff is raw stored
+    JSONB, and an opaque value is summarized server-side rather than
+    shipped."""
+
+    id: str
+    """``kind:node_kind:node_id:attribute:option_code`` — content-derived and
+    stable across runs, so a client can key rows by it."""
+    variant: ChangeVariant
+    """The row's discriminator (D1) — tells the client which shape it got."""
+    tier: ChangeTier
+    label_path: list[str]
+    """Section → field labels for display; empty for the template instruction."""
+    attribute: str | None = None
+    """The changed key, or ``None`` for a row with no single attribute (a
+    section add/remove, a field move, or a reorder)."""
+    before: str | bool | None = None
+    """The prior display value. ``None`` for an added row or a reorder."""
+    after: str | bool | None = None
+    """The new display value. ``None`` for a removed row or a reorder."""
+    before_opaque_state: OpaqueValueState | None = None
+    """Set instead of ``before`` when the prior value is an opaque blob or id
+    with no listable content — the copy layer renders the word (D3). ``None``
+    means the value slot carries the answer, absent value included."""
+    after_opaque_state: OpaqueValueState | None = None
+    """The ``after`` side of :attr:`before_opaque_state`."""
+    reorder_count: int | None = None
+    """Sibling count for a reorder row, pulled out of the engine's overloaded
+    ``after``. ``None`` for every other row.
+
+    The two reorder variants count **different populations** and the copy
+    layer must not write one sentence for both: a section's count
+    (``ENTITY_TYPE_FIELDS_REORDERED``) EXCLUDES fields added in the same diff
+    — the engine's ``after_seq`` keeps only ids that also existed under the
+    same parent in the baseline (``template_diff._diff_field_order``). A
+    field's option count (``FIELD_OPTIONS_REORDERED``) INCLUDES options added
+    in the same diff — the engine reports ``len(new)`` over the full new
+    option list (``template_diff._diff_options``)."""
+    affects_recorded_data: bool = False
+    """Whether this row touches work a human or the AI already recorded.
+    Field-derived: a section answers from the fields it owns, and a REMOVED
+    node is always false (every workflow ``field_id`` FK is RESTRICT, so the
+    delete would have been refused)."""
+
+
+class TemplateConfigDiffBuckets(BaseModel):
+    """The rows grouped by severity tier — one field per ``ChangeTier``.
+
+    Named fields rather than a map keyed by the enum, so the generated
+    client gets four exhaustive keys instead of an open ``Record``. A unit
+    test pins the field names to the enum's values, because a client that
+    buckets by ``row.tier`` has to find a bucket under that exact name."""
+
+    additive: list[TemplateChangeRowRead] = Field(default_factory=list)
+    cosmetic: list[TemplateChangeRowRead] = Field(default_factory=list)
+    semantic: list[TemplateChangeRowRead] = Field(default_factory=list)
+    destructive: list[TemplateChangeRowRead] = Field(default_factory=list)
+
+
+class TemplateConfigDiffRead(BaseModel):
+    """What the open draft would publish (slice B-9b2a).
+
+    ``status`` names which of :class:`~app.domain.template_change.DiffStatus`'s
+    three shapes this is; all three are HTTP 200, because an un-diffable
+    template is a state the sheet explains rather than an error. Only
+    ``available`` carries rows — the other two leave the buckets at their
+    empty default."""
+
+    project_template_id: UUID
+    status: DiffStatus
+    changes: TemplateConfigDiffBuckets = Field(default_factory=TemplateConfigDiffBuckets)
 
 
 class TemplateActiveVersionRead(BaseModel):

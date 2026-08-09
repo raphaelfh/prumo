@@ -64,6 +64,10 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     noun: string;
   } | null>(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  // B-9b2a: the read-only diff sheet's trigger lives in the command bar
+  // while the grid hosts the inspector Sheet, and two modal sheets must
+  // never stack — so the flag belongs to their nearest common owner, here.
+  const [diffSheetOpen, setDiffSheetOpen] = useState(false);
   // Delete confirm (B-5 Task 7): hosted HERE, outside the grid panel's
   // React subtree — a Radix dialog inside the panel would bubble its
   // dismiss-Esc (portals propagate through the REACT tree) into the
@@ -210,6 +214,8 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
           <TemplateConfigPublishControls
             projectId={projectId}
             templateId={templateId}
+            diffSheetOpen={diffSheetOpen}
+            onDiffSheetOpenChange={setDiffSheetOpen}
           />
         </div>
       </div>
@@ -245,6 +251,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
       <TemplateConfigGridPanel
         projectId={projectId}
         templateId={templateId}
+        diffSheetOpen={diffSheetOpen}
         sectionActions={{
           onCommitRename: (sectionId, label) => void handleSaveEdit(sectionId, label),
           onDelete: (section) => {

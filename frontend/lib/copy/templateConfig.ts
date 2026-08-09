@@ -20,13 +20,107 @@ export const templateConfig = {
     'Single for data that appears once per article; multiple allows several instances (e.g. a list or table).',
   cardinalityRootMultipleHint: 'Multiple occurrences per article (e.g. Authors, Groups)',
   cardinalityRootSingleHint: 'One occurrence per article (e.g. Summary, Conclusion)',
+  // --- B-9b2a: the read-only "unpublished changes" sheet (D7/D8) ---
+  //
+  // One sentence per generated ChangeVariant. The map in
+  // TemplateConfigDiffSheet is `satisfies Record<ChangeVariant, CopyKey>`,
+  // so a wire change breaks the typecheck instead of shipping a blank row.
+  changeEntityTypeAdded: 'Section added',
+  // D8: fields reordered INSIDE a section. Entity types themselves never
+  // reorder, so this must never say "sections were reordered". The count is
+  // the POPULATION of fields that survived in the section on both sides
+  // (template_diff._diff_field_order excludes ids that were added, removed,
+  // or re-parented) — NOT the number that swapped places. A single swap
+  // among five survivors still reports 5, so the sentence names the
+  // population, never the movers — which is also why this and
+  // `changeFieldOptionsReordered` cannot be one shared string (this one
+  // excludes just-added fields; the options one includes just-added
+  // options).
+  changeEntityTypeFieldsReordered: 'Order changed among {{n}} fields in this section',
+  changeEntityTypeModified: 'Section changed',
+  changeEntityTypeRemoved: 'Section removed',
+  changeFieldAdded: 'Field added',
+  changeFieldModified: 'Field changed',
+  changeFieldMoved: 'Field moved to another section',
+  changeFieldOptionAdded: 'Option added',
+  changeFieldOptionRemoved: 'Option removed',
+  // D8: the option count INCLUDES options added in the same diff
+  // (template_diff._diff_options reports len(new) over the whole new list),
+  // so "N options reordered" would claim N moves that did not happen. The
+  // honest phrasing names the population, not the moves.
+  changeFieldOptionsReordered: 'Order changed among {{n}} options',
+  changeFieldRemoved: 'Field removed',
+  // Degenerate reorder row (no count on the wire): says the direction of
+  // the change without inventing arithmetic for either population.
+  changeReorderPlain: 'Order changed',
+  changeTemplateInstructionAdded: 'AI instruction added',
+  changeTemplateInstructionModified: 'AI instruction changed',
+  changeTemplateInstructionRemoved: 'AI instruction removed',
+  // Runtime `??` fallback for a server ahead of this bundle — t() answers
+  // an unknown key with '', which would render a row with no sentence.
+  changeUnknown: 'Changed',
   deleteGroupCascadeWarning:
     'Deleting this repeating group also deletes {{children}} per-{{noun}} section(s) inside it and their {{fields}} field(s)',
   deleteRepeatingGroup: 'Delete repeating group…',
-  // B-9a: shown only for a POSITIVE server-computed count; 0 and null both
-  // fall back to extraction.configUnpublishedChanges (D9).
-  draftChangeCountOne: 'Draft · {{n}} change',
-  draftChangeCountOther: 'Draft · {{n}} changes',
+  // Attribute names, so a row says "Required" instead of "is_required".
+  // Descriptive only: NO row claims a downstream effect, which is what
+  // `validation_schema` requires (it has no functional reader anywhere in
+  // the product) and what every other attribute gets for free.
+  diffAttrAllowedUnits: 'Allowed units',
+  diffAttrAllowedValues: 'Options',
+  diffAttrAllowOther: '“Other” option',
+  diffAttrAllowsNotApplicable: '“Not applicable” option',
+  diffAttrAllowsNotEvaluated: '“Not evaluated” option',
+  diffAttrCardinality: 'Repeats',
+  diffAttrDescription: 'Description',
+  diffAttrEntryLabel: 'Entry label',
+  diffAttrFieldType: 'Field type',
+  diffAttrIsRequired: 'Required',
+  diffAttrLabel: 'Label',
+  diffAttrLlmDescription: 'AI instruction',
+  diffAttrLlmTemplateInstruction: 'AI instruction',
+  diffAttrName: 'Key',
+  diffAttrOtherLabel: '“Other” label',
+  diffAttrOtherPlaceholder: '“Other” placeholder',
+  diffAttrParentEntityTypeId: 'Parent section',
+  diffAttrRole: 'Role',
+  diffAttrUnit: 'Unit',
+  diffAttrValidationSchema: 'Validation schema',
+  // D8: reuses the discardTooltipBaselineTooOld framing. It must not read
+  // as "no changes" — the draft HAS changes, they just cannot be listed.
+  diffBaselineTooOld:
+    'The published version is too old to compare against, so this draft’s changes cannot be listed.',
+  // The genuinely empty diff: the marker is stamped but the snapshots
+  // match. Here "nothing different" is the true statement.
+  diffEmpty:
+    'This draft matches the published version — there is nothing different to list.',
+  // D8: defensive only (migration 0004 plus template_clone_service publish
+  // v1 in the same transaction), and still never "no changes".
+  diffInitialVersion:
+    'Nothing has been published yet, so there is no version to compare against. Everything in this template is new.',
+  diffLoadFailed:
+    'The changes could not be read. Check your connection and try again.',
+  diffLoading: 'Reading the changes…',
+  // D6: destructive rows only. The set behind it unions AI and system
+  // proposals with human ones, so it can never say "answers".
+  diffRecordedWork: 'Affects recorded extraction work',
+  diffSheetDescription:
+    'What this draft would publish. Read-only — nothing here changes the template.',
+  diffSheetTitle: 'Unpublished changes',
+  diffTierAdditive: 'New items',
+  // Both reorder variants land in this tier (template_diff.py:601,:649), and
+  // reordering is not wording — so this cannot say "Wording only" without
+  // misdescribing every reorder row grouped under it.
+  diffTierCosmetic: 'Wording and order',
+  diffTierDestructive: 'Removes or replaces',
+  diffTierSemantic: 'Changes meaning',
+  diffTriggerTooltip: 'See what this draft would publish',
+  // D3: an opaque value (a blob or an id) has nothing listable to print, so
+  // the wire ships a STATE and the word is chosen here — the server no
+  // longer sends English. `empty` is a present-but-empty container; an
+  // attribute that was never set ships no state at all and prints nothing.
+  diffValueEmpty: 'empty',
+  diffValueSet: 'set',
   // --- B-9c2: Discard the unpublished draft (button + four-phase dialog) ---
   discardAckAction: 'Discard anyway',
   discardAckBody:
@@ -83,6 +177,10 @@ export const templateConfig = {
   discardTooltipNeverPublished:
     'Nothing has been published yet, so there is no version to go back to',
   discardTooltipNothing: 'Nothing to discard — there are no draft changes',
+  // B-9a: shown only for a POSITIVE server-computed count; 0 and null both
+  // fall back to extraction.configUnpublishedChanges (D9).
+  draftChangeCountOne: 'Draft · {{n}} change',
+  draftChangeCountOther: 'Draft · {{n}} changes',
   dragCancelled: 'Move cancelled — {{field}} stays where it was',
   dragHandleHint: 'Drag to reorder',
   dragLockedFiltering: 'Clear search to reorder',

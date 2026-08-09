@@ -37,6 +37,7 @@ from app.schemas.hitl_session import (
     DiscardDraftResponse,
     RepublishTemplateVersionResponse,
     TemplateActiveVersionRead,
+    TemplateConfigDiffRead,
     TemplateConfigStatusRead,
     TemplateDiscardRefusalResponse,
     TemplateInstructionRead,
@@ -65,6 +66,7 @@ from app.services.template_instruction_service import (
 from app.services.template_version_read_service import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
+    get_template_config_diff,
     get_template_config_status,
 )
 from app.services.template_version_service import (
@@ -371,6 +373,37 @@ async def get_template_config_status_endpoint(
         result = await get_template_config_status(
             db, project_id=project_id, template_id=template_id
         )
+    except ProjectTemplateNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return ApiResponse.success(
+        result,
+        trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.get(
+    "/{project_id}/templates/{template_id}/config-diff",
+)
+async def get_template_config_diff_endpoint(
+    project_id: UUID,
+    template_id: UUID,
+    request: Request,
+    db: DbSession,
+    _user_sub: UUID = Depends(require_project_manager),
+) -> ApiResponse[TemplateConfigDiffRead]:
+    """What the open draft would publish, for the Publish sheet (B-9b2a).
+
+    Manager-gated like the sibling config endpoints. A template that never
+    published, and one whose baseline predates the wide snapshot builder,
+    are both 200 with empty buckets and a flag saying why — never a 404 and
+    never a fabricated change list. 404 is reserved for a foreign or missing
+    template, exactly as ``config-status`` does it.
+
+    Read-only, and takes no locks: a row that moves under it is a re-fetch,
+    not a corruption. Nothing here acknowledges or publishes anything.
+    """
+    try:
+        result = await get_template_config_diff(db, project_id=project_id, template_id=template_id)
     except ProjectTemplateNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return ApiResponse.success(

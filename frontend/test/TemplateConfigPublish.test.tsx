@@ -14,42 +14,12 @@ import userEvent from '@testing-library/user-event';
 import type {ReactNode} from 'react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
-const loadTemplateConfigStatus = vi.fn();
-const republishTemplateVersion = vi.fn();
-const discardTemplateDraft = vi.fn();
-vi.mock('@/services/templateService', () => {
-  // The refusal class is defined INSIDE the factory (the real module pulls
-  // in the supabase client). The test imports it back from the mocked
-  // module, so `instanceof` in the dialog matches what the test throws.
-  class TemplateDiscardRefusal extends Error {
-    constructor(
-      message: string,
-      public readonly code: string,
-      public readonly orphans: readonly {nodeId: string | null; label: string}[] = [],
-    ) {
-      super(message);
-      this.name = 'TemplateDiscardRefusal';
-    }
-  }
-  // Same reason for the publish refusal (B-9b0 D4): useTemplateRepublish
-  // reads this binding on EVERY failed publish, typed or not.
-  class TemplatePublishRefusal extends Error {
-    constructor(
-      message: string,
-      public readonly code: string,
-      public readonly sectionLabels: readonly string[] = [],
-    ) {
-      super(message);
-      this.name = 'TemplatePublishRefusal';
-    }
-  }
-  return {
-    loadTemplateConfigStatus: (...a: unknown[]) => loadTemplateConfigStatus(...a),
-    republishTemplateVersion: (...a: unknown[]) => republishTemplateVersion(...a),
-    discardTemplateDraft: (...a: unknown[]) => discardTemplateDraft(...a),
-    TemplateDiscardRefusal,
-    TemplatePublishRefusal,
-  };
+// The factory (spies + both refusal classes) is shared with
+// TemplateConfigDiffSheet.test.tsx — see frontend/test/mocks/templateService.ts
+// for the hoisting contract behind the async/dynamic-import shape.
+vi.mock('@/services/templateService', async () => {
+  const {templateServiceMock} = await import('./mocks/templateService');
+  return templateServiceMock();
 });
 const getTemplateInstruction = vi.fn();
 vi.mock('@/services/templateInstructionService', () => ({
@@ -62,12 +32,18 @@ vi.mock('sonner', () => ({
 
 import {TemplateConfigPublishControls} from '@/components/extraction/template-config/TemplateConfigPublishControls';
 import {TooltipProvider} from '@/components/ui/tooltip';
-import {common, templateConfig} from '@/lib/copy';
+import {common, extraction, templateConfig} from '@/lib/copy';
 import {
   TemplateDiscardRefusal,
   type TemplateDiscardRefusalCode,
 } from '@/services/templateService';
 import {toast} from 'sonner';
+
+import {
+  discardTemplateDraft,
+  loadTemplateConfigStatus,
+  republishTemplateVersion,
+} from './mocks/templateService';
 
 function renderControls() {
   const queryClient = new QueryClient({
@@ -80,7 +56,14 @@ function renderControls() {
     </QueryClientProvider>
   );
   return render(
-    <TemplateConfigPublishControls projectId="p1" templateId="t1" />,
+    // The diff sheet is never opened here — the editor owns that flag now,
+    // and this suite is about the chip, Publish and Discard.
+    <TemplateConfigPublishControls
+      projectId="p1"
+      templateId="t1"
+      diffSheetOpen={false}
+      onDiffSheetOpenChange={vi.fn()}
+    />,
     {wrapper},
   );
 }
@@ -130,8 +113,13 @@ function discardResult(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** The Discard trigger keeps a CONSTANT accessible name so the existing
- * `/publish/i` queries stay unambiguous (its tooltip carries the state). */
+/** The Discard trigger keeps a CONSTANT accessible name so a by-name lookup
+ * stays unambiguous (its tooltip carries the state). The Publish lookups
+ * below use the full `configPublishTooltip` aria-label rather than a
+ * `/publish/i` regex: the draft chip's own fallback text
+ * (`extraction.configUnpublishedChanges`, "Unpublished changes") contains
+ * "publish" as a substring now that the chip's accessible name comes from
+ * its visible text instead of a dedicated aria-label. */
 const DISCARD_TRIGGER = templateConfig.discardButtonAria;
 
 function discardButton() {
@@ -159,7 +147,7 @@ describe('TemplateConfigPublishControls', () => {
 
     expect(await screen.findByText('Unpublished changes')).toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByRole('button', {name: /publish/i})).toBeEnabled(),
+      expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeEnabled(),
     );
   });
 
@@ -168,7 +156,7 @@ describe('TemplateConfigPublishControls', () => {
     renderControls();
 
     expect(await screen.findByText('Published · v3')).toBeInTheDocument();
-    expect(screen.getByRole('button', {name: /publish/i})).toBeDisabled();
+    expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeDisabled();
   });
 
   it('never-published template → no version chip, never "vundefined"', async () => {
@@ -176,7 +164,7 @@ describe('TemplateConfigPublishControls', () => {
     renderControls();
 
     await waitFor(() =>
-      expect(screen.getByRole('button', {name: /publish/i})).toBeDisabled(),
+      expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeDisabled(),
     );
     expect(screen.queryByText(/vundefined/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Published/)).not.toBeInTheDocument();
@@ -186,7 +174,7 @@ describe('TemplateConfigPublishControls', () => {
     loadTemplateConfigStatus.mockImplementation(() => new Promise(() => {}));
     renderControls();
 
-    expect(screen.getByRole('button', {name: /publish/i})).toBeDisabled();
+    expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeDisabled();
     expect(screen.queryByText('Unpublished changes')).not.toBeInTheDocument();
   });
 
@@ -198,7 +186,7 @@ describe('TemplateConfigPublishControls', () => {
     renderControls();
 
     await waitFor(() =>
-      expect(screen.getByRole('button', {name: /publish/i})).toBeDisabled(),
+      expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeDisabled(),
     );
     expect(screen.queryByText('Unpublished changes')).not.toBeInTheDocument();
   });
@@ -211,7 +199,7 @@ describe('TemplateConfigPublishControls', () => {
     });
     renderControls();
 
-    const button = await screen.findByRole('button', {name: /publish/i});
+    const button = await screen.findByRole('button', {name: extraction.configPublishTooltip});
     await waitFor(() => expect(button).toBeEnabled());
     await userEvent.click(button);
 
@@ -258,7 +246,7 @@ describe('TemplateConfigPublishControls', () => {
     expect(await screen.findByText('Unpublished changes')).toBeInTheDocument();
     expect(screen.queryByText(/Draft ·/)).not.toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByRole('button', {name: /publish/i})).toBeEnabled(),
+      expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeEnabled(),
     );
   });
 
@@ -287,7 +275,7 @@ describe('TemplateConfigPublishControls', () => {
     renderControls();
 
     await waitFor(() =>
-      expect(screen.getByRole('button', {name: /publish/i})).toBeDisabled(),
+      expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeDisabled(),
     );
     expect(screen.queryByText(/Draft ·/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Published/)).not.toBeInTheDocument();
@@ -302,7 +290,7 @@ describe('TemplateConfigPublishControls', () => {
     });
     renderControls();
 
-    const button = await screen.findByRole('button', {name: /publish/i});
+    const button = await screen.findByRole('button', {name: extraction.configPublishTooltip});
     await waitFor(() => expect(button).toBeEnabled());
     await userEvent.click(button);
 

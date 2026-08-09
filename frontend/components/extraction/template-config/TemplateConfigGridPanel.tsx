@@ -98,6 +98,9 @@ interface TemplateConfigGridPanelProps {
   /** Bottom `＋▾` menu's "Add repeating group…" (B-8 D8) — the editor
    * opens AddSectionDialog in group mode. */
   onAddGroup: () => void;
+  /** True while the command bar's diff sheet is open (B-9b2a). Read-only
+   * here — the editor owns the flag and the sibling command bar sets it. */
+  diffSheetOpen?: boolean;
 }
 
 export function TemplateConfigGridPanel({
@@ -107,6 +110,11 @@ export function TemplateConfigGridPanel({
   sectionActions,
   onAddSection,
   onAddGroup,
+  // B-9b2a: the command bar's diff sheet is modal and full-height. Two
+  // modal sheets must never stack, so the inspector yields while it is
+  // open — derived, not an effect, so `sheetOpen` survives and the
+  // inspector comes back when the diff sheet closes.
+  diffSheetOpen = false,
 }: TemplateConfigGridPanelProps) {
   // ONE request for the whole structure, TanStack-cached on the key every
   // config mutation invalidates (useTemplateConfigCaches) — so the grid
@@ -667,7 +675,7 @@ export function TemplateConfigGridPanel({
             below the breakpoint — the FORM component is the same, so
             every capability stays editable on narrow containers. */}
         {isNarrow ? (
-          <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+          <Sheet open={sheetOpen && !diffSheetOpen} onOpenChange={setSheetOpen}>
             <SheetContent side="right" className="w-[320px] p-0 sm:max-w-[320px]">
               <SheetHeader className="sr-only">
                 <SheetTitle>{t('extraction', 'inspectorSheetTitle')}</SheetTitle>

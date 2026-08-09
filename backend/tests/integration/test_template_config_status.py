@@ -26,6 +26,7 @@ from app.services.project_template_active_service import ProjectTemplateNotFound
 from app.services.template_instruction_service import set_template_instruction
 from app.services.template_version_read_service import get_template_config_status
 from tests.integration.conftest import SEED, set_config_draft_marker
+from tests.integration.helpers.template_fixtures import force_narrow_baseline
 
 
 async def _publish_primary(db: AsyncSession) -> None:
@@ -132,16 +133,7 @@ async def test_count_reports_one_change_against_a_wide_baseline(
 async def test_narrow_baseline_suppresses_the_count(db_session: AsyncSession) -> None:
     """Pre-0026 baseline ⇒ ``None``, even though a real edit is pending (D5)."""
     await _publish_primary(db_session)
-    active = await ExtractionTemplateVersionRepository(db_session).get_active(SEED.primary_template)
-    assert active is not None
-    # A pre-0017 shape: the entity type carries no ``role``, so the whole
-    # snapshot is untrustworthy as a diff baseline.
-    active.schema_ = {
-        "entity_types": [
-            {"id": str(SEED.primary_entity_type), "label": "Participants", "fields": []}
-        ]
-    }
-    await db_session.flush()
+    await force_narrow_baseline(db_session, SEED.primary_template, SEED.primary_entity_type)
 
     await _edit_primary_field_label(db_session, " (narrow)")
 
@@ -227,14 +219,7 @@ async def test_discard_available_tracks_the_restorability_gate(
     await _edit_primary_field_label(db_session, " (b9c1)")
     assert (await _status(db_session)).discard_available is True
 
-    active = await ExtractionTemplateVersionRepository(db_session).get_active(SEED.primary_template)
-    assert active is not None
-    active.schema_ = {
-        "entity_types": [
-            {"id": str(SEED.primary_entity_type), "label": "Participants", "fields": []}
-        ]
-    }
-    await db_session.flush()
+    await force_narrow_baseline(db_session, SEED.primary_template, SEED.primary_entity_type)
 
     assert (await _status(db_session)).discard_available is False
 

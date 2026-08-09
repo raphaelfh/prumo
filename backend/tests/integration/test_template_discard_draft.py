@@ -20,7 +20,7 @@ import json as _json
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 import pytest_asyncio
@@ -56,50 +56,49 @@ from tests.integration.conftest import (
     set_config_draft_marker,
 )
 
-_ARTICLE_ID = UUID("ffffffff-9999-0002-0000-0000000009c1")
+# B-9b2a: the multi-tier fixture machinery this suite built first now lives
+# in a shared module, so the config-diff suite exercises the SAME tree. Kept
+# under their module-private names here to leave the ~40 call sites untouched.
+from tests.integration.helpers import template_fixtures
+from tests.integration.helpers.template_fixtures import (
+    ARTICLE_ID as _ARTICLE_ID,
+)
+from tests.integration.helpers.template_fixtures import (
+    active_schema as _active_schema,
+)
+from tests.integration.helpers.template_fixtures import (
+    add_field as _add_field,
+)
+from tests.integration.helpers.template_fixtures import (
+    add_instance as _add_instance,
+)
+from tests.integration.helpers.template_fixtures import (
+    add_section as _add_section,
+)
+from tests.integration.helpers.template_fixtures import (
+    delete_field as _delete_field,
+)
+from tests.integration.helpers.template_fixtures import (
+    entity_id as _entity_id,
+)
+from tests.integration.helpers.template_fixtures import (
+    field_id as _field_id,
+)
+from tests.integration.helpers.template_fixtures import (
+    fresh_charms as _fresh_charms,
+)
+from tests.integration.helpers.template_fixtures import (
+    option_orphan_setup as _option_orphan_setup,
+)
+from tests.integration.helpers.template_fixtures import (
+    set_label as _set_label,
+)
 
-
-# --------------------------------------------------------------------------
-# Baseline setup
-# --------------------------------------------------------------------------
-
-
-async def _fresh_charms(db: AsyncSession) -> tuple[UUID, UUID, dict[str, Any]]:
-    """CHARMS cloned into the cross-project seed and published.
-
-    Also materializes an article there: every partial-discard case needs a
-    HITL session, and the cross-project seed ships none."""
-    project_id = SEED.secondary_project
-    await clean_project_clones(db, project_id)
-    await db.execute(
-        text(
-            "INSERT INTO public.articles (id, project_id, title, row_version) "
-            "VALUES (:id, :pid, 'B-9c1 discard article', 1) "
-            "ON CONFLICT (id) DO NOTHING"
-        ),
-        {"id": str(_ARTICLE_ID), "pid": str(project_id)},
-    )
-    clone = await clone_charms(db, project_id, SEED.primary_profile)
-    template_id = clone.project_template_id
-    await TemplateVersionService(db).republish(
-        project_id=project_id,
-        project_template_id=template_id,
-        user_id=SEED.primary_profile,
-    )
-    return project_id, template_id, await _active_schema(db, template_id)
-
-
-async def _active_schema(db: AsyncSession, template_id: UUID) -> dict[str, Any]:
-    schema: dict[str, Any] = (
-        await db.execute(
-            text(
-                "SELECT schema FROM public.extraction_template_versions "
-                "WHERE project_template_id = :tid AND is_active IS TRUE"
-            ),
-            {"tid": str(template_id)},
-        )
-    ).scalar_one()
-    return schema
+#: Every template-config endpoint is manager-gated, so this fixture is shared
+#: with ``test_template_config_diff``. Bound by assignment rather than imported
+#: by name: an import binding collides with the identically named parameter in
+#: every test that requests it (ruff F811).
+auth_as_manager = template_fixtures.auth_as_manager
 
 
 async def _force_active_schema(db: AsyncSession, template_id: UUID, schema: dict[str, Any]) -> None:
@@ -116,31 +115,6 @@ async def _force_active_schema(db: AsyncSession, template_id: UUID, schema: dict
 # --------------------------------------------------------------------------
 # Live introspection / draft edits
 # --------------------------------------------------------------------------
-
-
-async def _entity_id(db: AsyncSession, template_id: UUID, name: str) -> UUID:
-    return (
-        await db.execute(
-            text(
-                "SELECT id FROM public.extraction_entity_types "
-                "WHERE project_template_id = :tid AND name = :name"
-            ),
-            {"tid": str(template_id), "name": name},
-        )
-    ).scalar_one()
-
-
-async def _field_id(db: AsyncSession, template_id: UUID, entity_name: str, field_name: str) -> UUID:
-    return (
-        await db.execute(
-            text(
-                "SELECT f.id FROM public.extraction_fields f "
-                "JOIN public.extraction_entity_types et ON et.id = f.entity_type_id "
-                "WHERE et.project_template_id = :tid AND et.name = :en AND f.name = :fn"
-            ),
-            {"tid": str(template_id), "en": entity_name, "fn": field_name},
-        )
-    ).scalar_one()
 
 
 async def _live_entity_ids(db: AsyncSession, template_id: UUID) -> set[UUID]:
@@ -163,84 +137,10 @@ async def _live_field_ids(db: AsyncSession, template_id: UUID) -> set[UUID]:
     return {row.id for row in rows}
 
 
-async def _add_section(
-    db: AsyncSession,
-    template_id: UUID,
-    name: str,
-    *,
-    role: str = "study_section",
-    parent_id: UUID | None = None,
-    cardinality: str = "one",
-    sort_order: int = 99,
-    entry_label: str | None = None,
-) -> UUID:
-    entity_id = uuid4()
-    await db.execute(
-        text(
-            "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, template_id, name, label, parent_entity_type_id, "
-            " cardinality, role, sort_order, is_required, entry_label) "
-            "VALUES (:id, :tid, NULL, :name, :label, :parent, CAST(:card AS extraction_cardinality),"
-            " CAST(:role AS extraction_entity_role), :o, false, :entry)"
-        ),
-        {
-            "id": str(entity_id),
-            "tid": str(template_id),
-            "name": name,
-            "label": name,
-            "parent": str(parent_id) if parent_id else None,
-            "card": cardinality,
-            "role": role,
-            "o": sort_order,
-            "entry": entry_label,
-        },
-    )
-    await db.flush()
-    return entity_id
-
-
-async def _add_field(
-    db: AsyncSession, entity_type_id: UUID, name: str, *, sort_order: int = 99
-) -> UUID:
-    field_id = uuid4()
-    await db.execute(
-        text(
-            "INSERT INTO public.extraction_fields "
-            "(id, entity_type_id, name, label, field_type, is_required, sort_order, "
-            " allow_other, allows_not_applicable, allows_not_evaluated) "
-            "VALUES (:id, :et, :name, :label, 'text', false, :o, false, false, false)"
-        ),
-        {
-            "id": str(field_id),
-            "et": str(entity_type_id),
-            "name": name,
-            "label": name,
-            "o": sort_order,
-        },
-    )
-    await db.flush()
-    return field_id
-
-
-async def _set_label(db: AsyncSession, table: str, node_id: UUID, label: str) -> None:
-    await db.execute(
-        text(f"UPDATE public.{table} SET label = :label WHERE id = :id"),  # noqa: S608
-        {"id": str(node_id), "label": label},
-    )
-    await db.flush()
-
-
 async def _set_field_name(db: AsyncSession, field_id: UUID, name: str) -> None:
     await db.execute(
         text("UPDATE public.extraction_fields SET name = :name, label = :name WHERE id = :id"),
         {"id": str(field_id), "name": name},
-    )
-    await db.flush()
-
-
-async def _delete_field(db: AsyncSession, field_id: UUID) -> None:
-    await db.execute(
-        text("DELETE FROM public.extraction_fields WHERE id = :id"), {"id": str(field_id)}
     )
     await db.flush()
 
@@ -250,37 +150,6 @@ async def _delete_section(db: AsyncSession, entity_id: UUID) -> None:
         text("DELETE FROM public.extraction_entity_types WHERE id = :id"), {"id": str(entity_id)}
     )
     await db.flush()
-
-
-async def _add_instance(
-    db: AsyncSession,
-    *,
-    project_id: UUID,
-    template_id: UUID,
-    entity_type_id: UUID,
-    parent_instance_id: UUID | None = None,
-) -> UUID:
-    """One extraction instance, the way the run UI adds a repeating entry."""
-    instance_id = uuid4()
-    await db.execute(
-        text(
-            "INSERT INTO public.extraction_instances "
-            "(id, project_id, article_id, template_id, entity_type_id, parent_instance_id, "
-            " label, sort_order, created_by) "
-            "VALUES (:id, :pid, :aid, :tid, :et, :parent, 'entry', 0, :uid)"
-        ),
-        {
-            "id": str(instance_id),
-            "pid": str(project_id),
-            "aid": str(_ARTICLE_ID),
-            "tid": str(template_id),
-            "et": str(entity_type_id),
-            "parent": str(parent_instance_id) if parent_instance_id else None,
-            "uid": str(SEED.primary_profile),
-        },
-    )
-    await db.flush()
-    return instance_id
 
 
 async def _assert_matches_baseline(
@@ -872,42 +741,6 @@ async def test_foreign_project_is_not_found(db_session: AsyncSession) -> None:
 # ==========================================================================
 
 
-async def _option_orphan_setup(
-    db_session: AsyncSession, *, options: tuple[str, ...] = ("draft_option",)
-) -> tuple[UUID, UUID, UUID]:
-    """A draft that added select options a reviewer then picked one of.
-
-    ``options`` is the whole draft list; the baseline has none, so every
-    entry is a separate destructive change on the SAME field."""
-    project_id, template_id, _ = await _fresh_charms(db_session)
-    owner = await _entity_id(db_session, template_id, "sample_size")
-    field = await _field_id(db_session, template_id, "sample_size", "number_of_participants")
-    session = await open_session(
-        db_session,
-        project_id=project_id,
-        article_id=_ARTICLE_ID,
-        template_id=template_id,
-        user_id=SEED.primary_profile,
-    )
-    await db_session.execute(
-        text(
-            "UPDATE public.extraction_fields "
-            "SET allowed_values = CAST(:opts AS jsonb) WHERE id = :id"
-        ),
-        {"id": str(field), "opts": _json.dumps(list(options))},
-    )
-    await db_session.flush()
-    await make_proposal(
-        db_session,
-        run_id=session.run_id,
-        instance_id=UUID(session.instances_by_entity_type[str(owner)]),
-        field_id=field,
-        user_id=SEED.primary_profile,
-        value=options[0],
-    )
-    return project_id, template_id, field
-
-
 async def _field_label(db: AsyncSession, field_id: UUID) -> str:
     label: str = (
         await db.execute(
@@ -1154,21 +987,6 @@ async def test_refusal_emits_a_warning_naming_the_blocking_node(
 # ==========================================================================
 # HTTP surface — routing, auth, envelope
 # ==========================================================================
-
-
-@pytest_asyncio.fixture
-async def auth_as_manager(db_session: AsyncSession) -> AsyncGenerator[UUID, None]:
-    """JWT sub = a manager of both seeded projects."""
-    del db_session  # fixture ordering only: the seed must run first
-
-    async def _override() -> TokenPayload:
-        return TokenPayload(
-            sub=str(SEED.primary_profile), email="t@example.com", role="authenticated", aal="aal1"
-        )
-
-    app.dependency_overrides[get_current_user] = _override
-    yield SEED.primary_profile
-    app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.mark.asyncio

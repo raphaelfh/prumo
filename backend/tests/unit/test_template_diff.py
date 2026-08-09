@@ -3,12 +3,14 @@
 No DB, no fixtures beyond dict literals — ``diff_snapshots`` is a pure
 comparison over two snapshot dicts plus the recorded-value id set (D3).
 
-The fixtures deliberately hand-build snapshot dicts in the exact shape
-``SNAPSHOT_SQL`` emits (``extraction_snapshot.py:45-97``), including the
-"era" shapes older stored snapshots really have: pre-#462 field objects
-without ``allows_not_*`` and pre-0051 entity objects without
-``entry_label``. Those must diff as *unchanged* against a modern live
-tree (D4), otherwise every legacy template would report a phantom draft.
+The builders come from ``tests.unit.helpers.snapshot_builders`` (shared with
+the read-model suite) and hand-build snapshot dicts in the exact shape
+``SNAPSHOT_SQL`` emits (``extraction_snapshot.py:45-97``). The "era" shapes
+older stored snapshots really have — pre-#462 field objects without
+``allows_not_*``, pre-0051 entity objects without ``entry_label`` — are made
+by stripping keys back off below. Those must diff as *unchanged* against a
+modern live tree (D4), otherwise every legacy template would report a
+phantom draft.
 """
 
 from __future__ import annotations
@@ -19,79 +21,19 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.domain.template_change import ChangeTier
 from app.services import template_diff
 from app.services.extraction_snapshot import SNAPSHOT_SQL
 from app.services.template_diff import (
     ChangeKind,
-    ChangeTier,
     NodeKind,
     diff_snapshots,
 )
+from tests.unit.helpers.snapshot_builders import entity_node as _entity
+from tests.unit.helpers.snapshot_builders import field_node as _field
+from tests.unit.helpers.snapshot_builders import snapshot as _snapshot
 
 NO_VALUES: frozenset[UUID] = frozenset()
-
-
-# --------------------------------------------------------------------------
-# Snapshot builders (mirror SNAPSHOT_SQL's key set exactly)
-# --------------------------------------------------------------------------
-
-
-def _field(field_id: UUID, **over: Any) -> dict[str, Any]:
-    """A field object with every wide-builder key present."""
-    node: dict[str, Any] = {
-        "id": str(field_id),
-        "name": "age",
-        "label": "Age",
-        "description": None,
-        "field_type": "text",
-        "is_required": False,
-        "validation_schema": {},
-        "allowed_values": None,
-        "unit": None,
-        "allowed_units": None,
-        "sort_order": 0,
-        "llm_description": None,
-        "allow_other": False,
-        "other_label": None,
-        "other_placeholder": None,
-        "allows_not_applicable": False,
-        "allows_not_evaluated": False,
-    }
-    node.update(over)
-    return node
-
-
-def _entity(entity_id: UUID, *fields: dict[str, Any], **over: Any) -> dict[str, Any]:
-    """An entity-type object; nested fields get ``sort_order`` by position.
-
-    Positional ``sort_order`` is what the SQL builder produces (fields are
-    aggregated ``ORDER BY f.sort_order``), so inserting or deleting a
-    sibling here renumbers the rest exactly like ``planFieldMove`` does.
-    """
-    node: dict[str, Any] = {
-        "id": str(entity_id),
-        "name": "participants",
-        "label": "Participants",
-        "description": None,
-        "entry_label": None,
-        "parent_entity_type_id": None,
-        "cardinality": "one",
-        "role": "study_section",
-        "sort_order": 0,
-        "is_required": False,
-        "fields": [dict(f, sort_order=i) for i, f in enumerate(fields)],
-    }
-    node.update(over)
-    return node
-
-
-def _snapshot(*entity_types: dict[str, Any], instruction: str | None = None) -> dict[str, Any]:
-    snapshot: dict[str, Any] = {
-        "entity_types": [dict(et, sort_order=i) for i, et in enumerate(entity_types)]
-    }
-    if instruction is not None:
-        snapshot["llm_template_instruction"] = instruction
-    return snapshot
 
 
 def _strip(node: dict[str, Any], *keys: str) -> dict[str, Any]:

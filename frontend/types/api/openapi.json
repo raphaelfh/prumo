@@ -1982,6 +1982,54 @@
         "title": "ApiResponse[TemplateActiveVersionRead]",
         "type": "object"
       },
+      "ApiResponse_TemplateConfigDiffRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateConfigDiffRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateConfigDiffRead]",
+        "type": "object"
+      },
       "ApiResponse_TemplateConfigStatusRead_": {
         "properties": {
           "data": {
@@ -3010,6 +3058,38 @@
         "title": "ArticleRunRef",
         "type": "object"
       },
+      "ChangeTier": {
+        "description": "Severity tier (D2) \u2014 what a reviewer stands to lose.",
+        "enum": [
+          "additive",
+          "cosmetic",
+          "semantic",
+          "destructive"
+        ],
+        "title": "ChangeTier",
+        "type": "string"
+      },
+      "ChangeVariant": {
+        "description": "The shape of one row \u2014 the client's discriminator (D1).\n\nOne member per reachable ``(kind, node_kind[, option polarity])`` the\nengine can emit, so a renderer never has to re-derive which of the\nengine's overloaded fields are meaningful.",
+        "enum": [
+          "template_instruction_added",
+          "template_instruction_removed",
+          "template_instruction_modified",
+          "entity_type_added",
+          "entity_type_removed",
+          "entity_type_modified",
+          "entity_type_fields_reordered",
+          "field_added",
+          "field_removed",
+          "field_moved",
+          "field_modified",
+          "field_option_added",
+          "field_option_removed",
+          "field_options_reordered"
+        ],
+        "title": "ChangeVariant",
+        "type": "string"
+      },
       "CloneTemplateRequest": {
         "properties": {
           "global_template_id": {
@@ -3667,6 +3747,16 @@
         ],
         "title": "DeleteAPIKeyResult",
         "type": "object"
+      },
+      "DiffStatus": {
+        "description": "Whether a config diff could be computed, and when not, why (D9).\n\nOne closed 3-way choice rather than a pair of booleans plus a reason: an\nun-diffable template is a state the Publish sheet renders, never an\nerror, and only :attr:`AVAILABLE` can carry rows. Encoding it as\nindependent fields would make \"no diff, yet here are some changes\"\nexpressible, which is exactly the payload no client should have to\ndefend against.",
+        "enum": [
+          "available",
+          "initial_version",
+          "baseline_too_old"
+        ],
+        "title": "DiffStatus",
+        "type": "string"
       },
       "DiscardDraftRequest": {
         "properties": {
@@ -5090,6 +5180,15 @@
         ],
         "title": "ModelHierarchyChildResponse",
         "type": "object"
+      },
+      "OpaqueValueState": {
+        "description": "A summarized opaque value that has no listable content (D3).\n\nThe wire row ships this instead of a server-rendered English word, so the\ncopy layer owns the sentence (``.claude/rules/frontend.md``) and a stored\nvalue that happens to read like the marker cannot be mistaken for it.",
+        "enum": [
+          "present",
+          "empty"
+        ],
+        "title": "OpaqueValueState",
+        "type": "string"
       },
       "OpenHITLSessionRequest": {
         "properties": {
@@ -6987,6 +7086,168 @@
           "entity_types"
         ],
         "title": "TemplateActiveVersionRead",
+        "type": "object"
+      },
+      "TemplateChangeRowRead": {
+        "description": "One diff row on the wire, built by ``app.services.template_diff_read``.\n\nNothing here is typed ``Any``: the baseline side of a diff is raw stored\nJSONB, and an opaque value is summarized server-side rather than\nshipped.",
+        "properties": {
+          "affects_recorded_data": {
+            "default": false,
+            "title": "Affects Recorded Data",
+            "type": "boolean"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "after_opaque_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpaqueValueState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attribute": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribute"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "before_opaque_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpaqueValueState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label_path": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Path",
+            "type": "array"
+          },
+          "reorder_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reorder Count"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/ChangeTier"
+          },
+          "variant": {
+            "$ref": "#/components/schemas/ChangeVariant"
+          }
+        },
+        "required": [
+          "id",
+          "variant",
+          "tier",
+          "label_path"
+        ],
+        "title": "TemplateChangeRowRead",
+        "type": "object"
+      },
+      "TemplateConfigDiffBuckets": {
+        "description": "The rows grouped by severity tier \u2014 one field per ``ChangeTier``.\n\nNamed fields rather than a map keyed by the enum, so the generated\nclient gets four exhaustive keys instead of an open ``Record``. A unit\ntest pins the field names to the enum's values, because a client that\nbuckets by ``row.tier`` has to find a bucket under that exact name.",
+        "properties": {
+          "additive": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeRowRead"
+            },
+            "title": "Additive",
+            "type": "array"
+          },
+          "cosmetic": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeRowRead"
+            },
+            "title": "Cosmetic",
+            "type": "array"
+          },
+          "destructive": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeRowRead"
+            },
+            "title": "Destructive",
+            "type": "array"
+          },
+          "semantic": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeRowRead"
+            },
+            "title": "Semantic",
+            "type": "array"
+          }
+        },
+        "title": "TemplateConfigDiffBuckets",
+        "type": "object"
+      },
+      "TemplateConfigDiffRead": {
+        "description": "What the open draft would publish (slice B-9b2a).\n\n``status`` names which of :class:`~app.domain.template_change.DiffStatus`'s\nthree shapes this is; all three are HTTP 200, because an un-diffable\ntemplate is a state the sheet explains rather than an error. Only\n``available`` carries rows \u2014 the other two leave the buckets at their\nempty default.",
+        "properties": {
+          "changes": {
+            "$ref": "#/components/schemas/TemplateConfigDiffBuckets"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DiffStatus"
+          }
+        },
+        "required": [
+          "project_template_id",
+          "status"
+        ],
+        "title": "TemplateConfigDiffRead",
         "type": "object"
       },
       "TemplateConfigStatusRead": {
@@ -10171,6 +10432,65 @@
           }
         ],
         "summary": "Get Template Active Version",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/config-diff": {
+      "get": {
+        "description": "What the open draft would publish, for the Publish sheet (B-9b2a).\n\nManager-gated like the sibling config endpoints. A template that never\npublished, and one whose baseline predates the wide snapshot builder,\nare both 200 with empty buckets and a flag saying why \u2014 never a 404 and\nnever a fabricated change list. 404 is reserved for a foreign or missing\ntemplate, exactly as ``config-status`` does it.\n\nRead-only, and takes no locks: a row that moves under it is a re-fetch,\nnot a corruption. Nothing here acknowledges or publishes anything.",
+        "operationId": "get_template_config_diff_endpoint_api_v1_projects__project_id__templates__template_id__config_diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateConfigDiffRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Template Config Diff Endpoint",
         "tags": [
           "project-templates"
         ]

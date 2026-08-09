@@ -2,6 +2,7 @@ import {useState} from 'react';
 import {RotateCcw, UploadCloud} from 'lucide-react';
 import {toast} from 'sonner';
 
+import {TemplateConfigDiffSheet} from '@/components/extraction/template-config/TemplateConfigDiffSheet';
 import {TemplateDiscardDialog} from '@/components/extraction/template-config/TemplateDiscardDialog';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
@@ -27,11 +28,18 @@ import {t} from '@/lib/copy';
 interface TemplateConfigPublishControlsProps {
   projectId: string;
   templateId: string;
+  /** True while the read-only diff sheet is open. Owned by the editor, not
+   * here: the grid panel — our sibling — has to close its own inspector
+   * Sheet rather than let two modal sheets stack. */
+  diffSheetOpen: boolean;
+  onDiffSheetOpenChange: (open: boolean) => void;
 }
 
 export function TemplateConfigPublishControls({
   projectId,
   templateId,
+  diffSheetOpen,
+  onDiffSheetOpenChange,
 }: TemplateConfigPublishControlsProps) {
   const {data: configStatus} = useTemplateConfigStatus(projectId, templateId);
   const {republish} = useTemplateRepublish(projectId, templateId);
@@ -101,18 +109,33 @@ export function TemplateConfigPublishControls({
 
   let chip = null;
   if (hasPendingChanges) {
+    // B-9b2a: the draft chip is now the diff sheet's trigger. It was a
+    // bare Badge — no role, no accessible name, not reachable by keyboard
+    // — so it becomes a real Button wearing the chip's look. The chip
+    // content is NOT a nested <Badge>: Badge renders a <div>, and <button>
+    // only admits phrasing content. The published-vN chip below stays a
+    // Badge — it has no draft to explain.
     chip = (
-      <Badge
-        variant="outline"
-        className="border-warning/50 bg-warning/10 text-xs text-warning"
-      >
-        {draftChangeCount == null
-          ? t('extraction', 'configUnpublishedChanges')
-          : (draftChangeCount === 1
-              ? t('templateConfig', 'draftChangeCountOne')
-              : t('templateConfig', 'draftChangeCountOther')
-            ).replace('{{n}}', String(draftChangeCount))}
-      </Badge>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 rounded-full border border-warning/50 bg-warning/10 px-2.5 text-xs font-semibold text-warning hover:bg-warning/20 hover:text-warning"
+            onClick={() => onDiffSheetOpenChange(true)}
+          >
+            {draftChangeCount == null
+              ? t('extraction', 'configUnpublishedChanges')
+              : (draftChangeCount === 1
+                  ? t('templateConfig', 'draftChangeCountOne')
+                  : t('templateConfig', 'draftChangeCountOther')
+                ).replace('{{n}}', String(draftChangeCount))}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {t('templateConfig', 'diffTriggerTooltip')}
+        </TooltipContent>
+      </Tooltip>
     );
   } else if (configStatus?.active_version != null) {
     chip = (
@@ -178,6 +201,15 @@ export function TemplateConfigPublishControls({
             (instruction?.llm_template_instruction ?? '').trim() !== ''
           }
           onClose={() => setDiscardOpen(false)}
+        />
+      )}
+      {/* Mounted per open, same as the Discard dialog: the diff read dies
+          with the sheet, so the next open asks the server again. */}
+      {diffSheetOpen && (
+        <TemplateConfigDiffSheet
+          projectId={projectId}
+          templateId={templateId}
+          onClose={() => onDiffSheetOpenChange(false)}
         />
       )}
     </>
