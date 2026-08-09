@@ -276,6 +276,7 @@ beforeEach(() => {
   vi.mocked(useTemplateConfigCaches).mockReturnValue({
     invalidateStructure: vi.fn(async () => undefined),
     invalidateAll: vi.fn(async () => undefined),
+    invalidateAfterDiscard: vi.fn(async () => undefined),
     invalidateAfterImport: vi.fn(async () => undefined),
   });
   // Implementation (not value): the round-trip test refetches a MOVED

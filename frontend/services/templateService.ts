@@ -30,6 +30,19 @@ export type RepublishTemplateVersionResponse =
 export type TemplateConfigStatus =
   components['schemas']['TemplateConfigStatusRead'];
 
+export type DiscardDraftResponse = components['schemas']['DiscardDraftResponse'];
+
+export type TemplateDiscardRefusalCode =
+  components['schemas']['TemplateDiscardRefusalCode'];
+
+/** One field whose recorded answers a Discard would strand, already
+ * human-readable (`Section → Field`); `nodeId` is a hint for keys/tests,
+ * never something the screen shows. */
+export interface TemplateDiscardOrphan {
+  nodeId: string | null;
+  label: string;
+}
+
 type SectionRead = components['schemas']['SectionRead'];
 type SectionDeleteResponse = components['schemas']['SectionDeleteResponse'];
 type SectionRole = components['schemas']['SectionCreateRequest']['role'];
@@ -69,6 +82,89 @@ export async function republishTemplateVersion(
   }, 'republishTemplateVersion');
 }
 
+/**
+ * A `POST .../discard-draft` the server deliberately refused (409, B-9c2 D3).
+ *
+ * Mirrors `PgError`'s discipline: a plain `Error` subclass passes through
+ * `normalizeError`/`toResult` untouched, so callers branch on `instanceof`
+ * instead of casting — and `ApiError` never escapes `frontend/services/`.
+ * Unlike `PgError` this one also carries a payload, because the orphan
+ * pane has to list the fields by name.
+ */
+export class TemplateDiscardRefusal extends Error {
+  constructor(
+    message: string,
+    /** The server's refusal code. Typed as the generated union because
+     * that is the contract; a value outside it is still delivered, and
+     * the copy layer falls back to the generic outcome (D5/D9). */
+    public readonly code: TemplateDiscardRefusalCode,
+    public readonly orphans: readonly TemplateDiscardOrphan[] = [],
+  ) {
+    super(message);
+    this.name = 'TemplateDiscardRefusal';
+  }
+}
+
+/**
+ * Runtime-validate `error.details.orphans`.
+ *
+ * The generated type says what the server *should* send; this guard is what
+ * makes rendering safe. Anything without a string `label` is dropped rather
+ * than surfaced as `undefined`, and a non-string `node_id` degrades to null
+ * (it is a hint, never displayed).
+ */
+function parseDiscardOrphans(details: unknown): TemplateDiscardOrphan[] {
+  if (!details || typeof details !== 'object') return [];
+  const raw = (details as {orphans?: unknown}).orphans;
+  if (!Array.isArray(raw)) return [];
+
+  const orphans: TemplateDiscardOrphan[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const {node_id: nodeId, label} = entry as {node_id?: unknown; label?: unknown};
+    if (typeof label !== 'string') continue;
+    orphans.push({nodeId: typeof nodeId === 'string' ? nodeId : null, label});
+  }
+  return orphans;
+}
+
+/**
+ * Discard the unpublished draft, restoring the live structure to the
+ * active published version (B-9c1 backend, B-9c2 UI).
+ *
+ * `acknowledgeOrphans` is never defaulted true: the first POST is the
+ * question ("these recorded answers will be stranded"), the second is the
+ * answer. Only a 409 is a deliberate refusal — every other failure
+ * (500, timeout, offline) flows through the normal error path so the UI
+ * cannot frame a server fault as a policy decision.
+ */
+export async function discardTemplateDraft(
+  projectId: string,
+  templateId: string,
+  opts: {acknowledgeOrphans?: boolean} = {},
+): Promise<ErrorResult<DiscardDraftResponse>> {
+  return toResult(async () => {
+    try {
+      return await apiClient<DiscardDraftResponse>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/discard-draft`,
+        {
+          method: 'POST',
+          body: {acknowledge_orphans: opts.acknowledgeOrphans ?? false},
+        },
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        throw new TemplateDiscardRefusal(
+          error.message,
+          error.code as TemplateDiscardRefusalCode,
+          parseDiscardOrphans(error.details),
+        );
+      }
+      throw error;
+    }
+  }, 'discardTemplateDraft');
+}
+
 /** Draft/publish status for the Configuration tab's chip (B-4). */
 export async function loadTemplateConfigStatus(
   projectId: string,
@@ -83,22 +179,6 @@ export async function loadTemplateConfigStatus(
   );
 }
 
-export interface EntityTypeWithCount {
-  id: string;
-  template_id: string;
-  name: string;
-  label: string;
-  description?: string | null;
-  cardinality: 'one' | 'many';
-  sort_order: number;
-  parent_entity_type_id?: string | null;
-  role?: string;
-  is_required?: boolean;
-  created_at?: string;
-  fieldsCount: number;
-  [key: string]: unknown;
-}
-
 export interface SectionImpact {
   fieldsCount: number;
   instancesCount: number;
@@ -107,39 +187,10 @@ export interface SectionImpact {
   warnings: string[];
 }
 
-// --- Entity type loading ---
-
-/**
- * Load all entity types for a template with their field counts.
- * Single-query relocation: no test needed.
- */
-export async function loadTemplateEntityTypes(
-  templateId: string,
-): Promise<ErrorResult<EntityTypeWithCount[]>> {
-  return toResult(async () => {
-    const {data: entityTypesData, error: entityTypesError} = await supabase
-      .from('extraction_entity_types')
-      .select('*, extraction_fields(count)')
-      .eq('project_template_id', templateId)
-      .order('sort_order', {ascending: true});
-
-    if (entityTypesError) throw entityTypesError;
-
-    // The embedded `extraction_fields(count)` above already carries the
-    // per-section count; the old code fired one extra HEAD request per
-    // entity type (14 on CHARMS) and discarded the value it already had.
-    const entityTypesWithCounts = (entityTypesData ?? []).map((et) => {
-      const embedded = (et as {extraction_fields?: {count: number}[]})
-        .extraction_fields;
-      return {
-        ...et,
-        fieldsCount: embedded?.[0]?.count ?? 0,
-      } as EntityTypeWithCount;
-    });
-
-    return entityTypesWithCounts;
-  }, 'loadTemplateEntityTypes');
-}
+// Entity-type LOADING lives in `useTemplateEntityTypes` (one cached
+// PostgREST read, shared by the editor and the grid panel). The imperative
+// `loadTemplateEntityTypes` this file used to export was its last caller's
+// private reload protocol and went with the B-9c2 editor migration.
 
 // --- Entity type label update ---
 

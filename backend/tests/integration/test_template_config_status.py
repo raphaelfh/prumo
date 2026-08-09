@@ -240,6 +240,30 @@ async def test_discard_available_tracks_the_restorability_gate(
 
 
 @pytest.mark.asyncio
+async def test_empty_baseline_yields_a_real_count(db_session: AsyncSession) -> None:
+    """B-9c2 D2: the count gate follows ``baseline_is_restorable``, not
+    ``snapshot_is_narrow``.
+
+    ``snapshot_is_narrow`` calls an EMPTY list narrow by design (so the run
+    view falls back to live rows), but an empty published baseline is a
+    perfectly honest diff baseline — every live node reads as added — and
+    ``discard_available`` already says so. The invariant the Discard dialog
+    rests on: ``discard_available`` ⇒ the count is an int."""
+    active = await ExtractionTemplateVersionRepository(db_session).get_active(SEED.primary_template)
+    assert active is not None
+    active.schema_ = {"entity_types": []}
+    await db_session.flush()
+
+    await _edit_primary_field_label(db_session, " (empty baseline)")
+
+    status = await _status(db_session)
+    assert status.discard_available is True
+    assert status.has_pending_changes is True
+    assert isinstance(status.pending_change_count, int)
+    assert status.pending_change_count > 0
+
+
+@pytest.mark.asyncio
 async def test_discard_unavailable_without_a_published_version(
     db_session: AsyncSession,
 ) -> None:

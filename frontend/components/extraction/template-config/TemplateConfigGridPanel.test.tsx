@@ -208,6 +208,7 @@ describe('TemplateConfigGridPanel — retention wiring', () => {
     vi.mocked(useTemplateEntityTypes).mockReturnValue({
       entityTypes: makeEntityTypes(firstLabel) as never,
       isLoading: false,
+      isPending: false,
       isError: false,
       error: null,
     });
@@ -290,6 +291,7 @@ describe('TemplateConfigGridPanel — optimistic ghost inserts (B-5 Task 4)', ()
     vi.mocked(useTemplateEntityTypes).mockReturnValue({
       entityTypes: makeEntityTypes(extraFields) as never,
       isLoading: false,
+      isPending: false,
       isError: false,
       error: null,
     });
@@ -483,6 +485,7 @@ describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', 
     vi.mocked(useTemplateEntityTypes).mockReturnValue({
       entityTypes: makeEntityTypes() as never,
       isLoading: false,
+      isPending: false,
       isError: false,
       error: null,
     });
@@ -681,6 +684,7 @@ describe('TemplateConfigGridPanel — key-cell commit validation (B-5 review fix
     vi.mocked(useTemplateEntityTypes).mockReturnValue({
       entityTypes: makeEntityTypes() as never,
       isLoading: false,
+      isPending: false,
       isError: false,
       error: null,
     });
@@ -806,6 +810,7 @@ describe('TemplateConfigGridPanel — inspector visibility (B-5 Task 5)', () => 
         },
       ] as never,
       isLoading: false,
+      isPending: false,
       isError: false,
       error: null,
     });
@@ -928,6 +933,7 @@ describe('TemplateConfigGridPanel — 3-rung Esc ladder (B-5 Task 6)', () => {
         },
       ] as never,
       isLoading: false,
+      isPending: false,
       isError: false,
       error: null,
     });

@@ -20,6 +20,8 @@ const {apiClientMock, ApiError} = vi.hoisted(() => {
       public code: string,
       message: string,
       public status: number,
+      public traceId?: string,
+      public details?: Record<string, unknown>,
     ) {
       super(message);
       this.name = 'ApiError';
@@ -39,7 +41,9 @@ import {PgError} from '@/lib/error-utils';
 import {
   createSection,
   deleteSection,
+  discardTemplateDraft,
   republishTemplateVersion,
+  TemplateDiscardRefusal,
   updateEntityTypeLabel,
   updateSection,
 } from '@/services/templateService';
@@ -284,5 +288,141 @@ describe('deleteSection — 409 section-in-use mapped to friendly PgError (panel
     if (result.ok) return;
     expect(result.error).not.toBeInstanceOf(PgError);
     expect(result.error.message).toContain('Section not found');
+  });
+});
+
+describe('discardTemplateDraft — structured refusals (B-9c2 D3)', () => {
+  const RESULT = {
+    project_template_id: 't1',
+    draft_was_open: true,
+    created_entity_types: 0,
+    deleted_entity_types: 1,
+    updated_entity_types: 2,
+    created_fields: 0,
+    deleted_fields: 3,
+    updated_fields: 0,
+    instruction_reset: true,
+    kept: [],
+  };
+
+  it('POSTs to the discard endpoint, defaulting acknowledge_orphans to false', async () => {
+    apiClientMock.mockResolvedValue(RESULT);
+
+    const result = await discardTemplateDraft('p1', 't1');
+
+    expect(result).toEqual({ok: true, data: RESULT});
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/projects/p1/templates/t1/discard-draft',
+      {method: 'POST', body: {acknowledge_orphans: false}},
+    );
+  });
+
+  it('sends {acknowledge_orphans: true} on the second, acknowledged POST', async () => {
+    apiClientMock.mockResolvedValue(RESULT);
+
+    await discardTemplateDraft('p1', 't1', {acknowledgeOrphans: true});
+
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/projects/p1/templates/t1/discard-draft',
+      {method: 'POST', body: {acknowledge_orphans: true}},
+    );
+  });
+
+  it('maps ORPHAN_ACK_REQUIRED to a TemplateDiscardRefusal carrying the parsed orphans', async () => {
+    apiClientMock.mockRejectedValue(
+      new ApiError(
+        'ORPHAN_ACK_REQUIRED',
+        'Discarding would orphan recorded answers',
+        409,
+        'trace-1',
+        {
+          orphans: [
+            {node_id: 'f-1', label: 'Participants → Age'},
+            {node_id: null, label: 'Outcomes → Endpoint'},
+          ],
+        },
+      ),
+    );
+
+    const result = await discardTemplateDraft('p1', 't1');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeInstanceOf(TemplateDiscardRefusal);
+    const refusal = result.error as TemplateDiscardRefusal;
+    expect(refusal.code).toBe('ORPHAN_ACK_REQUIRED');
+    expect(refusal.orphans).toEqual([
+      {nodeId: 'f-1', label: 'Participants → Age'},
+      {nodeId: null, label: 'Outcomes → Endpoint'},
+    ]);
+    expect(refusal.message).toContain('orphan recorded answers');
+  });
+
+  it('maps a hard refusal (no details) to a refusal with an EMPTY orphan list', async () => {
+    apiClientMock.mockRejectedValue(
+      new ApiError('NARROW_BASELINE', 'The published version is too old', 409),
+    );
+
+    const result = await discardTemplateDraft('p1', 't1');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeInstanceOf(TemplateDiscardRefusal);
+    const refusal = result.error as TemplateDiscardRefusal;
+    expect(refusal.code).toBe('NARROW_BASELINE');
+    expect(refusal.orphans).toEqual([]);
+  });
+
+  it('DROPS malformed orphan entries — the UI never renders undefined', async () => {
+    apiClientMock.mockRejectedValue(
+      new ApiError('ORPHAN_ACK_REQUIRED', 'Discard would orphan answers', 409, undefined, {
+        orphans: [
+          {node_id: 'f-1', label: 'Participants → Age'},
+          {node_id: 'f-2'}, // no label
+          {node_id: 'f-3', label: 42}, // non-string label
+          null,
+          'not an object',
+          {node_id: 7, label: 'Outcomes → Endpoint'}, // node_id coerced to null
+        ],
+      }),
+    );
+
+    const result = await discardTemplateDraft('p1', 't1');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const refusal = result.error as TemplateDiscardRefusal;
+    expect(refusal.orphans).toEqual([
+      {nodeId: 'f-1', label: 'Participants → Age'},
+      {nodeId: null, label: 'Outcomes → Endpoint'},
+    ]);
+    expect(refusal.orphans.every((o) => typeof o.label === 'string')).toBe(true);
+  });
+
+  it('tolerates a details payload whose orphans key is missing or not an array', async () => {
+    apiClientMock.mockRejectedValue(
+      new ApiError('DISCARD_RACED', 'Someone published meanwhile', 409, undefined, {
+        orphans: 'nope',
+      }),
+    );
+
+    const result = await discardTemplateDraft('p1', 't1');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect((result.error as TemplateDiscardRefusal).orphans).toEqual([]);
+  });
+
+  it('does NOT turn a 500 into a refusal — a server fault is not a policy decision', async () => {
+    apiClientMock.mockRejectedValue(
+      new ApiError('INTERNAL_ERROR', 'Boom', 500),
+    );
+
+    const result = await discardTemplateDraft('p1', 't1');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).not.toBeInstanceOf(TemplateDiscardRefusal);
+    expect(result.error.message).toContain('Boom');
   });
 });

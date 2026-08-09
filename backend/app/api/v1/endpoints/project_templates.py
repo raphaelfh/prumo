@@ -38,6 +38,7 @@ from app.schemas.hitl_session import (
     RepublishTemplateVersionResponse,
     TemplateActiveVersionRead,
     TemplateConfigStatusRead,
+    TemplateDiscardRefusalResponse,
     TemplateInstructionRead,
     TemplateKind,
     UpdateTemplateActiveRequest,
@@ -55,18 +56,11 @@ from app.services.template_clone_service import (
     TemplateCloneService,
     TemplateNotFoundError,
 )
-from app.services.template_discard_service import (
-    DiscardBlockedByCardinalityError,
-    DiscardRacedError,
-    NarrowBaselineError,
-    OrphanAcknowledgementRequiredError,
-    discard_draft,
-)
+from app.services.template_discard_service import discard_draft
 from app.services.template_instruction_service import (
     get_template_instruction,
     set_template_instruction,
 )
-from app.services.template_restore_service import ContainerSwapUnsupportedError
 from app.services.template_version_read_service import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
@@ -268,6 +262,10 @@ async def republish_template_version(
 
 @router.post(
     "/{project_id}/templates/{template_id}/discard-draft",
+    # B-9c2 D1: the 409 body is a contract, not prose. Declared so the
+    # generated client types ``error.details.orphans`` instead of the
+    # ``unknown`` that ``ErrorDetail.details: dict[str, Any]`` produces.
+    responses={status.HTTP_409_CONFLICT: {"model": TemplateDiscardRefusalResponse}},
 )
 async def discard_template_draft(
     project_id: UUID,
@@ -296,6 +294,11 @@ async def discard_template_draft(
     ``acknowledge_orphans`` is set. 404 when the template is foreign or has
     never published.
 
+    Every 409 carries a ``TemplateDiscardRefusalCode`` in ``error.code``
+    (B-9c2 D1) — only ``ORPHAN_ACK_REQUIRED`` is re-postable, and only it
+    carries ``error.details.orphans``, the fields whose recorded answers
+    the caller is being asked to strand.
+
     Known gap: a wide-but-older baseline that predates a column
     (``allows_not_applicable``, #462) normalizes the absent key to the
     column default rather than "leave alone", so a restore rewrites those
@@ -312,14 +315,13 @@ async def discard_template_draft(
         )
     except (ProjectTemplateNotFoundError, NoActiveTemplateVersionError) as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
-    except (
-        NarrowBaselineError,
-        DiscardBlockedByCardinalityError,
-        ContainerSwapUnsupportedError,
-        OrphanAcknowledgementRequiredError,
-        DiscardRacedError,
-    ) as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
+    # The five 409 refusals are ``AppError`` subclasses (B-9c2 D1) and are
+    # deliberately NOT caught: ``app_error_handler`` renders each one with
+    # its own ``TemplateDiscardRefusalCode`` and, for the orphan question,
+    # the fields it is about. Catching them here to re-raise
+    # ``HTTPException`` is what collapsed all five onto ``HTTP_ERROR`` with
+    # no ``details`` (precedent for letting them through:
+    # ``ExportColumnLimitError``).
     await db.commit()
     return ApiResponse.success(
         result,

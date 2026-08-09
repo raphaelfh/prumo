@@ -7,15 +7,12 @@
  * Simplifies code and allows natural hierarchy support.
  */
 
-import {useEffect, useState} from 'react';
-import {
-  loadTemplateEntityTypes,
-  updateEntityTypeLabel,
-} from '@/services/templateService';
+import {useState} from 'react';
+import {updateEntityTypeLabel} from '@/services/templateService';
 import {Card, CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
-import {Download, Loader2, Plus, Settings} from 'lucide-react';
+import {AlertTriangle, Download, Loader2, Plus, Settings} from 'lucide-react';
 import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructionRow';
 import {TemplateConfigGridPanel} from '@/components/extraction/template-config/TemplateConfigGridPanel';
 import {TemplateConfigPublishControls} from '@/components/extraction/template-config/TemplateConfigPublishControls';
@@ -25,8 +22,8 @@ import {t} from '@/lib/copy';
 import {AddSectionDialog, ImportTemplateDialog, RemoveSectionDialog} from './dialogs';
 import type {AddSectionMode} from './dialogs/AddSectionDialog';
 import {DeleteFieldConfirm} from './dialogs/DeleteFieldConfirm';
-import {ExtractionEntityType} from '@/types/extraction';
 import {useDeleteTemplateField} from '@/hooks/extraction/useDeleteTemplateField';
+import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
 import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
 import {validateFieldImpact} from '@/services/extractionFieldService';
 
@@ -36,12 +33,25 @@ interface TemplateConfigEditorProps {
 }
 
 export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEditorProps) {
-  const [entityTypes, setEntityTypes] = useState<ExtractionEntityType[]>([]);
-  // Only the FIRST load blanks the screen. Later refreshes (after a dialog
-  // save, a rename, a section add) must keep the grid mounted — unmounting
-  // it throws away the panel's view state: selection, search query,
-  // collapsed sections and column toggles.
-  const [initialLoading, setInitialLoading] = useState(true);
+  // ONE cached read of the template structure, shared with the grid panel
+  // (same key, same query). Every config mutation on this screen already
+  // invalidates `templateEntityTypesKeys.byTemplate`, so the header count
+  // refreshes itself — there is no hand-rolled reload protocol left.
+  //
+  // Three branches, and the order matters (B-9c2 D8): the hook returns
+  // `query.data ?? []`, so a FAILED fetch is byte-identical to a template
+  // with zero sections. `isError` must be answered before the empty state,
+  // or a dropped connection reads as "your configuration is gone".
+  const {entityTypes, isPending, isError} = useTemplateEntityTypes(templateId);
+  // …but only while there is nothing cached. TanStack flips `status` to
+  // error on a BACKGROUND failure and KEEPS the rows, and with staleTime at
+  // 5min and refetch-on-focus off, that is the realistic error on this
+  // screen: the invalidation that follows a mutation which already
+  // succeeded (rename, add/remove section, delete field, Discard). Blanking
+  // then discards a structure we still hold — along with the grid's
+  // selection/search/collapse state and the Discard result pane, which is
+  // mounted inside the publish controls in the success branch below.
+  const structureRefreshFailed = isError && entityTypes.length > 0;
   // Which AddSectionDialog variant is open (B-8 D3); null = closed.
   const [addSectionMode, setAddSectionMode] = useState<AddSectionMode | null>(null);
   const [removingSectionId, setRemovingSectionId] = useState<string | null>(null);
@@ -101,31 +111,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
       );
     });
 
-  const loadEntityTypes = async () => {
-
-    console.warn('📦 Carregando entity types do template:', templateId);
-
-    const result = await loadTemplateEntityTypes(templateId);
-
-    if (!result.ok) {
-      console.error('❌ Erro ao carregar entity types:', result.error);
-      toast.error(`${t('common', 'error')}: ${result.error.message}`);
-      setInitialLoading(false);
-      return;
-    }
-
-    console.warn(`✅ Entity types encontrados: ${result.data.length}`);
-    setEntityTypes(result.data as unknown as ExtractionEntityType[]);
-    setInitialLoading(false);
-  };
-
-  useEffect(() => {
-    if (projectId && templateId) {
-      // Microtask so the loader's setState calls run in an async callback.
-      queueMicrotask(() => void loadEntityTypes());
-    }
-  }, [projectId, templateId]);
-
   // Task 6: the grid row owns the rename draft — only the WRITE lives
   // here (service call + cache refresh; the grid guarantees one commit
   // per rename, with a changed, non-empty, trimmed label).
@@ -137,14 +122,12 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
       return;
     }
     toast.success(t('extraction', 'labelUpdatedSuccess'));
-    void invalidateStructure();
-    await loadEntityTypes();
+    await invalidateStructure();
   };
 
   const handleSectionAdded = () => {
     setAddSectionMode(null);
     void invalidateStructure();
-    loadEntityTypes();
   };
 
   const handleSectionRemoved = () => {
@@ -152,18 +135,48 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     setRemovingSectionName('');
     setRemovingCascade(null);
     void invalidateStructure();
-    loadEntityTypes();
   };
 
   // Only the header count reads this now — the grid owns the hierarchy.
   const rootEntityTypes = entityTypes.filter((et) => !et.parent_entity_type_id);
 
-  if (initialLoading) {
+  // isPending, NOT isFetching: only the first load may blank the screen. A
+  // later refresh (a rename, a section add, a Discard) must keep the grid
+  // mounted or the panel loses its view state — selection, search query,
+  // collapsed sections, column toggles.
+  if (isPending) {
     return (
       <div className="flex items-center justify-center p-12">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <span className="ml-3 text-muted-foreground">{t('extraction', 'loadingConfiguration')}</span>
       </div>
+    );
+  }
+
+  if (isError && entityTypes.length === 0) {
+    // Nothing cached: the only case where taking the screen is honest, and
+    // the only one D8 is about. Replaces the imperative loader's
+    // toast.error — a failure the user can still see (and retry) after the
+    // toast would have expired. Retrying is the same invalidation every
+    // mutation performs.
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <div className="text-center text-muted-foreground">
+            <AlertTriangle
+              className="h-10 w-10 mx-auto mb-3 text-destructive/70"
+              strokeWidth={1.5}
+            />
+            <p className="text-sm font-medium mb-1 text-foreground">
+              {t('templateConfig', 'sectionsLoadFailedTitle')}
+            </p>
+            <p className="text-xs mb-4">{t('templateConfig', 'sectionsLoadFailedBody')}</p>
+            <Button variant="outline" onClick={() => void invalidateStructure()}>
+              {t('common', 'tryAgain')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -200,6 +213,31 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
           />
         </div>
       </div>
+
+      {/* Degraded, not broken: the rows below are the last good read. An
+          inline strip rather than a toast — the same reason the blocking
+          card replaced one, and a toast would expire while the stale grid
+          stayed on screen. */}
+      {structureRefreshFailed && (
+        <div
+          role="alert"
+          data-testid="template-config-refresh-failed"
+          className="flex items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-xs text-warning"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden />
+          <span className="min-w-0 flex-1">
+            {t('templateConfig', 'sectionsRefreshFailedBody')}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 hover:bg-warning/20 hover:text-warning"
+            onClick={() => void invalidateStructure()}
+          >
+            {t('common', 'tryAgain')}
+          </Button>
+        </div>
+      )}
 
       <TemplateInstructionRow projectId={projectId} templateId={templateId} />
 
@@ -329,9 +367,9 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         onTemplateImported={() => {
           setShowImportDialog(false);
           // Import publishes server-side (clone routes through republish),
-          // possibly for a DIFFERENT template — id-free .all invalidation.
+          // possibly for a DIFFERENT template — id-free .all invalidation,
+          // which covers this template's entity-types key too.
           void invalidateAfterImport();
-          loadEntityTypes();
         }}
       />
     </div>

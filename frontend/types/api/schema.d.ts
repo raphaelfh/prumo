@@ -745,6 +745,11 @@ export interface paths {
          *     ``acknowledge_orphans`` is set. 404 when the template is foreign or has
          *     never published.
          *
+         *     Every 409 carries a ``TemplateDiscardRefusalCode`` in ``error.code``
+         *     (B-9c2 D1) — only ``ORPHAN_ACK_REQUIRED`` is re-postable, and only it
+         *     carries ``error.details.orphans``, the fields whose recorded answers
+         *     the caller is being asked to strand.
+         *
          *     Known gap: a wide-but-older baseline that predates a column
          *     (``allows_not_applicable``, #462) normalizes the absent key to the
          *     column default rather than "leave alone", so a restore rewrites those
@@ -4432,6 +4437,69 @@ export interface components {
             project_template_id: string;
         };
         /**
+         * TemplateDiscardRefusalCode
+         * @description Why ``POST .../discard-draft`` returned 409 (B-9c2 D1).
+         *
+         *     Deliberately NOT part of :class:`app.schemas.common.ApiErrorCode`: that
+         *     enum is the cross-cutting vocabulary every client branches on, and these
+         *     five are one endpoint's private outcomes. Same call as
+         *     ``ExtractionErrorCode`` — slice-local codes stay slice-local, so the
+         *     global contract does not grow a member per feature.
+         *
+         *     The split that matters to the caller: ``ORPHAN_ACK_REQUIRED`` is a
+         *     *question* (re-post with ``acknowledge_orphans``), the other four are
+         *     refusals no retry of the same request can satisfy.
+         * @enum {string}
+         */
+        TemplateDiscardRefusalCode: "ORPHAN_ACK_REQUIRED" | "NARROW_BASELINE" | "CARDINALITY_DOWNGRADE_BLOCKED" | "CONTAINER_SWAP_UNSUPPORTED" | "DISCARD_RACED";
+        /**
+         * TemplateDiscardRefusalDetails
+         * @description The ``error.details`` payload of an ``ORPHAN_ACK_REQUIRED`` refusal.
+         *
+         *     One entry per FIELD: ``allowed_values`` is diffed per option code, so a
+         *     field losing two recorded options is two changes and one orphan.
+         */
+        TemplateDiscardRefusalDetails: {
+            /** Orphans */
+            orphans?: components["schemas"]["TemplateDiscardRefusalOrphan"][];
+        };
+        /** TemplateDiscardRefusalError */
+        TemplateDiscardRefusalError: {
+            code: components["schemas"]["TemplateDiscardRefusalCode"];
+            details?: components["schemas"]["TemplateDiscardRefusalDetails"] | null;
+            /** Message */
+            message: string;
+        };
+        /**
+         * TemplateDiscardRefusalOrphan
+         * @description One field whose recorded answers the Discard would strand.
+         */
+        TemplateDiscardRefusalOrphan: {
+            /** Label */
+            label: string;
+            /** Node Id */
+            node_id: string | null;
+        };
+        /**
+         * TemplateDiscardRefusalResponse
+         * @description The 409 body, declared so the payload reaches ``schema.d.ts`` typed.
+         *
+         *     Documents what ``app_error_handler`` actually writes — ``details`` under
+         *     ``error``, never a ``data`` slot. Without this the generated client sees
+         *     ``ErrorDetail.details: dict[str, Any] | None`` and types the orphan list
+         *     as ``unknown``.
+         */
+        TemplateDiscardRefusalResponse: {
+            error: components["schemas"]["TemplateDiscardRefusalError"];
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /** Trace Id */
+            trace_id?: string | null;
+        };
+        /**
          * TemplateFieldCreateRequest
          * @description Create a field in a section of the path template.
          *
@@ -6062,6 +6130,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_DiscardDraftResponse_"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateDiscardRefusalResponse"];
                 };
             };
             /** @description Validation Error */

@@ -7037,6 +7037,114 @@
         "title": "TemplateConfigStatusRead",
         "type": "object"
       },
+      "TemplateDiscardRefusalCode": {
+        "description": "Why ``POST .../discard-draft`` returned 409 (B-9c2 D1).\n\nDeliberately NOT part of :class:`app.schemas.common.ApiErrorCode`: that\nenum is the cross-cutting vocabulary every client branches on, and these\nfive are one endpoint's private outcomes. Same call as\n``ExtractionErrorCode`` \u2014 slice-local codes stay slice-local, so the\nglobal contract does not grow a member per feature.\n\nThe split that matters to the caller: ``ORPHAN_ACK_REQUIRED`` is a\n*question* (re-post with ``acknowledge_orphans``), the other four are\nrefusals no retry of the same request can satisfy.",
+        "enum": [
+          "ORPHAN_ACK_REQUIRED",
+          "NARROW_BASELINE",
+          "CARDINALITY_DOWNGRADE_BLOCKED",
+          "CONTAINER_SWAP_UNSUPPORTED",
+          "DISCARD_RACED"
+        ],
+        "title": "TemplateDiscardRefusalCode",
+        "type": "string"
+      },
+      "TemplateDiscardRefusalDetails": {
+        "description": "The ``error.details`` payload of an ``ORPHAN_ACK_REQUIRED`` refusal.\n\nOne entry per FIELD: ``allowed_values`` is diffed per option code, so a\nfield losing two recorded options is two changes and one orphan.",
+        "properties": {
+          "orphans": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateDiscardRefusalOrphan"
+            },
+            "title": "Orphans",
+            "type": "array"
+          }
+        },
+        "title": "TemplateDiscardRefusalDetails",
+        "type": "object"
+      },
+      "TemplateDiscardRefusalError": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/TemplateDiscardRefusalCode"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateDiscardRefusalDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "TemplateDiscardRefusalError",
+        "type": "object"
+      },
+      "TemplateDiscardRefusalOrphan": {
+        "description": "One field whose recorded answers the Discard would strand.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          }
+        },
+        "required": [
+          "node_id",
+          "label"
+        ],
+        "title": "TemplateDiscardRefusalOrphan",
+        "type": "object"
+      },
+      "TemplateDiscardRefusalResponse": {
+        "description": "The 409 body, declared so the payload reaches ``schema.d.ts`` typed.\n\nDocuments what ``app_error_handler`` actually writes \u2014 ``details`` under\n``error``, never a ``data`` slot. Without this the generated client sees\n``ErrorDetail.details: dict[str, Any] | None`` and types the orphan list\nas ``unknown``.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/TemplateDiscardRefusalError"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "TemplateDiscardRefusalResponse",
+        "type": "object"
+      },
       "TemplateFieldCreateRequest": {
         "additionalProperties": false,
         "description": "Create a field in a section of the path template.\n\n``entity_type_id`` names the owning section (mirrors the frontend\n``ExtractionFieldInsert``); the service re-verifies it belongs to the\npath template (BOLA chain entity_type -> template -> project).\n``sort_order`` is client-supplied (panel 10): it is a per-section\nrendering convention computed at dequeue time by the optimistic-row\nghost chain \u2014 the server validates >= 0 and otherwise trusts it.",
@@ -10051,7 +10159,7 @@
     },
     "/api/v1/projects/{project_id}/templates/{template_id}/discard-draft": {
       "post": {
-        "description": "Throw the unpublished config draft away, back to the active version.\n\nPartial by design (B-9c1 D4): a draft-added section that already owns\nextraction instances \u2014 or a draft-added field the review workflow\nreferences \u2014 cannot be deleted, so it is KEPT and reported in\n``kept`` while the rest of the draft is undone. A PUBLISHED field whose\nper-section name a kept field took over is reported the same way\n(``name_taken_by_kept_node``): it stays as the draft left it, because\n``uq_extraction_fields_entity_type_name`` is immediate and restoring it\nwould abort the request instead of shrinking the draft. The draft marker\nsurvives whenever anything was kept.\n\nRefuses (409) when restoring would corrupt rather than merely fail: a\n``many`` -> ``one`` cardinality downgrade under a multi-entry parent, a\nreplaced model container, a pre-0026 \"narrow\" baseline (B-9x), and\ndestructive changes to fields already holding values unless\n``acknowledge_orphans`` is set. 404 when the template is foreign or has\nnever published.\n\nKnown gap: a wide-but-older baseline that predates a column\n(``allows_not_applicable``, #462) normalizes the absent key to the\ncolumn default rather than \"leave alone\", so a restore rewrites those\nflags \u2014 and ``diff_snapshots`` reports ``total == 0`` while it happens.\nOnly whole-era (narrow) baselines are detectable here.",
+        "description": "Throw the unpublished config draft away, back to the active version.\n\nPartial by design (B-9c1 D4): a draft-added section that already owns\nextraction instances \u2014 or a draft-added field the review workflow\nreferences \u2014 cannot be deleted, so it is KEPT and reported in\n``kept`` while the rest of the draft is undone. A PUBLISHED field whose\nper-section name a kept field took over is reported the same way\n(``name_taken_by_kept_node``): it stays as the draft left it, because\n``uq_extraction_fields_entity_type_name`` is immediate and restoring it\nwould abort the request instead of shrinking the draft. The draft marker\nsurvives whenever anything was kept.\n\nRefuses (409) when restoring would corrupt rather than merely fail: a\n``many`` -> ``one`` cardinality downgrade under a multi-entry parent, a\nreplaced model container, a pre-0026 \"narrow\" baseline (B-9x), and\ndestructive changes to fields already holding values unless\n``acknowledge_orphans`` is set. 404 when the template is foreign or has\nnever published.\n\nEvery 409 carries a ``TemplateDiscardRefusalCode`` in ``error.code``\n(B-9c2 D1) \u2014 only ``ORPHAN_ACK_REQUIRED`` is re-postable, and only it\ncarries ``error.details.orphans``, the fields whose recorded answers\nthe caller is being asked to strand.\n\nKnown gap: a wide-but-older baseline that predates a column\n(``allows_not_applicable``, #462) normalizes the absent key to the\ncolumn default rather than \"leave alone\", so a restore rewrites those\nflags \u2014 and ``diff_snapshots`` reports ``total == 0`` while it happens.\nOnly whole-era (narrow) baselines are detectable here.",
         "operationId": "discard_template_draft_api_v1_projects__project_id__templates__template_id__discard_draft_post",
         "parameters": [
           {
@@ -10095,6 +10203,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDiscardRefusalResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
