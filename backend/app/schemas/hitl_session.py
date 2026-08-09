@@ -97,6 +97,11 @@ class TemplateConfigStatusRead(BaseModel):
     project_template_id: UUID
     has_pending_changes: bool
     active_version: int | None
+    pending_change_count: int | None = None
+    """How many changes the open draft carries (B-9a), or None when that
+    is unknowable: no draft, no published baseline, or a pre-0026 narrow
+    snapshot. ``0`` is a real value — a marker-set-but-identical tree
+    (A→B→A) still needs a Publish to clear the marker."""
 
 
 class TemplateActiveVersionRead(BaseModel):

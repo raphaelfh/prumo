@@ -6846,6 +6846,17 @@
             "title": "Has Pending Changes",
             "type": "boolean"
           },
+          "pending_change_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Change Count"
+          },
           "project_template_id": {
             "format": "uuid",
             "title": "Project Template Id",

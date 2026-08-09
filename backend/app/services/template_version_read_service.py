@@ -7,19 +7,29 @@
   snapshot -> live fallback chain is inherited, not re-implemented.
 * B-4: the Configuration tab's Draft chip reads
   ``get_template_config_status`` (marker + active version number).
+* B-9a: that same status calibrates the chip with a change count —
+  ``template_diff.diff_snapshots`` of the stored active snapshot against
+  a fresh build of the live rows, run ONLY while the draft marker is set.
 """
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ProjectExtractionTemplate
+from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.schemas.hitl_session import TemplateActiveVersionRead, TemplateConfigStatusRead
-from app.services.extraction_snapshot import entity_types_for_version
+from app.services.extraction_snapshot import (
+    build_template_version_snapshot,
+    entity_types_for_version,
+    snapshot_is_narrow,
+)
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
+from app.services.template_diff import diff_snapshots
 
 
 class NoActiveTemplateVersionError(Exception):
@@ -29,7 +39,7 @@ class NoActiveTemplateVersionError(Exception):
 async def get_template_config_status(
     db: AsyncSession, *, project_id: UUID, template_id: UUID
 ) -> TemplateConfigStatusRead:
-    """Draft chip read model (B-4), BOLA-scoped by (id, project_id).
+    """Draft chip read model (B-4/B-9a), BOLA-scoped by (id, project_id).
 
     ``active_version`` is None only for a template that never published
     (legacy shapes) — unlike the tree read above, that is a renderable
@@ -40,11 +50,41 @@ async def get_template_config_status(
         raise ProjectTemplateNotFoundError(f"Template {template_id} not found")
 
     active = await ExtractionTemplateVersionRepository(db).get_active(template_id)
+    has_pending_changes = template.config_draft_since is not None
     return TemplateConfigStatusRead(
         project_template_id=template.id,
-        has_pending_changes=template.config_draft_since is not None,
+        has_pending_changes=has_pending_changes,
         active_version=active.version if active is not None else None,
+        pending_change_count=(
+            await _pending_change_count(db, template_id=template_id, active=active)
+            if has_pending_changes
+            else None
+        ),
     )
+
+
+async def _pending_change_count(
+    db: AsyncSession, *, template_id: UUID, active: ExtractionTemplateVersion | None
+) -> int | None:
+    """How many changes the open draft carries, or None when unknowable.
+
+    Only ever called for a template whose marker is set — a clean one must
+    not pay for the extra snapshot build (B-9a D7). ``None`` is not zero:
+    it means the question has no answer here, either because nothing was
+    ever published (D8) or because the stored baseline predates the wide
+    snapshot builder and would manufacture phantom changes (D5).
+    """
+    if active is None:
+        return None
+    baseline: dict[str, Any] = active.schema_ or {}
+    # snapshot_is_narrow takes the entity-types LIST; the snapshot dict
+    # reads narrow for every template (it iterates keys).
+    if snapshot_is_narrow(baseline.get("entity_types", [])):
+        return None
+    current = await build_template_version_snapshot(db, template_id)
+    # A count consumes no tiers, so it needs no value lookup — B-9b's diff
+    # endpoint resolves the real set for the Publish sheet's warnings (D3).
+    return diff_snapshots(baseline, current, fields_with_values=frozenset()).total
 
 
 async def get_active_version_tree(
