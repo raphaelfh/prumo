@@ -27,6 +27,62 @@ export const templateConfig = {
   // fall back to extraction.configUnpublishedChanges (D9).
   draftChangeCountOne: 'Draft · {{n}} change',
   draftChangeCountOther: 'Draft · {{n}} changes',
+  // --- B-9c2: Discard the unpublished draft (button + four-phase dialog) ---
+  discardAckAction: 'Discard anyway',
+  discardAckBody:
+    'Reviewers already recorded answers for these fields. Discarding removes the options — or changes the type — those answers were recorded under, so they will no longer match the template:',
+  discardAckTitle: 'Some recorded answers will be left behind',
+  discardButton: 'Discard',
+  // Constant accessible name (the tooltip carries the state). Deliberately
+  // free of the word "publish" so it can never collide with the sibling
+  // Publish button in a by-name lookup.
+  discardButtonAria: 'Discard draft changes',
+  discardConfirmAction: 'Discard changes',
+  discardConfirmBodyOne: 'Undo {{n}} unpublished change and go back to v{{v}}.',
+  discardConfirmBodyOther: 'Undo {{n}} unpublished changes and go back to v{{v}}.',
+  // Fallback for the degenerate shapes (a marker stamped with a zero diff,
+  // or a status without a version): true without inventing a number.
+  discardConfirmBodyPlain:
+    'Undo the unpublished changes and go back to the published version.',
+  discardConfirmInstruction:
+    'The template’s general AI instruction goes back to its published text too.',
+  // D11: a wide-but-older baseline can rewrite columns the diff does not
+  // count, so the pane states the SCOPE and never promises an inventory.
+  discardConfirmScope:
+    'Everything edited since the last publish returns to how it was then. This cannot be undone.',
+  discardConfirmTitle: 'Discard the unpublished changes?',
+  // D5 fifth outcome: an unknown code, a non-409, or a dead connection. Not
+  // a policy refusal, so it must not read like one.
+  discardFailedGeneric:
+    'The changes could not be discarded. Check your connection and try again.',
+  discardKeptKindField: 'Field',
+  discardKeptKindSection: 'Section',
+  discardKeptReasonHasRecordedData: 'reviewers already recorded answers for it',
+  discardKeptReasonNameTakenByKeptNode:
+    'another item that had to stay is using its name',
+  // D9 runtime fallback — t() returns '' for a missing key, which would
+  // render a labelled row with no explanation at all.
+  discardKeptReasonOther: 'this item could not be restored',
+  discardKeptReasonRelatedToKeptNode: 'it belongs to an item that had to stay',
+  discardRefusedCardinality:
+    'The published version expects one entry for a section that now holds several in at least one run. Restoring it would leave those runs impossible to complete.',
+  discardRefusedContainerSwap:
+    'The draft replaced this template’s repeating group. Discarding that particular change is not supported — undo it by hand in the grid instead.',
+  discardRefusedNarrowBaseline:
+    'The published version was saved in an older format, so restoring it would erase AI instructions and option settings across the template.',
+  discardRefusedRaced:
+    'Someone recorded work on this template while the discard was running. Nothing was changed — try again.',
+  discardRefusedTitle: 'These changes cannot be discarded',
+  discardResultStillDraft:
+    'Everything else went back to the published version, but these items had to stay — so the template is still a draft. Publish when you are ready.',
+  discardResultTitle: 'Some items could not be undone',
+  discardSuccessToast: 'Unpublished changes discarded',
+  discardTooltipAction:
+    'Undo the draft changes and go back to the last version you released',
+  discardTooltipBaselineTooOld: 'The published version is too old to restore from',
+  discardTooltipNeverPublished:
+    'Nothing has been published yet, so there is no version to go back to',
+  discardTooltipNothing: 'Nothing to discard — there are no draft changes',
   dragCancelled: 'Move cancelled — {{field}} stays where it was',
   dragHandleHint: 'Drag to reorder',
   dragLockedFiltering: 'Clear search to reorder',
