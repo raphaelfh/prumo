@@ -7234,6 +7234,17 @@
           "changes": {
             "$ref": "#/components/schemas/TemplateConfigDiffBuckets"
           },
+          "fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fingerprint"
+          },
           "project_template_id": {
             "format": "uuid",
             "title": "Project Template Id",

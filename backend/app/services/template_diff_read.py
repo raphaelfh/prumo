@@ -11,6 +11,8 @@ Pure: dataclasses in, wire models out. No DB, no IO, no HTTP.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping, Sequence
 from uuid import UUID
 
@@ -94,6 +96,38 @@ def with_recorded_data(
         )
         for change in changes
     )
+
+
+def fingerprint(active_version_id: UUID | None, rows: Sequence[TemplateChangeRowRead]) -> str:
+    """What the manager was looking at, in 64 hex chars (B-9b2b).
+
+    Hashes the **projection plus the baseline's identity**, not the live
+    snapshot. A concurrent publish leaves the live tree byte-identical while
+    making every row in the diff wrong, so a tree hash would still match; and
+    a reviewer recording one answer moves a row's ``tier`` or
+    ``affects_recorded_data`` without touching the tree at all. Both live in
+    the projection, so both are covered here — which is why the raw
+    ``fields_with_values`` set is deliberately NOT hashed on top (it would
+    refuse a publish for answers that moved no row the manager saw).
+
+    Canonicalises its own row order rather than trusting the caller's:
+    ``SNAPSHOT_SQL`` orders by an unconstrained ``sort_order``
+    (``extraction_snapshot.py:82``, ``:88``), so two sections can swap
+    between two reads of an unchanged tree. Sorting here — not on the wire —
+    is what leaves the shipped B-9b2a row order untouched. The sort key is
+    the composite id, which is provably unique; ``(label_path, attribute,
+    option_code)`` is not, because nothing enforces unique section labels.
+
+    ``model_dump`` rather than a hand-listed tuple, on purpose: a field added
+    to the row model joins the hash automatically instead of quietly escaping
+    the drift check.
+    """
+    payload = {
+        "active_version_id": str(active_version_id) if active_version_id else None,
+        "rows": [row.model_dump(mode="json") for row in sorted(rows, key=lambda r: r.id)],
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _affects_recorded_data(

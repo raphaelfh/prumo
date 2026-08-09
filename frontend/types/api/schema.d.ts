@@ -4564,6 +4564,8 @@ export interface components {
          */
         TemplateConfigDiffRead: {
             changes?: components["schemas"]["TemplateConfigDiffBuckets"];
+            /** Fingerprint */
+            fingerprint?: string | null;
             /**
              * Project Template Id
              * Format: uuid

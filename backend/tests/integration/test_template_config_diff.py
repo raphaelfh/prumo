@@ -244,6 +244,35 @@ async def test_recorded_values_flip_a_tier_without_moving_the_total(
     assert len(_all_rows(diff)) == status.pending_change_count
 
 
+@pytest.mark.asyncio
+async def test_a_recorded_value_moves_the_fingerprint_without_touching_the_tree(
+    db_session: AsyncSession,
+) -> None:
+    """The drift signal the Publish sheet is checked against (B-9b2b).
+
+    This is the escalation the ack contract exists for: nobody edited the
+    template between the two reads — a reviewer merely answered a question —
+    yet the row the manager is looking at went SEMANTIC → DESTRUCTIVE. A
+    fingerprint over the live snapshot would be identical here; over the
+    projection it moves, which is what lets the publish refuse.
+    """
+    project_id, template_id, _ = await fresh_charms(db_session)
+    target = await field_id(db_session, template_id, "sample_size", "number_of_participants")
+    await _set_field_type(db_session, target, "text")
+
+    before = await _diff(db_session, project_id, template_id)
+    assert await _record_a_value(db_session, project_id, template_id) == target
+    after = await _diff(db_session, project_id, template_id)
+
+    assert before.status is DiffStatus.AVAILABLE
+    assert after.status is DiffStatus.AVAILABLE
+    assert before.fingerprint is not None
+    assert [r.id for r in _all_rows(before)] == [r.id for r in _all_rows(after)], (
+        "the tree must be untouched — only the tier may move"
+    )
+    assert before.fingerprint != after.fingerprint
+
+
 # ==========================================================================
 # Shape 2 — no baseline
 # ==========================================================================
@@ -288,6 +317,10 @@ async def test_a_narrow_baseline_reports_no_rows(db_session: AsyncSession) -> No
     assert diff.status is DiffStatus.BASELINE_TOO_OLD
     rows = _all_rows(diff)
     assert rows == [], f"unrestorable baseline fabricated {len(rows)} row(s): {rows}"
+    # No rows to acknowledge means nothing to drift against (B-9b2b): a
+    # fingerprint here would hash emptiness and still refuse a publish for
+    # movement the sheet never showed.
+    assert diff.fingerprint is None
 
 
 @pytest.mark.asyncio

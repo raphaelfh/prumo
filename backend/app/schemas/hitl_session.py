@@ -354,6 +354,17 @@ class TemplateConfigDiffRead(BaseModel):
     project_template_id: UUID
     status: DiffStatus
     changes: TemplateConfigDiffBuckets = Field(default_factory=TemplateConfigDiffBuckets)
+    fingerprint: str | None = None
+    """What the client is looking at, hashed (B-9b2b).
+
+    Sent back on Publish so the server can refuse when the projection moved
+    under the manager — a concurrent publish, or a reviewer recording an
+    answer that escalates a tier without touching the template. ``None`` for
+    the two non-``available`` statuses: they carry no rows, so there is
+    nothing to acknowledge and nothing to drift.
+
+    Opaque to the client: it is produced and compared server-side only
+    (``template_diff_read.fingerprint``), never re-derived on the wire."""
 
 
 class TemplateActiveVersionRead(BaseModel):

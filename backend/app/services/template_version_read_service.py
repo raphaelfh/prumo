@@ -46,7 +46,7 @@ from app.services.extraction_snapshot import (
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_diff import TemplateDiff, diff_snapshots
-from app.services.template_diff_read import with_recorded_data
+from app.services.template_diff_read import fingerprint, with_recorded_data
 
 
 class NoActiveTemplateVersionError(Exception):
@@ -215,10 +215,34 @@ async def get_template_config_diff(
     outcome = await _resolve_template_diff(
         db, template_id=template_id, active=active, resolve_values=True
     )
+    buckets = _buckets(outcome)
     return TemplateConfigDiffRead(
         project_template_id=template_id,
         status=outcome.status,
-        changes=_buckets(outcome),
+        changes=buckets,
+        # Hashed over the SAME rows the client is about to see, plus the
+        # baseline's identity — the publish path recomputes both under its
+        # locks and refuses on a mismatch (B-9b2b). The non-available
+        # statuses carry no rows to acknowledge, so they carry no
+        # fingerprint either: a drift check over an empty projection would
+        # refuse on nothing.
+        fingerprint=(
+            fingerprint(
+                active.id if active is not None else None,
+                [
+                    row
+                    for tier_rows in (
+                        buckets.additive,
+                        buckets.cosmetic,
+                        buckets.semantic,
+                        buckets.destructive,
+                    )
+                    for row in tier_rows
+                ],
+            )
+            if outcome.status is DiffStatus.AVAILABLE
+            else None
+        ),
     )
 
 
