@@ -517,3 +517,64 @@ async def set_config_draft_marker(db: AsyncSession, template_id: UUID, value) ->
         {"tid": str(template_id), "val": value},
     )
     await db.flush()
+
+
+async def open_session(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    article_id: UUID,
+    template_id: UUID,
+    user_id: UUID,
+):
+    """Open (or resume) an extraction HITL session for one article.
+
+    The only supported way to materialize ``extraction_instances``: the
+    session seeds a singleton for every top-level ``cardinality='one'``
+    entity type and backfills ``cardinality='one'`` children of every
+    existing parent instance. Those instances are the RESTRICT reference
+    (``extraction_instances_entity_type_id_fkey``) that makes a section
+    un-deletable, so any suite about template deletes needs this rather
+    than a hand-rolled INSERT."""
+    from app.models.extraction import TemplateKind
+    from app.services.hitl_session_service import HITLSessionService
+
+    return await HITLSessionService(db).open_or_resume(
+        kind=TemplateKind.EXTRACTION,
+        project_id=project_id,
+        article_id=article_id,
+        user_id=user_id,
+        project_template_id=template_id,
+    )
+
+
+async def make_proposal(
+    db: AsyncSession,
+    *,
+    run_id: UUID,
+    instance_id: UUID,
+    field_id: UUID,
+    user_id: UUID,
+    value: object = "recorded",
+) -> UUID:
+    """Record one HUMAN proposal for ``(run, instance, field)``.
+
+    ``extraction_proposal_records.field_id`` is ON DELETE RESTRICT, so this
+    is both "the field holds recorded work" (it joins the
+    ``fields_with_values`` set) and "the field can no longer be deleted"."""
+    from app.models.extraction_workflow import (
+        ExtractionProposalRecord,
+        ExtractionProposalSource,
+    )
+
+    record = ExtractionProposalRecord(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.HUMAN.value,
+        source_user_id=user_id,
+        proposed_value={"value": value},
+    )
+    db.add(record)
+    await db.flush()
+    return record.id

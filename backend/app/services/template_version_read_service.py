@@ -24,6 +24,7 @@ from app.repositories.extraction_template_version_repository import (
 )
 from app.schemas.hitl_session import TemplateActiveVersionRead, TemplateConfigStatusRead
 from app.services.extraction_snapshot import (
+    baseline_is_restorable,
     build_template_version_snapshot,
     entity_types_for_version,
     snapshot_is_narrow,
@@ -60,6 +61,11 @@ async def get_template_config_status(
             if has_pending_changes
             else None
         ),
+        # B-9c1 D12: the Discard button must know before the click. Same
+        # shared gate the endpoint refuses on, so the two cannot disagree —
+        # and unlike the count, it is answered for a clean template too
+        # (a drifted marker-NULL template is discardable).
+        discard_available=active is not None and baseline_is_restorable(active.schema_),
     )
 
 

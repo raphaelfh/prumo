@@ -14,6 +14,10 @@
   explicit Publish button's endpoint: config edits (still PostgREST)
   only stamp the draft marker, and article forms — which render from
   the run's version snapshot — pick them up at Publish.
+* ``POST /api/v1/projects/{project_id}/templates/{template_id}/discard-draft``
+  — Publish's inverse (slice B-9c1): write the active version's snapshot
+  back over the live rows and clear the marker. Partial by construction —
+  nodes the review workflow already references are kept and reported.
 
 These are project-scoped. ``POST /api/v1/hitl/sessions`` is per-article run
 lifecycle and is separate.
@@ -29,6 +33,8 @@ from app.schemas.common import ApiResponse
 from app.schemas.hitl_session import (
     CloneTemplateRequest,
     CloneTemplateResponse,
+    DiscardDraftRequest,
+    DiscardDraftResponse,
     RepublishTemplateVersionResponse,
     TemplateActiveVersionRead,
     TemplateConfigStatusRead,
@@ -49,10 +55,18 @@ from app.services.template_clone_service import (
     TemplateCloneService,
     TemplateNotFoundError,
 )
+from app.services.template_discard_service import (
+    DiscardBlockedByCardinalityError,
+    DiscardRacedError,
+    NarrowBaselineError,
+    OrphanAcknowledgementRequiredError,
+    discard_draft,
+)
 from app.services.template_instruction_service import (
     get_template_instruction,
     set_template_instruction,
 )
+from app.services.template_restore_service import ContainerSwapUnsupportedError
 from app.services.template_version_read_service import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
@@ -248,6 +262,67 @@ async def republish_template_version(
             changed=result.changed,
             repinned_run_count=result.repinned_run_count,
         ),
+        trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.post(
+    "/{project_id}/templates/{template_id}/discard-draft",
+)
+async def discard_template_draft(
+    project_id: UUID,
+    template_id: UUID,
+    body: DiscardDraftRequest,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(require_project_manager),
+) -> ApiResponse[DiscardDraftResponse]:
+    """Throw the unpublished config draft away, back to the active version.
+
+    Partial by design (B-9c1 D4): a draft-added section that already owns
+    extraction instances — or a draft-added field the review workflow
+    references — cannot be deleted, so it is KEPT and reported in
+    ``kept`` while the rest of the draft is undone. A PUBLISHED field whose
+    per-section name a kept field took over is reported the same way
+    (``name_taken_by_kept_node``): it stays as the draft left it, because
+    ``uq_extraction_fields_entity_type_name`` is immediate and restoring it
+    would abort the request instead of shrinking the draft. The draft marker
+    survives whenever anything was kept.
+
+    Refuses (409) when restoring would corrupt rather than merely fail: a
+    ``many`` -> ``one`` cardinality downgrade under a multi-entry parent, a
+    replaced model container, a pre-0026 "narrow" baseline (B-9x), and
+    destructive changes to fields already holding values unless
+    ``acknowledge_orphans`` is set. 404 when the template is foreign or has
+    never published.
+
+    Known gap: a wide-but-older baseline that predates a column
+    (``allows_not_applicable``, #462) normalizes the absent key to the
+    column default rather than "leave alone", so a restore rewrites those
+    flags — and ``diff_snapshots`` reports ``total == 0`` while it happens.
+    Only whole-era (narrow) baselines are detectable here.
+    """
+    try:
+        result = await discard_draft(
+            db,
+            project_id=project_id,
+            template_id=template_id,
+            user_id=current_user_sub,
+            acknowledge_orphans=body.acknowledge_orphans,
+        )
+    except (ProjectTemplateNotFoundError, NoActiveTemplateVersionError) as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except (
+        NarrowBaselineError,
+        DiscardBlockedByCardinalityError,
+        ContainerSwapUnsupportedError,
+        OrphanAcknowledgementRequiredError,
+        DiscardRacedError,
+    ) as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    await db.commit()
+    return ApiResponse.success(
+        result,
         trace_id=getattr(request.state, "trace_id", None),
     )
 
