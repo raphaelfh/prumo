@@ -64,6 +64,11 @@ interface RemoveSectionDialogProps {
   templateId: string;
   sectionId: string | null;
   sectionName: string;
+  /** Set when the section is a repeating GROUP (B-8 D4): the cascade
+   * warning also lists its child sections + their fields (the impact
+   * probe counts only the section's OWN rows). Run entries still make
+   * the endpoint 409 — surfaced through the PgError path below. */
+  groupCascade?: {childCount: number; fieldsCount: number; noun: string} | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSectionRemoved: () => void;
@@ -76,6 +81,7 @@ export function RemoveSectionDialog({
   templateId,
   sectionId,
   sectionName,
+  groupCascade,
   open,
   onOpenChange,
   onSectionRemoved,
@@ -251,13 +257,24 @@ export function RemoveSectionDialog({
               </div>
             </div>
 
-            {/* Warnings */}
+            {/* Warnings — a group delete leads with the cascade line
+                (children + fields), B-8 D4. */}
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
                   <div className="font-medium mb-2">{t('extraction', 'removalImpactTitle')}</div>
                 <ul className="list-disc list-inside space-y-1">
-                  {impact.warnings.map((warning, index) => (
+                  {[
+                    ...(groupCascade
+                      ? [
+                          t('templateConfig', 'deleteGroupCascadeWarning')
+                            .replace('{{children}}', String(groupCascade.childCount))
+                            .replace('{{noun}}', groupCascade.noun)
+                            .replace('{{fields}}', String(groupCascade.fieldsCount)),
+                        ]
+                      : []),
+                    ...impact.warnings,
+                  ].map((warning, index) => (
                     <li key={index} className="text-sm">{warning}</li>
                   ))}
                 </ul>

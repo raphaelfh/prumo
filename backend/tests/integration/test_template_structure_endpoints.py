@@ -87,6 +87,33 @@ async def test_create_field_endpoint_persists_row(
 
 
 @pytest.mark.asyncio
+async def test_patch_section_label_only_body_still_valid(
+    db_session: AsyncSession,
+    db_client: AsyncClient,
+    auth_as_profile: UUID,
+) -> None:
+    """B-8 widened the PATCH body (SectionUpdateRequest) — the frontend's
+    existing label-only body must stay valid through the real ASGI stack,
+    and the response now carries ``entry_label``."""
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    clone = await clone_charms(db_session, project_id, auth_as_profile)
+    et_id = await first_entity_type_id(db_session, clone.project_template_id)
+
+    res = await db_client.patch(
+        f"/api/v1/projects/{project_id}/templates/{clone.project_template_id}/sections/{et_id}",
+        json={"label": "Renamed Via Endpoint"},
+    )
+    assert res.status_code == 200, res.text
+    envelope = res.json()
+    assert envelope["ok"] is True
+    assert envelope["data"]["label"] == "Renamed Via Endpoint"
+    assert "entry_label" in envelope["data"]
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
 async def test_create_field_endpoint_404_for_foreign_project(
     db_session: AsyncSession,
     db_client: AsyncClient,

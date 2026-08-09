@@ -44,6 +44,7 @@ function renderGrid(over: Partial<Parameters<typeof TemplateGrid>[0]> = {}) {
   const sectionActions: TemplateSectionActions = {
     onCommitRename: vi.fn(),
     onDelete: vi.fn(),
+    onAddPerModelSection: vi.fn(),
   };
   const props = {
     sections: tree,
@@ -57,6 +58,7 @@ function renderGrid(over: Partial<Parameters<typeof TemplateGrid>[0]> = {}) {
     onDeepLink: vi.fn(),
     sectionActions,
     onAddSection: vi.fn(),
+    onAddGroup: vi.fn(),
     onEscapeEscalate: vi.fn(),
     collapsed: new Set<string>(),
     onToggleCollapse: vi.fn(),

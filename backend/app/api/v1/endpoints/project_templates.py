@@ -58,7 +58,10 @@ from app.services.template_version_read_service import (
     get_active_version_tree,
     get_template_config_status,
 )
-from app.services.template_version_service import TemplateVersionService
+from app.services.template_version_service import (
+    PublishBlockedByMultiEntryError,
+    TemplateVersionService,
+)
 
 router = APIRouter()
 
@@ -94,6 +97,10 @@ async def clone_template_into_project(
         # B-4: re-importing over a pending draft would silently publish
         # it via the drift heal — refuse; Publish (or factory-restore by
         # deleting everything) is the exit.
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except PublishBlockedByMultiEntryError as e:
+        # B-8 review: the drift-heal republish inside clone re-checks the
+        # many->one cardinality rule; refuse like the pending-draft case.
         raise HTTPException(status_code=409, detail=str(e)) from e
     await db.commit()
     return ApiResponse.success(
@@ -228,6 +235,11 @@ async def republish_template_version(
         )
     except TemplateNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except PublishBlockedByMultiEntryError as e:
+        # B-8 review: publish-time re-check of the many->one cardinality
+        # rule (TOCTOU vs reviewers on the old 'many' snapshot). The
+        # message names the section; the Publish button toasts it.
+        raise HTTPException(status_code=409, detail=str(e)) from e
     await db.commit()
     return ApiResponse.success(
         RepublishTemplateVersionResponse(

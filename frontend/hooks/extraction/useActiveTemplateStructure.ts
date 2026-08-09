@@ -47,6 +47,7 @@ export function useActiveTemplateStructure(
         role: et.role ?? null,
         cardinality: et.cardinality ?? null,
         parent_entity_type_id: et.parent_entity_type_id ?? null,
+        entry_label: et.entry_label ?? null,
         sort_order: et.sort_order ?? 0,
         is_required: et.is_required,
         fields: (et.fields ?? []) as unknown as ExtractionField[],

@@ -1,4 +1,4 @@
-"""Direct endpoint-coroutine tests for the clone endpoint.
+"""Direct endpoint-coroutine tests for the clone + republish endpoints.
 
 httpx/ASGITransport lines don't register in diff-cover (the known ASGI
 blind spot), so these call the coroutine directly with the dependencies
@@ -17,6 +17,7 @@ from app.services.template_clone_service import (
     PendingConfigDraftError,
     TemplateNotFoundError,
 )
+from app.services.template_version_service import PublishBlockedByMultiEntryError
 
 
 def _request() -> MagicMock:
@@ -98,4 +99,50 @@ async def test_clone_maps_not_found_to_404(monkeypatch) -> None:
             current_user_sub=uuid.uuid4(),
         )
     assert exc.value.status_code == 404
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_clone_maps_publish_blocked_to_409(monkeypatch) -> None:
+    """The drift-heal republish inside clone can hit the publish-time
+    cardinality re-check (B-8 review); it maps like the pending-draft
+    refusal instead of a 500."""
+    monkeypatch.setattr(
+        endpoint_module,
+        "TemplateCloneService",
+        MagicMock(return_value=_service_raising(PublishBlockedByMultiEntryError("blocked"))),
+    )
+    db = AsyncMock()
+    with pytest.raises(HTTPException) as exc:
+        await endpoint_module.clone_template_into_project(
+            project_id=uuid.uuid4(),
+            body=CloneTemplateRequest(global_template_id=uuid.uuid4(), kind="extraction"),
+            request=_request(),
+            db=db,
+            current_user_sub=uuid.uuid4(),
+        )
+    assert exc.value.status_code == 409
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_republish_maps_publish_blocked_to_409(monkeypatch) -> None:
+    """B-8 review: the publish-time cardinality re-check surfaces as a
+    409 whose detail carries the section-naming message; no commit."""
+    service = MagicMock()
+    service.republish = AsyncMock(
+        side_effect=PublishBlockedByMultiEntryError('Cannot publish: section "Final predictors"')
+    )
+    monkeypatch.setattr(endpoint_module, "TemplateVersionService", MagicMock(return_value=service))
+    db = AsyncMock()
+    with pytest.raises(HTTPException) as exc:
+        await endpoint_module.republish_template_version(
+            project_id=uuid.uuid4(),
+            template_id=uuid.uuid4(),
+            request=_request(),
+            db=db,
+            current_user_sub=uuid.uuid4(),
+        )
+    assert exc.value.status_code == 409
+    assert "Final predictors" in str(exc.value.detail)
     db.commit.assert_not_awaited()

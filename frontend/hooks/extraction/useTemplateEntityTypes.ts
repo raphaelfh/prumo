@@ -30,6 +30,9 @@ export interface TemplateEntityTypeWithFields {
   role: string | null;
   cardinality: string | null;
   parent_entity_type_id: string | null;
+  /** Repeating-group entry noun (B-8) — null on non-containers;
+   * consumers interpolate with a 'model' fallback. */
+  entry_label: string | null;
   sort_order: number;
   /** Entity-level required flag (B-3b): supplied by the ACTIVE-snapshot
    * read; the live PostgREST select doesn't carry it (optional so its
@@ -49,7 +52,7 @@ export function useTemplateEntityTypes(templateId: string | null | undefined) {
       const { data, error } = await supabase
         .from('extraction_entity_types')
         .select(
-          'id, name, label, description, role, cardinality, parent_entity_type_id, sort_order, fields:extraction_fields(*)',
+          'id, name, label, description, role, cardinality, parent_entity_type_id, entry_label, sort_order, fields:extraction_fields(*)',
         )
         .eq('project_template_id', templateId as string)
         .order('sort_order', { ascending: true });
@@ -62,6 +65,7 @@ export function useTemplateEntityTypes(templateId: string | null | undefined) {
         role: (et.role ?? null) as string | null,
         cardinality: (et.cardinality ?? null) as string | null,
         parent_entity_type_id: (et.parent_entity_type_id ?? null) as string | null,
+        entry_label: (et.entry_label ?? null) as string | null,
         sort_order: (et.sort_order ?? 0) as number,
         fields: (et.fields ?? []) as unknown as ExtractionField[],
       }));

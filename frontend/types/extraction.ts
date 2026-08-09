@@ -99,6 +99,13 @@ export interface ExtractionEntityType {
   role: ExtractionEntityRole;
   sort_order: number;
   is_required: boolean;
+  /**
+   * Repeating-group entry noun (B-8): set only on ``model_container``
+   * rows; consumers interpolate it with a ``'model'`` fallback.
+   * Required (not optional) so hand-written mirrors and adapters cannot
+   * silently drop it.
+   */
+  entry_label: string | null;
   created_at: string;
 }
 

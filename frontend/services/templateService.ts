@@ -33,6 +33,9 @@ export type TemplateConfigStatus =
 type SectionRead = components['schemas']['SectionRead'];
 type SectionDeleteResponse = components['schemas']['SectionDeleteResponse'];
 type SectionRole = components['schemas']['SectionCreateRequest']['role'];
+type SectionCardinality = NonNullable<
+  components['schemas']['SectionUpdateRequest']['cardinality']
+>;
 
 /**
  * Publish the live template structure as a new active version.
@@ -40,19 +43,30 @@ type SectionRole = components['schemas']['SectionCreateRequest']['role'];
  * B-4: this is the explicit Publish button's call — config edits are
  * draft edits (the DB stamps `config_draft_since`) and only this
  * publish moves snapshots, prompts and editable-stage run pins.
+ *
+ * A 409 is the publish-time many→one cardinality re-check (B-8 review):
+ * its server message names the offending section, which no static copy
+ * key can carry — re-wrapped as PgError('409') with the message
+ * VERBATIM so useTemplateRepublish toasts it instead of the generic
+ * failure copy.
  */
 export async function republishTemplateVersion(
   projectId: string,
   templateId: string,
 ): Promise<ErrorResult<RepublishTemplateVersionResponse>> {
-  return toResult(
-    async () =>
-      apiClient<RepublishTemplateVersionResponse>(
+  return toResult(async () => {
+    try {
+      return await apiClient<RepublishTemplateVersionResponse>(
         `/api/v1/projects/${projectId}/templates/${templateId}/republish-version`,
         {method: 'POST'},
-      ),
-    'republishTemplateVersion',
-  );
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        throw new PgError(error.message, '409');
+      }
+      throw error;
+    }
+  }, 'republishTemplateVersion');
 }
 
 /** Draft/publish status for the Configuration tab's chip (B-4). */
@@ -148,6 +162,48 @@ export async function updateEntityTypeLabel(
       {method: 'PATCH', body: {label}},
     );
   }, 'updateEntityTypeLabel');
+}
+
+// --- Section update (B-8 D5) ---
+
+/** Partial section update — provided keys only; explicit nulls are
+ * rejected by the endpoint (omit instead), so the param type bans them. */
+export interface UpdateSectionChanges {
+  label?: string;
+  entry_label?: string;
+  cardinality?: SectionCardinality;
+}
+
+/**
+ * PATCH a section's label / entry_label / cardinality via the typed
+ * endpoint (role rules live server-side: entry_label on groups only,
+ * cardinality on per-model sections only).
+ *
+ * A many→one switch is REFUSED with a 409 while any model still holds
+ * multiple entries of the section — re-wrapped as PgError('23503')
+ * carrying friendly copy, the same translate-verbatim contract as
+ * `deleteSection` (the T6 inspector toasts it as-is; the raw backend
+ * message never reaches the user). NOTE: caller toasts success/error.
+ */
+export async function updateSection(
+  projectId: string,
+  templateId: string,
+  sectionId: string,
+  changes: UpdateSectionChanges,
+): Promise<ErrorResult<SectionRead>> {
+  return toResult(async () => {
+    try {
+      return await apiClient<SectionRead>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/sections/${sectionId}`,
+        {method: 'PATCH', body: changes},
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        throw new PgError(t('templateConfig', 'errors_cardinalityInUse'), '23503');
+      }
+      throw error;
+    }
+  }, 'updateSection');
 }
 
 // --- Section removal impact analysis ---
@@ -371,9 +427,14 @@ export interface CreateSectionParams {
   description?: string | null;
   cardinality: 'one' | 'many';
   /** Structural role — the caller states its intent (the old service
-   * hard-coded study_section). A model_section additionally needs a
-   * parent, which no caller creates today — the endpoint owns that rule. */
+   * hard-coded study_section). */
   role: SectionRole;
+  /** Owning group for a model_section (B-8); roots and containers omit
+   * it — the endpoint enforces the role/parent pairing. */
+  parentEntityTypeId?: string | null;
+  /** Repeating-group entry noun (B-8 D3) — model_container only; the
+   * server defaults a blank/omitted value to 'model'. */
+  entryLabel?: string | null;
   isRequired: boolean;
 }
 
@@ -397,6 +458,8 @@ export async function createSection(
           description: params.description || null,
           cardinality: params.cardinality,
           role: params.role,
+          parent_entity_type_id: params.parentEntityTypeId ?? null,
+          entry_label: params.entryLabel ?? null,
           is_required: params.isRequired,
         },
       },

@@ -11,6 +11,11 @@ import {act, render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
+// The panel mounts TemplateInspector, whose section pane reaches
+// templateService -> apiClient -> the supabase client, which throws on
+// import when env is absent (CI). Mocking the service keeps the module
+// tree out of these grid tests.
+vi.mock('@/services/templateService', () => ({updateSection: vi.fn()}));
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 vi.mock('@/hooks/extraction/useTemplateEntityTypes', () => ({
   useTemplateEntityTypes: vi.fn(),
@@ -135,7 +140,7 @@ describe('applyRetentionToFilter', () => {
 const sectionActions: TemplateSectionActions = {
   onCommitRename: vi.fn(),
   onDelete: vi.fn(),
-};
+  onAddPerModelSection: vi.fn()};
 
 /** Default queue stub: enqueueInsert echoes a deterministic client key. */
 function stubInsertQueue() {
@@ -194,7 +199,7 @@ describe('TemplateConfigGridPanel — retention wiring', () => {
         templateId="t1"
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
-        onAddSection={vi.fn()}
+        onAddSection={vi.fn()} onAddGroup={vi.fn()}
       />
     </TooltipProvider>
   );
@@ -276,7 +281,7 @@ describe('TemplateConfigGridPanel — optimistic ghost inserts (B-5 Task 4)', ()
         templateId="t1"
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
-        onAddSection={vi.fn()}
+        onAddSection={vi.fn()} onAddGroup={vi.fn()}
       />
     </TooltipProvider>
   );
@@ -469,7 +474,7 @@ describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', 
         templateId="t1"
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
-        onAddSection={vi.fn()}
+        onAddSection={vi.fn()} onAddGroup={vi.fn()}
       />
     </TooltipProvider>
   );
@@ -667,7 +672,7 @@ describe('TemplateConfigGridPanel — key-cell commit validation (B-5 review fix
         templateId="t1"
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
-        onAddSection={vi.fn()}
+        onAddSection={vi.fn()} onAddGroup={vi.fn()}
       />
     </TooltipProvider>
   );
@@ -780,7 +785,7 @@ describe('TemplateConfigGridPanel — inspector visibility (B-5 Task 5)', () => 
         templateId="t1"
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
-        onAddSection={vi.fn()}
+        onAddSection={vi.fn()} onAddGroup={vi.fn()}
       />
     </TooltipProvider>
   );
@@ -899,7 +904,7 @@ describe('TemplateConfigGridPanel — 3-rung Esc ladder (B-5 Task 6)', () => {
         templateId="t1"
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
-        onAddSection={vi.fn()}
+        onAddSection={vi.fn()} onAddGroup={vi.fn()}
       />
     </TooltipProvider>
   );

@@ -75,3 +75,46 @@ async def test_load_sections_maps_snapshot_metadata() -> None:
     assert f.description == "Dose given"
     assert f.is_required is True
     assert f.allow_other is True
+
+
+@pytest.mark.asyncio
+async def test_load_sections_carries_entry_label_and_defaults_it() -> None:
+    """B-8: the container's entry noun rides the pinned snapshot onto the
+    descriptors; entities without the key (pre-0051 snapshots) map to None."""
+    schema = {
+        "entity_types": [
+            {
+                "id": str(uuid4()),
+                "name": "prediction_models",
+                "label": "Prediction models",
+                "entry_label": "algorithm",
+                "parent_entity_type_id": None,
+                "cardinality": "many",
+                "role": "model_container",
+                "sort_order": 0,
+                "is_required": False,
+                "fields": [],
+            },
+            {
+                # No entry_label key at all — the old-snapshot shape.
+                "id": str(uuid4()),
+                "name": "study_info",
+                "label": "Study info",
+                "parent_entity_type_id": None,
+                "cardinality": "one",
+                "role": "study_section",
+                "sort_order": 1,
+                "is_required": False,
+                "fields": [],
+            },
+        ]
+    }
+    svc = ExtractionExportService(
+        db=_StubDB(_StubVersion(schema)),  # type: ignore[arg-type]
+        user_id=str(uuid4()),
+        storage=None,  # type: ignore[arg-type]
+    )
+    sections = await svc._load_sections(uuid4())
+
+    assert sections[0].entry_label == "algorithm"
+    assert sections[1].entry_label is None

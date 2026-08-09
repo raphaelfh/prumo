@@ -1,6 +1,14 @@
 import {useRef, useState} from 'react';
 import {useDroppable} from '@dnd-kit/core';
-import {ChevronDown, ChevronRight, GripVertical, Pencil, Plus, Trash2} from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  FolderPlus,
+  GripVertical,
+  Pencil,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 
 import {
   DropdownMenu,
@@ -26,6 +34,9 @@ import type {GridSection} from './templateTree';
 export interface TemplateSectionActions {
   onCommitRename: (sectionId: string, label: string) => void;
   onDelete: (section: GridSection) => void;
+  /** Opens AddSectionDialog in per-model mode preset to this GROUP (B-8
+   * D8) — reached from the group menu and the per-group ghost row. */
+  onAddPerModelSection: (group: GridSection) => void;
 }
 
 export function SectionHeaderRow({
@@ -106,8 +117,12 @@ export function SectionHeaderRow({
   const {setNodeRef: setDropRef, isOver} = useDroppable({id: section.id});
 
   const Chevron = collapsed ? ChevronRight : ChevronDown;
+  // B-8 D7: meta copy interpolates the group's entry noun ('{{noun}}'
+  // placeholder convention); keys without the placeholder pass through.
   const meta = [
-    ...section.metaKeys.map((key) => t('extraction', key)),
+    ...section.metaKeys.map((key) =>
+      t('extraction', key).replace('{{noun}}', section.entryNoun),
+    ),
     String(section.fieldCount),
   ];
   // Two roving stops inside the colSpan cell, in DOM order: the collapse
@@ -226,6 +241,18 @@ export function SectionHeaderRow({
               <Plus className="mr-2 size-3.5" aria-hidden />
               {t('extraction', 'gridNewField')}
             </DropdownMenuItem>
+            {section.kind === 'group' && (
+              // Dialog-opening item (B-8 D8): fires on select directly —
+              // the dialog's own focus trap takes over after the menu's
+              // FocusScope tears down, so no editor claim is needed.
+              <DropdownMenuItem onSelect={() => actions.onAddPerModelSection(section)}>
+                <FolderPlus className="mr-2 size-3.5" aria-hidden />
+                {t('templateConfig', 'newPerModelSection').replace(
+                  '{{noun}}',
+                  section.entryNoun,
+                )}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               onSelect={() => {
                 menuClaimedFocus.current = 'rename';
@@ -239,7 +266,11 @@ export function SectionHeaderRow({
               className="text-destructive focus:text-destructive"
             >
               <Trash2 className="mr-2 size-3.5" aria-hidden />
-              {t('extraction', 'removeButton')}
+              {/* D4: a group's delete states what it is — a cascade over
+                  the whole block; the confirm dialog carries the wording. */}
+              {section.kind === 'group'
+                ? t('templateConfig', 'deleteRepeatingGroup')
+                : t('extraction', 'removeButton')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

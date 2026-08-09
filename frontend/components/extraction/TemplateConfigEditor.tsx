@@ -23,6 +23,7 @@ import type {ExtractionField, FieldValidationResult} from '@/types/extraction';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {AddSectionDialog, ImportTemplateDialog, RemoveSectionDialog} from './dialogs';
+import type {AddSectionMode} from './dialogs/AddSectionDialog';
 import {DeleteFieldConfirm} from './dialogs/DeleteFieldConfirm';
 import {ExtractionEntityType} from '@/types/extraction';
 import {useDeleteTemplateField} from '@/hooks/extraction/useDeleteTemplateField';
@@ -41,9 +42,17 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   // it throws away the panel's view state: selection, search query,
   // collapsed sections and column toggles.
   const [initialLoading, setInitialLoading] = useState(true);
-  const [showAddSectionDialog, setShowAddSectionDialog] = useState(false);
+  // Which AddSectionDialog variant is open (B-8 D3); null = closed.
+  const [addSectionMode, setAddSectionMode] = useState<AddSectionMode | null>(null);
   const [removingSectionId, setRemovingSectionId] = useState<string | null>(null);
   const [removingSectionName, setRemovingSectionName] = useState('');
+  // Cascade info when the section being removed is a repeating GROUP
+  // (B-8 D4): child sections + their fields, from the grid tree.
+  const [removingCascade, setRemovingCascade] = useState<{
+    childCount: number;
+    fieldsCount: number;
+    noun: string;
+  } | null>(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
   // Delete confirm (B-5 Task 7): hosted HERE, outside the grid panel's
   // React subtree — a Radix dialog inside the panel would bubble its
@@ -133,7 +142,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   };
 
   const handleSectionAdded = () => {
-    setShowAddSectionDialog(false);
+    setAddSectionMode(null);
     void invalidateStructure();
     loadEntityTypes();
   };
@@ -141,6 +150,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   const handleSectionRemoved = () => {
     setRemovingSectionId(null);
     setRemovingSectionName('');
+    setRemovingCascade(null);
     void invalidateStructure();
     loadEntityTypes();
   };
@@ -202,10 +212,29 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
           onDelete: (section) => {
             setRemovingSectionId(section.id);
             setRemovingSectionName(section.label);
+            // D4: a group's confirm leads with the cascade warning —
+            // its child sections and their fields go with it.
+            setRemovingCascade(
+              section.kind === 'group'
+                ? {
+                    childCount: section.children.length,
+                    fieldsCount: section.totalFieldCount - section.fieldCount,
+                    noun: section.entryNoun,
+                  }
+                : null,
+            );
           },
+          onAddPerModelSection: (group) =>
+            setAddSectionMode({
+              kind: 'perModel',
+              parentId: group.id,
+              parentLabel: group.label,
+              entryNoun: group.entryNoun,
+            }),
         }}
         onDeleteField={setDeletingField}
-        onAddSection={() => setShowAddSectionDialog(true)}
+        onAddSection={() => setAddSectionMode({kind: 'root'})}
+        onAddGroup={() => setAddSectionMode({kind: 'group'})}
       />
       )}
 
@@ -227,9 +256,9 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                   <Download className="h-4 w-4 mr-2" />
                   {t('extraction', 'configImportTemplateButton')}
                 </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShowAddSectionDialog(true)}
+                <Button
+                  variant="outline"
+                  onClick={() => setAddSectionMode({kind: 'root'})}
                 >
                   <Plus className="h-4 w-4 mr-2" />
                     {t('extraction', 'addSection')}
@@ -244,13 +273,20 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
             the end-of-grid ghost row. A third button here was duplicate. */}
 
       {/* Dialogs. Field add/edit went inline in B-5 (ghost rows + the
-          inspector); AddSectionDialog SURVIVES until sections go inline
-          in B-8. */}
+          inspector); AddSectionDialog is the PERMANENT create surface
+          for sections — B-8 made it modal (root / repeating group /
+          per-model), reached from the grid's ＋▾ menus and ghost rows
+          (inline section creation was dropped in the B-8 plan). Keyed
+          by mode so the form re-initializes per variant. */}
       <AddSectionDialog
+        key={addSectionMode?.kind ?? 'root'}
         projectId={projectId}
         templateId={templateId}
-        open={showAddSectionDialog}
-        onOpenChange={setShowAddSectionDialog}
+        open={addSectionMode !== null}
+        mode={addSectionMode ?? {kind: 'root'}}
+        onOpenChange={(open) => {
+          if (!open) setAddSectionMode(null);
+        }}
         onSectionAdded={handleSectionAdded}
       />
 
@@ -259,11 +295,13 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         templateId={templateId}
         sectionId={removingSectionId}
         sectionName={removingSectionName}
+        groupCascade={removingCascade}
         open={!!removingSectionId}
         onOpenChange={(open) => {
           if (!open) {
             setRemovingSectionId(null);
             setRemovingSectionName('');
+            setRemovingCascade(null);
           }
         }}
         onSectionRemoved={handleSectionRemoved}

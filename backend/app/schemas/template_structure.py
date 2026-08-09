@@ -251,6 +251,15 @@ SectionLabel = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
 ]
 
+# The group entry noun on updates: when provided it must survive a trim
+# (a blanked input is a frontend no-op, never an API write). Create-side
+# the field is looser — blank collapses to the ``'model'`` default in
+# the container-rules validator instead of failing.
+SectionEntryLabel = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
+]
+
 
 class SectionCreateRequest(BaseModel):
     """Create a section (entity type) in the path template.
@@ -263,6 +272,9 @@ class SectionCreateRequest(BaseModel):
     frontend's read-then-write race. The ``ck_role_parent`` validator
     below mirrors the DB CHECK of the same name; parent OWNERSHIP
     (parent belongs to THIS template) is the service's BOLA job.
+    ``entry_label`` is the repeating group's entry noun (B-8, D3):
+    container-only, defaulting to ``'model'``; containers always repeat
+    (``cardinality='many'`` is enforced, never chosen).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -273,6 +285,7 @@ class SectionCreateRequest(BaseModel):
     cardinality: SectionCardinality
     role: SectionRole
     parent_entity_type_id: UUID | None = None
+    entry_label: str | None = Field(default=None, max_length=100)
     is_required: bool = False
 
     @model_validator(mode="after")
@@ -286,14 +299,44 @@ class SectionCreateRequest(BaseModel):
             raise ValueError(f"{self.role} must not set parent_entity_type_id")
         return self
 
+    @model_validator(mode="after")
+    def _enforce_container_rules(self) -> "SectionCreateRequest":
+        """D3: the entry noun exists only on the repeating group, and a
+        group always repeats — cardinality is forced to 'many' at create
+        time; an omitted/blank noun collapses to the 'model' default."""
+        if self.role != "model_container":
+            if self.entry_label is not None:
+                raise ValueError("entry_label is only valid for model_container sections")
+            return self
+        if self.cardinality != "many":
+            raise ValueError("model_container cardinality must be 'many'")
+        self.entry_label = (self.entry_label or "").strip() or "model"
+        return self
 
-class SectionRenameRequest(BaseModel):
-    """Rename a section: the label is the only client-editable attribute
-    after creation (structure changes are create/delete operations)."""
+
+class SectionUpdateRequest(BaseModel):
+    """Partial section update: ``label`` (any role), ``entry_label``
+    (repeating groups only) and ``cardinality`` (per-model sections
+    only) — the role rules live in the service, which owns the row
+    (B-8, D5). At least one field must be provided, and explicit nulls
+    are rejected (omit instead) so a smuggled ``{"label": null}`` can
+    never blank a column. Replaces the label-only SectionRenameRequest;
+    the pre-B-8 label-only body stays valid."""
 
     model_config = ConfigDict(extra="forbid")
 
-    label: SectionLabel
+    label: SectionLabel | None = None
+    entry_label: SectionEntryLabel | None = None
+    cardinality: SectionCardinality | None = None
+
+    @model_validator(mode="after")
+    def _require_one_field_no_nulls(self) -> "SectionUpdateRequest":
+        if not self.model_fields_set:
+            raise ValueError("at least one of label, entry_label, cardinality is required")
+        for field in self.model_fields_set:
+            if getattr(self, field) is None:
+                raise ValueError(f"{field} may be omitted but not null")
+        return self
 
 
 class SectionRead(BaseModel):
@@ -313,6 +356,8 @@ class SectionRead(BaseModel):
     cardinality: SectionCardinality
     role: SectionRole
     parent_entity_type_id: UUID | None = None
+    # Group entry noun (B-8): non-null only on model_container rows.
+    entry_label: str | None = None
     sort_order: int
     is_required: bool
     created_at: datetime

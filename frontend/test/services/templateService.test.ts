@@ -39,7 +39,9 @@ import {PgError} from '@/lib/error-utils';
 import {
   createSection,
   deleteSection,
+  republishTemplateVersion,
   updateEntityTypeLabel,
+  updateSection,
 } from '@/services/templateService';
 
 beforeEach(() => {
@@ -98,6 +100,8 @@ describe('createSection — typed create endpoint', () => {
           description: 'Outcome measures',
           cardinality: 'many',
           role: 'study_section',
+          parent_entity_type_id: null,
+          entry_label: null,
           is_required: true,
         },
       },
@@ -105,6 +109,29 @@ describe('createSection — typed create endpoint', () => {
     const body = (apiClientMock.mock.calls[0][1] as {body: Record<string, unknown>})
       .body;
     expect(body).not.toHaveProperty('sort_order');
+  });
+
+  it('threads entry_label and parent_entity_type_id into the body (B-8 D3), defaulting both to null', async () => {
+    apiClientMock.mockResolvedValue({id: 'sec-new'});
+    await createSection({
+      ...PARAMS,
+      role: 'model_container',
+      entryLabel: 'algorithm',
+    });
+    expect(
+      (apiClientMock.mock.calls[0][1] as {body: Record<string, unknown>}).body,
+    ).toMatchObject({entry_label: 'algorithm', parent_entity_type_id: null});
+
+    apiClientMock.mockClear();
+    apiClientMock.mockResolvedValue({id: 'sec-child'});
+    await createSection({
+      ...PARAMS,
+      role: 'model_section',
+      parentEntityTypeId: 'grp-1',
+    });
+    expect(
+      (apiClientMock.mock.calls[0][1] as {body: Record<string, unknown>}).body,
+    ).toMatchObject({entry_label: null, parent_entity_type_id: 'grp-1'});
   });
 
   it('normalizes a missing description to null and surfaces failures as ok:false', async () => {
@@ -120,6 +147,99 @@ describe('createSection — typed create endpoint', () => {
     );
     const result = await createSection(PARAMS);
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('updateSection — partial PATCH on the typed endpoint (B-8 D5)', () => {
+  it('PATCHes only the provided fields', async () => {
+    apiClientMock.mockResolvedValue({id: 'sec1', entry_label: 'algorithm'});
+
+    const result = await updateSection('p1', 't1', 'sec1', {
+      entry_label: 'algorithm',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/projects/p1/templates/t1/sections/sec1',
+      {method: 'PATCH', body: {entry_label: 'algorithm'}},
+    );
+    const body = (apiClientMock.mock.calls[0][1] as {body: Record<string, unknown>})
+      .body;
+    expect(Object.keys(body)).toEqual(['entry_label']);
+  });
+
+  it('sends a combined cardinality + label update as-is', async () => {
+    apiClientMock.mockResolvedValue({id: 'sec1'});
+
+    await updateSection('p1', 't1', 'sec1', {label: 'Renamed', cardinality: 'many'});
+
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/projects/p1/templates/t1/sections/sec1',
+      {method: 'PATCH', body: {label: 'Renamed', cardinality: 'many'}},
+    );
+  });
+
+  it("maps the backend 409 (cardinality in use) to PgError('23503') with the copy message", async () => {
+    apiClientMock.mockRejectedValue(
+      new ApiError(
+        'HTTP_ERROR',
+        "section 'Model results' still has parent instances with multiple entries",
+        409,
+      ),
+    );
+
+    const result = await updateSection('p1', 't1', 'sec1', {cardinality: 'one'});
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeInstanceOf(PgError);
+    expect((result.error as PgError).code).toBe('23503');
+    expect(result.error.message).toBe('templateConfig.errors_cardinalityInUse');
+    expect(result.error.message).not.toContain('parent instances');
+  });
+
+  it('passes a non-409 error through untouched (no PgError wrap)', async () => {
+    apiClientMock.mockRejectedValue(new ApiError('HTTP_ERROR', 'Section not found', 404));
+
+    const result = await updateSection('p1', 't1', 'sec1', {label: 'Renamed'});
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).not.toBeInstanceOf(PgError);
+    expect(result.error.message).toContain('Section not found');
+  });
+});
+
+describe('republishTemplateVersion — publish-blocked 409 (B-8 review)', () => {
+  it("maps the 409 to PgError('409') carrying the server message VERBATIM", async () => {
+    // The server message names the offending section — no static copy
+    // key can carry that, so it must survive to the toast untouched.
+    apiClientMock.mockRejectedValue(
+      new ApiError(
+        'HTTP_ERROR',
+        'Cannot publish: section "Final predictors" is set to repeat once per entry',
+        409,
+      ),
+    );
+
+    const result = await republishTemplateVersion('p1', 't1');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeInstanceOf(PgError);
+    expect((result.error as PgError).code).toBe('409');
+    expect(result.error.message).toContain('Final predictors');
+  });
+
+  it('passes a non-409 error through untouched (no PgError wrap)', async () => {
+    apiClientMock.mockRejectedValue(new ApiError('HTTP_ERROR', 'Template not found', 404));
+
+    const result = await republishTemplateVersion('p1', 't1');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).not.toBeInstanceOf(PgError);
+    expect(result.error.message).toContain('Template not found');
   });
 });
 

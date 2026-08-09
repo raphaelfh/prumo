@@ -1,15 +1,6 @@
 import {useMemo, useRef, useState} from 'react';
-import {PanelRight, Search, SlidersHorizontal, X} from 'lucide-react';
 import {toast} from 'sonner';
 
-import {Button} from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {Input} from '@/components/ui/input';
 import {
   Sheet,
   SheetContent,
@@ -18,7 +9,6 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import {Skeleton} from '@/components/ui/skeleton';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {useInsertTemplateField} from '@/hooks/extraction/useInsertTemplateField';
 import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
@@ -37,6 +27,7 @@ import {
   type TemplateSectionActions,
   type TextCellColumn,
 } from './TemplateGrid';
+import {TemplateConfigToolbar} from './TemplateConfigToolbar';
 import {TemplateInspector, type InspectorFocusGroup} from './TemplateInspector';
 import {TemplateOutlineRail} from './TemplateOutlineRail';
 import {MoveToSectionDialog} from './MoveToSectionDialog';
@@ -104,6 +95,9 @@ interface TemplateConfigGridPanelProps {
   onDeleteField: (field: ExtractionField) => void;
   sectionActions: TemplateSectionActions;
   onAddSection: () => void;
+  /** Bottom `＋▾` menu's "Add repeating group…" (B-8 D8) — the editor
+   * opens AddSectionDialog in group mode. */
+  onAddGroup: () => void;
 }
 
 export function TemplateConfigGridPanel({
@@ -112,6 +106,7 @@ export function TemplateConfigGridPanel({
   onDeleteField,
   sectionActions,
   onAddSection,
+  onAddGroup,
 }: TemplateConfigGridPanelProps) {
   // ONE request for the whole structure, TanStack-cached on the key every
   // config mutation invalidates (useTemplateConfigCaches) — so the grid
@@ -268,6 +263,14 @@ export function TemplateConfigGridPanel({
   const owningSection = selectedField
     ? findSection(displayTree, selectedField.entityTypeId)
     : null;
+  // B-8 T6: the locked Placement line for a selected per-model section —
+  // the label of the group whose children hold it.
+  const parentGroupLabel =
+    selectedSection?.kind === 'groupChild'
+      ? (displayTree.find((s) =>
+          s.children.some((c) => c.id === selectedSection.id),
+        )?.label ?? null)
+      : null;
   // A deep-link only travels with ITS field — selecting another row keeps
   // the inspector from stealing focus to a stale group.
   const inspectorFocusGroup: InspectorFocusGroup | null =
@@ -572,100 +575,18 @@ export function TemplateConfigGridPanel({
         }
       }}
     >
-      <div className="flex h-12 items-center gap-2 border-b px-3">
-        <div className="relative w-[240px]">
-          <Search
-            className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-            aria-hidden
-          />
-          <Input
-            value={query}
-            onChange={(event) => changeQuery(event.target.value)}
-            onKeyDown={(event) => {
-              // Esc in the search box is the box's OWN rung 3: clear the
-              // query and stop there — the ladder dispatcher must not
-              // close the inspector or steal focus from typing.
-              if (event.key === 'Escape') {
-                event.stopPropagation();
-                if (query) changeQuery('');
-              }
-            }}
-            placeholder={t('extraction', 'gridSearchPlaceholder')}
-            aria-label={t('extraction', 'gridSearchPlaceholder')}
-            className="h-8 pl-7 text-xs"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => changeQuery('')}
-              aria-label={t('extraction', 'gridSearchClear')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-3.5" aria-hidden />
-            </button>
-          )}
-        </div>
-
-        {filtered.isFiltering && (
-          <span className="tabular-nums text-xs text-muted-foreground">
-            {t('extraction', 'gridSearchCount')
-              .replace('{{n}}', String(filtered.matchCount))
-              .replace('{{total}}', String(filtered.totalCount))}
-          </span>
-        )}
-
-        <span className="flex-1" />
-
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8"
-                  aria-label={t('extraction', 'gridDisplayMenu')}
-                >
-                  <SlidersHorizontal className="size-3.5" aria-hidden />
-                </Button>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent>{t('extraction', 'gridDisplayMenu')}</TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent align="end">
-            <DropdownMenuCheckboxItem
-              checked={showKeyColumn}
-              onCheckedChange={(checked) => setShowKeyColumn(Boolean(checked))}
-            >
-              {t('extraction', 'gridDisplayKeyColumn')}
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={showOptionsColumn}
-              onCheckedChange={(checked) => setShowOptionsColumn(Boolean(checked))}
-            >
-              {t('extraction', 'gridDisplayOptionsColumn')}
-            </DropdownMenuCheckboxItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8"
-              aria-label={t('extraction', 'inspectorToggle')}
-              aria-pressed={isNarrow ? sheetOpen : dockedOpen}
-              onClick={toggleInspector}
-            >
-              <PanelRight className="size-3.5" aria-hidden />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('extraction', 'inspectorToggle')}</TooltipContent>
-        </Tooltip>
-      </div>
+      <TemplateConfigToolbar
+        query={query}
+        onQueryChange={changeQuery}
+        matchCount={filtered.isFiltering ? filtered.matchCount : null}
+        totalCount={filtered.totalCount}
+        showKeyColumn={showKeyColumn}
+        onShowKeyColumn={setShowKeyColumn}
+        showOptionsColumn={showOptionsColumn}
+        onShowOptionsColumn={setShowOptionsColumn}
+        inspectorPressed={isNarrow ? sheetOpen : dockedOpen}
+        onToggleInspector={toggleInspector}
+      />
 
       {/* B-6 T3: the surface's first live region (precedent SaveSlot) —
           announces completed keyboard moves, since the moved row may
@@ -723,6 +644,7 @@ export function TemplateConfigGridPanel({
                 pendingRowIds={pendingRowIds}
                 sectionActions={sectionActions}
                 onAddSection={onAddSection}
+                onAddGroup={onAddGroup}
                 // Esc ladder rungs 2-3: the grid escalates here once
                 // rung 1 (cancel edit) is resolved in the editors.
                 onEscapeEscalate={handleEscapeEscalate}
@@ -755,9 +677,12 @@ export function TemplateConfigGridPanel({
               </SheetHeader>
               <TemplateInspector
                 className="block h-full w-full border-l-0 pt-10"
+                projectId={projectId}
+                templateId={templateId}
                 field={selectedField}
                 section={selectedSection}
                 owningSection={owningSection}
+                parentGroupLabel={parentGroupLabel}
                 onSaveField={saveFieldUpdates}
                 saving={updateField.isPending}
                 sections={moveTargets}
@@ -770,9 +695,12 @@ export function TemplateConfigGridPanel({
         ) : (
           dockedOpen && (
             <TemplateInspector
+              projectId={projectId}
+              templateId={templateId}
               field={selectedField}
               section={selectedSection}
               owningSection={owningSection}
+              parentGroupLabel={parentGroupLabel}
               onSaveField={saveFieldUpdates}
               saving={updateField.isPending}
               sections={moveTargets}

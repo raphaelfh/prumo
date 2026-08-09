@@ -15,8 +15,9 @@ ceiling.
   renumber (replaces the old N-independent-UPDATEs loop).
 * ``POST   .../templates/{template_id}/sections`` — create a section (201);
   ``role``/``parent_entity_type_id`` are explicit, ``sort_order`` is
-  server-computed.
-* ``PATCH  .../templates/{template_id}/sections/{section_id}`` — rename.
+  server-computed; repeating groups carry ``entry_label`` (B-8).
+* ``PATCH  .../templates/{template_id}/sections/{section_id}`` — partial
+  update (label / entry_label / cardinality, role-gated in the service).
 * ``DELETE .../templates/{template_id}/sections/{section_id}`` — delete.
 
 All manager-gated (section/field editing is project-wide configuration)
@@ -38,7 +39,7 @@ from app.schemas.template_structure import (
     SectionCreateRequest,
     SectionDeleteResponse,
     SectionRead,
-    SectionRenameRequest,
+    SectionUpdateRequest,
     TemplateFieldCreateRequest,
     TemplateFieldDeleteResponse,
     TemplateFieldMoveRequest,
@@ -63,12 +64,15 @@ from app.services.template_field_service import (
 )
 from app.services.template_section_service import (
     OneContainerError,
+    SectionCardinalityInUseError,
+    SectionCardinalityRoleError,
+    SectionEntryLabelRoleError,
     SectionInUseError,
     SectionNotFoundError,
     SectionParentRoleError,
     create_section,
     delete_section,
-    rename_section,
+    update_section,
 )
 
 router = APIRouter()
@@ -282,22 +286,25 @@ async def create_template_section(
 @router.patch(
     "/{project_id}/templates/{template_id}/sections/{section_id}",
 )
-async def rename_template_section(
+async def update_template_section(
     project_id: UUID,
     template_id: UUID,
     section_id: UUID,
-    body: SectionRenameRequest,
+    body: SectionUpdateRequest,
     request: Request,
     db: DbSession,
     _user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[SectionRead]:
-    """Rename a section (label only).
+    """Partial section update: label, entry_label, cardinality (B-8).
 
-    A real rename stamps the B-4 draft marker via the 0048 trigger; a
-    no-op rename skips the write (no stamp).
+    Role rules are 422s (entry_label only on the repeating group;
+    cardinality only on a per-model section); many -> one with a parent
+    instance holding 2+ entries is a 409. A real change stamps the B-4
+    draft marker via the 0048 trigger; an all-no-op update skips the
+    write (no stamp).
     """
     try:
-        result = await rename_section(
+        result = await update_section(
             db,
             project_id=project_id,
             template_id=template_id,
@@ -306,6 +313,10 @@ async def rename_template_section(
         )
     except (ProjectTemplateNotFoundError, SectionNotFoundError) as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except (SectionEntryLabelRoleError, SectionCardinalityRoleError) as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except SectionCardinalityInUseError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
     await db.commit()
     return ApiResponse.success(
         result,

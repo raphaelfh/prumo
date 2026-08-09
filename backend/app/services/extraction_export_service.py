@@ -119,6 +119,9 @@ class SectionDescriptor:
     description: str | None = None
     # Machine name from the snapshot; see FieldDescriptor.name.
     name: str = ""
+    # Group entry noun from the pinned snapshot (B-8) — set on
+    # model_container rows; None elsewhere and on pre-0051 snapshots.
+    entry_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -847,6 +850,7 @@ class ExtractionExportService(LoggerMixin):
                 sort_order=s.sort_order,
                 description=s.description,
                 name=s.name,
+                entry_label=s.entry_label,
             )
             for s in snapshot_sections
         )
@@ -2063,6 +2067,12 @@ def _build_tidy_tables(
     non-model ``MANY`` fans out per ``section_instances``; non-model ``ONE`` is
     one row per article. ``MODEL_CONTAINER`` and field-less sections are skipped.
     """
+    # B-8: model records are labelled with the container's entry noun, read
+    # from the PINNED snapshot descriptors (never live rows). No container,
+    # or a pre-0051 snapshot without the key, falls back to the legacy
+    # "Model" stem byte-identically.
+    container = next((s for s in sections if s.role is ExtractionEntityRole.MODEL_CONTAINER), None)
+    model_stem = ((container.entry_label if container else None) or "model").title()
     tables: list[TidyTable] = []
     for section in sections:
         if section.role is ExtractionEntityRole.MODEL_CONTAINER:
@@ -2077,7 +2087,7 @@ def _build_tidy_tables(
                 continue
             if section.role is ExtractionEntityRole.MODEL_SECTION:
                 instances = article.model_instances
-                stem = "Model"
+                stem = model_stem
             elif section.cardinality is ExtractionCardinality.MANY:
                 instances = article.section_instances.get(section.entity_type_id, ())
                 stem = section.label

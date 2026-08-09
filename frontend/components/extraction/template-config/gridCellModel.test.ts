@@ -319,6 +319,48 @@ describe('gridCellModel — ghost transitions (Task 4: the Enter-chain)', () => 
     expect(s.mode).toBe('focus');
   });
 
+  it('a commit landing on a DIALOG-opening ghost (inlineEditor: false) stays in focus mode (B-8 D9)', () => {
+    // The per-group "New per-model section" ghost carries a REAL
+    // sectionId (the group's, for attribution) but mounts no editor —
+    // auto-entering edit there would soft-lock the roving focus.
+    const rows: GridRowShape[] = [
+      {rowId: 'cf-1', kind: 'field', sectionId: 'child'},
+      {
+        rowId: 'ghost:group-child:grp',
+        kind: 'ghost',
+        sectionId: 'grp',
+        inlineEditor: false,
+      },
+    ];
+    let s: GridModelState = {
+      ...initialGridState,
+      focus: at('cf-1', 'label'),
+      mode: 'edit',
+    };
+    s = gridReducer(s, {type: 'key', key: 'Enter', cellKind: 'text', rows});
+    expect(s.effects).toContainEqual({kind: 'commit', coord: at('cf-1', 'label')});
+    focused(s, 'ghost:group-child:grp', 'label');
+    expect(s.mode).toBe('focus');
+  });
+
+  it('an explicit inlineEditor: true ghost still Enter-chains into edit mode', () => {
+    // buildRowShapes now stamps field ghosts `inlineEditor: true`; the
+    // chain must behave exactly as it did when the flag was implicit.
+    const rows: GridRowShape[] = [
+      {rowId: 'f-9', kind: 'field', sectionId: 's-9'},
+      {rowId: 'ghost:s-9', kind: 'ghost', sectionId: 's-9', inlineEditor: true},
+    ];
+    let s: GridModelState = {
+      ...initialGridState,
+      focus: at('f-9', 'label'),
+      mode: 'edit',
+    };
+    s = gridReducer(s, {type: 'key', key: 'Enter', cellKind: 'text', rows});
+    focused(s, 'ghost:s-9', 'label');
+    expect(s.mode).toBe('edit');
+    expect(s.ghostDraftEmpty).toBe(true);
+  });
+
   it('setGhostDraftEmpty is identity when the flag is unchanged (no per-keystroke churn)', () => {
     const s = gridReducer(initialGridState, {
       type: 'setGhostDraftEmpty',

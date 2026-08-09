@@ -59,6 +59,8 @@ export interface TemplateEntityTypeInput {
   role?: string | null;
   cardinality?: string | null;
   parent_entity_type_id?: string | null;
+  /** Repeating-group entry noun (B-8) — meaningful on groups only. */
+  entry_label?: string | null;
   sort_order?: number;
 }
 
@@ -122,6 +124,14 @@ export interface GridSection {
   description: string | null;
   hasDescription: boolean;
   metaKeys: TemplateSectionMetaKey[];
+  /** Resolved entry noun for `{{noun}}` copy interpolation (B-8 D7): a
+   * group's own `entry_label ?? 'model'`; a groupChild inherits the
+   * PARENT group's resolved noun; roots carry the 'model' fallback
+   * (unused but total). */
+  entryNoun: string;
+  /** Raw cardinality ('one' | 'many' on the wire, absent → 'one') — the
+   * inspector's Repeats affordances read and edit it (B-8 T6). */
+  cardinality: string;
   fields: GridField[];
   children: GridSection[];
   /** Fields owned directly by this section. */
@@ -217,6 +227,7 @@ function metaKeysFor(
 function toGridSection(
   entityType: TemplateEntityTypeInput,
   kind: TemplateSectionKind,
+  entryNoun: string,
   fields: GridField[],
   children: GridSection[],
 ): GridSection {
@@ -229,6 +240,8 @@ function toGridSection(
     description,
     hasDescription: description !== null,
     metaKeys: metaKeysFor(kind, entityType.cardinality),
+    entryNoun,
+    cardinality: entityType.cardinality ?? 'one',
     fields,
     children,
     fieldCount: fields.length,
@@ -273,12 +286,22 @@ export function buildTemplateTree(
 
   return roots.map((entityType) => {
     const isGroup = entityType.role === ROLE_MODEL_CONTAINER;
+    // D7: the group resolves its own noun; children inherit the PARENT
+    // group's resolved value (their own entry_label is never consulted).
+    const entryNoun = (isGroup ? entityType.entry_label : null) ?? 'model';
     const children = (childrenByParent.get(entityType.id) ?? []).map((child) =>
-      toGridSection(child, 'groupChild', fieldsByEntityType.get(child.id) ?? [], []),
+      toGridSection(
+        child,
+        'groupChild',
+        entryNoun,
+        fieldsByEntityType.get(child.id) ?? [],
+        [],
+      ),
     );
     return toGridSection(
       entityType,
       isGroup ? 'group' : 'root',
+      entryNoun,
       fieldsByEntityType.get(entityType.id) ?? [],
       children,
     );

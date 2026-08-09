@@ -21,6 +21,11 @@ import {act, fireEvent, render, renderHook, screen, waitFor, within} from '@test
 import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
+// The panel mounts TemplateInspector, whose section pane reaches
+// templateService -> apiClient -> the supabase client, which throws on
+// import when env is absent (CI). Mocking the service keeps the module
+// tree out of these grid tests.
+vi.mock('@/services/templateService', () => ({updateSection: vi.fn()}));
 vi.mock('@/hooks/extraction/useTemplateEntityTypes', () => ({
   useTemplateEntityTypes: vi.fn(),
 }));
@@ -87,6 +92,7 @@ const field = (
 const sectionActions: TemplateSectionActions = {
   onCommitRename: vi.fn(),
   onDelete: vi.fn(),
+  onAddPerModelSection: vi.fn(),
 };
 
 /** DOM .focus() runs the grid's focusin sync — act-wrap outside userEvent. */
@@ -133,6 +139,7 @@ function renderGrid(over: Partial<Parameters<typeof TemplateGrid>[0]> = {}) {
     onMoveField: vi.fn(() => null),
     sectionActions,
     onAddSection: vi.fn(),
+    onAddGroup: vi.fn(),
     onEscapeEscalate: vi.fn(),
     collapsed: new Set<string>(),
     onToggleCollapse: vi.fn(),
@@ -429,6 +436,7 @@ function renderPanel() {
         onDeleteField={vi.fn()}
         sectionActions={sectionActions}
         onAddSection={vi.fn()}
+        onAddGroup={vi.fn()}
       />
     </TooltipProvider>,
   );

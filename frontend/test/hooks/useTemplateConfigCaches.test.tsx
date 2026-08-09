@@ -22,6 +22,7 @@ import {
   useTemplateRepublish,
 } from '@/hooks/extraction/useTemplateRepublish';
 import {runsKeys} from '@/hooks/runs/types';
+import {PgError} from '@/lib/error-utils';
 import {
   templateActiveStructureKeys,
   templateConfigStatusKeys,
@@ -186,6 +187,28 @@ describe('useTemplateRepublish (the Publish path)', () => {
 
     expect(outcome).toBeNull();
     expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the publish-blocked 409 (PgError '409') message VERBATIM", async () => {
+    // The backend 409 names the offending section (B-8 review); the
+    // generic errors_republishTemplate fallback must not swallow it.
+    const blocked =
+      'Cannot publish: section "Final predictors" is set to repeat once per entry';
+    republishTemplateVersion.mockResolvedValue({
+      ok: false,
+      error: new PgError(blocked, '409'),
+    });
+    const {queryClient, wrapper} = createWrapper();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const {result} = renderHook(() => useTemplateRepublish('p1', 't1'), {
+      wrapper,
+    });
+
+    const outcome = await result.current.republish();
+
+    expect(outcome).toBeNull();
+    expect(toast.error).toHaveBeenCalledWith(blocked);
     expect(invalidate).not.toHaveBeenCalled();
   });
 });
