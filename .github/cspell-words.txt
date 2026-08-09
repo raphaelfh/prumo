@@ -42,6 +42,8 @@ fluidcompute
 footgun
 frontmatter
 gatti
+graphify
+graphifyy
 gunicorn
 healthcheck
 hitl
