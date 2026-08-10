@@ -35,17 +35,19 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     # =================== CORS ===================
-    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,https://prumoai.vercel.app,https://prumo.vercel.app"
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,https://prumoai.vercel.app"
 
     @property
     def cors_origins_list(self) -> list[str]:
         """Return the CORS allow-list with a safe development fallback."""
         configured = [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
         # Always-allowed origins so a stale CORS_ORIGINS env can never lock
-        # out local dev or the canonical production frontend. The prod
-        # origin (prumoai.vercel.app) is pinned here because env drift
-        # between the Vercel domain and this list caused the 2026-05-31
-        # extraction outage (preflights rejected as "Disallowed CORS origin").
+        # out local dev or the canonical production frontend. Only
+        # prumoai.vercel.app is pinned: env drift between the Vercel domain
+        # and this list caused the 2026-05-31 extraction outage (preflights
+        # rejected as "Disallowed CORS origin"). Keep this list to origins
+        # the project actually controls -- these bypass CORS_ORIGINS
+        # entirely, so a host listed here cannot be revoked from the env.
         defaults = [
             "http://localhost:5173",
             "http://127.0.0.1:5173",
@@ -53,7 +55,6 @@ class Settings(BaseSettings):
             "http://localhost:8080",
             "http://127.0.0.1:8080",
             "https://prumoai.vercel.app",
-            "https://prumo.vercel.app",
         ]
         merged: list[str] = []
         for origin in [*configured, *defaults]:
