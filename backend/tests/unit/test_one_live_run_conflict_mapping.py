@@ -255,3 +255,79 @@ async def test_extract_models_maps_other_integrity_error_to_422() -> None:
         )
 
     assert exc_info.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_reopen_run_maps_one_live_run_to_409() -> None:
+    """Reopening onto an occupied coordinate is a conflict, not a crash.
+
+    `reopen_run`'s idempotency guard only recognises children OF THIS
+    PARENT, but `resolve_or_create_extract_run` (the "Run AI" path) can
+    create an UNPARENTED live run over a finalized coordinate — its lookup
+    filters on NON_TERMINAL_STAGES, so a finalized run is invisible to it.
+    The reopen then inserts, trips
+    uq_one_live_extraction_run_per_coord (0045), and — before this — the
+    endpoint caught only CannotReopenRunError and ValueError, so the
+    IntegrityError escaped as a 500 where the sibling create_run returns a
+    truthful 409.
+    """
+    from app.api.v1.endpoints.extraction_runs import reopen_run
+
+    service = MagicMock()
+    service.reopen_run = AsyncMock(
+        side_effect=_integrity_error(
+            f'duplicate key value violates unique constraint "{ONE_LIVE_RUN_CONSTRAINT}"',
+            constraint_name=ONE_LIVE_RUN_CONSTRAINT,
+        )
+    )
+    source_run = MagicMock()
+    source_run.project_id = uuid4()
+
+    with (
+        patch(f"{_RUNS_EP}._load_run_and_check_member", AsyncMock(return_value=source_run)),
+        patch(f"{_RUNS_EP}.ensure_project_reviewer", AsyncMock()),
+        patch(f"{_RUNS_EP}.RunLifecycleService", return_value=service),
+        patch(f"{_RUNS_EP}._trace", return_value=None),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await reopen_run(
+            run_id=uuid4(),
+            response=MagicMock(),
+            request=MagicMock(),
+            db=AsyncMock(),
+            current_user_sub=uuid4(),
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == ONE_LIVE_RUN_CONFLICT_DETAIL
+
+
+@pytest.mark.asyncio
+async def test_reopen_run_reraises_other_integrity_error() -> None:
+    """Only the one-live-run collision is a 409; anything else propagates."""
+    from app.api.v1.endpoints.extraction_runs import reopen_run
+
+    service = MagicMock()
+    service.reopen_run = AsyncMock(
+        side_effect=_integrity_error(
+            'insert or update violates foreign key constraint "some_fk"',
+            constraint_name="some_fk",
+        )
+    )
+    source_run = MagicMock()
+    source_run.project_id = uuid4()
+
+    with (
+        patch(f"{_RUNS_EP}._load_run_and_check_member", AsyncMock(return_value=source_run)),
+        patch(f"{_RUNS_EP}.ensure_project_reviewer", AsyncMock()),
+        patch(f"{_RUNS_EP}.RunLifecycleService", return_value=service),
+        patch(f"{_RUNS_EP}._trace", return_value=None),
+        pytest.raises(IntegrityError),
+    ):
+        await reopen_run(
+            run_id=uuid4(),
+            response=MagicMock(),
+            request=MagicMock(),
+            db=AsyncMock(),
+            current_user_sub=uuid4(),
+        )
