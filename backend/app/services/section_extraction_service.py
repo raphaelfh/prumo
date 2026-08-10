@@ -1709,7 +1709,7 @@ class SectionExtractionService(LoggerMixin):
            ``extract_for_run`` iterates every top-level entity_type of that
            run's template (QA / full-run surface).
         """
-        model = payload.model or settings.LLM_DEFAULT_MODEL
+        model = settings.LLM_DEFAULT_MODEL  # C1a: server-owned, never client-chosen
 
         if payload.entity_type_id is not None:
             return await self.extract_section(

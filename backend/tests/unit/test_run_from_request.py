@@ -4,6 +4,11 @@ Verifies that the 3-branch dispatch routes to the correct underlying
 method with the correct kwargs for a given SectionExtractionRequest, and
 that the result is returned unchanged.  No DB or LLM calls — each branch
 method is AsyncMock-patched on the service instance.
+
+Every branch forwards ``settings.LLM_DEFAULT_MODEL``: since C1a the engine
+is server-owned and the request carries no ``model`` at all, so there is no
+per-branch variation left to test (see
+``test_model_default_is_server_owned.py`` for the contract itself).
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -12,6 +17,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.infrastructure.storage import StorageAdapter
 from app.schemas.extraction import SectionExtractionRequest
 from app.services.section_extraction_service import (
@@ -118,7 +124,7 @@ class TestRunFromRequestSingleSection:
             template_id=template_id,
             entity_type_id=entity_type_id,
             parent_instance_id=None,
-            model=payload.model,
+            model=settings.LLM_DEFAULT_MODEL,
             run_id=None,
         )
 
@@ -151,7 +157,7 @@ class TestRunFromRequestSingleSection:
             template_id=template_id,
             entity_type_id=entity_type_id,
             parent_instance_id=parent_instance_id,
-            model=payload.model,
+            model=settings.LLM_DEFAULT_MODEL,
             run_id=existing_run_id,
         )
 
@@ -193,7 +199,7 @@ class TestRunFromRequestForRun:
             run_id=run_id,
             skip_fields_with_human_proposals=True,
             auto_advance_to_review=False,
-            model=payload.model,
+            model=settings.LLM_DEFAULT_MODEL,
         )
 
 
@@ -237,7 +243,7 @@ class TestRunFromRequestAllSections:
             parent_instance_id=parent_instance_id,
             section_ids=None,
             pdf_text=None,
-            model=payload.model,
+            model=settings.LLM_DEFAULT_MODEL,
             run_id=None,
         )
 
@@ -280,6 +286,6 @@ class TestRunFromRequestAllSections:
             parent_instance_id=parent_instance_id,
             section_ids=None,
             pdf_text=None,
-            model=payload.model,
+            model=settings.LLM_DEFAULT_MODEL,
             run_id=session_run_id,
         )

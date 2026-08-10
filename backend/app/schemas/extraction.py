@@ -11,8 +11,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.core.config import settings
-
 # =================== INTERNAL ASSEMBLY SCHEMAS ===================
 
 
@@ -36,11 +34,28 @@ class AssemblyInfo(BaseModel):
 
 
 class ExtractionOptions(BaseModel):
-    """Opcoes de extraction."""
+    """Extraction options — entirely inert.
 
-    model: str = Field(default=settings.LLM_DEFAULT_MODEL, description="Model to use")
-    temperature: float = Field(default=0.1, ge=0, le=2)
-    max_tokens: int | None = Field(default=None, ge=100, le=16000)
+    C1a removed ``model``: the engine is server-owned, so a client can no
+    longer choose it. The two fields left are inert too — nothing in
+    ``backend/app`` dereferences ``payload.options``, and what actually
+    reaches the LLM are the constants in ``app/llm/extractor.py``. They are
+    flagged ``deprecated`` in the OpenAPI contract while staying accepted on
+    the wire, so clients can be migrated off them before they are removed.
+    """
+
+    temperature: float = Field(
+        default=0.1,
+        ge=0,
+        le=2,
+        json_schema_extra={"deprecated": True},
+    )
+    max_tokens: int | None = Field(
+        default=None,
+        ge=100,
+        le=16000,
+        json_schema_extra={"deprecated": True},
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -93,10 +108,6 @@ class SectionExtractionRequest(BaseModel):
 
     # Opcoes de extraction
     options: ExtractionOptions | None = None
-    model: str | None = Field(
-        default=settings.LLM_DEFAULT_MODEL,
-        description="Model to use",
-    )
 
     # Reuse an existing run instead of creating a new one. Used by the
     # Quality-Assessment surface, which opens a Run via the HITL session
@@ -122,6 +133,15 @@ class SectionExtractionRequest(BaseModel):
         alias="skipFieldsWithHumanProposals",
     )
 
+    # NOTE: ``extra="forbid"`` is deliberately NOT set here yet (unlike
+    # ``ModelExtractionRequest``, which has no queue hop). This payload is
+    # enqueued to Celery as ``model_dump(mode="json")`` and rebuilt in the
+    # worker via ``SectionExtractionRequest(**payload_json)``, so jobs queued
+    # by a pre-C1a web process still carry the dropped ``model`` key. Under
+    # ``forbid`` that rebuild raises ValidationError, which
+    # ``is_transient_llm_error`` classifies as non-transient — the job would
+    # die terminally with no retry. Tighten in a LATER deploy, once no
+    # in-flight payload can still carry ``model``.
     model_config = ConfigDict(populate_by_name=True)
 
     @model_validator(mode="after")
@@ -247,13 +267,15 @@ class ModelExtractionRequest(BaseModel):
     run_id: UUID | None = Field(default=None, alias="runId")
 
     # Opcoes de extraction
-    model: str | None = Field(
-        default=settings.LLM_DEFAULT_MODEL,
-        description="Model to use",
-    )
     options: ExtractionOptions | None = None
 
-    model_config = ConfigDict(populate_by_name=True)
+    # C1a: the engine is server-owned. ``extra="forbid"`` turns a client that
+    # still sends ``model`` into a loud 422 instead of silently dropping its
+    # choice — same reasoning as ``CreateProposalRequest`` in
+    # ``schemas/extraction_run.py``. Safe here (and NOT on
+    # ``SectionExtractionRequest``) because this payload is validated once, in
+    # the request cycle: there is no Celery hop that could replay an older body.
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
 class IdentifiedModel(BaseModel):

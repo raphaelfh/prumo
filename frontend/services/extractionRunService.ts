@@ -26,7 +26,6 @@ export interface ExtractForRunRequest {
   runId: string;
   skipFieldsWithHumanProposals?: boolean;
   autoAdvanceToReview?: boolean;
-  model?: string;
 }
 
 /** Shape returned by POST /api/v1/extraction/sections (202 body). */
@@ -62,8 +61,7 @@ export function extractForRun(
           runId: params.runId,
           skipFieldsWithHumanProposals: params.skipFieldsWithHumanProposals ?? true,
           autoAdvanceToReview: params.autoAdvanceToReview ?? false,
-          // C1: no client-side default — see extractForRun's note.
-          ...(params.model ? {model: params.model} : {}),
+          // C1a: no `model` key — the engine is server-owned.
         },
       });
       return { jobId: raw.job_id };

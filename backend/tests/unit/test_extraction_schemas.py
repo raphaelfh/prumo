@@ -61,7 +61,6 @@ CITATION_UNION = TypeAdapter(CitationAnchor)
 class TestExtractionOptions:
     def test_defaults(self) -> None:
         opts = ExtractionOptions()
-        assert opts.model == "gpt-4o-mini"
         assert opts.temperature == 0.1
         assert opts.max_tokens is None
 
@@ -231,7 +230,6 @@ class TestSectionExtractionRequest:
         req = SectionExtractionRequest(**_section_req_base(entityTypeId=uuid4()))
         assert req.auto_advance_to_review is True
         assert req.skip_fields_with_human_proposals is False
-        assert req.model == "gpt-4o-mini"
 
     def test_dump_by_alias_is_camel(self) -> None:
         req = SectionExtractionRequest(**_section_req_base(entityTypeId=uuid4()))
@@ -638,7 +636,6 @@ class TestRemainingConstruction:
             articleId=uuid4(),
             templateId=uuid4(),
         )
-        assert req.model == "gpt-4o-mini"
         assert req.options is None
 
     def test_identified_model(self) -> None:

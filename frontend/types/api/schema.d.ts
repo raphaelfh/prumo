@@ -3389,19 +3389,24 @@ export interface components {
         };
         /**
          * ExtractionOptions
-         * @description Opcoes de extraction.
+         * @description Extraction options — entirely inert.
+         *
+         *     C1a removed ``model``: the engine is server-owned, so a client can no
+         *     longer choose it. The two fields left are inert too — nothing in
+         *     ``backend/app`` dereferences ``payload.options``, and what actually
+         *     reaches the LLM are the constants in ``app/llm/extractor.py``. They are
+         *     flagged ``deprecated`` in the OpenAPI contract while staying accepted on
+         *     the wire, so clients can be migrated off them before they are removed.
          */
         ExtractionOptions: {
-            /** Max Tokens */
+            /**
+             * Max Tokens
+             * @deprecated
+             */
             max_tokens?: number | null;
             /**
-             * Model
-             * @description Model to use
-             * @default gpt-4o-mini
-             */
-            model: string;
-            /**
              * Temperature
+             * @deprecated
              * @default 0.1
              */
             temperature: number;
@@ -3646,12 +3651,6 @@ export interface components {
              * Format: uuid
              */
             articleId: string;
-            /**
-             * Model
-             * @description Model to use
-             * @default gpt-4o-mini
-             */
-            model: string | null;
             options?: components["schemas"]["ExtractionOptions"] | null;
             /**
              * Projectid
@@ -4439,12 +4438,6 @@ export interface components {
              * @default false
              */
             extractAllSections: boolean;
-            /**
-             * Model
-             * @description Model to use
-             * @default gpt-4o-mini
-             */
-            model: string | null;
             options?: components["schemas"]["ExtractionOptions"] | null;
             /** Parentinstanceid */
             parentInstanceId?: string | null;

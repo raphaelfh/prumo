@@ -78,12 +78,24 @@ describe('extractForRun', () => {
       ...BASE_PARAMS,
       skipFieldsWithHumanProposals: false,
       autoAdvanceToReview: true,
-      model: 'gpt-4o',
     });
     const body = apiClientMock.mock.calls[0][1].body;
     expect(body.skipFieldsWithHumanProposals).toBe(false);
     expect(body.autoAdvanceToReview).toBe(true);
-    expect(body.model).toBe('gpt-4o');
+  });
+
+  it('never sends `model` — the engine is server-owned (C1a)', async () => {
+    // A client could previously put any string in `model` and it reached
+    // build_model() unvalidated. The backend request schema dropped the field.
+    // The cast smuggles one in anyway (`model` is no longer part of
+    // ExtractForRunRequest) to pin that the explicit-keyed body builder
+    // cannot leak an unknown extra onto the wire either.
+    apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
+
+    await extractForRun({...BASE_PARAMS, model: 'gpt-5'} as typeof BASE_PARAMS);
+
+    const body = apiClientMock.mock.calls[0][1].body;
+    expect('model' in body).toBe(false);
   });
 });
 
@@ -218,27 +230,5 @@ describe('writeRunFieldValue — decision write contract', () => {
       proposalRecordId: null,
     });
     expect(lastBody()).not.toHaveProperty('proposal_record_id');
-  });
-
-  it('omits `model` entirely when the caller did not choose one (C1)', async () => {
-    // The engine setting is the single source. The frontend used to send
-    // its own 'gpt-4o-mini', duplicating settings.LLM_DEFAULT_MODEL and
-    // silently overriding whatever the server would have chosen — while
-    // app.config.ts advertised 'gpt-5-mini' that nothing ever read.
-    apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
-
-    await extractForRun(BASE_PARAMS);
-
-    const body = apiClientMock.mock.calls[0]![1]!.body as Record<string, unknown>;
-    expect('model' in body).toBe(false);
-  });
-
-  it('still forwards an explicitly chosen model', async () => {
-    apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
-
-    await extractForRun({...BASE_PARAMS, model: 'gpt-5'});
-
-    const body = apiClientMock.mock.calls[0]![1]!.body as Record<string, unknown>;
-    expect(body.model).toBe('gpt-5');
   });
 });

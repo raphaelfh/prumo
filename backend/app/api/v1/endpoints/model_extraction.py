@@ -152,7 +152,7 @@ async def extract_models(
         project_id=str(payload.project_id),
         article_id=str(payload.article_id),
         template_id=str(payload.template_id),
-        model=payload.model,
+        model=settings.LLM_DEFAULT_MODEL,
     )
 
     await ensure_project_member(db, payload.project_id, current_user_sub)
@@ -177,7 +177,8 @@ async def extract_models(
             project_id=payload.project_id,
             article_id=payload.article_id,
             template_id=payload.template_id,
-            model=payload.model or settings.LLM_DEFAULT_MODEL,
+            # C1a: server-owned engine — never a client-supplied string.
+            model=settings.LLM_DEFAULT_MODEL,
             run_id=payload.run_id,
         )
 
