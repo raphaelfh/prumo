@@ -38,10 +38,12 @@ from app.schemas.hitl_session import (
     RepublishTemplateVersionRequest,
     RepublishTemplateVersionResponse,
     RestoreVersionResponse,
+    TakeOverDraftLockResponse,
     TemplateActiveVersionRead,
     TemplateConfigDiffRead,
     TemplateConfigStatusRead,
     TemplateDiscardRefusalResponse,
+    TemplateDraftLockRefusalResponse,
     TemplateInstructionRead,
     TemplateKind,
     TemplatePublishRefusalResponse,
@@ -62,6 +64,7 @@ from app.services.template_clone_service import (
     TemplateNotFoundError,
 )
 from app.services.template_discard_service import discard_draft
+from app.services.template_draft_lock_service import take_over_draft_lock
 from app.services.template_instruction_service import (
     get_template_instruction,
     set_template_instruction,
@@ -384,7 +387,7 @@ async def get_template_config_status_endpoint(
     template_id: UUID,
     request: Request,
     db: DbSession,
-    _user_sub: UUID = Depends(require_project_manager),
+    user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[TemplateConfigStatusRead]:
     """Draft/publish status for the Configuration tab's chip (B-4).
 
@@ -394,7 +397,7 @@ async def get_template_config_status_endpoint(
     """
     try:
         result = await get_template_config_status(
-            db, project_id=project_id, template_id=template_id
+            db, project_id=project_id, template_id=template_id, viewer_id=user_sub
         )
     except ProjectTemplateNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
@@ -533,6 +536,49 @@ async def restore_template_version(
             updated_entity_types=result.updated_entity_types,
             updated_fields=result.updated_fields,
             kept_count=result.kept_count,
+        ),
+        trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.post(
+    "/{project_id}/templates/{template_id}/draft-lock/take-over",
+    responses={status.HTTP_409_CONFLICT: {"model": TemplateDraftLockRefusalResponse}},
+)
+async def take_over_draft_lock_endpoint(
+    project_id: UUID,
+    template_id: UUID,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(require_project_manager),
+) -> ApiResponse[TakeOverDraftLockResponse]:
+    """Seize the advisory editor lock on this template's draft (B-9f).
+
+    Unconditional by design. The lock exists so two managers do not
+    silently overwrite each other, not to make a template unusable when
+    someone shuts their laptop — so the release valve is a human clicking
+    Take over, never a timer guessing whether the holder is still there.
+
+    Nothing is lost: there is exactly ONE draft, so everything the previous
+    holder wrote is already in it. They learn at their next write, which
+    refuses with the new holder named.
+    """
+    try:
+        result = await take_over_draft_lock(
+            db,
+            project_id=project_id,
+            template_id=template_id,
+            user_id=current_user_sub,
+        )
+    except TemplateNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    await db.commit()
+    return ApiResponse.success(
+        TakeOverDraftLockResponse(
+            previous_holder_id=str(result.previous_holder_id)
+            if result.previous_holder_id is not None
+            else None,
+            previous_holder_name=result.previous_holder_name,
         ),
         trace_id=getattr(request.state, "trace_id", None),
     )

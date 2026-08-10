@@ -232,7 +232,10 @@ class TemplateVersionService:
         await self.db.execute(
             update(ProjectExtractionTemplate)
             .where(ProjectExtractionTemplate.id == project_template_id)
-            .values(config_draft_since=None)
+            # B-9f: the editor lock dies with the draft it guarded —
+            # leaving a holder behind would show "being edited by …" over
+            # a template that has no draft at all.
+            .values(config_draft_since=None, config_draft_by=None)
         )
 
         snapshot = await build_template_version_snapshot(self.db, project_template_id)

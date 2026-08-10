@@ -149,7 +149,7 @@ async def _resolve_template_diff(
 
 
 async def get_template_config_status(
-    db: AsyncSession, *, project_id: UUID, template_id: UUID
+    db: AsyncSession, *, project_id: UUID, template_id: UUID, viewer_id: UUID | None = None
 ) -> TemplateConfigStatusRead:
     """Draft chip read model (B-4/B-9a), BOLA-scoped by (id, project_id).
 
@@ -174,6 +174,18 @@ async def get_template_config_status(
         # and unlike the count, it is answered for a clean template too
         # (a drifted marker-NULL template is discardable).
         discard_available=active is not None and baseline_is_restorable(active.schema_),
+        # B-9f: the advisory editor lock. `viewer_id` is optional so the
+        # existing callers keep working — they just never claim to be the
+        # holder, which is the safe default for a read that has no actor.
+        draft_holder_id=str(template.config_draft_by)
+        if template.config_draft_by is not None
+        else None,
+        draft_holder_name=(await _publisher_names(db, {template.config_draft_by})).get(
+            template.config_draft_by
+        )
+        if template.config_draft_by is not None
+        else None,
+        is_draft_holder=(viewer_id is not None and template.config_draft_by == viewer_id),
     )
 
 

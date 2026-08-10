@@ -213,6 +213,24 @@ class ProjectExtractionTemplate(BaseModel):
     config_draft_since: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    config_draft_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    """Who holds the ADVISORY editor lock on the open draft (B-9f).
+
+    ``SET NULL``, deliberately not ``created_by``'s ``RESTRICT``: deleting a
+    profile must never strand a template behind a lock nobody can release.
+
+    Set by the SERVICE on every config write, never by the 0048 triggers —
+    those run on an asyncpg session that sets no ``request.jwt.*``, so
+    ``auth.uid()`` is NULL there and a trigger cannot know the actor.
+
+    NULL while ``config_draft_since`` is set is a REAL state, not a bug: a
+    draft opened before this column existed, or one opened by a raw
+    PostgREST write (0049 left that grant in place). It reads as
+    "unattributed" and is claimable by the next writer."""
 
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

@@ -792,6 +792,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates/{template_id}/draft-lock/take-over": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take Over Draft Lock Endpoint
+         * @description Seize the advisory editor lock on this template's draft (B-9f).
+         *
+         *     Unconditional by design. The lock exists so two managers do not
+         *     silently overwrite each other, not to make a template unusable when
+         *     someone shuts their laptop — so the release valve is a human clicking
+         *     Take over, never a timer guessing whether the holder is still there.
+         *
+         *     Nothing is lost: there is exactly ONE draft, so everything the previous
+         *     holder wrote is already in it. They learn at their next write, which
+         *     refuses with the new holder named.
+         */
+        post: operations["take_over_draft_lock_endpoint_api_v1_projects__project_id__templates__template_id__draft_lock_take_over_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/{template_id}/fields": {
         parameters: {
             query?: never;
@@ -2186,6 +2215,23 @@ export interface components {
         ApiResponse_SectionRead_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["SectionRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TakeOverDraftLockResponse] */
+        ApiResponse_TakeOverDraftLockResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TakeOverDraftLockResponse"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -4623,6 +4669,17 @@ export interface components {
             traceId: string;
         };
         /**
+         * TakeOverDraftLockResponse
+         * @description Who was displaced by a take-over (B-9f), so the UI can say whose
+         *     draft was taken. Both ``None`` when nobody held it.
+         */
+        TakeOverDraftLockResponse: {
+            /** Previous Holder Id */
+            previous_holder_id?: string | null;
+            /** Previous Holder Name */
+            previous_holder_name?: string | null;
+        };
+        /**
          * TemplateActiveVersionRead
          * @description The template's ACTIVE version tree — what the worklist/dashboard
          *     progress and exports render from (B-3a). Never an empty stand-in for a
@@ -4742,8 +4799,17 @@ export interface components {
              * @default false
              */
             discard_available: boolean;
+            /** Draft Holder Id */
+            draft_holder_id?: string | null;
+            /** Draft Holder Name */
+            draft_holder_name?: string | null;
             /** Has Pending Changes */
             has_pending_changes: boolean;
+            /**
+             * Is Draft Holder
+             * @default false
+             */
+            is_draft_holder: boolean;
             /** Pending Change Count */
             pending_change_count?: number | null;
             /**
@@ -4807,6 +4873,46 @@ export interface components {
          */
         TemplateDiscardRefusalResponse: {
             error: components["schemas"]["TemplateDiscardRefusalError"];
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /** Trace Id */
+            trace_id?: string | null;
+        };
+        /**
+         * TemplateDraftLockRefusalCode
+         * @description Why a config write was refused by the advisory editor lock (B-9f).
+         *
+         *     Slice-local, like its two siblings: this is one surface's outcome, not
+         *     part of the cross-cutting ``ApiErrorCode`` vocabulary.
+         * @enum {string}
+         */
+        TemplateDraftLockRefusalCode: "DRAFT_LOCK_HELD";
+        /**
+         * TemplateDraftLockRefusalDetails
+         * @description Who holds the draft, so "Take over" is not a blind click.
+         */
+        TemplateDraftLockRefusalDetails: {
+            /** Holder Id */
+            holder_id?: string | null;
+            /** Holder Name */
+            holder_name?: string | null;
+        };
+        /** TemplateDraftLockRefusalError */
+        TemplateDraftLockRefusalError: {
+            code: components["schemas"]["TemplateDraftLockRefusalCode"];
+            details?: components["schemas"]["TemplateDraftLockRefusalDetails"] | null;
+            /** Message */
+            message: string;
+        };
+        /**
+         * TemplateDraftLockRefusalResponse
+         * @description The 409 body, declared so the generated client types the holder.
+         */
+        TemplateDraftLockRefusalResponse: {
+            error: components["schemas"]["TemplateDraftLockRefusalError"];
             /**
              * Ok
              * @default false
@@ -6602,6 +6708,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TemplateDiscardRefusalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    take_over_draft_lock_endpoint_api_v1_projects__project_id__templates__template_id__draft_lock_take_over_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TakeOverDraftLockResponse_"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateDraftLockRefusalResponse"];
                 };
             };
             /** @description Validation Error */
