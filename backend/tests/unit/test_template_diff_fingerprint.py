@@ -18,6 +18,7 @@ what keeps the shipped B-9b2a wire order untouched (D5).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from uuid import UUID
@@ -132,13 +133,17 @@ def test_hash_is_stable_across_processes() -> None:
         "label_path=['A','B']);"
         "print(fingerprint(UUID('11111111-1111-4111-8111-111111111111'), [row]))"
     )
+    # Inherit the parent environment and vary ONLY the seed. A minimal env
+    # looks tidier and is wrong: importing the app pulls in Settings, which
+    # finds backend/.env locally but has nothing to read on CI, so the
+    # subprocess died there while passing on a developer machine.
     digests = {
         subprocess.run(  # noqa: S603 - fixed argv, no shell
             [sys.executable, "-c", program],
             capture_output=True,
             text=True,
             check=True,
-            env={"PYTHONHASHSEED": seed, "PATH": "/usr/bin:/bin"},
+            env={**os.environ, "PYTHONHASHSEED": seed},
         ).stdout.strip()
         for seed in ("0", "1", "12345")
     }
