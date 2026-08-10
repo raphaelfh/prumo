@@ -106,7 +106,7 @@ function row(seed: RowSeed) {
   };
 }
 
-function diffOk(rows: RowSeed[]) {
+function diffOk(rows: RowSeed[], fingerprint = 'fp-1') {
   const changes: Record<Tier, ReturnType<typeof row>[]> = {
     additive: [],
     cosmetic: [],
@@ -120,6 +120,7 @@ function diffOk(rows: RowSeed[]) {
       project_template_id: 't1',
       status: 'available',
       changes,
+      fingerprint,
     },
   };
 }

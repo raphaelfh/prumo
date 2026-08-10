@@ -1,6 +1,5 @@
 import {useState} from 'react';
 import {RotateCcw, UploadCloud} from 'lucide-react';
-import {toast} from 'sonner';
 
 import {TemplateConfigDiffSheet} from '@/components/extraction/template-config/TemplateConfigDiffSheet';
 import {TemplateDiscardDialog} from '@/components/extraction/template-config/TemplateDiscardDialog';
@@ -9,7 +8,6 @@ import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {useTemplateConfigStatus} from '@/hooks/extraction/useTemplateConfigStatus';
 import {useTemplateInstruction} from '@/hooks/extraction/useTemplateInstruction';
-import {useTemplateRepublish} from '@/hooks/extraction/useTemplateRepublish';
 import {t} from '@/lib/copy';
 
 /**
@@ -17,9 +15,12 @@ import {t} from '@/lib/copy';
  * plus the B-9c2 Discard button that rewinds the draft.
  *
  * Publish is disabled unless the status query POSITIVELY reports pending
- * changes — loading and error states never enable a publish. The failure
- * toast lives in useTemplateRepublish; only the success toast is here
- * (it needs the returned version number).
+ * changes — loading and error states never enable a publish.
+ *
+ * B-9b2b: this button OPENS the diff sheet rather than publishing. The
+ * sheet owns the publish contract (the fingerprint of what was shown, the
+ * per-item acknowledgements, the note) and both toasts, because publishing
+ * from here meant the primary path never fetched a diff at all.
  *
  * B-9a adds the server-computed draft change count to the pending chip;
  * see the D9 note on `draftChangeCount` below for the null/zero rule.
@@ -42,12 +43,10 @@ export function TemplateConfigPublishControls({
   onDiffSheetOpenChange,
 }: TemplateConfigPublishControlsProps) {
   const {data: configStatus} = useTemplateConfigStatus(projectId, templateId);
-  const {republish} = useTemplateRepublish(projectId, templateId);
   // D10 — the Discard confirm pane warns about the AI instruction only when
   // there IS one. TemplateInstructionRow mounts this same key alongside us,
   // so the two observers dedupe into one request.
   const {data: instruction} = useTemplateInstruction(projectId, templateId);
-  const [publishing, setPublishing] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
 
   const hasPendingChanges = configStatus?.has_pending_changes === true;
@@ -89,23 +88,12 @@ export function TemplateConfigPublishControls({
     discardReason ?? 'discardTooltipAction',
   );
 
-  const handlePublish = () => {
-    setPublishing(true);
-    // Promise .finally (not try/finally — compiler-banned in component
-    // bodies) so an invalidation rejection can never strand the button.
-    void republish()
-      .then((result) => {
-        if (result) {
-          toast.success(
-            t('extraction', 'configPublishSuccess').replace(
-              '{{n}}',
-              String(result.version),
-            ),
-          );
-        }
-      })
-      .finally(() => setPublishing(false));
-  };
+  // B-9b2b: Publish no longer publishes. It opens the diff sheet, which
+  // owns the contract — the fingerprint of what was shown, the per-item
+  // acknowledgements and the note. Publishing straight from the command
+  // bar meant the primary product path never fetched a diff at all, so
+  // destructive changes shipped with nothing confirmed.
+  const handlePublish = () => onDiffSheetOpenChange(true);
 
   let chip = null;
   if (hasPendingChanges) {
@@ -178,7 +166,7 @@ export function TemplateConfigPublishControls({
               size="sm"
               className="h-8"
               onClick={() => void handlePublish()}
-              disabled={publishing || !hasPendingChanges}
+              disabled={!hasPendingChanges}
               aria-label={t('extraction', 'configPublishTooltip')}
             >
               <UploadCloud className="mr-2 h-4 w-4" aria-hidden />

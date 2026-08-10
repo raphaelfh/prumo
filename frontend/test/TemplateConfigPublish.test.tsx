@@ -45,6 +45,8 @@ import {
   republishTemplateVersion,
 } from './mocks/templateService';
 
+const onDiffSheetOpenChange = vi.fn();
+
 function renderControls() {
   const queryClient = new QueryClient({
     defaultOptions: {queries: {retry: false}},
@@ -56,13 +58,14 @@ function renderControls() {
     </QueryClientProvider>
   );
   return render(
-    // The diff sheet is never opened here — the editor owns that flag now,
-    // and this suite is about the chip, Publish and Discard.
+    // The sheet is never RENDERED here — the editor owns that flag. This
+    // suite asserts the chip, the Discard button, and that Publish asks
+    // for the sheet instead of publishing (B-9b2b).
     <TemplateConfigPublishControls
       projectId="p1"
       templateId="t1"
       diffSheetOpen={false}
-      onDiffSheetOpenChange={vi.fn()}
+      onDiffSheetOpenChange={onDiffSheetOpenChange}
     />,
     {wrapper},
   );
@@ -191,29 +194,20 @@ describe('TemplateConfigPublishControls', () => {
     expect(screen.queryByText('Unpublished changes')).not.toBeInTheDocument();
   });
 
-  it('click Publish → one POST, success toast with the version, status refetch', async () => {
+  it('click Publish → opens the diff sheet, publishes nothing on its own', async () => {
+    // B-9b2b: publishing from the command bar meant the primary product
+    // path never fetched a diff, so destructive changes shipped with
+    // nothing acknowledged. The button is now a door, not an action.
     loadTemplateConfigStatus.mockResolvedValue(status({has_pending_changes: true}));
-    republishTemplateVersion.mockResolvedValue({
-      ok: true,
-      data: {version_id: 'v-4', version: 4, changed: true, repinned_run_count: 2},
-    });
     renderControls();
 
     const button = await screen.findByRole('button', {name: extraction.configPublishTooltip});
     await waitFor(() => expect(button).toBeEnabled());
     await userEvent.click(button);
 
-    expect(republishTemplateVersion).toHaveBeenCalledTimes(1);
-    expect(republishTemplateVersion).toHaveBeenCalledWith('p1', 't1');
-    await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(
-        expect.stringContaining('4'),
-      ),
-    );
-    // The publish invalidates config-status — the query refetches.
-    await waitFor(() =>
-      expect(loadTemplateConfigStatus.mock.calls.length).toBeGreaterThan(1),
-    );
+    expect(onDiffSheetOpenChange).toHaveBeenCalledWith(true);
+    expect(republishTemplateVersion).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   // B-9a / D9 — the server-computed draft change count on the chip.
@@ -282,22 +276,6 @@ describe('TemplateConfigPublishControls', () => {
     expect(screen.queryByText('Unpublished changes')).not.toBeInTheDocument();
   });
 
-  it('publish failure → error toast (from the hook), button re-enabled', async () => {
-    loadTemplateConfigStatus.mockResolvedValue(status({has_pending_changes: true}));
-    republishTemplateVersion.mockResolvedValue({
-      ok: false,
-      error: {message: 'locked'},
-    });
-    renderControls();
-
-    const button = await screen.findByRole('button', {name: extraction.configPublishTooltip});
-    await waitFor(() => expect(button).toBeEnabled());
-    await userEvent.click(button);
-
-    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
-    expect(toast.success).not.toHaveBeenCalled();
-    await waitFor(() => expect(button).toBeEnabled());
-  });
 });
 
 // ---------------------------------------------------------------------------

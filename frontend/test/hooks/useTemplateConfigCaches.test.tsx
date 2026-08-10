@@ -211,7 +211,7 @@ describe('useTemplateRepublish (the Publish path)', () => {
       wrapper,
     });
 
-    const outcome = await result.current.republish();
+    const outcome = await result.current.republish({expected_fingerprint: 'fp'});
 
     expect(outcome).toEqual({
       version_id: 'v-2',
@@ -237,7 +237,7 @@ describe('useTemplateRepublish (the Publish path)', () => {
       wrapper,
     });
 
-    const outcome = await result.current.republish();
+    const outcome = await result.current.republish({expected_fingerprint: 'fp'});
 
     expect(outcome).toBeNull();
     expect(toast.error).toHaveBeenCalledTimes(1);
@@ -262,7 +262,7 @@ describe('useTemplateRepublish (the Publish path)', () => {
       wrapper,
     });
 
-    const outcome = await result.current.republish();
+    const outcome = await result.current.republish({expected_fingerprint: 'fp'});
 
     expect(outcome).toBeNull();
     expect(toast.error).toHaveBeenCalledWith(
@@ -285,7 +285,7 @@ describe('useTemplateRepublish (the Publish path)', () => {
     const {wrapper} = createWrapper();
     const {result} = renderHook(() => useTemplateRepublish('p1', 't1'), {wrapper});
 
-    await result.current.republish();
+    await result.current.republish({expected_fingerprint: 'fp'});
 
     expect(toast.error).toHaveBeenCalledWith(
       templateConfig.errors_publishBlockedOne.replace(
@@ -305,7 +305,7 @@ describe('useTemplateRepublish (the Publish path)', () => {
     const {wrapper} = createWrapper();
     const {result} = renderHook(() => useTemplateRepublish('p1', 't1'), {wrapper});
 
-    await result.current.republish();
+    await result.current.republish({expected_fingerprint: 'fp'});
 
     expect(toast.error).toHaveBeenCalledWith(templateConfig.errors_publishBlockedPlain);
   });

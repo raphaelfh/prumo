@@ -12,6 +12,8 @@
  *
  * @component
  */
+import {useState} from 'react';
+import {toast} from 'sonner';
 import {
   Accordion,
   AccordionContent,
@@ -19,6 +21,9 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import {Badge} from '@/components/ui/badge';
+import {Button} from '@/components/ui/button';
+import {Checkbox} from '@/components/ui/checkbox';
+import {Label} from '@/components/ui/label';
 import {ScrollArea} from '@/components/ui/scroll-area';
 import {
   Sheet,
@@ -27,7 +32,9 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {Textarea} from '@/components/ui/textarea';
 import {useTemplateConfigDiff} from '@/hooks/extraction/useTemplateConfigDiff';
+import {useTemplateRepublish} from '@/hooks/extraction/useTemplateRepublish';
 import {t} from '@/lib/copy';
 import type {templateConfig} from '@/lib/copy';
 import type {
@@ -174,7 +181,16 @@ function slotText(
     : value;
 }
 
-function DiffRow({row, tier}: {row: TemplateChangeRow; tier: ChangeTier}) {
+function DiffRow({
+  row,
+  tier,
+  ack,
+}: {
+  row: TemplateChangeRow;
+  tier: ChangeTier;
+  /** Present only for DESTRUCTIVE rows — the only tier the spec gates. */
+  ack?: {checked: boolean; onToggle: () => void};
+}) {
   const before = slotText(row.before, row.before_opaque_state);
   const after = slotText(row.after, row.after_opaque_state);
   // D6: the server computes `affects_recorded_data` for every node kind,
@@ -191,6 +207,18 @@ function DiffRow({row, tier}: {row: TemplateChangeRow; tier: ChangeTier}) {
       className="border-t border-border/40 px-5 py-2.5 first:border-t-0"
     >
       <div className="flex items-start justify-between gap-2">
+        {ack != null && (
+          <Checkbox
+            id={`ack-${row.id}`}
+            checked={ack.checked}
+            onCheckedChange={ack.onToggle}
+            className="mt-0.5 shrink-0"
+            aria-label={t('templateConfig', 'diffAckRowAria').replace(
+              '{{change}}',
+              sentenceOf(row),
+            )}
+          />
+        )}
         <span className="text-sm leading-5">{sentenceOf(row)}</span>
         {flagged && (
           <Badge
@@ -252,10 +280,14 @@ function DiffBody({
   diff,
   isPending,
   isError,
+  acked,
+  onToggleAck,
 }: {
   diff: TemplateConfigDiff | undefined;
   isPending: boolean;
   isError: boolean;
+  acked: ReadonlySet<string>;
+  onToggleAck: (rowId: string) => void;
 }) {
   if (isPending) return <DiffNotice copyKey="diffLoading" />;
   // `isError` is checked ahead of `diff == null`: with `gcTime: 0` a failed
@@ -294,7 +326,22 @@ function DiffBody({
             <AccordionContent className="p-0">
               <ul>
                 {rows.map((row) => (
-                  <DiffRow key={row.id} row={row} tier={tier} />
+                  <DiffRow
+                    key={row.id}
+                    row={row}
+                    tier={tier}
+                    // Spec §1: additive/cosmetic are pre-approved and
+                    // semantic is expand-to-view. Only destructive is
+                    // gated, so only destructive gets a checkbox.
+                    ack={
+                      tier === 'destructive'
+                        ? {
+                            checked: acked.has(row.id),
+                            onToggle: () => onToggleAck(row.id),
+                          }
+                        : undefined
+                    }
+                  />
                 ))}
               </ul>
             </AccordionContent>
@@ -305,6 +352,8 @@ function DiffBody({
   );
 }
 
+const NO_ACKS: ReadonlySet<string> = new Set();
+
 export function TemplateConfigDiffSheet({
   projectId,
   templateId,
@@ -314,7 +363,72 @@ export function TemplateConfigDiffSheet({
     data: diff,
     isPending,
     isError,
+    refetch,
   } = useTemplateConfigDiff(projectId, templateId);
+  const {republish} = useTemplateRepublish(projectId, templateId);
+  const [publishing, setPublishing] = useState(false);
+  const [note, setNote] = useState('');
+  // The drift phase (B-9b2b). Acknowledgements are stored WITH the
+  // fingerprint they were given for, and read back only when it still
+  // matches. A recompute — a refetch, a drift refusal, a reviewer
+  // recording an answer — therefore clears every tick without an effect
+  // and without a stale-state window. Carrying ticks across a recompute is
+  // the precise bug this slice exists to prevent: the manager would be
+  // confirming a list they never saw.
+  const [ackState, setAckState] = useState<{
+    fingerprint: string | null;
+    ids: ReadonlySet<string>;
+  }>({fingerprint: null, ids: NO_ACKS});
+
+  const fingerprint = diff?.fingerprint ?? null;
+  const acked = ackState.fingerprint === fingerprint ? ackState.ids : NO_ACKS;
+
+  const destructive =
+    diff?.status === 'available' ? (diff.changes?.destructive ?? []) : [];
+  const unacknowledged = destructive.filter((row) => !acked.has(row.id)).length;
+  const canPublish =
+    !publishing && diff?.status === 'available' && unacknowledged === 0;
+
+  const toggleAck = (rowId: string) => {
+    const next = new Set(acked);
+    if (!next.delete(rowId)) next.add(rowId);
+    setAckState({fingerprint, ids: next});
+  };
+
+  const handlePublish = () => {
+    setPublishing(true);
+    // Promise .finally, not try/finally — the React Compiler bans the
+    // latter in component bodies.
+    void republish({
+      expected_fingerprint: fingerprint,
+      acknowledged: destructive
+        .filter((row) => acked.has(row.id))
+        .map((row) => ({id: row.id, tier: row.tier})),
+      note: note.trim() === '' ? null : note.trim(),
+    })
+      .then((result) => {
+        if (result) {
+          toast.success(
+            t('extraction', 'configPublishSuccess').replace(
+              '{{n}}',
+              String(result.version),
+            ),
+          );
+          if (!result.changed && note.trim() !== '') {
+            // The no-op branch has no version row for the note to land on.
+            // Say so rather than swallowing what they typed.
+            toast.info(t('templateConfig', 'publishNoteNotRecorded'));
+          }
+          onClose();
+          return;
+        }
+        // A refusal already toasted. The projection the server saw differs
+        // from the one on screen, so re-read instead of letting the manager
+        // re-submit the same stale acknowledgements.
+        void refetch();
+      })
+      .finally(() => setPublishing(false));
+  };
 
   return (
     <Sheet
@@ -334,8 +448,43 @@ export function TemplateConfigDiffSheet({
           </SheetDescription>
         </SheetHeader>
         <ScrollArea className="min-h-0 flex-1">
-          <DiffBody diff={diff} isPending={isPending} isError={isError} />
+          <DiffBody
+            diff={diff}
+            isPending={isPending}
+            isError={isError}
+            acked={acked}
+            onToggleAck={toggleAck}
+          />
         </ScrollArea>
+        <div className="space-y-3 border-t px-5 py-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="publish-note" className="text-xs">
+              {t('templateConfig', 'publishNoteLabel')}
+            </Label>
+            <Textarea
+              id="publish-note"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder={t('templateConfig', 'publishNotePlaceholder')}
+              className="min-h-[3.5rem] text-sm"
+            />
+          </div>
+          {unacknowledged > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {t('templateConfig', 'publishAckPending').replace(
+                '{{n}}',
+                String(unacknowledged),
+              )}
+            </p>
+          )}
+          <Button
+            className="w-full"
+            onClick={handlePublish}
+            disabled={!canPublish}
+          >
+            {t('extraction', 'configPublishButton')}
+          </Button>
+        </div>
       </SheetContent>
     </Sheet>
   );

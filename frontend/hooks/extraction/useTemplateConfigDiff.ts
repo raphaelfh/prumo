@@ -44,5 +44,11 @@ export function useTemplateConfigDiff(projectId: string, templateId: string) {
     data: query.data,
     isPending: enabled && query.isPending,
     isError: query.isError,
+    // B-9b2b: a PUBLISH_DIFF_DRIFTED refusal means the server saw a
+    // different projection than the sheet is showing, so the sheet has to
+    // re-read rather than re-submit. Returning `refetch` keeps that in the
+    // query layer instead of making the component invalidate a key it does
+    // not own.
+    refetch: query.refetch,
   };
 }

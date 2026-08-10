@@ -228,7 +228,7 @@ describe('republishTemplateVersion — typed publish refusal (B-9b0 D4)', () => 
       ),
     );
 
-    const result = await republishTemplateVersion('p1', 't1');
+    const result = await republishTemplateVersion('p1', 't1', {expected_fingerprint: 'fp'});
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -253,7 +253,7 @@ describe('republishTemplateVersion — typed publish refusal (B-9b0 D4)', () => 
         new ApiError('PUBLISH_BLOCKED_BY_MULTI_ENTRY', 'refused', 409, undefined, details),
       );
 
-      const result = await republishTemplateVersion('p1', 't1');
+      const result = await republishTemplateVersion('p1', 't1', {expected_fingerprint: 'fp'});
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
@@ -269,7 +269,7 @@ describe('republishTemplateVersion — typed publish refusal (B-9b0 D4)', () => 
       }),
     );
 
-    const result = await republishTemplateVersion('p1', 't1');
+    const result = await republishTemplateVersion('p1', 't1', {expected_fingerprint: 'fp'});
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -281,7 +281,7 @@ describe('republishTemplateVersion — typed publish refusal (B-9b0 D4)', () => 
   it('leaves a 500 alone — a server fault is never framed as a policy refusal', async () => {
     apiClientMock.mockRejectedValue(new ApiError('HTTP_ERROR', 'Internal error', 500));
 
-    const result = await republishTemplateVersion('p1', 't1');
+    const result = await republishTemplateVersion('p1', 't1', {expected_fingerprint: 'fp'});
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
