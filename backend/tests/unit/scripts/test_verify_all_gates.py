@@ -68,10 +68,11 @@ def find_status_eating_gates(script_text: str) -> list[str]:
 
     Scope, stated honestly: this audits the *text of the gate invocation* and
     the body of any `bash -c '...'` it spells out inline. It cannot see into a
-    command it merely names — `make db-lint-migrations` swallows its own
-    squawk verdict and this audit will never notice. Pinning what each gate is
-    allowed to invoke is `test_gate_roster_is_pinned`'s job; keeping a human in
-    the loop on any new gate is the actual defense.
+    command it merely names — an `npm run lint` redefined in package.json as
+    `eslint . || true`, or a Makefile target that swallows its own tool's
+    verdict, both read as clean here. Pinning what each gate is allowed to
+    invoke is `test_gate_roster_is_pinned`'s job; keeping a human in the loop
+    on any new gate is the actual defense.
     """
     violations: list[str] = []
     for statement in _gate_statements(script_text):

@@ -804,10 +804,10 @@ class RunLifecycleService:
         project_template_id: UUID,
         user_id: UUID,
     ) -> ExtractionTemplateVersion:
-        """Mirror alembic 0010's backfill query for a single template.
+        """The v=1 snapshot (mirrors alembic 0010's backfill for one template).
 
-        Captures the current entity_types + fields tree as the v=1 snapshot.
-        Marked active so subsequent runs reuse it via the ``is_active`` index.
+        Live tree, active so later runs reuse it via ``is_active``. The ONE
+        version writer outside ``republish``: no baseline, so no B-9b2b acks.
         """
         snapshot = await build_template_version_snapshot(self.db, project_template_id)
 

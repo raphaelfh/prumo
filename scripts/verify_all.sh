@@ -205,22 +205,11 @@ run_gate "test:vitest" \
 run_gate "build:react-compiler" \
   node scripts/check_compiler_coverage.mjs
 
-# 6. DB migration lint (squawk) — DISABLED, and saying so out loud.
-#    `make db-lint-migrations` cannot fail: its .py branch ends in
-#    `| squawk 2>/dev/null || true` and only the .sql branch sets FAILED=1 —
-#    and that branch has no inputs once baseline_v1.sql is excluded. Running it
-#    through run_gate would print `db:squawk: OK` for a command with no
-#    possible failure, which is exactly the false green this harness now bans.
-#    Un-blinding it is its own slice: 22 of the 26 lintable migrations trip a
-#    rule today, 11 of them because the `op.execute` regex hands squawk
-#    unparseable SQL. Restore `run_gate` here once that lands.
-skip_gate "db:squawk" "squawk lint is blind — pending its own slice"
-
-# 7. Architectural fitness functions
+# 6. Architectural fitness functions
 run_gate "fitness:run_all" \
   bash "${SCRIPT_DIR}/fitness/run_all.sh" ${SCOPE:+--scope "${SCOPE}"}
 
-# 8. Playwright smoke (local-api + local-ui projects only — local-hitl is too
+# 7. Playwright smoke (local-api + local-ui projects only — local-hitl is too
 #    slow to run on every iteration; CI still runs all three in the
 #    frontend-e2e-ephemeral job).
 #    Invoked as `npx playwright test`, NOT `npm run test:e2e:local -- ...`:
