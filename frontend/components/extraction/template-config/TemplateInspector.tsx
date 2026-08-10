@@ -351,6 +351,12 @@ function FieldInspectorForm({
           </option>
         ))}
       </select>
+      {/* Nothing BLOCKS a type change: update_field has no such guard, and
+          B-9b2b deliberately chose ack-over-block — it lands as a DESTRUCTIVE
+          row needing a per-item confirmation at Publish. The hint used to say
+          "blocked", promising a guarantee the product does not make. Blocking
+          would also be the wrong product: a field typed `text` that should
+          have been `number` is exactly the correction a manager needs. */}
       <p className="mt-[3px] text-[10.5px] text-muted-foreground">
         {t('extraction', 'inspectorTypeChangeHint')}
       </p>

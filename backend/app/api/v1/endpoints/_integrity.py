@@ -15,7 +15,7 @@ conflict "referenced row does not exist". Callers use ``is_one_live_run_conflict
 to branch the 409 out and keep their own (truthful) mapping for anything else.
 """
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 # Source of truth is the index in ``ExtractionRun.__table_args__`` (migration
 # 0045). Duplicated here as a literal on purpose: the api layer must not import
@@ -47,3 +47,38 @@ def is_one_live_run_conflict(exc: IntegrityError) -> bool:
         if getattr(candidate, "constraint_name", None) == ONE_LIVE_RUN_CONSTRAINT:
             return True
     return ONE_LIVE_RUN_CONSTRAINT in str(orig or exc)
+
+
+# --------------------------------------------------------------------------
+# Deadlocks on the config-write path
+# --------------------------------------------------------------------------
+
+#: Postgres "deadlock detected". The transaction was chosen as the victim and
+#: rolled back whole, so retrying is the correct and only response.
+_DEADLOCK_SQLSTATE = "40P01"
+
+DEADLOCK_RETRY_DETAIL = (
+    "Someone else was editing this template at the same moment. Nothing was changed — try again."
+)
+
+
+def is_deadlock(exc: DBAPIError) -> bool:
+    """True when ``exc`` is Postgres 40P01.
+
+    Deliberately narrow. A serialization failure (40001) or an FK violation
+    looks adjacent and is not the same promise: telling a user to retry
+    something that will fail identically every time is worse than a 500,
+    because it hides a real bug behind a friendly sentence.
+
+    ``template_discard_service`` already makes this call for its own writes
+    (``DiscardRacedError``); the B-7 structure endpoints take the SAME
+    advisory locks through ``claim_draft_lock``, so they can lose the same
+    race and owe the same answer.
+    """
+    orig = getattr(exc, "orig", None)
+    for candidate in (orig, getattr(orig, "__cause__", None)):
+        if getattr(candidate, "sqlstate", None) == _DEADLOCK_SQLSTATE:
+            return True
+        if getattr(candidate, "pgcode", None) == _DEADLOCK_SQLSTATE:
+            return True
+    return False
