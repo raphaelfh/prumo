@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-08-05
+last_reviewed: 2026-08-10
 owner: '@raphaelfh'
 ---
 
@@ -112,7 +112,7 @@ republish; publish does).
 Editor writes move off direct PostgREST (CI forbids new `supabase.from`)
 onto typed endpoints: draft field/section CRUD (including reorder and
 move), server diff + severity classification, versions list (History),
-publish (with staged reopen set), per-change leaf revert, discard draft,
+publish, per-change leaf revert, discard draft,
 engine settings GET/PUT (lands in C1), engine availability per-user
 (lands in C2), and the sub-section/table writes gaining `role` +
 `parent_entity_type_id` (replacing the hard-coded `study_section`/`null`
@@ -351,23 +351,33 @@ inconsistent frontend hardcoded model defaults
 (`sectionExtractionService`, `extractionRunService`, `app.config.ts`)
 are deleted in C1 — the engine setting is the single source.
 
-## 6. Publish sheet — runs section (phase B3)
+## 6. Publish sheet — runs section — DROPPED 2026-08-10
 
-- Active (editable-stage) runs re-pin automatically (existing machinery);
-  the sheet states it.
-- Finalized runs: listed with per-run checkboxes — **reopen on publish**.
-  The staged set is explicit run IDs captured when the sheet opens,
-  executed inside the Publish transaction, re-validated server-side;
-  per-run outcomes reported afterwards ("1 reopened · Chen 2024 was
-  already reopened by L. Costa"). Confirmation types the fixed token
-  `REOPEN` — the count is displayed, never typed (it can change).
-  Arbitrator-only; the existing reviewer-level `POST /runs/{id}/reopen`
-  permission tightening is an owned breaking change, resolved via
-  `ExtractionHitlConfig.arbitrator_id` becoming authoritative.
-  Publishing never requires reopening; individual reopen stays available
-  post-publish via History/worklist.
-- The reopen extension consensus→extract → finalized→extract is a
-  deliberate, tested widening of the ADR-0017 transition.
+**Reopen-on-publish is not being built.** Only the first bullet survives:
+active (editable-stage) runs re-pin automatically via existing machinery,
+and the sheet says so. There is no runs checklist and no `REOPEN` token.
+
+An independent map of every reopen path, made before planning, found the
+section rested on a mistaken reading of the code: it conflated
+`reopen_to_extract` (destroys published state in place) with `reopen_run`
+(forks), and `finalized → extract` exists in no transition table. Both
+candidate implementations were unacceptable — destroying deletes
+`ExtractionPublishedState`, which *is* the value of record, and would have
+needed a new ADR **superseding** ADR-0017 rather than the "deliberate
+widening" this section claimed; forking collides with
+`uq_one_live_extraction_run_per_coord` (0045), where the first `23505`
+aborts the whole publish transaction. The stated permission model was also
+unbuildable: `ExtractionHitlConfig.arbitrator_id` is read by zero
+authorization paths today.
+
+Decisive argument for dropping it rather than redesigning it: this section
+already conceded that **publishing never requires reopening**, and
+individual reopen remains available post-publish via History/worklist. The
+feature bought nothing that did not already exist, at the price of an
+irreversible delete path.
+
+Full evidence:
+[`../plans/2026-08-10-template-config-b9g-reopen-findings.md`](../plans/2026-08-10-template-config-b9g-reopen-findings.md).
 
 ## 7. Probe (phase C3)
 
@@ -384,7 +394,7 @@ alternates stay distinct mechanisms.
 
 Typed codes end-to-end (ApiResponse envelope; `error.message`):
 draft lock conflict (409 + holder identity), publish diff drift
-(sheet recompute prompt), reopen set validation (per-run outcomes),
+(sheet recompute prompt),
 `LLM_KEY_UNAVAILABLE` (+ reason codes), endpoint unreachable /
 capability lost (fail fast, re-probe affordance), model-retired,
 unique-index race on group creation ("Someone else just added a
@@ -417,8 +427,8 @@ Per phase, integration-first (per project rules):
   announcements, WCAG drag alternative); Playwright E2E for
   add-field-chain and drag-between-sections; visual snapshots for the
   group block.
-- **B3:** reopen-on-publish transaction (concurrent reopen/finalize
-  races → per-run outcomes), leaf revert, restore-as-draft.
+- **B3:** leaf revert, restore-as-draft. (Reopen-on-publish dropped —
+  see §6.)
 - **C2:** SSRF validator unit suite (private IPs, redirects, rebinding,
   userinfo, schemes), capability probe against a stub OpenAI-compatible
   server, availability matrix per key state, alternates gating,

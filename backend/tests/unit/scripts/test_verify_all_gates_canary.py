@@ -30,7 +30,7 @@ run_gate "test:vitest" bash -c 'npm test -- --run | cat'
 """
 
 EXPLICIT_SWALLOW = """\
-run_gate "db:squawk" bash -c 'make db-lint-migrations || true'
+run_gate "lint:ruff" bash -c 'make lint-backend || true'
 """
 
 # `;` drops the `cd`'s verdict: pytest then runs against the wrong tree.
@@ -80,7 +80,7 @@ def test_audit_does_not_trip_on_prose_or_quoted_arguments() -> None:
     so the false-positive direction matters as much as the false-negative one.
     """
     prose = """\
-skip_gate "db:squawk" "no migrations; nothing to lint"
+skip_gate "test:vitest" "node_modules missing; run npm ci"
 skip_gate "smoke:playwright" "local stack unreachable — run make start"
 run_gate "fitness:custom" python3 check.py --pattern "^(alpha|beta)$"
 """

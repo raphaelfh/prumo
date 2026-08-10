@@ -1,5 +1,5 @@
 ---
-status: draft
+status: frozen
 last_reviewed: 2026-08-10
 owner: '@raphaelfh'
 ---
@@ -107,7 +107,25 @@ sibling `create_run` returns a truthful **409**. Reachable today via path
 C: finalized run → someone clicks "Run AI" → unparented live run → reopen
 collides → 500. B-9g would have made that the default failure mode.
 
-## The decision needed before B-9g can be planned
+## Decision taken (2026-08-10): §6 is dropped
+
+The owner chose to **remove §6 from the spec** rather than answer the three
+questions below. §6's own text conceded that "Publishing never requires
+reopening", and individual reopen remains available post-publish via
+History/worklist — so the feature bought nothing that did not already
+exist, at the price of an irreversible delete path and a new ADR
+superseding 0017.
+
+Consequently: `_ALLOWED_TRANSITIONS` is unchanged, `reopen_to_extract`
+keeps its `stage == consensus` guard, and `ExtractionHitlConfig.
+arbitrator_id` stays unread by authorization — `is_project_arbitrator`
+remains the sole authority. The 500→409 fix described above shipped on its
+own merits and is unaffected.
+
+The three questions are kept below as the record of what a future
+reopen-on-publish proposal would have to answer first.
+
+## The questions that would have had to be answered
 
 1. **Destroy in place, or fork?** They are different products. Destroying
    deletes records of record; forking silently creates N runs pinned to the
@@ -119,4 +137,4 @@ collides → 500. B-9g would have made that the default failure mode.
    authoritative (and §6's sentence about `arbitrator_id` is dropped), or
    per-config authority is designed from zero.
 
-Until 1–3 are answered, any B-9g plan is fiction.
+These went unanswered because the feature was dropped, not deferred.

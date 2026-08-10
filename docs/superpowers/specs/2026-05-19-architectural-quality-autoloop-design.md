@@ -62,7 +62,6 @@ Loop refuses to run without an explicit scope. Prevents the "boil the ocean" fai
 - `npm run lint`
 - `npx tsc --noEmit`
 - `uv run mypy app --ignore-missing-imports` (advisory weight 0.7 at MVP — matches CI policy)
-- `make db-lint-migrations` (squawk on touched Alembic files)
 - `scripts/fitness/*` — deterministic architecture checks; see §5.
 
 **Inferential lane** (5 subagents in parallel via `Agent` tool, each `subagent_type=Explore`):
@@ -117,10 +116,9 @@ APPLY always writes the failing test first (per [feedback_always_test](../../../
 3. `npx tsc --noEmit`
 4. `make test-backend`
 5. `npm test -- --run` (vitest, no watch)
-6. `make db-lint-migrations` (if migrations changed)
-7. `scripts/fitness/run_all.sh` (re-runs the deterministic architecture checks on the touched scope)
-8. **Playwright smoke** (the `local-api` + `local-ui` projects only, not `local-hitl` — too slow). Only triggers if frontend or any router changed.
-9. **LLM judge** — receives:
+6. `scripts/fitness/run_all.sh` (re-runs the deterministic architecture checks on the touched scope)
+7. **Playwright smoke** (the `local-api` + `local-ui` projects only, not `local-hitl` — too slow). Only triggers if frontend or any router changed.
+8. **LLM judge** — receives:
    - The original finding (verbatim).
    - The diff produced by APPLY.
    - The gate output above.
