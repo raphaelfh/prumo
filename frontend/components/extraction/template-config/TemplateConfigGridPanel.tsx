@@ -17,7 +17,6 @@ import {t} from '@/lib/copy';
 import {validateFieldImpact} from '@/services/extractionFieldService';
 import {
   ExtractionFieldSchema,
-  type ExtractionField,
   type ExtractionFieldUpdate,
 } from '@/types/extraction';
 
@@ -91,8 +90,18 @@ export {applyRetentionToFilter};
 interface TemplateConfigGridPanelProps {
   projectId: string;
   templateId: string;
-  /** Receives the RAW row — the editor-hosted DeleteFieldConfirm needs it. */
-  onDeleteField: (field: ExtractionField) => void;
+  /** Deletes the field. Resolves false when the write was refused — the
+   * six ``field_id`` RESTRICT FKs block a field holding recorded work,
+   * and the mutation hook already toasts that as friendly copy (B-9d). */
+  onDeleteField: (fieldId: string) => Promise<boolean>;
+  /** Re-creates a deleted field in its original slot, for Undo (B-9d).
+   * Optional, and the hook's `restoreField` is too: a mount without one
+   * still deletes, it just offers no Undo. */
+  onRestoreField?: (
+    field: GridField,
+    sectionId: string,
+    index: number,
+  ) => Promise<boolean>;
   sectionActions: TemplateSectionActions;
   onAddSection: () => void;
   /** Bottom `＋▾` menu's "Add repeating group…" (B-8 D8) — the editor
@@ -107,6 +116,7 @@ export function TemplateConfigGridPanel({
   projectId,
   templateId,
   onDeleteField,
+  onRestoreField,
   sectionActions,
   onAddSection,
   onAddGroup,
@@ -240,7 +250,12 @@ export function TemplateConfigGridPanel({
   // B-6 T5: the single-slot Undo wrapper. EVERY chokepoint (the grid's
   // chord + drag via onMoveField, the combobox via moveFieldToSectionEnd)
   // dispatches through it; Undo itself re-enters through the RAW moveFieldTo.
-  const {moveFieldWithUndo} = useStructuralUndo({tree, moveFieldTo});
+  const {moveFieldWithUndo, deleteFieldWithUndo} = useStructuralUndo({
+    tree,
+    moveFieldTo,
+    deleteField: onDeleteField,
+    restoreField: onRestoreField,
+  });
   const filtered = useMemo(
     () => filterTemplateTree(displayTree, query),
     [displayTree, query],
@@ -287,13 +302,6 @@ export function TemplateConfigGridPanel({
       : null;
 
   // The grid speaks in projections; the delete confirm needs the raw row.
-  const withRawField = (handler: (raw: ExtractionField) => void) => (gridField: GridField) => {
-    const raw = entityTypes
-      .flatMap((et) => et.fields)
-      .find((f) => f.id === gridField.id);
-    if (raw) handler(raw);
-  };
-
   /** Rung-2 focus return: the roving contract keeps EXACTLY ONE
    * `tabindex="0"` target inside the grid — that IS the focused cell.
    * The inspector may be unmounting under the focused element, so the
@@ -638,7 +646,7 @@ export function TemplateConfigGridPanel({
                 sections={visibleSections}
                 selection={selection}
                 onSelect={setSelection}
-                onDeleteField={withRawField(onDeleteField)}
+                onDeleteField={(field) => void deleteFieldWithUndo(field)}
                 onCommitField={handleCommitField}
                 onInsertField={handleInsertField}
                 onToggleRequired={(field, isRequired) =>

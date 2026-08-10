@@ -16,16 +16,16 @@ import {AlertTriangle, Download, Loader2, Plus, Settings} from 'lucide-react';
 import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructionRow';
 import {TemplateConfigGridPanel} from '@/components/extraction/template-config/TemplateConfigGridPanel';
 import {TemplateConfigPublishControls} from '@/components/extraction/template-config/TemplateConfigPublishControls';
-import type {ExtractionField, FieldValidationResult} from '@/types/extraction';
+import type {GridField} from '@/components/extraction/template-config/templateTree';
+import type {ExtractionFieldInsert} from '@/types/extraction';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {AddSectionDialog, ImportTemplateDialog, RemoveSectionDialog} from './dialogs';
 import type {AddSectionMode} from './dialogs/AddSectionDialog';
-import {DeleteFieldConfirm} from './dialogs/DeleteFieldConfirm';
 import {useDeleteTemplateField} from '@/hooks/extraction/useDeleteTemplateField';
 import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
 import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
-import {validateFieldImpact} from '@/services/extractionFieldService';
+import {insertField} from '@/services/extractionFieldService';
 
 interface TemplateConfigEditorProps {
   projectId: string;
@@ -68,46 +68,63 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   // while the grid hosts the inspector Sheet, and two modal sheets must
   // never stack — so the flag belongs to their nearest common owner, here.
   const [diffSheetOpen, setDiffSheetOpen] = useState(false);
-  // Delete confirm (B-5 Task 7): hosted HERE, outside the grid panel's
-  // React subtree — a Radix dialog inside the panel would bubble its
-  // dismiss-Esc (portals propagate through the REACT tree) into the
-  // panel's Esc ladder and close the inspector as a side effect.
-  const [deletingField, setDeletingField] = useState<ExtractionField | null>(null);
+  // B-9d retired the delete-confirm dialog: the Publish ☑ ack gates what
+  // reaches published data, and the grid arms a 6s Undo for the misclick.
+  // The mutation stays here because the editor owns the cache refresh.
   const deleteFieldMutation = useDeleteTemplateField(projectId, templateId);
   const {invalidateStructure, invalidateAfterImport} = useTemplateConfigCaches(
     projectId,
     templateId,
   );
 
-  /** Impact pre-fetch for DeleteFieldConfirm. Never rejects: a probe
-   * failure resolves as a cannot-delete result (the dialog's contract).
-   * The probe is ADVISORY — the service's 23503 mapping is the real
-   * invariant. */
-  const validateForDelete = async (fieldId: string): Promise<FieldValidationResult> => {
-    const result = await validateFieldImpact(
-      fieldId,
-      t('extraction', 'fieldSafeToModifyMessage'),
-      (count, articles) =>
-        t('extraction', 'fieldExtractedValuesMessage')
-          .replace('{{count}}', String(count))
-          .replace('{{n}}', String(articles)),
-    );
-    if (result.ok) return result.data;
-    console.error('Error validating field impact:', result.error);
-    return {
-      canDelete: false,
-      canUpdate: false,
-      canChangeType: false,
-      extractedValuesCount: 0,
-      affectedArticles: [],
-      message: t('extraction', 'errors_validateField'),
-    };
+  /** Undo a delete: re-create the field in the slot it came from (B-9d).
+   *
+   * The row comes back with a NEW id, and that is sound precisely BECAUSE
+   * the delete succeeded — every workflow `field_id` FK is ON DELETE
+   * RESTRICT, so a field that could be deleted provably had nothing
+   * pointing at it. What must survive is the SHAPE the manager authored,
+   * so the payload is rebuilt from the grid projection rather than from a
+   * bare name/type pair.
+   */
+  const restoreFieldNow = async (
+    field: GridField,
+    sectionId: string,
+    index: number,
+  ): Promise<boolean> => {
+    const result = await insertField(projectId, templateId, {
+      entity_type_id: sectionId,
+      name: field.key,
+      label: field.label,
+      description: field.description,
+      // The grid projection widens field_type to string; the insert
+      // payload wants the closed union the server validates anyway.
+      field_type: field.fieldType as ExtractionFieldInsert['field_type'],
+      is_required: field.isRequired,
+      validation_schema: {},
+      allowed_values: field.allowedValues,
+      unit: field.unit,
+      allowed_units: field.allowedUnits,
+      sort_order: index,
+    });
+    if (!result.ok) {
+      console.error('[TemplateConfigEditor] restore failed:', result.error);
+      toast.error(
+        `${t('templateConfig', 'errors_restoreField')}: ${result.error.message}`,
+      );
+      return false;
+    }
+    await invalidateStructure();
+    return true;
   };
 
-  /** Confirm-time delete: the SMALL dedicated mutation (service +
-   * invalidateStructure) — resolves a boolean for the dialog without
-   * throwing across a component body. */
-  const confirmDeleteField = (fieldId: string) =>
+  /** Delete a field. B-9d removed the confirmation modal — the Publish ☑
+   * ack is the real gate now (B-9b2b) and the grid arms a 6s Undo — so
+   * this is dispatched straight from the row.
+   *
+   * Resolves a boolean rather than throwing: the panel needs to know
+   * whether to arm Undo, and a refusal (recorded work, over the RESTRICT
+   * FKs) has already been toasted as friendly copy by the mutation hook. */
+  const deleteFieldNow = (fieldId: string) =>
     new Promise<boolean>((resolve) => {
       deleteFieldMutation.mutate(
         {fieldId},
@@ -277,7 +294,8 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
               entryNoun: group.entryNoun,
             }),
         }}
-        onDeleteField={setDeletingField}
+        onDeleteField={deleteFieldNow}
+        onRestoreField={restoreFieldNow}
         onAddSection={() => setAddSectionMode({kind: 'root'})}
         onAddGroup={() => setAddSectionMode({kind: 'group'})}
       />
@@ -351,21 +369,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         }}
         onSectionRemoved={handleSectionRemoved}
       />
-
-      {/* Mounted per open so the dialog's impact pre-fetch runs fresh.
-          Kept OUTSIDE the grid panel subtree (see deletingField above). */}
-      {deletingField && (
-        <DeleteFieldConfirm
-          field={deletingField}
-          open
-          onOpenChange={(open) => {
-            if (!open) setDeletingField(null);
-          }}
-          onConfirm={confirmDeleteField}
-          onValidate={validateForDelete}
-          confirmPending={deleteFieldMutation.isPending}
-        />
-      )}
 
       <ImportTemplateDialog
         projectId={projectId}

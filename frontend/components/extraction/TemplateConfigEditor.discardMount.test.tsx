@@ -25,7 +25,11 @@ const pgrst = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
-vi.mock('sonner', () => ({toast: {error: vi.fn(), success: vi.fn()}}));
+// `toast` is CALLABLE as well as a namespace: the B-9d undo arms
+// `toast(message, {action})`, which a namespace-only mock cannot receive.
+vi.mock('sonner', () => ({
+  toast: Object.assign(vi.fn(), {error: vi.fn(), success: vi.fn(), info: vi.fn()}),
+}));
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: () => ({
@@ -78,7 +82,6 @@ vi.mock('./dialogs', () => ({
   RemoveSectionDialog: () => null,
   ImportTemplateDialog: () => null,
 }));
-vi.mock('./dialogs/DeleteFieldConfirm', () => ({DeleteFieldConfirm: () => null}));
 
 import {TooltipProvider} from '@/components/ui/tooltip';
 import {useTemplateConfigStatus} from '@/hooks/extraction/useTemplateConfigStatus';
