@@ -803,8 +803,13 @@ async def test_republish_endpoint_publishes_edit(
     et_id = await _first_entity_type_id(db_session, clone.project_template_id)
     await _add_field_like_postgrest(db_session, et_id, "endpoint_field")
 
+    sheet = await db_client.get(
+        f"/api/v1/projects/{project_id}/templates/{clone.project_template_id}/config-diff"
+    )
+    assert sheet.status_code == 200, sheet.text
     res = await db_client.post(
-        f"/api/v1/projects/{project_id}/templates/{clone.project_template_id}/republish-version"
+        f"/api/v1/projects/{project_id}/templates/{clone.project_template_id}/republish-version",
+        json={"expected_fingerprint": sheet.json()["data"]["fingerprint"]},
     )
     assert res.status_code == 200, res.text
     data = res.json()["data"]
@@ -827,7 +832,8 @@ async def test_republish_endpoint_404_for_foreign_template(
 
     res = await db_client.post(
         f"/api/v1/projects/{SEED.primary_project}/templates/"
-        f"{clone.project_template_id}/republish-version"
+        f"{clone.project_template_id}/republish-version",
+        json={},
     )
     assert res.status_code == 404, res.text
 
@@ -853,8 +859,11 @@ async def test_republish_endpoint_409_when_publish_blocked(
         db_session, clone.project_template_id
     )
 
+    # The many->one re-check runs BEFORE the publish contract, so this
+    # refusal needs no fingerprint — an empty body reaches it.
     res = await db_client.post(
-        f"/api/v1/projects/{project_id}/templates/{clone.project_template_id}/republish-version"
+        f"/api/v1/projects/{project_id}/templates/{clone.project_template_id}/republish-version",
+        json={},
     )
     assert res.status_code == 409, res.text
     error = res.json()["error"]

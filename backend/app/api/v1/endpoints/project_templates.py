@@ -35,6 +35,7 @@ from app.schemas.hitl_session import (
     CloneTemplateResponse,
     DiscardDraftRequest,
     DiscardDraftResponse,
+    RepublishTemplateVersionRequest,
     RepublishTemplateVersionResponse,
     TemplateActiveVersionRead,
     TemplateConfigDiffRead,
@@ -73,6 +74,7 @@ from app.services.template_version_service import (
     PublishBlockedByMultiEntryError,
     TemplateVersionService,
 )
+from app.utils.rate_limiter import limiter
 
 router = APIRouter()
 
@@ -231,9 +233,16 @@ async def update_template_llm_instruction(
     # ``unknown`` that ``ErrorDetail.details: dict[str, Any]`` produces.
     responses={status.HTTP_409_CONFLICT: {"model": TemplatePublishRefusalResponse}},
 )
+# B-9b2b made a refused publish expensive: the contract re-check builds the
+# whole snapshot and unions the five workflow tables WHILE holding the
+# per-article advisory locks that also gate session-open and run creation.
+# A manager looping deliberately-stale fingerprints would stall reviewers,
+# so this joins the sibling write endpoints behind a limit.
+@limiter.limit("10/minute")
 async def republish_template_version(
     project_id: UUID,
     template_id: UUID,
+    body: RepublishTemplateVersionRequest,
     request: Request,
     db: DbSession,
     current_user_sub: UUID = Depends(require_project_manager),
@@ -260,6 +269,13 @@ async def republish_template_version(
             project_id=project_id,
             project_template_id=template_id,
             user_id=current_user_sub,
+            # Always True here, never inferred from what the body carried:
+            # this is the untrusted surface, and the service defaults the
+            # flag off only so the clone/restore callers stay unchanged.
+            enforce_publish_contract=True,
+            expected_fingerprint=body.expected_fingerprint,
+            acknowledged=body.acknowledged,
+            note=body.note,
         )
     except TemplateNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e

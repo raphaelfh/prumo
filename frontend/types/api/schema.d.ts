@@ -3748,6 +3748,24 @@ export interface components {
             /** Version */
             version: number;
         };
+        /**
+         * RepublishTemplateVersionRequest
+         * @description What the Publish button submits (B-9b2b).
+         *
+         *     A REQUIRED body even though every field is optional, matching
+         *     ``DiscardDraftRequest``: the endpoint is the untrusted surface, and an
+         *     optional body would let a bodyless POST skip the whole contract. With
+         *     the fields defaulted, a bodyless POST is a 422 rather than a silent
+         *     unchecked publish.
+         */
+        RepublishTemplateVersionRequest: {
+            /** Acknowledged */
+            acknowledged?: components["schemas"]["TemplateChangeAck"][];
+            /** Expected Fingerprint */
+            expected_fingerprint?: string | null;
+            /** Note */
+            note?: string | null;
+        };
         /** RepublishTemplateVersionResponse */
         RepublishTemplateVersionResponse: {
             /** Changed */
@@ -4503,6 +4521,22 @@ export interface components {
             version_id: string;
         };
         /**
+         * TemplateChangeAck
+         * @description One destructive row the manager ticked, as ``(id, tier)`` (B-9b2b).
+         *
+         *     The tier travels WITH the id on purpose. It is deliberately not part of
+         *     the composite row id (``template_diff_read._row_id``), so an ack whose
+         *     tier no longer matches the server's recomputed row reads as *absent*
+         *     rather than as a match — which is exactly right, because a reviewer
+         *     recording an answer can escalate a row to DESTRUCTIVE without anyone
+         *     touching the template.
+         */
+        TemplateChangeAck: {
+            /** Id */
+            id: string;
+            tier: components["schemas"]["ChangeTier"];
+        };
+        /**
          * TemplateChangeRowRead
          * @description One diff row on the wire, built by ``app.services.template_diff_read``.
          *
@@ -4564,6 +4598,8 @@ export interface components {
          */
         TemplateConfigDiffRead: {
             changes?: components["schemas"]["TemplateConfigDiffBuckets"];
+            /** Fingerprint */
+            fingerprint?: string | null;
             /**
              * Project Template Id
              * Format: uuid
@@ -4935,7 +4971,7 @@ export interface components {
          *     under ``fail_if_pending_draft``, which only the clone service passes).
          * @enum {string}
          */
-        TemplatePublishRefusalCode: "PUBLISH_BLOCKED_BY_MULTI_ENTRY";
+        TemplatePublishRefusalCode: "PUBLISH_BLOCKED_BY_MULTI_ENTRY" | "PUBLISH_DIFF_DRIFTED" | "PUBLISH_MISSING_ACKNOWLEDGEMENT";
         /**
          * TemplatePublishRefusalDetails
          * @description The ``error.details`` payload of a publish refusal (B-9b0 D2).
@@ -4944,8 +4980,16 @@ export interface components {
          *     ``section_label``: the un-ordered select behind it raised on the first
          *     heap row, so one name out of several was reported at random and the
          *     manager had to publish-read-fix-publish to find the rest.
+         *
+         *     One model across all three codes rather than a discriminated union: the
+         *     generated client already branches on ``code``, and three near-empty
+         *     payload models would buy nothing but three more names.
          */
         TemplatePublishRefusalDetails: {
+            /** Fingerprint */
+            fingerprint?: string | null;
+            /** Row Ids */
+            row_ids?: string[];
             /** Section Labels */
             section_labels?: string[];
         };
@@ -6658,7 +6702,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepublishTemplateVersionRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

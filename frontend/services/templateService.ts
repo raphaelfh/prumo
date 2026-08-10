@@ -27,6 +27,13 @@ import type {components} from '@/types/api/schema';
 export type RepublishTemplateVersionResponse =
   components['schemas']['RepublishTemplateVersionResponse'];
 
+/** What Publish submits: the fingerprint the sheet showed, the ticked
+ * destructive rows, and an optional note (B-9b2b). */
+export type RepublishTemplateVersionRequest =
+  components['schemas']['RepublishTemplateVersionRequest'];
+
+export type TemplateChangeAck = components['schemas']['TemplateChangeAck'];
+
 export type TemplateConfigStatus =
   components['schemas']['TemplateConfigStatusRead'];
 
@@ -120,12 +127,15 @@ function parsePublishSectionLabels(details: unknown): string[] {
 export async function republishTemplateVersion(
   projectId: string,
   templateId: string,
+  contract: RepublishTemplateVersionRequest,
 ): Promise<ErrorResult<RepublishTemplateVersionResponse>> {
   return toResult(async () => {
     try {
       return await apiClient<RepublishTemplateVersionResponse>(
         `/api/v1/projects/${projectId}/templates/${templateId}/republish-version`,
-        {method: 'POST'},
+        // The body is REQUIRED by the endpoint (B-9b2b): sending none would
+        // be a 422, never a silent unchecked publish.
+        {method: 'POST', body: JSON.stringify(contract)},
       );
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {

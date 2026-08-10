@@ -28,6 +28,7 @@ import {
 import {
   republishTemplateVersion,
   TemplatePublishRefusal,
+  type RepublishTemplateVersionRequest,
   type RepublishTemplateVersionResponse,
 } from '@/services/templateService';
 
@@ -42,6 +43,14 @@ import {
 function publishFailureMessage(error: Error): string {
   if (!(error instanceof TemplatePublishRefusal)) {
     return t('extraction', 'errors_republishTemplate');
+  }
+  // The two B-9b2b refusals are about the sheet, not the template's shape,
+  // so they get their own sentences rather than the section-list one.
+  if (error.code === 'PUBLISH_DIFF_DRIFTED') {
+    return t('templateConfig', 'errors_publishDrifted');
+  }
+  if (error.code === 'PUBLISH_MISSING_ACKNOWLEDGEMENT') {
+    return t('templateConfig', 'errors_publishMissingAck');
   }
   const {sectionLabels} = error;
   if (sectionLabels.length === 0) {
@@ -138,10 +147,12 @@ export function useTemplateRepublish(
    * success toast's version number) or null on failure — the failure
    * toast lives here so every caller reports consistently.
    */
-  const republish = async (): Promise<RepublishTemplateVersionResponse | null> => {
+  const republish = async (
+    contract: RepublishTemplateVersionRequest,
+  ): Promise<RepublishTemplateVersionResponse | null> => {
     if (!projectId || !templateId) return null;
 
-    const result = await republishTemplateVersion(projectId, templateId);
+    const result = await republishTemplateVersion(projectId, templateId, contract);
     if (!result.ok) {
       console.error('[useTemplateRepublish] publish failed:', result.error);
       toast.error(publishFailureMessage(result.error));

@@ -65,6 +65,61 @@ class CloneTemplateResponse(BaseModel):
     created: bool
 
 
+class TemplateChangeAck(BaseModel):
+    """One destructive row the manager ticked, as ``(id, tier)`` (B-9b2b).
+
+    The tier travels WITH the id on purpose. It is deliberately not part of
+    the composite row id (``template_diff_read._row_id``), so an ack whose
+    tier no longer matches the server's recomputed row reads as *absent*
+    rather than as a match — which is exactly right, because a reviewer
+    recording an answer can escalate a row to DESTRUCTIVE without anyone
+    touching the template."""
+
+    id: str = Field(max_length=200)
+    """A composite row id — five ``:``-joined components, the longest a
+    UUID. Bounded because it arrives from the client and is only ever
+    compared against server-computed ids."""
+    tier: ChangeTier
+
+
+class RepublishTemplateVersionRequest(BaseModel):
+    """What the Publish button submits (B-9b2b).
+
+    A REQUIRED body even though every field is optional, matching
+    ``DiscardDraftRequest``: the endpoint is the untrusted surface, and an
+    optional body would let a bodyless POST skip the whole contract. With
+    the fields defaulted, a bodyless POST is a 422 rather than a silent
+    unchecked publish."""
+
+    expected_fingerprint: str | None = Field(default=None, max_length=64)
+    """The ``fingerprint`` from the diff the manager was looking at.
+
+    Bounded to the exact width of a sha256 hex digest: it is only ever
+    compared for equality against one, so anything longer is noise the
+    server should refuse before it reaches the publish locks.
+
+    Nullable rather than required because two of the three diff statuses
+    carry none: a template that never published (``initial_version``) and
+    one whose baseline predates the wide snapshot (``baseline_too_old``).
+    The server refuses a ``None`` when its own under-lock recompute says
+    ``available`` — that is the case where the client should have had one."""
+
+    acknowledged: list[TemplateChangeAck] = Field(default_factory=list, max_length=500)
+    """Every DESTRUCTIVE row the manager ticked. Checked against the diff
+    the server recomputes under its locks, never against the client's view,
+    so an empty list refuses rather than skipping the check."""
+
+    note: str | None = Field(default=None, max_length=2000)
+    """Optional prose recorded on the new version (History renders it).
+
+    Recorded only when the publish actually spawns a version. A draft whose
+    edits cancel out (A->B->A) still clears its marker, but has no new row
+    for a note to land on, and rewriting the current row's note would
+    attribute prose to a version someone else published. The response's
+    ``changed=False`` is the signal that this happened — the sheet says so
+    rather than swallowing what the manager typed."""
+
+
 class RepublishTemplateVersionResponse(BaseModel):
     version_id: UUID
     version: int
@@ -196,6 +251,16 @@ class TemplatePublishRefusalCode(StrEnum):
     """
 
     PUBLISH_BLOCKED_BY_MULTI_ENTRY = "PUBLISH_BLOCKED_BY_MULTI_ENTRY"
+    PUBLISH_DIFF_DRIFTED = "PUBLISH_DIFF_DRIFTED"
+    """The projection moved under the manager (B-9b2b). Recoverable by
+    re-rendering the sheet — ``details.fingerprint`` carries the fresh value
+    so the client needs no second round trip. Also returned when the client
+    sent no fingerprint at all for a diff the server can compute: that is
+    the same situation, a sheet the manager never saw."""
+    PUBLISH_MISSING_ACKNOWLEDGEMENT = "PUBLISH_MISSING_ACKNOWLEDGEMENT"
+    """A DESTRUCTIVE row was not ticked (B-9b2b). ``details.row_ids`` names
+    every one, sorted by composite id, so the sheet marks them all in one
+    pass instead of surfacing the next on each retry."""
 
 
 class TemplatePublishRefusalDetails(BaseModel):
@@ -204,9 +269,21 @@ class TemplatePublishRefusalDetails(BaseModel):
     EVERY offending section, ordered by ``sort_order`` — never a single
     ``section_label``: the un-ordered select behind it raised on the first
     heap row, so one name out of several was reported at random and the
-    manager had to publish-read-fix-publish to find the rest."""
+    manager had to publish-read-fix-publish to find the rest.
+
+    One model across all three codes rather than a discriminated union: the
+    generated client already branches on ``code``, and three near-empty
+    payload models would buy nothing but three more names."""
 
     section_labels: list[str] = Field(default_factory=list)
+    row_ids: list[str] = Field(default_factory=list)
+    """Every unacknowledged DESTRUCTIVE row, for
+    ``PUBLISH_MISSING_ACKNOWLEDGEMENT``. Composite ids, not labels: the
+    client keys its checkboxes by exactly these."""
+    fingerprint: str | None = None
+    """The server's freshly computed fingerprint, for
+    ``PUBLISH_DIFF_DRIFTED`` — what the manager should have been looking
+    at."""
 
 
 class TemplatePublishRefusalError(BaseModel):
@@ -354,6 +431,17 @@ class TemplateConfigDiffRead(BaseModel):
     project_template_id: UUID
     status: DiffStatus
     changes: TemplateConfigDiffBuckets = Field(default_factory=TemplateConfigDiffBuckets)
+    fingerprint: str | None = None
+    """What the client is looking at, hashed (B-9b2b).
+
+    Sent back on Publish so the server can refuse when the projection moved
+    under the manager — a concurrent publish, or a reviewer recording an
+    answer that escalates a tier without touching the template. ``None`` for
+    the two non-``available`` statuses: they carry no rows, so there is
+    nothing to acknowledge and nothing to drift.
+
+    Opaque to the client: it is produced and compared server-side only
+    (``template_diff_read.fingerprint``), never re-derived on the wire."""
 
 
 class TemplateActiveVersionRead(BaseModel):

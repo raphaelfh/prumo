@@ -6,22 +6,53 @@ passed explicitly — mirroring test_template_instruction_endpoint.py.
 """
 
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 
 import app.api.v1.endpoints.project_templates as endpoint_module
-from app.schemas.hitl_session import CloneTemplateRequest, TemplatePublishRefusalCode
+from app.domain.template_change import ChangeTier
+from app.main import app
+from app.schemas.hitl_session import (
+    CloneTemplateRequest,
+    RepublishTemplateVersionRequest,
+    TemplateChangeAck,
+    TemplatePublishRefusalCode,
+)
 from app.services.template_clone_service import (
     PendingConfigDraftError,
     TemplateNotFoundError,
 )
-from app.services.template_version_service import PublishBlockedByMultiEntryError
+from app.services.template_version_service import (
+    PublishBlockedByMultiEntryError,
+    PublishDiffDriftedError,
+    PublishMissingAcknowledgementError,
+)
 
 
-def _request() -> MagicMock:
-    request = MagicMock()
+def _request() -> Request:
+    """A REAL starlette Request, not a MagicMock.
+
+    ``republish_template_version`` carries ``@limiter.limit`` (B-9b2b), and
+    slowapi rejects anything that is not a genuine ``Request`` — a mock
+    would trade the rate limit for this file's direct endpoint-coroutine
+    coverage, which exists precisely because ASGI-level tests do not
+    register in diff-cover.
+    """
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/",
+            "headers": [],
+            "query_string": b"",
+            "client": ("test-client", 1),
+            "app": app,
+        }
+    )
     request.state.trace_id = "trace-1"
     return request
 
@@ -148,6 +179,7 @@ async def test_republish_propagates_the_typed_publish_refusal(monkeypatch) -> No
         await endpoint_module.republish_template_version(
             project_id=uuid.uuid4(),
             template_id=uuid.uuid4(),
+            body=RepublishTemplateVersionRequest(),
             request=_request(),
             db=db,
             current_user_sub=uuid.uuid4(),
@@ -158,4 +190,87 @@ async def test_republish_propagates_the_typed_publish_refusal(monkeypatch) -> No
     # Forwarded by keyword, so ``AppError.__init__``'s ``super().__init__``
     # keeps ``str(e)`` equal to the message.
     assert "Final predictors" in str(exc.value)
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_republish_endpoint_forwards_the_whole_contract(monkeypatch) -> None:
+    """The endpoint must actually hand the body to the service (B-9b2b).
+
+    This is the one failure the type checker cannot see: every contract
+    parameter is keyword-with-default on the service (so the clone callers
+    stay unchanged), which means an endpoint that quietly forwards NOTHING
+    type-checks clean, passes every other test, and silently publishes
+    un-acknowledged destructive changes.
+    """
+    service = MagicMock()
+    service.republish = AsyncMock(
+        return_value=SimpleNamespace(
+            version_id=uuid.uuid4(), version=2, changed=True, repinned_run_count=0
+        )
+    )
+    monkeypatch.setattr(endpoint_module, "TemplateVersionService", MagicMock(return_value=service))
+    ack = TemplateChangeAck(id="removed:field:abc:-:-", tier=ChangeTier.DESTRUCTIVE)
+
+    await endpoint_module.republish_template_version(
+        project_id=uuid.uuid4(),
+        template_id=uuid.uuid4(),
+        body=RepublishTemplateVersionRequest(
+            expected_fingerprint="deadbeef", acknowledged=[ack], note="why"
+        ),
+        request=_request(),
+        db=AsyncMock(),
+        current_user_sub=uuid.uuid4(),
+    )
+
+    kwargs = service.republish.await_args.kwargs
+    assert kwargs["enforce_publish_contract"] is True, (
+        "the endpoint is the untrusted surface — it must always enforce"
+    )
+    assert kwargs["expected_fingerprint"] == "deadbeef"
+    assert kwargs["acknowledged"] == [ack]
+    assert kwargs["note"] == "why"
+
+
+@pytest.mark.parametrize(
+    "error,expected_code",
+    [
+        (
+            PublishDiffDriftedError("moved", details={"fingerprint": "fresh"}),
+            TemplatePublishRefusalCode.PUBLISH_DIFF_DRIFTED,
+        ),
+        (
+            PublishMissingAcknowledgementError("unticked", details={"row_ids": ["r1"]}),
+            TemplatePublishRefusalCode.PUBLISH_MISSING_ACKNOWLEDGEMENT,
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_republish_propagates_the_contract_refusals(
+    monkeypatch, error, expected_code
+) -> None:
+    """Both new refusals reach ``app_error_handler`` with code AND details.
+
+    Flattening either to ``HTTPException(409, str(e))`` would drop the
+    fresh fingerprint and the row ids the sheet needs to re-render, leaving
+    the manager with a dead-end toast. Nothing is committed.
+    """
+    service = MagicMock()
+    service.republish = AsyncMock(side_effect=error)
+    monkeypatch.setattr(endpoint_module, "TemplateVersionService", MagicMock(return_value=service))
+    db = AsyncMock()
+
+    with pytest.raises(type(error)) as exc:
+        await endpoint_module.republish_template_version(
+            project_id=uuid.uuid4(),
+            template_id=uuid.uuid4(),
+            body=RepublishTemplateVersionRequest(),
+            request=_request(),
+            db=db,
+            current_user_sub=uuid.uuid4(),
+        )
+
+    assert exc.value.code == expected_code
+    assert exc.value.status_code == 409
+    assert exc.value.details
     db.commit.assert_not_awaited()

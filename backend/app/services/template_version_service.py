@@ -16,6 +16,7 @@ the ADR-0009 finalize gate — which counts required fields per EXISTING
 instance — would silently skip the new section).
 """
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
@@ -25,6 +26,7 @@ from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
+from app.domain.template_change import DiffStatus
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionRun,
@@ -33,6 +35,7 @@ from app.models.extraction import (
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.schemas.hitl_session import (
+    TemplateChangeAck,
     TemplatePublishRefusalCode,
     TemplatePublishRefusalDetails,
 )
@@ -44,10 +47,13 @@ from app.services.template_clone_service import (
     TemplateNotFoundError,
 )
 from app.services.template_section_service import has_multi_entry_parent
+from app.services.template_version_read_service import get_template_config_diff
 
 __all__ = [
     "PendingConfigDraftError",
     "PublishBlockedByMultiEntryError",
+    "PublishDiffDriftedError",
+    "PublishMissingAcknowledgementError",
     "RepublishResult",
     "TemplateNotFoundError",
     "TemplateVersionService",
@@ -79,6 +85,39 @@ class PublishBlockedByMultiEntryError(AppError):
         # assertion reads (the ``_DiscardRefusal`` precedent).
         super().__init__(
             code=TemplatePublishRefusalCode.PUBLISH_BLOCKED_BY_MULTI_ENTRY,
+            message=message,
+            status_code=status.HTTP_409_CONFLICT,
+            details=details,
+        )
+
+
+class PublishDiffDriftedError(AppError):
+    """Publish refused: the projection moved since the sheet was rendered.
+
+    Recoverable, unlike its siblings — the client re-renders from the
+    ``fingerprint`` in ``details`` and asks the manager to re-acknowledge.
+    Also raised when the client sent NO fingerprint for a diff the server
+    can compute, which is the same situation: a sheet nobody looked at."""
+
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+        super().__init__(
+            code=TemplatePublishRefusalCode.PUBLISH_DIFF_DRIFTED,
+            message=message,
+            status_code=status.HTTP_409_CONFLICT,
+            details=details,
+        )
+
+
+class PublishMissingAcknowledgementError(AppError):
+    """Publish refused: a DESTRUCTIVE row was never ticked.
+
+    ``details.row_ids`` names every one, sorted, for the same reason the
+    many->one refusal names every section: one-at-a-time discovery turns a
+    single fix into a publish-read-fix-publish loop."""
+
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+        super().__init__(
+            code=TemplatePublishRefusalCode.PUBLISH_MISSING_ACKNOWLEDGEMENT,
             message=message,
             status_code=status.HTTP_409_CONFLICT,
             details=details,
@@ -121,6 +160,10 @@ class TemplateVersionService:
         project_template_id: UUID,
         user_id: UUID,
         fail_if_pending_draft: bool = False,
+        enforce_publish_contract: bool = False,
+        expected_fingerprint: str | None = None,
+        acknowledged: Sequence[TemplateChangeAck] = (),
+        note: str | None = None,
     ) -> RepublishResult:
         # BOLA defense (unlocked read): validate ownership before taking any
         # lock, so a caller who is only a manager elsewhere can never lock —
@@ -163,6 +206,23 @@ class TemplateVersionService:
         # reviewers on runs still pinned to the old 'many' snapshot can
         # add entries until this publish re-pins them.
         await self._refuse_if_one_section_has_multi_entries(project_template_id)
+
+        # The publish contract (B-9b2b), under the same locks and BEFORE the
+        # marker UPDATE below: a refusal must not leave config_draft_since
+        # cleared for a publish that never happened.
+        #
+        # Driven by an explicit flag, never inferred from "did the caller
+        # pass a fingerprint": with every parameter defaulted, inferring it
+        # would mean a bodyless POST silently skipped the whole check. The
+        # endpoint passes True; the clone/restore callers keep the default,
+        # exactly like fail_if_pending_draft above.
+        if enforce_publish_contract:
+            await self._refuse_if_publish_contract_unmet(
+                project_id=project_id,
+                project_template_id=project_template_id,
+                expected_fingerprint=expected_fingerprint,
+                acknowledged=acknowledged,
+            )
 
         # Publishing makes the live tree the recorded intent — clear the
         # B-4 draft marker under the same locks as the snapshot build.
@@ -224,6 +284,12 @@ class TemplateVersionService:
             published_at=datetime.now(UTC),
             published_by=user_id,
             is_active=True,
+            # Only this branch has a row to carry it. A note on a no-op
+            # publish is dropped — `changed=False` is the signal, and the
+            # sheet says so rather than swallowing it silently. Rewriting
+            # the CURRENT row's note instead would attribute prose to a
+            # version someone else published.
+            note=note,
         )
         self.db.add(new_version)
         await self.db.flush()
@@ -240,6 +306,70 @@ class TemplateVersionService:
             changed=True,
             repinned_run_count=repinned,
         )
+
+    async def _refuse_if_publish_contract_unmet(
+        self,
+        *,
+        project_id: UUID,
+        project_template_id: UUID,
+        expected_fingerprint: str | None,
+        acknowledged: Sequence[TemplateChangeAck],
+    ) -> None:
+        """What the manager saw must still be true, or the publish refuses.
+
+        The Publish sheet is computed lock-free by design, so between render
+        and click the projection can move three ways: another manager edits
+        the tree, a concurrent publish moves the baseline (the live tree
+        stays byte-identical — which is why the fingerprint covers the
+        PROJECTION, not the snapshot), or a reviewer records one answer and
+        a row escalates to DESTRUCTIVE with the template untouched.
+
+        Scope, stated honestly: this closes the render->click window, not
+        the one inside this transaction. ``take_advisory_xact_lock`` is
+        taken by publish, ``open_or_resume`` and run creation — never by the
+        value-write path, so under READ COMMITTED a reviewer's answer can
+        still commit between this recompute and our COMMIT. The narrowest
+        destructive case is closed by the database anyway: every workflow
+        ``field_id`` FK is RESTRICT, so a field holding recorded work cannot
+        be deleted at all.
+
+        A ``baseline_too_old`` template cannot be gated — no diff is
+        computable against a narrow pre-0026 baseline, so there are no rows
+        and no acks. That heals itself: the version written below is built
+        from LIVE rows, so the next publish has a wide baseline and is fully
+        gated.
+        """
+        diff = await get_template_config_diff(
+            self.db, project_id=project_id, template_id=project_template_id
+        )
+        if diff.status is not DiffStatus.AVAILABLE:
+            return
+
+        if expected_fingerprint != diff.fingerprint:
+            # Covers a None fingerprint too: a client that sent none for a
+            # diff we CAN compute is a client that published a sheet nobody
+            # looked at.
+            raise PublishDiffDriftedError(
+                "The pending changes moved since this sheet was rendered.",
+                details=TemplatePublishRefusalDetails(fingerprint=diff.fingerprint).model_dump(
+                    mode="json", exclude_defaults=True
+                ),
+            )
+
+        # (id, tier) pairs, not bare ids: tier is deliberately absent from
+        # the composite id, so a row that escalated since the render fails
+        # to match and reads as unacknowledged.
+        ticked = {(ack.id, ack.tier) for ack in acknowledged}
+        missing = sorted(
+            row.id for row in diff.changes.destructive if (row.id, row.tier) not in ticked
+        )
+        if missing:
+            raise PublishMissingAcknowledgementError(
+                f"{len(missing)} destructive change(s) were not acknowledged.",
+                details=TemplatePublishRefusalDetails(row_ids=missing).model_dump(
+                    mode="json", exclude_defaults=True
+                ),
+            )
 
     async def acquire_publish_locks(self, project_template_id: UUID) -> list[tuple[UUID, UUID]]:
         """Advisory (article, template) locks for editable-stage runs —
@@ -324,7 +454,9 @@ class TemplateVersionService:
             # JSON primitives only: ``app_error_handler`` renders ``details``
             # through a bare ``JSONResponse``, so anything else would raise
             # INSIDE the handler and reach the client as a 500.
-            details=TemplatePublishRefusalDetails(section_labels=offenders).model_dump(mode="json"),
+            details=TemplatePublishRefusalDetails(section_labels=offenders).model_dump(
+                mode="json", exclude_defaults=True
+            ),
         )
 
     async def _repin_editable_runs(self, project_template_id: UUID, version_id: UUID) -> int:

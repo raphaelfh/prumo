@@ -208,6 +208,26 @@ export const templateConfig = {
     'Cannot publish: the sections {{sections}} are set to appear once per entry, but an entry still holds several. Remove the extra entries first.',
   errors_publishBlockedPlain:
     'Cannot publish: a section is set to appear once per entry, but an entry still holds several. Remove the extra entries first.',
+  // B-9b2b: the two contract refusals. Drift is recoverable and says so —
+  // the sheet has already reloaded by the time this is read, and every
+  // acknowledgement was cleared, so the ask is to look again rather than to
+  // retry. The missing-ack sentence is a fallback: the button is disabled
+  // until every destructive row is ticked, so reaching it means the sheet
+  // and the server disagreed.
+  // B-9b2b: the acknowledgement gate. The row sentence is interpolated so
+  // the checkbox has a real accessible name — a bare "confirm" checkbox
+  // beside a list of changes tells a screen-reader user nothing.
+  diffAckRowAria: 'Confirm this change: {{change}}',
+  publishAckPending:
+    '{{n}} change(s) still need confirming before you can publish.',
+  publishNoteLabel: 'Note (optional)',
+  publishNotePlaceholder: 'Why are you publishing these changes?',
+  publishNoteNotRecorded:
+    'Nothing had changed, so no new version was created and your note was not saved.',
+  errors_publishDrifted:
+    'These changes moved while you were reviewing them. The list has been reloaded — check it and confirm again.',
+  errors_publishMissingAck:
+    'Cannot publish: every change that removes or rewrites recorded data has to be confirmed first.',
   errors_reorderFields: 'Error reordering fields',
   errors_updateSection: 'Error updating section',
   inspectorGroupAlwaysRepeats: 'A group always repeats',
