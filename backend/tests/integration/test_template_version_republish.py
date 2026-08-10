@@ -176,51 +176,43 @@ async def _flip_final_predictors_with_raced_extra(
 
 
 async def _two_one_sections_with_raced_extras(
-    db: AsyncSession, project_template_id: UUID
+    db: AsyncSession,
+    project_template_id: UUID,
+    *,
+    performance_sort_order: int,
+    development_sort_order: int,
 ) -> list[str]:
     """Two cardinality-one model_sections that each already hold 2+ entries
-    under the same parent, with their ``sort_order`` deliberately INVERTED
-    against the order an un-ordered select hands them back in (B-9b0 D2).
+    under the same parent, carrying a CALLER-CHOSEN ``sort_order`` (B-9b0 D2).
 
-    The two ``sort_order`` writes go out as raw SQL, HIGHEST value first:
-    an UPDATE writes a new heap tuple, so a scan with no ``ORDER BY``
-    follows the order the two writes were issued in. Mutating the ORM
-    objects instead leaves that order to SQLAlchemy, which flushes
-    persistent UPDATEs in primary-key order — and the clone assigns primary
-    keys with ``uuid4()``, which made the un-ordered order (and therefore
-    the ordering assertion resting on it) a coin flip. The inversion is
-    asserted below rather than assumed, so that a future storage change
-    surfaces as a fixture failure instead of a silently passing test.
+    The sort orders vary per parametrization; the physical write order does
+    not — ``model_development`` is always written first. So both cases hand
+    an un-ordered scan the same row order while expecting opposite lists,
+    and a refusal that lost its ``ORDER BY`` answers both identically and
+    can satisfy at most one of them.
+
+    That indirection replaces an assertion that the un-ordered scan came
+    back in one specific order. It did not, reliably: a query without
+    ``ORDER BY`` promises nothing about row order — not the order the
+    UPDATEs were issued in, whatever the heap usually does — and reading
+    that non-promise as a precondition failed roughly one full-suite run in
+    four while passing every time in isolation.
 
     Returns the labels in ascending ``sort_order`` — the order the refusal
-    must name them in, and the reverse of the un-ordered one."""
+    must name them in."""
     container = await _section_by_name(db, project_template_id, "prediction_models")
-    by_sort_order = [
-        (900, await _section_by_name(db, project_template_id, "model_performance")),
-        (901, await _section_by_name(db, project_template_id, "model_development")),
-    ]
-    for sort_order, section in reversed(by_sort_order):
+    performance = await _section_by_name(db, project_template_id, "model_performance")
+    development = await _section_by_name(db, project_template_id, "model_development")
+
+    # Fixed write order; only the values differ between parametrizations.
+    for sort_order, section in (
+        (development_sort_order, development),
+        (performance_sort_order, performance),
+    ):
         await db.execute(
             text("UPDATE public.extraction_entity_types SET sort_order = :so WHERE id = :id"),
             {"so": sort_order, "id": str(section.id)},
         )
-
-    targets = [section.id for _, section in by_sort_order]
-    scanned = (
-        # The refusal's own query, minus its ORDER BY.
-        await db.execute(
-            select(ExtractionEntityType.id).where(
-                ExtractionEntityType.project_template_id == project_template_id,
-                ExtractionEntityType.role == "model_section",
-                ExtractionEntityType.cardinality == "one",
-            )
-        )
-    ).scalars()
-    assert [row_id for row_id in scanned if row_id in targets] == list(reversed(targets)), (
-        "fixture precondition: without an ORDER BY the two sections must come "
-        "back in the REVERSE of their sort_order, or this test cannot tell an "
-        "ordered refusal from an unordered one"
-    )
 
     parent = await _insert_instance_raw(
         db,
@@ -228,7 +220,7 @@ async def _two_one_sections_with_raced_extras(
         entity_type_id=container.id,
         label="Model A",
     )
-    for _, section in by_sort_order:
+    for section in (performance, development):
         for order in (0, 1):
             await _insert_instance_raw(
                 db,
@@ -237,7 +229,11 @@ async def _two_one_sections_with_raced_extras(
                 parent_instance_id=parent,
                 sort_order=order,
             )
-    return [section.label for _, section in by_sort_order]
+    ranked = sorted(
+        ((performance_sort_order, performance), (development_sort_order, development)),
+        key=lambda pair: pair[0],
+    )
+    return [section.label for _, section in ranked]
 
 
 @pytest.mark.asyncio
@@ -736,23 +732,39 @@ async def test_republish_blocked_by_multi_entry_under_one_section(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("performance_sort_order", "development_sort_order"),
+    [(900, 901), (901, 900)],
+    ids=["performance-first", "development-first"],
+)
 async def test_republish_names_every_offending_section_in_sort_order(
     db_session: AsyncSession,
+    performance_sort_order: int,
+    development_sort_order: int,
 ) -> None:
     """B-9b0 D2: two offending sections ⇒ BOTH are named, in ``sort_order``.
 
     The pre-B-9b0 select had no ``ORDER BY`` and raised on the first hit, so
     a manager with two flipped sections was told about whichever one the
     heap happened to yield — and had to publish, read, fix, publish again to
-    discover the second. Here the two sections' ``sort_order`` is inverted
-    against their physical order, so heap order would produce the reverse
-    list."""
+    discover the second.
+
+    Run twice with the two sections' ``sort_order`` swapped and their write
+    order held fixed. An un-ordered refusal returns the same list for both
+    parametrizations, so it can satisfy at most one; a correctly ordered one
+    satisfies both. Neither case asserts what the un-ordered order actually
+    is, because Postgres does not promise one."""
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
     await _clean_project_clones(db_session, project_id)
     clone = await _clone_charms(db_session, project_id, user_id)
 
-    expected = await _two_one_sections_with_raced_extras(db_session, clone.project_template_id)
+    expected = await _two_one_sections_with_raced_extras(
+        db_session,
+        clone.project_template_id,
+        performance_sort_order=performance_sort_order,
+        development_sort_order=development_sort_order,
+    )
 
     with pytest.raises(PublishBlockedByMultiEntryError) as exc:
         await TemplateVersionService(db_session).republish(
