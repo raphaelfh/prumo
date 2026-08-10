@@ -22,7 +22,11 @@ const pgrst = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
-vi.mock('sonner', () => ({toast: {error: vi.fn(), success: vi.fn()}}));
+// `toast` is CALLABLE as well as a namespace: the B-9d undo arms
+// `toast(message, {action})`, which a namespace-only mock cannot receive.
+vi.mock('sonner', () => ({
+  toast: Object.assign(vi.fn(), {error: vi.fn(), success: vi.fn(), info: vi.fn()}),
+}));
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: () => ({
@@ -188,51 +192,39 @@ beforeEach(() => {
   vi.mocked(deleteField).mockResolvedValue({ok: true, data: undefined});
 });
 
-async function openDeleteDialog() {
+async function openRowMenuDelete() {
   await userEvent.click(
     screen.getAllByRole('button', {name: /actionsForFieldAria/})[0],
   );
   await userEvent.click(await screen.findByRole('menuitem', {name: /deleteField/}));
-  return screen.findByRole('alertdialog');
 }
 
-describe('TemplateConfigEditor — delete-field hosting (B-5 Task 7)', () => {
-  it('opens the editor-hosted confirm from the row menu; confirm runs the delete mutation + invalidateStructure', async () => {
+describe('TemplateConfigEditor — delete-field hosting (B-9d)', () => {
+  it('deletes straight from the row menu — no confirmation dialog at all', async () => {
+    // B-9d: the Publish ☑ ack (B-9b2b) is the real gate for anything
+    // reaching published data, and the grid arms a 6s Undo for the
+    // misclick, so the modal was pure friction on a draft edit.
     renderEditor();
     await screen.findByRole('button', {name: 'Study design'});
 
-    const dialog = await openDeleteDialog();
-    expect(vi.mocked(validateFieldImpact)).toHaveBeenCalledWith(
-      'f1',
-      expect.any(String),
-      expect.any(Function),
-    );
-
-    await userEvent.click(
-      await within(dialog).findByRole('button', {name: /deleteField/}),
-    );
+    await openRowMenuDelete();
 
     await waitFor(() => expect(deleteField).toHaveBeenCalledWith('p1', 't1', 'f1'));
     await waitFor(() => expect(invalidateStructure).toHaveBeenCalled());
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
-  it('Esc dismisses the delete confirm WITHOUT closing the inspector (dialog lives outside the panel subtree)', async () => {
+  it('does not probe field impact before deleting', async () => {
+    // The probe existed to populate the dialog. The DB is the real
+    // invariant: six field_id FKs are ON DELETE RESTRICT, and the
+    // mutation hook already renders that 23503 as friendly copy.
     renderEditor();
-    const label = await screen.findByRole('button', {name: 'Study design'});
+    await screen.findByRole('button', {name: 'Study design'});
 
-    // Select the row so the inspector shows the field form.
-    await userEvent.click(label);
-    expect(screen.getByLabelText('inspectorLabelLabel')).toBeInTheDocument();
+    await openRowMenuDelete();
 
-    await openDeleteDialog();
-    await userEvent.keyboard('{Escape}');
-
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    // The regression: an in-panel dialog would have escalated this Esc to
-    // rung 2 of the ladder and closed the inspector.
-    expect(screen.getByLabelText('inspectorLabelLabel')).toBeInTheDocument();
-    expect(deleteField).not.toHaveBeenCalled();
+    await waitFor(() => expect(deleteField).toHaveBeenCalled());
+    expect(vi.mocked(validateFieldImpact)).not.toHaveBeenCalled();
   });
 });
 

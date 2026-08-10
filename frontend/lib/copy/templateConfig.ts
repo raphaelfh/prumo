@@ -198,6 +198,7 @@ export const templateConfig = {
   errors_duplicateFieldName:
     'A field with this name already exists in this section.',
   errors_moveField: 'Error moving field',
+  errors_restoreField: 'Could not restore the field',
   // B-9b0 D4: the publish refusal, composed here from the server's CODE and
   // its section labels — never its prose. The nameless variant is the
   // degenerate payload (labels missing or malformed): still a policy
@@ -266,6 +267,7 @@ export const templateConfig = {
   shortcutMoveToSection: '⌘⇧M',
   shortcutMoveUp: '⌘⇧↑',
   undoAction: 'Undo',
+  undoDeleteToast: 'Deleted {{field}}',
   undoFieldMissing: 'This field no longer exists — nothing to undo',
   undoMoveToast: 'Moved {{field}}',
 } as const;

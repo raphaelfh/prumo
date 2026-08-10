@@ -67,7 +67,7 @@ import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField'
 
 import {TemplateConfigGridPanel} from './TemplateConfigGridPanel';
 import type {TemplateSectionActions} from './TemplateGrid';
-import {buildTemplateTree, findField, type GridSection} from './templateTree';
+import {buildTemplateTree, findField, type GridField, type GridSection} from './templateTree';
 import type {FieldMoveRecord} from './useMoveFieldTo';
 import {STRUCTURAL_UNDO_TOAST_ID, useStructuralUndo} from './useStructuralUndo';
 
@@ -425,3 +425,106 @@ describe('TemplateConfigGridPanel — undo wiring', () => {
     expect(toast).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('useStructuralUndo — delete (B-9d)', () => {
+  function renderDeleteUndo(
+    deleteField: (fieldId: string) => Promise<boolean>,
+    restoreField: (field: GridField, sectionId: string, index: number) => Promise<boolean>,
+  ) {
+    return renderHook(
+      ({tree}: {tree: GridSection[]}) =>
+        useStructuralUndo({
+          tree,
+          moveFieldTo: vi.fn(() => record(true)),
+          deleteField,
+          restoreField,
+        }),
+      {initialProps: {tree: treeOf(baseFields)}},
+    );
+  }
+
+  it('arms the undo toast only after the delete actually lands', async () => {
+    const deleteField = vi.fn(async (_fieldId: string) => true);
+    const restoreField = vi.fn(
+      async (_field: GridField, _sectionId: string, _index: number) => true,
+    );
+    const {result} = renderDeleteUndo(deleteField, restoreField);
+    const beta = mustField(treeOf(baseFields), 'f2');
+
+    void result.current.deleteFieldWithUndo(beta);
+    expect(toast).not.toHaveBeenCalled();
+    await flush();
+
+    expect(deleteField).toHaveBeenCalledWith('f2');
+    expect(toast).toHaveBeenCalledTimes(1);
+    const {message, data} = toastCall();
+    expect(message).toBe('Deleted Beta');
+    expect(data.id).toBe(STRUCTURAL_UNDO_TOAST_ID);
+    expect(data.duration).toBe(6000);
+  });
+
+  it('a refused delete arms NO undo — the mutation hook owns that error', async () => {
+    // The six ON DELETE RESTRICT field_id FKs mean a field holding
+    // recorded work cannot be deleted at all. There is nothing to undo,
+    // and offering Undo on a delete that never happened would be a lie.
+    const deleteField = vi.fn(async (_fieldId: string) => false);
+    const restoreField = vi.fn(
+      async (_field: GridField, _sectionId: string, _index: number) => true,
+    );
+    const {result} = renderDeleteUndo(deleteField, restoreField);
+
+    void result.current.deleteFieldWithUndo(mustField(treeOf(baseFields), 'f2'));
+    await flush();
+
+    expect(toast).not.toHaveBeenCalled();
+    expect(restoreField).not.toHaveBeenCalled();
+  });
+
+  it('Undo restores the field into the exact slot it was deleted from', async () => {
+    const deleteField = vi.fn(async (_fieldId: string) => true);
+    const restoreField = vi.fn(
+      async (_field: GridField, _sectionId: string, _index: number) => true,
+    );
+    const {result} = renderDeleteUndo(deleteField, restoreField);
+    // Beta sits at index 1 of sec1 in the fixture tree.
+    const beta = mustField(treeOf(baseFields), 'f2');
+
+    void result.current.deleteFieldWithUndo(beta);
+    await flush();
+    clickUndo();
+    await flush();
+
+    expect(restoreField).toHaveBeenCalledTimes(1);
+    const [restored, sectionId, index] = restoreField.mock.calls[0];
+    expect(restored.id).toBe('f2');
+    expect(restored.label).toBe('Beta');
+    expect(sectionId).toBe('sec1');
+    expect(index).toBe(1);
+  });
+
+  it('a delete retires a live move undo — still one slot, never a stack', async () => {
+    const deleteField = vi.fn(async (_fieldId: string) => true);
+    const restoreField = vi.fn(
+      async (_field: GridField, _sectionId: string, _index: number) => true,
+    );
+    const dispatcher = vi.fn(() => record(true));
+    const {result} = renderHook(
+      ({tree}: {tree: GridSection[]}) =>
+        useStructuralUndo({tree, moveFieldTo: dispatcher, deleteField, restoreField}),
+      {initialProps: {tree: treeOf(baseFields)}},
+    );
+
+    result.current.moveFieldWithUndo(mustField(treeOf(baseFields), 'f1'), 'sec2', 0);
+    await flush();
+    void result.current.deleteFieldWithUndo(mustField(treeOf(baseFields), 'f2'));
+    await flush();
+
+    // Both toasts share the one id, so sonner replaced the first.
+    expect(toast).toHaveBeenCalledTimes(2);
+    for (const call of vi.mocked(toast).mock.calls) {
+      expect((call[1] as {id?: string}).id).toBe(STRUCTURAL_UNDO_TOAST_ID);
+    }
+    // The LAST toast is the delete: it replaced the move's slot.
+    expect(toastCall(1).message).toBe('Deleted Beta');
+  });
+})
