@@ -5505,12 +5505,14 @@
             "items": {
               "$ref": "#/components/schemas/TemplateChangeAck"
             },
+            "maxItems": 500,
             "title": "Acknowledged",
             "type": "array"
           },
           "expected_fingerprint": {
             "anyOf": [
               {
+                "maxLength": 64,
                 "type": "string"
               },
               {
@@ -5522,6 +5524,7 @@
           "note": {
             "anyOf": [
               {
+                "maxLength": 2000,
                 "type": "string"
               },
               {
@@ -7128,6 +7131,7 @@
         "description": "One destructive row the manager ticked, as ``(id, tier)`` (B-9b2b).\n\nThe tier travels WITH the id on purpose. It is deliberately not part of\nthe composite row id (``template_diff_read._row_id``), so an ack whose\ntier no longer matches the server's recomputed row reads as *absent*\nrather than as a match \u2014 which is exactly right, because a reviewer\nrecording an answer can escalate a row to DESTRUCTIVE without anyone\ntouching the template.",
         "properties": {
           "id": {
+            "maxLength": 200,
             "title": "Id",
             "type": "string"
           },

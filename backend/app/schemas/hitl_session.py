@@ -75,7 +75,10 @@ class TemplateChangeAck(BaseModel):
     recording an answer can escalate a row to DESTRUCTIVE without anyone
     touching the template."""
 
-    id: str
+    id: str = Field(max_length=200)
+    """A composite row id — five ``:``-joined components, the longest a
+    UUID. Bounded because it arrives from the client and is only ever
+    compared against server-computed ids."""
     tier: ChangeTier
 
 
@@ -88,8 +91,12 @@ class RepublishTemplateVersionRequest(BaseModel):
     the fields defaulted, a bodyless POST is a 422 rather than a silent
     unchecked publish."""
 
-    expected_fingerprint: str | None = None
+    expected_fingerprint: str | None = Field(default=None, max_length=64)
     """The ``fingerprint`` from the diff the manager was looking at.
+
+    Bounded to the exact width of a sha256 hex digest: it is only ever
+    compared for equality against one, so anything longer is noise the
+    server should refuse before it reaches the publish locks.
 
     Nullable rather than required because two of the three diff statuses
     carry none: a template that never published (``initial_version``) and
@@ -97,12 +104,12 @@ class RepublishTemplateVersionRequest(BaseModel):
     The server refuses a ``None`` when its own under-lock recompute says
     ``available`` — that is the case where the client should have had one."""
 
-    acknowledged: list[TemplateChangeAck] = Field(default_factory=list)
+    acknowledged: list[TemplateChangeAck] = Field(default_factory=list, max_length=500)
     """Every DESTRUCTIVE row the manager ticked. Checked against the diff
     the server recomputes under its locks, never against the client's view,
     so an empty list refuses rather than skipping the check."""
 
-    note: str | None = None
+    note: str | None = Field(default=None, max_length=2000)
     """Optional prose recorded on the new version (History renders it).
 
     Recorded only when the publish actually spawns a version. A draft whose

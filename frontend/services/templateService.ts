@@ -89,12 +89,6 @@ export class TemplatePublishRefusal extends Error {
      * layer composes what the manager reads. */
     public readonly code: TemplatePublishRefusalCode,
     public readonly sectionLabels: readonly string[] = [],
-    /** Unacknowledged destructive row ids (`PUBLISH_MISSING_ACKNOWLEDGEMENT`). */
-    public readonly rowIds: readonly string[] = [],
-    /** The server's fresh fingerprint (`PUBLISH_DIFF_DRIFTED`) — what the
-     * manager should have been looking at. Carried so the sheet can
-     * re-render from one round trip instead of two. */
-    public readonly fingerprint: string | null = null,
   ) {
     super(message);
     this.name = 'TemplatePublishRefusal';
@@ -110,28 +104,10 @@ export class TemplatePublishRefusal extends Error {
  * dropped rather than interpolated as `undefined`.
  */
 function parsePublishSectionLabels(details: unknown): string[] {
-  return parseStringList(details, 'section_labels');
-}
-
-/** Same guard, for `PUBLISH_MISSING_ACKNOWLEDGEMENT`'s row ids. */
-function parseStringList(details: unknown, key: string): string[] {
   if (!details || typeof details !== 'object') return [];
-  const raw = (details as Record<string, unknown>)[key];
+  const raw = (details as {section_labels?: unknown}).section_labels;
   if (!Array.isArray(raw)) return [];
-  return raw.filter((entry): entry is string => typeof entry === 'string');
-}
-
-/**
- * Runtime-validate `error.details.fingerprint`.
- *
- * `null` when absent or not a string, which the sheet reads as "re-fetch
- * the diff" — strictly safer than trusting a malformed value, since a wrong
- * fingerprint would be refused again on the retry.
- */
-function parsePublishFingerprint(details: unknown): string | null {
-  if (!details || typeof details !== 'object') return null;
-  const raw = (details as {fingerprint?: unknown}).fingerprint;
-  return typeof raw === 'string' ? raw : null;
+  return raw.filter((label): label is string => typeof label === 'string');
 }
 
 /**
@@ -167,8 +143,6 @@ export async function republishTemplateVersion(
           error.message,
           error.code as TemplatePublishRefusalCode,
           parsePublishSectionLabels(error.details),
-          parseStringList(error.details, 'row_ids'),
-          parsePublishFingerprint(error.details),
         );
       }
       throw error;

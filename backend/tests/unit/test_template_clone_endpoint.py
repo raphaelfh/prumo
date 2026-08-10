@@ -11,9 +11,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 
 import app.api.v1.endpoints.project_templates as endpoint_module
 from app.domain.template_change import ChangeTier
+from app.main import app
 from app.schemas.hitl_session import (
     CloneTemplateRequest,
     RepublishTemplateVersionRequest,
@@ -31,8 +33,26 @@ from app.services.template_version_service import (
 )
 
 
-def _request() -> MagicMock:
-    request = MagicMock()
+def _request() -> Request:
+    """A REAL starlette Request, not a MagicMock.
+
+    ``republish_template_version`` carries ``@limiter.limit`` (B-9b2b), and
+    slowapi rejects anything that is not a genuine ``Request`` — a mock
+    would trade the rate limit for this file's direct endpoint-coroutine
+    coverage, which exists precisely because ASGI-level tests do not
+    register in diff-cover.
+    """
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/",
+            "headers": [],
+            "query_string": b"",
+            "client": ("test-client", 1),
+            "app": app,
+        }
+    )
     request.state.trace_id = "trace-1"
     return request
 

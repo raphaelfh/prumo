@@ -383,11 +383,22 @@ export function TemplateConfigDiffSheet({
   const fingerprint = diff?.fingerprint ?? null;
   const acked = ackState.fingerprint === fingerprint ? ackState.ids : NO_ACKS;
 
-  const destructive =
-    diff?.status === 'available' ? (diff.changes?.destructive ?? []) : [];
+  // Only an `available` diff HAS rows to acknowledge. The other two
+  // statuses carry none — and they must still be publishable, or a
+  // template with a pre-0026 baseline becomes a dead end: its draft can
+  // neither be published (nothing to ack, but nothing to show either) nor
+  // discarded (`discard_available` is false for exactly the same reason).
+  // The server accepts a null fingerprint there and heals the baseline by
+  // republishing from live rows, which is what unsticks the template.
+  const gated = diff?.status === 'available';
+  const destructive = gated ? (diff.changes?.destructive ?? []) : [];
   const unacknowledged = destructive.filter((row) => !acked.has(row.id)).length;
   const canPublish =
-    !publishing && diff?.status === 'available' && unacknowledged === 0;
+    !publishing &&
+    !isPending &&
+    !isError &&
+    diff != null &&
+    (!gated || unacknowledged === 0);
 
   const toggleAck = (rowId: string) => {
     const next = new Set(acked);

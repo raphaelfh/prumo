@@ -74,6 +74,7 @@ from app.services.template_version_service import (
     PublishBlockedByMultiEntryError,
     TemplateVersionService,
 )
+from app.utils.rate_limiter import limiter
 
 router = APIRouter()
 
@@ -232,6 +233,12 @@ async def update_template_llm_instruction(
     # ``unknown`` that ``ErrorDetail.details: dict[str, Any]`` produces.
     responses={status.HTTP_409_CONFLICT: {"model": TemplatePublishRefusalResponse}},
 )
+# B-9b2b made a refused publish expensive: the contract re-check builds the
+# whole snapshot and unions the five workflow tables WHILE holding the
+# per-article advisory locks that also gate session-open and run creation.
+# A manager looping deliberately-stale fingerprints would stall reviewers,
+# so this joins the sibling write endpoints behind a limit.
+@limiter.limit("10/minute")
 async def republish_template_version(
     project_id: UUID,
     template_id: UUID,

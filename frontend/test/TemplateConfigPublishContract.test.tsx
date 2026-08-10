@@ -188,3 +188,50 @@ describe('TemplateConfigDiffSheet — the publish contract (B-9b2b)', () => {
     );
   });
 });
+
+describe('TemplateConfigDiffSheet — the undiffable shapes stay publishable', () => {
+  // Regression guard. Gating Publish on `status === 'available'` stranded
+  // every template with a pre-0026 baseline: nothing to acknowledge, so
+  // Publish stayed disabled, and Discard is independently disabled for the
+  // same templates — no forward path and no backward one. The server
+  // accepts a null fingerprint here and heals the baseline by republishing
+  // from live rows.
+  it.each([
+    ['baseline_too_old' as const],
+    ['initial_version' as const],
+  ])('publishes a %s draft with a null fingerprint', async (status) => {
+    loadTemplateConfigDiff.mockResolvedValue({
+      ok: true,
+      data: {project_template_id: 't1', status, changes: undefined, fingerprint: null},
+    });
+    republishTemplateVersion.mockResolvedValue({
+      ok: true,
+      data: {version_id: 'v2', version: 2, changed: true, repinned_run_count: 0},
+    });
+    renderSheet();
+
+    const publish = await screen.findByRole('button', {
+      name: extraction.configPublishButton,
+    });
+    await waitFor(() => expect(publish).toBeEnabled());
+    await userEvent.click(publish);
+
+    await waitFor(() => expect(republishTemplateVersion).toHaveBeenCalledTimes(1));
+    expect(republishTemplateVersion).toHaveBeenCalledWith('p1', 't1', {
+      expected_fingerprint: null,
+      acknowledged: [],
+      note: null,
+    });
+  });
+
+  it('keeps Publish disabled while the diff is still loading or failed', async () => {
+    loadTemplateConfigDiff.mockRejectedValue(new Error('offline'));
+    renderSheet();
+
+    const publish = await screen.findByRole('button', {
+      name: extraction.configPublishButton,
+    });
+    await waitFor(() => expect(publish).toBeDisabled());
+    expect(republishTemplateVersion).not.toHaveBeenCalled();
+  });
+});

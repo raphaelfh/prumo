@@ -284,8 +284,11 @@ class TemplateVersionService:
             published_at=datetime.now(UTC),
             published_by=user_id,
             is_active=True,
-            # Only the changed branch has a row to carry it; a note on a
-            # no-op publish is refused above rather than dropped in silence.
+            # Only this branch has a row to carry it. A note on a no-op
+            # publish is dropped — `changed=False` is the signal, and the
+            # sheet says so rather than swallowing it silently. Rewriting
+            # the CURRENT row's note instead would attribute prose to a
+            # version someone else published.
             note=note,
         )
         self.db.add(new_version)
