@@ -120,11 +120,17 @@ async def test_every_write_endpoint_maps_a_deadlock_to_409(endpoint, service, ex
 
 @pytest.mark.parametrize("endpoint,service,extra", WRITE_ENDPOINTS)
 @pytest.mark.asyncio
-async def test_a_deadlock_while_CLAIMING_the_lock_is_also_a_409(endpoint, _service, extra) -> None:
-    """The claim is itself an UPDATE on the template row, so it deadlocks too."""
+async def test_a_deadlock_while_CLAIMING_the_lock_is_also_a_409(endpoint, service, extra) -> None:
+    """The claim is itself an UPDATE on the template row, so it deadlocks too.
+
+    The service is patched to a NO-OP on purpose: it proves the 409 came
+    from the claim and not from the write, which a bare patch of the claim
+    alone would leave ambiguous.
+    """
     db = AsyncMock()
     with (
         patch(f"{_EP}.claim_draft_lock", AsyncMock(side_effect=_dbapi_error("40P01"))),
+        patch(f"{_EP}.{service}", AsyncMock()),
         pytest.raises(HTTPException) as exc,
     ):
         await getattr(endpoint_module, endpoint)(
