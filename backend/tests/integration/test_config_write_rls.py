@@ -20,6 +20,10 @@ RLS refusals surface two ways and the probes assert both:
 - an INSERT / UPDATE-with-check violation raises 42501
   ("row-level security policy"),
 - a USING mismatch on UPDATE silently matches 0 rows.
+
+Since 0054, ``authenticated`` no longer holds INSERT/UPDATE on either
+table at all, so ``_attempt_write`` re-grants them inside its own
+rolled-back transaction — see its docstring.
 """
 
 from __future__ import annotations
@@ -49,11 +53,26 @@ async def _attempt_write(
     """Run one write as ``user_id`` under RLS, then roll it back.
 
     The leading commit seals any fixture rows below their own savepoint so
-    the trailing rollback undoes ONLY this attempt (write + role switch),
-    keeping the seeded graph pristine for the next probe.
+    the trailing rollback undoes ONLY this attempt (grant + write + role
+    switch), keeping the seeded graph pristine for the next probe.
+
+    Migration 0054 revoked INSERT/UPDATE on both tables from
+    ``authenticated``, so a bare probe would now stop at the table
+    privilege before any policy is consulted. Re-granting inside the
+    rolled-back transaction keeps these probes aimed at the POLICY — the
+    security floor, which has to keep holding if the grant is ever
+    restored (a Supabase ``GRANT ALL ON ALL TABLES`` is one dashboard
+    click). The revoke itself is pinned by
+    ``test_config_write_grant_revoked.py``.
     """
     await db.commit()
     try:
+        await db.execute(
+            text(
+                "GRANT INSERT, UPDATE ON public.extraction_entity_types, "
+                "public.extraction_fields TO authenticated"
+            )
+        )
         await db.execute(
             text("SELECT set_config('request.jwt.claims', :claims, true)"),
             {"claims": json.dumps({"sub": str(user_id), "role": "authenticated"})},

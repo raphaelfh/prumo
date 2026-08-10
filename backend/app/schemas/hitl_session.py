@@ -461,8 +461,9 @@ class TemplateConfigStatusRead(BaseModel):
 
     A string, matching the refusal payload. ``None`` while a draft is open
     means UNATTRIBUTED — a draft from before 0053, or a raw PostgREST
-    write — and is claimable by the next writer, so the chip renders a
-    nameless variant rather than inventing an owner."""
+    write from before 0054 revoked that grant — and is claimable by the
+    next writer, so the chip renders a nameless variant rather than
+    inventing an owner."""
     draft_holder_name: str | None = None
     is_draft_holder: bool = False
     """Whether the CALLER holds it. Derived server-side so the chip never
