@@ -48,6 +48,7 @@ from app.schemas.template_structure import (
     TemplateFieldReorderResponse,
     TemplateFieldUpdateRequest,
 )
+from app.services.template_draft_lock_service import claim_draft_lock
 from app.services.template_field_service import (
     CrossTemplateMoveError,
     DuplicateFieldNameError,
@@ -88,13 +89,16 @@ async def create_template_field(
     body: TemplateFieldCreateRequest,
     request: Request,
     db: DbSession,
-    _user_sub: UUID = Depends(require_project_manager),
+    user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[TemplateFieldRead]:
     """Create a field in a section of the path template.
 
     The write stamps the B-4 draft marker via the 0048 trigger (nothing
     manual); the field reaches article forms at Publish.
     """
+    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
+    # with the holder named when another manager holds the draft.
+    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
     try:
         result = await create_field(
             db, project_id=project_id, template_id=template_id, payload=body
@@ -120,13 +124,16 @@ async def update_template_field(
     body: TemplateFieldUpdateRequest,
     request: Request,
     db: DbSession,
-    _user_sub: UUID = Depends(require_project_manager),
+    user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[TemplateFieldRead]:
     """Partial field update — only explicitly-set keys are applied.
 
     Relocation is the move endpoint's job (the schema rejects a smuggled
     ``entity_type_id``). Stamps the B-4 draft marker via the 0048 trigger.
     """
+    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
+    # with the holder named when another manager holds the draft.
+    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
     try:
         result = await update_field(
             db,
@@ -155,12 +162,15 @@ async def delete_template_field(
     field_id: UUID,
     request: Request,
     db: DbSession,
-    _user_sub: UUID = Depends(require_project_manager),
+    user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[TemplateFieldDeleteResponse]:
     """Delete a field; recorded extraction work (RESTRICT FKs) is a 409.
 
     Stamps the B-4 draft marker via the 0048 trigger (nothing manual).
     """
+    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
+    # with the holder named when another manager holds the draft.
+    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
     try:
         result = await delete_field(
             db, project_id=project_id, template_id=template_id, field_id=field_id
@@ -186,7 +196,7 @@ async def move_template_field(
     body: TemplateFieldMoveRequest,
     request: Request,
     db: DbSession,
-    _user_sub: UUID = Depends(require_project_manager),
+    user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[TemplateFieldRead]:
     """Move a field onto another section of the SAME template.
 
@@ -194,6 +204,9 @@ async def move_template_field(
     retry can succeed) — the cross-template hole this slice closes.
     Stamps the B-4 draft marker via the 0048 trigger.
     """
+    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
+    # with the holder named when another manager holds the draft.
+    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
     try:
         result = await move_field(
             db,
@@ -224,7 +237,7 @@ async def reorder_template_fields(
     body: TemplateFieldReorderRequest,
     request: Request,
     db: DbSession,
-    _user_sub: UUID = Depends(require_project_manager),
+    user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[TemplateFieldReorderResponse]:
     """Atomic batch renumber (multi-section batches are legal).
 
@@ -232,6 +245,9 @@ async def reorder_template_fields(
     applies or fully fails. Stamps the B-4 draft marker via the 0048
     trigger.
     """
+    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
+    # with the holder named when another manager holds the draft.
+    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
     try:
         result = await reorder_fields(
             db, project_id=project_id, template_id=template_id, payload=body
@@ -257,7 +273,7 @@ async def create_template_section(
     body: SectionCreateRequest,
     request: Request,
     db: DbSession,
-    _user_sub: UUID = Depends(require_project_manager),
+    user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[SectionRead]:
     """Create a section; ``sort_order`` is server-computed (max+1).
 
@@ -266,6 +282,9 @@ async def create_template_section(
     a second model_container is a 409. Stamps the B-4 draft marker via
     the 0048 trigger (nothing manual).
     """
+    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
+    # with the holder named when another manager holds the draft.
+    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
     try:
         result = await create_section(
             db, project_id=project_id, template_id=template_id, payload=body
@@ -293,7 +312,7 @@ async def update_template_section(
     body: SectionUpdateRequest,
     request: Request,
     db: DbSession,
-    _user_sub: UUID = Depends(require_project_manager),
+    user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[SectionRead]:
     """Partial section update: label, entry_label, cardinality (B-8).
 
@@ -303,6 +322,9 @@ async def update_template_section(
     draft marker via the 0048 trigger; an all-no-op update skips the
     write (no stamp).
     """
+    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
+    # with the holder named when another manager holds the draft.
+    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
     try:
         result = await update_section(
             db,
@@ -333,13 +355,16 @@ async def delete_template_section(
     section_id: UUID,
     request: Request,
     db: DbSession,
-    _user_sub: UUID = Depends(require_project_manager),
+    user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[SectionDeleteResponse]:
     """Delete a section (the DB cascades fields and child sections).
 
     Extracted data anywhere under it (RESTRICT FK) is a 409. Stamps the
     B-4 draft marker via the 0048 trigger (nothing manual).
     """
+    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
+    # with the holder named when another manager holds the draft.
+    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
     try:
         result = await delete_section(
             db, project_id=project_id, template_id=template_id, section_id=section_id

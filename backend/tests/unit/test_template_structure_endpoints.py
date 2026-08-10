@@ -9,6 +9,7 @@ service awaited with the exact path-scoped kwargs) and one raises-case
 per mapped error class (parametrized; commit NOT awaited on error).
 """
 
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -51,6 +52,18 @@ from app.services.template_section_service import (
     SectionNotFoundError,
     SectionParentRoleError,
 )
+
+
+@pytest.fixture(autouse=True)
+def _stub_draft_lock(monkeypatch):
+    """These tests mock ``db`` wholesale, so the real B-9f claim — which
+    runs a conditional UPDATE and reads its rowcount — cannot execute
+    against them. The claim's own behaviour is covered by
+    tests/integration/test_template_draft_lock.py; that every write
+    endpoint still CALLS it is covered by
+    test_every_write_endpoint_claims_the_draft_lock below.
+    """
+    monkeypatch.setattr(endpoint_module, "claim_draft_lock", AsyncMock())
 
 
 def _request() -> MagicMock:
@@ -121,7 +134,7 @@ async def test_create_field_wraps_commits_and_scopes(monkeypatch) -> None:
         body=body,
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
     assert response.ok is True
     assert response.data is read
@@ -147,7 +160,7 @@ async def test_update_field_wraps_commits_and_scopes(monkeypatch) -> None:
         body=body,
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
     assert response.ok is True
     assert response.data is read
@@ -171,7 +184,7 @@ async def test_delete_field_wraps_commits_and_scopes(monkeypatch) -> None:
         field_id=field_id,
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
     assert response.ok is True
     assert response.data is result
@@ -197,7 +210,7 @@ async def test_move_field_wraps_commits_and_scopes(monkeypatch) -> None:
         body=body,
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
     assert response.ok is True
     assert response.data is read
@@ -224,7 +237,7 @@ async def test_reorder_fields_wraps_commits_and_scopes(monkeypatch) -> None:
         body=body,
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
     assert response.ok is True
     assert response.data is result
@@ -249,7 +262,7 @@ async def test_create_section_wraps_commits_and_scopes(monkeypatch) -> None:
         body=body,
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
     assert response.ok is True
     assert response.data is read
@@ -275,7 +288,7 @@ async def test_update_section_wraps_commits_and_scopes(monkeypatch) -> None:
         body=body,
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
     assert response.ok is True
     assert response.data is read
@@ -299,7 +312,7 @@ async def test_delete_section_wraps_commits_and_scopes(monkeypatch) -> None:
         section_id=section_id,
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
     assert response.ok is True
     assert response.data is result
@@ -322,7 +335,7 @@ async def _call_create_field(db: AsyncMock) -> Any:
         body=_field_create_body(),
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
 
 
@@ -334,7 +347,7 @@ async def _call_update_field(db: AsyncMock) -> Any:
         body=TemplateFieldUpdateRequest(label="New"),
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
 
 
@@ -345,7 +358,7 @@ async def _call_delete_field(db: AsyncMock) -> Any:
         field_id=uuid.uuid4(),
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
 
 
@@ -357,7 +370,7 @@ async def _call_move_field(db: AsyncMock) -> Any:
         body=TemplateFieldMoveRequest(entity_type_id=uuid.uuid4(), sort_order=0),
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
 
 
@@ -370,7 +383,7 @@ async def _call_reorder_fields(db: AsyncMock) -> Any:
         ),
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
 
 
@@ -381,7 +394,7 @@ async def _call_create_section(db: AsyncMock) -> Any:
         body=_section_create_body(),
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
 
 
@@ -393,7 +406,7 @@ async def _call_update_section(db: AsyncMock) -> Any:
         body=SectionUpdateRequest(label="Renamed"),
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
 
 
@@ -404,7 +417,7 @@ async def _call_delete_section(db: AsyncMock) -> Any:
         section_id=uuid.uuid4(),
         request=_request(),
         db=db,
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
 
 
@@ -461,3 +474,37 @@ async def test_error_mapping_and_no_commit(
     assert exc.value.status_code == expected_status
     assert exc.value.detail == str(error)
     db.commit.assert_not_awaited()
+
+
+def test_every_write_endpoint_claims_the_draft_lock() -> None:
+    """The B-9f lock is only real if every write path takes it.
+
+    A static roster rather than eight behavioural tests: the failure this
+    guards is a NEW write endpoint landing without the claim, and that is a
+    thing a reviewer has to notice in this file rather than a thing a mock
+    can catch. Same reasoning as the verify_all gate roster.
+    """
+    import inspect
+
+    source = inspect.getsource(endpoint_module)
+    # Every route that mutates the live tree, i.e. everything but the reads.
+    write_endpoints = [
+        "create_template_field",
+        "update_template_field",
+        "delete_template_field",
+        "move_template_field",
+        "reorder_template_fields",
+        "create_template_section",
+        "update_template_section",
+        "delete_template_section",
+    ]
+    declared = re.findall(r"^async def (\w+)\(", source, re.M)
+    unclaimed = []
+    for name in write_endpoints:
+        body = source.split(f"async def {name}(", 1)[1].split("\nasync def ", 1)[0]
+        if "claim_draft_lock(" not in body:
+            unclaimed.append(name)
+
+    assert not unclaimed, f"these write endpoints do not claim the draft lock: {unclaimed}"
+    missing = [name for name in write_endpoints if name not in declared]
+    assert not missing, f"the roster names endpoints that no longer exist: {missing}"

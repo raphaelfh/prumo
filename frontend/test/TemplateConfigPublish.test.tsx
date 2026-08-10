@@ -662,3 +662,63 @@ describe('TemplateDiscardDialog — outcomes', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('TemplateConfigPublishControls — the advisory editor lock (B-9f)', () => {
+  it('names the holder and offers Take over when someone else holds the draft', async () => {
+    loadTemplateConfigStatus.mockResolvedValue(
+      status({
+        has_pending_changes: true,
+        draft_holder_id: 'u-2',
+        draft_holder_name: 'L. Costa',
+        is_draft_holder: false,
+      }),
+    );
+    renderControls();
+
+    expect(
+      await screen.findByText(
+        templateConfig.draftHeldBy.replace('{{who}}', 'L. Costa'),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {name: templateConfig.draftTakeOver}),
+    ).toBeInTheDocument();
+  });
+
+  it('offers no takeover when the draft is unattributed', async () => {
+    // Every draft open when 0053 deployed is in this state, as is any raw
+    // PostgREST write. There is nobody to take it from, and the next write
+    // simply claims it.
+    loadTemplateConfigStatus.mockResolvedValue(
+      status({
+        has_pending_changes: true,
+        draft_holder_id: null,
+        draft_holder_name: null,
+        is_draft_holder: false,
+      }),
+    );
+    renderControls();
+
+    await screen.findByRole('button', {name: extraction.configPublishTooltip});
+    expect(
+      screen.queryByRole('button', {name: templateConfig.draftTakeOver}),
+    ).toBeNull();
+  });
+
+  it('says nothing about a lock the caller already holds', async () => {
+    loadTemplateConfigStatus.mockResolvedValue(
+      status({
+        has_pending_changes: true,
+        draft_holder_id: 'u-1',
+        draft_holder_name: 'M. Costa',
+        is_draft_holder: true,
+      }),
+    );
+    renderControls();
+
+    await screen.findByRole('button', {name: extraction.configPublishTooltip});
+    expect(
+      screen.queryByRole('button', {name: templateConfig.draftTakeOver}),
+    ).toBeNull();
+  });
+});

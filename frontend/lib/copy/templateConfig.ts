@@ -247,6 +247,21 @@ export const templateConfig = {
   historyLoadFailed:
     'The version history could not be loaded. This does not mean the template has none — try again.',
   historyEmpty: 'This template has not been published yet.',
+  // B-9f — the advisory editor lock. "held by" never names a raw id: an
+  // unattributed draft (pre-0053, or a raw PostgREST write) reads as a
+  // plain draft with no owner and offers no takeover, because there is
+  // nobody to take it from.
+  draftHeldBy: 'Being edited by {{who}}',
+  draftTakeOver: 'Take over',
+  draftTakeOverTooltip:
+    'Continue editing this draft yourself. Nothing is lost — there is only one draft, and their changes are already in it.',
+  draftTakeOverSuccess: 'You are now editing this draft.',
+  draftTakeOverFrom: 'You took over the draft from {{who}}.',
+  errors_draftLockHeld:
+    'Someone else is editing this configuration. Take over the draft to continue.',
+  errors_draftLockHeldBy:
+    '{{who}} is editing this configuration. Take over the draft to continue.',
+  errors_takeOverDraft: 'Could not take over the draft',
   historyTriggerTooltip: 'See every published version',
   historyRestoreAction: 'Restore',
   historyRestoreTooltip:

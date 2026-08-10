@@ -36,7 +36,7 @@ async def test_config_status_wraps_service_result(monkeypatch) -> None:
         template_id=template_id,
         request=_request(),
         db=AsyncMock(),
-        _user_sub=uuid.uuid4(),
+        user_sub=uuid.uuid4(),
     )
     assert response.ok is True
     assert response.data is read
@@ -56,6 +56,6 @@ async def test_config_status_maps_not_found_to_404(monkeypatch) -> None:
             template_id=uuid.uuid4(),
             request=_request(),
             db=AsyncMock(),
-            _user_sub=uuid.uuid4(),
+            user_sub=uuid.uuid4(),
         )
     assert exc.value.status_code == 404

@@ -1982,6 +1982,54 @@
         "title": "ApiResponse[SectionRead]",
         "type": "object"
       },
+      "ApiResponse_TakeOverDraftLockResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TakeOverDraftLockResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TakeOverDraftLockResponse]",
+        "type": "object"
+      },
       "ApiResponse_TemplateActiveVersionRead_": {
         "properties": {
           "data": {
@@ -7249,6 +7297,35 @@
         "title": "SyncStatusResponse",
         "type": "object"
       },
+      "TakeOverDraftLockResponse": {
+        "description": "Who was displaced by a take-over (B-9f), so the UI can say whose\ndraft was taken. Both ``None`` when nobody held it.",
+        "properties": {
+          "previous_holder_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Holder Id"
+          },
+          "previous_holder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Holder Name"
+          }
+        },
+        "title": "TakeOverDraftLockResponse",
+        "type": "object"
+      },
       "TemplateActiveVersionRead": {
         "description": "The template's ACTIVE version tree \u2014 what the worklist/dashboard\nprogress and exports render from (B-3a). Never an empty stand-in for a\nmissing active version: that case is a typed 404.",
         "properties": {
@@ -7488,8 +7565,35 @@
             "title": "Discard Available",
             "type": "boolean"
           },
+          "draft_holder_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Holder Id"
+          },
+          "draft_holder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Holder Name"
+          },
           "has_pending_changes": {
             "title": "Has Pending Changes",
+            "type": "boolean"
+          },
+          "is_draft_holder": {
+            "default": false,
+            "title": "Is Draft Holder",
             "type": "boolean"
           },
           "pending_change_count": {
@@ -7623,6 +7727,99 @@
           "error"
         ],
         "title": "TemplateDiscardRefusalResponse",
+        "type": "object"
+      },
+      "TemplateDraftLockRefusalCode": {
+        "description": "Why a config write was refused by the advisory editor lock (B-9f).\n\nSlice-local, like its two siblings: this is one surface's outcome, not\npart of the cross-cutting ``ApiErrorCode`` vocabulary.",
+        "enum": [
+          "DRAFT_LOCK_HELD"
+        ],
+        "title": "TemplateDraftLockRefusalCode",
+        "type": "string"
+      },
+      "TemplateDraftLockRefusalDetails": {
+        "description": "Who holds the draft, so \"Take over\" is not a blind click.",
+        "properties": {
+          "holder_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holder Id"
+          },
+          "holder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holder Name"
+          }
+        },
+        "title": "TemplateDraftLockRefusalDetails",
+        "type": "object"
+      },
+      "TemplateDraftLockRefusalError": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/TemplateDraftLockRefusalCode"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateDraftLockRefusalDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "TemplateDraftLockRefusalError",
+        "type": "object"
+      },
+      "TemplateDraftLockRefusalResponse": {
+        "description": "The 409 body, declared so the generated client types the holder.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/TemplateDraftLockRefusalError"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "TemplateDraftLockRefusalResponse",
         "type": "object"
       },
       "TemplateFieldCreateRequest": {
@@ -10954,6 +11151,75 @@
           }
         ],
         "summary": "Discard Template Draft",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/draft-lock/take-over": {
+      "post": {
+        "description": "Seize the advisory editor lock on this template's draft (B-9f).\n\nUnconditional by design. The lock exists so two managers do not\nsilently overwrite each other, not to make a template unusable when\nsomeone shuts their laptop \u2014 so the release valve is a human clicking\nTake over, never a timer guessing whether the holder is still there.\n\nNothing is lost: there is exactly ONE draft, so everything the previous\nholder wrote is already in it. They learn at their next write, which\nrefuses with the new holder named.",
+        "operationId": "take_over_draft_lock_endpoint_api_v1_projects__project_id__templates__template_id__draft_lock_take_over_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TakeOverDraftLockResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDraftLockRefusalResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Take Over Draft Lock Endpoint",
         "tags": [
           "project-templates"
         ]

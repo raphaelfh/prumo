@@ -301,7 +301,8 @@ async def discard_draft(
         await db.execute(
             update(ProjectExtractionTemplate)
             .where(ProjectExtractionTemplate.id == template_id)
-            .values(config_draft_since=None)
+            # B-9f: the draft is gone, so its editor lock goes with it.
+            .values(config_draft_since=None, config_draft_by=None)
         )
 
     logger.info(

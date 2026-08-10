@@ -6,6 +6,7 @@ import {TemplateDiscardDialog} from '@/components/extraction/template-config/Tem
 import {TemplateVersionHistorySheet} from '@/components/extraction/template-config/TemplateVersionHistorySheet';
 import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
+import {useTakeOverDraftLock} from '@/hooks/extraction/useTakeOverDraftLock';
 import {useTemplateConfigStatus} from '@/hooks/extraction/useTemplateConfigStatus';
 import {useTemplateInstruction} from '@/hooks/extraction/useTemplateInstruction';
 import {t} from '@/lib/copy';
@@ -47,6 +48,7 @@ export function TemplateConfigPublishControls({
   // there IS one. TemplateInstructionRow mounts this same key alongside us,
   // so the two observers dedupe into one request.
   const {data: instruction} = useTemplateInstruction(projectId, templateId);
+  const {takeOver, takingOver} = useTakeOverDraftLock(projectId, templateId);
   const [discardOpen, setDiscardOpen] = useState(false);
   // B-9e History. Local, unlike diffSheetOpen: the History sheet does
   // not collide with the grid's inspector — the editor hoists only the
@@ -98,6 +100,14 @@ export function TemplateConfigPublishControls({
   // bar meant the primary product path never fetched a diff at all, so
   // destructive changes shipped with nothing confirmed.
   const handlePublish = () => onDiffSheetOpenChange(true);
+
+  // B-9f: someone ELSE holds the advisory lock. Rendered only when the
+  // server says so — `is_draft_holder` is derived server-side, so the chip
+  // never compares ids, and an UNATTRIBUTED draft (holder id null) shows
+  // no owner and offers no takeover, because there is nobody to take it
+  // from.
+  const heldByOther =
+    configStatus?.draft_holder_id != null && configStatus.is_draft_holder !== true;
 
   let chip = null;
   if (hasPendingChanges) {
@@ -160,6 +170,33 @@ export function TemplateConfigPublishControls({
   return (
     <>
       {chip}
+      {heldByOther && (
+        <>
+          <span className="text-xs text-muted-foreground">
+            {t('templateConfig', 'draftHeldBy').replace(
+              '{{who}}',
+              configStatus?.draft_holder_name ??
+                t('templateConfig', 'historyUnknownAuthor'),
+            )}
+          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={takingOver}
+                onClick={() => void takeOver()}
+              >
+                {t('templateConfig', 'draftTakeOver')}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t('templateConfig', 'draftTakeOverTooltip')}
+            </TooltipContent>
+          </Tooltip>
+        </>
+      )}
       <Tooltip>
         <TooltipTrigger asChild>
           {/* span keeps the tooltip alive while the button is disabled */}

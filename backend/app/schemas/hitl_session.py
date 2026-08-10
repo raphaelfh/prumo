@@ -232,6 +232,49 @@ class RestoreVersionResponse(BaseModel):
     staged tree keeps them regardless of the version's shape."""
 
 
+class TakeOverDraftLockResponse(BaseModel):
+    """Who was displaced by a take-over (B-9f), so the UI can say whose
+    draft was taken. Both ``None`` when nobody held it."""
+
+    previous_holder_id: str | None = None
+    previous_holder_name: str | None = None
+
+
+class TemplateDraftLockRefusalCode(StrEnum):
+    """Why a config write was refused by the advisory editor lock (B-9f).
+
+    Slice-local, like its two siblings: this is one surface's outcome, not
+    part of the cross-cutting ``ApiErrorCode`` vocabulary."""
+
+    DRAFT_LOCK_HELD = "DRAFT_LOCK_HELD"
+
+
+class TemplateDraftLockRefusalDetails(BaseModel):
+    """Who holds the draft, so "Take over" is not a blind click."""
+
+    holder_id: str | None = None
+    """A STRING: ``app_error_handler`` renders ``details`` through a bare
+    JSONResponse, so a raw UUID would raise inside the handler and turn the
+    refusal into a 500 (the B-9c1 precedent)."""
+    holder_name: str | None = None
+    """``None`` when the profile has no name, or when the draft is
+    unattributed — never the raw id as a stand-in."""
+
+
+class TemplateDraftLockRefusalError(BaseModel):
+    code: TemplateDraftLockRefusalCode
+    message: str
+    details: TemplateDraftLockRefusalDetails | None = None
+
+
+class TemplateDraftLockRefusalResponse(BaseModel):
+    """The 409 body, declared so the generated client types the holder."""
+
+    ok: bool = False
+    error: TemplateDraftLockRefusalError
+    trace_id: str | None = None
+
+
 class TemplateDiscardRefusalCode(StrEnum):
     """Why ``POST .../discard-draft`` returned 409 (B-9c2 D1).
 
@@ -413,6 +456,18 @@ class TemplateConfigStatusRead(BaseModel):
     button is disabled with the right tooltip instead of discovering the
     refusal by clicking. False without a published baseline, and false for a
     pre-0026 narrow one (restoring it would wipe columns project-wide)."""
+    draft_holder_id: str | None = None
+    """Who holds the advisory editor lock (B-9f), or ``None``.
+
+    A string, matching the refusal payload. ``None`` while a draft is open
+    means UNATTRIBUTED — a draft from before 0053, or a raw PostgREST
+    write — and is claimable by the next writer, so the chip renders a
+    nameless variant rather than inventing an owner."""
+    draft_holder_name: str | None = None
+    is_draft_holder: bool = False
+    """Whether the CALLER holds it. Derived server-side so the chip never
+    has to compare ids, and so "Take over" is offered only when there is
+    someone to take over from."""
 
 
 class TemplateChangeRowRead(BaseModel):
