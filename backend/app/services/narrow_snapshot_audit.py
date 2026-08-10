@@ -23,10 +23,25 @@ reporter touches one.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-__all__ = ["NarrowEra", "BaselineClassification", "classify_baseline"]
+from sqlalchemy import func, select
+
+from app.models.extraction import ProjectExtractionTemplate
+from app.models.extraction_versioning import ExtractionTemplateVersion
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+__all__ = [
+    "BaselineClassification",
+    "BaselineFinding",
+    "NarrowEra",
+    "audit_active_baselines",
+    "classify_baseline",
+    "format_findings",
+]
 
 
 class NarrowEra(Enum):
@@ -107,61 +122,91 @@ def classify_baseline(schema_: dict[str, Any] | None) -> BaselineClassification:
     return BaselineClassification(era=NarrowEra.WIDE, restorable=True)
 
 
-async def _report() -> int:
-    """Print one line per template with an unrestorable baseline.
+@dataclass(frozen=True, slots=True)
+class BaselineFinding:
+    """One template whose active baseline cannot be restored."""
 
-    Imports live here rather than at module scope so the classifier stays
-    importable — and testable — without a database or app settings.
+    template_id: UUID
+    project_id: UUID
+    version: int
+    classification: BaselineClassification
+
+
+async def audit_active_baselines(db: "AsyncSession") -> list[BaselineFinding]:
+    """Every template whose ACTIVE baseline is unrestorable, newest query first.
+
+    Takes the session rather than opening one, so this is testable against a
+    planted baseline instead of only runnable by an operator. One query for
+    the whole estate — the classification is pure, so there is nothing to
+    batch.
     """
-    from sqlalchemy import select
-
-    from app.core.deps import AsyncSessionLocal
-    from app.models.extraction import ProjectExtractionTemplate
-    from app.models.extraction_versioning import ExtractionTemplateVersion
-
-    affected = 0
-    async with AsyncSessionLocal() as db:
-        rows = (
-            await db.execute(
-                select(
-                    ProjectExtractionTemplate.id,
-                    ProjectExtractionTemplate.project_id,
-                    ExtractionTemplateVersion.version,
-                    ExtractionTemplateVersion.schema_,
-                )
-                .join(
-                    ExtractionTemplateVersion,
-                    ExtractionTemplateVersion.project_template_id == ProjectExtractionTemplate.id,
-                )
-                .where(ExtractionTemplateVersion.is_active.is_(True))
+    rows = (
+        await db.execute(
+            select(
+                ProjectExtractionTemplate.id,
+                ProjectExtractionTemplate.project_id,
+                ExtractionTemplateVersion.version,
+                ExtractionTemplateVersion.schema_,
             )
-        ).all()
+            .join(
+                ExtractionTemplateVersion,
+                ExtractionTemplateVersion.project_template_id == ProjectExtractionTemplate.id,
+            )
+            .where(ExtractionTemplateVersion.is_active.is_(True))
+        )
+    ).all()
 
-        for template_id, project_id, version, schema_ in rows:
-            result = classify_baseline(schema_)
-            if result.restorable:
-                continue
-            affected += 1
-            _print_finding(template_id, project_id, version, result)
+    findings: list[BaselineFinding] = []
+    for template_id, project_id, version, schema_ in rows:
+        classification = classify_baseline(schema_)
+        if classification.restorable:
+            continue
+        findings.append(
+            BaselineFinding(
+                template_id=template_id,
+                project_id=project_id,
+                version=version,
+                classification=classification,
+            )
+        )
+    return findings
 
-    print(f"\n{affected} template(s) of {len(rows)} carry an unrestorable baseline.")
-    if affected:
-        print(
+
+def format_findings(findings: list[BaselineFinding], total: int) -> str:
+    """The operator-facing report. Pure, so its wording is testable."""
+    lines = [
+        f"\ntemplate {f.template_id}  (project {f.project_id}, active v{f.version})"
+        f"\n  era:      {f.classification.era.label}"
+        f"\n  sections: {', '.join(f.classification.narrow_entity_type_ids) or '(all)'}"
+        f"\n  remedy:   {f.classification.era.remedy}"
+        for f in findings
+    ]
+    lines.append(f"\n{len(findings)} template(s) of {total} carry an unrestorable baseline.")
+    if findings:
+        lines.append(
             "Each one cannot diff, cannot Discard, and publishes without the "
             "B-9b2b acknowledgement gate (no diff is computable, so there are "
             "no rows to acknowledge). Publishing heals it: the new version is "
             "built from live rows."
         )
-    return affected
+    return "\n".join(lines)
 
 
-def _print_finding(
-    template_id: UUID, project_id: UUID, version: int, result: BaselineClassification
-) -> None:
-    print(f"\ntemplate {template_id}  (project {project_id}, active v{version})")
-    print(f"  era:      {result.era.label}")
-    print(f"  sections: {', '.join(result.narrow_entity_type_ids) or '(all)'}")
-    print(f"  remedy:   {result.era.remedy}")
+async def _report() -> int:  # pragma: no cover - operator entry point
+    """Open a session, print the report, and exit non-zero when affected."""
+    from app.core.deps import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        total = (
+            await db.execute(
+                select(func.count())
+                .select_from(ExtractionTemplateVersion)
+                .where(ExtractionTemplateVersion.is_active.is_(True))
+            )
+        ).scalar_one()
+        findings = await audit_active_baselines(db)
+    print(format_findings(findings, total))
+    return len(findings)
 
 
 if __name__ == "__main__":  # pragma: no cover - operator entry point
