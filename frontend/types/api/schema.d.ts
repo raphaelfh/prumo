@@ -1044,6 +1044,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates/{template_id}/versions/{version_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Template Version
+         * @description Stage an older version's shape as the current draft (B-9e).
+         *
+         *     Does NOT rewrite history: the live tree is reconciled to that version
+         *     and the draft marker is left stamped, so the manager reviews it through
+         *     the ordinary Publish sheet — per-item acks and all — and it lands as
+         *     v_max+1.
+         *
+         *     404 covers both an unknown version and one belonging to another
+         *     template: distinguishing them would confirm a foreign id exists.
+         */
+        post: operations["restore_template_version_api_v1_projects__project_id__templates__template_id__versions__version_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs": {
         parameters: {
             query?: never;
@@ -2005,6 +2033,23 @@ export interface components {
         ApiResponse_RepublishTemplateVersionResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["RepublishTemplateVersionResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[RestoreVersionResponse] */
+        ApiResponse_RestoreVersionResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["RestoreVersionResponse"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3824,6 +3869,35 @@ export interface components {
              * Format: uuid
              */
             version_id: string;
+        };
+        /**
+         * RestoreVersionResponse
+         * @description What a Restore-vN staged (B-9e).
+         *
+         *     ``changed`` is False when the version's shape already matched the live
+         *     tree: the writer touched no rows, so no draft marker was stamped and
+         *     Publish stays disabled. The sheet says so rather than claiming a
+         *     restore that the UI cannot act on.
+         */
+        RestoreVersionResponse: {
+            /** Changed */
+            changed: boolean;
+            /** Created Entity Types */
+            created_entity_types: number;
+            /** Created Fields */
+            created_fields: number;
+            /** Deleted Entity Types */
+            deleted_entity_types: number;
+            /** Deleted Fields */
+            deleted_fields: number;
+            /** Kept Count */
+            kept_count: number;
+            /** Updated Entity Types */
+            updated_entity_types: number;
+            /** Updated Fields */
+            updated_fields: number;
+            /** Version */
+            version: number;
         };
         /** ReviewerDecisionResponse */
         ReviewerDecisionResponse: {
@@ -6958,6 +7032,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_TemplateVersionHistoryRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_template_version_api_v1_projects__project_id__templates__template_id__versions__version_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RestoreVersionResponse_"];
                 };
             };
             /** @description Validation Error */

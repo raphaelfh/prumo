@@ -16,7 +16,10 @@
  *
  * @module components/extraction/template-config/TemplateVersionHistorySheet
  */
+import {toast} from 'sonner';
+
 import {Badge} from '@/components/ui/badge';
+import {Button} from '@/components/ui/button';
 import {ScrollArea} from '@/components/ui/scroll-area';
 import {
   Sheet,
@@ -25,6 +28,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
+import {useRestoreTemplateVersion} from '@/hooks/extraction/useRestoreTemplateVersion';
 import {useTemplateVersionHistory} from '@/hooks/extraction/useTemplateVersionHistory';
 import {t} from '@/lib/copy';
 import type {TemplateVersionHistoryEntry} from '@/services/templateService';
@@ -42,7 +47,15 @@ function publishedAt(iso: string): string {
   return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleString();
 }
 
-function HistoryRow({entry}: {entry: TemplateVersionHistoryEntry}) {
+function HistoryRow({
+  entry,
+  onRestore,
+  restoring,
+}: {
+  entry: TemplateVersionHistoryEntry;
+  onRestore: (entry: TemplateVersionHistoryEntry) => void;
+  restoring: boolean;
+}) {
   return (
     <li
       data-testid={`template-version-${entry.version}`}
@@ -73,12 +86,35 @@ function HistoryRow({entry}: {entry: TemplateVersionHistoryEntry}) {
           {entry.note}
         </p>
       )}
-      <p className="mt-1 text-xs text-muted-foreground">
-        {(entry.pinned_run_count === 1
-          ? t('templateConfig', 'historyPinnedRunsOne')
-          : t('templateConfig', 'historyPinnedRunsOther')
-        ).replace('{{n}}', String(entry.pinned_run_count))}
-      </p>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          {(entry.pinned_run_count === 1
+            ? t('templateConfig', 'historyPinnedRunsOne')
+            : t('templateConfig', 'historyPinnedRunsOther')
+          ).replace('{{n}}', String(entry.pinned_run_count))}
+        </p>
+        {/* The ACTIVE version has nothing to restore — the live tree
+            already is it (modulo an open draft), so the button would
+            promise a change it cannot make. */}
+        {!entry.is_active && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 shrink-0 text-xs"
+                disabled={restoring}
+                onClick={() => onRestore(entry)}
+              >
+                {t('templateConfig', 'historyRestoreAction')}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t('templateConfig', 'historyRestoreTooltip')}
+            </TooltipContent>
+          </Tooltip>
+        )}
+      </div>
     </li>
   );
 }
@@ -89,7 +125,34 @@ export function TemplateVersionHistorySheet({
   onClose,
 }: TemplateVersionHistorySheetProps) {
   const {data, isPending, isError} = useTemplateVersionHistory(projectId, templateId);
+  const {restore, restoring} = useRestoreTemplateVersion(projectId, templateId);
   const versions = data?.versions ?? [];
+
+  const handleRestore = (entry: TemplateVersionHistoryEntry) => {
+    // Promise .then, not try/finally — the React Compiler bans the latter
+    // in component bodies.
+    void restore(entry.version_id).then((result) => {
+      if (!result) return;
+      // A restore that changed nothing is reported as such rather than as
+      // success: the marker was never stamped, so Publish stays disabled
+      // and a "restored!" toast would leave the manager hunting for it.
+      toast.success(
+        (result.changed
+          ? t('templateConfig', 'historyRestoreSuccess')
+          : t('templateConfig', 'historyRestoreNoop')
+        ).replace('{{n}}', String(result.version)),
+      );
+      if (result.kept_count > 0) {
+        toast.info(
+          t('templateConfig', 'historyRestoreKept').replace(
+            '{{n}}',
+            String(result.kept_count),
+          ),
+        );
+      }
+      onClose();
+    });
+  };
 
   let body;
   if (isPending) {
@@ -112,7 +175,12 @@ export function TemplateVersionHistorySheet({
     body = (
       <ul>
         {versions.map((entry) => (
-          <HistoryRow key={entry.version_id} entry={entry} />
+          <HistoryRow
+            key={entry.version_id}
+            entry={entry}
+            onRestore={handleRestore}
+            restoring={restoring}
+          />
         ))}
       </ul>
     );

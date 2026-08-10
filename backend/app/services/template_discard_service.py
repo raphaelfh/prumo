@@ -100,7 +100,11 @@ from app.services.extraction_snapshot import (
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_diff import TemplateChange, diff_snapshots
-from app.services.template_restore_service import ContainerSwapUnsupportedError, restore_snapshot
+from app.services.template_restore_service import (
+    ContainerSwapUnsupportedError,
+    RestoreOutcome,
+    restore_snapshot,
+)
 from app.services.template_section_service import has_multi_entry_parent
 from app.services.template_version_read_service import NoActiveTemplateVersionError
 from app.services.template_version_service import TemplateVersionService
@@ -203,6 +207,20 @@ class DiscardRacedError(_DiscardRefusal):
 
 
 @dataclass(frozen=True, slots=True)
+class ReconcileResult:
+    """What a reconcile did, and what it could not undo.
+
+    ``orphans`` and ``discarded`` ride along because the caller logs them:
+    re-deriving either would mean a second diff over the same trees.
+    """
+
+    outcome: RestoreOutcome
+    kept: tuple[DiscardKeptNode, ...]
+    orphans: list[TemplateChange]
+    discarded: list[TemplateChange]
+
+
+@dataclass(frozen=True, slots=True)
 class _Blocked:
     """The D4 analysis: what cannot be deleted, and what survives with it."""
 
@@ -261,67 +279,18 @@ async def discard_draft(
             user_id=user_id,
         )
 
-    live_entities, live_fields = await _live_tree(db, template_id)
-    blocked = await _analyze(
-        db, baseline=baseline, live_entities=live_entities, live_fields=live_fields
-    )
-    await _refuse_cardinality_downgrade(
+    reconciled = await reconcile_to_baseline(
         db,
-        baseline=baseline,
-        live_entities=live_entities,
         project_id=project_id,
         template_id=template_id,
         user_id=user_id,
+        baseline=baseline,
+        acknowledge_orphans=acknowledge_orphans,
     )
-
-    # D6/D10 — the live snapshot, captured BEFORE the writer runs. Diffed in
-    # the direction of the operation (live -> published), so a "destructive"
-    # tier names what THIS Discard destroys, not what the draft did.
-    current = await build_template_version_snapshot(db, template_id)
-    kept_ids = {node.node_id for node in blocked.kept}
-    discarded = [
-        change
-        for change in diff_snapshots(
-            current, baseline, fields_with_values=blocked.fields_with_values
-        ).changes
-        if change.node_id not in kept_ids
-    ]
-    orphans = [
-        change
-        for change in discarded
-        if change.tier is ChangeTier.DESTRUCTIVE and change.node_id in blocked.fields_with_values
-    ]
-    if orphans and not acknowledge_orphans:
-        _refuse(
-            _orphan_refusal(orphans),
-            project_id=project_id,
-            template_id=template_id,
-            user_id=user_id,
-            blocking_node_id=orphans[0].node_id,
-        )
-
-    try:
-        outcome = await restore_snapshot(
-            db,
-            project_id=project_id,
-            template_id=template_id,
-            snapshot=baseline,
-            skip_entity_type_ids=blocked.skip_entity_type_ids,
-        )
-    except ContainerSwapUnsupportedError as exc:
-        _refuse(exc, project_id=project_id, template_id=template_id, user_id=user_id)
-    except DBAPIError as exc:
-        _reraise_if_raced(exc, project_id=project_id, template_id=template_id, user_id=user_id)
-        raise
-
-    # A kept field owns its per-section name for good, so the baseline
-    # fields aimed at that name stayed as the draft left them. They are part
-    # of what Discard could not undo, so they join ``kept`` — and, like any
-    # other kept node, they hold the marker open.
-    kept_nodes = (
-        *blocked.kept,
-        *_name_conflicted_nodes(baseline, outcome.name_conflicted_field_ids),
-    )
+    outcome = reconciled.outcome
+    kept_nodes = reconciled.kept
+    orphans = reconciled.orphans
+    discarded = reconciled.discarded
 
     # D7 — the marker, last and by Core UPDATE: the 0048 AFTER-ROW triggers
     # re-stamp it on every row the writer touched, and an ORM attribute set
@@ -709,3 +678,98 @@ def _refuse(
         reason=str(error),
     )
     raise error from cause
+
+
+async def reconcile_to_baseline(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    template_id: UUID,
+    user_id: UUID,
+    baseline: dict[str, Any],
+    acknowledge_orphans: bool,
+) -> ReconcileResult:
+    """Reconcile the live tree to ANY baseline snapshot, gates included.
+
+    Extracted for B-9e's Restore-vN. Discard and Restore are the same
+    reconcile with two differences the callers own: where the baseline
+    comes from (the ACTIVE version vs. an arbitrary one), and what happens
+    to ``config_draft_since`` afterwards (Discard clears it when the tree
+    matches; Restore deliberately leaves it stamped, because staging an old
+    shape IS a draft).
+
+    Everything between those two ends is baseline-agnostic and always was —
+    it already read a local ``baseline`` dict. What it was NOT is reachable:
+    the only caller resolved that dict from ``get_active``, so restoring an
+    arbitrary version would have skipped every gate below.
+
+    Those gates are not optional for an older version — they are MORE
+    load-bearing. An old snapshot can omit sections that have since
+    accumulated ``extraction_instances``; without ``_analyze``'s skip set
+    those land in the delete set and abort the transaction on a RESTRICT FK
+    as an untyped 500, or strand recorded work.
+
+    Returns the writer's outcome plus every node the reconcile could not
+    undo. Flushes, never commits.
+    """
+    live_entities, live_fields = await _live_tree(db, template_id)
+    blocked = await _analyze(
+        db, baseline=baseline, live_entities=live_entities, live_fields=live_fields
+    )
+    await _refuse_cardinality_downgrade(
+        db,
+        baseline=baseline,
+        live_entities=live_entities,
+        project_id=project_id,
+        template_id=template_id,
+        user_id=user_id,
+    )
+
+    # D6/D10 — the live snapshot, captured BEFORE the writer runs. Diffed in
+    # the direction of the operation (live -> published), so a "destructive"
+    # tier names what THIS Discard destroys, not what the draft did.
+    current = await build_template_version_snapshot(db, template_id)
+    kept_ids = {node.node_id for node in blocked.kept}
+    discarded = [
+        change
+        for change in diff_snapshots(
+            current, baseline, fields_with_values=blocked.fields_with_values
+        ).changes
+        if change.node_id not in kept_ids
+    ]
+    orphans = [
+        change
+        for change in discarded
+        if change.tier is ChangeTier.DESTRUCTIVE and change.node_id in blocked.fields_with_values
+    ]
+    if orphans and not acknowledge_orphans:
+        _refuse(
+            _orphan_refusal(orphans),
+            project_id=project_id,
+            template_id=template_id,
+            user_id=user_id,
+            blocking_node_id=orphans[0].node_id,
+        )
+
+    try:
+        outcome = await restore_snapshot(
+            db,
+            project_id=project_id,
+            template_id=template_id,
+            snapshot=baseline,
+            skip_entity_type_ids=blocked.skip_entity_type_ids,
+        )
+    except ContainerSwapUnsupportedError as exc:
+        _refuse(exc, project_id=project_id, template_id=template_id, user_id=user_id)
+    except DBAPIError as exc:
+        _reraise_if_raced(exc, project_id=project_id, template_id=template_id, user_id=user_id)
+        raise
+
+    # A kept field owns its per-section name for good, so the baseline
+    # fields aimed at that name stayed as they were. They are part of what
+    # the reconcile could not undo, so they join ``kept``.
+    kept_nodes = (
+        *blocked.kept,
+        *_name_conflicted_nodes(baseline, outcome.name_conflicted_field_ids),
+    )
+    return ReconcileResult(outcome=outcome, kept=kept_nodes, orphans=orphans, discarded=discarded)

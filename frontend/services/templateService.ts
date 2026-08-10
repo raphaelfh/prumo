@@ -45,6 +45,9 @@ export type TemplateChangeRow = components['schemas']['TemplateChangeRowRead'];
 export type TemplateVersionHistory =
   components['schemas']['TemplateVersionHistoryRead'];
 
+export type RestoreVersionResponse =
+  components['schemas']['RestoreVersionResponse'];
+
 export type TemplateVersionHistoryEntry =
   components['schemas']['TemplateVersionHistoryEntry'];
 
@@ -289,6 +292,28 @@ export async function loadTemplateVersionHistory(
         `/api/v1/projects/${projectId}/templates/${templateId}/versions`,
       ),
     'loadTemplateVersionHistory',
+  );
+}
+
+/**
+ * Stage an older version's shape as the current draft (B-9e).
+ *
+ * Never rewrites history: the tree is reconciled to that version and the
+ * draft marker stays stamped, so it lands as v_max+1 through the ordinary
+ * Publish sheet.
+ */
+export async function restoreTemplateVersion(
+  projectId: string,
+  templateId: string,
+  versionId: string,
+): Promise<ErrorResult<RestoreVersionResponse>> {
+  return toResult(
+    async () =>
+      apiClient<RestoreVersionResponse>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/versions/${versionId}/restore`,
+        {method: 'POST'},
+      ),
+    'restoreTemplateVersion',
   );
 }
 

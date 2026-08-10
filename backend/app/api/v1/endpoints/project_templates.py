@@ -37,6 +37,7 @@ from app.schemas.hitl_session import (
     DiscardDraftResponse,
     RepublishTemplateVersionRequest,
     RepublishTemplateVersionResponse,
+    RestoreVersionResponse,
     TemplateActiveVersionRead,
     TemplateConfigDiffRead,
     TemplateConfigStatusRead,
@@ -64,6 +65,10 @@ from app.services.template_discard_service import discard_draft
 from app.services.template_instruction_service import (
     get_template_instruction,
     set_template_instruction,
+)
+from app.services.template_restore_version_service import (
+    VersionNotFoundError,
+    restore_version,
 )
 from app.services.template_version_read_service import (
     NoActiveTemplateVersionError,
@@ -481,3 +486,53 @@ async def get_template_version_history_endpoint(
     except ProjectTemplateNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return ApiResponse.success(history, trace_id=getattr(request.state, "trace_id", None))
+
+
+@router.post("/{project_id}/templates/{template_id}/versions/{version_id}/restore")
+async def restore_template_version(
+    project_id: UUID,
+    template_id: UUID,
+    version_id: UUID,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(require_project_manager),
+) -> ApiResponse[RestoreVersionResponse]:
+    """Stage an older version's shape as the current draft (B-9e).
+
+    Does NOT rewrite history: the live tree is reconciled to that version
+    and the draft marker is left stamped, so the manager reviews it through
+    the ordinary Publish sheet — per-item acks and all — and it lands as
+    v_max+1.
+
+    404 covers both an unknown version and one belonging to another
+    template: distinguishing them would confirm a foreign id exists.
+    """
+    try:
+        result = await restore_version(
+            db,
+            project_id=project_id,
+            template_id=template_id,
+            version_id=version_id,
+            user_id=current_user_sub,
+        )
+    except ProjectTemplateNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except VersionNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    # NarrowBaselineError is an AppError and reaches app_error_handler with
+    # its typed code, exactly as it does on the discard path.
+    await db.commit()
+    return ApiResponse.success(
+        RestoreVersionResponse(
+            version=result.version,
+            changed=result.changed,
+            created_entity_types=result.created_entity_types,
+            created_fields=result.created_fields,
+            deleted_entity_types=result.deleted_entity_types,
+            deleted_fields=result.deleted_fields,
+            updated_entity_types=result.updated_entity_types,
+            updated_fields=result.updated_fields,
+            kept_count=result.kept_count,
+        ),
+        trace_id=getattr(request.state, "trace_id", None),
+    )

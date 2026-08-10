@@ -1550,6 +1550,54 @@
         "title": "ApiResponse[RepublishTemplateVersionResponse]",
         "type": "object"
       },
+      "ApiResponse_RestoreVersionResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RestoreVersionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[RestoreVersionResponse]",
+        "type": "object"
+      },
       "ApiResponse_ReviewerDecisionResponse_": {
         "properties": {
           "data": {
@@ -5612,6 +5660,60 @@
           "repinned_run_count"
         ],
         "title": "RepublishTemplateVersionResponse",
+        "type": "object"
+      },
+      "RestoreVersionResponse": {
+        "description": "What a Restore-vN staged (B-9e).\n\n``changed`` is False when the version's shape already matched the live\ntree: the writer touched no rows, so no draft marker was stamped and\nPublish stays disabled. The sheet says so rather than claiming a\nrestore that the UI cannot act on.",
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "created_entity_types": {
+            "title": "Created Entity Types",
+            "type": "integer"
+          },
+          "created_fields": {
+            "title": "Created Fields",
+            "type": "integer"
+          },
+          "deleted_entity_types": {
+            "title": "Deleted Entity Types",
+            "type": "integer"
+          },
+          "deleted_fields": {
+            "title": "Deleted Fields",
+            "type": "integer"
+          },
+          "kept_count": {
+            "title": "Kept Count",
+            "type": "integer"
+          },
+          "updated_entity_types": {
+            "title": "Updated Entity Types",
+            "type": "integer"
+          },
+          "updated_fields": {
+            "title": "Updated Fields",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "changed",
+          "created_entity_types",
+          "created_fields",
+          "deleted_entity_types",
+          "deleted_fields",
+          "updated_entity_types",
+          "updated_fields",
+          "kept_count"
+        ],
+        "title": "RestoreVersionResponse",
         "type": "object"
       },
       "ReviewerDecisionResponse": {
@@ -11694,6 +11796,75 @@
           }
         ],
         "summary": "Get Template Version History Endpoint",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/versions/{version_id}/restore": {
+      "post": {
+        "description": "Stage an older version's shape as the current draft (B-9e).\n\nDoes NOT rewrite history: the live tree is reconciled to that version\nand the draft marker is left stamped, so the manager reviews it through\nthe ordinary Publish sheet \u2014 per-item acks and all \u2014 and it lands as\nv_max+1.\n\n404 covers both an unknown version and one belonging to another\ntemplate: distinguishing them would confirm a foreign id exists.",
+        "operationId": "restore_template_version_api_v1_projects__project_id__templates__template_id__versions__version_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RestoreVersionResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Restore Template Version",
         "tags": [
           "project-templates"
         ]

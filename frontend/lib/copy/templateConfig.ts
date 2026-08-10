@@ -248,6 +248,16 @@ export const templateConfig = {
     'The version history could not be loaded. This does not mean the template has none — try again.',
   historyEmpty: 'This template has not been published yet.',
   historyTriggerTooltip: 'See every published version',
+  historyRestoreAction: 'Restore',
+  historyRestoreTooltip:
+    'Bring this version back as an unpublished draft — nothing is overwritten until you publish',
+  historyRestoreSuccess:
+    'Version {{n}} is staged as a draft. Review it and publish when ready.',
+  historyRestoreNoop:
+    'Version {{n}} already matches the current configuration, so nothing changed.',
+  historyRestoreKept:
+    '{{n}} item(s) could not be brought back because they hold recorded answers.',
+  errors_restoreVersion: 'Could not restore that version',
   inspectorGroupAlwaysRepeats: 'A group always repeats',
   inspectorGroupKindLine: 'Repeating group — reviewers add one entry per {{noun}}',
   inspectorInsideGroup: 'Inside {{group}}',
