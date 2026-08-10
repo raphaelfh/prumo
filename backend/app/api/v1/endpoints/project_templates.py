@@ -44,6 +44,7 @@ from app.schemas.hitl_session import (
     TemplateInstructionRead,
     TemplateKind,
     TemplatePublishRefusalResponse,
+    TemplateVersionHistoryRead,
     UpdateTemplateActiveRequest,
     UpdateTemplateActiveResponse,
     UpdateTemplateInstructionRequest,
@@ -69,6 +70,7 @@ from app.services.template_version_read_service import (
     get_active_version_tree,
     get_template_config_diff,
     get_template_config_status,
+    get_template_version_history,
 )
 from app.services.template_version_service import (
     PublishBlockedByMultiEntryError,
@@ -452,3 +454,30 @@ async def get_template_active_version(
         result,
         trace_id=getattr(request.state, "trace_id", None),
     )
+
+
+@router.get("/{project_id}/templates/{template_id}/versions")
+async def get_template_version_history_endpoint(
+    project_id: UUID,
+    template_id: UUID,
+    request: Request,
+    db: DbSession,
+    _: UUID = Depends(require_project_manager),
+) -> ApiResponse[TemplateVersionHistoryRead]:
+    """The History timeline for a template's published versions (B-9e).
+
+    Manager-gated like the rest of the configuration surface — this reads
+    who changed the template and why, which is not reviewer-facing. The
+    sibling ``active-version`` route is the one exception, member-gated
+    because the worklist renders from it.
+
+    An empty list is a 200: a template that never published has no
+    timeline yet, which the card explains rather than treating as an error.
+    """
+    try:
+        history = await get_template_version_history(
+            db, project_id=project_id, template_id=template_id
+        )
+    except ProjectTemplateNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return ApiResponse.success(history, trace_id=getattr(request.state, "trace_id", None))

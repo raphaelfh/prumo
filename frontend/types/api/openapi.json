@@ -2270,6 +2270,54 @@
         "title": "ApiResponse[TemplateInstructionRead]",
         "type": "object"
       },
+      "ApiResponse_TemplateVersionHistoryRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateVersionHistoryRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateVersionHistoryRead]",
+        "type": "object"
+      },
       "ApiResponse_Union_RunSummaryResponse__NoneType__": {
         "properties": {
           "data": {
@@ -8268,6 +8316,92 @@
         "title": "TemplatePublishRefusalResponse",
         "type": "object"
       },
+      "TemplateVersionHistoryEntry": {
+        "description": "One published version, as the History timeline renders it (B-9e).\n\nCarries no ``schema`` payload: the timeline shows WHAT happened and WHO\ndid it, and shipping every snapshot would put the whole template\nstructure on the wire once per version for a list nobody diffs inline.",
+        "properties": {
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "pinned_run_count": {
+            "title": "Pinned Run Count",
+            "type": "integer"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "published_by": {
+            "format": "uuid",
+            "title": "Published By",
+            "type": "string"
+          },
+          "published_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published By Name"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_id",
+          "version",
+          "is_active",
+          "published_at",
+          "published_by",
+          "pinned_run_count"
+        ],
+        "title": "TemplateVersionHistoryEntry",
+        "type": "object"
+      },
+      "TemplateVersionHistoryRead": {
+        "description": "The History card's read model \u2014 newest version first.\n\nAn empty list is a real, renderable state (a template that never\npublished), not an error.",
+        "properties": {
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateVersionHistoryEntry"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project_template_id"
+        ],
+        "title": "TemplateVersionHistoryRead",
+        "type": "object"
+      },
       "TestConnectionResponse": {
         "description": "Response de teste de conexao.",
         "properties": {
@@ -11501,6 +11635,65 @@
           }
         ],
         "summary": "Update Template Section",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/versions": {
+      "get": {
+        "description": "The History timeline for a template's published versions (B-9e).\n\nManager-gated like the rest of the configuration surface \u2014 this reads\nwho changed the template and why, which is not reviewer-facing. The\nsibling ``active-version`` route is the one exception, member-gated\nbecause the worklist renders from it.\n\nAn empty list is a 200: a template that never published has no\ntimeline yet, which the card explains rather than treating as an error.",
+        "operationId": "get_template_version_history_endpoint_api_v1_projects__project_id__templates__template_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateVersionHistoryRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Template Version History Endpoint",
         "tags": [
           "project-templates"
         ]

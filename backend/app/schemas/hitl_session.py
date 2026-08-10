@@ -1,5 +1,6 @@
 """Schemas for the HITL session and project-template management endpoints."""
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 from uuid import UUID
@@ -173,6 +174,41 @@ class DiscardDraftResponse(BaseModel):
     kept: list[DiscardKeptNode]
     """Non-empty ⇒ the template is STILL in draft: the marker is only
     cleared when the live tree matches the published version exactly."""
+
+
+class TemplateVersionHistoryEntry(BaseModel):
+    """One published version, as the History timeline renders it (B-9e).
+
+    Carries no ``schema`` payload: the timeline shows WHAT happened and WHO
+    did it, and shipping every snapshot would put the whole template
+    structure on the wire once per version for a list nobody diffs inline.
+    """
+
+    version_id: UUID
+    version: int
+    is_active: bool
+    published_at: datetime
+    published_by: UUID
+    published_by_name: str | None = None
+    """Resolved display name, or ``None`` when the profile has none — a raw
+    uuid must never reach the screen as a stand-in for a person."""
+    note: str | None = None
+    """Why this version was published, in the publisher's words (0052)."""
+    pinned_run_count: int
+    """Runs still pinned to this version. ``ExtractionRun.version_id`` is ON
+    DELETE RESTRICT, so a non-zero count means the version is permanent —
+    which is exactly what a manager needs to see before restoring an old
+    shape over it."""
+
+
+class TemplateVersionHistoryRead(BaseModel):
+    """The History card's read model — newest version first.
+
+    An empty list is a real, renderable state (a template that never
+    published), not an error."""
+
+    project_template_id: UUID
+    versions: list[TemplateVersionHistoryEntry] = Field(default_factory=list)
 
 
 class TemplateDiscardRefusalCode(StrEnum):
