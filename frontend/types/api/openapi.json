@@ -4616,7 +4616,7 @@
         "type": "object"
       },
       "ExtractionOptions": {
-        "description": "Extraction options.\n\nC1a: ``model`` was removed \u2014 the engine is server-owned and a client\ncan no longer choose it. The two fields that remain are NOT read\nanywhere in ``backend/app`` either (``payload.options`` is never\ndereferenced); they are kept only so the wire contract does not\nchange while the engine work lands.",
+        "description": "Extraction options \u2014 entirely inert.\n\nC1a removed ``model``: the engine is server-owned, so a client can no\nlonger choose it. The two fields left are inert too \u2014 nothing in\n``backend/app`` dereferences ``payload.options``, and what actually\nreaches the LLM are the constants in ``app/llm/extractor.py``. They are\nflagged ``deprecated`` in the OpenAPI contract while staying accepted on\nthe wire, so clients can be migrated off them before they are removed.",
         "properties": {
           "max_tokens": {
             "anyOf": [

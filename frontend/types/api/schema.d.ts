@@ -3389,13 +3389,14 @@ export interface components {
         };
         /**
          * ExtractionOptions
-         * @description Extraction options.
+         * @description Extraction options — entirely inert.
          *
-         *     C1a: ``model`` was removed — the engine is server-owned and a client
-         *     can no longer choose it. The two fields that remain are NOT read
-         *     anywhere in ``backend/app`` either (``payload.options`` is never
-         *     dereferenced); they are kept only so the wire contract does not
-         *     change while the engine work lands.
+         *     C1a removed ``model``: the engine is server-owned, so a client can no
+         *     longer choose it. The two fields left are inert too — nothing in
+         *     ``backend/app`` dereferences ``payload.options``, and what actually
+         *     reaches the LLM are the constants in ``app/llm/extractor.py``. They are
+         *     flagged ``deprecated`` in the OpenAPI contract while staying accepted on
+         *     the wire, so clients can be migrated off them before they are removed.
          */
         ExtractionOptions: {
             /**
