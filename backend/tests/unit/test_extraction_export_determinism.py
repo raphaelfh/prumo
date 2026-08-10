@@ -293,7 +293,7 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
 
     # Mock the six DB execute calls in _load_ai_proposal_rows order (B-3a):
     #   1. instance query, 2. proposal query, 3. evidence query,
-    #   4. decision query, 5. run params query (id, parameters, version_id),
+    #   4. decision query, 5. whole-ExtractionRun query (via .scalars()),
     #   6. entity-type label fallback. The run-snapshot label tier between
     #   5 and 6 starts with db.get (NOT db.execute); stubbing db.get -> None
     #   keeps it a clean no-op so the live fallback queries still fire.
@@ -301,6 +301,17 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
         r = MagicMock()
         r.all.return_value = rows
         return r
+
+    def _scalars(items):
+        r = MagicMock()
+        r.scalars.return_value.all.return_value = items
+        return r
+
+    run = MagicMock()
+    run.id = run_id
+    run.parameters = {}
+    run.results = {}
+    run.version_id = uuid4()
 
     mock_db = AsyncMock()
     mock_db.get = AsyncMock(return_value=None)  # snapshot label tier no-op
@@ -325,7 +336,7 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
             _result(
                 [(run_id, inst_id, field_id, uuid4(), "accept_proposal", pid)]
             ),  # decisions (reviewer-tagged)
-            _result([(run_id, {}, uuid4())]),  # run params
+            _scalars([run]),  # the in-scope ExtractionRun rows
             _result([(entity_type_id, "1. Source of data")]),  # entity labels
         ]
     )

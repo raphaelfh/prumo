@@ -76,6 +76,26 @@ def _rows_result(rows: list) -> MagicMock:
     return result
 
 
+def _export_run(
+    run_id: UUID, *, parameters: dict | None = None, results: dict | None = None
+) -> MagicMock:
+    """An ExtractionRun-shaped stub for ``_load_ai_proposal_rows``' run query.
+
+    That loader selects whole ``ExtractionRun`` rows and reads three columns:
+    ``parameters`` + ``results`` (the "Model used" resolution, which prefers
+    the server-written ``results["provenance"]`` engine) and ``version_id``
+    (the label-fallback chain). All three must be concrete values — a bare
+    ``MagicMock(spec=...)`` attribute would make the resolution silently
+    ambiguous instead of loudly wrong.
+    """
+    run = MagicMock(spec=ExtractionRun)
+    run.id = run_id
+    run.parameters = parameters if parameters is not None else {}
+    run.results = results if results is not None else {}
+    run.version_id = uuid4()
+    return run
+
+
 def _scalar_result(value) -> MagicMock:
     """Return a fake Result whose .scalar_one_or_none() yields *value*."""
     result = MagicMock()
@@ -702,7 +722,8 @@ class TestLoadAiProposalRows:
       2. ExtractionProposalRecord (proposal_rows) — AI proposals
       3. ExtractionEvidence (evidence_rows) — evidence
       4. ExtractionReviewerState+Decision (decision_rows) — reviewer outcomes
-      5. ExtractionRun (run_param_rows) — (id, parameters, version_id)
+      5. ExtractionRun (whole rows, via .scalars()) — parameters + results
+         feed the "Model used" resolution, version_id the label chain
       -- run-snapshot label tier: load_export_sections per distinct
          version_id starts with db.get (NOT db.execute); tests stub
          svc.db.get -> None so the tier is a clean no-op and the live
@@ -852,8 +873,9 @@ class TestLoadAiProposalRows:
                 _rows_result([evidence_row]),
                 # 4. decision_rows
                 _rows_result([]),
-                # 5. run_param_rows (id, parameters, version_id)
-                _rows_result([(run_id, {}, uuid4())]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
                 # 6. ent_label_rows — entity ids unresolved by the snapshot tier
                 _rows_result([ent_label_row]),
                 # (no field fallback — field_id is in field_label_by_id from sections)
@@ -924,8 +946,9 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result(evidence_rows),
                 _rows_result([]),  # decisions
-                # 5. run_param_rows (id, parameters, version_id)
-                _rows_result([(run_id, {}, uuid4())]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Sec")]),
                 # 7. field fallback (sections=())
@@ -989,8 +1012,9 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),  # no evidence
                 _rows_result([decision_row]),
-                # 5. run_param_rows (id, parameters, version_id)
-                _rows_result([(run_id, {}, uuid4())]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Section Label")]),
                 # 7. field label fallback (field_id not in sections=())
@@ -1048,8 +1072,9 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
-                # 5. run_param_rows (id, parameters, version_id)
-                _rows_result([(run_id, {}, uuid4())]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Section")]),
                 # 7. field fallback (field_id not in sections=())
@@ -1104,8 +1129,9 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
-                # 5. run_param_rows (id, parameters, version_id)
-                _rows_result([(run_id, {}, uuid4())]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Section")]),
                 # 7. field fallback (field_id not in sections=())
@@ -1168,8 +1194,9 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([target_reject]),  # query filtered to target reviewer
-                # 5. run_param_rows (id, parameters, version_id)
-                _rows_result([(run_id, {}, uuid4())]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Sec")]),
                 # 7. field fallback (sections=())
@@ -1215,8 +1242,9 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
-                # 5. run_param_rows (id, parameters, version_id)
-                _rows_result([(run_id, {}, uuid4())]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
                 # 6. ent_label_rows provides fallback label
                 _rows_result([(entity_type_id, "Fallback Section Label")]),
                 # 7. field fallback (field_id not in sections=())
@@ -1262,8 +1290,9 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
-                # 5. run_param_rows (id, parameters, version_id)
-                _rows_result([(run_id, {}, uuid4())]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Section Label")]),
                 # 7. field label fallback
@@ -1328,8 +1357,9 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),  # evidence
                 _rows_result([decision_a, decision_b]),  # decisions (reviewer-tagged)
-                # 5. run_param_rows (id, parameters, version_id)
-                _rows_result([(run_id, {}, uuid4())]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Sec")]),
                 # 7. field fallback (sections=())
@@ -2487,8 +2517,9 @@ class TestAiProposalRowsModelInstances:
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
-                # 5. run_param_rows (id, parameters, version_id)
-                _rows_result([(run_id, {}, uuid4())]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Model Section")]),
                 # 7. field fallback
