@@ -54,6 +54,7 @@ from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     load_export_sections,
 )
+from app.services.exports.run_engine import resolve_model_used
 from app.services.exports.value_envelope import resolve_value
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
@@ -221,7 +222,7 @@ class AIProposalRow:
     evidence_text: str  # joined with ' | ' when multiple
     evidence_pages: str  # joined with ', ' when multiple
     proposed_at: datetime
-    model_used: str  # resolved from run.parameters["model"]; "" when absent
+    model_used: str  # server-written provenance engine; see resolve_model_used
     reviewer_outcome: str  # accepted | rejected | edited (best-effort) | pending | superseded
     final_value_used: Any  # None when not published
 
@@ -1632,7 +1633,6 @@ class ExtractionExportService(LoggerMixin):
           3. reviewer_states + decisions for the same (run, instance, field)
              coordinates (to compute the ``Reviewer outcome`` column).
         """
-        from app.models.extraction import ExtractionEntityType
         from app.models.extraction_workflow import (
             ExtractionProposalRecord,
             ExtractionReviewerDecision,
@@ -1792,19 +1792,12 @@ class ExtractionExportService(LoggerMixin):
                 for idx, iid in enumerate(ids, start=1):
                     instance_index_by_id[iid] = idx
 
-        # 6. Model per run — resolved from run.parameters["model"] (set at
-        # dispatch time). Falls back to "" for older runs without the key.
-        # version_id rides along to feed the label-fallback chain below.
-        run_param_rows = (
-            await self.db.execute(
-                select(ExtractionRun.id, ExtractionRun.parameters, ExtractionRun.version_id).where(
-                    ExtractionRun.id.in_(run_ids)
-                )
-            )
-        ).all()
-        model_by_run: dict[UUID, str] = {
-            rid: (params or {}).get("model", "") for rid, params, _vid in run_param_rows
-        }
+        # 6. The in-scope runs, carrying both halves of the "Model used"
+        # resolution (``results`` provenance first, ``parameters`` only as the
+        # legacy fallback — see ``resolve_model_used``) plus the ``version_id``
+        # that feeds the label-fallback chain below.
+        run_stmt = select(ExtractionRun).where(ExtractionRun.id.in_(run_ids))
+        run_by_id = {r.id: r for r in (await self.db.execute(run_stmt)).scalars().all()}
 
         # Label-fallback CHAIN (B-3a): anchor sections -> the RUN's pinned
         # snapshot -> live tables -> "(unknown ...)". An instance belongs to
@@ -1813,7 +1806,7 @@ class ExtractionExportService(LoggerMixin):
         # before the live table (which may have lost the row entirely).
         section_label_by_entity: dict[UUID, str] = {}
         run_field_labels: dict[UUID, str] = {}
-        for vid in {vid for _rid, _params, vid in run_param_rows}:
+        for vid in {r.version_id for r in run_by_id.values()}:
             for section in await load_export_sections(self.db, version_id=vid):
                 section_label_by_entity.setdefault(section.entity_type_id, section.label)
                 for snap_field in section.fields:
@@ -1853,7 +1846,8 @@ class ExtractionExportService(LoggerMixin):
         out: list[AIProposalRow] = []
         for pid, rid, iid, fid, proposed_value, confidence, rationale, ts in proposal_rows:
             article = articles_by_run.get(rid)
-            if article is None:
+            run = run_by_id.get(rid)
+            if article is None or run is None:
                 continue  # defensive; the run is in scope by construction
             instance_etid = instance_meta.get(iid, (None, None))[0]
             section_label = (
@@ -1889,7 +1883,9 @@ class ExtractionExportService(LoggerMixin):
                     )
                 ),
                 proposed_at=ts,
-                model_used=model_by_run.get(rid, ""),
+                model_used=resolve_model_used(
+                    run.parameters, run.results, entity_type_id=instance_etid
+                ),
                 reviewer_outcome=outcome,
                 final_value_used=final_value,
             )
