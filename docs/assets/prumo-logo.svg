@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="34 0 292 96" width="292" height="96" role="img" aria-label="Prumo">
+  <title>Prumo</title>
+  <g transform="translate(56 12) scale(2.25)">
+    <rect width="32" height="32" rx="8" fill="#312e81"/>
+    <g transform="translate(4 4)" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 7v14"/>
+      <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>
+    </g>
+  </g>
+  <text
+    x="148"
+    y="62"
+    fill="#6366f1"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
+    font-size="54"
+    font-weight="700"
+    letter-spacing="-1.5"
+  >prumo</text>
+</svg>
