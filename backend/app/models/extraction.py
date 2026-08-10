@@ -229,8 +229,8 @@ class ProjectExtractionTemplate(BaseModel):
 
     NULL while ``config_draft_since`` is set is a REAL state, not a bug: a
     draft opened before this column existed, or one opened by a raw
-    PostgREST write (0049 left that grant in place). It reads as
-    "unattributed" and is claimable by the next writer."""
+    PostgREST write back when that grant existed (0054 revoked it). It
+    reads as "unattributed" and is claimable by the next writer."""
 
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

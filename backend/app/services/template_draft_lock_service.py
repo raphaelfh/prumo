@@ -6,18 +6,17 @@ over". Spec section 8: a typed 409 carrying holder identity.
 
 **Advisory, and the word is load-bearing.** This arbitrates the typed
 endpoints so two managers do not silently overwrite each other's draft. It
-is NOT an authorization boundary: 0049 deliberately left ``GRANT ALL ... TO
-authenticated`` on the two config tables (its own docstring names the
-REVOKE as a separate follow-up), so a manager with a raw PostgREST call can
-still write around this — the same manager who could drop the template
-outright.
+is NOT an authorization boundary: 0054 closed the raw PostgREST INSERT /
+UPDATE path onto the two config tables, but ``project_extraction_templates``
+still grants ALL to ``authenticated``, so a manager can drop the template
+outright — around this lock and every endpoint that honours it.
 
 Two rules keep it advisory rather than a mutex, and both are tested:
 
 * an **unattributed** draft is claimable. ``config_draft_by IS NULL`` with
   ``config_draft_since`` set is a real state — every draft open when 0053
-  deployed, and any raw PostgREST write — and refusing those would leave
-  those templates permanently unusable;
+  deployed, and every raw PostgREST write 0054 later shut out — and
+  refusing those would leave those templates permanently unusable;
 * **take-over always wins**. There is no TTL, no heartbeat and no lease,
   because all three answer "is the holder still there?" with a guess. A
   laptop that sleeps mid-draft must not hold a template hostage, so the
