@@ -62,7 +62,8 @@ export function extractForRun(
           runId: params.runId,
           skipFieldsWithHumanProposals: params.skipFieldsWithHumanProposals ?? true,
           autoAdvanceToReview: params.autoAdvanceToReview ?? false,
-          model: params.model ?? 'gpt-4o-mini',
+          // C1: no client-side default — see extractForRun's note.
+          ...(params.model ? {model: params.model} : {}),
         },
       });
       return { jobId: raw.job_id };

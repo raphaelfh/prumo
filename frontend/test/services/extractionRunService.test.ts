@@ -49,7 +49,6 @@ describe('extractForRun', () => {
           runId: 'run-1',
           skipFieldsWithHumanProposals: true,
           autoAdvanceToReview: false,
-          model: 'gpt-4o-mini',
         }),
       }),
     );
@@ -219,5 +218,27 @@ describe('writeRunFieldValue — decision write contract', () => {
       proposalRecordId: null,
     });
     expect(lastBody()).not.toHaveProperty('proposal_record_id');
+  });
+
+  it('omits `model` entirely when the caller did not choose one (C1)', async () => {
+    // The engine setting is the single source. The frontend used to send
+    // its own 'gpt-4o-mini', duplicating settings.LLM_DEFAULT_MODEL and
+    // silently overriding whatever the server would have chosen — while
+    // app.config.ts advertised 'gpt-5-mini' that nothing ever read.
+    apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
+
+    await extractForRun(BASE_PARAMS);
+
+    const body = apiClientMock.mock.calls[0]![1]!.body as Record<string, unknown>;
+    expect('model' in body).toBe(false);
+  });
+
+  it('still forwards an explicitly chosen model', async () => {
+    apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
+
+    await extractForRun({...BASE_PARAMS, model: 'gpt-5'});
+
+    const body = apiClientMock.mock.calls[0]![1]!.body as Record<string, unknown>;
+    expect(body.model).toBe('gpt-5');
   });
 });
