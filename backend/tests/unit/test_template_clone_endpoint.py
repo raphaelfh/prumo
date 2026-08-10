@@ -22,6 +22,7 @@ from app.schemas.hitl_session import (
     TemplateChangeAck,
     TemplatePublishRefusalCode,
 )
+from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_clone_service import (
     PendingConfigDraftError,
     TemplateNotFoundError,
@@ -274,3 +275,44 @@ async def test_republish_propagates_the_contract_refusals(
     assert exc.value.status_code == 409
     assert exc.value.details
     db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_version_history_endpoint_wraps_the_service_result(monkeypatch) -> None:
+    """Direct endpoint-coroutine call: the ASGI path does not reach diff-cover."""
+    history = MagicMock()
+    monkeypatch.setattr(
+        endpoint_module,
+        "get_template_version_history",
+        AsyncMock(return_value=history),
+    )
+
+    result = await endpoint_module.get_template_version_history_endpoint(
+        project_id=uuid.uuid4(),
+        template_id=uuid.uuid4(),
+        request=_request(),
+        db=AsyncMock(),
+    )
+
+    assert result.data is history
+    assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_version_history_endpoint_maps_a_foreign_template_to_404(monkeypatch) -> None:
+    """BOLA: a template owned elsewhere must not confirm that it exists."""
+    monkeypatch.setattr(
+        endpoint_module,
+        "get_template_version_history",
+        AsyncMock(side_effect=ProjectTemplateNotFoundError("nope")),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint_module.get_template_version_history_endpoint(
+            project_id=uuid.uuid4(),
+            template_id=uuid.uuid4(),
+            request=_request(),
+            db=AsyncMock(),
+        )
+
+    assert exc.value.status_code == 404

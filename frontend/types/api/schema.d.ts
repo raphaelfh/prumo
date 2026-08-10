@@ -1016,6 +1016,34 @@ export interface paths {
         patch: operations["update_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates/{template_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Template Version History Endpoint
+         * @description The History timeline for a template's published versions (B-9e).
+         *
+         *     Manager-gated like the rest of the configuration surface — this reads
+         *     who changed the template and why, which is not reviewer-facing. The
+         *     sibling ``active-version`` route is the one exception, member-gated
+         *     because the worklist renders from it.
+         *
+         *     An empty list is a 200: a template that never published has no
+         *     timeline yet, which the card explains rather than treating as an error.
+         */
+        get: operations["get_template_version_history_endpoint_api_v1_projects__project_id__templates__template_id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs": {
         parameters: {
             query?: never;
@@ -2232,6 +2260,23 @@ export interface components {
         ApiResponse_TemplateInstructionRead_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["TemplateInstructionRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateVersionHistoryRead] */
+        ApiResponse_TemplateVersionHistoryRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateVersionHistoryRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -5020,6 +5065,57 @@ export interface components {
             trace_id?: string | null;
         };
         /**
+         * TemplateVersionHistoryEntry
+         * @description One published version, as the History timeline renders it (B-9e).
+         *
+         *     Carries no ``schema`` payload: the timeline shows WHAT happened and WHO
+         *     did it, and shipping every snapshot would put the whole template
+         *     structure on the wire once per version for a list nobody diffs inline.
+         */
+        TemplateVersionHistoryEntry: {
+            /** Is Active */
+            is_active: boolean;
+            /** Note */
+            note?: string | null;
+            /** Pinned Run Count */
+            pinned_run_count: number;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * Published By
+             * Format: uuid
+             */
+            published_by: string;
+            /** Published By Name */
+            published_by_name?: string | null;
+            /** Version */
+            version: number;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+        };
+        /**
+         * TemplateVersionHistoryRead
+         * @description The History card's read model — newest version first.
+         *
+         *     An empty list is a real, renderable state (a template that never
+         *     published), not an error.
+         */
+        TemplateVersionHistoryRead: {
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+            /** Versions */
+            versions?: components["schemas"]["TemplateVersionHistoryEntry"][];
+        };
+        /**
          * TestConnectionResponse
          * @description Response de teste de conexao.
          */
@@ -6830,6 +6926,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_SectionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_template_version_history_endpoint_api_v1_projects__project_id__templates__template_id__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateVersionHistoryRead_"];
                 };
             };
             /** @description Validation Error */

@@ -22,11 +22,13 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.template_change import ChangeTier, DiffStatus
-from app.models.extraction import ProjectExtractionTemplate
+from app.models.extraction import ExtractionRun, ProjectExtractionTemplate
 from app.models.extraction_versioning import ExtractionTemplateVersion
+from app.models.user import Profile
 from app.repositories.extraction_field_reference_repository import (
     ExtractionFieldReferenceRepository,
 )
@@ -38,6 +40,8 @@ from app.schemas.hitl_session import (
     TemplateConfigDiffBuckets,
     TemplateConfigDiffRead,
     TemplateConfigStatusRead,
+    TemplateVersionHistoryEntry,
+    TemplateVersionHistoryRead,
 )
 from app.services.extraction_snapshot import (
     baseline_is_restorable,
@@ -304,3 +308,76 @@ async def get_active_version_tree(
         version=active.version,
         entity_types=entity_types,
     )
+
+
+async def get_template_version_history(
+    db: AsyncSession, *, project_id: UUID, template_id: UUID
+) -> TemplateVersionHistoryRead:
+    """The History timeline (B-9e), BOLA-scoped by ``(id, project_id)``.
+
+    Three reads, not N+1: the versions, one profile lookup for every
+    distinct publisher, and ONE grouped count of the runs pinned per
+    version. A template with twenty versions is still four round trips.
+
+    No snapshot payload rides along — the timeline answers *what happened
+    and who did it*, and shipping every version's structure would put the
+    whole template on the wire once per row for something nobody diffs
+    inline. The Publish sheet already owns the diff surface.
+    """
+    await _scoped_template(db, project_id=project_id, template_id=template_id)
+    versions = await ExtractionTemplateVersionRepository(db).list_for_template(template_id)
+    if not versions:
+        # A template that never published has an empty timeline, not an error.
+        return TemplateVersionHistoryRead(project_template_id=template_id, versions=[])
+
+    name_by_id = await _publisher_names(db, {version.published_by for version in versions})
+    pinned = await _pinned_run_counts(db, template_id)
+
+    return TemplateVersionHistoryRead(
+        project_template_id=template_id,
+        versions=[
+            TemplateVersionHistoryEntry(
+                version_id=version.id,
+                version=version.version,
+                is_active=version.is_active,
+                published_at=version.published_at,
+                published_by=version.published_by,
+                published_by_name=name_by_id.get(version.published_by),
+                note=version.note,
+                pinned_run_count=pinned.get(version.id, 0),
+            )
+            for version in versions
+        ],
+    )
+
+
+async def _publisher_names(db: AsyncSession, ids: set[UUID]) -> dict[UUID, str | None]:
+    """Display names for the publishers, one query for all of them.
+
+    A profile with no ``full_name`` maps to ``None`` rather than to its
+    uuid: the screen renders a fallback, never a raw id dressed as a name.
+    """
+    rows = await db.execute(select(Profile.id, Profile.full_name).where(Profile.id.in_(ids)))
+    # A plain loop, not a comprehension or dict(): ruff's C416/C402 pair
+    # contradict each other on this shape, and the loop types cleanly.
+    names: dict[UUID, str | None] = {}
+    for profile_id, full_name in rows.all():
+        names[profile_id] = full_name
+    return names
+
+
+async def _pinned_run_counts(db: AsyncSession, template_id: UUID) -> dict[UUID, int]:
+    """How many runs still point at each version of this template.
+
+    One grouped count rather than a per-row subquery. Versions with no runs
+    are simply absent from the map and read as 0.
+    """
+    rows = await db.execute(
+        select(ExtractionRun.version_id, func.count())
+        .where(ExtractionRun.template_id == template_id)
+        .group_by(ExtractionRun.version_id)
+    )
+    counts: dict[UUID, int] = {}
+    for version_id, count in rows.all():
+        counts[version_id] = count
+    return counts

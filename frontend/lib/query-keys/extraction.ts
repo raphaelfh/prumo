@@ -65,6 +65,13 @@ export const templateConfigStatusKeys = {
     ['template-config-status', projectId, templateId] as const,
 };
 
+/** The published-version timeline behind the History sheet (B-9e). */
+export const templateVersionHistoryKeys = {
+  all: ['template-version-history'] as const,
+  byTemplate: (projectId: string, templateId: string) =>
+    ['template-version-history', projectId, templateId] as const,
+};
+
 /** What the open draft would publish, bucketed by tier (B-9b2a). */
 export const templateDiffKeys = {
   byTemplate: (projectId: string, templateId: string) =>

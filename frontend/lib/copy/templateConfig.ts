@@ -232,6 +232,22 @@ export const templateConfig = {
     'Cannot publish: every change that removes or rewrites recorded data has to be confirmed first.',
   errors_reorderFields: 'Error reordering fields',
   errors_updateSection: 'Error updating section',
+  // B-9e History. The timeline shows absolute timestamps on purpose:
+  // versions are read against each other, so "3 days ago" is useless.
+  historySheetTitle: 'Version history',
+  historySheetDescription:
+    'Every published version of this template, newest first.',
+  historyVersionLabel: 'Version {{n}}',
+  historyActiveBadge: 'Current',
+  historyPublishedBy: 'Published by {{who}} on {{when}}',
+  historyUnknownAuthor: 'an unknown user',
+  historyPinnedRunsOne: '{{n}} extraction still uses this version',
+  historyPinnedRunsOther: '{{n}} extractions still use this version',
+  historyLoading: 'Reading the history…',
+  historyLoadFailed:
+    'The version history could not be loaded. This does not mean the template has none — try again.',
+  historyEmpty: 'This template has not been published yet.',
+  historyTriggerTooltip: 'See every published version',
   inspectorGroupAlwaysRepeats: 'A group always repeats',
   inspectorGroupKindLine: 'Repeating group — reviewers add one entry per {{noun}}',
   inspectorInsideGroup: 'Inside {{group}}',
