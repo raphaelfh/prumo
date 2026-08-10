@@ -40,7 +40,22 @@ const submit = () => userEvent.click(screen.getByRole('button', {name: /Create s
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(createSection).mockResolvedValue({ok: true, data: undefined});
+  // createSection returns the created row since B-9d part 2 (the undo
+  // replay needs its id). This dialog ignores it, but the type is real.
+  vi.mocked(createSection).mockResolvedValue({
+    ok: true,
+    data: {
+      id: 'sec-new',
+      name: 'outcomes',
+      label: 'Outcomes',
+      role: 'study_section',
+      cardinality: 'one',
+      is_required: false,
+      project_template_id: 't1',
+      created_at: '2026-01-01T00:00:00Z',
+      sort_order: 0,
+    },
+  });
 });
 
 describe('AddSectionDialog — root mode (unchanged B-7 contract)', () => {

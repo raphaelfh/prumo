@@ -58,6 +58,8 @@ export interface TemplateEntityTypeInput {
   description?: string | null;
   role?: string | null;
   cardinality?: string | null;
+  /** NOT NULL server-side. Needed to restore a deleted section exactly. */
+  is_required?: boolean;
   parent_entity_type_id?: string | null;
   /** Repeating-group entry noun (B-8) — meaningful on groups only. */
   entry_label?: string | null;
