@@ -15,8 +15,9 @@
  *   articleId: '...',
  *   templateId: '...',
  *   entityTypeId: '...',
- *   options: { model: 'gpt-4o' }   // optional; omit to use the engine setting
  * });
+ *
+ * // The engine is server-owned (C1a): no request here carries a model.
  *
  * console.warn(`Created ${result.data?.suggestionsCreated} suggestions`);
  * ```
@@ -120,7 +121,7 @@ export class SectionExtractionService {
 
     console.warn('[SectionExtractionService] Starting extraction via FastAPI', {
       traceId,
-      request: { ...request, options: request.options || {} },
+      request,
     });
 
     // POST — get job_id
@@ -133,11 +134,8 @@ export class SectionExtractionService {
         entityTypeId: request.entityTypeId,
         parentInstanceId: request.parentInstanceId,
         runId: request.runId,
-        // C1: no client-side default. The engine setting is the single
-        // source, and the server already defaults to
-        // settings.LLM_DEFAULT_MODEL — sending our own duplicated it and
-        // silently overrode the server's choice.
-        ...(request.options?.model ? {model: request.options.model} : {}),
+        // C1a: no `model` key. The engine is server-owned — the request
+        // schema dropped the field, so anything we sent would be ignored.
       },
     }).catch((err: unknown) => {
       if (err instanceof ApiError) {
@@ -191,7 +189,7 @@ export class SectionExtractionService {
 
       console.warn('[SectionExtractionService] Starting model extraction via FastAPI', {
       traceId,
-      request: { ...request, options: request.options || {} },
+      request,
     });
 
     try {
@@ -206,7 +204,7 @@ export class SectionExtractionService {
         // Reuse the session run when provided so model extraction never forks a
         // parallel run that would orphan the reviewer's decisions.
         runId: request.runId,
-        model: request.options?.model,
+        // C1a: no `model` key — the engine is server-owned.
       });
 
         console.warn('[SectionExtractionService] Model extraction via FastAPI completed', {
@@ -252,7 +250,7 @@ export class SectionExtractionService {
 
     console.warn('[SectionExtractionService] Starting full sections extraction via FastAPI', {
       traceId,
-      request: { ...request, options: request.options || {} },
+      request,
     });
 
     // POST — get job_id
@@ -269,11 +267,7 @@ export class SectionExtractionService {
         extractAllSections: true,
         sectionIds: request.sectionIds,
         pdfText: request.pdfText,
-        // C1: no client-side default. The engine setting is the single
-        // source, and the server already defaults to
-        // settings.LLM_DEFAULT_MODEL — sending our own duplicated it and
-        // silently overrode the server's choice.
-        ...(request.options?.model ? {model: request.options.model} : {}),
+        // C1a: no `model` key — the engine is server-owned.
       },
     }).catch((err: unknown) => {
       if (err instanceof ApiError) {
@@ -334,7 +328,6 @@ export interface AsyncSectionExtractionParams {
   parentInstanceId?: string;
   skipFieldsWithHumanProposals?: boolean;
   autoAdvanceToReview?: boolean;
-  model?: string;
 }
 
 /**
@@ -365,8 +358,7 @@ export function extractSectionAsync(
             skipFieldsWithHumanProposals:
               params.skipFieldsWithHumanProposals ?? true,
             autoAdvanceToReview: params.autoAdvanceToReview ?? false,
-            // C1: no client-side default (see above).
-            ...(params.model ? {model: params.model} : {}),
+            // C1a: no `model` key — the engine is server-owned.
           },
         },
       );

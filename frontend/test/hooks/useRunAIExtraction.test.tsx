@@ -146,14 +146,14 @@ describe('useRunAIExtraction (async job)', () => {
         ...PARAMS,
         skipFieldsWithHumanProposals: false,
         autoAdvanceToReview: true,
-        model: 'gpt-4o',
       });
     });
 
     const body = apiClientMock.mock.calls[0][1].body;
     expect(body.skipFieldsWithHumanProposals).toBe(false);
     expect(body.autoAdvanceToReview).toBe(true);
-    expect(body.model).toBe('gpt-4o');
+    // C1a: the engine is server-owned — no model key ever leaves the client.
+    expect('model' in body).toBe(false);
   });
 
   it('calls onSuccess and shows success toast when job completes', async () => {

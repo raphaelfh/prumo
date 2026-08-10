@@ -3389,17 +3389,17 @@ export interface components {
         };
         /**
          * ExtractionOptions
-         * @description Opcoes de extraction.
+         * @description Extraction options.
+         *
+         *     C1a: ``model`` was removed — the engine is server-owned and a client
+         *     can no longer choose it. The two fields that remain are NOT read
+         *     anywhere in ``backend/app`` either (``payload.options`` is never
+         *     dereferenced); they are kept only so the wire contract does not
+         *     change while the engine work lands.
          */
         ExtractionOptions: {
             /** Max Tokens */
             max_tokens?: number | null;
-            /**
-             * Model
-             * @description Model to use
-             * @default gpt-4o-mini
-             */
-            model: string;
             /**
              * Temperature
              * @default 0.1
@@ -3646,12 +3646,6 @@ export interface components {
              * Format: uuid
              */
             articleId: string;
-            /**
-             * Model
-             * @description Model to use
-             * @default gpt-4o-mini
-             */
-            model: string | null;
             options?: components["schemas"]["ExtractionOptions"] | null;
             /**
              * Projectid
@@ -4439,12 +4433,6 @@ export interface components {
              * @default false
              */
             extractAllSections: boolean;
-            /**
-             * Model
-             * @description Model to use
-             * @default gpt-4o-mini
-             */
-            model: string | null;
             options?: components["schemas"]["ExtractionOptions"] | null;
             /** Parentinstanceid */
             parentInstanceId?: string | null;

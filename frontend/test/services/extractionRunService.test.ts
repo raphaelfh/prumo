@@ -78,12 +78,10 @@ describe('extractForRun', () => {
       ...BASE_PARAMS,
       skipFieldsWithHumanProposals: false,
       autoAdvanceToReview: true,
-      model: 'gpt-4o',
     });
     const body = apiClientMock.mock.calls[0][1].body;
     expect(body.skipFieldsWithHumanProposals).toBe(false);
     expect(body.autoAdvanceToReview).toBe(true);
-    expect(body.model).toBe('gpt-4o');
   });
 });
 
@@ -220,11 +218,10 @@ describe('writeRunFieldValue — decision write contract', () => {
     expect(lastBody()).not.toHaveProperty('proposal_record_id');
   });
 
-  it('omits `model` entirely when the caller did not choose one (C1)', async () => {
-    // The engine setting is the single source. The frontend used to send
-    // its own 'gpt-4o-mini', duplicating settings.LLM_DEFAULT_MODEL and
-    // silently overriding whatever the server would have chosen — while
-    // app.config.ts advertised 'gpt-5-mini' that nothing ever read.
+  it('never sends `model` — the engine is server-owned (C1a)', async () => {
+    // A client could previously put any string in `model` and it reached
+    // build_model() unvalidated. The backend request schema dropped the
+    // field; this pins that the body carries no engine choice at all.
     apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
 
     await extractForRun(BASE_PARAMS);
@@ -233,12 +230,14 @@ describe('writeRunFieldValue — decision write contract', () => {
     expect('model' in body).toBe(false);
   });
 
-  it('still forwards an explicitly chosen model', async () => {
+  it('cannot smuggle a model through an extra param', async () => {
     apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
 
-    await extractForRun({...BASE_PARAMS, model: 'gpt-5'});
+    // Cast: `model` is not part of ExtractForRunRequest any more. The body
+    // builder is explicit-keyed, so an unknown extra never reaches the wire.
+    await extractForRun({...BASE_PARAMS, model: 'gpt-5'} as typeof BASE_PARAMS);
 
     const body = apiClientMock.mock.calls[0]![1]!.body as Record<string, unknown>;
-    expect(body.model).toBe('gpt-5');
+    expect('model' in body).toBe(false);
   });
 });

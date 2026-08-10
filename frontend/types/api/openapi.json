@@ -4616,7 +4616,7 @@
         "type": "object"
       },
       "ExtractionOptions": {
-        "description": "Opcoes de extraction.",
+        "description": "Extraction options.\n\nC1a: ``model`` was removed \u2014 the engine is server-owned and a client\ncan no longer choose it. The two fields that remain are NOT read\nanywhere in ``backend/app`` either (``payload.options`` is never\ndereferenced); they are kept only so the wire contract does not\nchange while the engine work lands.",
         "properties": {
           "max_tokens": {
             "anyOf": [
@@ -4630,12 +4630,6 @@
               }
             ],
             "title": "Max Tokens"
-          },
-          "model": {
-            "default": "gpt-4o-mini",
-            "description": "Model to use",
-            "title": "Model",
-            "type": "string"
           },
           "temperature": {
             "default": 0.1,
@@ -5168,19 +5162,6 @@
             "format": "uuid",
             "title": "Articleid",
             "type": "string"
-          },
-          "model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": "gpt-4o-mini",
-            "description": "Model to use",
-            "title": "Model"
           },
           "options": {
             "anyOf": [
@@ -6730,19 +6711,6 @@
             "default": false,
             "title": "Extractallsections",
             "type": "boolean"
-          },
-          "model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": "gpt-4o-mini",
-            "description": "Model to use",
-            "title": "Model"
           },
           "options": {
             "anyOf": [

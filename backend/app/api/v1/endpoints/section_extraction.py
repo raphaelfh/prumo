@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 from redis import Redis
 
 from app.api.deps.security import ensure_project_member, get_current_user_sub
+from app.core.config import settings
 from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
@@ -184,7 +185,7 @@ async def extract_section(
         template_id=str(payload.template_id),
         entity_type_id=str(payload.entity_type_id) if payload.entity_type_id else None,
         extract_all_sections=payload.extract_all_sections,
-        model=payload.model,
+        model=settings.LLM_DEFAULT_MODEL,
     )
 
     task = run_section_extraction_task.delay(
