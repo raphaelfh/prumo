@@ -52,7 +52,7 @@ export function useTemplateEntityTypes(templateId: string | null | undefined) {
       const { data, error } = await supabase
         .from('extraction_entity_types')
         .select(
-          'id, name, label, description, role, cardinality, parent_entity_type_id, entry_label, sort_order, fields:extraction_fields(*)',
+          'id, name, label, description, role, cardinality, is_required, parent_entity_type_id, entry_label, sort_order, fields:extraction_fields(*)',
         )
         .eq('project_template_id', templateId as string)
         .order('sort_order', { ascending: true });
@@ -64,6 +64,9 @@ export function useTemplateEntityTypes(templateId: string | null | undefined) {
         description: (et.description ?? null) as string | null,
         role: (et.role ?? null) as string | null,
         cardinality: (et.cardinality ?? null) as string | null,
+        // Carried so an undo can restore the section EXACTLY (B-9d part 2);
+        // the column is NOT NULL server-side, the projection just dropped it.
+        is_required: Boolean(et.is_required),
         parent_entity_type_id: (et.parent_entity_type_id ?? null) as string | null,
         entry_label: (et.entry_label ?? null) as string | null,
         sort_order: (et.sort_order ?? 0) as number,

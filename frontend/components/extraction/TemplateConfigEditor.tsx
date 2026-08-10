@@ -8,7 +8,7 @@
  */
 
 import {useState} from 'react';
-import {updateEntityTypeLabel} from '@/services/templateService';
+import {createSection, deleteSection, updateEntityTypeLabel} from '@/services/templateService';
 import {Card, CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
@@ -20,12 +20,14 @@ import type {GridField} from '@/components/extraction/template-config/templateTr
 import type {ExtractionFieldInsert} from '@/types/extraction';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
-import {AddSectionDialog, ImportTemplateDialog, RemoveSectionDialog} from './dialogs';
+import {AddSectionDialog, ImportTemplateDialog} from './dialogs';
 import type {AddSectionMode} from './dialogs/AddSectionDialog';
 import {useDeleteTemplateField} from '@/hooks/extraction/useDeleteTemplateField';
 import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
 import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
 import {insertField} from '@/services/extractionFieldService';
+import {captureSection, replaySection} from '@/components/extraction/template-config/sectionRestore';
+import {STRUCTURAL_UNDO_TOAST_ID} from '@/components/extraction/template-config/useStructuralUndo';
 
 interface TemplateConfigEditorProps {
   projectId: string;
@@ -54,15 +56,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   const structureRefreshFailed = isError && entityTypes.length > 0;
   // Which AddSectionDialog variant is open (B-8 D3); null = closed.
   const [addSectionMode, setAddSectionMode] = useState<AddSectionMode | null>(null);
-  const [removingSectionId, setRemovingSectionId] = useState<string | null>(null);
-  const [removingSectionName, setRemovingSectionName] = useState('');
-  // Cascade info when the section being removed is a repeating GROUP
-  // (B-8 D4): child sections + their fields, from the grid tree.
-  const [removingCascade, setRemovingCascade] = useState<{
-    childCount: number;
-    fieldsCount: number;
-    noun: string;
-  } | null>(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
   // B-9b2a: the read-only diff sheet's trigger lives in the command bar
   // while the grid hosts the inspector Sheet, and two modal sheets must
@@ -117,6 +110,52 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     return true;
   };
 
+  /**
+   * Delete a section with no confirmation, and arm the Undo (B-9d part 2).
+   *
+   * The snapshot is taken BEFORE the write, because the delete cascades:
+   * a repeating group takes its child sections and every field beneath
+   * them, and nothing is tombstoned — after the round trip there is
+   * nothing left to read.
+   *
+   * The undo shares the ONE structural slot (`STRUCTURAL_UNDO_TOAST_ID`)
+   * with the grid's move/delete undos: pushing under that id replaces a
+   * live toast, which is what keeps "one live undo at a time" true across
+   * the two owners. It cannot live in `useStructuralUndo` itself — that
+   * hook is panel-scoped and this needs the RAW `entityTypes` the editor
+   * holds, which is where `role` and `is_required` survive.
+   */
+  const deleteSectionNow = async (sectionId: string, label: string): Promise<void> => {
+    const snapshot = captureSection(entityTypes, sectionId);
+    const result = await deleteSection(projectId, templateId, sectionId);
+    if (!result.ok) {
+      // A section owning extraction instances cannot be deleted at all
+      // (RESTRICT), and the service maps that 409 to friendly copy.
+      toast.error(result.error.message);
+      return;
+    }
+    await invalidateStructure();
+    if (!snapshot) return;
+
+    toast(t('templateConfig', 'undoDeleteSectionToast').replace('{{section}}', label), {
+      id: STRUCTURAL_UNDO_TOAST_ID,
+      duration: 6000,
+      action: {
+        label: t('templateConfig', 'undoAction'),
+        onClick: () => {
+          void replaySection(snapshot, {
+            createSection: (params) =>
+              createSection({projectId, templateId, ...params}),
+            insertField: (payload) => insertField(projectId, templateId, payload),
+          }).then(async (restored) => {
+            if (!restored) toast.error(t('templateConfig', 'errors_restoreSection'));
+            await invalidateStructure();
+          });
+        },
+      },
+    });
+  };
+
   /** Delete a field. B-9d removed the confirmation modal — the Publish ☑
    * ack is the real gate now (B-9b2b) and the grid arms a 6s Undo — so
    * this is dispatched straight from the row.
@@ -148,13 +187,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
 
   const handleSectionAdded = () => {
     setAddSectionMode(null);
-    void invalidateStructure();
-  };
-
-  const handleSectionRemoved = () => {
-    setRemovingSectionId(null);
-    setRemovingSectionName('');
-    setRemovingCascade(null);
     void invalidateStructure();
   };
 
@@ -271,21 +303,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         diffSheetOpen={diffSheetOpen}
         sectionActions={{
           onCommitRename: (sectionId, label) => void handleSaveEdit(sectionId, label),
-          onDelete: (section) => {
-            setRemovingSectionId(section.id);
-            setRemovingSectionName(section.label);
-            // D4: a group's confirm leads with the cascade warning —
-            // its child sections and their fields go with it.
-            setRemovingCascade(
-              section.kind === 'group'
-                ? {
-                    childCount: section.children.length,
-                    fieldsCount: section.totalFieldCount - section.fieldCount,
-                    noun: section.entryNoun,
-                  }
-                : null,
-            );
-          },
+          onDelete: (section) => void deleteSectionNow(section.id, section.label),
           onAddPerModelSection: (group) =>
             setAddSectionMode({
               kind: 'perModel',
@@ -353,22 +371,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         onSectionAdded={handleSectionAdded}
       />
 
-      <RemoveSectionDialog
-        projectId={projectId}
-        templateId={templateId}
-        sectionId={removingSectionId}
-        sectionName={removingSectionName}
-        groupCascade={removingCascade}
-        open={!!removingSectionId}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRemovingSectionId(null);
-            setRemovingSectionName('');
-            setRemovingCascade(null);
-          }
-        }}
-        onSectionRemoved={handleSectionRemoved}
-      />
 
       <ImportTemplateDialog
         projectId={projectId}

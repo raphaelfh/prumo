@@ -418,7 +418,7 @@ export async function analyzeSectionRemovalImpact(
  * refuses the delete with a 409 — the advisory impact probe above can
  * miss those rows, so this translation is the real invariant: re-wrap
  * as a typed PgError ('23503', the SQLSTATE behind the refusal)
- * carrying friendly copy. RemoveSectionDialog branches on exactly that
+ * carrying friendly copy. The editor's section delete toasts exactly that
  * pair to toast it verbatim; the raw backend message never reaches the
  * user. NOTE: caller toasts success/error.
  */
@@ -585,9 +585,12 @@ export interface CreateSectionParams {
  */
 export async function createSection(
   params: CreateSectionParams,
-): Promise<ErrorResult<void>> {
+): Promise<ErrorResult<SectionRead>> {
   return toResult(async () => {
-    await apiClient<SectionRead>(
+    // Returns the created row rather than discarding it: undoing a
+    // section delete replays the subtree, and every child section and
+    // field has to be created against the NEW id (B-9d part 2).
+    return await apiClient<SectionRead>(
       `/api/v1/projects/${params.projectId}/templates/${params.templateId}/sections`,
       {
         method: 'POST',

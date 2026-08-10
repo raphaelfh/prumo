@@ -79,7 +79,6 @@ vi.mock('@/components/extraction/template-config/TemplateConfigGridPanel', () =>
 }));
 vi.mock('./dialogs', () => ({
   AddSectionDialog: () => null,
-  RemoveSectionDialog: () => null,
   ImportTemplateDialog: () => null,
 }));
 
