@@ -65,6 +65,10 @@ class SnapshotSection:
     sort_order: int
     fields: tuple[SnapshotField, ...]
     description: str | None = None
+    # Group entry noun (B-8) — set on model_container rows; None elsewhere
+    # and on pre-0051 snapshots (readers default, consumers fall back to
+    # "model").
+    entry_label: str | None = None
 
 
 async def load_export_sections(
@@ -101,6 +105,7 @@ def _section_from_view(view: RunViewEntityType) -> SnapshotSection:
         sort_order=view.sort_order,
         fields=tuple(_field_from_view(f) for f in sorted(view.fields, key=lambda x: x.sort_order)),
         description=view.description,
+        entry_label=view.entry_label,
     )
 
 

@@ -1345,10 +1345,12 @@ export default function ExtractionFullScreen() {
         onConfirm={handleConfirmAddModel}
         onCancel={() => setShowAddModelDialog(false)}
         existingModels={models.map(m => m.modelName)}
+        entryLabel={modelParentEntityType?.entry_label ?? 'model'}
       />
 
       <RemoveModelDialog
         open={!!modelToRemove}
+        entryLabel={modelParentEntityType?.entry_label ?? 'model'}
         modelName={modelToRemove?.name || ''}
         hasExtractedData={modelToRemove?.hasData || false}
         extractedFieldsCount={modelToRemove?.fieldsCount || 0}

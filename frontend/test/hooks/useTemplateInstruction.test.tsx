@@ -14,7 +14,11 @@ import {
   useTemplateInstruction,
   useUpdateTemplateInstruction,
 } from '@/hooks/extraction/useTemplateInstruction';
-import {templateInstructionKeys} from '@/lib/query-keys/extraction';
+import {runsKeys} from '@/hooks/runs/types';
+import {
+  templateConfigStatusKeys,
+  templateInstructionKeys,
+} from '@/lib/query-keys/extraction';
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -47,14 +51,11 @@ describe('useTemplateInstruction', () => {
 });
 
 describe('useUpdateTemplateInstruction', () => {
-  it('puts the value and invalidates the instruction query', async () => {
+  it('puts the value and refreshes the instruction + Draft chip queries', async () => {
+    // B-4 response shape: a draft edit — no version fields.
     updateTemplateInstruction.mockResolvedValue({
       project_template_id: 't1',
       llm_template_instruction: 'New',
-      version_id: 'v2',
-      version: 2,
-      changed: true,
-      repinned_run_count: 0,
     });
     const {queryClient, wrapper} = createWrapper();
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
@@ -70,6 +71,15 @@ describe('useUpdateTemplateInstruction', () => {
       expect.objectContaining({
         queryKey: templateInstructionKeys.byTemplate('p1', 't1'),
       }),
+    );
+    expect(invalidate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryKey: templateConfigStatusKeys.byTemplate('p1', 't1'),
+      }),
+    );
+    // Nothing re-pins on a draft edit — the runs cache must NOT churn.
+    expect(invalidate).not.toHaveBeenCalledWith(
+      expect.objectContaining({queryKey: runsKeys.all}),
     );
   });
 });

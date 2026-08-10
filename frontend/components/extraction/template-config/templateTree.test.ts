@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 
 import {
   buildTemplateTree,
+  deriveMoveTargets,
   filterTemplateTree,
   normalizeForSearch,
   type TemplateEntityTypeInput,
@@ -51,6 +52,18 @@ describe('buildTemplateTree', () => {
     expect(tree.map((s) => s.label)).toEqual(['Source of Data', 'Participants']);
     expect(tree[0].fields.map((f) => f.label)).toEqual(['Study design', 'Data source']);
     expect(tree[0].fieldCount).toBe(2);
+  });
+
+  it('carries sort_order onto GridField — move/reorder writes renumber from it (B-6)', () => {
+    const tree = buildTemplateTree(
+      [section({id: 'a', sort_order: 1})],
+      [
+        field({id: 'f1', entity_type_id: 'a', sort_order: 3}),
+        field({id: 'f2', entity_type_id: 'a'}),
+      ],
+    );
+
+    expect(tree[0].fields.map((f) => f.sortOrder)).toEqual([0, 3]);
   });
 
   it('nests model sections under the repeating group and keeps them out of the roots', () => {
@@ -120,6 +133,26 @@ describe('buildTemplateTree', () => {
     expect(tree[2].children[1].metaKeys).toEqual(['sectionMetaRepeatsPerModel']);
   });
 
+  it('projects cardinality onto every section (the inspector edits it)', () => {
+    const tree = buildTemplateTree(
+      [
+        section({id: 'plain', sort_order: 1}),
+        section({id: 'grp', role: 'model_container', cardinality: 'many', sort_order: 2}),
+        section({
+          id: 'childOnce',
+          role: 'model_section',
+          parent_entity_type_id: 'grp',
+          sort_order: 3,
+        }),
+      ],
+      [],
+    );
+
+    expect(tree[0].cardinality).toBe('one');
+    expect(tree[1].cardinality).toBe('many');
+    expect(tree[1].children[0].cardinality).toBe('one');
+  });
+
   it('flags a description dot and an AI instruction per field', () => {
     const tree = buildTemplateTree(
       [section({id: 'a', description: 'Where the data came from'})],
@@ -151,12 +184,111 @@ describe('buildTemplateTree', () => {
     expect(tree[0].totalFieldCount).toBe(3);
   });
 
+  it('resolves entryNoun from the group own entry_label and children inherit it (B-8 D7)', () => {
+    const tree = buildTemplateTree(
+      [
+        section({
+          id: 'grp',
+          role: 'model_container',
+          cardinality: 'many',
+          entry_label: 'algorithm',
+          sort_order: 1,
+        }),
+        section({
+          id: 'child',
+          role: 'model_section',
+          parent_entity_type_id: 'grp',
+          sort_order: 2,
+        }),
+      ],
+      [],
+    );
+
+    expect(tree[0].entryNoun).toBe('algorithm');
+    expect(tree[0].children[0].entryNoun).toBe('algorithm');
+  });
+
+  it('falls back entryNoun to "model" when entry_label is null or absent', () => {
+    const tree = buildTemplateTree(
+      [
+        section({
+          id: 'grpNull',
+          role: 'model_container',
+          cardinality: 'many',
+          entry_label: null,
+          sort_order: 1,
+        }),
+        section({
+          id: 'grpAbsent',
+          role: 'model_container',
+          cardinality: 'many',
+          sort_order: 2,
+        }),
+        section({
+          id: 'child',
+          role: 'model_section',
+          parent_entity_type_id: 'grpNull',
+          sort_order: 3,
+        }),
+      ],
+      [],
+    );
+
+    expect(tree[0].entryNoun).toBe('model');
+    expect(tree[0].children[0].entryNoun).toBe('model');
+    expect(tree[1].entryNoun).toBe('model');
+  });
+
+  it('gives root sections the total fallback entryNoun "model" (unused but total)', () => {
+    const tree = buildTemplateTree(
+      [section({id: 'root', entry_label: null, sort_order: 1})],
+      [],
+    );
+
+    expect(tree[0].entryNoun).toBe('model');
+  });
+
   it('treats an orphaned child (parent missing) as a root rather than dropping it', () => {
     const tree = buildTemplateTree(
       [section({id: 'lost', role: 'model_section', parent_entity_type_id: 'gone'})],
       [],
     );
     expect(tree.map((s) => s.id)).toEqual(['lost']);
+  });
+});
+
+describe('deriveMoveTargets (B-6 T4)', () => {
+  it('flattens EVERY section as a destination — group children right after their group, own fieldCount carried', () => {
+    const tree = buildTemplateTree(
+      [
+        section({id: 'root1', sort_order: 1}),
+        section({
+          id: 'grp',
+          role: 'model_container',
+          cardinality: 'many',
+          sort_order: 2,
+        }),
+        section({
+          id: 'child',
+          role: 'model_section',
+          parent_entity_type_id: 'grp',
+          sort_order: 3,
+        }),
+        section({id: 'root2', sort_order: 4}),
+      ],
+      [
+        field({id: 'f1', entity_type_id: 'root1'}),
+        field({id: 'f2', entity_type_id: 'child'}),
+        field({id: 'f3', entity_type_id: 'child', sort_order: 2}),
+      ],
+    );
+
+    expect(deriveMoveTargets(tree)).toEqual([
+      {id: 'root1', label: 'root1', kind: 'root', fieldCount: 1},
+      {id: 'grp', label: 'grp', kind: 'group', fieldCount: 0},
+      {id: 'child', label: 'child', kind: 'groupChild', fieldCount: 2},
+      {id: 'root2', label: 'root2', kind: 'root', fieldCount: 0},
+    ]);
   });
 });
 

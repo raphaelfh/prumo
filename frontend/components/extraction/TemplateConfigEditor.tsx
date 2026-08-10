@@ -7,24 +7,25 @@
  * Simplifies code and allows natural hierarchy support.
  */
 
-import {useEffect, useState} from 'react';
-import {
-  loadTemplateEntityTypes,
-  updateEntityTypeLabel,
-} from '@/services/templateService';
+import {useState} from 'react';
+import {updateEntityTypeLabel} from '@/services/templateService';
 import {Card, CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
-import {Download, Loader2, Plus, Settings} from 'lucide-react';
+import {AlertTriangle, Download, Loader2, Plus, Settings} from 'lucide-react';
 import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructionRow';
 import {TemplateConfigGridPanel} from '@/components/extraction/template-config/TemplateConfigGridPanel';
-import {TemplateFieldDialogs} from '@/components/extraction/template-config/TemplateFieldDialogs';
-import type {ExtractionField} from '@/types/extraction';
+import {TemplateConfigPublishControls} from '@/components/extraction/template-config/TemplateConfigPublishControls';
+import type {ExtractionField, FieldValidationResult} from '@/types/extraction';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {AddSectionDialog, ImportTemplateDialog, RemoveSectionDialog} from './dialogs';
-import {ExtractionEntityType} from '@/types/extraction';
-import {useTemplateRepublish} from '@/hooks/extraction/useTemplateRepublish';
+import type {AddSectionMode} from './dialogs/AddSectionDialog';
+import {DeleteFieldConfirm} from './dialogs/DeleteFieldConfirm';
+import {useDeleteTemplateField} from '@/hooks/extraction/useDeleteTemplateField';
+import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
+import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
+import {validateFieldImpact} from '@/services/extractionFieldService';
 
 interface TemplateConfigEditorProps {
   projectId: string;
@@ -32,92 +33,154 @@ interface TemplateConfigEditorProps {
 }
 
 export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEditorProps) {
-  const [entityTypes, setEntityTypes] = useState<ExtractionEntityType[]>([]);
-  // Only the FIRST load blanks the screen. Later refreshes (after a dialog
-  // save, a rename, a section add) must keep the grid mounted — unmounting
-  // it throws away the panel's view state: selection, search query,
-  // collapsed sections and column toggles.
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editLabel, setEditLabel] = useState('');
-  const [showAddSectionDialog, setShowAddSectionDialog] = useState(false);
+  // ONE cached read of the template structure, shared with the grid panel
+  // (same key, same query). Every config mutation on this screen already
+  // invalidates `templateEntityTypesKeys.byTemplate`, so the header count
+  // refreshes itself — there is no hand-rolled reload protocol left.
+  //
+  // Three branches, and the order matters (B-9c2 D8): the hook returns
+  // `query.data ?? []`, so a FAILED fetch is byte-identical to a template
+  // with zero sections. `isError` must be answered before the empty state,
+  // or a dropped connection reads as "your configuration is gone".
+  const {entityTypes, isPending, isError} = useTemplateEntityTypes(templateId);
+  // …but only while there is nothing cached. TanStack flips `status` to
+  // error on a BACKGROUND failure and KEEPS the rows, and with staleTime at
+  // 5min and refetch-on-focus off, that is the realistic error on this
+  // screen: the invalidation that follows a mutation which already
+  // succeeded (rename, add/remove section, delete field, Discard). Blanking
+  // then discards a structure we still hold — along with the grid's
+  // selection/search/collapse state and the Discard result pane, which is
+  // mounted inside the publish controls in the success branch below.
+  const structureRefreshFailed = isError && entityTypes.length > 0;
+  // Which AddSectionDialog variant is open (B-8 D3); null = closed.
+  const [addSectionMode, setAddSectionMode] = useState<AddSectionMode | null>(null);
   const [removingSectionId, setRemovingSectionId] = useState<string | null>(null);
   const [removingSectionName, setRemovingSectionName] = useState('');
-  const [showImportDialog, setShowImportDialog] = useState(false);
-  // Grid editing bridge (B-1): the grid selects, the existing dialogs edit.
-  const [fieldDialog, setFieldDialog] = useState<{
-    mode: 'add' | 'edit' | 'delete';
-    entityTypeId: string;
-    sectionName: string;
-    field: ExtractionField | null;
+  // Cascade info when the section being removed is a repeating GROUP
+  // (B-8 D4): child sections + their fields, from the grid tree.
+  const [removingCascade, setRemovingCascade] = useState<{
+    childCount: number;
+    fieldsCount: number;
+    noun: string;
   } | null>(null);
-  const { republish } = useTemplateRepublish(projectId, templateId);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  // B-9b2a: the read-only diff sheet's trigger lives in the command bar
+  // while the grid hosts the inspector Sheet, and two modal sheets must
+  // never stack — so the flag belongs to their nearest common owner, here.
+  const [diffSheetOpen, setDiffSheetOpen] = useState(false);
+  // Delete confirm (B-5 Task 7): hosted HERE, outside the grid panel's
+  // React subtree — a Radix dialog inside the panel would bubble its
+  // dismiss-Esc (portals propagate through the REACT tree) into the
+  // panel's Esc ladder and close the inspector as a side effect.
+  const [deletingField, setDeletingField] = useState<ExtractionField | null>(null);
+  const deleteFieldMutation = useDeleteTemplateField(projectId, templateId);
+  const {invalidateStructure, invalidateAfterImport} = useTemplateConfigCaches(
+    projectId,
+    templateId,
+  );
 
-  const loadEntityTypes = async () => {
-
-    console.warn('📦 Carregando entity types do template:', templateId);
-
-    const result = await loadTemplateEntityTypes(templateId);
-
-    if (!result.ok) {
-      console.error('❌ Erro ao carregar entity types:', result.error);
-      toast.error(`${t('common', 'error')}: ${result.error.message}`);
-      setInitialLoading(false);
-      return;
-    }
-
-    console.warn(`✅ Entity types encontrados: ${result.data.length}`);
-    setEntityTypes(result.data as unknown as ExtractionEntityType[]);
-    setInitialLoading(false);
+  /** Impact pre-fetch for DeleteFieldConfirm. Never rejects: a probe
+   * failure resolves as a cannot-delete result (the dialog's contract).
+   * The probe is ADVISORY — the service's 23503 mapping is the real
+   * invariant. */
+  const validateForDelete = async (fieldId: string): Promise<FieldValidationResult> => {
+    const result = await validateFieldImpact(
+      fieldId,
+      t('extraction', 'fieldSafeToModifyMessage'),
+      (count, articles) =>
+        t('extraction', 'fieldExtractedValuesMessage')
+          .replace('{{count}}', String(count))
+          .replace('{{n}}', String(articles)),
+    );
+    if (result.ok) return result.data;
+    console.error('Error validating field impact:', result.error);
+    return {
+      canDelete: false,
+      canUpdate: false,
+      canChangeType: false,
+      extractedValuesCount: 0,
+      affectedArticles: [],
+      message: t('extraction', 'errors_validateField'),
+    };
   };
 
-  useEffect(() => {
-    if (projectId && templateId) {
-      // Microtask so the loader's setState calls run in an async callback.
-      queueMicrotask(() => void loadEntityTypes());
-    }
-  }, [projectId, templateId]);
+  /** Confirm-time delete: the SMALL dedicated mutation (service +
+   * invalidateStructure) — resolves a boolean for the dialog without
+   * throwing across a component body. */
+  const confirmDeleteField = (fieldId: string) =>
+    new Promise<boolean>((resolve) => {
+      deleteFieldMutation.mutate(
+        {fieldId},
+        {onSuccess: () => resolve(true), onError: () => resolve(false)},
+      );
+    });
 
-  const handleSaveEdit = async (entityTypeId: string) => {
-    const result = await updateEntityTypeLabel(entityTypeId, editLabel);
+  // Task 6: the grid row owns the rename draft — only the WRITE lives
+  // here (service call + cache refresh; the grid guarantees one commit
+  // per rename, with a changed, non-empty, trimmed label).
+  const handleSaveEdit = async (entityTypeId: string, label: string) => {
+    const result = await updateEntityTypeLabel(projectId, templateId, entityTypeId, label);
     if (!result.ok) {
       console.error('Erro ao atualizar label:', result.error);
       toast.error(`${t('common', 'error')}: ${result.error.message}`);
       return;
     }
     toast.success(t('extraction', 'labelUpdatedSuccess'));
-    setEditingId(null);
-    void republish();
-    await loadEntityTypes();
-  };
-
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditLabel('');
+    await invalidateStructure();
   };
 
   const handleSectionAdded = () => {
-    setShowAddSectionDialog(false);
-    void republish();
-    loadEntityTypes();
+    setAddSectionMode(null);
+    void invalidateStructure();
   };
 
   const handleSectionRemoved = () => {
     setRemovingSectionId(null);
     setRemovingSectionName('');
-    void republish();
-    loadEntityTypes();
+    setRemovingCascade(null);
+    void invalidateStructure();
   };
 
   // Only the header count reads this now — the grid owns the hierarchy.
   const rootEntityTypes = entityTypes.filter((et) => !et.parent_entity_type_id);
 
-  if (initialLoading) {
+  // isPending, NOT isFetching: only the first load may blank the screen. A
+  // later refresh (a rename, a section add, a Discard) must keep the grid
+  // mounted or the panel loses its view state — selection, search query,
+  // collapsed sections, column toggles.
+  if (isPending) {
     return (
       <div className="flex items-center justify-center p-12">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <span className="ml-3 text-muted-foreground">{t('extraction', 'loadingConfiguration')}</span>
       </div>
+    );
+  }
+
+  if (isError && entityTypes.length === 0) {
+    // Nothing cached: the only case where taking the screen is honest, and
+    // the only one D8 is about. Replaces the imperative loader's
+    // toast.error — a failure the user can still see (and retry) after the
+    // toast would have expired. Retrying is the same invalidation every
+    // mutation performs.
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <div className="text-center text-muted-foreground">
+            <AlertTriangle
+              className="h-10 w-10 mx-auto mb-3 text-destructive/70"
+              strokeWidth={1.5}
+            />
+            <p className="text-sm font-medium mb-1 text-foreground">
+              {t('templateConfig', 'sectionsLoadFailedTitle')}
+            </p>
+            <p className="text-xs mb-4">{t('templateConfig', 'sectionsLoadFailedBody')}</p>
+            <Button variant="outline" onClick={() => void invalidateStructure()}>
+              {t('common', 'tryAgain')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -148,8 +211,39 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
             <Download className="h-4 w-4 mr-2" />
             {t('extraction', 'configImportTemplateButton')}
           </Button>
+          <TemplateConfigPublishControls
+            projectId={projectId}
+            templateId={templateId}
+            diffSheetOpen={diffSheetOpen}
+            onDiffSheetOpenChange={setDiffSheetOpen}
+          />
         </div>
       </div>
+
+      {/* Degraded, not broken: the rows below are the last good read. An
+          inline strip rather than a toast — the same reason the blocking
+          card replaced one, and a toast would expire while the stale grid
+          stayed on screen. */}
+      {structureRefreshFailed && (
+        <div
+          role="alert"
+          data-testid="template-config-refresh-failed"
+          className="flex items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-xs text-warning"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden />
+          <span className="min-w-0 flex-1">
+            {t('templateConfig', 'sectionsRefreshFailedBody')}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 hover:bg-warning/20 hover:text-warning"
+            onClick={() => void invalidateStructure()}
+          >
+            {t('common', 'tryAgain')}
+          </Button>
+        </div>
+      )}
 
       <TemplateInstructionRow projectId={projectId} templateId={templateId} />
 
@@ -157,49 +251,35 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
       <TemplateConfigGridPanel
         projectId={projectId}
         templateId={templateId}
-        onEditField={(field) => {
-          const section = entityTypes.find((et) => et.id === field.entity_type_id);
-          setFieldDialog({
-            mode: 'edit',
-            entityTypeId: field.entity_type_id,
-            sectionName: section?.label ?? '',
-            field,
-          });
-        }}
+        diffSheetOpen={diffSheetOpen}
         sectionActions={{
-          renamingId: editingId,
-          renameValue: editLabel,
-          onRenameValueChange: setEditLabel,
-          onStartRename: (section) => {
-            setEditingId(section.id);
-            setEditLabel(section.label);
-          },
-          onCommitRename: (sectionId) => void handleSaveEdit(sectionId),
-          onCancelRename: handleCancelEdit,
+          onCommitRename: (sectionId, label) => void handleSaveEdit(sectionId, label),
           onDelete: (section) => {
             setRemovingSectionId(section.id);
             setRemovingSectionName(section.label);
+            // D4: a group's confirm leads with the cascade warning —
+            // its child sections and their fields go with it.
+            setRemovingCascade(
+              section.kind === 'group'
+                ? {
+                    childCount: section.children.length,
+                    fieldsCount: section.totalFieldCount - section.fieldCount,
+                    noun: section.entryNoun,
+                  }
+                : null,
+            );
           },
-          onAddField: (sectionId) => {
-            const section = entityTypes.find((et) => et.id === sectionId);
-            setFieldDialog({
-              mode: 'add',
-              entityTypeId: sectionId,
-              sectionName: section?.label ?? '',
-              field: null,
-            });
-          },
+          onAddPerModelSection: (group) =>
+            setAddSectionMode({
+              kind: 'perModel',
+              parentId: group.id,
+              parentLabel: group.label,
+              entryNoun: group.entryNoun,
+            }),
         }}
-        onDeleteField={(field) => {
-          const section = entityTypes.find((et) => et.id === field.entity_type_id);
-          setFieldDialog({
-            mode: 'delete',
-            entityTypeId: field.entity_type_id,
-            sectionName: section?.label ?? '',
-            field,
-          });
-        }}
-        onAddSection={() => setShowAddSectionDialog(true)}
+        onDeleteField={setDeletingField}
+        onAddSection={() => setAddSectionMode({kind: 'root'})}
+        onAddGroup={() => setAddSectionMode({kind: 'group'})}
       />
       )}
 
@@ -221,9 +301,9 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                   <Download className="h-4 w-4 mr-2" />
                   {t('extraction', 'configImportTemplateButton')}
                 </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShowAddSectionDialog(true)}
+                <Button
+                  variant="outline"
+                  onClick={() => setAddSectionMode({kind: 'root'})}
                 >
                   <Plus className="h-4 w-4 mr-2" />
                     {t('extraction', 'addSection')}
@@ -237,12 +317,21 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         {/* Adding a section lives in the grid now: the rail footer and
             the end-of-grid ghost row. A third button here was duplicate. */}
 
-      {/* Dialogs */}
+      {/* Dialogs. Field add/edit went inline in B-5 (ghost rows + the
+          inspector); AddSectionDialog is the PERMANENT create surface
+          for sections — B-8 made it modal (root / repeating group /
+          per-model), reached from the grid's ＋▾ menus and ghost rows
+          (inline section creation was dropped in the B-8 plan). Keyed
+          by mode so the form re-initializes per variant. */}
       <AddSectionDialog
+        key={addSectionMode?.kind ?? 'root'}
         projectId={projectId}
         templateId={templateId}
-        open={showAddSectionDialog}
-        onOpenChange={setShowAddSectionDialog}
+        open={addSectionMode !== null}
+        mode={addSectionMode ?? {kind: 'root'}}
+        onOpenChange={(open) => {
+          if (!open) setAddSectionMode(null);
+        }}
         onSectionAdded={handleSectionAdded}
       />
 
@@ -251,25 +340,30 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         templateId={templateId}
         sectionId={removingSectionId}
         sectionName={removingSectionName}
+        groupCascade={removingCascade}
         open={!!removingSectionId}
         onOpenChange={(open) => {
           if (!open) {
             setRemovingSectionId(null);
             setRemovingSectionName('');
+            setRemovingCascade(null);
           }
         }}
         onSectionRemoved={handleSectionRemoved}
       />
 
-      {fieldDialog && (
-        <TemplateFieldDialogs
-          mode={fieldDialog.mode}
-          entityTypeId={fieldDialog.entityTypeId}
-          sectionName={fieldDialog.sectionName}
-          projectId={projectId}
-          templateId={templateId}
-          field={fieldDialog.field}
-          onClose={() => setFieldDialog(null)}
+      {/* Mounted per open so the dialog's impact pre-fetch runs fresh.
+          Kept OUTSIDE the grid panel subtree (see deletingField above). */}
+      {deletingField && (
+        <DeleteFieldConfirm
+          field={deletingField}
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeletingField(null);
+          }}
+          onConfirm={confirmDeleteField}
+          onValidate={validateForDelete}
+          confirmPending={deleteFieldMutation.isPending}
         />
       )}
 
@@ -279,11 +373,10 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         onOpenChange={setShowImportDialog}
         onTemplateImported={() => {
           setShowImportDialog(false);
-          // Import may have healed/rewritten structure — republish is a
-          // server-side no-op when current, but re-pins stale runs and
-          // invalidates the form caches either way.
-          void republish();
-          loadEntityTypes();
+          // Import publishes server-side (clone routes through republish),
+          // possibly for a DIFFERENT template — id-free .all invalidation,
+          // which covers this template's entity-types key too.
+          void invalidateAfterImport();
         }}
       />
     </div>

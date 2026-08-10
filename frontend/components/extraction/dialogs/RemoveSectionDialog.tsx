@@ -35,6 +35,7 @@ import {
 } from '@/services/templateService';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
+import {PgError} from '@/lib/error-utils';
 
 // =================== SCHEMAS ===================
 
@@ -63,6 +64,11 @@ interface RemoveSectionDialogProps {
   templateId: string;
   sectionId: string | null;
   sectionName: string;
+  /** Set when the section is a repeating GROUP (B-8 D4): the cascade
+   * warning also lists its child sections + their fields (the impact
+   * probe counts only the section's OWN rows). Run entries still make
+   * the endpoint 409 — surfaced through the PgError path below. */
+  groupCascade?: {childCount: number; fieldsCount: number; noun: string} | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSectionRemoved: () => void;
@@ -71,10 +77,11 @@ interface RemoveSectionDialogProps {
 // =================== COMPONENT ===================
 
 export function RemoveSectionDialog({
-                                        projectId: _projectId,
-                                        templateId: _templateId,
+  projectId,
+  templateId,
   sectionId,
   sectionName,
+  groupCascade,
   open,
   onOpenChange,
   onSectionRemoved,
@@ -166,11 +173,18 @@ export function RemoveSectionDialog({
     console.warn('Starting section removal:', {sectionId, sectionName});
     console.warn('🎯 Entity type a ser removido:', sectionId);
 
-    const result = await deleteSection(sectionId);
+    const result = await deleteSection(projectId, templateId, sectionId);
 
     if (!result.ok) {
       console.error('Error removing section:', result.error);
-      toast.error(`${t('extraction', 'sectionRemoveError')}: ${result.error.message}`);
+      // Section-in-use refusal (backend 409 over the RESTRICT FKs): the
+      // service already mapped it to a PgError whose message IS the
+      // friendly copy — toast it verbatim, never the raw backend text.
+      if (result.error instanceof PgError && result.error.code === '23503') {
+        toast.error(result.error.message);
+      } else {
+        toast.error(`${t('extraction', 'sectionRemoveError')}: ${result.error.message}`);
+      }
       setLoading(false);
       return;
     }
@@ -243,13 +257,24 @@ export function RemoveSectionDialog({
               </div>
             </div>
 
-            {/* Warnings */}
+            {/* Warnings — a group delete leads with the cascade line
+                (children + fields), B-8 D4. */}
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
                   <div className="font-medium mb-2">{t('extraction', 'removalImpactTitle')}</div>
                 <ul className="list-disc list-inside space-y-1">
-                  {impact.warnings.map((warning, index) => (
+                  {[
+                    ...(groupCascade
+                      ? [
+                          t('templateConfig', 'deleteGroupCascadeWarning')
+                            .replace('{{children}}', String(groupCascade.childCount))
+                            .replace('{{noun}}', groupCascade.noun)
+                            .replace('{{fields}}', String(groupCascade.fieldsCount)),
+                        ]
+                      : []),
+                    ...impact.warnings,
+                  ].map((warning, index) => (
                     <li key={index} className="text-sm">{warning}</li>
                   ))}
                 </ul>

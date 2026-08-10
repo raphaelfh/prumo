@@ -1,7 +1,9 @@
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 
-import {runsKeys} from '@/hooks/runs/types';
-import {templateInstructionKeys} from '@/lib/query-keys/extraction';
+import {
+  templateConfigStatusKeys,
+  templateInstructionKeys,
+} from '@/lib/query-keys/extraction';
 import {
   getTemplateInstruction,
   updateTemplateInstruction,
@@ -22,15 +24,15 @@ export function useUpdateTemplateInstruction(projectId: string, templateId: stri
   return useMutation<UpdateTemplateInstructionResponse, Error, string | null>({
     mutationFn: (value) => updateTemplateInstruction(projectId, templateId, value),
     onSuccess: async () => {
-      // The PUT republished server-side: editable-stage runs were
-      // re-pinned, so run-scoped reads are stale alongside our own key.
-      // Parallel: the two refetch rounds are independent, and awaiting
-      // them serially would extend the disabled-Save window.
+      // B-4: the PUT stages a draft edit — nothing re-pins, so the runs
+      // cache stays put; only our own read and the Draft chip refresh.
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: templateInstructionKeys.byTemplate(projectId, templateId),
         }),
-        queryClient.invalidateQueries({queryKey: runsKeys.all}),
+        queryClient.invalidateQueries({
+          queryKey: templateConfigStatusKeys.byTemplate(projectId, templateId),
+        }),
       ]);
     },
   });

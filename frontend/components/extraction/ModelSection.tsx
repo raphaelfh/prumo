@@ -140,6 +140,10 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
       </div>
 
       <ModelSelector
+        // B-8 D6: the entry noun is DATA — the container's entry_label
+        // (fallback 'model'); the heading is the container's label.
+        entryLabel={modelContainer.entry_label ?? 'model'}
+        title={modelContainer.label}
         models={models}
         activeModelId={activeModelId}
         onSelectModel={setActiveModelId}

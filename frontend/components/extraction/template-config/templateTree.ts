@@ -28,6 +28,29 @@ export type TemplateMatchHint = 'label' | 'key' | 'description' | 'aiInstruction
 const ROLE_MODEL_CONTAINER = 'model_container';
 const CARDINALITY_MANY = 'many';
 
+/** Copy keys in the `extraction` namespace naming each field type. */
+export type FieldTypeCopyKey =
+  | 'fieldTypeText'
+  | 'fieldTypeNumber'
+  | 'fieldTypeDate'
+  | 'fieldTypeSelect'
+  | 'fieldTypeMultiselect'
+  | 'fieldTypeBoolean';
+
+/** The six field types (same set as the DB enum), labelled through copy —
+ * shared by the inspector's type select and the grid's type menu. */
+export const FIELD_TYPE_OPTIONS: ReadonlyArray<{
+  value: string;
+  copyKey: FieldTypeCopyKey;
+}> = [
+  {value: 'text', copyKey: 'fieldTypeText'},
+  {value: 'number', copyKey: 'fieldTypeNumber'},
+  {value: 'date', copyKey: 'fieldTypeDate'},
+  {value: 'select', copyKey: 'fieldTypeSelect'},
+  {value: 'multiselect', copyKey: 'fieldTypeMultiselect'},
+  {value: 'boolean', copyKey: 'fieldTypeBoolean'},
+];
+
 export interface TemplateEntityTypeInput {
   id: string;
   name: string;
@@ -36,6 +59,8 @@ export interface TemplateEntityTypeInput {
   role?: string | null;
   cardinality?: string | null;
   parent_entity_type_id?: string | null;
+  /** Repeating-group entry noun (B-8) — meaningful on groups only. */
+  entry_label?: string | null;
   sort_order?: number;
 }
 
@@ -49,6 +74,12 @@ export interface TemplateFieldInput {
   is_required?: boolean;
   allowed_values?: string[] | null;
   unit?: string | null;
+  allowed_units?: string[] | null;
+  allow_other?: boolean;
+  other_label?: string | null;
+  other_placeholder?: string | null;
+  allows_not_applicable?: boolean;
+  allows_not_evaluated?: boolean;
   llm_description?: string | null;
   sort_order?: number;
 }
@@ -56,6 +87,11 @@ export interface TemplateFieldInput {
 export interface GridField {
   id: string;
   entityTypeId: string;
+  /** Committed per-section position as fetched. UNREAD by the B-6
+   * move/reorder writes — renumbering derives new sort_orders from array
+   * INDEX (`fieldMove`), never from this value; absent on the wire
+   * defaults to 0 like `bySortOrder`. */
+  sortOrder: number;
   label: string;
   key: string;
   fieldType: string;
@@ -66,6 +102,16 @@ export interface GridField {
   allowedValues: string[] | null;
   optionCount: number;
   unit: string | null;
+  /** B-5 Task 5 — everything the inspector edits rides the projection so
+   * PENDING optimistic rows (which have no raw ExtractionField) can still
+   * open the full form; absent columns default to off/empty until the
+   * drain refetch serves the committed row. */
+  allowedUnits: string[] | null;
+  allowOther: boolean;
+  otherLabel: string | null;
+  otherPlaceholder: string | null;
+  allowsNotApplicable: boolean;
+  allowsNotEvaluated: boolean;
   /** Set only while a search filter is active. */
   matchHint?: TemplateMatchHint;
 }
@@ -78,6 +124,14 @@ export interface GridSection {
   description: string | null;
   hasDescription: boolean;
   metaKeys: TemplateSectionMetaKey[];
+  /** Resolved entry noun for `{{noun}}` copy interpolation (B-8 D7): a
+   * group's own `entry_label ?? 'model'`; a groupChild inherits the
+   * PARENT group's resolved noun; roots carry the 'model' fallback
+   * (unused but total). */
+  entryNoun: string;
+  /** Raw cardinality ('one' | 'many' on the wire, absent → 'one') — the
+   * inspector's Repeats affordances read and edit it (B-8 T6). */
+  cardinality: string;
   fields: GridField[];
   children: GridSection[];
   /** Fields owned directly by this section. */
@@ -91,6 +145,31 @@ export interface FilteredTemplateTree {
   isFiltering: boolean;
   matchCount: number;
   totalCount: number;
+}
+
+/** One destination for the inspector's Section move combobox (B-6 T4) —
+ * ALWAYS derived from the current template's tree: the RLS write policy
+ * does not block cross-template moves, so this list is the client-side
+ * guard (B-7 owns the server fix). `fieldCount` lets the panel land a
+ * pick at the destination's END without a tree walk. */
+export interface MoveTargetSection {
+  id: string;
+  label: string;
+  kind: TemplateSectionKind;
+  fieldCount: number;
+}
+
+/** Every section as a move destination, roots and children in tree
+ * order — fields carry no placement constraints, so all are legal. */
+export function deriveMoveTargets(sections: GridSection[]): MoveTargetSection[] {
+  return sections.flatMap((section) =>
+    [section, ...section.children].map(({id, label, kind, fieldCount}) => ({
+      id,
+      label,
+      kind,
+      fieldCount,
+    })),
+  );
 }
 
 /** Case- and diacritic-insensitive fold, applied to BOTH sides of a match. */
@@ -112,6 +191,7 @@ function toGridField(input: TemplateFieldInput): GridField {
   return {
     id: input.id,
     entityTypeId: input.entity_type_id,
+    sortOrder: input.sort_order ?? 0,
     label: input.label ?? input.name,
     key: input.name,
     fieldType: input.field_type,
@@ -122,6 +202,12 @@ function toGridField(input: TemplateFieldInput): GridField {
     allowedValues: options,
     optionCount: options?.length ?? 0,
     unit: input.unit?.trim() ? input.unit : null,
+    allowedUnits: input.allowed_units ?? null,
+    allowOther: Boolean(input.allow_other),
+    otherLabel: input.other_label ?? null,
+    otherPlaceholder: input.other_placeholder ?? null,
+    allowsNotApplicable: Boolean(input.allows_not_applicable),
+    allowsNotEvaluated: Boolean(input.allows_not_evaluated),
   };
 }
 
@@ -141,6 +227,7 @@ function metaKeysFor(
 function toGridSection(
   entityType: TemplateEntityTypeInput,
   kind: TemplateSectionKind,
+  entryNoun: string,
   fields: GridField[],
   children: GridSection[],
 ): GridSection {
@@ -153,6 +240,8 @@ function toGridSection(
     description,
     hasDescription: description !== null,
     metaKeys: metaKeysFor(kind, entityType.cardinality),
+    entryNoun,
+    cardinality: entityType.cardinality ?? 'one',
     fields,
     children,
     fieldCount: fields.length,
@@ -197,12 +286,22 @@ export function buildTemplateTree(
 
   return roots.map((entityType) => {
     const isGroup = entityType.role === ROLE_MODEL_CONTAINER;
+    // D7: the group resolves its own noun; children inherit the PARENT
+    // group's resolved value (their own entry_label is never consulted).
+    const entryNoun = (isGroup ? entityType.entry_label : null) ?? 'model';
     const children = (childrenByParent.get(entityType.id) ?? []).map((child) =>
-      toGridSection(child, 'groupChild', fieldsByEntityType.get(child.id) ?? [], []),
+      toGridSection(
+        child,
+        'groupChild',
+        entryNoun,
+        fieldsByEntityType.get(child.id) ?? [],
+        [],
+      ),
     );
     return toGridSection(
       entityType,
       isGroup ? 'group' : 'root',
+      entryNoun,
       fieldsByEntityType.get(entityType.id) ?? [],
       children,
     );

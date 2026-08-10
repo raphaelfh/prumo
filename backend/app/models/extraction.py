@@ -205,6 +205,15 @@ class ProjectExtractionTemplate(BaseModel):
 
     llm_template_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Slice B-4: stamped by DB triggers on any live config write
+    # (extraction_entity_types / extraction_fields — the editor writes
+    # via PostgREST until B-7, so the DB is the only chokepoint);
+    # cleared ONLY inside TemplateVersionService.republish's locked
+    # section. NULL = live == published intent.
+    config_draft_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.profiles.id", ondelete="RESTRICT"),
@@ -261,6 +270,10 @@ class ExtractionEntityType(BaseModel):
     name: Mapped[str] = mapped_column(String, nullable=False)
     label: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Group entry noun interpolated into config-editor/run-view copy;
+    # meaningful only for role='model_container' rows, seeded "model" (B-8).
+    entry_label: Mapped[str | None] = mapped_column(String, nullable=True)
 
     parent_entity_type_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -401,6 +414,20 @@ class ExtractionField(BaseModel):
     entity_type: Mapped["ExtractionEntityType"] = relationship(
         "ExtractionEntityType",
         back_populates="fields",
+    )
+
+    # Per-section name uniqueness (B-7, migration 0050). Declared as a
+    # NAMED unique Index — not a UniqueConstraint — with the exact name
+    # of the migration's CREATE UNIQUE INDEX, so autogenerate emits no
+    # spurious diffs; the tuple must end with the schema dict (#93).
+    __table_args__ = (
+        Index(
+            "uq_extraction_fields_entity_type_name",
+            "entity_type_id",
+            "name",
+            unique=True,
+        ),
+        {"schema": "public"},
     )
 
     def __repr__(self) -> str:

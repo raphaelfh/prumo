@@ -20,9 +20,11 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
 
+from fastapi import status
 from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_handler import AppError
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionRun,
@@ -30,24 +32,63 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
+from app.schemas.hitl_session import (
+    TemplatePublishRefusalCode,
+    TemplatePublishRefusalDetails,
+)
 from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_session_service import HITLSessionService
-from app.services.template_clone_service import TemplateNotFoundError
+from app.services.template_clone_service import (
+    PendingConfigDraftError,
+    TemplateNotFoundError,
+)
+from app.services.template_section_service import has_multi_entry_parent
 
-__all__ = ["RepublishResult", "TemplateNotFoundError", "TemplateVersionService"]
+__all__ = [
+    "PendingConfigDraftError",
+    "PublishBlockedByMultiEntryError",
+    "RepublishResult",
+    "TemplateNotFoundError",
+    "TemplateVersionService",
+]
+
+
+class PublishBlockedByMultiEntryError(AppError):
+    """Publish refused: a cardinality-one model_section still has a
+    parent entry holding 2+ instances.
+
+    409-class (B-8 review): the many->one flip is validated at PATCH
+    time, but a reviewer on a run still pinned to the old 'many'
+    snapshot can add a second entry between PATCH and Publish (the
+    pinned frontend skips the cardinality check and no DB constraint
+    guards article-less rows). Publishing would re-pin those runs to
+    the 'one' snapshot, whose run view renders only ``instances[0]``
+    while the completion gate counts every instance — leaving the run
+    permanently un-completable. Re-checked under the template row FOR
+    UPDATE; the message names every offending section.
+
+    An ``AppError`` since B-9b0 D1 so the republish endpoint can let it
+    reach ``app_error_handler`` instead of flattening it to
+    ``HTTPException(409, str(e))``, which dropped the code and the labels
+    the Publish button needs to compose its own sentence."""
+
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+        # By keyword, so ``AppError.__init__``'s ``super().__init__(message)``
+        # still runs and ``str(exc)`` stays the message every existing
+        # assertion reads (the ``_DiscardRefusal`` precedent).
+        super().__init__(
+            code=TemplatePublishRefusalCode.PUBLISH_BLOCKED_BY_MULTI_ENTRY,
+            message=message,
+            status_code=status.HTTP_409_CONFLICT,
+            details=details,
+        )
+
 
 _EDITABLE_STAGES = (
     ExtractionRunStage.PENDING.value,
     ExtractionRunStage.EXTRACT.value,
 )
-
-
-class _Unset:
-    """Sentinel: distinguishes 'kwarg not provided' from an explicit None."""
-
-
-_UNSET = _Unset()
 
 
 class RepublishResult:
@@ -79,7 +120,7 @@ class TemplateVersionService:
         project_id: UUID,
         project_template_id: UUID,
         user_id: UUID,
-        llm_template_instruction: str | None | _Unset = _UNSET,
+        fail_if_pending_draft: bool = False,
     ) -> RepublishResult:
         # BOLA defense (unlocked read): validate ownership before taking any
         # lock, so a caller who is only a manager elsewhere can never lock —
@@ -95,48 +136,44 @@ class TemplateVersionService:
         if owned is None:
             raise TemplateNotFoundError(f"Template {project_template_id} not found")
 
-        # Lock ordering mirrors HITLSessionService.open_or_resume — advisory
-        # (article, template) locks FIRST (sorted for a deterministic global
-        # order), THEN the template row. open_or_resume holds the advisory
-        # lock while create_run takes the template row FOR SHARE; taking the
-        # template FOR UPDATE before the advisory locks here would invert
-        # that order and deadlock.
-        run_pairs: list[tuple[UUID, UUID]] = [
-            (row.project_id, row.article_id)
-            for row in (
+        run_pairs = await self.acquire_publish_locks(project_template_id)
+
+        if fail_if_pending_draft:
+            # Authoritative pending-draft check, UNDER the row FOR UPDATE:
+            # callers' unlocked pre-checks are TOCTOU-racy — a stamp that
+            # committed after their read is visible here and must refuse
+            # rather than be silently published (B-4). Callers whose own
+            # transaction deliberately stamped (clone fresh/zero-state
+            # rebuilds) must NOT pass this flag.
+            pending = (
                 await self.db.execute(
-                    select(ExtractionRun.project_id, ExtractionRun.article_id)
-                    .where(
-                        ExtractionRun.template_id == project_template_id,
-                        ExtractionRun.stage.in_(_EDITABLE_STAGES),
+                    select(ProjectExtractionTemplate.config_draft_since).where(
+                        ProjectExtractionTemplate.id == project_template_id
                     )
-                    .distinct()
                 )
-            ).all()
-        ]
-        for _, article_id in sorted(run_pairs, key=lambda pair: str(pair[1])):
-            await take_advisory_xact_lock(self.db, article_id, project_template_id)
+            ).scalar_one()
+            if pending is not None:
+                raise PendingConfigDraftError()
 
-        # Serialization: FOR UPDATE so two concurrent republishes cannot both
-        # compute the same next version number (unique on
-        # (project_template_id, version)), and so run creation (FOR SHARE on
-        # this row) cannot pin a version this transaction is deactivating.
+        # Publish-time re-validation of the many->one rule (B-8 review),
+        # under the same locks as the snapshot build and BEFORE anything
+        # is written, so it guards BOTH branches below (changed and
+        # unchanged-but-repinned). The PATCH-time check in
+        # template_section_service saw the instances that existed THEN;
+        # reviewers on runs still pinned to the old 'many' snapshot can
+        # add entries until this publish re-pins them.
+        await self._refuse_if_one_section_has_multi_entries(project_template_id)
+
+        # Publishing makes the live tree the recorded intent — clear the
+        # B-4 draft marker under the same locks as the snapshot build.
+        # Runs in BOTH branches below (changed and unchanged): a marker
+        # set by a snapshot-identical edit chain (A→B→A) must still
+        # clear, or the Draft chip sticks with a dead Publish button.
         await self.db.execute(
-            select(ProjectExtractionTemplate.id)
+            update(ProjectExtractionTemplate)
             .where(ProjectExtractionTemplate.id == project_template_id)
-            .with_for_update()
+            .values(config_draft_since=None)
         )
-
-        if not isinstance(llm_template_instruction, _Unset):
-            # Applied under the same locks as the snapshot build. Writing
-            # the column before the advisory locks (e.g. in a caller)
-            # would invert the documented lock order above and deadlock
-            # against session-open / a concurrent republish.
-            await self.db.execute(
-                update(ProjectExtractionTemplate)
-                .where(ProjectExtractionTemplate.id == project_template_id)
-                .values(llm_template_instruction=llm_template_instruction)
-            )
 
         snapshot = await build_template_version_snapshot(self.db, project_template_id)
 
@@ -202,6 +239,92 @@ class TemplateVersionService:
             version=new_version.version,
             changed=True,
             repinned_run_count=repinned,
+        )
+
+    async def acquire_publish_locks(self, project_template_id: UUID) -> list[tuple[UUID, UUID]]:
+        """Advisory (article, template) locks for editable-stage runs —
+        sorted, FIRST — then the template row FOR UPDATE.
+
+        Lock ordering mirrors HITLSessionService.open_or_resume: it holds
+        the advisory lock while create_run takes the template row FOR
+        SHARE; taking the template FOR UPDATE before the advisory locks
+        would invert that order and deadlock. Idempotent within a
+        transaction, so a caller that must hold the locks BEFORE writing
+        live rows (the clone service's zero-state rebuild — its mark-draft
+        trigger stamps take the template-row lock) can take them early;
+        ``republish`` re-takes them harmlessly.
+
+        Returns the (project_id, article_id) pairs of editable-stage runs
+        for the instance-materialization pass.
+        """
+        run_pairs: list[tuple[UUID, UUID]] = [
+            (row.project_id, row.article_id)
+            for row in (
+                await self.db.execute(
+                    select(ExtractionRun.project_id, ExtractionRun.article_id)
+                    .where(
+                        ExtractionRun.template_id == project_template_id,
+                        ExtractionRun.stage.in_(_EDITABLE_STAGES),
+                    )
+                    .distinct()
+                )
+            ).all()
+        ]
+        for _, article_id in sorted(run_pairs, key=lambda pair: str(pair[1])):
+            await take_advisory_xact_lock(self.db, article_id, project_template_id)
+
+        # Serialization: FOR UPDATE so two concurrent republishes cannot both
+        # compute the same next version number (unique on
+        # (project_template_id, version)), and so run creation (FOR SHARE on
+        # this row) cannot pin a version this transaction is deactivating.
+        await self.db.execute(
+            select(ProjectExtractionTemplate.id)
+            .where(ProjectExtractionTemplate.id == project_template_id)
+            .with_for_update()
+        )
+        return run_pairs
+
+    async def _refuse_if_one_section_has_multi_entries(self, project_template_id: UUID) -> None:
+        """Raise ``PublishBlockedByMultiEntryError`` naming EVERY live
+        cardinality-one model_section that still has a parent entry
+        holding 2+ instances (the shared ``has_multi_entry_parent``
+        query — the exact predicate the PATCH-time check enforces).
+
+        B-9b0 D2: ordered, and raised once AFTER the loop. The select had
+        no ``ORDER BY`` and the raise sat inside the loop, so with two
+        flipped sections the manager was told about whichever one the heap
+        yielded first — and only learned about the second by fixing that
+        one and publishing again.
+        """
+        one_sections = (
+            await self.db.execute(
+                select(ExtractionEntityType.id, ExtractionEntityType.label)
+                .where(
+                    ExtractionEntityType.project_template_id == project_template_id,
+                    ExtractionEntityType.role == "model_section",
+                    ExtractionEntityType.cardinality == "one",
+                )
+                .order_by(ExtractionEntityType.sort_order, ExtractionEntityType.id)
+            )
+        ).all()
+        offenders = [
+            section_label
+            for section_id, section_label in one_sections
+            if await has_multi_entry_parent(self.db, section_id=section_id)
+        ]
+        if not offenders:
+            return
+
+        noun, verb = ("section", "is") if len(offenders) == 1 else ("sections", "are")
+        listed = "; ".join(f'"{label}"' for label in offenders)
+        raise PublishBlockedByMultiEntryError(
+            f"Cannot publish: {noun} {listed} {verb} set to repeat once per "
+            "entry, but an entry already has multiple items. Remove the extra "
+            "items and publish again.",
+            # JSON primitives only: ``app_error_handler`` renders ``details``
+            # through a bare ``JSONResponse``, so anything else would raise
+            # INSIDE the handler and reach the client as a 500.
+            details=TemplatePublishRefusalDetails(section_labels=offenders).model_dump(mode="json"),
         )
 
     async def _repin_editable_runs(self, project_template_id: UUID, version_id: UUID) -> int:

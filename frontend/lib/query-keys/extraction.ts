@@ -57,3 +57,16 @@ export const templateInstructionKeys = {
   byTemplate: (projectId: string, templateId: string) =>
     ['template-instruction', projectId, templateId] as const,
 };
+
+/** Draft/publish status for the Configuration tab's chip (B-4). */
+export const templateConfigStatusKeys = {
+  all: ['template-config-status'] as const,
+  byTemplate: (projectId: string, templateId: string) =>
+    ['template-config-status', projectId, templateId] as const,
+};
+
+/** What the open draft would publish, bucketed by tier (B-9b2a). */
+export const templateDiffKeys = {
+  byTemplate: (projectId: string, templateId: string) =>
+    ['template-config-diff', projectId, templateId] as const,
+};

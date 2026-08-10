@@ -34,9 +34,14 @@ from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.schemas.extraction_run import RunViewEntityType
 
 # WARNING: migration 0026_widen_template_snapshot embeds a copy of this
-# key set for its one-time backfill. If you add a key here, update that
-# migration's SQL too (migrations must stay self-contained; they cannot import
-# app code that may change after they are committed).
+# key set for its one-time backfill. If you add a key here for a column that
+# already existed at 0026's revision, update that migration's SQL too
+# (migrations must stay self-contained; they cannot import app code that may
+# change after they are committed). Keys for columns added AFTER 0026's slot
+# (e.g. ``entry_label``, 0051) are exempt by construction — on a fresh-DB
+# upgrade 0026 runs before the column exists, so mirroring them would fail
+# with UndefinedColumn; readers treat the absent key as its null default
+# (same precedent as ``llm_template_instruction`` in the module docstring).
 SNAPSHOT_SQL = text(
     """
     SELECT jsonb_build_object(
@@ -48,6 +53,7 @@ SNAPSHOT_SQL = text(
                         'name', et.name,
                         'label', et.label,
                         'description', et.description,
+                        'entry_label', et.entry_label,
                         'parent_entity_type_id', et.parent_entity_type_id,
                         'cardinality', et.cardinality,
                         'role', et.role,
@@ -165,6 +171,25 @@ def snapshot_is_narrow(entity_types: list[dict[str, Any]]) -> bool:
             if "llm_description" not in field or "allow_other" not in field:
                 return True
     return False
+
+
+def baseline_is_restorable(schema_: dict[str, Any] | None) -> bool:
+    """Can this published snapshot be written back over the live rows (B-9c1)?
+
+    The gate is ``entity_types and snapshot_is_narrow(entity_types)`` and the
+    leading truthiness test is load-bearing in the opposite direction from
+    every other caller: :func:`snapshot_is_narrow` calls an EMPTY list narrow
+    *by design*, so the run view falls back to live rows — but an empty
+    published baseline is perfectly restorable, the restore being a plain
+    delete-all. Only a pre-0026 baseline with actual content is unrestorable:
+    writing it back would wipe ``llm_description``/``allow_other``
+    project-wide (that era gets Discard in B-9x).
+
+    Shared so the endpoint's refusal and the Configuration tab's
+    ``discard_available`` flag can never disagree about the same template.
+    """
+    entity_types = (schema_ or {}).get("entity_types") or []
+    return not (entity_types and snapshot_is_narrow(entity_types))
 
 
 async def entity_types_for_version(

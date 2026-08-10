@@ -2,6 +2,12 @@
  * Idempotent E2E fixture provisioner. Creates-if-missing the full fixture
  * graph so the suite self-provisions on every run (reset-proof, zero-config).
  * Built on the service-role PostgREST helpers (RLS-bypassing) + the clone API.
+ *
+ * B-4 note: adminInserts into extraction_entity_types/extraction_fields
+ * permanently stamp the shared template's `config_draft_since` in the
+ * E2E DB. The suite survives because bootstrap early-returns before
+ * calling clone on an existing project — a future re-clone of
+ * E2E_PROJECT_ID would 409 on the pending-draft guard.
  */
 import { adminInsert, adminSelect, adminUpdate } from "./supabase-admin";
 import { loadE2EEnv } from "./env";

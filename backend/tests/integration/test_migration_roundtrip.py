@@ -577,6 +577,513 @@ async def test_migration_0047_round_trip(
     assert cols_after == both_tables, "upgrade head must restore both columns"
 
 
+_DRAFT_MARKER_COL = text(
+    "SELECT column_name FROM information_schema.columns "
+    "WHERE table_schema = 'public' "
+    "AND table_name = 'project_extraction_templates' "
+    "AND column_name = 'config_draft_since'"
+)
+_DRAFT_MARKER_TRIGGERS = text(
+    "SELECT tgname FROM pg_trigger "
+    "WHERE tgname IN ('trg_extraction_entity_types_mark_draft', "
+    "'trg_extraction_fields_mark_draft') AND NOT tgisinternal"
+)
+_DRAFT_MARKER_FUNC = text("SELECT 1 FROM pg_proc WHERE proname = 'mark_template_config_draft'")
+_BOTH_DRAFT_TRIGGERS = {
+    "trg_extraction_entity_types_mark_draft",
+    "trg_extraction_fields_mark_draft",
+}
+
+
+@pytest.mark.asyncio
+async def test_migration_0048_round_trip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0048_config_draft_marker`` adds ``config_draft_since`` +
+    the two mark-draft triggers and their SECURITY DEFINER function.
+    Downgrading to the explicit parent ``0047_llm_template_instruction``
+    drops all four; ``upgrade head`` re-creates them idempotently.
+    Downgrades to the explicit parent (not ``-1``) so the test stays
+    correct as later migrations stack on top."""
+    assert (await migration_session.execute(_DRAFT_MARKER_COL)).scalar() is not None, (
+        "config_draft_since must exist at HEAD"
+    )
+    assert (await migration_session.execute(_DRAFT_MARKER_FUNC)).scalar() == 1, (
+        "mark_template_config_draft function must exist at HEAD"
+    )
+    triggers_at_head = set(
+        (await migration_session.execute(_DRAFT_MARKER_TRIGGERS)).scalars().all()
+    )
+    assert triggers_at_head == _BOTH_DRAFT_TRIGGERS, (
+        f"both mark-draft triggers must exist at HEAD, got {triggers_at_head}"
+    )
+
+    _run_alembic("downgrade", "0047_llm_template_instruction", database_url=migration_db_url)
+    try:
+        await migration_session.commit()
+        assert (await migration_session.execute(_DRAFT_MARKER_COL)).scalar() is None, (
+            "downgrade must drop the column"
+        )
+        assert (await migration_session.execute(_DRAFT_MARKER_FUNC)).scalar() is None, (
+            "downgrade must drop the function"
+        )
+        triggers_down = set(
+            (await migration_session.execute(_DRAFT_MARKER_TRIGGERS)).scalars().all()
+        )
+        assert triggers_down == set(), "downgrade must drop both triggers"
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    await migration_session.commit()
+    assert (await migration_session.execute(_DRAFT_MARKER_COL)).scalar() is not None, (
+        "upgrade head must restore the column"
+    )
+    triggers_after = set((await migration_session.execute(_DRAFT_MARKER_TRIGGERS)).scalars().all())
+    assert triggers_after == _BOTH_DRAFT_TRIGGERS, "upgrade head must restore both triggers"
+
+
+# The four template-config write policies 0049 rewrites. pg_policies
+# pretty-prints qual/with_check via pg_get_expr (re-quoted, re-nested), so
+# every assertion below is SUBSTRING matching — never string equality.
+_CONFIG_WRITE_POLICY_NAMES = {
+    "extraction_entity_types_project_insert",
+    "extraction_entity_types_project_update",
+    "extraction_fields_project_insert",
+    "extraction_fields_project_update",
+}
+_CONFIG_WRITE_POLICIES = text(
+    "SELECT policyname, cmd, qual, with_check FROM pg_policies "
+    "WHERE schemaname = 'public' "
+    "AND tablename IN ('extraction_entity_types', 'extraction_fields') "
+    "AND policyname IN ("
+    "'extraction_entity_types_project_insert', "
+    "'extraction_entity_types_project_update', "
+    "'extraction_fields_project_insert', "
+    "'extraction_fields_project_update')"
+)
+_ENTITY_TYPE_POLICY_NAMES = (
+    "extraction_entity_types_project_insert",
+    "extraction_entity_types_project_update",
+)
+_UPDATE_POLICY_NAMES = (
+    "extraction_entity_types_project_update",
+    "extraction_fields_project_update",
+)
+
+
+async def _config_write_policies(session: AsyncSession) -> dict:
+    rows = (await session.execute(_CONFIG_WRITE_POLICIES)).all()
+    return {row.policyname: row for row in rows}
+
+
+def _assert_0049_policies(policies: dict) -> None:
+    """The manager-gated shape 0049 installs."""
+    assert set(policies) == _CONFIG_WRITE_POLICY_NAMES, (
+        f"all four write policies must exist, got {set(policies)}"
+    )
+    for name, row in policies.items():
+        combined = (row.qual or "") + (row.with_check or "")
+        assert "is_project_manager" in combined, (
+            f"{name} must gate on is_project_manager, got: {combined}"
+        )
+        assert "is_project_member" not in combined, (
+            f"{name} must no longer mention is_project_member, got: {combined}"
+        )
+    # The blocking global-lineage predicate (panel decision 1) on the
+    # entity-types pair — in EVERY expression each policy carries.
+    for name in _ENTITY_TYPE_POLICY_NAMES:
+        row = policies[name]
+        for expr in (row.qual, row.with_check):
+            if expr is not None:
+                assert "template_id IS NULL" in expr, (
+                    f"{name} must pin template_id IS NULL, got: {expr}"
+                )
+    # Both UPDATEs carry an explicit WITH CHECK (panel decision 3).
+    for name in _UPDATE_POLICY_NAMES:
+        assert policies[name].with_check is not None, (
+            f"{name} must carry an explicit WITH CHECK at head"
+        )
+
+
+def _assert_baseline_policies(policies: dict) -> None:
+    """The four ASYMMETRIC baseline originals the downgrade restores."""
+    assert set(policies) == _CONFIG_WRITE_POLICY_NAMES
+    for name, row in policies.items():
+        combined = (row.qual or "") + (row.with_check or "")
+        assert "is_project_member" in combined, (
+            f"downgrade must restore is_project_member on {name}, got: {combined}"
+        )
+        assert "is_project_manager" not in combined, (
+            f"downgrade must remove is_project_manager from {name}, got: {combined}"
+        )
+    # The lazy-downgrade catch (panel decision 8): baseline UPDATEs were
+    # USING-only — a downgrade that keeps the WITH CHECK is wrong.
+    for name in _UPDATE_POLICY_NAMES:
+        assert policies[name].with_check is None, (
+            f"downgrade must drop the WITH CHECK from {name} (baseline is USING-only)"
+        )
+    # Baseline entity-types INSERT keeps its lineage guard but never the
+    # 0049 template_id IS NULL predicate ("project_template_id IS NOT
+    # NULL" does not contain the "template_id IS NULL" substring).
+    et_insert = policies["extraction_entity_types_project_insert"].with_check
+    assert et_insert is not None and "project_template_id IS NOT NULL" in et_insert
+    assert "template_id IS NULL" not in et_insert, (
+        f"downgrade must restore the baseline INSERT verbatim, got: {et_insert}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_migration_0049_round_trip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0049_config_write_rls_manager`` rewrites the four template-config
+    write policies: member → manager, explicit WITH CHECK on both UPDATEs,
+    and ``template_id IS NULL`` on the entity-types pair (the global-
+    catalogue injection floor). Downgrading to the explicit parent
+    ``0048_config_draft_marker`` restores the asymmetric baseline originals
+    verbatim (member predicates, USING-only UPDATEs); ``upgrade head``
+    re-installs the manager shape. Downgrades to the explicit parent (not
+    ``-1``) so the test stays correct as later migrations stack on top."""
+    _assert_0049_policies(await _config_write_policies(migration_session))
+    # pg_policies deparses qual/with_check via pg_get_expr, which takes an
+    # AccessShare lock on the policies' TABLES — unlike the sibling tests'
+    # information_schema reads. End the transaction before every alembic
+    # subprocess or its DROP POLICY (AccessExclusive) waits on this session
+    # forever.
+    await migration_session.rollback()
+
+    _run_alembic("downgrade", "0048_config_draft_marker", database_url=migration_db_url)
+    try:
+        _assert_baseline_policies(await _config_write_policies(migration_session))
+    finally:
+        await migration_session.rollback()
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    _assert_0049_policies(await _config_write_policies(migration_session))
+
+
+# --- 0050: per-section field-name unique index + duplicate-name heal ---
+# Fixed fixture ids (0050-prefixed, hex-only) so assertions can name rows.
+_H_PROFILE = "00500000-0000-4000-8000-00000000000a"
+_H_PROJECT = "00500000-0000-4000-8000-00000000000b"
+_H_TEMPLATE = "00500000-0000-4000-8000-00000000000c"
+_H_GLOBAL_TPL = "00500000-0000-4000-8000-00000000000d"
+_H_SECTION = "00500000-0000-4000-8000-00000000000e"
+_H_GLOBAL_SECTION = "00500000-0000-4000-8000-00000000000f"
+_H_F_KEEP = "00500000-0000-4000-8000-000000000001"
+_H_F_DUP2 = "00500000-0000-4000-8000-000000000002"
+_H_F_DUP3 = "00500000-0000-4000-8000-000000000003"
+_H_F_TAKEN = "00500000-0000-4000-8000-000000000004"
+_H_G_KEEP = "00500000-0000-4000-8000-000000000005"
+_H_G_DUP = "00500000-0000-4000-8000-000000000006"
+
+# The deterministic heal outcome (panel decision 6): keeper = earliest
+# created_at per (section, name); rn>1 rows renamed in rn order to the
+# first FREE suffix — the pre-existing dup_probe_2 forces _3/_4.
+_HEALED_PROJECT_NAMES = {
+    _H_F_KEEP: "dup_probe",
+    _H_F_DUP2: "dup_probe_3",
+    _H_F_DUP3: "dup_probe_4",
+    _H_F_TAKEN: "dup_probe_2",
+}
+_HEALED_GLOBAL_NAMES = {_H_G_KEEP: "g_dup", _H_G_DUP: "g_dup_2"}
+
+_FIELD_UNIQUE_INDEX = text(
+    "SELECT 1 FROM pg_indexes "
+    "WHERE schemaname = 'public' AND tablename = 'extraction_fields' "
+    "AND indexname = 'uq_extraction_fields_entity_type_name'"
+)
+_SECTION_FIELD_NAMES = text(
+    "SELECT id::text, name FROM public.extraction_fields WHERE entity_type_id = :sid"
+)
+_HEAL_MARKER = text(
+    "SELECT config_draft_since FROM public.project_extraction_templates WHERE id = :tid"
+)
+_CLEAR_HEAL_MARKER = text(
+    "UPDATE public.project_extraction_templates SET config_draft_since = NULL WHERE id = :tid"
+)
+
+# Duplicate names are only representable at 0049 (pre-index). Mirrors the
+# minimal FK graph of test_one_live_run_guard_migration; created_at is
+# staggered explicitly because it is the heal's rank key.
+_HEAL_FIXTURE_STATEMENTS = (
+    "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES "
+    f"('{_H_PROFILE}', 'heal-0050@integration-test.prumo.local', "
+    "'00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')",
+    "INSERT INTO public.profiles (id, email, full_name) VALUES "
+    f"('{_H_PROFILE}', 'heal-0050@integration-test.prumo.local', 'Heal 0050')",
+    "INSERT INTO public.projects (id, name, created_by_id, is_active) VALUES "
+    f"('{_H_PROJECT}', 'Heal 0050 Project', '{_H_PROFILE}', true)",
+    "INSERT INTO public.project_extraction_templates "
+    "(id, project_id, name, framework, version, kind, schema, is_active, created_by) VALUES "
+    f"('{_H_TEMPLATE}', '{_H_PROJECT}', 'heal-0050-template', 'CUSTOM', '1.0', "
+    f"'extraction', '{{}}'::jsonb, true, '{_H_PROFILE}')",
+    # Deferred 0004 invariant: an ACTIVE project template needs an active
+    # version row by COMMIT time.
+    "INSERT INTO public.extraction_template_versions "
+    "(id, project_template_id, version, schema, published_by, is_active) VALUES "
+    f"('00500000-0000-4000-8000-0000000000aa', '{_H_TEMPLATE}', 1, "
+    f"'{{\"entity_types\": []}}'::jsonb, '{_H_PROFILE}', true)",
+    "INSERT INTO public.extraction_templates_global "
+    "(id, name, framework, version, kind, is_global, schema) VALUES "
+    f"('{_H_GLOBAL_TPL}', 'heal-0050-global', 'CUSTOM', '1.0', 'extraction', "
+    "true, '{}'::jsonb)",
+    "INSERT INTO public.extraction_entity_types "
+    "(id, project_template_id, name, label, cardinality, role, "
+    " parent_entity_type_id, sort_order, is_required) VALUES "
+    f"('{_H_SECTION}', '{_H_TEMPLATE}', 'heal_section', 'Heal Section', 'one', "
+    "'study_section', NULL, 0, false)",
+    "INSERT INTO public.extraction_entity_types "
+    "(id, template_id, name, label, cardinality, role, "
+    " parent_entity_type_id, sort_order, is_required) VALUES "
+    f"('{_H_GLOBAL_SECTION}', '{_H_GLOBAL_TPL}', 'heal_global_section', "
+    "'Heal Global Section', 'one', 'study_section', NULL, 0, false)",
+    # Project section: three 'dup_probe' rows + a pre-existing 'dup_probe_2'
+    # that must NOT collide with the healed names (collision-proof case).
+    "INSERT INTO public.extraction_fields "
+    "(id, entity_type_id, name, label, field_type, is_required, sort_order, created_at) VALUES "
+    f"('{_H_F_KEEP}', '{_H_SECTION}', 'dup_probe', 'Dup Probe', 'text', false, 0, "
+    "now() - interval '3 hours'), "
+    f"('{_H_F_DUP2}', '{_H_SECTION}', 'dup_probe', 'Dup Probe', 'text', false, 1, "
+    "now() - interval '2 hours'), "
+    f"('{_H_F_DUP3}', '{_H_SECTION}', 'dup_probe', 'Dup Probe', 'text', false, 2, "
+    "now() - interval '1 hour'), "
+    f"('{_H_F_TAKEN}', '{_H_SECTION}', 'dup_probe_2', 'Dup Probe 2', 'text', false, 3, "
+    "now() - interval '4 hours')",
+    # Global lineage: the heal covers BOTH lineages (plain per-section scan).
+    "INSERT INTO public.extraction_fields "
+    "(id, entity_type_id, name, label, field_type, is_required, sort_order, created_at) VALUES "
+    f"('{_H_G_KEEP}', '{_H_GLOBAL_SECTION}', 'g_dup', 'G Dup', 'text', false, 0, "
+    "now() - interval '2 hours'), "
+    f"('{_H_G_DUP}', '{_H_GLOBAL_SECTION}', 'g_dup', 'G Dup', 'text', false, 1, "
+    "now() - interval '1 hour')",
+)
+
+
+async def _section_names(session: AsyncSession, section_id: str) -> dict[str, str]:
+    rows = (await session.execute(_SECTION_FIELD_NAMES, {"sid": section_id})).all()
+    return {row[0]: row[1] for row in rows}
+
+
+@pytest.mark.asyncio
+async def test_migration_0050_round_trip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0050_field_name_unique_heal`` heals duplicate per-section field
+    names (deterministic first-free-suffix rename, 0048 trigger ENABLED)
+    and creates the ``uq_extraction_fields_entity_type_name`` unique
+    index. Downgrading to the explicit parent ``0049`` drops the INDEX
+    ONLY — healed names persist (permanent data repair) — and a second
+    upgrade renames nothing (idempotency). Duplicate fixtures are
+    inserted while downgraded (the only state that can represent them);
+    the healed project template must carry a stamped draft marker (the
+    trigger-enabled proof, panel decision 6). Every alembic subprocess is
+    preceded by ``rollback()``: the data reads above take AccessShare
+    locks on ``extraction_fields`` that would deadlock the DDL."""
+    assert (await migration_session.execute(_FIELD_UNIQUE_INDEX)).scalar() == 1, (
+        "uq_extraction_fields_entity_type_name must exist at HEAD"
+    )
+    await migration_session.rollback()
+
+    _run_alembic("downgrade", "0049_config_write_rls_manager", database_url=migration_db_url)
+    try:
+        assert (await migration_session.execute(_FIELD_UNIQUE_INDEX)).scalar() is None, (
+            "downgrade must drop the unique index"
+        )
+        for statement in _HEAL_FIXTURE_STATEMENTS:
+            await migration_session.execute(text(statement))
+        # The fixture INSERTs fired the (still-present) 0048 trigger and
+        # stamped the template; reset so the upgrade's heal must re-stamp.
+        await migration_session.execute(_CLEAR_HEAL_MARKER, {"tid": _H_TEMPLATE})
+        await migration_session.commit()
+    finally:
+        await migration_session.rollback()
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    assert await _section_names(migration_session, _H_SECTION) == _HEALED_PROJECT_NAMES, (
+        "heal must rename rn>1 rows to the first FREE suffix (skipping the "
+        "pre-existing dup_probe_2), keeping the earliest-created row's name"
+    )
+    assert await _section_names(migration_session, _H_GLOBAL_SECTION) == _HEALED_GLOBAL_NAMES, (
+        "heal must cover the GLOBAL lineage too"
+    )
+    assert (await migration_session.execute(_HEAL_MARKER, {"tid": _H_TEMPLATE})).scalar() is not (
+        None
+    ), "the heal must stamp config_draft_since — the 0048 trigger stays ENABLED (panel 6)"
+    assert (await migration_session.execute(_FIELD_UNIQUE_INDEX)).scalar() == 1, (
+        "upgrade head must create the unique index"
+    )
+    await migration_session.rollback()
+
+    # Idempotency leg: downgrade drops the index only; healed names
+    # persist; a re-upgrade selects no rn>1 rows and renames nothing.
+    _run_alembic("downgrade", "0049_config_write_rls_manager", database_url=migration_db_url)
+    try:
+        assert (await migration_session.execute(_FIELD_UNIQUE_INDEX)).scalar() is None
+        assert await _section_names(migration_session, _H_SECTION) == _HEALED_PROJECT_NAMES, (
+            "healed names must persist through the downgrade (index-only)"
+        )
+        # NULL the marker again: if the second heal renamed anything the
+        # trigger would re-stamp it, so a still-NULL marker after the
+        # upgrade is the no-op proof.
+        await migration_session.execute(_CLEAR_HEAL_MARKER, {"tid": _H_TEMPLATE})
+        await migration_session.commit()
+    finally:
+        await migration_session.rollback()
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    assert await _section_names(migration_session, _H_SECTION) == _HEALED_PROJECT_NAMES, (
+        "re-running the heal must rename nothing (idempotent)"
+    )
+    assert await _section_names(migration_session, _H_GLOBAL_SECTION) == _HEALED_GLOBAL_NAMES
+    assert (await migration_session.execute(_HEAL_MARKER, {"tid": _H_TEMPLATE})).scalar() is None, (
+        "an idempotent re-heal performs no DML, so the trigger must not re-stamp"
+    )
+    assert (await migration_session.execute(_FIELD_UNIQUE_INDEX)).scalar() == 1
+    await migration_session.rollback()
+    # Fixture rows are left in place: the scratch DB is dropped at session
+    # end, and the healed names are unique so later round-trips no-op.
+
+
+# --- 0051: group entry noun column + container backfill (B-8) ---
+# Fixed fixture ids (0051-prefixed, hex-only) so assertions can name rows.
+_B8_PROFILE = "00510000-0000-4000-8000-00000000000a"
+_B8_PROJECT = "00510000-0000-4000-8000-00000000000b"
+_B8_TEMPLATE = "00510000-0000-4000-8000-00000000000c"
+_B8_GLOBAL_TPL = "00510000-0000-4000-8000-00000000000d"
+_B8_CONTAINER = "00510000-0000-4000-8000-000000000001"
+_B8_SECTION = "00510000-0000-4000-8000-000000000002"
+_B8_GLOBAL_CONTAINER = "00510000-0000-4000-8000-000000000003"
+
+_ENTRY_LABEL_COL = text(
+    "SELECT 1 FROM information_schema.columns "
+    "WHERE table_schema = 'public' AND table_name = 'extraction_entity_types' "
+    "AND column_name = 'entry_label'"
+)
+_B8_ENTRY_LABELS = text(
+    "SELECT id::text, entry_label FROM public.extraction_entity_types "
+    f"WHERE id IN ('{_B8_CONTAINER}', '{_B8_SECTION}', '{_B8_GLOBAL_CONTAINER}')"
+)
+
+# Rows are inserted while downgraded to 0050 (pre-column state) so the
+# upgrade's backfill has to stamp them. Mirrors the 0050 heal fixture's
+# minimal FK graph; the containers live on BOTH lineages because the
+# backfill predicate is role-only and must stay that way.
+_B8_FIXTURE_STATEMENTS = (
+    "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES "
+    f"('{_B8_PROFILE}', 'entry-label-0051@integration-test.prumo.local', "
+    "'00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')",
+    "INSERT INTO public.profiles (id, email, full_name) VALUES "
+    f"('{_B8_PROFILE}', 'entry-label-0051@integration-test.prumo.local', 'Entry Label 0051')",
+    "INSERT INTO public.projects (id, name, created_by_id, is_active) VALUES "
+    f"('{_B8_PROJECT}', 'Entry Label 0051 Project', '{_B8_PROFILE}', true)",
+    "INSERT INTO public.project_extraction_templates "
+    "(id, project_id, name, framework, version, kind, schema, is_active, created_by) VALUES "
+    f"('{_B8_TEMPLATE}', '{_B8_PROJECT}', 'entry-label-0051-template', 'CUSTOM', '1.0', "
+    f"'extraction', '{{}}'::jsonb, true, '{_B8_PROFILE}')",
+    # Deferred 0004 invariant: an ACTIVE project template needs an active
+    # version row by COMMIT time.
+    "INSERT INTO public.extraction_template_versions "
+    "(id, project_template_id, version, schema, published_by, is_active) VALUES "
+    f"('00510000-0000-4000-8000-0000000000aa', '{_B8_TEMPLATE}', 1, "
+    f"'{{\"entity_types\": []}}'::jsonb, '{_B8_PROFILE}', true)",
+    "INSERT INTO public.extraction_templates_global "
+    "(id, name, framework, version, kind, is_global, schema) VALUES "
+    f"('{_B8_GLOBAL_TPL}', 'entry-label-0051-global', 'CUSTOM', '1.0', 'extraction', "
+    "true, '{}'::jsonb)",
+    "INSERT INTO public.extraction_entity_types "
+    "(id, project_template_id, name, label, cardinality, role, "
+    " parent_entity_type_id, sort_order, is_required) VALUES "
+    f"('{_B8_CONTAINER}', '{_B8_TEMPLATE}', 'prediction_models', 'Prediction Models', "
+    "'many', 'model_container', NULL, 0, false)",
+    "INSERT INTO public.extraction_entity_types "
+    "(id, project_template_id, name, label, cardinality, role, "
+    " parent_entity_type_id, sort_order, is_required) VALUES "
+    f"('{_B8_SECTION}', '{_B8_TEMPLATE}', 'population', 'Population', "
+    "'one', 'study_section', NULL, 1, false)",
+    "INSERT INTO public.extraction_entity_types "
+    "(id, template_id, name, label, cardinality, role, "
+    " parent_entity_type_id, sort_order, is_required) VALUES "
+    f"('{_B8_GLOBAL_CONTAINER}', '{_B8_GLOBAL_TPL}', 'prediction_models', "
+    "'Prediction Models', 'many', 'model_container', NULL, 0, false)",
+)
+
+
+async def _entry_labels(session: AsyncSession) -> dict[str, str | None]:
+    rows = (await session.execute(_B8_ENTRY_LABELS)).all()
+    return {row[0]: row[1] for row in rows}
+
+
+@pytest.mark.asyncio
+async def test_migration_0051_round_trip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0051_entity_entry_label`` adds ``extraction_entity_types.entry_label``
+    and backfills ``'model'`` where ``role='model_container'`` — the role-only
+    predicate covers BOTH lineages (global and project) and must stay
+    role-only, so the fixture plants a container on each. The backfill runs
+    with the 0048 mark-draft trigger DISABLED (0048 docstring WARNING: an
+    every-row backfill would stamp every project template), proven by the
+    still-NULL draft marker after upgrade. Downgrading to the explicit parent
+    ``0050`` drops the column; a second upgrade re-backfills idempotently.
+    Every alembic subprocess is preceded by ``rollback()`` so no data-read
+    lock outlives the transaction and deadlocks the DDL."""
+    assert (await migration_session.execute(_ENTRY_LABEL_COL)).scalar() == 1, (
+        "entry_label must exist at HEAD"
+    )
+    await migration_session.rollback()
+
+    _run_alembic("downgrade", "0050_field_name_unique_heal", database_url=migration_db_url)
+    try:
+        assert (await migration_session.execute(_ENTRY_LABEL_COL)).scalar() is None, (
+            "downgrade must drop entry_label"
+        )
+        for statement in _B8_FIXTURE_STATEMENTS:
+            await migration_session.execute(text(statement))
+        # The fixture INSERTs fired the (present-since-0048) mark-draft
+        # trigger; reset so a stamped marker after upgrade could only come
+        # from the backfill UPDATE. (_CLEAR_HEAL_MARKER/_HEAL_MARKER are
+        # generic project_extraction_templates marker queries — reused.)
+        await migration_session.execute(_CLEAR_HEAL_MARKER, {"tid": _B8_TEMPLATE})
+        await migration_session.commit()
+    finally:
+        await migration_session.rollback()
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    labels = await _entry_labels(migration_session)
+    assert labels[_B8_CONTAINER] == "model", (
+        "backfill must stamp 'model' on the project-lineage container"
+    )
+    assert labels[_B8_GLOBAL_CONTAINER] == "model", (
+        "backfill must cover the GLOBAL lineage too (role-only predicate)"
+    )
+    assert labels[_B8_SECTION] is None, "study_section rows must stay NULL"
+    assert (await migration_session.execute(_HEAL_MARKER, {"tid": _B8_TEMPLATE})).scalar() is (
+        None
+    ), "the backfill must not stamp config_draft_since (0048 trigger disabled)"
+    await migration_session.rollback()
+
+    # Downgrade drops the column; the second upgrade re-adds it and the
+    # backfill re-stamps the containers (idempotent re-run).
+    _run_alembic("downgrade", "0050_field_name_unique_heal", database_url=migration_db_url)
+    try:
+        assert (await migration_session.execute(_ENTRY_LABEL_COL)).scalar() is None, (
+            "second downgrade must drop entry_label again"
+        )
+    finally:
+        await migration_session.rollback()
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    labels = await _entry_labels(migration_session)
+    assert labels[_B8_CONTAINER] == "model", "second upgrade must re-backfill the container"
+    assert labels[_B8_GLOBAL_CONTAINER] == "model"
+    assert labels[_B8_SECTION] is None
+    assert (await migration_session.execute(_HEAL_MARKER, {"tid": _B8_TEMPLATE})).scalar() is (
+        None
+    ), "the re-backfill must not stamp config_draft_since either"
+    await migration_session.rollback()
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     """Pin the head revision id. If a future migration is added without
@@ -585,8 +1092,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0047_llm_template_instruction" in out, (
-        f"Expected head revision '0047_llm_template_instruction', got:\n{out}"
+    assert "0051_entity_entry_label" in out, (
+        f"Expected head revision '0051_entity_entry_label', got:\n{out}"
     )
 
 

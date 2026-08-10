@@ -13,13 +13,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.extraction_snapshot import build_template_version_snapshot
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, clean_project_clones, clone_charms
 
 _ENTITY_KEYS = {
     "id",
     "name",
     "label",
     "description",
+    "entry_label",
     "parent_entity_type_id",
     "cardinality",
     "role",
@@ -75,6 +76,26 @@ async def test_snapshot_carries_role_and_all_field_columns(
             assert set(f.keys()) >= _FIELD_KEYS, (
                 f"field missing keys: {_FIELD_KEYS - set(f.keys())}"
             )
+
+
+@pytest.mark.asyncio
+async def test_snapshot_carries_entry_label(db_session: AsyncSession) -> None:
+    """B-8: the group entry noun is pinned in the snapshot — 'model' for
+    the seeded CHARMS container, null for every other section (nullable
+    entity keys are emitted unconditionally, D2)."""
+    await clean_project_clones(db_session, SEED.secondary_project)
+    clone = await clone_charms(db_session, SEED.secondary_project, SEED.primary_profile)
+
+    snapshot = await build_template_version_snapshot(db_session, clone.project_template_id)
+    entity_types = snapshot["entity_types"]
+    assert any(et["role"] == "model_container" for et in entity_types)
+    for et in entity_types:
+        assert "entry_label" in et, f"entity_type {et.get('name')} missing entry_label"
+        if et["role"] == "model_container":
+            assert et["entry_label"] == "model"
+        else:
+            assert et["entry_label"] is None
+    await db_session.rollback()
 
 
 @pytest.mark.asyncio

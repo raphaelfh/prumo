@@ -73,6 +73,10 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
     articleId: props.articleId,
     templateId: props.templateId,
     runId: props.runId,
+    // Run-pinned child sections (derived from the run view upstream): the
+    // AI dispatch loop must match the snapshot the backend extracts from,
+    // not the live entity-type rows (B-5b).
+    sections: props.modelChildSections,
     activeModelId: props.activeModelId,
     models: props.models,
     onRefreshModels: props.onRefreshModels,

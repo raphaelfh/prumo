@@ -27,8 +27,8 @@ interface TemplateInstructionRowProps {
 /**
  * Config "row zero" (spec Phase A §4): the template-level general AI
  * instruction. Collapsed = one-line preview; expanded = editor. The save
- * PUT republishes server-side in the same transaction, so no separate
- * republish call happens here.
+ * PUT stages a draft edit (B-4): the text reaches prompts only when the
+ * manager presses Publish.
  */
 export function TemplateInstructionRow({
   projectId,

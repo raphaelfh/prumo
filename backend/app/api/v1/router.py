@@ -21,6 +21,7 @@ from app.api.v1.endpoints import (
     parser_settings,
     project_templates,
     section_extraction,
+    template_structure,
     user_api_keys,
     zotero_import,
 )
@@ -72,6 +73,12 @@ api_router.include_router(
 
 api_router.include_router(
     project_templates.router,
+    prefix="/projects",
+    tags=["project-templates"],
+)
+
+api_router.include_router(
+    template_structure.router,
     prefix="/projects",
     tags=["project-templates"],
 )

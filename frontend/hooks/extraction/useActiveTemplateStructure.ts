@@ -31,11 +31,14 @@ export function useActiveTemplateStructure(
         projectId as string,
         templateId as string,
       );
-      // B-3a inertness: build the LEGACY projection explicitly — no spread.
-      // The snapshot carries entity-level `is_required`, which today's live
-      // hook omits; letting it through would activate progress.ts's
-      // phantom-slot logic and move visible numbers. B-3b removes this
-      // projection as its own disclosed change.
+      // B-3b (disclosed change): entity-level `is_required` passes
+      // through, activating progress.ts's template-driven phantom-slot
+      // logic — a REQUIRED cardinality='many' section with zero
+      // instances now blocks 100% in the worklist/dashboard, matching
+      // the form header (which already threads the flag from the
+      // run-pinned snapshot). Deliberately stricter than the backend
+      // finalize gate, which counts required fields per EXISTING
+      // instance only.
       return read.entity_types.map((et) => ({
         id: et.id,
         name: et.name,
@@ -44,7 +47,9 @@ export function useActiveTemplateStructure(
         role: et.role ?? null,
         cardinality: et.cardinality ?? null,
         parent_entity_type_id: et.parent_entity_type_id ?? null,
+        entry_label: et.entry_label ?? null,
         sort_order: et.sort_order ?? 0,
+        is_required: et.is_required,
         fields: (et.fields ?? []) as unknown as ExtractionField[],
       }));
     },
