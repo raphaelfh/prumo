@@ -783,7 +783,7 @@ export const extraction = {
     inspectorUnitsLabel: 'Units',
     inspectorUnitsHint: 'The first unit is the default reviewers see.',
     inspectorDispositionsLabel: 'Dispositions',
-    inspectorTypeChangeHint: 'Type changes are blocked once the field holds extracted data.',
+    inspectorTypeChangeHint: 'Changing the type of a field that already holds answers is a destructive change — you will confirm it before publishing.',
     inspectorToggle: 'Show or hide the inspector (⌘./Ctrl+.)',
     inspectorSheetTitle: 'Field inspector',
     // TemplateInstructionRow (general AI instruction, config row zero)

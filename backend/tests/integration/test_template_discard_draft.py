@@ -85,6 +85,9 @@ from tests.integration.helpers.template_fixtures import (
     field_id as _field_id,
 )
 from tests.integration.helpers.template_fixtures import (
+    force_narrow_baseline,
+)
+from tests.integration.helpers.template_fixtures import (
     fresh_charms as _fresh_charms,
 )
 from tests.integration.helpers.template_fixtures import (
@@ -102,6 +105,14 @@ auth_as_manager = template_fixtures.auth_as_manager
 
 
 async def _force_active_schema(db: AsyncSession, template_id: UUID, schema: dict[str, Any]) -> None:
+    """Overwrite the active version's schema with an ARBITRARY payload.
+
+    Kept alongside ``force_narrow_baseline`` because one caller needs the
+    EMPTY baseline, which is restorable — the opposite of narrow. Every
+    narrow-shape caller uses the shared helper instead: that shape is a gate
+    input, and a copy that drifted would quietly stop being narrow while its
+    suite kept passing.
+    """
     await db.execute(
         text(
             "UPDATE public.extraction_template_versions SET schema = CAST(:s AS jsonb) "
@@ -681,11 +692,7 @@ async def test_narrow_baseline_is_refused(db_session: AsyncSession) -> None:
     project-wide if written back — no Discard until B-9x."""
     project_id, template_id, _ = await _fresh_charms(db_session)
     section = await _entity_id(db_session, template_id, "participants")
-    await _force_active_schema(
-        db_session,
-        template_id,
-        {"entity_types": [{"id": str(section), "label": "Participants", "fields": []}]},
-    )
+    await force_narrow_baseline(db_session, template_id, section)
 
     with pytest.raises(NarrowBaselineError, match="B-9x"):
         await _discard(db_session, project_id=project_id, template_id=template_id)
@@ -968,11 +975,7 @@ async def test_refusal_emits_a_warning_naming_the_blocking_node(
 ) -> None:
     project_id, template_id, _ = await _fresh_charms(db_session)
     section = await _entity_id(db_session, template_id, "participants")
-    await _force_active_schema(
-        db_session,
-        template_id,
-        {"entity_types": [{"id": str(section), "label": "Participants", "fields": []}]},
-    )
+    await force_narrow_baseline(db_session, template_id, section)
 
     with pytest.raises(NarrowBaselineError):
         await _discard(db_session, project_id=project_id, template_id=template_id)
@@ -1075,11 +1078,7 @@ async def test_endpoint_hard_refusal_has_its_own_code_and_no_details(
     assert auth_as_manager == SEED.primary_profile
     project_id, template_id, _ = await _fresh_charms(db_session)
     section = await _entity_id(db_session, template_id, "participants")
-    await _force_active_schema(
-        db_session,
-        template_id,
-        {"entity_types": [{"id": str(section), "label": "Participants", "fields": []}]},
-    )
+    await force_narrow_baseline(db_session, template_id, section)
 
     res = await db_client.post(
         f"/api/v1/projects/{project_id}/templates/{template_id}/discard-draft",

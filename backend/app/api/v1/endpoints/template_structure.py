@@ -31,8 +31,10 @@ for the B-4 Publish button (typed endpoints + the RLS tightening).
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.exc import DBAPIError
 
 from app.api.deps.security import require_project_manager
+from app.api.v1.endpoints._integrity import DEADLOCK_RETRY_DETAIL, is_deadlock
 from app.core.deps import DbSession
 from app.schemas.common import ApiResponse
 from app.schemas.template_structure import (
@@ -98,7 +100,16 @@ async def create_template_field(
     """
     # B-9f: claim the advisory editor lock BEFORE the write. Refuses
     # with the holder named when another manager holds the draft.
-    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    #
+    # The claim is itself an UPDATE on the template row, so it can lose a
+    # deadlock race exactly like the write below — hence one guard around
+    # both rather than only around the service call.
+    try:
+        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     try:
         result = await create_field(
             db, project_id=project_id, template_id=template_id, payload=body
@@ -107,6 +118,10 @@ async def create_template_field(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except DuplicateFieldNameError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     await db.commit()
     return ApiResponse.success(
         result,
@@ -133,7 +148,16 @@ async def update_template_field(
     """
     # B-9f: claim the advisory editor lock BEFORE the write. Refuses
     # with the holder named when another manager holds the draft.
-    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    #
+    # The claim is itself an UPDATE on the template row, so it can lose a
+    # deadlock race exactly like the write below — hence one guard around
+    # both rather than only around the service call.
+    try:
+        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     try:
         result = await update_field(
             db,
@@ -146,6 +170,10 @@ async def update_template_field(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except DuplicateFieldNameError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     await db.commit()
     return ApiResponse.success(
         result,
@@ -170,7 +198,16 @@ async def delete_template_field(
     """
     # B-9f: claim the advisory editor lock BEFORE the write. Refuses
     # with the holder named when another manager holds the draft.
-    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    #
+    # The claim is itself an UPDATE on the template row, so it can lose a
+    # deadlock race exactly like the write below — hence one guard around
+    # both rather than only around the service call.
+    try:
+        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     try:
         result = await delete_field(
             db, project_id=project_id, template_id=template_id, field_id=field_id
@@ -179,6 +216,10 @@ async def delete_template_field(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except FieldInUseError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     await db.commit()
     return ApiResponse.success(
         result,
@@ -206,7 +247,16 @@ async def move_template_field(
     """
     # B-9f: claim the advisory editor lock BEFORE the write. Refuses
     # with the holder named when another manager holds the draft.
-    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    #
+    # The claim is itself an UPDATE on the template row, so it can lose a
+    # deadlock race exactly like the write below — hence one guard around
+    # both rather than only around the service call.
+    try:
+        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     try:
         result = await move_field(
             db,
@@ -221,6 +271,10 @@ async def move_template_field(
         raise HTTPException(status_code=409, detail=str(e)) from e
     except CrossTemplateMoveError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     await db.commit()
     return ApiResponse.success(
         result,
@@ -247,7 +301,16 @@ async def reorder_template_fields(
     """
     # B-9f: claim the advisory editor lock BEFORE the write. Refuses
     # with the holder named when another manager holds the draft.
-    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    #
+    # The claim is itself an UPDATE on the template row, so it can lose a
+    # deadlock race exactly like the write below — hence one guard around
+    # both rather than only around the service call.
+    try:
+        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     try:
         result = await reorder_fields(
             db, project_id=project_id, template_id=template_id, payload=body
@@ -256,6 +319,10 @@ async def reorder_template_fields(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except DuplicateReorderIdsError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     await db.commit()
     return ApiResponse.success(
         result,
@@ -284,7 +351,16 @@ async def create_template_section(
     """
     # B-9f: claim the advisory editor lock BEFORE the write. Refuses
     # with the holder named when another manager holds the draft.
-    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    #
+    # The claim is itself an UPDATE on the template row, so it can lose a
+    # deadlock race exactly like the write below — hence one guard around
+    # both rather than only around the service call.
+    try:
+        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     try:
         result = await create_section(
             db, project_id=project_id, template_id=template_id, payload=body
@@ -295,6 +371,10 @@ async def create_template_section(
         raise HTTPException(status_code=400, detail=str(e)) from e
     except OneContainerError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     await db.commit()
     return ApiResponse.success(
         result,
@@ -324,7 +404,16 @@ async def update_template_section(
     """
     # B-9f: claim the advisory editor lock BEFORE the write. Refuses
     # with the holder named when another manager holds the draft.
-    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    #
+    # The claim is itself an UPDATE on the template row, so it can lose a
+    # deadlock race exactly like the write below — hence one guard around
+    # both rather than only around the service call.
+    try:
+        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     try:
         result = await update_section(
             db,
@@ -339,6 +428,10 @@ async def update_template_section(
         raise HTTPException(status_code=422, detail=str(e)) from e
     except SectionCardinalityInUseError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     await db.commit()
     return ApiResponse.success(
         result,
@@ -364,7 +457,16 @@ async def delete_template_section(
     """
     # B-9f: claim the advisory editor lock BEFORE the write. Refuses
     # with the holder named when another manager holds the draft.
-    await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    #
+    # The claim is itself an UPDATE on the template row, so it can lose a
+    # deadlock race exactly like the write below — hence one guard around
+    # both rather than only around the service call.
+    try:
+        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     try:
         result = await delete_section(
             db, project_id=project_id, template_id=template_id, section_id=section_id
@@ -373,6 +475,10 @@ async def delete_template_section(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except SectionInUseError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
     await db.commit()
     return ApiResponse.success(
         result,
