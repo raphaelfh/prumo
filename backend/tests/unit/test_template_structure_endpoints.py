@@ -20,20 +20,6 @@ import pytest
 from fastapi import HTTPException
 
 import app.api.v1.endpoints.template_structure as endpoint_module
-
-
-@pytest.fixture(autouse=True)
-def _stub_draft_lock(monkeypatch):
-    """These tests mock ``db`` wholesale, so the real B-9f claim — which
-    runs a conditional UPDATE and reads its rowcount — cannot execute
-    against them. The claim's own behaviour is covered by
-    tests/integration/test_template_draft_lock.py; that every write
-    endpoint still CALLS it is covered by
-    test_every_write_endpoint_claims_the_draft_lock below.
-    """
-    monkeypatch.setattr(endpoint_module, "claim_draft_lock", AsyncMock())
-
-
 from app.schemas.template_structure import (
     SectionCreateRequest,
     SectionDeleteResponse,
@@ -66,6 +52,18 @@ from app.services.template_section_service import (
     SectionNotFoundError,
     SectionParentRoleError,
 )
+
+
+@pytest.fixture(autouse=True)
+def _stub_draft_lock(monkeypatch):
+    """These tests mock ``db`` wholesale, so the real B-9f claim — which
+    runs a conditional UPDATE and reads its rowcount — cannot execute
+    against them. The claim's own behaviour is covered by
+    tests/integration/test_template_draft_lock.py; that every write
+    endpoint still CALLS it is covered by
+    test_every_write_endpoint_claims_the_draft_lock below.
+    """
+    monkeypatch.setattr(endpoint_module, "claim_draft_lock", AsyncMock())
 
 
 def _request() -> MagicMock:

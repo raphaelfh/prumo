@@ -45,6 +45,9 @@ export type TemplateChangeRow = components['schemas']['TemplateChangeRowRead'];
 export type TemplateVersionHistory =
   components['schemas']['TemplateVersionHistoryRead'];
 
+export type TakeOverDraftLockResponse =
+  components['schemas']['TakeOverDraftLockResponse'];
+
 export type RestoreVersionResponse =
   components['schemas']['RestoreVersionResponse'];
 
@@ -314,6 +317,21 @@ export async function restoreTemplateVersion(
         {method: 'POST'},
       ),
     'restoreTemplateVersion',
+  );
+}
+
+/** Seize the advisory editor lock (B-9f). Unconditional by design. */
+export async function takeOverDraftLock(
+  projectId: string,
+  templateId: string,
+): Promise<ErrorResult<TakeOverDraftLockResponse>> {
+  return toResult(
+    async () =>
+      apiClient<TakeOverDraftLockResponse>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/draft-lock/take-over`,
+        {method: 'POST'},
+      ),
+    'takeOverDraftLock',
   );
 }
 
