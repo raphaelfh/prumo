@@ -83,6 +83,20 @@ describe('extractForRun', () => {
     expect(body.skipFieldsWithHumanProposals).toBe(false);
     expect(body.autoAdvanceToReview).toBe(true);
   });
+
+  it('never sends `model` — the engine is server-owned (C1a)', async () => {
+    // A client could previously put any string in `model` and it reached
+    // build_model() unvalidated. The backend request schema dropped the field.
+    // The cast smuggles one in anyway (`model` is no longer part of
+    // ExtractForRunRequest) to pin that the explicit-keyed body builder
+    // cannot leak an unknown extra onto the wire either.
+    apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
+
+    await extractForRun({...BASE_PARAMS, model: 'gpt-5'} as typeof BASE_PARAMS);
+
+    const body = apiClientMock.mock.calls[0][1].body;
+    expect('model' in body).toBe(false);
+  });
 });
 
 describe('getExtractionJobStatus', () => {
@@ -216,28 +230,5 @@ describe('writeRunFieldValue — decision write contract', () => {
       proposalRecordId: null,
     });
     expect(lastBody()).not.toHaveProperty('proposal_record_id');
-  });
-
-  it('never sends `model` — the engine is server-owned (C1a)', async () => {
-    // A client could previously put any string in `model` and it reached
-    // build_model() unvalidated. The backend request schema dropped the
-    // field; this pins that the body carries no engine choice at all.
-    apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
-
-    await extractForRun(BASE_PARAMS);
-
-    const body = apiClientMock.mock.calls[0]![1]!.body as Record<string, unknown>;
-    expect('model' in body).toBe(false);
-  });
-
-  it('cannot smuggle a model through an extra param', async () => {
-    apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
-
-    // Cast: `model` is not part of ExtractForRunRequest any more. The body
-    // builder is explicit-keyed, so an unknown extra never reaches the wire.
-    await extractForRun({...BASE_PARAMS, model: 'gpt-5'} as typeof BASE_PARAMS);
-
-    const body = apiClientMock.mock.calls[0]![1]!.body as Record<string, unknown>;
-    expect('model' in body).toBe(false);
   });
 });

@@ -61,9 +61,7 @@ export function extractForRun(
           runId: params.runId,
           skipFieldsWithHumanProposals: params.skipFieldsWithHumanProposals ?? true,
           autoAdvanceToReview: params.autoAdvanceToReview ?? false,
-          // C1a: no `model` key. The engine is server-owned — the backend
-          // request schema dropped the field, so a client can no longer
-          // pick which model runs the extraction.
+          // C1a: no `model` key — the engine is server-owned.
         },
       });
       return { jobId: raw.job_id };

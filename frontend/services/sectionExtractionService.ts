@@ -6,7 +6,8 @@
  *
  * FOCUS: Section extraction pipeline - granular extraction per section (entity type).
  *
- * USAGE: Called by extraction hooks to process articles with AI.
+ * USAGE: Called by extraction hooks to process articles with AI. The engine is
+ * server-owned (C1a) — no request built here carries a model.
  *
  * @example
  * ```typescript
@@ -16,8 +17,6 @@
  *   templateId: '...',
  *   entityTypeId: '...',
  * });
- *
- * // The engine is server-owned (C1a): no request here carries a model.
  *
  * console.warn(`Created ${result.data?.suggestionsCreated} suggestions`);
  * ```
@@ -134,8 +133,7 @@ export class SectionExtractionService {
         entityTypeId: request.entityTypeId,
         parentInstanceId: request.parentInstanceId,
         runId: request.runId,
-        // C1a: no `model` key. The engine is server-owned — the request
-        // schema dropped the field, so anything we sent would be ignored.
+        // C1a: no `model` key — the engine is server-owned.
       },
     }).catch((err: unknown) => {
       if (err instanceof ApiError) {
