@@ -42,6 +42,12 @@ export type TemplateConfigDiff =
 
 export type TemplateChangeRow = components['schemas']['TemplateChangeRowRead'];
 
+export type TemplateVersionHistory =
+  components['schemas']['TemplateVersionHistoryRead'];
+
+export type TemplateVersionHistoryEntry =
+  components['schemas']['TemplateVersionHistoryEntry'];
+
 export type ChangeTier = components['schemas']['ChangeTier'];
 
 export type ChangeVariant = components['schemas']['ChangeVariant'];
@@ -264,6 +270,25 @@ export async function loadTemplateConfigDiff(
         `/api/v1/projects/${projectId}/templates/${templateId}/config-diff`,
       ),
     'loadTemplateConfigDiff',
+  );
+}
+
+/**
+ * The published-version timeline (B-9e).
+ *
+ * Read-only and manager-gated server-side; an empty `versions` array is a
+ * real state (a template that never published), never an error.
+ */
+export async function loadTemplateVersionHistory(
+  projectId: string,
+  templateId: string,
+): Promise<ErrorResult<TemplateVersionHistory>> {
+  return toResult(
+    async () =>
+      apiClient<TemplateVersionHistory>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/versions`,
+      ),
+    'loadTemplateVersionHistory',
   );
 }
 

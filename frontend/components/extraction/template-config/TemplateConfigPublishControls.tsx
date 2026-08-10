@@ -3,7 +3,7 @@ import {RotateCcw, UploadCloud} from 'lucide-react';
 
 import {TemplateConfigDiffSheet} from '@/components/extraction/template-config/TemplateConfigDiffSheet';
 import {TemplateDiscardDialog} from '@/components/extraction/template-config/TemplateDiscardDialog';
-import {Badge} from '@/components/ui/badge';
+import {TemplateVersionHistorySheet} from '@/components/extraction/template-config/TemplateVersionHistorySheet';
 import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {useTemplateConfigStatus} from '@/hooks/extraction/useTemplateConfigStatus';
@@ -48,6 +48,10 @@ export function TemplateConfigPublishControls({
   // so the two observers dedupe into one request.
   const {data: instruction} = useTemplateInstruction(projectId, templateId);
   const [discardOpen, setDiscardOpen] = useState(false);
+  // B-9e History. Local, unlike diffSheetOpen: the History sheet does
+  // not collide with the grid's inspector — the editor hoists only the
+  // sheet that does.
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const hasPendingChanges = configStatus?.has_pending_changes === true;
   // B-9a/D9: the count qualifies the chip only when it is a POSITIVE
@@ -126,13 +130,30 @@ export function TemplateConfigPublishControls({
       </Tooltip>
     );
   } else if (configStatus?.active_version != null) {
+    // B-9e: the published-vN chip becomes the History trigger. It was a
+    // bare Badge — no role, no accessible name, not keyboard-reachable —
+    // so it becomes a real Button wearing the chip's look, exactly as the
+    // draft chip did in B-9b2a. Badge renders a <div>, and <button> only
+    // admits phrasing content, so the label is NOT a nested Badge.
     chip = (
-      <Badge variant="outline" className="text-xs text-muted-foreground">
-        {t('extraction', 'configPublishedVersion').replace(
-          '{{n}}',
-          String(configStatus.active_version),
-        )}
-      </Badge>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 rounded-full border border-border px-2.5 text-xs font-normal text-muted-foreground"
+            onClick={() => setHistoryOpen(true)}
+          >
+            {t('extraction', 'configPublishedVersion').replace(
+              '{{n}}',
+              String(configStatus.active_version),
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {t('templateConfig', 'historyTriggerTooltip')}
+        </TooltipContent>
+      </Tooltip>
     );
   }
 
@@ -193,6 +214,15 @@ export function TemplateConfigPublishControls({
       )}
       {/* Mounted per open, same as the Discard dialog: the diff read dies
           with the sheet, so the next open asks the server again. */}
+      {/* Mounted per open, same as the sheets above: the timeline dies
+          with the sheet, so the next open asks the server again. */}
+      {historyOpen && (
+        <TemplateVersionHistorySheet
+          projectId={projectId}
+          templateId={templateId}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
       {diffSheetOpen && (
         <TemplateConfigDiffSheet
           projectId={projectId}
