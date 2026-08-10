@@ -211,6 +211,27 @@ class TemplateVersionHistoryRead(BaseModel):
     versions: list[TemplateVersionHistoryEntry] = Field(default_factory=list)
 
 
+class RestoreVersionResponse(BaseModel):
+    """What a Restore-vN staged (B-9e).
+
+    ``changed`` is False when the version's shape already matched the live
+    tree: the writer touched no rows, so no draft marker was stamped and
+    Publish stays disabled. The sheet says so rather than claiming a
+    restore that the UI cannot act on."""
+
+    version: int
+    changed: bool
+    created_entity_types: int
+    created_fields: int
+    deleted_entity_types: int
+    deleted_fields: int
+    updated_entity_types: int
+    updated_fields: int
+    kept_count: int
+    """Nodes the restore could NOT undo — they hold recorded work, so the
+    staged tree keeps them regardless of the version's shape."""
+
+
 class TemplateDiscardRefusalCode(StrEnum):
     """Why ``POST .../discard-draft`` returned 409 (B-9c2 D1).
 

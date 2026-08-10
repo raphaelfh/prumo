@@ -27,6 +27,7 @@ import {vi} from 'vitest';
 
 export const loadTemplateConfigDiff = vi.fn();
 export const loadTemplateVersionHistory = vi.fn();
+export const restoreTemplateVersion = vi.fn();
 export const loadTemplateConfigStatus = vi.fn();
 export const republishTemplateVersion = vi.fn();
 export const discardTemplateDraft = vi.fn();
@@ -66,6 +67,7 @@ export function templateServiceMock() {
   return {
     loadTemplateConfigDiff,
     loadTemplateVersionHistory,
+    restoreTemplateVersion,
     loadTemplateConfigStatus,
     republishTemplateVersion,
     discardTemplateDraft,

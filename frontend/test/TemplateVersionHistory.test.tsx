@@ -6,19 +6,26 @@
  * part of the contract.
  */
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
-import {render, screen} from '@testing-library/react';
+import {render, screen, waitFor} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type {ReactNode} from 'react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
+vi.mock('sonner', () => ({
+  toast: Object.assign(vi.fn(), {error: vi.fn(), success: vi.fn(), info: vi.fn()}),
+}));
 vi.mock('@/services/templateService', async () => {
   const {templateServiceMock} = await import('./mocks/templateService');
   return templateServiceMock();
 });
 
 import {TemplateVersionHistorySheet} from '@/components/extraction/template-config/TemplateVersionHistorySheet';
+import {TooltipProvider} from '@/components/ui/tooltip';
+import {toast} from 'sonner';
+
 import {templateConfig} from '@/lib/copy';
 
-import {loadTemplateVersionHistory} from './mocks/templateService';
+import {loadTemplateVersionHistory, restoreTemplateVersion} from './mocks/templateService';
 
 function entry(overrides: Record<string, unknown> = {}) {
   return {
@@ -36,8 +43,12 @@ function entry(overrides: Record<string, unknown> = {}) {
 
 function renderSheet() {
   const queryClient = new QueryClient({defaultOptions: {queries: {retry: false}}});
+  // TooltipProvider mirrors App.tsx: the Restore button's tooltip is a
+  // Radix Root, which throws outside a provider.
   const wrapper = ({children}: {children: ReactNode}) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
+    </QueryClientProvider>
   );
   return render(
     <TemplateVersionHistorySheet projectId="p1" templateId="t1" onClose={vi.fn()} />,
@@ -138,5 +149,83 @@ describe('TemplateVersionHistorySheet', () => {
     renderSheet();
 
     expect(await screen.findByText(templateConfig.historyEmpty)).toBeInTheDocument();
+  });
+
+  it('offers Restore on older versions but never on the active one', async () => {
+    // Restoring the ACTIVE version is a no-op by construction: the live
+    // tree already is it, so the button would promise a change it cannot
+    // make.
+    loadTemplateVersionHistory.mockResolvedValue({
+      ok: true,
+      data: {
+        project_template_id: 't1',
+        versions: [
+          entry({version_id: 'v-2', version: 2, is_active: true}),
+          entry({version_id: 'v-1', version: 1, is_active: false}),
+        ],
+      },
+    });
+    renderSheet();
+
+    await screen.findByTestId('template-version-2');
+    const restoreButtons = screen.getAllByRole('button', {
+      name: templateConfig.historyRestoreAction,
+    });
+    expect(restoreButtons).toHaveLength(1);
+  });
+
+  it('restores by version id and reports a real change', async () => {
+    loadTemplateVersionHistory.mockResolvedValue({
+      ok: true,
+      data: {
+        project_template_id: 't1',
+        versions: [entry({version_id: 'v-1', version: 1, is_active: false})],
+      },
+    });
+    restoreTemplateVersion.mockResolvedValue({
+      ok: true,
+      data: {version: 1, changed: true, kept_count: 0},
+    });
+    renderSheet();
+
+    await userEvent.click(
+      await screen.findByRole('button', {name: templateConfig.historyRestoreAction}),
+    );
+
+    await waitFor(() =>
+      expect(restoreTemplateVersion).toHaveBeenCalledWith('p1', 't1', 'v-1'),
+    );
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        templateConfig.historyRestoreSuccess.replace('{{n}}', '1'),
+      ),
+    );
+  });
+
+  it('says nothing changed rather than claiming a restore the UI cannot act on', async () => {
+    // changed=false means the writer touched no rows, so no draft marker
+    // was stamped and Publish stays disabled.
+    loadTemplateVersionHistory.mockResolvedValue({
+      ok: true,
+      data: {
+        project_template_id: 't1',
+        versions: [entry({version_id: 'v-1', version: 1, is_active: false})],
+      },
+    });
+    restoreTemplateVersion.mockResolvedValue({
+      ok: true,
+      data: {version: 1, changed: false, kept_count: 0},
+    });
+    renderSheet();
+
+    await userEvent.click(
+      await screen.findByRole('button', {name: templateConfig.historyRestoreAction}),
+    );
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        templateConfig.historyRestoreNoop.replace('{{n}}', '1'),
+      ),
+    );
   });
 });
