@@ -15,7 +15,7 @@
  *   articleId: '...',
  *   templateId: '...',
  *   entityTypeId: '...',
- *   options: { model: 'gpt-4o' }
+ *   options: { model: 'gpt-4o' }   // optional; omit to use the engine setting
  * });
  *
  * console.warn(`Created ${result.data?.suggestionsCreated} suggestions`);
@@ -133,7 +133,11 @@ export class SectionExtractionService {
         entityTypeId: request.entityTypeId,
         parentInstanceId: request.parentInstanceId,
         runId: request.runId,
-        model: request.options?.model ?? 'gpt-4o-mini',
+        // C1: no client-side default. The engine setting is the single
+        // source, and the server already defaults to
+        // settings.LLM_DEFAULT_MODEL — sending our own duplicated it and
+        // silently overrode the server's choice.
+        ...(request.options?.model ? {model: request.options.model} : {}),
       },
     }).catch((err: unknown) => {
       if (err instanceof ApiError) {
@@ -265,7 +269,11 @@ export class SectionExtractionService {
         extractAllSections: true,
         sectionIds: request.sectionIds,
         pdfText: request.pdfText,
-        model: request.options?.model ?? 'gpt-4o-mini',
+        // C1: no client-side default. The engine setting is the single
+        // source, and the server already defaults to
+        // settings.LLM_DEFAULT_MODEL — sending our own duplicated it and
+        // silently overrode the server's choice.
+        ...(request.options?.model ? {model: request.options.model} : {}),
       },
     }).catch((err: unknown) => {
       if (err instanceof ApiError) {
@@ -357,7 +365,8 @@ export function extractSectionAsync(
             skipFieldsWithHumanProposals:
               params.skipFieldsWithHumanProposals ?? true,
             autoAdvanceToReview: params.autoAdvanceToReview ?? false,
-            model: params.model ?? 'gpt-4o-mini',
+            // C1: no client-side default (see above).
+            ...(params.model ? {model: params.model} : {}),
           },
         },
       );
