@@ -5498,6 +5498,42 @@
         "title": "PublishedStateResponse",
         "type": "object"
       },
+      "RepublishTemplateVersionRequest": {
+        "description": "What the Publish button submits (B-9b2b).\n\nA REQUIRED body even though every field is optional, matching\n``DiscardDraftRequest``: the endpoint is the untrusted surface, and an\noptional body would let a bodyless POST skip the whole contract. With\nthe fields defaulted, a bodyless POST is a 422 rather than a silent\nunchecked publish.",
+        "properties": {
+          "acknowledged": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeAck"
+            },
+            "title": "Acknowledged",
+            "type": "array"
+          },
+          "expected_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Fingerprint"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "RepublishTemplateVersionRequest",
+        "type": "object"
+      },
       "RepublishTemplateVersionResponse": {
         "properties": {
           "changed": {
@@ -7088,6 +7124,24 @@
         "title": "TemplateActiveVersionRead",
         "type": "object"
       },
+      "TemplateChangeAck": {
+        "description": "One destructive row the manager ticked, as ``(id, tier)`` (B-9b2b).\n\nThe tier travels WITH the id on purpose. It is deliberately not part of\nthe composite row id (``template_diff_read._row_id``), so an ack whose\ntier no longer matches the server's recomputed row reads as *absent*\nrather than as a match \u2014 which is exactly right, because a reviewer\nrecording an answer can escalate a row to DESTRUCTIVE without anyone\ntouching the template.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/ChangeTier"
+          }
+        },
+        "required": [
+          "id",
+          "tier"
+        ],
+        "title": "TemplateChangeAck",
+        "type": "object"
+      },
       "TemplateChangeRowRead": {
         "description": "One diff row on the wire, built by ``app.services.template_diff_read``.\n\nNothing here is typed ``Any``: the baseline side of a diff is raw stored\nJSONB, and an opaque value is summarized server-side rather than\nshipped.",
         "properties": {
@@ -8115,14 +8169,34 @@
       "TemplatePublishRefusalCode": {
         "description": "Why ``POST .../republish-version`` returned 409 (B-9b0 D1).\n\nDeliberately NOT part of :class:`app.schemas.common.ApiErrorCode`, for\nthe same reason as :class:`TemplateDiscardRefusalCode`: that enum is the\ncross-cutting vocabulary every client branches on, and this is one\nendpoint's private outcome. Slice-local codes stay slice-local so the\nglobal contract does not grow a member per feature.\n\nOne member today, and an enum rather than a bare literal so the\ngenerated client already branches on a closed set \u2014 Publish has exactly\none refusal that can reach it (``PendingConfigDraftError`` fires only\nunder ``fail_if_pending_draft``, which only the clone service passes).",
         "enum": [
-          "PUBLISH_BLOCKED_BY_MULTI_ENTRY"
+          "PUBLISH_BLOCKED_BY_MULTI_ENTRY",
+          "PUBLISH_DIFF_DRIFTED",
+          "PUBLISH_MISSING_ACKNOWLEDGEMENT"
         ],
         "title": "TemplatePublishRefusalCode",
         "type": "string"
       },
       "TemplatePublishRefusalDetails": {
-        "description": "The ``error.details`` payload of a publish refusal (B-9b0 D2).\n\nEVERY offending section, ordered by ``sort_order`` \u2014 never a single\n``section_label``: the un-ordered select behind it raised on the first\nheap row, so one name out of several was reported at random and the\nmanager had to publish-read-fix-publish to find the rest.",
+        "description": "The ``error.details`` payload of a publish refusal (B-9b0 D2).\n\nEVERY offending section, ordered by ``sort_order`` \u2014 never a single\n``section_label``: the un-ordered select behind it raised on the first\nheap row, so one name out of several was reported at random and the\nmanager had to publish-read-fix-publish to find the rest.\n\nOne model across all three codes rather than a discriminated union: the\ngenerated client already branches on ``code``, and three near-empty\npayload models would buy nothing but three more names.",
         "properties": {
+          "fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fingerprint"
+          },
+          "row_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Row Ids",
+            "type": "array"
+          },
           "section_labels": {
             "items": {
               "type": "string"
@@ -11160,6 +11234,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepublishTemplateVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {

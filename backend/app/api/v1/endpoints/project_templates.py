@@ -35,6 +35,7 @@ from app.schemas.hitl_session import (
     CloneTemplateResponse,
     DiscardDraftRequest,
     DiscardDraftResponse,
+    RepublishTemplateVersionRequest,
     RepublishTemplateVersionResponse,
     TemplateActiveVersionRead,
     TemplateConfigDiffRead,
@@ -234,6 +235,7 @@ async def update_template_llm_instruction(
 async def republish_template_version(
     project_id: UUID,
     template_id: UUID,
+    body: RepublishTemplateVersionRequest,
     request: Request,
     db: DbSession,
     current_user_sub: UUID = Depends(require_project_manager),
@@ -260,6 +262,13 @@ async def republish_template_version(
             project_id=project_id,
             project_template_id=template_id,
             user_id=current_user_sub,
+            # Always True here, never inferred from what the body carried:
+            # this is the untrusted surface, and the service defaults the
+            # flag off only so the clone/restore callers stay unchanged.
+            enforce_publish_contract=True,
+            expected_fingerprint=body.expected_fingerprint,
+            acknowledged=body.acknowledged,
+            note=body.note,
         )
     except TemplateNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
