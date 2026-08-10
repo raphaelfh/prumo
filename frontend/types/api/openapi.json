@@ -4629,10 +4629,12 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
             "title": "Max Tokens"
           },
           "temperature": {
             "default": 0.1,
+            "deprecated": true,
             "maximum": 2.0,
             "minimum": 0.0,
             "title": "Temperature",
@@ -5156,6 +5158,7 @@
         "type": "object"
       },
       "ModelExtractionRequest": {
+        "additionalProperties": false,
         "description": "Request for extraction de modelos de predicao.",
         "properties": {
           "articleId": {

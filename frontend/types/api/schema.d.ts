@@ -3398,10 +3398,14 @@ export interface components {
          *     change while the engine work lands.
          */
         ExtractionOptions: {
-            /** Max Tokens */
+            /**
+             * Max Tokens
+             * @deprecated
+             */
             max_tokens?: number | null;
             /**
              * Temperature
+             * @deprecated
              * @default 0.1
              */
             temperature: number;

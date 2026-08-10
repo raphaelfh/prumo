@@ -9,11 +9,22 @@ could POST `{"model": "<anything>"}` and have that string reach
 
 C1a deleted the field. These tests pin both halves of the new contract:
 
-1. A client-supplied `model` key is silently DROPPED. Pydantic v2 defaults
-   to `extra='ignore'` and none of these models override it, so the key
-   never becomes an attribute and never survives `model_dump()` — which
-   also closes the Celery path, where the endpoint round-trips the payload
-   through `model_dump(mode='json')` and rebuilds the request in the worker.
+1. A client-supplied `model` key never reaches `build_model()`, by one of
+   two mechanisms:
+
+   - `ModelExtractionRequest` sets `extra='forbid'` and REJECTS it with a
+     422. That request is validated exactly once, in the request cycle, so
+     failing loudly beats dropping the caller's choice in silence.
+   - `SectionExtractionRequest` / `ExtractionOptions` keep pydantic's
+     `extra='ignore'` default, so the key is DROPPED: it never becomes an
+     attribute and never survives `model_dump()`, which also closes the
+     Celery path, where the endpoint round-trips the payload through
+     `model_dump(mode='json')` and rebuilds the request in the worker.
+     `forbid` is deliberately deferred there to a LATER deploy — a payload
+     enqueued by a pre-C1a web process still carries `model`, and under
+     `forbid` the worker-side rebuild would raise a ValidationError that
+     `is_transient_llm_error` treats as non-transient, killing the job with
+     no retry.
 2. The engine every dispatch branch actually uses is
    `settings.LLM_DEFAULT_MODEL`. If that stops being the resolved value,
    extraction silently changes model, so it is asserted here rather than
@@ -26,6 +37,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from app.core.config import settings
 from app.schemas.extraction import (
@@ -69,10 +81,14 @@ def test_a_client_supplied_model_is_ignored_on_the_section_request() -> None:
     assert "model" not in payload.model_dump(mode="json", by_alias=True)
 
 
-def test_a_client_supplied_model_is_ignored_on_the_model_extraction_request() -> None:
-    payload = ModelExtractionRequest(**_IDS, model="gpt-5")  # type: ignore[call-arg]
-    assert not hasattr(payload, "model")
-    assert "model" not in payload.model_dump(mode="json", by_alias=True)
+def test_a_client_supplied_model_is_rejected_on_the_model_extraction_request() -> None:
+    # extra='forbid' here (and ONLY here): this request is validated once, in
+    # the request cycle, so rejecting loudly costs nothing and beats dropping
+    # the caller's choice in silence.
+    with pytest.raises(ValidationError) as exc:
+        ModelExtractionRequest(**_IDS, model="gpt-5")  # type: ignore[call-arg]
+
+    assert exc.value.errors()[0]["type"] == "extra_forbidden"
 
 
 def test_a_client_supplied_model_is_ignored_in_extraction_options() -> None:

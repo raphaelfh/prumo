@@ -185,7 +185,11 @@ async def extract_section(
         template_id=str(payload.template_id),
         entity_type_id=str(payload.entity_type_id) if payload.entity_type_id else None,
         extract_all_sections=payload.extract_all_sections,
-        model=settings.LLM_DEFAULT_MODEL,
+        # Config of the WEB process at enqueue time, not a record of what ran:
+        # the worker re-resolves the model when it executes the task. The
+        # authoritative record is the run provenance snapshot the worker writes
+        # (``section_extraction_service._build_run_provenance``).
+        default_model_at_enqueue=settings.LLM_DEFAULT_MODEL,
     )
 
     task = run_section_extraction_task.delay(
