@@ -156,7 +156,6 @@ async def test_skip_flag_does_not_delete_human_settled_field(
         framework=None,
         kind="quality_assessment",
         skip_fields_with_human_proposals=True,
-        model="gpt-4o-mini",
     )
 
     # The kept field got an AI proposal ...

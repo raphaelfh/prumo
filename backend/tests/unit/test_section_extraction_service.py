@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage
+from app.schemas.llm_target import LlmTarget
 from app.services.extraction_prompt_input import PromptInputInfo
 from app.services.section_extraction_service import SectionExtractionService
 
@@ -108,6 +109,10 @@ def service(mock_db, mock_storage):
         svc._proposals = mock_proposal_instance
         svc._runs = mock_run_repo_instance
         svc._lifecycle = mock_lifecycle_instance
+        # Engine freeze: None = "the run names no engine", so the service keeps
+        # the settings-derived candidate. Stubbed explicitly rather than left to
+        # a MagicMock auto-attribute, which is not awaitable.
+        svc._runs.freeze_engine = AsyncMock(return_value=None)
 
         # B-2: the run-pinned snapshot provider is a service seam now. Default
         # to an empty pinned tree so ``extract_section`` routes through the
@@ -815,7 +820,6 @@ class TestExtractOneEntityTypeForRun:
             framework=None,
             kind="extraction",
             skip_fields_with_human_proposals=True,
-            model="gpt-4o-mini",
         )
 
         # Only the un-settled field is sent to the LLM (via the override) ...
@@ -857,7 +861,6 @@ class TestExtractOneEntityTypeForRun:
             framework=None,
             kind="extraction",
             skip_fields_with_human_proposals=True,
-            model="gpt-4o-mini",
         )
 
         assert result == {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
@@ -907,7 +910,6 @@ class TestExtractOneEntityTypeForRun:
             framework=None,
             kind="extraction",
             skip_fields_with_human_proposals=False,
-            model="gpt-4o-mini",
         )
 
         service._fields_with_recent_human_proposal.assert_not_called()
@@ -965,7 +967,6 @@ class TestExtractOneEntityTypeForRun:
             framework=None,
             kind="extraction",
             skip_fields_with_human_proposals=True,
-            model="gpt-4o-mini",
         )
 
         # Only the untouched field is sent to the LLM, via the override ...
@@ -1173,8 +1174,8 @@ class TestCreateSuggestions:
         # was generated and concurrent sections don't clobber each other.
         self._wire_one_field(service)
         entity_type_id = uuid4()
+        service._engine = LlmTarget(provider="openai", model="gpt-x")
         service._run_provenance = service._build_run_provenance(
-            model="gpt-x",
             prompt_name="extract",
             prompt_version="1",
             usage=LlmUsage(prompt_tokens=10, completion_tokens=5),
@@ -1212,8 +1213,9 @@ class TestCreateSuggestions:
         run = self._make_run()
         et_a, et_b = uuid4(), uuid4()
 
+        service._engine = LlmTarget(provider="openai", model="m-a")
         service._run_provenance = service._build_run_provenance(
-            model="m-a", prompt_name="extract", prompt_version="1"
+            prompt_name="extract", prompt_version="1"
         )
         await service._create_suggestions(
             project_id=run.project_id,
@@ -1223,8 +1225,9 @@ class TestCreateSuggestions:
             extracted_data={"f1": "value"},
             run=run,
         )
+        service._engine = LlmTarget(provider="openai", model="m-b")
         service._run_provenance = service._build_run_provenance(
-            model="m-b", prompt_name="extract", prompt_version="1"
+            prompt_name="extract", prompt_version="1"
         )
         await service._create_suggestions(
             project_id=run.project_id,
@@ -1379,8 +1382,8 @@ class TestCreateSuggestions:
         # what was actually sent. No prompt_text — the system prompt lives in the
         # prompt_composition (a duplicate flat copy serves no reader).
         service.user_id = "user-123"
+        service._engine = LlmTarget(provider="openai", model="gpt-4o-mini")
         prov = service._build_run_provenance(
-            model="gpt-4o-mini",
             prompt_name="section_extraction",
             prompt_version="v3",
         )
@@ -1403,7 +1406,6 @@ class TestCreateSuggestions:
         )
 
         snap = service._build_run_provenance(
-            model="gpt-4o-mini",
             prompt_name="section_extraction",
             prompt_version="v1",
             usage=LlmUsage(prompt_tokens=10, completion_tokens=5),
@@ -1423,9 +1425,7 @@ class TestCreateSuggestions:
     def test_build_run_provenance_omits_optional_keys_when_absent(self, service):
         # No usage / no composition → those keys are simply absent (the no-LLM
         # and legacy-caller shapes), never null placeholders.
-        snap = service._build_run_provenance(
-            model="m", prompt_name="section_extraction", prompt_version="v1"
-        )
+        snap = service._build_run_provenance(prompt_name="section_extraction", prompt_version="v1")
         assert "tokens" not in snap
         assert "prompt_composition" not in snap
 
@@ -2169,7 +2169,7 @@ class TestExtractWithLlmWiring:
     async def test_no_fields_skips_llm_entirely(self, service):
         with patch("app.services.section_extraction_service.extract_structured") as mock_x:
             data, usage = await service._extract_with_llm(
-                pdf_text="text", entity_type=self._entity_type(0), model="gpt-4o-mini"
+                pdf_text="text", entity_type=self._entity_type(0)
             )
         assert data == {}
         assert usage.total_tokens == 0
@@ -2206,7 +2206,6 @@ class TestExtractWithLlmWiring:
             extracted, usage = await service._extract_with_llm(
                 pdf_text="Sample text from PDF...",
                 entity_type=entity_type,
-                model="gpt-4o-mini",
             )
         assert extracted["field_0"]["value"] == "150"
         assert extracted["field_1"]["value"] == "RCT"
@@ -2244,9 +2243,7 @@ class TestExtractWithLlmWiring:
             ),
             patch("app.services.section_extraction_service.build_model", MagicMock()),
         ):
-            data, usage = await service._extract_with_llm(
-                pdf_text="text", entity_type=entity_type, model="gpt-4o-mini"
-            )
+            data, usage = await service._extract_with_llm(pdf_text="text", entity_type=entity_type)
         assert len(data) == 30
         assert usage.prompt_tokens == 10 * len(chunk_models)
 
@@ -2275,7 +2272,6 @@ class TestExtractWithLlmWiring:
             await service._extract_with_llm(
                 pdf_text="text",
                 entity_type=entity_type,
-                model="gpt-4o-mini",
                 kind="extraction",
                 framework=None,
             )
@@ -2311,7 +2307,6 @@ class TestExtractWithLlmWiring:
             await service._extract_with_llm(
                 pdf_text="text",
                 entity_type=entity_type,
-                model="gpt-4o-mini",
                 kind="quality_assessment",
                 framework="PROBAST",
             )
@@ -2351,9 +2346,7 @@ class TestExtractWithLlmWiring:
             patch("app.services.section_extraction_service.extract_structured", mock_x),
             patch("app.services.section_extraction_service.build_model", MagicMock()),
         ):
-            await service._extract_with_llm(
-                pdf_text="ARTICLE BODY", entity_type=entity_type, model="gpt-4o-mini"
-            )
+            await service._extract_with_llm(pdf_text="ARTICLE BODY", entity_type=entity_type)
 
         comp = service._run_provenance["prompt_composition"]
         # The article is replaced by a marker in the persisted instruction, and
@@ -2394,7 +2387,6 @@ class TestExtractWithLlmWiring:
             await service._extract_with_llm(
                 pdf_text="text",
                 entity_type=entity_type,
-                model="gpt-4o-mini",
                 kind="quality_assessment",
                 framework="PROBAST",
             )
@@ -2415,9 +2407,7 @@ class TestExtractWithLlmWiring:
             patch("app.services.section_extraction_service.build_model", MagicMock()),
             pytest.raises(UnexpectedModelBehavior),
         ):
-            await service._extract_with_llm(
-                pdf_text="text", entity_type=self._entity_type(1), model="gpt-4o-mini"
-            )
+            await service._extract_with_llm(pdf_text="text", entity_type=self._entity_type(1))
 
     async def test_memory_context_included_in_user_prompt(self, service):
         from app.llm.schema import build_output_models
@@ -2443,7 +2433,6 @@ class TestExtractWithLlmWiring:
             await service._extract_with_llm(
                 pdf_text="article text",
                 entity_type=entity_type,
-                model="gpt-4o-mini",
                 memory_context=[
                     {"entity_type_name": "Participants", "summary": "N=100 patients"},
                 ],

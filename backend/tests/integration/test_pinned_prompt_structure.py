@@ -459,7 +459,6 @@ async def test_pinned_but_deleted_live_paths(db_session: AsyncSession) -> None:
         framework=None,
         kind="extraction",
         skip_fields_with_human_proposals=False,
-        model="gpt-test",
     )
     assert result == {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
     service._extract_with_llm.assert_not_called()
