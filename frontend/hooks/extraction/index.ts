@@ -3,7 +3,6 @@
  */
 
 export { useExtractedValues } from './useExtractedValues';
-export { useFieldManagement } from './useFieldManagement';
 export { useExtractionProgress } from './useExtractionProgress';
 export { useGlobalTemplates } from './useGlobalTemplates';
 

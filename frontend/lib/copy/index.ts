@@ -19,6 +19,7 @@ import {shared} from './shared';
 import {pdf} from './pdf';
 import {runs} from './runs';
 import {parsing} from './parsing';
+import {templateConfig} from './templateConfig';
 
 export {
     common,
@@ -38,6 +39,7 @@ export {
     pdf,
     runs,
     parsing,
+    templateConfig,
 };
 
 const copy = {
@@ -58,6 +60,7 @@ const copy = {
     pdf,
     runs,
     parsing,
+    templateConfig,
 } as const;
 
 export type CopyNamespace = keyof typeof copy;

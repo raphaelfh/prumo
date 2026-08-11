@@ -6,7 +6,8 @@ Follows the same encryption pattern used by ZoteroService.
 """
 
 import base64
-from typing import Any
+from enum import StrEnum
+from typing import Any, NamedTuple
 from uuid import UUID
 
 import httpx
@@ -71,6 +72,28 @@ def list_providers_info() -> list[dict[str, str]]:
             )
         result.append({"id": pid, **_PROVIDER_METADATA[pid]})
     return result
+
+
+class KeyScope(StrEnum):
+    """Whose key paid for a call — the part of key resolution that is safe to
+    record. §5.2 requires provenance to name the scope and NEVER the key."""
+
+    USER_BYOK = "user_byok"
+    """The caller's own stored key."""
+    GLOBAL_SERVICE = "global_service"
+    """prumo's shared key, used when the caller has none."""
+
+
+class ResolvedKey(NamedTuple):
+    """A decrypted key plus whose it is.
+
+    A plain ``str`` return made the two sources indistinguishable, so a run
+    could not record which one it ran on. Keep the two apart at every call
+    site: ``key`` goes to the provider, ``scope`` goes to provenance.
+    """
+
+    key: str
+    scope: KeyScope
 
 
 class APIKeyService(LoggerMixin):
@@ -230,20 +253,29 @@ class APIKeyService(LoggerMixin):
         self,
         provider: str,
         use_fallback: bool = True,
-    ) -> str | None:
+    ) -> ResolvedKey | None:
         """
-        Get decrypted API key for a provider.
+        Get the decrypted API key for a provider, and WHOSE key it is.
 
         Priority:
         1. User default key for provider
         2. Fallback to global key (if use_fallback=True)
+
+        The scope rides along because the two branches below are otherwise
+        indistinguishable to the caller: both used to return a bare ``str``,
+        so a run could not record whether it was billed to the reviewer's own
+        key or to prumo's shared one. Provenance needs that (§5.2) and there
+        is no side channel for it — ``update_last_used`` is a write nobody
+        reads back, and it races with any other run for the same user.
 
         Args:
             provider: Provider.
             use_fallback: Whether to use global key as fallback.
 
         Returns:
-            Decrypted API key or None.
+            The key and its scope, or None when neither source has one.
+            The KEY ITSELF must never be logged or written to provenance —
+            only ``scope``.
         """
         # If user_id is invalid (tests), go straight to fallback.
         if self._user_id is not None:
@@ -254,11 +286,13 @@ class APIKeyService(LoggerMixin):
                 # Update last_used_at
                 await self._repo.update_last_used(default_key.id)
                 # Decrypt and return
-                return self._decrypt(default_key.encrypted_api_key)
+                return ResolvedKey(self._decrypt(default_key.encrypted_api_key), KeyScope.USER_BYOK)
 
         # Fallback to global key
         if use_fallback:
-            return self._get_global_key(provider)
+            global_key = self._get_global_key(provider)
+            if global_key is not None:
+                return ResolvedKey(global_key, KeyScope.GLOBAL_SERVICE)
 
         return None
 

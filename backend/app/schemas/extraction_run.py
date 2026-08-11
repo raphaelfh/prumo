@@ -218,6 +218,9 @@ class RunViewEntityType(BaseModel):
     name: str
     label: str
     description: str | None = None
+    # Group entry noun (B-8); pre-B-8 snapshots lack the key -> None and
+    # consumers fall back to "model".
+    entry_label: str | None = None
     parent_entity_type_id: UUID | None = None
     cardinality: str
     role: str

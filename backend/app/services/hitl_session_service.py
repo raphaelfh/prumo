@@ -35,6 +35,7 @@ from app.services.run_lifecycle_service import (
     last_human_activity_order,
 )
 from app.services.template_clone_service import (
+    PendingConfigDraftError,
     TemplateCloneService,
     TemplateNotFoundError,
 )
@@ -166,12 +167,23 @@ class HITLSessionService:
                     "kind=quality_assessment requires either project_template_id "
                     "or global_template_id"
                 )
-            clone = await self._clone.clone(
-                project_id=project_id,
-                global_template_id=global_template_id,
-                user_id=user_id,
-                kind=kind,
-            )
+            try:
+                clone = await self._clone.clone(
+                    project_id=project_id,
+                    global_template_id=global_template_id,
+                    user_id=user_id,
+                    kind=kind,
+                )
+            except PendingConfigDraftError:
+                # B-4: a pending config draft must NEVER gate session-open
+                # (the global constraint that keeps reviewers out of the
+                # manager's edit loop). The refusal only fires on an
+                # EXISTING clone's drift heal — use that clone AS-IS: the
+                # run pins to the current ACTIVE version and the draft
+                # stays unpublished until the manager presses Publish.
+                existing = await self._clone.resolve_existing_clone(project_id, global_template_id)
+                assert existing is not None, "PendingConfigDraftError implies an existing clone"
+                return existing.id
             return clone.project_template_id
 
         raise HITLSessionInputError(

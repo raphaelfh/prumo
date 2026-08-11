@@ -67,7 +67,7 @@ import {useIsNarrow} from '@/hooks/use-mobile';
 import {useQueryClient} from '@tanstack/react-query';
 import {loadExtractionTableArticles} from '@/services/articlesService';
 import {getCurrentUserId} from '@/services/authService';
-import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
+import {useActiveTemplateStructure} from '@/hooks/extraction/useActiveTemplateStructure';
 import {
   useArticleExtractionValues,
   articleExtractionValuesKeys,
@@ -187,8 +187,12 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
 
   // Required-field structure (cached by template id) for the canonical
   // progress metric shared with the form header and QA list.
-  const {entityTypes, isLoading: entityTypesLoading} =
-    useTemplateEntityTypes(templateId);
+  // ACTIVE snapshot (B-3a); errors gate the render — see HITLArticleTable.
+  const {
+    entityTypes,
+    isLoading: entityTypesLoading,
+    isError: entityTypesError,
+  } = useActiveTemplateStructure(projectId, templateId);
   // Per-article values, shared with the HITL list and dashboard (replaces this
   // table's own instances/states/proposals fetch). Run-scoped to each
   // article's form run for kind='extraction'.
@@ -575,7 +579,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
     });
 
     // Loading state — skeleton matching table layout (frontend-ux compact)
-  if (loading || entityTypesLoading || valuesLoading) {
+  if (loading || entityTypesLoading || entityTypesError || valuesLoading) {
     return (
         <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">

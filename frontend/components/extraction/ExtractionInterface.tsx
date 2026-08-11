@@ -6,7 +6,6 @@
  */
 
 import {useEffect, useState} from 'react';
-import {useQueryClient} from '@tanstack/react-query';
 import {useSearchParams} from 'react-router';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
@@ -19,7 +18,7 @@ import {
 } from '@/hooks/hitl/useHITLProjectTemplates';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {useArticleExtractionValues} from '@/hooks/extraction/useArticleExtractionValues';
-import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
+import {useActiveTemplateStructure} from '@/hooks/extraction/useActiveTemplateStructure';
 import {computeRowProgress} from '@/lib/extraction/progress';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
@@ -28,8 +27,7 @@ import {TemplateConfigEditor} from './TemplateConfigEditor';
 import {useAuth} from '@/contexts/AuthContext';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
 import {loadProjectArticles} from '@/services/articlesService';
-import {runsKeys} from '@/hooks/runs/types';
-import {templateEntityTypesKeys} from '@/lib/query-keys/extraction';
+import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 
@@ -39,7 +37,7 @@ interface ExtractionInterfaceProps {
 
 export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
+  const {invalidateAfterImport} = useTemplateConfigCaches(projectId, undefined);
   const [searchParams, setSearchParams] = useSearchParams();
 
     // Read tab from URL or use default
@@ -62,7 +60,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     activeTemplate?.id,
     user?.id,
   );
-  const { entityTypes } = useTemplateEntityTypes(activeTemplate?.id);
+  // ACTIVE snapshot (B-3a). Loading/error must render a placeholder, never
+  // stats computed from an empty tree (reads as inflated completeness).
+  const {
+    entityTypes,
+    isLoading: structureLoading,
+    isError: structureError,
+  } = useActiveTemplateStructure(projectId, activeTemplate?.id);
 
   const extractionStats = (() => {
     const totalArticles = articles.length;
@@ -211,7 +215,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
 
     // Render Dashboard tab
-  const renderDashboard = () => (
+  const renderDashboard = () => {
+    // Same gate as the worklist tables: while the active-version structure
+    // is loading — or errored — show a placeholder, never numbers from [].
+    if (activeTemplate && (structureLoading || structureError)) {
+      return <Skeleton data-testid="dashboard-skeleton" className="h-48 w-full rounded-md border" />;
+    }
+    return (
       <div className="space-y-4">
           {/* Dense stat strip — one bordered row of figures (replaces the
               three oversized single-number cards). */}
@@ -295,8 +305,9 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           </CardContent>
         </Card>
       )}
-    </div>
-  );
+      </div>
+    );
+  };
 
     // Render tab content (only when not loading templates)
   const renderTabContent = () => {
@@ -549,11 +560,9 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         initialTemplateId={importInitialTemplateId}
         onTemplateImported={async (templateId?: string) => {
             setImportInitialTemplateId(null);
-            // Import may have healed/rewritten the clone's structure — the
-            // live-structure and run-view caches must not keep serving the
-            // pre-import shape.
-            void queryClient.invalidateQueries({queryKey: templateEntityTypesKeys.all});
-            void queryClient.invalidateQueries({queryKey: runsKeys.all});
+            // Import publishes server-side, possibly for a DIFFERENT
+            // template — id-free .all invalidation (shared contract).
+            void invalidateAfterImport();
             // Refresh templates without reloading the page
           const updatedTemplates = await refreshTemplates() || [];
             // Stay on configuration tab

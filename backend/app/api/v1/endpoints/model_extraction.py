@@ -152,7 +152,7 @@ async def extract_models(
         project_id=str(payload.project_id),
         article_id=str(payload.article_id),
         template_id=str(payload.template_id),
-        model=payload.model,
+        model=settings.LLM_DEFAULT_MODEL,
     )
 
     await ensure_project_member(db, payload.project_id, current_user_sub)
@@ -163,7 +163,9 @@ async def extract_models(
 
         # Buscar API key do user (BYOK) with fallback for global
         api_key_service = APIKeyService(db=db, user_id=user.sub)
-        user_llm_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+        # Scope is dropped: ModelExtractionService writes no provenance.
+        _resolved_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+        user_llm_key = _resolved_key.key if _resolved_key is not None else None
 
         service = ModelExtractionService(
             db=db,
@@ -177,7 +179,8 @@ async def extract_models(
             project_id=payload.project_id,
             article_id=payload.article_id,
             template_id=payload.template_id,
-            model=payload.model or settings.LLM_DEFAULT_MODEL,
+            # C1a: server-owned engine — never a client-supplied string.
+            model=settings.LLM_DEFAULT_MODEL,
             run_id=payload.run_id,
         )
 

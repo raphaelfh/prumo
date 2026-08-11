@@ -18,11 +18,6 @@ export type ExtractionRunStage =
   | 'finalized'
   | 'cancelled';
 
-/**
- * Supported models for AI extraction
- */
-export type SupportedAIModel = 'gpt-4o-mini' | 'gpt-4o' | 'gpt-5';
-
 // =================== AI SUGGESTIONS (presentation shape) ===================
 
 /**
@@ -138,9 +133,6 @@ export interface SectionExtractionRequest {
    * Omit for callers without an active session.
    */
   runId?: string;
-  options?: {
-    model?: SupportedAIModel;
-  };
 }
 
 /**
@@ -187,9 +179,6 @@ export interface ModelExtractionRequest {
    * standalone (e.g. bulk table) extraction where no session run exists.
    */
   runId?: string;
-  options?: {
-    model?: SupportedAIModel;
-  };
 }
 
 /**
@@ -213,9 +202,6 @@ export interface BatchSectionExtractionRequest {
   extractAllSections: true; // Flag for batch extraction
   sectionIds?: string[]; // Filter specific sections (for chunking)
   pdfText?: string; // Pre-processed PDF text (avoids reprocessing)
-  options?: {
-    model?: SupportedAIModel;
-  };
 }
 
 /**

@@ -782,6 +782,54 @@
         "title": "ApiResponse[DeleteAPIKeyResult]",
         "type": "object"
       },
+      "ApiResponse_DiscardDraftResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiscardDraftResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[DiscardDraftResponse]",
+        "type": "object"
+      },
       "ApiResponse_ExportCancelResponse_": {
         "properties": {
           "data": {
@@ -1502,6 +1550,54 @@
         "title": "ApiResponse[RepublishTemplateVersionResponse]",
         "type": "object"
       },
+      "ApiResponse_RestoreVersionResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RestoreVersionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[RestoreVersionResponse]",
+        "type": "object"
+      },
       "ApiResponse_ReviewerDecisionResponse_": {
         "properties": {
           "data": {
@@ -1790,6 +1886,534 @@
         "title": "ApiResponse[RunViewResponse]",
         "type": "object"
       },
+      "ApiResponse_SectionDeleteResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SectionDeleteResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[SectionDeleteResponse]",
+        "type": "object"
+      },
+      "ApiResponse_SectionRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SectionRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[SectionRead]",
+        "type": "object"
+      },
+      "ApiResponse_TakeOverDraftLockResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TakeOverDraftLockResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TakeOverDraftLockResponse]",
+        "type": "object"
+      },
+      "ApiResponse_TemplateActiveVersionRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateActiveVersionRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateActiveVersionRead]",
+        "type": "object"
+      },
+      "ApiResponse_TemplateConfigDiffRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateConfigDiffRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateConfigDiffRead]",
+        "type": "object"
+      },
+      "ApiResponse_TemplateConfigStatusRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateConfigStatusRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateConfigStatusRead]",
+        "type": "object"
+      },
+      "ApiResponse_TemplateFieldDeleteResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateFieldDeleteResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateFieldDeleteResponse]",
+        "type": "object"
+      },
+      "ApiResponse_TemplateFieldRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateFieldRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateFieldRead]",
+        "type": "object"
+      },
+      "ApiResponse_TemplateFieldReorderResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateFieldReorderResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateFieldReorderResponse]",
+        "type": "object"
+      },
+      "ApiResponse_TemplateInstructionRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateInstructionRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateInstructionRead]",
+        "type": "object"
+      },
+      "ApiResponse_TemplateVersionHistoryRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateVersionHistoryRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateVersionHistoryRead]",
+        "type": "object"
+      },
       "ApiResponse_Union_RunSummaryResponse__NoneType__": {
         "properties": {
           "data": {
@@ -2008,6 +2632,54 @@
           "ok"
         ],
         "title": "ApiResponse[UpdateTemplateActiveResponse]",
+        "type": "object"
+      },
+      "ApiResponse_UpdateTemplateInstructionResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateTemplateInstructionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[UpdateTemplateInstructionResponse]",
         "type": "object"
       },
       "ApiResponse_list_AISuggestionHistoryItem__": {
@@ -2529,6 +3201,38 @@
         ],
         "title": "ArticleRunRef",
         "type": "object"
+      },
+      "ChangeTier": {
+        "description": "Severity tier (D2) \u2014 what a reviewer stands to lose.",
+        "enum": [
+          "additive",
+          "cosmetic",
+          "semantic",
+          "destructive"
+        ],
+        "title": "ChangeTier",
+        "type": "string"
+      },
+      "ChangeVariant": {
+        "description": "The shape of one row \u2014 the client's discriminator (D1).\n\nOne member per reachable ``(kind, node_kind[, option polarity])`` the\nengine can emit, so a renderer never has to re-derive which of the\nengine's overloaded fields are meaningful.",
+        "enum": [
+          "template_instruction_added",
+          "template_instruction_removed",
+          "template_instruction_modified",
+          "entity_type_added",
+          "entity_type_removed",
+          "entity_type_modified",
+          "entity_type_fields_reordered",
+          "field_added",
+          "field_removed",
+          "field_moved",
+          "field_modified",
+          "field_option_added",
+          "field_option_removed",
+          "field_options_reordered"
+        ],
+        "title": "ChangeVariant",
+        "type": "string"
       },
       "CloneTemplateRequest": {
         "properties": {
@@ -3188,6 +3892,129 @@
         "title": "DeleteAPIKeyResult",
         "type": "object"
       },
+      "DiffStatus": {
+        "description": "Whether a config diff could be computed, and when not, why (D9).\n\nOne closed 3-way choice rather than a pair of booleans plus a reason: an\nun-diffable template is a state the Publish sheet renders, never an\nerror, and only :attr:`AVAILABLE` can carry rows. Encoding it as\nindependent fields would make \"no diff, yet here are some changes\"\nexpressible, which is exactly the payload no client should have to\ndefend against.",
+        "enum": [
+          "available",
+          "initial_version",
+          "baseline_too_old"
+        ],
+        "title": "DiffStatus",
+        "type": "string"
+      },
+      "DiscardDraftRequest": {
+        "properties": {
+          "acknowledge_orphans": {
+            "default": false,
+            "title": "Acknowledge Orphans",
+            "type": "boolean"
+          }
+        },
+        "title": "DiscardDraftRequest",
+        "type": "object"
+      },
+      "DiscardDraftResponse": {
+        "description": "What Discard actually undid (B-9c1 D11). No diff payload \u2014 B-9b owns\nthat shape.",
+        "properties": {
+          "created_entity_types": {
+            "title": "Created Entity Types",
+            "type": "integer"
+          },
+          "created_fields": {
+            "title": "Created Fields",
+            "type": "integer"
+          },
+          "deleted_entity_types": {
+            "title": "Deleted Entity Types",
+            "type": "integer"
+          },
+          "deleted_fields": {
+            "title": "Deleted Fields",
+            "type": "integer"
+          },
+          "draft_was_open": {
+            "title": "Draft Was Open",
+            "type": "boolean"
+          },
+          "instruction_reset": {
+            "title": "Instruction Reset",
+            "type": "boolean"
+          },
+          "kept": {
+            "items": {
+              "$ref": "#/components/schemas/DiscardKeptNode"
+            },
+            "title": "Kept",
+            "type": "array"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          },
+          "updated_entity_types": {
+            "title": "Updated Entity Types",
+            "type": "integer"
+          },
+          "updated_fields": {
+            "title": "Updated Fields",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_template_id",
+          "draft_was_open",
+          "created_entity_types",
+          "deleted_entity_types",
+          "updated_entity_types",
+          "created_fields",
+          "deleted_fields",
+          "updated_fields",
+          "instruction_reset",
+          "kept"
+        ],
+        "title": "DiscardDraftResponse",
+        "type": "object"
+      },
+      "DiscardKeptNode": {
+        "description": "One node Discard could NOT undo, and why (B-9c1 D4).\n\nEither deleting it would break a RESTRICT reference to real run data, or\nrestoring it would collide with something that does \u2014 so the draft\nshrinks around it instead of failing wholesale.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "node_id": {
+            "format": "uuid",
+            "title": "Node Id",
+            "type": "string"
+          },
+          "node_kind": {
+            "enum": [
+              "entity_type",
+              "field"
+            ],
+            "title": "Node Kind",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "has_recorded_data",
+              "related_to_kept_node",
+              "name_taken_by_kept_node"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "node_kind",
+          "label",
+          "reason"
+        ],
+        "title": "DiscardKeptNode",
+        "type": "object"
+      },
       "DownloadAttachmentResponse": {
         "description": "Response de download de attachment.",
         "properties": {
@@ -3789,7 +4616,7 @@
         "type": "object"
       },
       "ExtractionOptions": {
-        "description": "Opcoes de extraction.",
+        "description": "Extraction options \u2014 entirely inert.\n\nC1a removed ``model``: the engine is server-owned, so a client can no\nlonger choose it. The two fields left are inert too \u2014 nothing in\n``backend/app`` dereferences ``payload.options``, and what actually\nreaches the LLM are the constants in ``app/llm/extractor.py``. They are\nflagged ``deprecated`` in the OpenAPI contract while staying accepted on\nthe wire, so clients can be migrated off them before they are removed.",
         "properties": {
           "max_tokens": {
             "anyOf": [
@@ -3802,16 +4629,12 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
             "title": "Max Tokens"
-          },
-          "model": {
-            "default": "gpt-4o-mini",
-            "description": "Model to use",
-            "title": "Model",
-            "type": "string"
           },
           "temperature": {
             "default": 0.1,
+            "deprecated": true,
             "maximum": 2.0,
             "minimum": 0.0,
             "title": "Temperature",
@@ -4335,25 +5158,13 @@
         "type": "object"
       },
       "ModelExtractionRequest": {
+        "additionalProperties": false,
         "description": "Request for extraction de modelos de predicao.",
         "properties": {
           "articleId": {
             "format": "uuid",
             "title": "Articleid",
             "type": "string"
-          },
-          "model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": "gpt-4o-mini",
-            "description": "Model to use",
-            "title": "Model"
           },
           "options": {
             "anyOf": [
@@ -4497,6 +5308,15 @@
         ],
         "title": "ModelHierarchyChildResponse",
         "type": "object"
+      },
+      "OpaqueValueState": {
+        "description": "A summarized opaque value that has no listable content (D3).\n\nThe wire row ships this instead of a server-rendered English word, so the\ncopy layer owns the sentence (``.claude/rules/frontend.md``) and a stored\nvalue that happens to read like the marker cannot be mistaken for it.",
+        "enum": [
+          "present",
+          "empty"
+        ],
+        "title": "OpaqueValueState",
+        "type": "string"
       },
       "OpenHITLSessionRequest": {
         "properties": {
@@ -4806,6 +5626,45 @@
         "title": "PublishedStateResponse",
         "type": "object"
       },
+      "RepublishTemplateVersionRequest": {
+        "description": "What the Publish button submits (B-9b2b).\n\nA REQUIRED body even though every field is optional, matching\n``DiscardDraftRequest``: the endpoint is the untrusted surface, and an\noptional body would let a bodyless POST skip the whole contract. With\nthe fields defaulted, a bodyless POST is a 422 rather than a silent\nunchecked publish.",
+        "properties": {
+          "acknowledged": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeAck"
+            },
+            "maxItems": 500,
+            "title": "Acknowledged",
+            "type": "array"
+          },
+          "expected_fingerprint": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Fingerprint"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "RepublishTemplateVersionRequest",
+        "type": "object"
+      },
       "RepublishTemplateVersionResponse": {
         "properties": {
           "changed": {
@@ -4833,6 +5692,60 @@
           "repinned_run_count"
         ],
         "title": "RepublishTemplateVersionResponse",
+        "type": "object"
+      },
+      "RestoreVersionResponse": {
+        "description": "What a Restore-vN staged (B-9e).\n\n``changed`` is False when the version's shape already matched the live\ntree: the writer touched no rows, so no draft marker was stamped and\nPublish stays disabled. The sheet says so rather than claiming a\nrestore that the UI cannot act on.",
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "created_entity_types": {
+            "title": "Created Entity Types",
+            "type": "integer"
+          },
+          "created_fields": {
+            "title": "Created Fields",
+            "type": "integer"
+          },
+          "deleted_entity_types": {
+            "title": "Deleted Entity Types",
+            "type": "integer"
+          },
+          "deleted_fields": {
+            "title": "Deleted Fields",
+            "type": "integer"
+          },
+          "kept_count": {
+            "title": "Kept Count",
+            "type": "integer"
+          },
+          "updated_entity_types": {
+            "title": "Updated Entity Types",
+            "type": "integer"
+          },
+          "updated_fields": {
+            "title": "Updated Fields",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "changed",
+          "created_entity_types",
+          "created_fields",
+          "deleted_entity_types",
+          "deleted_fields",
+          "updated_entity_types",
+          "updated_fields",
+          "kept_count"
+        ],
+        "title": "RestoreVersionResponse",
         "type": "object"
       },
       "ReviewerDecisionResponse": {
@@ -5255,6 +6168,17 @@
             ],
             "title": "Description"
           },
+          "entry_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Label"
+          },
           "fields": {
             "items": {
               "$ref": "#/components/schemas/RunViewField"
@@ -5656,6 +6580,111 @@
         "title": "SaveCredentialsResponse",
         "type": "object"
       },
+      "SectionCreateRequest": {
+        "additionalProperties": false,
+        "description": "Create a section (entity type) in the path template.\n\n``role`` is REQUIRED with no default \u2014 the column deliberately has no\nserver_default (migration 0016 step 4) so an insert that omits the\nstructural role fails loudly instead of silently becoming a\nstudy_section. ``sort_order`` is deliberately ABSENT: the server\ncomputes max+1 template-wide inside the INSERT itself, killing the\nfrontend's read-then-write race. The ``ck_role_parent`` validator\nbelow mirrors the DB CHECK of the same name; parent OWNERSHIP\n(parent belongs to THIS template) is the service's BOLA job.\n``entry_label`` is the repeating group's entry noun (B-8, D3):\ncontainer-only, defaulting to ``'model'``; containers always repeat\n(``cardinality='many'`` is enforced, never chosen).",
+        "properties": {
+          "cardinality": {
+            "enum": [
+              "one",
+              "many"
+            ],
+            "title": "Cardinality",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "entry_label": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Label"
+          },
+          "is_required": {
+            "default": false,
+            "title": "Is Required",
+            "type": "boolean"
+          },
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 50,
+            "minLength": 2,
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_entity_type_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Entity Type Id"
+          },
+          "role": {
+            "enum": [
+              "study_section",
+              "model_container",
+              "model_section"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "cardinality",
+          "role"
+        ],
+        "title": "SectionCreateRequest",
+        "type": "object"
+      },
+      "SectionDeleteResponse": {
+        "description": "Payload of the section DELETE endpoint.",
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "deleted"
+        ],
+        "title": "SectionDeleteResponse",
+        "type": "object"
+      },
       "SectionExtractionRequest": {
         "description": "Request for extraction de section.",
         "properties": {
@@ -5685,19 +6714,6 @@
             "default": false,
             "title": "Extractallsections",
             "type": "boolean"
-          },
-          "model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": "gpt-4o-mini",
-            "description": "Model to use",
-            "title": "Model"
           },
           "options": {
             "anyOf": [
@@ -5837,6 +6853,155 @@
           "success"
         ],
         "title": "SectionOutcome",
+        "type": "object"
+      },
+      "SectionRead": {
+        "description": "The full section row the config editor renders. Built from the\nORM row via ``model_validate`` \u2014 the create/rename response payload.\n\n``project_template_id`` is non-optional: the section service writes\nonly project-lineage rows (global-lineage sections are seed-owned).",
+        "properties": {
+          "cardinality": {
+            "enum": [
+              "one",
+              "many"
+            ],
+            "title": "Cardinality",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "entry_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Label"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_required": {
+            "title": "Is Required",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_entity_type_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Entity Type Id"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "study_section",
+              "model_container",
+              "model_section"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "project_template_id",
+          "name",
+          "label",
+          "cardinality",
+          "role",
+          "sort_order",
+          "is_required",
+          "created_at"
+        ],
+        "title": "SectionRead",
+        "type": "object"
+      },
+      "SectionUpdateRequest": {
+        "additionalProperties": false,
+        "description": "Partial section update: ``label`` (any role), ``entry_label``\n(repeating groups only) and ``cardinality`` (per-model sections\nonly) \u2014 the role rules live in the service, which owns the row\n(B-8, D5). At least one field must be provided, and explicit nulls\nare rejected (omit instead) so a smuggled ``{\"label\": null}`` can\nnever blank a column. Replaces the label-only SectionRenameRequest;\nthe pre-B-8 label-only body stays valid.",
+        "properties": {
+          "cardinality": {
+            "anyOf": [
+              {
+                "enum": [
+                  "one",
+                  "many"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cardinality"
+          },
+          "entry_label": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Label"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "title": "SectionUpdateRequest",
         "type": "object"
       },
       "SkippedFileEntry": {
@@ -6103,6 +7268,1410 @@
         "title": "SyncStatusResponse",
         "type": "object"
       },
+      "TakeOverDraftLockResponse": {
+        "description": "Who was displaced by a take-over (B-9f), so the UI can say whose\ndraft was taken. Both ``None`` when nobody held it.",
+        "properties": {
+          "previous_holder_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Holder Id"
+          },
+          "previous_holder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Holder Name"
+          }
+        },
+        "title": "TakeOverDraftLockResponse",
+        "type": "object"
+      },
+      "TemplateActiveVersionRead": {
+        "description": "The template's ACTIVE version tree \u2014 what the worklist/dashboard\nprogress and exports render from (B-3a). Never an empty stand-in for a\nmissing active version: that case is a typed 404.",
+        "properties": {
+          "entity_types": {
+            "items": {
+              "$ref": "#/components/schemas/RunViewEntityType"
+            },
+            "title": "Entity Types",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_id",
+          "version",
+          "entity_types"
+        ],
+        "title": "TemplateActiveVersionRead",
+        "type": "object"
+      },
+      "TemplateChangeAck": {
+        "description": "One destructive row the manager ticked, as ``(id, tier)`` (B-9b2b).\n\nThe tier travels WITH the id on purpose. It is deliberately not part of\nthe composite row id (``template_diff_read._row_id``), so an ack whose\ntier no longer matches the server's recomputed row reads as *absent*\nrather than as a match \u2014 which is exactly right, because a reviewer\nrecording an answer can escalate a row to DESTRUCTIVE without anyone\ntouching the template.",
+        "properties": {
+          "id": {
+            "maxLength": 200,
+            "title": "Id",
+            "type": "string"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/ChangeTier"
+          }
+        },
+        "required": [
+          "id",
+          "tier"
+        ],
+        "title": "TemplateChangeAck",
+        "type": "object"
+      },
+      "TemplateChangeRowRead": {
+        "description": "One diff row on the wire, built by ``app.services.template_diff_read``.\n\nNothing here is typed ``Any``: the baseline side of a diff is raw stored\nJSONB, and an opaque value is summarized server-side rather than\nshipped.",
+        "properties": {
+          "affects_recorded_data": {
+            "default": false,
+            "title": "Affects Recorded Data",
+            "type": "boolean"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "after_opaque_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpaqueValueState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attribute": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribute"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "before_opaque_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpaqueValueState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label_path": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Path",
+            "type": "array"
+          },
+          "reorder_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reorder Count"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/ChangeTier"
+          },
+          "variant": {
+            "$ref": "#/components/schemas/ChangeVariant"
+          }
+        },
+        "required": [
+          "id",
+          "variant",
+          "tier",
+          "label_path"
+        ],
+        "title": "TemplateChangeRowRead",
+        "type": "object"
+      },
+      "TemplateConfigDiffBuckets": {
+        "description": "The rows grouped by severity tier \u2014 one field per ``ChangeTier``.\n\nNamed fields rather than a map keyed by the enum, so the generated\nclient gets four exhaustive keys instead of an open ``Record``. A unit\ntest pins the field names to the enum's values, because a client that\nbuckets by ``row.tier`` has to find a bucket under that exact name.",
+        "properties": {
+          "additive": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeRowRead"
+            },
+            "title": "Additive",
+            "type": "array"
+          },
+          "cosmetic": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeRowRead"
+            },
+            "title": "Cosmetic",
+            "type": "array"
+          },
+          "destructive": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeRowRead"
+            },
+            "title": "Destructive",
+            "type": "array"
+          },
+          "semantic": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateChangeRowRead"
+            },
+            "title": "Semantic",
+            "type": "array"
+          }
+        },
+        "title": "TemplateConfigDiffBuckets",
+        "type": "object"
+      },
+      "TemplateConfigDiffRead": {
+        "description": "What the open draft would publish (slice B-9b2a).\n\n``status`` names which of :class:`~app.domain.template_change.DiffStatus`'s\nthree shapes this is; all three are HTTP 200, because an un-diffable\ntemplate is a state the sheet explains rather than an error. Only\n``available`` carries rows \u2014 the other two leave the buckets at their\nempty default.",
+        "properties": {
+          "changes": {
+            "$ref": "#/components/schemas/TemplateConfigDiffBuckets"
+          },
+          "fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fingerprint"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DiffStatus"
+          }
+        },
+        "required": [
+          "project_template_id",
+          "status"
+        ],
+        "title": "TemplateConfigDiffRead",
+        "type": "object"
+      },
+      "TemplateConfigStatusRead": {
+        "description": "Draft/publish status for the Configuration tab (slice B-4).\n\n``has_pending_changes`` mirrors the trigger-stamped\n``config_draft_since``; ``active_version`` is None only for a\ntemplate that never published (legacy shapes).",
+        "properties": {
+          "active_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Version"
+          },
+          "discard_available": {
+            "default": false,
+            "title": "Discard Available",
+            "type": "boolean"
+          },
+          "draft_holder_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Holder Id"
+          },
+          "draft_holder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Holder Name"
+          },
+          "has_pending_changes": {
+            "title": "Has Pending Changes",
+            "type": "boolean"
+          },
+          "is_draft_holder": {
+            "default": false,
+            "title": "Is Draft Holder",
+            "type": "boolean"
+          },
+          "pending_change_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Change Count"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_template_id",
+          "has_pending_changes",
+          "active_version"
+        ],
+        "title": "TemplateConfigStatusRead",
+        "type": "object"
+      },
+      "TemplateDiscardRefusalCode": {
+        "description": "Why ``POST .../discard-draft`` returned 409 (B-9c2 D1).\n\nDeliberately NOT part of :class:`app.schemas.common.ApiErrorCode`: that\nenum is the cross-cutting vocabulary every client branches on, and these\nfive are one endpoint's private outcomes. Same call as\n``ExtractionErrorCode`` \u2014 slice-local codes stay slice-local, so the\nglobal contract does not grow a member per feature.\n\nThe split that matters to the caller: ``ORPHAN_ACK_REQUIRED`` is a\n*question* (re-post with ``acknowledge_orphans``), the other four are\nrefusals no retry of the same request can satisfy.",
+        "enum": [
+          "ORPHAN_ACK_REQUIRED",
+          "NARROW_BASELINE",
+          "CARDINALITY_DOWNGRADE_BLOCKED",
+          "CONTAINER_SWAP_UNSUPPORTED",
+          "DISCARD_RACED"
+        ],
+        "title": "TemplateDiscardRefusalCode",
+        "type": "string"
+      },
+      "TemplateDiscardRefusalDetails": {
+        "description": "The ``error.details`` payload of an ``ORPHAN_ACK_REQUIRED`` refusal.\n\nOne entry per FIELD: ``allowed_values`` is diffed per option code, so a\nfield losing two recorded options is two changes and one orphan.",
+        "properties": {
+          "orphans": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateDiscardRefusalOrphan"
+            },
+            "title": "Orphans",
+            "type": "array"
+          }
+        },
+        "title": "TemplateDiscardRefusalDetails",
+        "type": "object"
+      },
+      "TemplateDiscardRefusalError": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/TemplateDiscardRefusalCode"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateDiscardRefusalDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "TemplateDiscardRefusalError",
+        "type": "object"
+      },
+      "TemplateDiscardRefusalOrphan": {
+        "description": "One field whose recorded answers the Discard would strand.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          }
+        },
+        "required": [
+          "node_id",
+          "label"
+        ],
+        "title": "TemplateDiscardRefusalOrphan",
+        "type": "object"
+      },
+      "TemplateDiscardRefusalResponse": {
+        "description": "The 409 body, declared so the payload reaches ``schema.d.ts`` typed.\n\nDocuments what ``app_error_handler`` actually writes \u2014 ``details`` under\n``error``, never a ``data`` slot. Without this the generated client sees\n``ErrorDetail.details: dict[str, Any] | None`` and types the orphan list\nas ``unknown``.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/TemplateDiscardRefusalError"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "TemplateDiscardRefusalResponse",
+        "type": "object"
+      },
+      "TemplateDraftLockRefusalCode": {
+        "description": "Why a config write was refused by the advisory editor lock (B-9f).\n\nSlice-local, like its two siblings: this is one surface's outcome, not\npart of the cross-cutting ``ApiErrorCode`` vocabulary.",
+        "enum": [
+          "DRAFT_LOCK_HELD"
+        ],
+        "title": "TemplateDraftLockRefusalCode",
+        "type": "string"
+      },
+      "TemplateDraftLockRefusalDetails": {
+        "description": "Who holds the draft, so \"Take over\" is not a blind click.",
+        "properties": {
+          "holder_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holder Id"
+          },
+          "holder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holder Name"
+          }
+        },
+        "title": "TemplateDraftLockRefusalDetails",
+        "type": "object"
+      },
+      "TemplateDraftLockRefusalError": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/TemplateDraftLockRefusalCode"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateDraftLockRefusalDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "TemplateDraftLockRefusalError",
+        "type": "object"
+      },
+      "TemplateDraftLockRefusalResponse": {
+        "description": "The 409 body, declared so the generated client types the holder.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/TemplateDraftLockRefusalError"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "TemplateDraftLockRefusalResponse",
+        "type": "object"
+      },
+      "TemplateFieldCreateRequest": {
+        "additionalProperties": false,
+        "description": "Create a field in a section of the path template.\n\n``entity_type_id`` names the owning section (mirrors the frontend\n``ExtractionFieldInsert``); the service re-verifies it belongs to the\npath template (BOLA chain entity_type -> template -> project).\n``sort_order`` is client-supplied (panel 10): it is a per-section\nrendering convention computed at dequeue time by the optimistic-row\nghost chain \u2014 the server validates >= 0 and otherwise trusts it.",
+        "properties": {
+          "allow_other": {
+            "default": false,
+            "title": "Allow Other",
+            "type": "boolean"
+          },
+          "allowed_units": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 50,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Units"
+          },
+          "allowed_values": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Values"
+          },
+          "allows_not_applicable": {
+            "default": false,
+            "title": "Allows Not Applicable",
+            "type": "boolean"
+          },
+          "allows_not_evaluated": {
+            "default": false,
+            "title": "Allows Not Evaluated",
+            "type": "boolean"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "entity_type_id": {
+            "format": "uuid",
+            "title": "Entity Type Id",
+            "type": "string"
+          },
+          "field_type": {
+            "enum": [
+              "text",
+              "number",
+              "date",
+              "select",
+              "multiselect",
+              "boolean"
+            ],
+            "title": "Field Type",
+            "type": "string"
+          },
+          "is_required": {
+            "default": false,
+            "title": "Is Required",
+            "type": "boolean"
+          },
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "llm_description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Description"
+          },
+          "name": {
+            "maxLength": 50,
+            "minLength": 2,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Name",
+            "type": "string"
+          },
+          "other_label": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Label"
+          },
+          "other_placeholder": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Placeholder"
+          },
+          "sort_order": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "validation_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Schema"
+          }
+        },
+        "required": [
+          "entity_type_id",
+          "name",
+          "label",
+          "field_type"
+        ],
+        "title": "TemplateFieldCreateRequest",
+        "type": "object"
+      },
+      "TemplateFieldDeleteResponse": {
+        "description": "Payload of the field DELETE endpoint.",
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "deleted"
+        ],
+        "title": "TemplateFieldDeleteResponse",
+        "type": "object"
+      },
+      "TemplateFieldMoveRequest": {
+        "additionalProperties": false,
+        "description": "Move a field to another section: destination + landing position.\n\nBoth required \u2014 a move always names where it lands. The service\nrefuses a destination outside the path template (the cross-template\nhole this slice closes) and treats same-section as a plain reorder\nconcern, not a move.",
+        "properties": {
+          "entity_type_id": {
+            "format": "uuid",
+            "title": "Entity Type Id",
+            "type": "string"
+          },
+          "sort_order": {
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entity_type_id",
+          "sort_order"
+        ],
+        "title": "TemplateFieldMoveRequest",
+        "type": "object"
+      },
+      "TemplateFieldRead": {
+        "description": "The full field row the config editor renders (mirrors the frontend\n``ExtractionField`` interface). Built from the ORM row via\n``model_validate`` \u2014 the create/update/move response payload.",
+        "properties": {
+          "allow_other": {
+            "default": false,
+            "title": "Allow Other",
+            "type": "boolean"
+          },
+          "allowed_units": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Units"
+          },
+          "allowed_values": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Values"
+          },
+          "allows_not_applicable": {
+            "default": false,
+            "title": "Allows Not Applicable",
+            "type": "boolean"
+          },
+          "allows_not_evaluated": {
+            "default": false,
+            "title": "Allows Not Evaluated",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "entity_type_id": {
+            "format": "uuid",
+            "title": "Entity Type Id",
+            "type": "string"
+          },
+          "field_type": {
+            "enum": [
+              "text",
+              "number",
+              "date",
+              "select",
+              "multiselect",
+              "boolean"
+            ],
+            "title": "Field Type",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_required": {
+            "title": "Is Required",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "llm_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Description"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "other_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Label"
+          },
+          "other_placeholder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Placeholder"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "validation_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Schema"
+          }
+        },
+        "required": [
+          "id",
+          "entity_type_id",
+          "name",
+          "label",
+          "field_type",
+          "is_required",
+          "sort_order",
+          "created_at"
+        ],
+        "title": "TemplateFieldRead",
+        "type": "object"
+      },
+      "TemplateFieldReorderRequest": {
+        "additionalProperties": false,
+        "description": "Atomic batch renumber \u2014 callers renumber the whole affected\nsection(s). Multi-section batches are legal (see module docstring);\nid ownership and duplicate rejection are enforced by the service.",
+        "properties": {
+          "updates": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateFieldSortOrderUpdate"
+            },
+            "minItems": 1,
+            "title": "Updates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "updates"
+        ],
+        "title": "TemplateFieldReorderRequest",
+        "type": "object"
+      },
+      "TemplateFieldReorderResponse": {
+        "description": "Payload of the reorder endpoint: how many rows the atomic batch\nrenumbered (equals the request batch size on success).",
+        "properties": {
+          "updated_count": {
+            "title": "Updated Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "updated_count"
+        ],
+        "title": "TemplateFieldReorderResponse",
+        "type": "object"
+      },
+      "TemplateFieldSortOrderUpdate": {
+        "additionalProperties": false,
+        "description": "One row of a reorder batch.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "sort_order": {
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "sort_order"
+        ],
+        "title": "TemplateFieldSortOrderUpdate",
+        "type": "object"
+      },
+      "TemplateFieldUpdateRequest": {
+        "additionalProperties": false,
+        "description": "Partial update \u2014 every field optional; the service applies only the\nexplicitly-set keys (``model_dump(exclude_unset=True)``).\n\n``entity_type_id`` is deliberately absent (``extra=\"forbid\"`` rejects\nit): relocating a field across sections is a MOVE with its own model\nand server-side destination checks \u2014 an update must never smuggle one.",
+        "properties": {
+          "allow_other": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Other"
+          },
+          "allowed_units": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 50,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Units"
+          },
+          "allowed_values": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Values"
+          },
+          "allows_not_applicable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allows Not Applicable"
+          },
+          "allows_not_evaluated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allows Not Evaluated"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "field_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "text",
+                  "number",
+                  "date",
+                  "select",
+                  "multiselect",
+                  "boolean"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field Type"
+          },
+          "is_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Required"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "llm_description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 2,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "other_label": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Label"
+          },
+          "other_placeholder": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Placeholder"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "validation_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Schema"
+          }
+        },
+        "title": "TemplateFieldUpdateRequest",
+        "type": "object"
+      },
+      "TemplateInstructionRead": {
+        "properties": {
+          "default_instruction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Instruction"
+          },
+          "llm_template_instruction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Template Instruction"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_template_id",
+          "llm_template_instruction",
+          "default_instruction"
+        ],
+        "title": "TemplateInstructionRead",
+        "type": "object"
+      },
+      "TemplatePublishRefusalCode": {
+        "description": "Why ``POST .../republish-version`` returned 409 (B-9b0 D1).\n\nDeliberately NOT part of :class:`app.schemas.common.ApiErrorCode`, for\nthe same reason as :class:`TemplateDiscardRefusalCode`: that enum is the\ncross-cutting vocabulary every client branches on, and this is one\nendpoint's private outcome. Slice-local codes stay slice-local so the\nglobal contract does not grow a member per feature.\n\nOne member today, and an enum rather than a bare literal so the\ngenerated client already branches on a closed set \u2014 Publish has exactly\none refusal that can reach it (``PendingConfigDraftError`` fires only\nunder ``fail_if_pending_draft``, which only the clone service passes).",
+        "enum": [
+          "PUBLISH_BLOCKED_BY_MULTI_ENTRY",
+          "PUBLISH_DIFF_DRIFTED",
+          "PUBLISH_MISSING_ACKNOWLEDGEMENT"
+        ],
+        "title": "TemplatePublishRefusalCode",
+        "type": "string"
+      },
+      "TemplatePublishRefusalDetails": {
+        "description": "The ``error.details`` payload of a publish refusal (B-9b0 D2).\n\nEVERY offending section, ordered by ``sort_order`` \u2014 never a single\n``section_label``: the un-ordered select behind it raised on the first\nheap row, so one name out of several was reported at random and the\nmanager had to publish-read-fix-publish to find the rest.\n\nOne model across all three codes rather than a discriminated union: the\ngenerated client already branches on ``code``, and three near-empty\npayload models would buy nothing but three more names.",
+        "properties": {
+          "fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fingerprint"
+          },
+          "row_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Row Ids",
+            "type": "array"
+          },
+          "section_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Section Labels",
+            "type": "array"
+          }
+        },
+        "title": "TemplatePublishRefusalDetails",
+        "type": "object"
+      },
+      "TemplatePublishRefusalError": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/TemplatePublishRefusalCode"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplatePublishRefusalDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "TemplatePublishRefusalError",
+        "type": "object"
+      },
+      "TemplatePublishRefusalResponse": {
+        "description": "The 409 body, declared so the payload reaches ``schema.d.ts`` typed.\n\nDocuments what ``app_error_handler`` actually writes \u2014 ``details`` under\n``error``, never a ``data`` slot, so this is NOT an ``ApiResponse[T]``.\nWithout it the generated client sees ``ErrorDetail.details:\ndict[str, Any] | None`` and types the labels as ``unknown``.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/TemplatePublishRefusalError"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "TemplatePublishRefusalResponse",
+        "type": "object"
+      },
+      "TemplateVersionHistoryEntry": {
+        "description": "One published version, as the History timeline renders it (B-9e).\n\nCarries no ``schema`` payload: the timeline shows WHAT happened and WHO\ndid it, and shipping every snapshot would put the whole template\nstructure on the wire once per version for a list nobody diffs inline.",
+        "properties": {
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "pinned_run_count": {
+            "title": "Pinned Run Count",
+            "type": "integer"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "published_by": {
+            "format": "uuid",
+            "title": "Published By",
+            "type": "string"
+          },
+          "published_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published By Name"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_id",
+          "version",
+          "is_active",
+          "published_at",
+          "published_by",
+          "pinned_run_count"
+        ],
+        "title": "TemplateVersionHistoryEntry",
+        "type": "object"
+      },
+      "TemplateVersionHistoryRead": {
+        "description": "The History card's read model \u2014 newest version first.\n\nAn empty list is a real, renderable state (a template that never\npublished), not an error.",
+        "properties": {
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateVersionHistoryEntry"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project_template_id"
+        ],
+        "title": "TemplateVersionHistoryRead",
+        "type": "object"
+      },
       "TestConnectionResponse": {
         "description": "Response de teste de conexao.",
         "properties": {
@@ -6249,6 +8818,51 @@
           "is_active"
         ],
         "title": "UpdateTemplateActiveResponse",
+        "type": "object"
+      },
+      "UpdateTemplateInstructionRequest": {
+        "properties": {
+          "llm_template_instruction": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Template Instruction"
+          }
+        },
+        "title": "UpdateTemplateInstructionRequest",
+        "type": "object"
+      },
+      "UpdateTemplateInstructionResponse": {
+        "description": "B-4: the PUT stages a draft edit \u2014 no version fields (nothing\nrepublishes until the explicit Publish).",
+        "properties": {
+          "llm_template_instruction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Template Instruction"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_template_id",
+          "llm_template_instruction"
+        ],
+        "title": "UpdateTemplateInstructionResponse",
         "type": "object"
       },
       "ValidationError": {
@@ -8257,10 +10871,10 @@
         ]
       }
     },
-    "/api/v1/projects/{project_id}/templates/{template_id}/republish-version": {
-      "post": {
-        "description": "Publish the live template structure as a new active version.\n\nIdempotent when nothing changed (returns the current active version\nwithout spawning rows). Runs still in an editable stage\n(``pending``/``extract``) are re-pinned to the new version so open\narticle forms render the edit; runs from ``consensus`` on keep the\nversion they were assessed under. Manager-gated like the sibling\nendpoints \u2014 section/field editing is project-wide configuration.",
-        "operationId": "republish_template_version_api_v1_projects__project_id__templates__template_id__republish_version_post",
+    "/api/v1/projects/{project_id}/templates/{template_id}/active-version": {
+      "get": {
+        "description": "The ACTIVE version tree the worklist/dashboard render from (B-3a).\n\nMember-gated (reviewers see the worklist). A template with no active\nversion is a typed 404 \u2014 never an empty tree, which progress math\nwould read as fully complete.",
+        "operationId": "get_template_active_version_api_v1_projects__project_id__templates__template_id__active_version_get",
         "parameters": [
           {
             "in": "path",
@@ -8288,7 +10902,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_RepublishTemplateVersionResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_TemplateActiveVersionRead_"
                 }
               }
             },
@@ -8310,7 +10924,1184 @@
             "Supabase JWT": []
           }
         ],
+        "summary": "Get Template Active Version",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/config-diff": {
+      "get": {
+        "description": "What the open draft would publish, for the Publish sheet (B-9b2a).\n\nManager-gated like the sibling config endpoints. A template that never\npublished, and one whose baseline predates the wide snapshot builder,\nare both 200 with empty buckets and a flag saying why \u2014 never a 404 and\nnever a fabricated change list. 404 is reserved for a foreign or missing\ntemplate, exactly as ``config-status`` does it.\n\nRead-only, and takes no locks: a row that moves under it is a re-fetch,\nnot a corruption. Nothing here acknowledges or publishes anything.",
+        "operationId": "get_template_config_diff_endpoint_api_v1_projects__project_id__templates__template_id__config_diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateConfigDiffRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Template Config Diff Endpoint",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/config-status": {
+      "get": {
+        "description": "Draft/publish status for the Configuration tab's chip (B-4).\n\nManager-gated like the sibling config endpoints \u2014 the Configuration\ntab is the only consumer. A template that never published renders as\n``active_version = null`` (a status, not an error).",
+        "operationId": "get_template_config_status_endpoint_api_v1_projects__project_id__templates__template_id__config_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateConfigStatusRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Template Config Status Endpoint",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/discard-draft": {
+      "post": {
+        "description": "Throw the unpublished config draft away, back to the active version.\n\nPartial by design (B-9c1 D4): a draft-added section that already owns\nextraction instances \u2014 or a draft-added field the review workflow\nreferences \u2014 cannot be deleted, so it is KEPT and reported in\n``kept`` while the rest of the draft is undone. A PUBLISHED field whose\nper-section name a kept field took over is reported the same way\n(``name_taken_by_kept_node``): it stays as the draft left it, because\n``uq_extraction_fields_entity_type_name`` is immediate and restoring it\nwould abort the request instead of shrinking the draft. The draft marker\nsurvives whenever anything was kept.\n\nRefuses (409) when restoring would corrupt rather than merely fail: a\n``many`` -> ``one`` cardinality downgrade under a multi-entry parent, a\nreplaced model container, a pre-0026 \"narrow\" baseline (B-9x), and\ndestructive changes to fields already holding values unless\n``acknowledge_orphans`` is set. 404 when the template is foreign or has\nnever published.\n\nEvery 409 carries a ``TemplateDiscardRefusalCode`` in ``error.code``\n(B-9c2 D1) \u2014 only ``ORPHAN_ACK_REQUIRED`` is re-postable, and only it\ncarries ``error.details.orphans``, the fields whose recorded answers\nthe caller is being asked to strand.\n\nKnown gap: a wide-but-older baseline that predates a column\n(``allows_not_applicable``, #462) normalizes the absent key to the\ncolumn default rather than \"leave alone\", so a restore rewrites those\nflags \u2014 and ``diff_snapshots`` reports ``total == 0`` while it happens.\nOnly whole-era (narrow) baselines are detectable here.",
+        "operationId": "discard_template_draft_api_v1_projects__project_id__templates__template_id__discard_draft_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscardDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DiscardDraftResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDiscardRefusalResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Discard Template Draft",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/draft-lock/take-over": {
+      "post": {
+        "description": "Seize the advisory editor lock on this template's draft (B-9f).\n\nUnconditional by design. The lock exists so two managers do not\nsilently overwrite each other, not to make a template unusable when\nsomeone shuts their laptop \u2014 so the release valve is a human clicking\nTake over, never a timer guessing whether the holder is still there.\n\nNothing is lost: there is exactly ONE draft, so everything the previous\nholder wrote is already in it. They learn at their next write, which\nrefuses with the new holder named.",
+        "operationId": "take_over_draft_lock_endpoint_api_v1_projects__project_id__templates__template_id__draft_lock_take_over_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TakeOverDraftLockResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDraftLockRefusalResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Take Over Draft Lock Endpoint",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/fields": {
+      "post": {
+        "description": "Create a field in a section of the path template.\n\nThe write stamps the B-4 draft marker via the 0048 trigger (nothing\nmanual); the field reaches article forms at Publish.",
+        "operationId": "create_template_field_api_v1_projects__project_id__templates__template_id__fields_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateFieldCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateFieldRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create Template Field",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/fields/reorder": {
+      "post": {
+        "description": "Atomic batch renumber (multi-section batches are legal).\n\nEvery id must belong to a section of this template; the batch fully\napplies or fully fails. Stamps the B-4 draft marker via the 0048\ntrigger.",
+        "operationId": "reorder_template_fields_api_v1_projects__project_id__templates__template_id__fields_reorder_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateFieldReorderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateFieldReorderResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Reorder Template Fields",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/fields/{field_id}": {
+      "delete": {
+        "description": "Delete a field; recorded extraction work (RESTRICT FKs) is a 409.\n\nStamps the B-4 draft marker via the 0048 trigger (nothing manual).",
+        "operationId": "delete_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "field_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Field Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateFieldDeleteResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Delete Template Field",
+        "tags": [
+          "project-templates"
+        ]
+      },
+      "patch": {
+        "description": "Partial field update \u2014 only explicitly-set keys are applied.\n\nRelocation is the move endpoint's job (the schema rejects a smuggled\n``entity_type_id``). Stamps the B-4 draft marker via the 0048 trigger.",
+        "operationId": "update_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "field_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Field Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateFieldUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateFieldRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Update Template Field",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/fields/{field_id}/move": {
+      "post": {
+        "description": "Move a field onto another section of the SAME template.\n\nA destination outside the path template is a 422 (deterministic, no\nretry can succeed) \u2014 the cross-template hole this slice closes.\nStamps the B-4 draft marker via the 0048 trigger.",
+        "operationId": "move_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__move_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "field_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Field Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateFieldMoveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateFieldRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Move Template Field",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/llm-instruction": {
+      "get": {
+        "description": "Current general AI instruction + the origin global's default.\n\nManager-gated like the sibling endpoints \u2014 the Configuration tab is\nthe only consumer.",
+        "operationId": "get_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateInstructionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Template Llm Instruction",
+        "tags": [
+          "project-templates"
+        ]
+      },
+      "put": {
+        "description": "Stage the instruction as a draft edit (slice B-4).\n\nWhitespace-only normalizes to NULL (nothing injected). Nothing\nrepublishes here \u2014 the text reaches snapshots, prompts and\neditable-stage runs when the manager presses Publish\n(``republish-version``).",
+        "operationId": "update_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTemplateInstructionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UpdateTemplateInstructionResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Update Template Llm Instruction",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/republish-version": {
+      "post": {
+        "description": "Publish the live template structure as a new active version.\n\nIdempotent when nothing changed (returns the current active version\nwithout spawning rows). Runs still in an editable stage\n(``pending``/``extract``) are re-pinned to the new version so open\narticle forms render the edit; runs from ``consensus`` on keep the\nversion they were assessed under. Manager-gated like the sibling\nendpoints \u2014 section/field editing is project-wide configuration.\n\nThe single 409 (B-9b0 D1) is the publish-time re-check of the many->one\ncardinality rule: ``error.code`` is a ``TemplatePublishRefusalCode`` and\n``error.details.section_labels`` names EVERY offending section, ordered\nby ``sort_order``, so the Publish button composes its own sentence\ninstead of echoing English prose \u2014 and the manager fixes all of them in\none pass rather than rediscovering the next on each retry.",
+        "operationId": "republish_template_version_api_v1_projects__project_id__templates__template_id__republish_version_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepublishTemplateVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RepublishTemplateVersionResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplatePublishRefusalResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
         "summary": "Republish Template Version",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/sections": {
+      "post": {
+        "description": "Create a section; ``sort_order`` is server-computed (max+1).\n\n``role`` and ``parent_entity_type_id`` are explicit parameters \u2014 a\nmodel_section's parent must be the template's model_container (400);\na second model_container is a 409. Stamps the B-4 draft marker via\nthe 0048 trigger (nothing manual).",
+        "operationId": "create_template_section_api_v1_projects__project_id__templates__template_id__sections_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SectionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create Template Section",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/sections/{section_id}": {
+      "delete": {
+        "description": "Delete a section (the DB cascades fields and child sections).\n\nExtracted data anywhere under it (RESTRICT FK) is a 409. Stamps the\nB-4 draft marker via the 0048 trigger (nothing manual).",
+        "operationId": "delete_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "section_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Section Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SectionDeleteResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Delete Template Section",
+        "tags": [
+          "project-templates"
+        ]
+      },
+      "patch": {
+        "description": "Partial section update: label, entry_label, cardinality (B-8).\n\nRole rules are 422s (entry_label only on the repeating group;\ncardinality only on a per-model section); many -> one with a parent\ninstance holding 2+ entries is a 409. A real change stamps the B-4\ndraft marker via the 0048 trigger; an all-no-op update skips the\nwrite (no stamp).",
+        "operationId": "update_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "section_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Section Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SectionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Update Template Section",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/versions": {
+      "get": {
+        "description": "The History timeline for a template's published versions (B-9e).\n\nManager-gated like the rest of the configuration surface \u2014 this reads\nwho changed the template and why, which is not reviewer-facing. The\nsibling ``active-version`` route is the one exception, member-gated\nbecause the worklist renders from it.\n\nAn empty list is a 200: a template that never published has no\ntimeline yet, which the card explains rather than treating as an error.",
+        "operationId": "get_template_version_history_endpoint_api_v1_projects__project_id__templates__template_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateVersionHistoryRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Template Version History Endpoint",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/versions/{version_id}/restore": {
+      "post": {
+        "description": "Stage an older version's shape as the current draft (B-9e).\n\nDoes NOT rewrite history: the live tree is reconciled to that version\nand the draft marker is left stamped, so the manager reviews it through\nthe ordinary Publish sheet \u2014 per-item acks and all \u2014 and it lands as\nv_max+1.\n\n404 covers both an unknown version and one belonging to another\ntemplate: distinguishing them would confirm a foreign id exists.",
+        "operationId": "restore_template_version_api_v1_projects__project_id__templates__template_id__versions__version_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RestoreVersionResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Restore Template Version",
         "tags": [
           "project-templates"
         ]

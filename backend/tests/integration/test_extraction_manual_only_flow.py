@@ -456,7 +456,6 @@ async def test_human_decision_skip_probe_scoping_and_types(
         framework=None,
         kind="extraction",
         skip_fields_with_human_proposals=True,
-        model="gpt-4o-mini",
     )
     assert result.get("skipped") is True
     assert result.get("suggestions_created") == 0

@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.models.user_api_key import UserAPIKey
-from app.services.api_key_service import APIKeyService
+from app.services.api_key_service import APIKeyService, KeyScope
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -236,7 +236,7 @@ class TestGetKeyForProvider:
 
         result = await svc.get_key_for_provider("openai")
 
-        assert result == plaintext
+        assert result == (plaintext, KeyScope.USER_BYOK)
         repo.update_last_used.assert_awaited_once_with(key.id)
 
     @pytest.mark.asyncio
@@ -248,7 +248,7 @@ class TestGetKeyForProvider:
         with patch.object(svc, "_get_global_key", return_value="global-key"):
             result = await svc.get_key_for_provider("openai")
 
-        assert result == "global-key"
+        assert result == ("global-key", KeyScope.GLOBAL_SERVICE)
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_fallback(self) -> None:
@@ -268,7 +268,7 @@ class TestGetKeyForProvider:
         with patch.object(svc, "_get_global_key", return_value="fallback-key"):
             result = await svc.get_key_for_provider("openai")
 
-        assert result == "fallback-key"
+        assert result == ("fallback-key", KeyScope.GLOBAL_SERVICE)
 
 
 # ---------------------------------------------------------------------------

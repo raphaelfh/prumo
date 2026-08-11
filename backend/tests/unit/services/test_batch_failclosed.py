@@ -20,20 +20,32 @@ async def test_extract_for_run_raises_when_all_sections_fail():
     svc.trace_id = "t"
 
     run = SimpleNamespace(
-        id="r", template_id="tpl", article_id="a", kind="extraction", stage="extract"
+        id="r",
+        template_id="tpl",
+        article_id="a",
+        kind="extraction",
+        stage="extract",
+        version_id="v",
     )
     template = SimpleNamespace(framework="CHARMS")
-    # db.get is called twice: first the run, then the template.
-    svc.db = SimpleNamespace(get=AsyncMock(side_effect=[run, template]))
+    # db.get is called twice: first the run, then the template. db.execute
+    # serves the hoisted general_instructions_for_version fetch (-> None).
+    svc.db = SimpleNamespace(
+        get=AsyncMock(side_effect=[run, template]),
+        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: None)),
+    )
     svc._runs = SimpleNamespace(
         start_run=AsyncMock(),
         complete_run=AsyncMock(),
         rollback_and_fail=AsyncMock(),
+        # None = "no engine recorded", so the run falls back to the candidate.
+        freeze_engine=AsyncMock(return_value=None),
     )
     # Mock _assemble_prompt_text to bypass build_prompt_input (PDF/storage not needed).
     svc._assemble_prompt_text = AsyncMock(return_value="text")
-    entity_type = SimpleNamespace(id="e1", name="Sec")
-    svc._top_level_entity_types_for_template = AsyncMock(return_value=[entity_type])
+    # B-2: the top-level set comes from the run-pinned tree seam.
+    entity_type = SimpleNamespace(id="e1", name="Sec", parent_entity_type_id=None)
+    svc._pinned_entity_types = AsyncMock(return_value=[entity_type])
     # Every entity-type extraction fails -> successful == 0.
     svc._extract_one_entity_type_for_run = AsyncMock(side_effect=RuntimeError("llm down"))
 

@@ -33,7 +33,6 @@ from app.llm.provider import build_model
 from app.llm.schema import build_output_models, dump_extraction
 from app.llm.validators import evidence_is_plausible
 from app.models.extraction import (
-    ExtractionEntityType,
     ExtractionEvidence,
     ExtractionInstance,
     ExtractionRun,
@@ -54,10 +53,16 @@ from app.repositories import (
     ExtractionRunRepository,
 )
 from app.schemas.extraction import SectionExtractionRequest
+from app.schemas.llm_target import LlmTarget
 from app.schemas.prompt_composition import PromptComposition, PromptCompositionArticleRef
+from app.services.api_key_service import KeyScope
 from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
+from app.services.extraction_snapshot import (
+    entity_types_for_version,
+    general_instructions_for_version,
+)
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.value_semantics import AbsentReason
 
@@ -134,22 +139,21 @@ class SectionExtractionService(LoggerMixin):
         storage: StorageAdapter,
         trace_id: str,
         openai_api_key: str | None = None,
+        key_scope: KeyScope | None = None,
     ):
-        """
-        Initialize service instance.
+        """Initialize service instance.
 
         Args:
-            db: Async SQLAlchemy session.
-            user_id: Authenticated user ID.
-            storage: Storage adapter.
-            trace_id: Trace ID.
             openai_api_key: Custom API key (BYOK). If None, uses global key.
+            key_scope: WHOSE key that is, for provenance (§5.2) — resolved by
+                the caller, since only it knows which lookup branch won.
         """
         self.db = db
         self.user_id = user_id
         self.storage = storage
         self.trace_id = trace_id
         self._llm_api_key = openai_api_key
+        self._key_scope = key_scope
 
         # Repositories
         self._article_files = ArticleFileRepository(db)
@@ -171,25 +175,35 @@ class SectionExtractionService(LoggerMixin):
         # Run provenance snapshot, set by _extract_with_llm and merged into the
         # run's results at completion (how the suggestions were generated).
         self._run_provenance: dict[str, Any] | None = None
+        # Engine for every LLM call here; ``_freeze_engine`` rebinds it to the run's.
+        self._engine = LlmTarget(provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL)
+
+    async def _freeze_engine(self, run_id: UUID, candidate: str) -> str:
+        """Pin the run's engine on first write and adopt it; returns its model.
+        A Celery retry re-enters with the same payload and a fresh ``settings``
+        read, so only a run-scoped pin keeps attempt 2 on attempt 1's engine."""
+        target = LlmTarget(provider=settings.LLM_PROVIDER, model=candidate)
+        pinned = await self._runs.freeze_engine(run_id, target.model_dump())
+        self._engine = LlmTarget.model_validate(pinned) if pinned else target
+        return self._engine.model
 
     def _build_run_provenance(
         self,
         *,
-        model: str,
         prompt_name: str,
         prompt_version: str,
         usage: LlmUsage | None = None,
         prompt_composition: PromptComposition | None = None,
     ) -> dict[str, Any]:
-        """Per-section snapshot of how a section's suggestions were generated,
-        for transparency/traceability. Params come from the single-source
-        extractor constants so they can't drift from what was actually sent.
-        Includes this section's token usage and the structured prompt
-        composition (the recipe the review UI renders)."""
+        """Per-section snapshot of how a section's suggestions were generated.
+        Engine, key scope and params come from the run-frozen target and the
+        single-source extractor constants, so a later ``settings`` change cannot
+        rewrite what this run reports. The key itself is never recorded (§5.2)."""
         snapshot: dict[str, Any] = {
             "ran_by_user_id": self.user_id,
-            "provider": settings.LLM_PROVIDER,
-            "model": model,
+            "provider": self._engine.provider,
+            "model": self._engine.model,
+            "key_scope": self._key_scope.value if self._key_scope is not None else None,
             "strategy": prompt_name,
             "prompt_version": prompt_version,
             "params": {
@@ -244,7 +258,7 @@ class SectionExtractionService(LoggerMixin):
             template_id: Template ID.
             entity_type_id: Entity type ID to extract.
             parent_instance_id: Parent instance ID (optional).
-            model: Modelo OpenAI.
+            model: Candidate engine; used only if the run has none pinned yet.
             run_id: Existing run to append proposals to. When provided
                 (the extraction surface path), the proposals are added
                 to that run instead of creating a fresh one — so the
@@ -293,6 +307,7 @@ class SectionExtractionService(LoggerMixin):
             if manage_lifecycle:
                 await self._runs.start_run(run.id)
 
+        model = await self._freeze_engine(run.id, model)
         self.logger.info(
             "section_extraction_start",
             trace_id=self.trace_id,
@@ -307,17 +322,33 @@ class SectionExtractionService(LoggerMixin):
             pdf_text = await self._assemble_prompt_text(article_id, model)
             phase_durations_ms["assemble_prompt"] = (perf_counter() - phase_start) * 1000
 
-            # 4. Fetch entity type and fields
+            # 4. Entity type + fields from the run-PINNED snapshot (B-2):
+            # structure and instructions come from run.version_id, never live
+            # rows. Fields sent to the LLM are snapshot ∩ live (a field
+            # deleted live is silently not extracted; one added live is
+            # invisible until publish re-pins). Falls back to the live row
+            # when the id is not in the pin (re-pin race) — today's behavior.
             phase_start = perf_counter()
-            entity_type = await self._get_entity_type(entity_type_id)
+            pinned_tree = await self._pinned_entity_types(run)
+            entity_type: Any = next((et for et in pinned_tree if et.id == entity_type_id), None)
+            fields_override: list[Any] | None = None
+            if entity_type is None:
+                entity_type = await self._get_entity_type(entity_type_id)
+            else:
+                fields_override = await self._live_field_intersection(entity_type)
+                if fields_override is None:
+                    # Pinned but deleted live — mirrors the live path's error.
+                    raise ValueError(f"Entity type not found: {entity_type_id}")
             phase_durations_ms["fetch_entity_type"] = (perf_counter() - phase_start) * 1000
 
             # 5. Run LLM extraction (with token tracking)
             phase_start = perf_counter()
+            general_instructions = await general_instructions_for_version(self.db, run.version_id)
             extracted_data, llm_usage = await self._extract_with_llm(
                 pdf_text=pdf_text,
                 entity_type=entity_type,
-                model=model,
+                fields_override=fields_override,
+                general_instructions=general_instructions,
             )
             phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
@@ -330,7 +361,6 @@ class SectionExtractionService(LoggerMixin):
                 parent_instance_id=parent_instance_id,
                 extracted_data=extracted_data,
                 run=run,
-                model=model,
             )
             phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -469,6 +499,7 @@ class SectionExtractionService(LoggerMixin):
         kind = run.kind
 
         await self._runs.start_run(run.id)
+        model = await self._freeze_engine(run.id, model)
 
         section_results: list[dict[str, Any]] = []
         total_suggestions = 0
@@ -479,7 +510,14 @@ class SectionExtractionService(LoggerMixin):
         try:
             pdf_text = await self._assemble_prompt_text(run.article_id, model)
 
-            top_level = await self._top_level_entity_types_for_template(run.template_id)
+            # Run-constant (keyed by the pinned version): fetch once, not per section.
+            general_instructions = await general_instructions_for_version(self.db, run.version_id)
+
+            # Top-level set from the run-PINNED snapshot (B-2). The provider
+            # chains empty/narrow snapshots to live rows, so an empty pin can
+            # never turn this into a green no-op run.
+            pinned_tree = await self._pinned_entity_types(run)
+            top_level = [et for et in pinned_tree if et.parent_entity_type_id is None]
 
             for entity_type in top_level:
                 try:
@@ -490,7 +528,7 @@ class SectionExtractionService(LoggerMixin):
                         framework=framework,
                         kind=kind,
                         skip_fields_with_human_proposals=skip_fields_with_human_proposals,
-                        model=model,
+                        general_instructions=general_instructions,
                     )
                     successful += 1
                     total_suggestions += result["suggestions_created"]
@@ -588,7 +626,7 @@ class SectionExtractionService(LoggerMixin):
         framework: str | None,
         kind: str,
         skip_fields_with_human_proposals: bool,
-        model: str,
+        general_instructions: str | None = None,
     ) -> dict[str, Any]:
         """Extract a single entity_type into an existing Run.
 
@@ -596,8 +634,11 @@ class SectionExtractionService(LoggerMixin):
         NOT create a fresh Run — it appends ``source='ai'`` proposals
         onto the Run that the caller already owns.
         """
-        full_entity_type = await self._entity_types.get_with_fields(entity_type.id)
-        if full_entity_type is None:
+        # The PINNED entity drives the prompt; the live row is demoted to a
+        # coherence source (existence + live field-id set). None = deleted
+        # live -> skip, mirroring the old live-refetch behavior.
+        pinned_fields = await self._live_field_intersection(entity_type)
+        if pinned_fields is None:
             return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
 
         instance = await self._find_instance_for_entity_type(
@@ -605,12 +646,10 @@ class SectionExtractionService(LoggerMixin):
             entity_type_id=entity_type.id,
         )
 
-        # Filter via an override, never by mutating ``full_entity_type.fields``:
-        # that relationship is ``cascade="all, delete-orphan"``, so dropping the
-        # skipped (human-settled) fields would DELETE them on the next flush and
-        # hit the ondelete=RESTRICT FK from their proposal (ForeignKeyViolationError).
-        fields_override: list[Any] | None = None
-        original_fields = list(full_entity_type.fields or [])
+        # Always pass an override (never mutate a fields collection — the
+        # live ORM one cascades delete-orphan; see the FK regression test).
+        fields_override: list[Any] | None = pinned_fields
+        original_fields = list(pinned_fields)
         if skip_fields_with_human_proposals and instance is not None and original_fields:
             field_ids = [f.id for f in original_fields]
             # Protect a field from the AI re-run if the human has already
@@ -637,11 +676,11 @@ class SectionExtractionService(LoggerMixin):
 
         extracted_data, llm_usage = await self._extract_with_llm(
             pdf_text=pdf_text,
-            entity_type=full_entity_type,
-            model=model,
+            entity_type=entity_type,
             kind=kind,
             framework=framework,
             fields_override=fields_override,
+            general_instructions=general_instructions,
         )
         suggestions_created = await self._create_suggestions(
             project_id=run.project_id,
@@ -650,7 +689,6 @@ class SectionExtractionService(LoggerMixin):
             parent_instance_id=None,
             extracted_data=extracted_data,
             run=run,
-            model=model,
         )
         return {
             "suggestions_created": suggestions_created,
@@ -658,19 +696,40 @@ class SectionExtractionService(LoggerMixin):
             "usage": llm_usage,
         }
 
-    async def _top_level_entity_types_for_template(
-        self,
-        template_id: UUID,
-    ) -> list[ExtractionEntityType]:
-        stmt = (
-            select(ExtractionEntityType)
-            .where(
-                ExtractionEntityType.project_template_id == template_id,
-                ExtractionEntityType.parent_entity_type_id.is_(None),
-            )
-            .order_by(ExtractionEntityType.sort_order)
+    async def _pinned_entity_types(self, run: ExtractionRun) -> list[Any]:
+        """The frozen tree this run is pinned to (shared B-2 provider)."""
+        return await entity_types_for_version(
+            self.db, version_id=run.version_id, template_id=run.template_id
         )
-        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def _live_field_intersection(self, entity_type: Any) -> list[Any] | None:
+        """Snapshot fields ∩ live field ids for one pinned entity type.
+
+        ``None`` means the entity type no longer exists live (skip — a
+        proposal write could not resolve it anyway). The intersection is
+        pair-safe by construction: ids are matched inside this one entity
+        type's live field set.
+
+        The field NAME is the write-layer bridge: the LLM answers with the
+        prompt's property key and ``_create_suggestions`` resolves that key
+        against LIVE field names. A field renamed live (same id) therefore
+        carries the LIVE name into the prompt — otherwise the write would
+        silently drop the extracted value — while the semantic prompt
+        content (label, description, llm_description) stays pinned.
+        """
+        live = await self._entity_types.get_with_fields(entity_type.id)
+        if live is None:
+            return None
+        live_by_id = {f.id: f for f in (live.fields or [])}
+        result: list[Any] = []
+        for field in entity_type.fields:
+            live_field = live_by_id.get(field.id)
+            if live_field is None:
+                continue
+            if field.name != live_field.name:
+                field = field.model_copy(update={"name": live_field.name})
+            result.append(field)
+        return result
 
     async def _find_instance_for_entity_type(
         self,
@@ -802,7 +861,7 @@ class SectionExtractionService(LoggerMixin):
             parent_instance_id: Parent instance ID.
             section_ids: Specific IDs to extract (optional).
             pdf_text: Preprocessed PDF text (optional).
-            model: Modelo OpenAI.
+            model: Candidate engine; used only if the run has none pinned yet.
             run_id: Existing run to append to. When set (the extraction surface),
                 the run is REUSED and its lifecycle left to the HITL session, so
                 a reviewer's decisions are never orphaned onto a forked run.
@@ -849,6 +908,7 @@ class SectionExtractionService(LoggerMixin):
             if manage_lifecycle:
                 await self._runs.start_run(run.id)
 
+        model = await self._freeze_engine(run.id, model)
         self.logger.info(
             "batch_extraction_start",
             trace_id=self.trace_id,
@@ -875,7 +935,7 @@ class SectionExtractionService(LoggerMixin):
             # 2. Fetch child entity types
             phase_start = perf_counter()
             child_types = await self._get_child_entity_types(
-                template_id=template_id,
+                run=run,
                 parent_instance_id=parent_instance_id,
                 section_ids=section_ids,
             )
@@ -885,6 +945,9 @@ class SectionExtractionService(LoggerMixin):
             successful = 0
             failed = 0
             total_suggestions = 0
+
+            # Run-constant (keyed by the pinned version): fetch once, not per section.
+            general_instructions = await general_instructions_for_version(self.db, run.version_id)
 
             # 3. Extract each section sequentially with memory — every section
             # appends to THE batch run (no more one-run-per-section pollution).
@@ -896,7 +959,7 @@ class SectionExtractionService(LoggerMixin):
                         parent_instance_id=parent_instance_id,
                         pdf_text=pdf_text,
                         memory_history=memory_history,
-                        model=model,
+                        general_instructions=general_instructions,
                     )
 
                     successful += 1
@@ -1011,7 +1074,7 @@ class SectionExtractionService(LoggerMixin):
         parent_instance_id: UUID,
         pdf_text: str,
         memory_history: list[dict[str, str]],
-        model: str,
+        general_instructions: str | None = None,
     ) -> dict[str, Any]:
         """
         Extract one section with summarized memory context onto the batch run.
@@ -1033,20 +1096,27 @@ class SectionExtractionService(LoggerMixin):
             parent_instance_id: Parent instance ID.
             pdf_text: PDF text.
             memory_history: Summarized memory history.
-            model: Modelo OpenAI.
 
         Returns:
             Dict with suggestions_created, tokens_total, and summary.
         """
         section_phase_durations_ms: dict[str, float] = {}
 
+        # Same coherence contract as the sibling paths: fields sent to the
+        # LLM are snapshot ∩ live; a section deleted live is skipped before
+        # burning an LLM call on values the write layer could not resolve.
+        pinned_fields = await self._live_field_intersection(entity_type)
+        if pinned_fields is None:
+            return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
+
         # Run extraction with memory context
         phase_start = perf_counter()
         extracted_data, llm_usage = await self._extract_with_llm(
             pdf_text=pdf_text,
             entity_type=entity_type,
-            model=model,
             memory_context=memory_history,
+            fields_override=pinned_fields,
+            general_instructions=general_instructions,
         )
         section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
@@ -1059,7 +1129,6 @@ class SectionExtractionService(LoggerMixin):
             parent_instance_id=parent_instance_id,
             extracted_data=extracted_data,
             run=run,
-            model=model,
         )
         section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -1133,18 +1202,21 @@ class SectionExtractionService(LoggerMixin):
 
     async def _get_child_entity_types(
         self,
-        template_id: UUID,  # noqa: ARG002
+        run: ExtractionRun,
         parent_instance_id: UUID,
         section_ids: list[UUID] | None = None,
     ) -> list[Any]:
         """
-        Fetch child entity types based on the parent instance's entity_type.
+        Child entity types of the parent instance's entity_type, from the
+        run-PINNED snapshot (B-2).
 
-        parent_instance_id points to an instance (e.g. a model).
-        We need to fetch that instance's entity_type_id and then
-        fetch the entity types that have this entity_type as parent.
+        The parent INSTANCE is runtime data and stays a live read; the
+        children STRUCTURE comes from the pinned tree, so a child section
+        added live is invisible until publish re-pins the run. Field-level
+        coherence is enforced at the write layer (``_create_suggestions``
+        resolves field names against live rows).
         """
-        # 1. Fetch parent instance to get its entity_type_id
+        # 1. Fetch parent instance (runtime data — live) to get its entity_type_id
         parent_instance = await self._instances.get_by_id(parent_instance_id)
 
         if not parent_instance:
@@ -1155,19 +1227,19 @@ class SectionExtractionService(LoggerMixin):
             )
             return []
 
-        parent_entity_type_id = str(parent_instance.entity_type_id)
+        parent_entity_type_id = parent_instance.entity_type_id
 
-        # 2. Fetch child entity types of this parent_entity_type
-        child_entity_types = await self._entity_types.get_children(
-            parent_entity_type_id=parent_entity_type_id,
-            cardinality=None,  # Fetch all, not just 'one'
-        )
+        # 2. Children of this parent in the PINNED tree
+        pinned_tree = await self._pinned_entity_types(run)
+        child_entity_types = [
+            et for et in pinned_tree if et.parent_entity_type_id == parent_entity_type_id
+        ]
 
         if not child_entity_types:
             self.logger.info(
                 "no_child_entity_types_found",
                 trace_id=self.trace_id,
-                parent_entity_type_id=parent_entity_type_id,
+                parent_entity_type_id=str(parent_entity_type_id),
             )
             return []
 
@@ -1179,7 +1251,7 @@ class SectionExtractionService(LoggerMixin):
             "child_entity_types_found",
             trace_id=self.trace_id,
             count=len(child_entity_types),
-            parent_entity_type_id=parent_entity_type_id,
+            parent_entity_type_id=str(parent_entity_type_id),
         )
 
         return child_entity_types
@@ -1188,11 +1260,11 @@ class SectionExtractionService(LoggerMixin):
         self,
         pdf_text: str,
         entity_type: Any,
-        model: str,
         memory_context: list[dict[str, str]] | None = None,
         kind: str = "extraction",
         framework: str | None = None,
         fields_override: list[Any] | None = None,
+        general_instructions: str | None = None,
     ) -> tuple[dict[str, Any], LlmUsage]:
         """
         Run extraction using the typed LLM call layer.
@@ -1200,7 +1272,6 @@ class SectionExtractionService(LoggerMixin):
         Args:
             pdf_text: PDF text.
             entity_type: Entity type to extract (fields drive the output model).
-            model: OpenAI model name.
             memory_context: Summarized memory context (optional).
             kind: 'extraction' or 'quality_assessment' — selects the prompt
                 pair. The response shape is identical either way, so
@@ -1209,6 +1280,9 @@ class SectionExtractionService(LoggerMixin):
                 framework (PROBAST / QUADAS-2) the prompts ground in.
             fields_override: Exact field list for the LLM (e.g. human-settled
                 fields removed); avoids mutating ``entity_type.fields``.
+            general_instructions: Template-level instruction from the
+                run-pinned snapshot (never the live column); prepended to
+                the user prompt when present.
 
         Returns:
             Tuple of extracted data ({field_name: {value, confidence,
@@ -1228,6 +1302,7 @@ class SectionExtractionService(LoggerMixin):
                 article_text=pdf_text,
                 framework=framework,
                 memory_context=memory_context,
+                general_instructions=general_instructions,
             )
         else:
             prompt_module = section_extraction
@@ -1237,6 +1312,7 @@ class SectionExtractionService(LoggerMixin):
                 entity_description=entity_description,
                 article_text=pdf_text,
                 memory_context=memory_context,
+                general_instructions=general_instructions,
             )
 
         output_models = build_output_models(entity_type, fields=fields_override)
@@ -1248,7 +1324,8 @@ class SectionExtractionService(LoggerMixin):
             )
             return {}, LlmUsage()
 
-        llm_model = build_model(settings.LLM_PROVIDER, model, api_key=self._llm_api_key)
+        engine = self._engine
+        llm_model = build_model(engine.provider, engine.model, api_key=self._llm_api_key)
 
         extracted_data: dict[str, Any] = {}
         usage = LlmUsage()
@@ -1275,6 +1352,7 @@ class SectionExtractionService(LoggerMixin):
                 article_text=ARTICLE_MARKDOWN_MARKER,
                 framework=framework,
                 memory_context=memory_context,
+                general_instructions=general_instructions,
             )
         else:
             section_instruction = section_extraction.render(
@@ -1282,6 +1360,7 @@ class SectionExtractionService(LoggerMixin):
                 entity_description=entity_description,
                 article_text=ARTICLE_MARKDOWN_MARKER,
                 memory_context=memory_context,
+                general_instructions=general_instructions,
             )
         info = self._prompt_input_info
         # The fields actually sent to the LLM: the human-settled override when the
@@ -1305,7 +1384,6 @@ class SectionExtractionService(LoggerMixin):
             llm_calls=len(output_models),
         )
         self._run_provenance = self._build_run_provenance(
-            model=model,
             prompt_name=prompt_module.NAME,
             prompt_version=prompt_module.VERSION,
             usage=usage,
@@ -1321,7 +1399,6 @@ class SectionExtractionService(LoggerMixin):
         parent_instance_id: UUID | None,
         extracted_data: dict[str, Any],
         run: ExtractionRun,
-        model: str = settings.LLM_DEFAULT_MODEL,
     ) -> int:
         """
         Create extraction suggestions in database via repository.
@@ -1339,7 +1416,6 @@ class SectionExtractionService(LoggerMixin):
             parent_instance_id: Parent instance ID.
             extracted_data: Extracted data.
             run: ExtractionRun used to link suggestions.
-            model: LLM model name (used to build the entailment judge model).
 
         Returns:
             Number of created suggestions.
@@ -1580,7 +1656,8 @@ class SectionExtractionService(LoggerMixin):
 
         # Run the entailment gate; premise-building + fan-out live in the helper.
         if _gate_specs:
-            _judge_model = build_model(settings.LLM_PROVIDER, model, api_key=self._llm_api_key)
+            engine = self._engine
+            _judge_model = build_model(engine.provider, engine.model, api_key=self._llm_api_key)
             labels = await run_entailment_gate(_gate_specs, _judge_model, self.logger)
             for row, label in zip(_gate_rows, labels, strict=True):
                 if label is not None:
@@ -1632,7 +1709,7 @@ class SectionExtractionService(LoggerMixin):
            ``extract_for_run`` iterates every top-level entity_type of that
            run's template (QA / full-run surface).
         """
-        model = payload.model or settings.LLM_DEFAULT_MODEL
+        model = settings.LLM_DEFAULT_MODEL  # C1a: server-owned, never client-chosen
 
         if payload.entity_type_id is not None:
             return await self.extract_section(

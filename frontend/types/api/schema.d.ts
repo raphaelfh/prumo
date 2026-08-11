@@ -667,6 +667,292 @@ export interface paths {
         patch: operations["update_project_template_active_api_v1_projects__project_id__templates__template_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates/{template_id}/active-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Template Active Version
+         * @description The ACTIVE version tree the worklist/dashboard render from (B-3a).
+         *
+         *     Member-gated (reviewers see the worklist). A template with no active
+         *     version is a typed 404 — never an empty tree, which progress math
+         *     would read as fully complete.
+         */
+        get: operations["get_template_active_version_api_v1_projects__project_id__templates__template_id__active_version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/config-diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Template Config Diff Endpoint
+         * @description What the open draft would publish, for the Publish sheet (B-9b2a).
+         *
+         *     Manager-gated like the sibling config endpoints. A template that never
+         *     published, and one whose baseline predates the wide snapshot builder,
+         *     are both 200 with empty buckets and a flag saying why — never a 404 and
+         *     never a fabricated change list. 404 is reserved for a foreign or missing
+         *     template, exactly as ``config-status`` does it.
+         *
+         *     Read-only, and takes no locks: a row that moves under it is a re-fetch,
+         *     not a corruption. Nothing here acknowledges or publishes anything.
+         */
+        get: operations["get_template_config_diff_endpoint_api_v1_projects__project_id__templates__template_id__config_diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/config-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Template Config Status Endpoint
+         * @description Draft/publish status for the Configuration tab's chip (B-4).
+         *
+         *     Manager-gated like the sibling config endpoints — the Configuration
+         *     tab is the only consumer. A template that never published renders as
+         *     ``active_version = null`` (a status, not an error).
+         */
+        get: operations["get_template_config_status_endpoint_api_v1_projects__project_id__templates__template_id__config_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/discard-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard Template Draft
+         * @description Throw the unpublished config draft away, back to the active version.
+         *
+         *     Partial by design (B-9c1 D4): a draft-added section that already owns
+         *     extraction instances — or a draft-added field the review workflow
+         *     references — cannot be deleted, so it is KEPT and reported in
+         *     ``kept`` while the rest of the draft is undone. A PUBLISHED field whose
+         *     per-section name a kept field took over is reported the same way
+         *     (``name_taken_by_kept_node``): it stays as the draft left it, because
+         *     ``uq_extraction_fields_entity_type_name`` is immediate and restoring it
+         *     would abort the request instead of shrinking the draft. The draft marker
+         *     survives whenever anything was kept.
+         *
+         *     Refuses (409) when restoring would corrupt rather than merely fail: a
+         *     ``many`` -> ``one`` cardinality downgrade under a multi-entry parent, a
+         *     replaced model container, a pre-0026 "narrow" baseline (B-9x), and
+         *     destructive changes to fields already holding values unless
+         *     ``acknowledge_orphans`` is set. 404 when the template is foreign or has
+         *     never published.
+         *
+         *     Every 409 carries a ``TemplateDiscardRefusalCode`` in ``error.code``
+         *     (B-9c2 D1) — only ``ORPHAN_ACK_REQUIRED`` is re-postable, and only it
+         *     carries ``error.details.orphans``, the fields whose recorded answers
+         *     the caller is being asked to strand.
+         *
+         *     Known gap: a wide-but-older baseline that predates a column
+         *     (``allows_not_applicable``, #462) normalizes the absent key to the
+         *     column default rather than "leave alone", so a restore rewrites those
+         *     flags — and ``diff_snapshots`` reports ``total == 0`` while it happens.
+         *     Only whole-era (narrow) baselines are detectable here.
+         */
+        post: operations["discard_template_draft_api_v1_projects__project_id__templates__template_id__discard_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/draft-lock/take-over": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take Over Draft Lock Endpoint
+         * @description Seize the advisory editor lock on this template's draft (B-9f).
+         *
+         *     Unconditional by design. The lock exists so two managers do not
+         *     silently overwrite each other, not to make a template unusable when
+         *     someone shuts their laptop — so the release valve is a human clicking
+         *     Take over, never a timer guessing whether the holder is still there.
+         *
+         *     Nothing is lost: there is exactly ONE draft, so everything the previous
+         *     holder wrote is already in it. They learn at their next write, which
+         *     refuses with the new holder named.
+         */
+        post: operations["take_over_draft_lock_endpoint_api_v1_projects__project_id__templates__template_id__draft_lock_take_over_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Template Field
+         * @description Create a field in a section of the path template.
+         *
+         *     The write stamps the B-4 draft marker via the 0048 trigger (nothing
+         *     manual); the field reaches article forms at Publish.
+         */
+        post: operations["create_template_field_api_v1_projects__project_id__templates__template_id__fields_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/fields/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reorder Template Fields
+         * @description Atomic batch renumber (multi-section batches are legal).
+         *
+         *     Every id must belong to a section of this template; the batch fully
+         *     applies or fully fails. Stamps the B-4 draft marker via the 0048
+         *     trigger.
+         */
+        post: operations["reorder_template_fields_api_v1_projects__project_id__templates__template_id__fields_reorder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/fields/{field_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Template Field
+         * @description Delete a field; recorded extraction work (RESTRICT FKs) is a 409.
+         *
+         *     Stamps the B-4 draft marker via the 0048 trigger (nothing manual).
+         */
+        delete: operations["delete_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Template Field
+         * @description Partial field update — only explicitly-set keys are applied.
+         *
+         *     Relocation is the move endpoint's job (the schema rejects a smuggled
+         *     ``entity_type_id``). Stamps the B-4 draft marker via the 0048 trigger.
+         */
+        patch: operations["update_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/fields/{field_id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move Template Field
+         * @description Move a field onto another section of the SAME template.
+         *
+         *     A destination outside the path template is a 422 (deterministic, no
+         *     retry can succeed) — the cross-template hole this slice closes.
+         *     Stamps the B-4 draft marker via the 0048 trigger.
+         */
+        post: operations["move_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/llm-instruction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Template Llm Instruction
+         * @description Current general AI instruction + the origin global's default.
+         *
+         *     Manager-gated like the sibling endpoints — the Configuration tab is
+         *     the only consumer.
+         */
+        get: operations["get_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_get"];
+        /**
+         * Update Template Llm Instruction
+         * @description Stage the instruction as a draft edit (slice B-4).
+         *
+         *     Whitespace-only normalizes to NULL (nothing injected). Nothing
+         *     republishes here — the text reaches snapshots, prompts and
+         *     editable-stage runs when the manager presses Publish
+         *     (``republish-version``).
+         */
+        put: operations["update_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/{template_id}/republish-version": {
         parameters: {
             query?: never;
@@ -686,8 +972,129 @@ export interface paths {
          *     article forms render the edit; runs from ``consensus`` on keep the
          *     version they were assessed under. Manager-gated like the sibling
          *     endpoints — section/field editing is project-wide configuration.
+         *
+         *     The single 409 (B-9b0 D1) is the publish-time re-check of the many->one
+         *     cardinality rule: ``error.code`` is a ``TemplatePublishRefusalCode`` and
+         *     ``error.details.section_labels`` names EVERY offending section, ordered
+         *     by ``sort_order``, so the Publish button composes its own sentence
+         *     instead of echoing English prose — and the manager fixes all of them in
+         *     one pass rather than rediscovering the next on each retry.
          */
         post: operations["republish_template_version_api_v1_projects__project_id__templates__template_id__republish_version_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/sections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Template Section
+         * @description Create a section; ``sort_order`` is server-computed (max+1).
+         *
+         *     ``role`` and ``parent_entity_type_id`` are explicit parameters — a
+         *     model_section's parent must be the template's model_container (400);
+         *     a second model_container is a 409. Stamps the B-4 draft marker via
+         *     the 0048 trigger (nothing manual).
+         */
+        post: operations["create_template_section_api_v1_projects__project_id__templates__template_id__sections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/sections/{section_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Template Section
+         * @description Delete a section (the DB cascades fields and child sections).
+         *
+         *     Extracted data anywhere under it (RESTRICT FK) is a 409. Stamps the
+         *     B-4 draft marker via the 0048 trigger (nothing manual).
+         */
+        delete: operations["delete_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Template Section
+         * @description Partial section update: label, entry_label, cardinality (B-8).
+         *
+         *     Role rules are 422s (entry_label only on the repeating group;
+         *     cardinality only on a per-model section); many -> one with a parent
+         *     instance holding 2+ entries is a 409. A real change stamps the B-4
+         *     draft marker via the 0048 trigger; an all-no-op update skips the
+         *     write (no stamp).
+         */
+        patch: operations["update_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Template Version History Endpoint
+         * @description The History timeline for a template's published versions (B-9e).
+         *
+         *     Manager-gated like the rest of the configuration surface — this reads
+         *     who changed the template and why, which is not reviewer-facing. The
+         *     sibling ``active-version`` route is the one exception, member-gated
+         *     because the worklist renders from it.
+         *
+         *     An empty list is a 200: a template that never published has no
+         *     timeline yet, which the card explains rather than treating as an error.
+         */
+        get: operations["get_template_version_history_endpoint_api_v1_projects__project_id__templates__template_id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/versions/{version_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Template Version
+         * @description Stage an older version's shape as the current draft (B-9e).
+         *
+         *     Does NOT rewrite history: the live tree is reconciled to that version
+         *     and the draft marker is left stamped, so the manager reviews it through
+         *     the ordinary Publish sheet — per-item acks and all — and it lands as
+         *     v_max+1.
+         *
+         *     404 covers both an unknown version and one belonging to another
+         *     template: distinguishing them would confirm a foreign id exists.
+         */
+        post: operations["restore_template_version_api_v1_projects__project_id__templates__template_id__versions__version_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1396,6 +1803,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[DiscardDraftResponse] */
+        ApiResponse_DiscardDraftResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["DiscardDraftResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[ExportCancelResponse] */
         ApiResponse_ExportCancelResponse_: {
             /** @description Dados da resposta */
@@ -1651,6 +2075,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[RestoreVersionResponse] */
+        ApiResponse_RestoreVersionResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["RestoreVersionResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[ReviewerDecisionResponse] */
         ApiResponse_ReviewerDecisionResponse_: {
             /** @description Dados da resposta */
@@ -1753,6 +2194,193 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[SectionDeleteResponse] */
+        ApiResponse_SectionDeleteResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["SectionDeleteResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[SectionRead] */
+        ApiResponse_SectionRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["SectionRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TakeOverDraftLockResponse] */
+        ApiResponse_TakeOverDraftLockResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TakeOverDraftLockResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateActiveVersionRead] */
+        ApiResponse_TemplateActiveVersionRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateActiveVersionRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateConfigDiffRead] */
+        ApiResponse_TemplateConfigDiffRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateConfigDiffRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateConfigStatusRead] */
+        ApiResponse_TemplateConfigStatusRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateConfigStatusRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateFieldDeleteResponse] */
+        ApiResponse_TemplateFieldDeleteResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateFieldDeleteResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateFieldRead] */
+        ApiResponse_TemplateFieldRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateFieldRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateFieldReorderResponse] */
+        ApiResponse_TemplateFieldReorderResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateFieldReorderResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateInstructionRead] */
+        ApiResponse_TemplateInstructionRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateInstructionRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateVersionHistoryRead] */
+        ApiResponse_TemplateVersionHistoryRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateVersionHistoryRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[Union[RunSummaryResponse, NoneType]] */
         ApiResponse_Union_RunSummaryResponse__NoneType__: {
             /** @description Dados da resposta */
@@ -1811,6 +2439,23 @@ export interface components {
         ApiResponse_UpdateTemplateActiveResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["UpdateTemplateActiveResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[UpdateTemplateInstructionResponse] */
+        ApiResponse_UpdateTemplateInstructionResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["UpdateTemplateInstructionResponse"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2051,6 +2696,22 @@ export interface components {
             /** Run Id */
             run_id: string | null;
         };
+        /**
+         * ChangeTier
+         * @description Severity tier (D2) — what a reviewer stands to lose.
+         * @enum {string}
+         */
+        ChangeTier: "additive" | "cosmetic" | "semantic" | "destructive";
+        /**
+         * ChangeVariant
+         * @description The shape of one row — the client's discriminator (D1).
+         *
+         *     One member per reachable ``(kind, node_kind[, option polarity])`` the
+         *     engine can emit, so a renderer never has to re-derive which of the
+         *     engine's overloaded fields are meaningful.
+         * @enum {string}
+         */
+        ChangeVariant: "template_instruction_added" | "template_instruction_removed" | "template_instruction_modified" | "entity_type_added" | "entity_type_removed" | "entity_type_modified" | "entity_type_fields_reordered" | "field_added" | "field_removed" | "field_moved" | "field_modified" | "field_option_added" | "field_option_removed" | "field_options_reordered";
         /** CloneTemplateRequest */
         CloneTemplateRequest: {
             /**
@@ -2368,6 +3029,84 @@ export interface components {
             id: string;
         };
         /**
+         * DiffStatus
+         * @description Whether a config diff could be computed, and when not, why (D9).
+         *
+         *     One closed 3-way choice rather than a pair of booleans plus a reason: an
+         *     un-diffable template is a state the Publish sheet renders, never an
+         *     error, and only :attr:`AVAILABLE` can carry rows. Encoding it as
+         *     independent fields would make "no diff, yet here are some changes"
+         *     expressible, which is exactly the payload no client should have to
+         *     defend against.
+         * @enum {string}
+         */
+        DiffStatus: "available" | "initial_version" | "baseline_too_old";
+        /** DiscardDraftRequest */
+        DiscardDraftRequest: {
+            /**
+             * Acknowledge Orphans
+             * @default false
+             */
+            acknowledge_orphans: boolean;
+        };
+        /**
+         * DiscardDraftResponse
+         * @description What Discard actually undid (B-9c1 D11). No diff payload — B-9b owns
+         *     that shape.
+         */
+        DiscardDraftResponse: {
+            /** Created Entity Types */
+            created_entity_types: number;
+            /** Created Fields */
+            created_fields: number;
+            /** Deleted Entity Types */
+            deleted_entity_types: number;
+            /** Deleted Fields */
+            deleted_fields: number;
+            /** Draft Was Open */
+            draft_was_open: boolean;
+            /** Instruction Reset */
+            instruction_reset: boolean;
+            /** Kept */
+            kept: components["schemas"]["DiscardKeptNode"][];
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+            /** Updated Entity Types */
+            updated_entity_types: number;
+            /** Updated Fields */
+            updated_fields: number;
+        };
+        /**
+         * DiscardKeptNode
+         * @description One node Discard could NOT undo, and why (B-9c1 D4).
+         *
+         *     Either deleting it would break a RESTRICT reference to real run data, or
+         *     restoring it would collide with something that does — so the draft
+         *     shrinks around it instead of failing wholesale.
+         */
+        DiscardKeptNode: {
+            /** Label */
+            label: string;
+            /**
+             * Node Id
+             * Format: uuid
+             */
+            node_id: string;
+            /**
+             * Node Kind
+             * @enum {string}
+             */
+            node_kind: "entity_type" | "field";
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "has_recorded_data" | "related_to_kept_node" | "name_taken_by_kept_node";
+        };
+        /**
          * DownloadAttachmentResponse
          * @description Response de download de attachment.
          */
@@ -2650,19 +3389,24 @@ export interface components {
         };
         /**
          * ExtractionOptions
-         * @description Opcoes de extraction.
+         * @description Extraction options — entirely inert.
+         *
+         *     C1a removed ``model``: the engine is server-owned, so a client can no
+         *     longer choose it. The two fields left are inert too — nothing in
+         *     ``backend/app`` dereferences ``payload.options``, and what actually
+         *     reaches the LLM are the constants in ``app/llm/extractor.py``. They are
+         *     flagged ``deprecated`` in the OpenAPI contract while staying accepted on
+         *     the wire, so clients can be migrated off them before they are removed.
          */
         ExtractionOptions: {
-            /** Max Tokens */
+            /**
+             * Max Tokens
+             * @deprecated
+             */
             max_tokens?: number | null;
             /**
-             * Model
-             * @description Model to use
-             * @default gpt-4o-mini
-             */
-            model: string;
-            /**
              * Temperature
+             * @deprecated
              * @default 0.1
              */
             temperature: number;
@@ -2907,12 +3651,6 @@ export interface components {
              * Format: uuid
              */
             articleId: string;
-            /**
-             * Model
-             * @description Model to use
-             * @default gpt-4o-mini
-             */
-            model: string | null;
             options?: components["schemas"]["ExtractionOptions"] | null;
             /**
              * Projectid
@@ -2981,6 +3719,16 @@ export interface components {
              */
             parentInstanceId: string;
         };
+        /**
+         * OpaqueValueState
+         * @description A summarized opaque value that has no listable content (D3).
+         *
+         *     The wire row ships this instead of a server-rendered English word, so the
+         *     copy layer owns the sentence (``.claude/rules/frontend.md``) and a stored
+         *     value that happens to read like the marker cannot be mistaken for it.
+         * @enum {string}
+         */
+        OpaqueValueState: "present" | "empty";
         /** OpenHITLSessionRequest */
         OpenHITLSessionRequest: {
             /**
@@ -3135,6 +3883,24 @@ export interface components {
             /** Version */
             version: number;
         };
+        /**
+         * RepublishTemplateVersionRequest
+         * @description What the Publish button submits (B-9b2b).
+         *
+         *     A REQUIRED body even though every field is optional, matching
+         *     ``DiscardDraftRequest``: the endpoint is the untrusted surface, and an
+         *     optional body would let a bodyless POST skip the whole contract. With
+         *     the fields defaulted, a bodyless POST is a 422 rather than a silent
+         *     unchecked publish.
+         */
+        RepublishTemplateVersionRequest: {
+            /** Acknowledged */
+            acknowledged?: components["schemas"]["TemplateChangeAck"][];
+            /** Expected Fingerprint */
+            expected_fingerprint?: string | null;
+            /** Note */
+            note?: string | null;
+        };
         /** RepublishTemplateVersionResponse */
         RepublishTemplateVersionResponse: {
             /** Changed */
@@ -3148,6 +3914,35 @@ export interface components {
              * Format: uuid
              */
             version_id: string;
+        };
+        /**
+         * RestoreVersionResponse
+         * @description What a Restore-vN staged (B-9e).
+         *
+         *     ``changed`` is False when the version's shape already matched the live
+         *     tree: the writer touched no rows, so no draft marker was stamped and
+         *     Publish stays disabled. The sheet says so rather than claiming a
+         *     restore that the UI cannot act on.
+         */
+        RestoreVersionResponse: {
+            /** Changed */
+            changed: boolean;
+            /** Created Entity Types */
+            created_entity_types: number;
+            /** Created Fields */
+            created_fields: number;
+            /** Deleted Entity Types */
+            deleted_entity_types: number;
+            /** Deleted Fields */
+            deleted_fields: number;
+            /** Kept Count */
+            kept_count: number;
+            /** Updated Entity Types */
+            updated_entity_types: number;
+            /** Updated Fields */
+            updated_fields: number;
+            /** Version */
+            version: number;
         };
         /** ReviewerDecisionResponse */
         ReviewerDecisionResponse: {
@@ -3381,6 +4176,8 @@ export interface components {
             cardinality: string;
             /** Description */
             description?: string | null;
+            /** Entry Label */
+            entry_label?: string | null;
             /** Fields */
             fields: components["schemas"]["RunViewField"][];
             /**
@@ -3564,6 +4361,62 @@ export interface components {
             integration_id: string;
         };
         /**
+         * SectionCreateRequest
+         * @description Create a section (entity type) in the path template.
+         *
+         *     ``role`` is REQUIRED with no default — the column deliberately has no
+         *     server_default (migration 0016 step 4) so an insert that omits the
+         *     structural role fails loudly instead of silently becoming a
+         *     study_section. ``sort_order`` is deliberately ABSENT: the server
+         *     computes max+1 template-wide inside the INSERT itself, killing the
+         *     frontend's read-then-write race. The ``ck_role_parent`` validator
+         *     below mirrors the DB CHECK of the same name; parent OWNERSHIP
+         *     (parent belongs to THIS template) is the service's BOLA job.
+         *     ``entry_label`` is the repeating group's entry noun (B-8, D3):
+         *     container-only, defaulting to ``'model'``; containers always repeat
+         *     (``cardinality='many'`` is enforced, never chosen).
+         */
+        SectionCreateRequest: {
+            /**
+             * Cardinality
+             * @enum {string}
+             */
+            cardinality: "one" | "many";
+            /** Description */
+            description?: string | null;
+            /** Entry Label */
+            entry_label?: string | null;
+            /**
+             * Is Required
+             * @default false
+             */
+            is_required: boolean;
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+            /** Parent Entity Type Id */
+            parent_entity_type_id?: string | null;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "study_section" | "model_container" | "model_section";
+        };
+        /**
+         * SectionDeleteResponse
+         * @description Payload of the section DELETE endpoint.
+         */
+        SectionDeleteResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
          * SectionExtractionRequest
          * @description Request for extraction de section.
          */
@@ -3585,12 +4438,6 @@ export interface components {
              * @default false
              */
             extractAllSections: boolean;
-            /**
-             * Model
-             * @description Model to use
-             * @default gpt-4o-mini
-             */
-            model: string | null;
             options?: components["schemas"]["ExtractionOptions"] | null;
             /** Parentinstanceid */
             parentInstanceId?: string | null;
@@ -3648,6 +4495,73 @@ export interface components {
              * @default 0
              */
             tokens_used: number;
+        };
+        /**
+         * SectionRead
+         * @description The full section row the config editor renders. Built from the
+         *     ORM row via ``model_validate`` — the create/rename response payload.
+         *
+         *     ``project_template_id`` is non-optional: the section service writes
+         *     only project-lineage rows (global-lineage sections are seed-owned).
+         */
+        SectionRead: {
+            /**
+             * Cardinality
+             * @enum {string}
+             */
+            cardinality: "one" | "many";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description?: string | null;
+            /** Entry Label */
+            entry_label?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Required */
+            is_required: boolean;
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+            /** Parent Entity Type Id */
+            parent_entity_type_id?: string | null;
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "study_section" | "model_container" | "model_section";
+            /** Sort Order */
+            sort_order: number;
+        };
+        /**
+         * SectionUpdateRequest
+         * @description Partial section update: ``label`` (any role), ``entry_label``
+         *     (repeating groups only) and ``cardinality`` (per-model sections
+         *     only) — the role rules live in the service, which owns the row
+         *     (B-8, D5). At least one field must be provided, and explicit nulls
+         *     are rejected (omit instead) so a smuggled ``{"label": null}`` can
+         *     never blank a column. Replaces the label-only SectionRenameRequest;
+         *     the pre-B-8 label-only body stays valid.
+         */
+        SectionUpdateRequest: {
+            /** Cardinality */
+            cardinality?: ("one" | "many") | null;
+            /** Entry Label */
+            entry_label?: string | null;
+            /** Label */
+            label?: string | null;
         };
         /**
          * SkippedFileEntry
@@ -3748,6 +4662,633 @@ export interface components {
             traceId: string;
         };
         /**
+         * TakeOverDraftLockResponse
+         * @description Who was displaced by a take-over (B-9f), so the UI can say whose
+         *     draft was taken. Both ``None`` when nobody held it.
+         */
+        TakeOverDraftLockResponse: {
+            /** Previous Holder Id */
+            previous_holder_id?: string | null;
+            /** Previous Holder Name */
+            previous_holder_name?: string | null;
+        };
+        /**
+         * TemplateActiveVersionRead
+         * @description The template's ACTIVE version tree — what the worklist/dashboard
+         *     progress and exports render from (B-3a). Never an empty stand-in for a
+         *     missing active version: that case is a typed 404.
+         */
+        TemplateActiveVersionRead: {
+            /** Entity Types */
+            entity_types: components["schemas"]["RunViewEntityType"][];
+            /** Version */
+            version: number;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+        };
+        /**
+         * TemplateChangeAck
+         * @description One destructive row the manager ticked, as ``(id, tier)`` (B-9b2b).
+         *
+         *     The tier travels WITH the id on purpose. It is deliberately not part of
+         *     the composite row id (``template_diff_read._row_id``), so an ack whose
+         *     tier no longer matches the server's recomputed row reads as *absent*
+         *     rather than as a match — which is exactly right, because a reviewer
+         *     recording an answer can escalate a row to DESTRUCTIVE without anyone
+         *     touching the template.
+         */
+        TemplateChangeAck: {
+            /** Id */
+            id: string;
+            tier: components["schemas"]["ChangeTier"];
+        };
+        /**
+         * TemplateChangeRowRead
+         * @description One diff row on the wire, built by ``app.services.template_diff_read``.
+         *
+         *     Nothing here is typed ``Any``: the baseline side of a diff is raw stored
+         *     JSONB, and an opaque value is summarized server-side rather than
+         *     shipped.
+         */
+        TemplateChangeRowRead: {
+            /**
+             * Affects Recorded Data
+             * @default false
+             */
+            affects_recorded_data: boolean;
+            /** After */
+            after?: string | boolean | null;
+            after_opaque_state?: components["schemas"]["OpaqueValueState"] | null;
+            /** Attribute */
+            attribute?: string | null;
+            /** Before */
+            before?: string | boolean | null;
+            before_opaque_state?: components["schemas"]["OpaqueValueState"] | null;
+            /** Id */
+            id: string;
+            /** Label Path */
+            label_path: string[];
+            /** Reorder Count */
+            reorder_count?: number | null;
+            tier: components["schemas"]["ChangeTier"];
+            variant: components["schemas"]["ChangeVariant"];
+        };
+        /**
+         * TemplateConfigDiffBuckets
+         * @description The rows grouped by severity tier — one field per ``ChangeTier``.
+         *
+         *     Named fields rather than a map keyed by the enum, so the generated
+         *     client gets four exhaustive keys instead of an open ``Record``. A unit
+         *     test pins the field names to the enum's values, because a client that
+         *     buckets by ``row.tier`` has to find a bucket under that exact name.
+         */
+        TemplateConfigDiffBuckets: {
+            /** Additive */
+            additive?: components["schemas"]["TemplateChangeRowRead"][];
+            /** Cosmetic */
+            cosmetic?: components["schemas"]["TemplateChangeRowRead"][];
+            /** Destructive */
+            destructive?: components["schemas"]["TemplateChangeRowRead"][];
+            /** Semantic */
+            semantic?: components["schemas"]["TemplateChangeRowRead"][];
+        };
+        /**
+         * TemplateConfigDiffRead
+         * @description What the open draft would publish (slice B-9b2a).
+         *
+         *     ``status`` names which of :class:`~app.domain.template_change.DiffStatus`'s
+         *     three shapes this is; all three are HTTP 200, because an un-diffable
+         *     template is a state the sheet explains rather than an error. Only
+         *     ``available`` carries rows — the other two leave the buckets at their
+         *     empty default.
+         */
+        TemplateConfigDiffRead: {
+            changes?: components["schemas"]["TemplateConfigDiffBuckets"];
+            /** Fingerprint */
+            fingerprint?: string | null;
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+            status: components["schemas"]["DiffStatus"];
+        };
+        /**
+         * TemplateConfigStatusRead
+         * @description Draft/publish status for the Configuration tab (slice B-4).
+         *
+         *     ``has_pending_changes`` mirrors the trigger-stamped
+         *     ``config_draft_since``; ``active_version`` is None only for a
+         *     template that never published (legacy shapes).
+         */
+        TemplateConfigStatusRead: {
+            /** Active Version */
+            active_version: number | null;
+            /**
+             * Discard Available
+             * @default false
+             */
+            discard_available: boolean;
+            /** Draft Holder Id */
+            draft_holder_id?: string | null;
+            /** Draft Holder Name */
+            draft_holder_name?: string | null;
+            /** Has Pending Changes */
+            has_pending_changes: boolean;
+            /**
+             * Is Draft Holder
+             * @default false
+             */
+            is_draft_holder: boolean;
+            /** Pending Change Count */
+            pending_change_count?: number | null;
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+        };
+        /**
+         * TemplateDiscardRefusalCode
+         * @description Why ``POST .../discard-draft`` returned 409 (B-9c2 D1).
+         *
+         *     Deliberately NOT part of :class:`app.schemas.common.ApiErrorCode`: that
+         *     enum is the cross-cutting vocabulary every client branches on, and these
+         *     five are one endpoint's private outcomes. Same call as
+         *     ``ExtractionErrorCode`` — slice-local codes stay slice-local, so the
+         *     global contract does not grow a member per feature.
+         *
+         *     The split that matters to the caller: ``ORPHAN_ACK_REQUIRED`` is a
+         *     *question* (re-post with ``acknowledge_orphans``), the other four are
+         *     refusals no retry of the same request can satisfy.
+         * @enum {string}
+         */
+        TemplateDiscardRefusalCode: "ORPHAN_ACK_REQUIRED" | "NARROW_BASELINE" | "CARDINALITY_DOWNGRADE_BLOCKED" | "CONTAINER_SWAP_UNSUPPORTED" | "DISCARD_RACED";
+        /**
+         * TemplateDiscardRefusalDetails
+         * @description The ``error.details`` payload of an ``ORPHAN_ACK_REQUIRED`` refusal.
+         *
+         *     One entry per FIELD: ``allowed_values`` is diffed per option code, so a
+         *     field losing two recorded options is two changes and one orphan.
+         */
+        TemplateDiscardRefusalDetails: {
+            /** Orphans */
+            orphans?: components["schemas"]["TemplateDiscardRefusalOrphan"][];
+        };
+        /** TemplateDiscardRefusalError */
+        TemplateDiscardRefusalError: {
+            code: components["schemas"]["TemplateDiscardRefusalCode"];
+            details?: components["schemas"]["TemplateDiscardRefusalDetails"] | null;
+            /** Message */
+            message: string;
+        };
+        /**
+         * TemplateDiscardRefusalOrphan
+         * @description One field whose recorded answers the Discard would strand.
+         */
+        TemplateDiscardRefusalOrphan: {
+            /** Label */
+            label: string;
+            /** Node Id */
+            node_id: string | null;
+        };
+        /**
+         * TemplateDiscardRefusalResponse
+         * @description The 409 body, declared so the payload reaches ``schema.d.ts`` typed.
+         *
+         *     Documents what ``app_error_handler`` actually writes — ``details`` under
+         *     ``error``, never a ``data`` slot. Without this the generated client sees
+         *     ``ErrorDetail.details: dict[str, Any] | None`` and types the orphan list
+         *     as ``unknown``.
+         */
+        TemplateDiscardRefusalResponse: {
+            error: components["schemas"]["TemplateDiscardRefusalError"];
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /** Trace Id */
+            trace_id?: string | null;
+        };
+        /**
+         * TemplateDraftLockRefusalCode
+         * @description Why a config write was refused by the advisory editor lock (B-9f).
+         *
+         *     Slice-local, like its two siblings: this is one surface's outcome, not
+         *     part of the cross-cutting ``ApiErrorCode`` vocabulary.
+         * @enum {string}
+         */
+        TemplateDraftLockRefusalCode: "DRAFT_LOCK_HELD";
+        /**
+         * TemplateDraftLockRefusalDetails
+         * @description Who holds the draft, so "Take over" is not a blind click.
+         */
+        TemplateDraftLockRefusalDetails: {
+            /** Holder Id */
+            holder_id?: string | null;
+            /** Holder Name */
+            holder_name?: string | null;
+        };
+        /** TemplateDraftLockRefusalError */
+        TemplateDraftLockRefusalError: {
+            code: components["schemas"]["TemplateDraftLockRefusalCode"];
+            details?: components["schemas"]["TemplateDraftLockRefusalDetails"] | null;
+            /** Message */
+            message: string;
+        };
+        /**
+         * TemplateDraftLockRefusalResponse
+         * @description The 409 body, declared so the generated client types the holder.
+         */
+        TemplateDraftLockRefusalResponse: {
+            error: components["schemas"]["TemplateDraftLockRefusalError"];
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /** Trace Id */
+            trace_id?: string | null;
+        };
+        /**
+         * TemplateFieldCreateRequest
+         * @description Create a field in a section of the path template.
+         *
+         *     ``entity_type_id`` names the owning section (mirrors the frontend
+         *     ``ExtractionFieldInsert``); the service re-verifies it belongs to the
+         *     path template (BOLA chain entity_type -> template -> project).
+         *     ``sort_order`` is client-supplied (panel 10): it is a per-section
+         *     rendering convention computed at dequeue time by the optimistic-row
+         *     ghost chain — the server validates >= 0 and otherwise trusts it.
+         */
+        TemplateFieldCreateRequest: {
+            /**
+             * Allow Other
+             * @default false
+             */
+            allow_other: boolean;
+            /** Allowed Units */
+            allowed_units?: string[] | null;
+            /** Allowed Values */
+            allowed_values?: string[] | null;
+            /**
+             * Allows Not Applicable
+             * @default false
+             */
+            allows_not_applicable: boolean;
+            /**
+             * Allows Not Evaluated
+             * @default false
+             */
+            allows_not_evaluated: boolean;
+            /** Description */
+            description?: string | null;
+            /**
+             * Entity Type Id
+             * Format: uuid
+             */
+            entity_type_id: string;
+            /**
+             * Field Type
+             * @enum {string}
+             */
+            field_type: "text" | "number" | "date" | "select" | "multiselect" | "boolean";
+            /**
+             * Is Required
+             * @default false
+             */
+            is_required: boolean;
+            /** Label */
+            label: string;
+            /** Llm Description */
+            llm_description?: string | null;
+            /** Name */
+            name: string;
+            /** Other Label */
+            other_label?: string | null;
+            /** Other Placeholder */
+            other_placeholder?: string | null;
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+            /** Unit */
+            unit?: string | null;
+            /** Validation Schema */
+            validation_schema?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * TemplateFieldDeleteResponse
+         * @description Payload of the field DELETE endpoint.
+         */
+        TemplateFieldDeleteResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * TemplateFieldMoveRequest
+         * @description Move a field to another section: destination + landing position.
+         *
+         *     Both required — a move always names where it lands. The service
+         *     refuses a destination outside the path template (the cross-template
+         *     hole this slice closes) and treats same-section as a plain reorder
+         *     concern, not a move.
+         */
+        TemplateFieldMoveRequest: {
+            /**
+             * Entity Type Id
+             * Format: uuid
+             */
+            entity_type_id: string;
+            /** Sort Order */
+            sort_order: number;
+        };
+        /**
+         * TemplateFieldRead
+         * @description The full field row the config editor renders (mirrors the frontend
+         *     ``ExtractionField`` interface). Built from the ORM row via
+         *     ``model_validate`` — the create/update/move response payload.
+         */
+        TemplateFieldRead: {
+            /**
+             * Allow Other
+             * @default false
+             */
+            allow_other: boolean;
+            /** Allowed Units */
+            allowed_units?: string[] | null;
+            /** Allowed Values */
+            allowed_values?: string[] | null;
+            /**
+             * Allows Not Applicable
+             * @default false
+             */
+            allows_not_applicable: boolean;
+            /**
+             * Allows Not Evaluated
+             * @default false
+             */
+            allows_not_evaluated: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Entity Type Id
+             * Format: uuid
+             */
+            entity_type_id: string;
+            /**
+             * Field Type
+             * @enum {string}
+             */
+            field_type: "text" | "number" | "date" | "select" | "multiselect" | "boolean";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Required */
+            is_required: boolean;
+            /** Label */
+            label: string;
+            /** Llm Description */
+            llm_description?: string | null;
+            /** Name */
+            name: string;
+            /** Other Label */
+            other_label?: string | null;
+            /** Other Placeholder */
+            other_placeholder?: string | null;
+            /** Sort Order */
+            sort_order: number;
+            /** Unit */
+            unit?: string | null;
+            /** Validation Schema */
+            validation_schema?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * TemplateFieldReorderRequest
+         * @description Atomic batch renumber — callers renumber the whole affected
+         *     section(s). Multi-section batches are legal (see module docstring);
+         *     id ownership and duplicate rejection are enforced by the service.
+         */
+        TemplateFieldReorderRequest: {
+            /** Updates */
+            updates: components["schemas"]["TemplateFieldSortOrderUpdate"][];
+        };
+        /**
+         * TemplateFieldReorderResponse
+         * @description Payload of the reorder endpoint: how many rows the atomic batch
+         *     renumbered (equals the request batch size on success).
+         */
+        TemplateFieldReorderResponse: {
+            /** Updated Count */
+            updated_count: number;
+        };
+        /**
+         * TemplateFieldSortOrderUpdate
+         * @description One row of a reorder batch.
+         */
+        TemplateFieldSortOrderUpdate: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Sort Order */
+            sort_order: number;
+        };
+        /**
+         * TemplateFieldUpdateRequest
+         * @description Partial update — every field optional; the service applies only the
+         *     explicitly-set keys (``model_dump(exclude_unset=True)``).
+         *
+         *     ``entity_type_id`` is deliberately absent (``extra="forbid"`` rejects
+         *     it): relocating a field across sections is a MOVE with its own model
+         *     and server-side destination checks — an update must never smuggle one.
+         */
+        TemplateFieldUpdateRequest: {
+            /** Allow Other */
+            allow_other?: boolean | null;
+            /** Allowed Units */
+            allowed_units?: string[] | null;
+            /** Allowed Values */
+            allowed_values?: string[] | null;
+            /** Allows Not Applicable */
+            allows_not_applicable?: boolean | null;
+            /** Allows Not Evaluated */
+            allows_not_evaluated?: boolean | null;
+            /** Description */
+            description?: string | null;
+            /** Field Type */
+            field_type?: ("text" | "number" | "date" | "select" | "multiselect" | "boolean") | null;
+            /** Is Required */
+            is_required?: boolean | null;
+            /** Label */
+            label?: string | null;
+            /** Llm Description */
+            llm_description?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Other Label */
+            other_label?: string | null;
+            /** Other Placeholder */
+            other_placeholder?: string | null;
+            /** Sort Order */
+            sort_order?: number | null;
+            /** Unit */
+            unit?: string | null;
+            /** Validation Schema */
+            validation_schema?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** TemplateInstructionRead */
+        TemplateInstructionRead: {
+            /** Default Instruction */
+            default_instruction: string | null;
+            /** Llm Template Instruction */
+            llm_template_instruction: string | null;
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+        };
+        /**
+         * TemplatePublishRefusalCode
+         * @description Why ``POST .../republish-version`` returned 409 (B-9b0 D1).
+         *
+         *     Deliberately NOT part of :class:`app.schemas.common.ApiErrorCode`, for
+         *     the same reason as :class:`TemplateDiscardRefusalCode`: that enum is the
+         *     cross-cutting vocabulary every client branches on, and this is one
+         *     endpoint's private outcome. Slice-local codes stay slice-local so the
+         *     global contract does not grow a member per feature.
+         *
+         *     One member today, and an enum rather than a bare literal so the
+         *     generated client already branches on a closed set — Publish has exactly
+         *     one refusal that can reach it (``PendingConfigDraftError`` fires only
+         *     under ``fail_if_pending_draft``, which only the clone service passes).
+         * @enum {string}
+         */
+        TemplatePublishRefusalCode: "PUBLISH_BLOCKED_BY_MULTI_ENTRY" | "PUBLISH_DIFF_DRIFTED" | "PUBLISH_MISSING_ACKNOWLEDGEMENT";
+        /**
+         * TemplatePublishRefusalDetails
+         * @description The ``error.details`` payload of a publish refusal (B-9b0 D2).
+         *
+         *     EVERY offending section, ordered by ``sort_order`` — never a single
+         *     ``section_label``: the un-ordered select behind it raised on the first
+         *     heap row, so one name out of several was reported at random and the
+         *     manager had to publish-read-fix-publish to find the rest.
+         *
+         *     One model across all three codes rather than a discriminated union: the
+         *     generated client already branches on ``code``, and three near-empty
+         *     payload models would buy nothing but three more names.
+         */
+        TemplatePublishRefusalDetails: {
+            /** Fingerprint */
+            fingerprint?: string | null;
+            /** Row Ids */
+            row_ids?: string[];
+            /** Section Labels */
+            section_labels?: string[];
+        };
+        /** TemplatePublishRefusalError */
+        TemplatePublishRefusalError: {
+            code: components["schemas"]["TemplatePublishRefusalCode"];
+            details?: components["schemas"]["TemplatePublishRefusalDetails"] | null;
+            /** Message */
+            message: string;
+        };
+        /**
+         * TemplatePublishRefusalResponse
+         * @description The 409 body, declared so the payload reaches ``schema.d.ts`` typed.
+         *
+         *     Documents what ``app_error_handler`` actually writes — ``details`` under
+         *     ``error``, never a ``data`` slot, so this is NOT an ``ApiResponse[T]``.
+         *     Without it the generated client sees ``ErrorDetail.details:
+         *     dict[str, Any] | None`` and types the labels as ``unknown``.
+         */
+        TemplatePublishRefusalResponse: {
+            error: components["schemas"]["TemplatePublishRefusalError"];
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /** Trace Id */
+            trace_id?: string | null;
+        };
+        /**
+         * TemplateVersionHistoryEntry
+         * @description One published version, as the History timeline renders it (B-9e).
+         *
+         *     Carries no ``schema`` payload: the timeline shows WHAT happened and WHO
+         *     did it, and shipping every snapshot would put the whole template
+         *     structure on the wire once per version for a list nobody diffs inline.
+         */
+        TemplateVersionHistoryEntry: {
+            /** Is Active */
+            is_active: boolean;
+            /** Note */
+            note?: string | null;
+            /** Pinned Run Count */
+            pinned_run_count: number;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * Published By
+             * Format: uuid
+             */
+            published_by: string;
+            /** Published By Name */
+            published_by_name?: string | null;
+            /** Version */
+            version: number;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+        };
+        /**
+         * TemplateVersionHistoryRead
+         * @description The History card's read model — newest version first.
+         *
+         *     An empty list is a real, renderable state (a template that never
+         *     published), not an error.
+         */
+        TemplateVersionHistoryRead: {
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+            /** Versions */
+            versions?: components["schemas"]["TemplateVersionHistoryEntry"][];
+        };
+        /**
          * TestConnectionResponse
          * @description Response de teste de conexao.
          */
@@ -3808,6 +5349,25 @@ export interface components {
         UpdateTemplateActiveResponse: {
             /** Is Active */
             is_active: boolean;
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+        };
+        /** UpdateTemplateInstructionRequest */
+        UpdateTemplateInstructionRequest: {
+            /** Llm Template Instruction */
+            llm_template_instruction?: string | null;
+        };
+        /**
+         * UpdateTemplateInstructionResponse
+         * @description B-4: the PUT stages a draft edit — no version fields (nothing
+         *     republishes until the explicit Publish).
+         */
+        UpdateTemplateInstructionResponse: {
+            /** Llm Template Instruction */
+            llm_template_instruction: string | null;
             /**
              * Project Template Id
              * Format: uuid
@@ -5013,7 +6573,7 @@ export interface operations {
             };
         };
     };
-    republish_template_version_api_v1_projects__project_id__templates__template_id__republish_version_post: {
+    get_template_active_version_api_v1_projects__project_id__templates__template_id__active_version_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -5031,7 +6591,620 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateActiveVersionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_template_config_diff_endpoint_api_v1_projects__project_id__templates__template_id__config_diff_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateConfigDiffRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_template_config_status_endpoint_api_v1_projects__project_id__templates__template_id__config_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateConfigStatusRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_template_draft_api_v1_projects__project_id__templates__template_id__discard_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscardDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_DiscardDraftResponse_"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateDiscardRefusalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    take_over_draft_lock_endpoint_api_v1_projects__project_id__templates__template_id__draft_lock_take_over_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TakeOverDraftLockResponse_"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateDraftLockRefusalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_template_field_api_v1_projects__project_id__templates__template_id__fields_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateFieldCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateFieldRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_template_fields_api_v1_projects__project_id__templates__template_id__fields_reorder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateFieldReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateFieldReorderResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+                field_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateFieldDeleteResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+                field_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateFieldUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateFieldRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_template_field_api_v1_projects__project_id__templates__template_id__fields__field_id__move_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+                field_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateFieldMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateFieldRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateInstructionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_template_llm_instruction_api_v1_projects__project_id__templates__template_id__llm_instruction_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTemplateInstructionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_UpdateTemplateInstructionResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    republish_template_version_api_v1_projects__project_id__templates__template_id__republish_version_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepublishTemplateVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/json": components["schemas"]["ApiResponse_RepublishTemplateVersionResponse_"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplatePublishRefusalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_template_section_api_v1_projects__project_id__templates__template_id__sections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SectionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_SectionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_SectionDeleteResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SectionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_SectionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_template_version_history_endpoint_api_v1_projects__project_id__templates__template_id__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateVersionHistoryRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_template_version_api_v1_projects__project_id__templates__template_id__versions__version_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RestoreVersionResponse_"];
                 };
             };
             /** @description Validation Error */

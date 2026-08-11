@@ -17,6 +17,7 @@ Coverage targets (in priority order):
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
@@ -73,6 +74,26 @@ def _rows_result(rows: list) -> MagicMock:
     result = MagicMock()
     result.all.return_value = rows
     return result
+
+
+def _export_run(
+    run_id: UUID, *, parameters: dict | None = None, results: dict | None = None
+) -> MagicMock:
+    """An ExtractionRun-shaped stub for ``_load_ai_proposal_rows``' run query.
+
+    That loader selects whole ``ExtractionRun`` rows and reads three columns:
+    ``parameters`` + ``results`` (the "Model used" resolution, which prefers
+    the server-written ``results["provenance"]`` engine) and ``version_id``
+    (the label-fallback chain). All three must be concrete values — a bare
+    ``MagicMock(spec=...)`` attribute would make the resolution silently
+    ambiguous instead of loudly wrong.
+    """
+    run = MagicMock(spec=ExtractionRun)
+    run.id = run_id
+    run.parameters = parameters if parameters is not None else {}
+    run.results = results if results is not None else {}
+    run.version_id = uuid4()
+    return run
 
 
 def _scalar_result(value) -> MagicMock:
@@ -694,16 +715,23 @@ class TestInferReviewerOutcome:
 class TestLoadAiProposalRows:
     """AI metadata sheet loader (FR-036 – FR-040).
 
-    This method issues 5 separate db.execute() calls for the main path.
     We use side_effect on db.execute to return controlled results in order.
 
-    Query order (from reading the implementation):
+    Query order (from reading the implementation, post B-3a):
       1. ExtractionInstance (inst_rows) — instance meta
       2. ExtractionProposalRecord (proposal_rows) — AI proposals
       3. ExtractionEvidence (evidence_rows) — evidence
       4. ExtractionReviewerState+Decision (decision_rows) — reviewer outcomes
-      5. ExtractionEntityType (ent_label_rows) — section labels
-      (6. ExtractionField fallback — only when missing field ids)
+      5. ExtractionRun (whole rows, via .scalars()) — parameters + results
+         feed the "Model used" resolution, version_id the label chain
+      -- run-snapshot label tier: load_export_sections per distinct
+         version_id starts with db.get (NOT db.execute); tests stub
+         svc.db.get -> None so the tier is a clean no-op and the live
+         fallback queries below still fire.
+      (6. ExtractionEntityType fallback — only for entity ids the snapshot
+          tier did not resolve; with db.get -> None that is all of them,
+          so it fires whenever instance_meta is non-empty)
+      (7. ExtractionField fallback — only when missing field ids)
     """
 
     def _make_article(
@@ -832,6 +860,9 @@ class TestLoadAiProposalRows:
         # entity label rows: (entity_type_id, label)
         ent_label_row = (entity_type_id, "Demographics")
 
+        # B-3a: snapshot label tier no-op — load_export_sections' db.get
+        # returns None, so the live fallback queries below still run.
+        svc.db.get = AsyncMock(return_value=None)
         svc.db.execute = AsyncMock(
             side_effect=[
                 # 1. instance meta
@@ -842,10 +873,11 @@ class TestLoadAiProposalRows:
                 _rows_result([evidence_row]),
                 # 4. decision_rows
                 _rows_result([]),
-                # 5. ent_label_rows
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
+                # 6. ent_label_rows — entity ids unresolved by the snapshot tier
                 _rows_result([ent_label_row]),
-                # 6. run_param_rows
-                _rows_result([(run_id, {})]),
                 # (no field fallback — field_id is in field_label_by_id from sections)
             ]
         )
@@ -907,15 +939,18 @@ class TestLoadAiProposalRows:
             (proposal_id, "middle finding", 9),
         ]
 
+        svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
         svc.db.execute = AsyncMock(
             side_effect=[
                 _rows_result([(instance_id, entity_type_id, article_id)]),
                 _rows_result([proposal_row]),
                 _rows_result(evidence_rows),
                 _rows_result([]),  # decisions
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
+                # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Sec")]),
-                # 6. run_param_rows
-                _rows_result([(run_id, {})]),
                 # 7. field fallback (sections=())
                 _rows_result([(field_id, "Fld")]),
             ]
@@ -970,15 +1005,18 @@ class TestLoadAiProposalRows:
         # value_map uses 3-tuple for CONSENSUS mode
         value_map = {(run_id, instance_id, field_id): "consensus_val"}
 
+        svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
         svc.db.execute = AsyncMock(
             side_effect=[
                 _rows_result([(instance_id, entity_type_id, article_id)]),
                 _rows_result([proposal_row]),
                 _rows_result([]),  # no evidence
                 _rows_result([decision_row]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
+                # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Section Label")]),
-                # 6. run_param_rows
-                _rows_result([(run_id, {})]),
                 # 7. field label fallback (field_id not in sections=())
                 _rows_result([(field_id, "Field Label")]),
             ]
@@ -1027,15 +1065,18 @@ class TestLoadAiProposalRows:
         # But also the 3-tuple key should NOT be picked up in ALL_USERS mode
         value_map_4tuple[(run_id, instance_id, field_id)] = "wrong_3tuple_value"
 
+        svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
         svc.db.execute = AsyncMock(
             side_effect=[
                 _rows_result([(instance_id, entity_type_id, article_id)]),
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
+                # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Section")]),
-                # 6. run_param_rows
-                _rows_result([(run_id, {})]),
                 # 7. field fallback (field_id not in sections=())
                 _rows_result([(field_id, "Field Label")]),
             ]
@@ -1081,15 +1122,18 @@ class TestLoadAiProposalRows:
         # Only 3-tuple key in value_map
         value_map = {(run_id, instance_id, field_id): "3tuple_value"}
 
+        svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
         svc.db.execute = AsyncMock(
             side_effect=[
                 _rows_result([(instance_id, entity_type_id, article_id)]),
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
+                # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Section")]),
-                # 6. run_param_rows
-                _rows_result([(run_id, {})]),
                 # 7. field fallback (field_id not in sections=())
                 _rows_result([(field_id, "Field Label")]),
             ]
@@ -1143,15 +1187,18 @@ class TestLoadAiProposalRows:
         # decision query is now filtered by target_reviewer_id in SINGLE_USER mode.
         target_reject = (run_id, instance_id, field_id, target_reviewer, "reject", None)
 
+        svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
         svc.db.execute = AsyncMock(
             side_effect=[
                 _rows_result([(instance_id, entity_type_id, article_id)]),
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([target_reject]),  # query filtered to target reviewer
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
+                # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Sec")]),
-                # 6. run_param_rows
-                _rows_result([(run_id, {})]),
                 # 7. field fallback (sections=())
                 _rows_result([(field_id, "Fld")]),
             ]
@@ -1188,16 +1235,18 @@ class TestLoadAiProposalRows:
 
         proposal_row = (proposal_id, run_id, instance_id, field_id, "v", None, None, ts)
 
+        svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
         svc.db.execute = AsyncMock(
             side_effect=[
                 _rows_result([(instance_id, entity_type_id, article_id)]),
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
-                # ent_label_rows provides fallback label
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
+                # 6. ent_label_rows provides fallback label
                 _rows_result([(entity_type_id, "Fallback Section Label")]),
-                # 6. run_param_rows
-                _rows_result([(run_id, {})]),
                 # 7. field fallback (field_id not in sections=())
                 _rows_result([(field_id, "Field Label")]),
             ]
@@ -1234,15 +1283,18 @@ class TestLoadAiProposalRows:
 
         proposal_row = (proposal_id, run_id, instance_id, field_id, "v", None, None, ts)
 
+        svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
         svc.db.execute = AsyncMock(
             side_effect=[
                 _rows_result([(instance_id, entity_type_id, article_id)]),
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
+                # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Section Label")]),
-                # 6. run_param_rows
-                _rows_result([(run_id, {})]),
                 # 7. field label fallback
                 _rows_result([(field_id, "Fallback Field Label")]),
             ]
@@ -1298,15 +1350,18 @@ class TestLoadAiProposalRows:
         decision_a = (run_id, instance_id, field_id, reviewer_a, "accept_proposal", proposal_id)
         decision_b = (run_id, instance_id, field_id, reviewer_b, "reject", None)
 
+        svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
         svc.db.execute = AsyncMock(
             side_effect=[
                 _rows_result([(instance_id, entity_type_id, article_id)]),
                 _rows_result([proposal_row]),
                 _rows_result([]),  # evidence
                 _rows_result([decision_a, decision_b]),  # decisions (reviewer-tagged)
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
+                # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Sec")]),
-                # 6. run_param_rows
-                _rows_result([(run_id, {})]),
                 # 7. field fallback (sections=())
                 _rows_result([(field_id, "Fld")]),
             ]
@@ -2024,6 +2079,11 @@ class TestLoadEntityTypeRoleMap:
         """Rows are mapped to entity_type_id → ExtractionEntityRole."""
         svc = _make_service()
         eid = uuid4()
+        # B-3a: no active snapshot version → the live-table branch runs and
+        # every original assertion below is preserved unchanged.
+        svc._template_versions_repo = MagicMock(
+            return_value=SimpleNamespace(get_active=AsyncMock(return_value=None))
+        )
         svc.db.execute = AsyncMock(
             return_value=_rows_result([(eid, ExtractionEntityRole.STUDY_SECTION.value)])
         )
@@ -2449,6 +2509,7 @@ class TestAiProposalRowsModelInstances:
 
         proposal_row = (proposal_id, run_id, model_instance_id1, field_id, "v", None, None, ts)
 
+        svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
         svc.db.execute = AsyncMock(
             side_effect=[
                 # inst_rows: instance_id, entity_type_id, article_id
@@ -2456,9 +2517,11 @@ class TestAiProposalRowsModelInstances:
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
+                # 5. the in-scope ExtractionRun rows (parameters + results
+                #    + version_id)
+                _scalars_result([_export_run(run_id)]),
+                # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Model Section")]),
-                # 6. run_param_rows
-                _rows_result([(run_id, {})]),
                 # 7. field fallback
                 _rows_result([(field_id, "Field")]),
             ]

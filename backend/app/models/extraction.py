@@ -133,6 +133,8 @@ class ExtractionTemplateGlobal(BaseModel):
     is_global: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     schema_: Mapped[dict[str, Any]] = mapped_column("schema", JSONB, default={}, nullable=False)
 
+    llm_template_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Relationships
     entity_types: Mapped[list["ExtractionEntityType"]] = relationship(
         "ExtractionEntityType",
@@ -144,6 +146,13 @@ class ExtractionTemplateGlobal(BaseModel):
     __table_args__ = (
         Index("idx_extraction_templates_global_schema_gin", "schema", postgresql_using="gin"),
         UniqueConstraint("id", "kind", name="uq_extraction_templates_global_id_kind"),
+        # SHORT name: the 'ck' naming convention (base.py) expands it to
+        # ck_extraction_templates_global_llm_instruction_len; a pre-expanded
+        # ck_ literal would double-wrap and md5-truncate.
+        CheckConstraint(
+            "char_length(llm_template_instruction) <= 4000",
+            name="llm_instruction_len",
+        ),
         {"schema": "public"},
     )
 
@@ -194,6 +203,35 @@ class ProjectExtractionTemplate(BaseModel):
     schema_: Mapped[dict[str, Any]] = mapped_column("schema", JSONB, default={}, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    llm_template_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Slice B-4: stamped by DB triggers on any live config write
+    # (extraction_entity_types / extraction_fields — the editor writes
+    # via PostgREST until B-7, so the DB is the only chokepoint);
+    # cleared ONLY inside TemplateVersionService.republish's locked
+    # section. NULL = live == published intent.
+    config_draft_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    config_draft_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    """Who holds the ADVISORY editor lock on the open draft (B-9f).
+
+    ``SET NULL``, deliberately not ``created_by``'s ``RESTRICT``: deleting a
+    profile must never strand a template behind a lock nobody can release.
+
+    Set by the SERVICE on every config write, never by the 0048 triggers —
+    those run on an asyncpg session that sets no ``request.jwt.*``, so
+    ``auth.uid()`` is NULL there and a trigger cannot know the actor.
+
+    NULL while ``config_draft_since`` is set is a REAL state, not a bug: a
+    draft opened before this column existed, or one opened by a raw
+    PostgREST write back when that grant existed (0054 revoked it). It
+    reads as "unattributed" and is claimable by the next writer."""
+
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.profiles.id", ondelete="RESTRICT"),
@@ -215,6 +253,11 @@ class ProjectExtractionTemplate(BaseModel):
     __table_args__ = (
         Index("idx_project_extraction_templates_schema_gin", "schema", postgresql_using="gin"),
         UniqueConstraint("id", "kind", name="uq_project_extraction_templates_id_kind"),
+        # SHORT name — expands to ck_project_extraction_templates_llm_instruction_len.
+        CheckConstraint(
+            "char_length(llm_template_instruction) <= 4000",
+            name="llm_instruction_len",
+        ),
         {"schema": "public"},
     )
 
@@ -245,6 +288,10 @@ class ExtractionEntityType(BaseModel):
     name: Mapped[str] = mapped_column(String, nullable=False)
     label: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Group entry noun interpolated into config-editor/run-view copy;
+    # meaningful only for role='model_container' rows, seeded "model" (B-8).
+    entry_label: Mapped[str | None] = mapped_column(String, nullable=True)
 
     parent_entity_type_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -385,6 +432,20 @@ class ExtractionField(BaseModel):
     entity_type: Mapped["ExtractionEntityType"] = relationship(
         "ExtractionEntityType",
         back_populates="fields",
+    )
+
+    # Per-section name uniqueness (B-7, migration 0050). Declared as a
+    # NAMED unique Index — not a UniqueConstraint — with the exact name
+    # of the migration's CREATE UNIQUE INDEX, so autogenerate emits no
+    # spurious diffs; the tuple must end with the schema dict (#93).
+    __table_args__ = (
+        Index(
+            "uq_extraction_fields_entity_type_name",
+            "entity_type_id",
+            "name",
+            unique=True,
+        ),
+        {"schema": "public"},
     )
 
     def __repr__(self) -> str:

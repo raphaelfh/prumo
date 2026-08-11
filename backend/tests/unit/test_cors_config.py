@@ -12,6 +12,10 @@ origin must always be allowed, even when ``CORS_ORIGINS`` env is stale.
 from app.core.config import Settings, settings
 
 PROD_FRONTEND_ORIGIN = "https://prumoai.vercel.app"
+# Retired 2026-08-09: this host is not under the project's Vercel account
+# and serves an unrelated application. It must never be able to make
+# credentialed cross-origin calls to the API.
+RETIRED_ORIGIN = "https://prumo.vercel.app"
 
 
 def test_prod_frontend_origin_always_allowed_even_when_env_omits_it() -> None:
@@ -34,3 +38,10 @@ def test_cors_origins_list_dedupes() -> None:
 
 def test_singleton_includes_prod_origin() -> None:
     assert PROD_FRONTEND_ORIGIN in settings.cors_origins_list
+
+
+def test_retired_origin_is_not_in_the_defaults() -> None:
+    """A retired origin must not survive in the hardcoded defaults, where
+    no env change can remove it."""
+    empty_env = Settings.model_construct(CORS_ORIGINS="")
+    assert RETIRED_ORIGIN not in empty_env.cors_origins_list

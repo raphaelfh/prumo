@@ -49,7 +49,6 @@ describe('extractForRun', () => {
           runId: 'run-1',
           skipFieldsWithHumanProposals: true,
           autoAdvanceToReview: false,
-          model: 'gpt-4o-mini',
         }),
       }),
     );
@@ -79,12 +78,24 @@ describe('extractForRun', () => {
       ...BASE_PARAMS,
       skipFieldsWithHumanProposals: false,
       autoAdvanceToReview: true,
-      model: 'gpt-4o',
     });
     const body = apiClientMock.mock.calls[0][1].body;
     expect(body.skipFieldsWithHumanProposals).toBe(false);
     expect(body.autoAdvanceToReview).toBe(true);
-    expect(body.model).toBe('gpt-4o');
+  });
+
+  it('never sends `model` — the engine is server-owned (C1a)', async () => {
+    // A client could previously put any string in `model` and it reached
+    // build_model() unvalidated. The backend request schema dropped the field.
+    // The cast smuggles one in anyway (`model` is no longer part of
+    // ExtractForRunRequest) to pin that the explicit-keyed body builder
+    // cannot leak an unknown extra onto the wire either.
+    apiClientMock.mockResolvedValueOnce({job_id: 'job-1'});
+
+    await extractForRun({...BASE_PARAMS, model: 'gpt-5'} as typeof BASE_PARAMS);
+
+    const body = apiClientMock.mock.calls[0][1].body;
+    expect('model' in body).toBe(false);
   });
 });
 

@@ -204,6 +204,55 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         await self.db.flush()
         return run
 
+    async def freeze_engine(
+        self,
+        run_id: UUID,
+        candidate: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Pin the run's LLM engine under ``results["provenance"]["engine"]``.
+
+        First writer wins: ``candidate`` is installed only when the run names no
+        engine yet, and the run's effective engine is returned either way. That
+        is what makes a Celery retry reproducible — ``run_section_extraction_task``
+        re-invokes with the same payload, which carries no model, so every
+        attempt re-reads ``settings`` and attempt 2 would otherwise be free to
+        run a different engine than attempt 1.
+
+        Row-locked read-modify-write, mirroring ``merge_provenance_section``:
+        concurrent section tasks on one run serialize here instead of racing to
+        install different engines. Sibling provenance keys (the per-section
+        ``sections`` map) are preserved; reassign (not mutate) so SQLAlchemy
+        tracks the JSONB change.
+
+        ``results`` is server-only. ``parameters`` is a free-form bag any project
+        reviewer can write through ``POST /api/v1/runs`` and must never hold
+        provenance — that is the hole #610 closed on the export side.
+
+        Args:
+            run_id: the run to pin.
+            candidate: ``LlmTarget.model_dump()``, used only if none is pinned.
+
+        Returns:
+            The run's effective engine payload, or None if the run does not exist.
+        """
+        run = (
+            await self.db.execute(
+                select(ExtractionRun).where(ExtractionRun.id == run_id).with_for_update()
+            )
+        ).scalar_one_or_none()
+        if run is None:
+            return None
+        results = {**(run.results or {})}
+        provenance = {**(results.get("provenance") or {})}
+        pinned = provenance.get("engine")
+        if isinstance(pinned, dict) and pinned:
+            return pinned
+        provenance["engine"] = candidate
+        results["provenance"] = provenance
+        run.results = results
+        await self.db.flush()
+        return candidate
+
     async def fail_run(
         self,
         run_id: UUID,
