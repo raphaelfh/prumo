@@ -264,6 +264,17 @@ need is visual grouping, ship a cosmetic field-group divider instead).
 
 ## 5. ⚙ Extraction engine (phases C1, C2)
 
+> **Scope call, 2026-08-10.** The backend half of C1 shipped: the server owns
+> which model runs (the client-supplied `model` field is gone), the engine is
+> frozen once per run so retries cannot drift, and provenance records the
+> resolved engine plus the key scope (`user_byok` / `global_service`) — never
+> the key. Everything below that is **surface** — the curated catalogue, the
+> model picker, the per-project `llm_engine` setting, and the Fast/Verified
+> selector — is **deferred to its own spec**, along with §5.1 and §7 which
+> depend on it. Tracked in [`docs/ROADMAP.md`](../../ROADMAP.md) under
+> "Deferred to a future spec". The text below is retained as the design input
+> for that spec, not as a description of what C1 delivered.
+
 - **Storage (C1):** `projects.settings.llm_engine =
   {provider, model, mode, updated_by, updated_at, previous_model}`,
   owned by a service (ParserSettingsService pattern). One attribution
