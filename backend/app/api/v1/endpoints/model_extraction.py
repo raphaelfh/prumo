@@ -163,7 +163,9 @@ async def extract_models(
 
         # Buscar API key do user (BYOK) with fallback for global
         api_key_service = APIKeyService(db=db, user_id=user.sub)
-        user_llm_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+        # Scope is dropped: ModelExtractionService writes no provenance.
+        _resolved_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+        user_llm_key = _resolved_key.key if _resolved_key is not None else None
 
         service = ModelExtractionService(
             db=db,

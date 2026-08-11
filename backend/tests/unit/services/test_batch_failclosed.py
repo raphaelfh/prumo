@@ -38,6 +38,8 @@ async def test_extract_for_run_raises_when_all_sections_fail():
         start_run=AsyncMock(),
         complete_run=AsyncMock(),
         rollback_and_fail=AsyncMock(),
+        # None = "no engine recorded", so the run falls back to the candidate.
+        freeze_engine=AsyncMock(return_value=None),
     )
     # Mock _assemble_prompt_text to bypass build_prompt_input (PDF/storage not needed).
     svc._assemble_prompt_text = AsyncMock(return_value="text")

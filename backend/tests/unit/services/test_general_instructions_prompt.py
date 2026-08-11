@@ -66,7 +66,6 @@ async def test_extract_with_llm_prepends_general_instructions(monkeypatch) -> No
     await service._extract_with_llm(
         pdf_text="ARTICLE",
         entity_type=_EntityType(),
-        model="gpt-test",
         general_instructions="Report values exactly as stated.",
     )
     # Threading is under test here; the block's exact wording is golden-
