@@ -23,6 +23,7 @@ run row, the freeze write and the provenance merge are real Postgres.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
@@ -36,8 +37,12 @@ from app.llm.extractor import LlmUsage
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.schemas.extraction import SectionExtractionRequest
 from app.services import section_extraction_service as ses
+from app.services.api_key_service import KeyScope
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
+
+#: Stands in for real key material. It must never reach the run row.
+_SECRET_KEY = "sk-must-never-be-recorded"
 
 #: What the tests treat as "the setting changed under a retry".
 _OTHER_PROVIDER = "anthropic"
@@ -73,14 +78,19 @@ async def _run_in_extract(db: AsyncSession) -> ExtractionRun:
     return run
 
 
-def _service(db: AsyncSession, trace_id: str) -> ses.SectionExtractionService:
+def _service(
+    db: AsyncSession,
+    trace_id: str,
+    key_scope: KeyScope | None = None,
+) -> ses.SectionExtractionService:
     """A service built the way the worker builds one — fresh per attempt."""
     return ses.SectionExtractionService(
         db=db,
         user_id=str(SEED.primary_profile),
         storage=MagicMock(),
         trace_id=trace_id,
-        openai_api_key="sk-test",
+        openai_api_key=_SECRET_KEY,
+        key_scope=key_scope,
     )
 
 
@@ -123,13 +133,14 @@ async def _extract_once(
     db: AsyncSession,
     run: ExtractionRun,
     trace_id: str,
+    key_scope: KeyScope | None = None,
 ) -> ses.SectionExtractionService:
     """One worker attempt against ``run``, entered exactly like the Celery task.
 
     ``run_from_request`` is the retried entry point: the payload carries no
     model, so this is where a settings change would leak into attempt 2.
     """
-    service = _service(db, trace_id)
+    service = _service(db, trace_id, key_scope)
     service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
         return_value="ARTICLE BODY"
     )
@@ -272,3 +283,55 @@ async def test_section_provenance_records_the_frozen_provider(
     assert snapshot, f"no section provenance was written: results={run.results}"
     assert snapshot["provider"] == original_provider
     assert snapshot["model"] == original_model
+
+
+@pytest.mark.asyncio
+async def test_provenance_records_the_key_scope_and_never_the_key(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§5.2 wants to know WHOSE key paid, and must never store the key.
+
+    ``get_key_for_provider`` used to return a bare string, so both branches —
+    the reviewer's own stored key and prumo's shared one — looked identical to
+    the caller and no run could say which one it ran on. The scope now travels
+    beside the key; only the scope is recorded.
+
+    The second assertion is the one that matters if this ever regresses: the
+    whole run row is searched for the key material, not just the field we
+    expect it in.
+    """
+    _stub_llm_seams(monkeypatch)
+    run = await _run_in_extract(db_session)
+
+    await _extract_once(db_session, run, "key-scope", KeyScope.USER_BYOK)
+    await db_session.refresh(run)
+
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot.get("key_scope") == KeyScope.USER_BYOK.value
+
+    assert _SECRET_KEY not in json.dumps(run.results or {}), (
+        "key material reached the run row — provenance must carry the scope only"
+    )
+
+
+@pytest.mark.asyncio
+async def test_provenance_key_scope_is_null_when_the_caller_did_not_resolve_one(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unknown scope is recorded as null, never guessed.
+
+    Only the caller knows which lookup branch won, so a service built without
+    one must not invent ``global_service`` — a wrong attribution is worse than
+    an absent one when the record is what an auditor reads.
+    """
+    _stub_llm_seams(monkeypatch)
+    run = await _run_in_extract(db_session)
+
+    await _extract_once(db_session, run, "key-scope-none")
+    await db_session.refresh(run)
+
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot, "no section provenance was written"
+    assert snapshot.get("key_scope") is None

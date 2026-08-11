@@ -55,6 +55,7 @@ from app.repositories import (
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
 from app.schemas.prompt_composition import PromptComposition, PromptCompositionArticleRef
+from app.services.api_key_service import KeyScope
 from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
@@ -138,22 +139,21 @@ class SectionExtractionService(LoggerMixin):
         storage: StorageAdapter,
         trace_id: str,
         openai_api_key: str | None = None,
+        key_scope: KeyScope | None = None,
     ):
-        """
-        Initialize service instance.
+        """Initialize service instance.
 
         Args:
-            db: Async SQLAlchemy session.
-            user_id: Authenticated user ID.
-            storage: Storage adapter.
-            trace_id: Trace ID.
             openai_api_key: Custom API key (BYOK). If None, uses global key.
+            key_scope: WHOSE key that is, for provenance (§5.2) — resolved by
+                the caller, since only it knows which lookup branch won.
         """
         self.db = db
         self.user_id = user_id
         self.storage = storage
         self.trace_id = trace_id
         self._llm_api_key = openai_api_key
+        self._key_scope = key_scope
 
         # Repositories
         self._article_files = ArticleFileRepository(db)
@@ -195,15 +195,15 @@ class SectionExtractionService(LoggerMixin):
         usage: LlmUsage | None = None,
         prompt_composition: PromptComposition | None = None,
     ) -> dict[str, Any]:
-        """Per-section snapshot of how a section's suggestions were generated,
-        for transparency/traceability. Engine + params come from the run-frozen
-        target and the single-source extractor constants, so a later ``settings``
-        change cannot rewrite what this run reports. Includes this section's
-        token usage and the prompt composition (the recipe the review UI renders)."""
+        """Per-section snapshot of how a section's suggestions were generated.
+        Engine, key scope and params come from the run-frozen target and the
+        single-source extractor constants, so a later ``settings`` change cannot
+        rewrite what this run reports. The key itself is never recorded (§5.2)."""
         snapshot: dict[str, Any] = {
             "ran_by_user_id": self.user_id,
             "provider": self._engine.provider,
             "model": self._engine.model,
+            "key_scope": self._key_scope.value if self._key_scope is not None else None,
             "strategy": prompt_name,
             "prompt_version": prompt_version,
             "params": {

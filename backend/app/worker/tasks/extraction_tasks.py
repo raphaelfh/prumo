@@ -70,7 +70,7 @@ def extract_section_task(
     async def run() -> dict[str, Any]:
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
-        from app.services.api_key_service import APIKeyService
+        from app.services.api_key_service import APIKeyService, KeyScope
         from app.services.section_extraction_service import SectionExtractionService
         from app.worker._session import worker_session
 
@@ -81,9 +81,13 @@ def extract_section_task(
 
                 # Resolve user API key if not provided
                 api_key = openai_api_key
+                # An api_key handed in through the message is the caller's own.
+                key_scope: KeyScope | None = KeyScope.USER_BYOK if api_key else None
                 if not api_key:
                     api_key_service = APIKeyService(db=session, user_id=user_id)
-                    api_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                    resolved = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                    if resolved is not None:
+                        api_key, key_scope = resolved.key, resolved.scope
 
                 service = SectionExtractionService(
                     db=session,
@@ -91,6 +95,7 @@ def extract_section_task(
                     storage=storage,
                     trace_id=self.request.id,
                     openai_api_key=api_key,
+                    key_scope=key_scope,
                 )
 
                 result = await service.extract_section(
@@ -165,7 +170,10 @@ def extract_models_task(
                 api_key = openai_api_key
                 if not api_key:
                     api_key_service = APIKeyService(db=session, user_id=user_id)
-                    api_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                    # Scope is dropped here on purpose: this service writes no
+                    # provenance, so there is nothing to record it against.
+                    resolved = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                    api_key = resolved.key if resolved is not None else None
 
                 service = ModelExtractionService(
                     db=session,
@@ -272,14 +280,15 @@ def run_section_extraction_task(
                 storage = create_storage_adapter(supabase)
 
                 api_key_service = APIKeyService(db=session, user_id=user_id)
-                api_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                resolved = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
 
                 service = SectionExtractionService(
                     db=session,
                     user_id=user_id,
                     storage=storage,
                     trace_id=trace_id or self.request.id or "worker-missing-trace",
-                    openai_api_key=api_key,
+                    openai_api_key=resolved.key if resolved is not None else None,
+                    key_scope=resolved.scope if resolved is not None else None,
                 )
 
                 request = SectionExtractionRequest(**payload_json)

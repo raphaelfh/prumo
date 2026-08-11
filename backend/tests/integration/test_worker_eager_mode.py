@@ -26,6 +26,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.services.api_key_service import KeyScope, ResolvedKey
 from app.worker.celery_app import celery_app
 
 # ----------------------------------------------------------------------
@@ -300,7 +301,9 @@ def test_extract_section_task_signature_and_kwargs_alignment() -> None:
     )
 
     fake_api_key_service = MagicMock()
-    fake_api_key_service.get_key_for_provider = AsyncMock(return_value="resolved-from-user-keys")
+    fake_api_key_service.get_key_for_provider = AsyncMock(
+        return_value=ResolvedKey("resolved-from-user-keys", KeyScope.USER_BYOK)
+    )
 
     with (
         patch(
