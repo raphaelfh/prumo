@@ -47,6 +47,16 @@ export interface CapturedField {
   allowedValues: string[] | null;
   unit: string | null;
   allowedUnits: string[] | null;
+  /** ✨ AI instruction — present on the raw row; dropping it here made the
+   * first B-9d ship a silently lossy undo. */
+  aiInstruction: string | null;
+  allowOther: boolean;
+  otherLabel: string | null;
+  otherPlaceholder: string | null;
+  /** ADR-0016 opt-in dispositions. */
+  allowsNotApplicable: boolean;
+  allowsNotEvaluated: boolean;
+  validationSchema: Record<string, unknown>;
   sortOrder: number;
 }
 
@@ -105,6 +115,13 @@ function capture(entityType: TemplateEntityTypeWithFields): CapturedSection {
         allowedValues: field.allowed_values ?? null,
         unit: field.unit ?? null,
         allowedUnits: field.allowed_units ?? null,
+        aiInstruction: field.llm_description ?? null,
+        allowOther: Boolean(field.allow_other),
+        otherLabel: field.other_label ?? null,
+        otherPlaceholder: field.other_placeholder ?? null,
+        allowsNotApplicable: Boolean(field.allows_not_applicable),
+        allowsNotEvaluated: Boolean(field.allows_not_evaluated),
+        validationSchema: (field.validation_schema ?? {}) as Record<string, unknown>,
         sortOrder: field.sort_order ?? 0,
       })),
   };
@@ -131,6 +148,13 @@ interface ReplayDeps {
     allowed_values: string[] | null;
     unit: string | null;
     allowed_units: string[] | null;
+    llm_description: string | null;
+    allow_other: boolean;
+    other_label: string | null;
+    other_placeholder: string | null;
+    allows_not_applicable: boolean;
+    allows_not_evaluated: boolean;
+    validation_schema: Record<string, unknown>;
     sort_order: number;
   }) => Promise<{ok: true; data: unknown} | {ok: false; error: Error}>;
 }
@@ -180,6 +204,13 @@ export async function replaySection(
         allowed_values: field.allowedValues,
         unit: field.unit,
         allowed_units: field.allowedUnits,
+        llm_description: field.aiInstruction,
+        allow_other: field.allowOther,
+        other_label: field.otherLabel,
+        other_placeholder: field.otherPlaceholder,
+        allows_not_applicable: field.allowsNotApplicable,
+        allows_not_evaluated: field.allowsNotEvaluated,
+        validation_schema: field.validationSchema,
         sort_order: field.sortOrder,
       });
       if (!inserted.ok) return false;

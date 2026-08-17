@@ -267,7 +267,8 @@ export function SectionHeaderRow({
             >
               <Trash2 className="mr-2 size-3.5" aria-hidden />
               {/* D4: a group's delete states what it is — a cascade over
-                  the whole block; the confirm dialog carries the wording. */}
+                  the whole block. B-9d: it dispatches immediately (no
+                  confirm dialog); the 6s Undo toast is the safety net. */}
               {section.kind === 'group'
                 ? t('templateConfig', 'deleteRepeatingGroup')
                 : t('extraction', 'removeButton')}
