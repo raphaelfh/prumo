@@ -242,7 +242,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full min-h-0 flex-col gap-6">
       {/* Thin command bar (replaces the tall header Card). */}
       <div className="flex h-12 items-center justify-between gap-3 rounded-md border border-border/40 bg-card px-4">
         <div className="flex min-w-0 items-center gap-2">
@@ -305,6 +305,9 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
       <TemplateInstructionRow projectId={projectId} templateId={templateId} />
 
       {entityTypes.length > 0 && (
+      // The grid absorbs the leftover column height (dashboard regime:
+      // the panel scrolls inside, never the page).
+      <div className="min-h-0 flex-1">
       <TemplateConfigGridPanel
         projectId={projectId}
         templateId={templateId}
@@ -325,6 +328,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         onAddSection={() => setAddSectionMode({kind: 'root'})}
         onAddGroup={() => setAddSectionMode({kind: 'group'})}
       />
+      </div>
       )}
 
       {entityTypes.length === 0 && (
