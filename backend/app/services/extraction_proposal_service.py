@@ -16,7 +16,11 @@ from app.repositories.extraction_proposal_repository import (
 )
 from app.services._extraction_run_lock import load_run_for_update
 from app.services.coordinate_coherence import assert_coords_coherent
-from app.services.value_semantics import disposition_to_marker, is_disposition_candidate
+from app.services.value_semantics import (
+    disposition_to_marker,
+    is_disposition_candidate,
+    strip_verification,
+)
 
 
 class InvalidProposalError(Exception):
@@ -103,11 +107,30 @@ class ExtractionProposalService:
         # Idempotent re-record: a client replaying an unchanged value (form
         # remount, debounce double-fire, retry) must not append a duplicate
         # row. The audit trail captures value *changes*, not redundant
-        # replays. A genuinely changed value still appends.
+        # replays. A genuinely changed value still appends. The compare
+        # ignores the Verified-mode ``verification`` ANNOTATION sibling
+        # (value + absent_reason only): a re-extract whose verify pass
+        # flaked — or newly succeeded — is still the same value.
         latest = await self._repo.get_latest_for_coord(
             run_id, instance_id, field_id, source_value, source_user_id
         )
-        if latest is not None and latest.proposed_value == proposed_value:
+        if latest is not None and strip_verification(latest.proposed_value) == strip_verification(
+            proposed_value
+        ):
+            # Same value, but the verify verdict moved (flip, or a heal after
+            # a flaked pass): refresh the server-owned ANNOTATION in place —
+            # no new audit row, the value did not change. An incoming bag
+            # WITHOUT the sibling (fast re-run / flaked verify) never clears
+            # a stored verdict.
+            incoming_verdict = proposed_value.get("verification")
+            if incoming_verdict is not None and incoming_verdict != latest.proposed_value.get(
+                "verification"
+            ):
+                latest.proposed_value = {
+                    **latest.proposed_value,
+                    "verification": incoming_verdict,
+                }
+                await self.db.flush()
             return latest
 
         record = ExtractionProposalRecord(

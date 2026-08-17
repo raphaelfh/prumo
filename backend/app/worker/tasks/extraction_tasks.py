@@ -92,6 +92,8 @@ def extract_section_task(
                 # This task carries no run_id, so it resolves the project
                 # engine and relies on the service's re-key (key_provider)
                 # when a reused run's pin settles on another provider.
+                # If re-armed on an OLD build, a stored mode this build does
+                # not know degrades the read to the env-default engine.
                 engine = await resolve_project_engine(session, UUID(project_id))
 
                 # Resolve user API key if not provided
@@ -189,7 +191,9 @@ def extract_models_task(
                 # exists — the endpoint path reads the run's pinned engine
                 # before keying (resolve_engine_for_run); this task carries
                 # no run_id, so it resolves the project engine only. Align
-                # with the endpoint before re-use.
+                # with the endpoint before re-use. If re-armed on an OLD
+                # build, a stored mode it does not know degrades the read
+                # to the env-default engine.
                 engine = await resolve_project_engine(session, UUID(project_id))
 
                 # Resolve user API key if not provided

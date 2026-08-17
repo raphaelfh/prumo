@@ -38,6 +38,7 @@ from app.models.extraction import ExtractionRun
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
 from app.services import section_extraction_service as ses
+from app.services import verified_mode as vm
 from app.services.api_key_service import KeyScope, ResolvedKey
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
@@ -98,7 +99,58 @@ def _stub_llm_seams(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
             }
         },
     )
+    # Verified-mode seams (glue module): its build_model must not demand a
+    # key, and run_verify_pass must never reach the wire. Unstubbed, the
+    # verifier swallows every exception to None BY DESIGN, so a verified test
+    # would degrade silently and go vacuously green. Default stub confirms
+    # every proposal; tests needing a call log or the failure path re-stub
+    # via _stub_verify_pass.
+    monkeypatch.setattr(vm, "build_model", _fake_build_model)
+    _stub_verify_pass(monkeypatch)
     return calls
+
+
+def _stub_verify_pass(
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: str | None = "confirm-all",
+) -> list[dict[str, Any]]:
+    """Patch the glue's ``run_verify_pass`` seam; return the call log.
+
+    Default: echo-confirm every proposal with a fixed usage (3+2 tokens).
+    ``outcome=None`` simulates the degrade path (the verifier swallowed an
+    exception and returned ``None``).
+    """
+    log: list[dict[str, Any]] = []
+
+    async def _fake_run_verify_pass(**kw: Any) -> tuple[dict[str, str], LlmUsage] | None:
+        log.append(kw)
+        if outcome is None:
+            return None
+        return (
+            {key: "confirmed" for key, _label, _value in kw["proposals"]},
+            LlmUsage(prompt_tokens=3, completion_tokens=2),
+        )
+
+    monkeypatch.setattr(vm, "run_verify_pass", _fake_run_verify_pass)
+    return log
+
+
+async def _proposal_values(db: AsyncSession, run_id: UUID) -> list[dict[str, Any]]:
+    """Every ``proposed_value`` bag written for *run_id*."""
+    rows = await db.execute(
+        text("SELECT proposed_value FROM public.extraction_proposal_records WHERE run_id = :rid"),
+        {"rid": str(run_id)},
+    )
+    return list(rows.scalars().all())
+
+
+async def _run_pinned_verified(db: AsyncSession) -> ExtractionRun:
+    """A fresh EXTRACT-stage run pre-pinned to the env-default engine in Verified."""
+    run = await engine_setup.run_in_extract(db)
+    await engine_setup.pin_run(
+        db, run, settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL, mode="verified"
+    )
+    return run
 
 
 async def _extract_once(
@@ -559,4 +611,211 @@ async def test_rekey_with_no_key_for_the_adopted_provider_degrades_to_none(
     assert snapshot, "no section provenance was written"
     assert snapshot.get("key_scope") is None, (
         "a scope was invented for a key that was never resolved"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Verified mode — the verify pass + the section snapshot's execution truth.
+# Execution truth lives ONLY in provenance.sections[et_id] (design 3): the
+# frozen engine dict's mode fields are a request-echo, never an execution
+# claim. Verified is set up via the run PIN (LlmTarget's bare-str modes);
+# the stored-project path lands with the T3 widening.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_verified_pin_runs_verify_and_annotates_proposals(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A run pinned to Verified gets the second pass: the verifier runs once
+    for the section, verdict annotations land on the proposal rows, the
+    SECTION snapshot records verified/2, and the verify usage sums into the
+    section token totals."""
+    _stub_llm_seams(monkeypatch)
+    verify_log = _stub_verify_pass(monkeypatch)
+    run = await _run_pinned_verified(db_session)
+
+    await _extract_once(db_session, run, "verified-success")
+    await db_session.refresh(run)
+
+    assert len(verify_log) == 1, "the verifier must run exactly once per section"
+    # F6a: the verify prompt grounds in the entity's human LABEL, not the name.
+    assert verify_log[0]["entity_type_label"] == "Participants"
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot["mode_requested"] == "verified"
+    assert snapshot["mode_executed"] == "verified"
+    assert snapshot["passes"] == 2
+    # extract (1+1) + verify (3+2): the verify usage is IN the run's totals.
+    assert snapshot["tokens"] == {"prompt": 4, "completion": 3, "total": 7}
+    values = await _proposal_values(db_session, run.id)
+    assert values, "no proposal rows were written"
+    assert all(pv.get("verification") == {"verdict": "confirmed"} for pv in values), (
+        f"verdict annotation missing on proposal rows: {values}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_fresh_run_freezes_the_stored_verified_mode(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T3: a project whose STORED engine says verified freezes that mode into
+    the engine dict (exact dict — a request-echo) and the section snapshot
+    records the executed verify pass."""
+    _stub_llm_seams(monkeypatch)
+    verify_log = _stub_verify_pass(monkeypatch)
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o", mode="verified")
+    run = await engine_setup.run_in_extract(db_session)
+
+    await _extract_once(db_session, run, "freeze-stored-verified")
+    await db_session.refresh(run)
+
+    assert _engine_of(run) == {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "mode_requested": "verified",
+        "mode_executed": "verified",
+    }, f"the stored verified mode was not frozen: results={run.results}"
+    assert len(verify_log) == 1
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot["mode_executed"] == "verified"
+    assert snapshot["passes"] == 2
+
+
+@pytest.mark.asyncio
+async def test_verified_pin_verify_failure_degrades_to_fast(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Design 3: the verify pass degrades, honestly recorded — proposals land
+    UNANNOTATED and the section snapshot says mode_executed fast, passes 1,
+    while mode_requested still records the ask."""
+    _stub_llm_seams(monkeypatch)
+    verify_log = _stub_verify_pass(monkeypatch, outcome=None)
+    run = await _run_pinned_verified(db_session)
+
+    await _extract_once(db_session, run, "verified-degrade")
+    await db_session.refresh(run)
+
+    assert len(verify_log) == 1
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot["mode_requested"] == "verified"
+    assert snapshot["mode_executed"] == "fast"
+    assert snapshot["passes"] == 1
+    # No verify tokens on the degrade path — extract usage only.
+    assert snapshot["tokens"] == {"prompt": 1, "completion": 1, "total": 2}
+    values = await _proposal_values(db_session, run.id)
+    assert values, "no proposal rows were written"
+    assert all("verification" not in pv for pv in values), (
+        f"a flaked verify must leave proposals unannotated: {values}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_fast_run_never_calls_the_verifier(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fast project: the verify seam is NEVER reached (must-not-be-called
+    guard) and the section snapshot records fast/1."""
+    _stub_llm_seams(monkeypatch)
+    verify_log = _stub_verify_pass(monkeypatch)
+    run = await engine_setup.run_in_extract(db_session)
+
+    await _extract_once(db_session, run, "fast-guard")
+    await db_session.refresh(run)
+
+    assert verify_log == [], f"the verifier ran on a fast project: {verify_log}"
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot["mode_requested"] == "fast"
+    assert snapshot["mode_executed"] == "fast"
+    assert snapshot["passes"] == 1
+
+
+@pytest.mark.asyncio
+async def test_verified_no_info_proposal_carries_no_verification_key(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No-info proposals are NOT verified — there is no value to check. F5:
+    an all-no-info section never invokes the verifier at all, and its
+    snapshot says verified/1 — ``passes`` counts LLM passes that RAN, and
+    "nothing needed verifying" is not a degrade."""
+    _stub_llm_seams(monkeypatch)
+    verify_log = _stub_verify_pass(monkeypatch)
+    monkeypatch.setattr(
+        ses,
+        "dump_extraction",
+        lambda _out: {
+            "sample_size": {
+                "value": None,
+                "confidence": None,
+                "reasoning": "not stated",
+                "evidence": [],
+                "status": "not_found",
+            }
+        },
+    )
+    run = await _run_pinned_verified(db_session)
+
+    await _extract_once(db_session, run, "verified-no-info")
+    await db_session.refresh(run)
+
+    # Zero found fields -> the verify pass is skipped BEFORE any call.
+    assert verify_log == [], f"the verifier ran on an all-no-info section: {verify_log}"
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot["mode_requested"] == "verified"
+    assert snapshot["mode_executed"] == "verified"
+    assert snapshot["passes"] == 1
+    # Zero verify tokens — extract usage only.
+    assert snapshot["tokens"] == {"prompt": 1, "completion": 1, "total": 2}
+    values = await _proposal_values(db_session, run.id)
+    assert values == [{"value": None, "absent_reason": "no_information"}]
+
+
+@pytest.mark.asyncio
+async def test_verified_qa_run_skips_the_verifier(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """F4: the verify prompt judges whether the TEXT states a value —
+    inapplicable to evaluative QA judgments, which would draw systematic
+    amber chips on legitimate assessments. A ``quality_assessment`` run on a
+    verified engine skips the pass: verifier never called, proposals
+    unannotated, snapshot says requested-verified / executed-fast / 1 pass,
+    under the DISTINCT ``verify_skipped_qa_kind`` log (never confusable
+    with a flake)."""
+    from structlog.testing import capture_logs
+
+    _stub_llm_seams(monkeypatch)
+    verify_log = _stub_verify_pass(monkeypatch)
+    # Flip the TEMPLATE to the QA kind BEFORE the run exists: create_run
+    # derives run.kind from the template, and the composite FK
+    # fk_extraction_runs_template_kind_coherence forbids flipping either
+    # side once the pair is referenced.
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET kind = 'quality_assessment' WHERE id = :tid"
+        ),
+        {"tid": str(SEED.primary_template)},
+    )
+    run = await _run_pinned_verified(db_session)
+    assert run.kind == "quality_assessment", "the run must derive the QA kind"
+
+    with capture_logs() as entries:
+        await _extract_once(db_session, run, "verified-qa-skip")
+    await db_session.refresh(run)
+
+    assert verify_log == [], f"the verifier ran on a QA run: {verify_log}"
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot["mode_requested"] == "verified"
+    assert snapshot["mode_executed"] == "fast"
+    assert snapshot["passes"] == 1
+    values = await _proposal_values(db_session, run.id)
+    assert values, "no proposal rows were written"
+    assert all("verification" not in pv for pv in values)
+    assert any(e["event"] == "verify_skipped_qa_kind" for e in entries), (
+        "the QA skip must be logged under its own event, distinct from a flake"
     )

@@ -8,7 +8,6 @@ export const llmEngine = {
     modeGroupAria: 'Extraction mode',
     modeFast: 'Fast',
     modeVerified: 'Verified',
-    modeVerifiedSoon: 'soon',
     searchPlaceholder: 'Search models…',
     emptyResults: 'No models match.',
     providerOpenai: 'OpenAI',

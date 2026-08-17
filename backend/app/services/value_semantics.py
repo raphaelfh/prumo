@@ -69,6 +69,22 @@ ABSENT_REASON_LABELS: dict[str, str] = {
 }
 
 
+def strip_verification(raw: Any) -> Any:
+    """Drop the Verified-mode ``verification`` ANNOTATION sibling (§5).
+
+    The verdict is server-written provenance that belongs to the PROPOSAL row
+    only — published values, agreement keys, replay-dedupe compares and export
+    cells are always clean. The ONE strip shared by every read/resolution seam
+    (``extraction_proposal_service`` dedupe, ``run_lifecycle_service``
+    resolution + reopen carry-over, ``extraction_consensus_service`` publish,
+    ``exports/value_envelope``), so an annotated accept and a clean edit of the
+    same value can never diverge. Non-dict values pass through untouched.
+    """
+    if isinstance(raw, dict) and "verification" in raw:
+        return {k: v for k, v in raw.items() if k != "verification"}
+    return raw
+
+
 def unwrap_value_envelope(raw: Any) -> Any:
     """Peel a single ``{"value": X}`` envelope, matching the frontend's one-level
     unwrap in ``progress.ts`` / ``useReviewerSummary``. A bare scalar (or any dict

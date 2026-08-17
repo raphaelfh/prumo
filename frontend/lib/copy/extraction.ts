@@ -858,6 +858,11 @@ export const extraction = {
     reviewAdoptedBy: 'Adopted by {{name}}',
     reviewEditedBy: 'Edited by {{name}}',
     reviewRunBy: 'Run by {{name}}',
+    // Verified-mode verdict chip (§5) — the second pass's per-value judgement.
+    // No chip = "not verified" (Fast run, degraded pass, or no-info proposal).
+    verificationConfirmed: 'Verified',
+    verificationUnsupported: 'Not supported',
+    verificationUncertain: 'Uncertain',
     // Runtime disposition control (ADR-0016) — set a "no value, on purpose" answer
     // on any field type when the source is silent / the item does not apply.
     dispositionNoInformation: 'No information',

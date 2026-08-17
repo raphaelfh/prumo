@@ -282,6 +282,14 @@ need is visual grouping, ship a cosmetic field-group divider instead).
 > keys recorded). Still deferred: the Verified execution pass, alternates and
 > custom endpoints (C2), §5.1 reviewer surfaces, §7, and the per-article cost
 > preview.
+>
+> **Scope call, 2026-08-17 (Verified execution).** The Verified pass shipped
+> (`docs/superpowers/plans/2026-08-17-verified-mode.md`): the selector is live,
+> extract → independent verify runs on the same frozen engine, verdicts
+> annotate each AI value, and per-section provenance records
+> `mode_requested`/`mode_executed`/`passes`. Still deferred: alternates and
+> custom endpoints (C2), §5.1 reviewer surfaces, §7, and the per-article cost
+> preview.
 
 - **Storage (C1):** `projects.settings.llm_engine =
   {provider, model, mode, updated_by, updated_at, previous_model}`,
@@ -298,11 +306,13 @@ need is visual grouping, ship a cosmetic field-group divider instead).
   grayed + lock + "Add your key" CTA (never visible-but-fails); group
   header carries "each user runs on their own key". Retired catalog
   entries preserve stored strings and block new runs until re-chosen.
-- **Mode:** segmented `Fast` (single pass — today's pipeline with the
-  entailment gate flag recorded) / `Verified` (extract → independent
-  verify). C1 ships the selector with `Fast` active and `Verified`
-  visible but disabled ("soon"); the enum and the provenance key land in
-  C1 so records are stable when the verify pass arrives. Cost preview per article before running;
+- **Mode:** segmented `Fast` (single pass — today's pipeline; the
+  entailment gate is structural in BOTH modes, and per-section
+  provenance records `mode_requested`/`mode_executed`/`passes`) /
+  `Verified` (extract → independent verify). C1 ships the selector with
+  `Fast` active and `Verified` visible but disabled ("soon"); the enum
+  and the provenance keys land in C1 so records are stable when the
+  verify pass arrives. Cost preview per article before running;
   actuals recorded per run. No temperature/seed controls **by design** —
   system-fixed and recorded ("temperature=0, fixed by system").
 - **Alternates (C2):** manager-curated list in the engine popover

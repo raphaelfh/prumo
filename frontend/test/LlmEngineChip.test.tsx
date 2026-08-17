@@ -8,8 +8,9 @@
  * - on a failed read the chip renders NOTHING (deploy-race 404 window)
  *   and sibling content is unaffected;
  * - popover: provider groups, locked BYOK rows (disabled + "Add your
- *   key" CTA deep-linking to the key settings), Verified disabled;
- * - selection fires the mutation with the canonical pair;
+ *   key" CTA deep-linking to the key settings), mode toggle driven by
+ *   the stored mode (§5 Verified enabled);
+ * - selection fires the mutation with the canonical pair + current mode;
  * - attribution renders only for source == "project";
  * - a retired stored engine shows the amber re-choose note.
  */
@@ -31,6 +32,8 @@ vi.mock('sonner', () => ({
     info: vi.fn(),
   }),
 }));
+
+import {toast} from 'sonner';
 
 import {LlmEngineChip} from '@/components/extraction/LlmEngineChip';
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
@@ -155,6 +158,15 @@ describe('chip', () => {
     expect(chip).toHaveTextContent(copy.modeFast);
   });
 
+  it('renders the Verified mode label when the stored mode is verified', () => {
+    mockRead({mode: 'verified'});
+    renderChip();
+
+    const chip = screen.getByRole('button', {name: copy.chipAria});
+    expect(chip).toHaveTextContent(copy.modeVerified);
+    expect(chip).not.toHaveTextContent(copy.modeFast);
+  });
+
   it('renders NOTHING on a failed read, leaving siblings unaffected', () => {
     useLlmEngineMock.mockReturnValue({
       data: undefined,
@@ -254,17 +266,89 @@ describe('popover', () => {
     expect(mutateMock).not.toHaveBeenCalled();
   });
 
-  it('shows Fast selected and Verified disabled with the soon hint', async () => {
+  it('shows the stored mode selected with Verified enabled — no soon hint (§5 Verified)', async () => {
     await renderOpenPopover();
 
-    const verified = screen.getByRole('radio', {
-      name: new RegExp(copy.modeVerified),
-    });
-    expect(verified).toBeDisabled();
-    expect(screen.getByText(copy.modeVerifiedSoon)).toBeInTheDocument();
+    const verified = screen.getByRole('radio', {name: copy.modeVerified});
+    expect(verified).toBeEnabled();
+    // The "soon" hint died with the disabled state.
+    expect(verified.textContent).toBe(copy.modeVerified);
     expect(
       screen.getByRole('radio', {name: copy.modeFast}),
     ).toHaveAttribute('data-state', 'on');
+  });
+
+  it('drives the toggle from the stored mode on a verified project', async () => {
+    await renderOpenPopover({mode: 'verified'});
+
+    expect(
+      screen.getByRole('radio', {name: copy.modeVerified}),
+    ).toHaveAttribute('data-state', 'on');
+    expect(
+      screen.getByRole('radio', {name: copy.modeFast}),
+    ).toHaveAttribute('data-state', 'off');
+  });
+
+  it('fires the mutation with the CHOSEN mode on toggle', async () => {
+    await renderOpenPopover();
+
+    await userEvent.click(screen.getByRole('radio', {name: copy.modeVerified}));
+
+    expect(mutateMock).toHaveBeenCalledTimes(1);
+    expect(mutateMock.mock.calls[0][0]).toEqual({
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      mode: 'verified',
+    });
+  });
+
+  it('re-clicking the active mode never fires a mutation (Radix deselect)', async () => {
+    await renderOpenPopover();
+
+    await userEvent.click(screen.getByRole('radio', {name: copy.modeFast}));
+
+    expect(mutateMock).not.toHaveBeenCalled();
+  });
+
+  it('MODEL selection on a verified project sends mode: "verified" explicitly (panel B2)', async () => {
+    // Omitting mode would let the server default silently downgrade the
+    // project back to fast — the old-FE stale-tab clobber this FE must not
+    // recreate.
+    await renderOpenPopover({mode: 'verified'});
+
+    await userEvent.click(screen.getByTestId('llm-engine-option-openai:gpt-4o'));
+
+    expect(mutateMock).toHaveBeenCalledTimes(1);
+    expect(mutateMock.mock.calls[0][0]).toEqual({
+      provider: 'openai',
+      model: 'gpt-4o',
+      mode: 'verified',
+    });
+  });
+
+  it('a 422 from an old backend toasts generically and leaves the toggle unchanged (panel B3)', async () => {
+    // The deploy window: FastAPI's raw `detail` body misses the client's
+    // message chain, so the surfaced Error carries the generic copy (pinned
+    // at the service level in llmEngineService.test.ts).
+    mutateMock.mockImplementation(
+      (_body: unknown, opts?: {onError?: (e: Error) => void}) => {
+        opts?.onError?.(new Error('Unknown error'));
+      },
+    );
+    await renderOpenPopover();
+
+    await userEvent.click(screen.getByRole('radio', {name: copy.modeVerified}));
+
+    expect(toast.error).toHaveBeenCalledWith(
+      `${copy.saveError}: Unknown error`,
+    );
+    // No optimistic update: the toggle re-derives from the cached read.
+    expect(
+      screen.getByRole('radio', {name: copy.modeFast}),
+    ).toHaveAttribute('data-state', 'on');
+    expect(
+      screen.getByRole('radio', {name: copy.modeVerified}),
+    ).toHaveAttribute('data-state', 'off');
   });
 
   it('renders the attribution line only when the source is the project', async () => {

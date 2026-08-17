@@ -15,28 +15,43 @@ parses the stored JSONB itself.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class LlmEngineStored(BaseModel):
-    """The persisted engine choice: identity pair + attribution trail."""
+    """The persisted engine choice: identity pair + attribution trail.
+
+    ``mode`` is a plain ``str`` ON PURPOSE (panel migration B1): a stored
+    Literal makes NEW payloads invalid to OLD readers, whose swallowed
+    ValidationError silently degrades the manager's engine choice to the
+    env default. Reads NORMALIZE an unknown mode to ``"fast"`` with a
+    warning instead; the closed enum lives on the write gate below.
+    """
 
     provider: str
     model: str
-    mode: Literal["fast"] = "fast"
+    mode: str = "fast"
     updated_by: UUID | None = None
     updated_at: datetime | None = None
     previous_model: str | None = None
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _stringify_garbage_mode(cls, v: Any) -> Any:
+        # A hand-written NON-STRING mode (numeric JSONB via PostgREST) must
+        # not throw the WHOLE payload away — the pair keeps the manager's
+        # choice; the read normalizes the unknown mode to "fast", loudly.
+        return v if isinstance(v, str) else str(v)
 
 
 class LlmEngineUpdateRequest(BaseModel):
     """PUT body for the project engine.
 
-    ``mode: Literal["fast"]`` refuses ``verified`` with a free 422 until
-    Verified ships (§5 — the Literal itself is the enum landing in C1);
+    ``mode: Literal["fast", "verified"]`` is the closed write gate (§5 —
+    Verified shipped with the verify pass; anything else is a free 422);
     ``extra="forbid"`` blocks smuggled keys (no temperature/seed, by design).
     """
 
@@ -44,7 +59,7 @@ class LlmEngineUpdateRequest(BaseModel):
 
     provider: str
     model: str
-    mode: Literal["fast"] = "fast"
+    mode: Literal["fast", "verified"] = "fast"
 
 
 class LlmEngineCatalogEntryRead(BaseModel):
@@ -73,7 +88,7 @@ class LlmEngineRead(BaseModel):
 
     provider: str
     model: str
-    mode: Literal["fast"]
+    mode: Literal["fast", "verified"]
     source: Literal["project", "default"]
     retired: bool
     updated_by_name: str | None = None

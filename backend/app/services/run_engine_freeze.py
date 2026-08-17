@@ -96,12 +96,21 @@ def build_run_provenance(
     prompt_version: str,
     usage: LlmUsage | None = None,
     prompt_composition: PromptComposition | None = None,
+    mode_requested: str | None = None,
+    mode_executed: str | None = None,
+    passes: int = 1,
 ) -> dict[str, Any]:
     """Per-section snapshot of how a section's suggestions were generated.
 
     Engine, key scope and params come from the run-frozen target and the
     single-source extractor constants, so a later ``settings`` change cannot
     rewrite what this run reports. The key itself is never recorded (§5.2).
+
+    ``mode_requested``/``mode_executed``/``passes`` are this section's
+    execution truth (§5 design 3): a verify-pass failure records
+    ``mode_executed: "fast", passes: 1`` while ``mode_requested`` keeps the
+    ask. They default off the engine (a request-echo) and ``passes=1`` so
+    legacy callers keep working; the Verified glue passes the real outcome.
     """
     snapshot: dict[str, Any] = {
         "ran_by_user_id": ran_by_user_id,
@@ -110,6 +119,9 @@ def build_run_provenance(
         "key_scope": key_scope.value if key_scope is not None else None,
         "strategy": prompt_name,
         "prompt_version": prompt_version,
+        "mode_requested": mode_requested if mode_requested is not None else engine.mode_requested,
+        "mode_executed": mode_executed if mode_executed is not None else engine.mode_executed,
+        "passes": passes,
         "params": {
             "temperature": LLM_TEMPERATURE,
             "output_retries": OUTPUT_RETRIES_DEFAULT,
