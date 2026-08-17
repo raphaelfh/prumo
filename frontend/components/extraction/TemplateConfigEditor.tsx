@@ -77,7 +77,9 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
    * RESTRICT, so a field that could be deleted provably had nothing
    * pointing at it. What must survive is the SHAPE the manager authored,
    * so the payload is rebuilt from the grid projection rather than from a
-   * bare name/type pair.
+   * bare name/type pair — including the ✨ AI instruction, the "Other"
+   * option, the ADR-0016 disposition flags and the validation schema,
+   * which the first ship silently dropped.
    */
   const restoreFieldNow = async (
     field: GridField,
@@ -93,7 +95,13 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
       // payload wants the closed union the server validates anyway.
       field_type: field.fieldType as ExtractionFieldInsert['field_type'],
       is_required: field.isRequired,
-      validation_schema: {},
+      llm_description: field.aiInstruction,
+      allow_other: field.allowOther,
+      other_label: field.otherLabel,
+      other_placeholder: field.otherPlaceholder,
+      allows_not_applicable: field.allowsNotApplicable,
+      allows_not_evaluated: field.allowsNotEvaluated,
+      validation_schema: field.validationSchema ?? {},
       allowed_values: field.allowedValues,
       unit: field.unit,
       allowed_units: field.allowedUnits,

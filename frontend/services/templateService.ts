@@ -335,14 +335,6 @@ export async function takeOverDraftLock(
   );
 }
 
-export interface SectionImpact {
-  fieldsCount: number;
-  instancesCount: number;
-  dataCount: number;
-  canDelete: boolean;
-  warnings: string[];
-}
-
 // Entity-type LOADING lives in `useTemplateEntityTypes` (one cached
 // PostgREST read, shared by the editor and the grid panel). The imperative
 // `loadTemplateEntityTypes` this file used to export was its last caller's
@@ -413,69 +405,6 @@ export async function updateSection(
   }, 'updateSection');
 }
 
-// --- Section removal impact analysis ---
-
-/**
- * Analyze the impact of removing a section (entity type).
- * Returns field/instance/data counts and warnings so the component can
- * present them before the user confirms.
- *
- * ADVISORY only, and honest debt: these are direct workflow-table reads
- * from the frontend. B-7 moved only the config WRITES onto typed
- * endpoints; these reads move with the read-path consolidation
- * follow-up (the multi-line fitness-regex fix + honest baseline, split
- * out of B-7). The real refusal is `deleteSection`'s 409 remap.
- */
-export async function analyzeSectionRemovalImpact(
-  entityTypeId: string,
-): Promise<ErrorResult<SectionImpact>> {
-  return toResult(async () => {
-    // Count section fields
-    const {count: fieldsCount, error: fieldsError} = await supabase
-      .from('extraction_fields')
-      .select('id', {count: 'exact', head: true})
-      .eq('entity_type_id', entityTypeId);
-
-    if (fieldsError) throw fieldsError;
-
-    // Count section instances
-    const {count: instancesCount, error: instancesError} = await supabase
-      .from('extraction_instances')
-      .select('id', {count: 'exact', head: true})
-      .eq('entity_type_id', entityTypeId);
-
-    if (instancesError) throw instancesError;
-
-    // Count non-reject reviewer decisions tied to instances of this type
-    const {data: typeInstances} = await supabase
-      .from('extraction_instances')
-      .select('id')
-      .eq('entity_type_id', entityTypeId);
-    const typeInstanceIds = (typeInstances || []).map((i) => i.id);
-    let dataCount = 0;
-    if (typeInstanceIds.length > 0) {
-      const {count, error: dataError} = await supabase
-        .from('extraction_reviewer_decisions')
-        .select('id', {count: 'exact', head: true})
-        .in('instance_id', typeInstanceIds)
-        .neq('decision', 'reject');
-      if (dataError) {
-        console.warn('Could not count reviewer decisions:', dataError);
-      } else {
-        dataCount = count ?? 0;
-      }
-    }
-
-    return {
-      fieldsCount: fieldsCount || 0,
-      instancesCount: instancesCount || 0,
-      dataCount,
-      canDelete: true,
-      warnings: [], // Caller builds warnings from counts + copy keys
-    } satisfies SectionImpact;
-  }, 'analyzeSectionRemovalImpact');
-}
-
 // --- Section deletion ---
 
 /**
@@ -483,8 +412,8 @@ export async function analyzeSectionRemovalImpact(
  * and child sections).
  *
  * Recorded extraction work anywhere under the section (RESTRICT FKs)
- * refuses the delete with a 409 — the advisory impact probe above can
- * miss those rows, so this translation is the real invariant: re-wrap
+ * refuses the delete with a 409 — no client-side probe precedes this
+ * write, so this translation is the real invariant: re-wrap
  * as a typed PgError ('23503', the SQLSTATE behind the refusal)
  * carrying friendly copy. The editor's section delete toasts exactly that
  * pair to toast it verbatim; the raw backend message never reaches the
