@@ -31,7 +31,13 @@ from app.llm.catalog import CATALOG, canonical, find_entry
 from app.models.project import Project
 from app.models.user import Profile
 from app.repositories.project_repository import ProjectRepository
-from app.schemas.llm_engine import LlmEngineCatalogEntryRead, LlmEngineRead, LlmEngineStored
+from app.schemas.llm_engine import (
+    LlmEngineAlternate,
+    LlmEngineAlternateRead,
+    LlmEngineCatalogEntryRead,
+    LlmEngineRead,
+    LlmEngineStored,
+)
 from app.schemas.llm_target import LlmTarget
 from app.services.api_key_service import APIKeyService
 from app.services.parser_settings_service import ProjectNotFoundError
@@ -192,14 +198,36 @@ class LlmEngineService:
         model: str,
         mode: Literal["fast", "verified"],
         updated_by: UUID,
+        alternates: list[LlmEngineAlternate] | None = None,
     ) -> LlmEngineStored:
         """Persist a catalogue-validated engine choice with attribution.
 
         ``updated_by`` comes from the auth dependency and ``previous_model``
         from the stored value — never client-supplied.
+
+        ``alternates`` is tri-state: ``None`` keeps the previously stored
+        list verbatim, ``[]`` clears it, a list replaces it. Every entry
+        must be in the server catalogue (alternates are catalogue-only in
+        C2); duplicates collapse to the first occurrence and the primary
+        pair is silently filtered out.
         """
         if find_entry(provider, model) is None:
             raise ValueError(f"Unknown engine {provider}:{model} — not in the server catalogue")
+        curated: list[LlmEngineAlternate] | None = None
+        if alternates is not None:
+            seen: set[tuple[str, str]] = set()
+            curated = []
+            for alternate in alternates:
+                if find_entry(alternate.provider, alternate.model) is None:
+                    raise ValueError(
+                        f"Unknown alternate engine {alternate.provider}:{alternate.model} "
+                        "— not in the server catalogue"
+                    )
+                pair = (alternate.provider, alternate.model)
+                if pair == (provider, model) or pair in seen:
+                    continue
+                seen.add(pair)
+                curated.append(alternate)
         # Row-locked read for the read-modify-reassign below (mirrors
         # ``freeze_engine``'s reasoning in ``extraction_run_repository``):
         # ``settings`` is a whole-column JSONB write shared with
@@ -218,6 +246,10 @@ class LlmEngineService:
         if project is None:
             raise ProjectNotFoundError(f"Project {project_id} not found")
         previous = _stored_engine(project.settings)
+        if curated is None:
+            # None = keep: the previously stored list, verbatim, from the
+            # same row-locked read that feeds previous_model.
+            curated = list(previous.alternates) if previous is not None else []
         stored = LlmEngineStored(
             provider=provider,
             model=model,
@@ -225,6 +257,7 @@ class LlmEngineService:
             updated_by=updated_by,
             updated_at=datetime.now(UTC),
             previous_model=previous.model if previous is not None else None,
+            alternates=curated,
         )
         # projects.settings is plain JSONB (NOT MutableDict): build a new dict
         # and REASSIGN, or the change is not tracked and never persists. Only
@@ -242,6 +275,10 @@ class LlmEngineService:
         server-curated roster + the CALLER's per-provider availability —
         booleans only (``has_key_for_provider`` is an existence probe: no
         decrypt, no ``update_last_used`` write). Never another user's keys.
+        Plus the manager-curated ``alternates`` with a per-entry ``retired``
+        flag (empty when the engine is unset — the env default carries no
+        alternates). Alternates are runtime-inert in C2: only this read
+        surfaces them; :func:`resolve_project_engine` ignores them.
         """
         resolved = await self.get_for_project(project_id)
         stored = resolved.stored
@@ -279,4 +316,13 @@ class LlmEngineService:
                 for entry in CATALOG
             ],
             availability=availability,
+            alternates=[
+                LlmEngineAlternateRead(
+                    provider=a.provider,
+                    model=a.model,
+                    canonical=f"{a.provider}:{a.model}",
+                    retired=find_entry(a.provider, a.model) is None,
+                )
+                for a in (stored.alternates if stored is not None else [])
+            ],
         )
