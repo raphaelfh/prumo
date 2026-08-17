@@ -16,7 +16,6 @@ from app.api.v1.endpoints._integrity import (
     ONE_LIVE_RUN_CONFLICT_DETAIL,
     is_one_live_run_conflict,
 )
-from app.core.config import settings
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
@@ -31,6 +30,7 @@ from app.schemas.extraction import (
 from app.services.api_key_service import APIKeyService
 from app.services.model_extraction_service import ModelExtractionService
 from app.services.model_hierarchy_service import ModelHierarchyService
+from app.services.run_engine_freeze import resolve_engine_for_run
 from app.services.run_lifecycle_service import (
     CreateRunInputError,
     TemplateNotFoundError,
@@ -152,10 +152,19 @@ async def extract_models(
         project_id=str(payload.project_id),
         article_id=str(payload.article_id),
         template_id=str(payload.template_id),
-        model=settings.LLM_DEFAULT_MODEL,
     )
 
     await ensure_project_member(db, payload.project_id, current_user_sub)
+
+    # C1b/F4: the run's PINNED engine wins — read before any project resolve,
+    # so a pinned run can never execute a second engine while
+    # ``provenance.engine`` names the first (and a retired project pair
+    # cannot 409 a legitimately pinned continuation). An unpinned run
+    # freezes the resolved pair so the record exists before any LLM call.
+    # Kept outside the broad try below, so EngineRetiredError reaches its
+    # registered AppError handler — a typed 409 — instead of being swallowed
+    # into the generic 500.
+    engine = await resolve_engine_for_run(db, run_id=payload.run_id, project_id=payload.project_id)
 
     try:
         # Create storage adapter via factory
@@ -164,7 +173,8 @@ async def extract_models(
         # Buscar API key do user (BYOK) with fallback for global
         api_key_service = APIKeyService(db=db, user_id=user.sub)
         # Scope is dropped: ModelExtractionService writes no provenance.
-        _resolved_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+        # The lookup follows the RESOLVED engine's provider, never settings.
+        _resolved_key = await api_key_service.get_key_for_provider(engine.provider)
         user_llm_key = _resolved_key.key if _resolved_key is not None else None
 
         service = ModelExtractionService(
@@ -179,8 +189,8 @@ async def extract_models(
             project_id=payload.project_id,
             article_id=payload.article_id,
             template_id=payload.template_id,
-            # C1a: server-owned engine — never a client-supplied string.
-            model=settings.LLM_DEFAULT_MODEL,
+            # C1a/C1b: server-owned engine — never a client-supplied string.
+            engine=engine,
             run_id=payload.run_id,
         )
 

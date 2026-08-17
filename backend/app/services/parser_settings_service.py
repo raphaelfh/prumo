@@ -29,7 +29,13 @@ class ProjectNotFoundError(Exception):
 
 
 class ParserSettingsService:
-    """Owns the ``parsing`` map inside projects.settings."""
+    """Owns the ``parsing`` map inside projects.settings.
+
+    NOTE: this write is an UNLOCKED read-modify-reassign of the shared
+    ``settings`` column — now that ``LlmEngineService`` is a second writer
+    (which takes ``FOR UPDATE``), an interleaved parser write can still drop
+    a concurrent sibling-key update (pre-existing; out of C1b scope).
+    """
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db

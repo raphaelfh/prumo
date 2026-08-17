@@ -46,6 +46,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+from app.utils.rate_limiter import limiter
 
 # =================== AUTO MARKER ===================
 # Every test collected under tests/integration/ gets the ``integration``
@@ -53,6 +54,23 @@ from app.core.config import settings
 # ``pytestmark = pytest.mark.integration`` at the top of all 40+ files.
 # Pairs with ``--strict-markers`` in pyproject so typo'd markers fail
 # instead of being silently ignored.
+
+
+@pytest.fixture(autouse=True)
+def _isolated_rate_limits() -> None:
+    """Each test starts with a clean rate-limit window.
+
+    The app-level limits are real in this suite (nothing disables the
+    limiter), which is right for any single test — but the counters are
+    process-global, so requests ACCUMULATE across tests. The section
+    kickoff's 10/minute budget was quietly shared by every test touching
+    that endpoint, and whichever unlucky test crossed the threshold under
+    the suite's randomized ordering failed with a 429 it never caused
+    (seen: test_section_extraction_run_id_403_for_non_member asserting
+    403, receiving "Rate limit exceeded: 10 per 1 minute"). Per-test
+    reset keeps limits enforceable WITHIN a test and kills the
+    cross-test coupling."""
+    limiter.reset()
 
 
 def pytest_collection_modifyitems(

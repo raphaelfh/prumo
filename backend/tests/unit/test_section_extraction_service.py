@@ -19,6 +19,7 @@ from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage
 from app.schemas.llm_target import LlmTarget
 from app.services.extraction_prompt_input import PromptInputInfo
+from app.services.run_engine_freeze import build_run_provenance
 from app.services.section_extraction_service import SectionExtractionService
 
 
@@ -1175,7 +1176,10 @@ class TestCreateSuggestions:
         self._wire_one_field(service)
         entity_type_id = uuid4()
         service._engine = LlmTarget(provider="openai", model="gpt-x")
-        service._run_provenance = service._build_run_provenance(
+        service._run_provenance = build_run_provenance(
+            ran_by_user_id=service.user_id,
+            engine=service._engine,
+            key_scope=service._key_scope,
             prompt_name="extract",
             prompt_version="1",
             usage=LlmUsage(prompt_tokens=10, completion_tokens=5),
@@ -1214,8 +1218,12 @@ class TestCreateSuggestions:
         et_a, et_b = uuid4(), uuid4()
 
         service._engine = LlmTarget(provider="openai", model="m-a")
-        service._run_provenance = service._build_run_provenance(
-            prompt_name="extract", prompt_version="1"
+        service._run_provenance = build_run_provenance(
+            ran_by_user_id=service.user_id,
+            engine=service._engine,
+            key_scope=service._key_scope,
+            prompt_name="extract",
+            prompt_version="1",
         )
         await service._create_suggestions(
             project_id=run.project_id,
@@ -1226,8 +1234,12 @@ class TestCreateSuggestions:
             run=run,
         )
         service._engine = LlmTarget(provider="openai", model="m-b")
-        service._run_provenance = service._build_run_provenance(
-            prompt_name="extract", prompt_version="1"
+        service._run_provenance = build_run_provenance(
+            ran_by_user_id=service.user_id,
+            engine=service._engine,
+            key_scope=service._key_scope,
+            prompt_name="extract",
+            prompt_version="1",
         )
         await service._create_suggestions(
             project_id=run.project_id,
@@ -1376,14 +1388,15 @@ class TestCreateSuggestions:
         assert prop["confidence_score"] == 0.3
         assert prop["rationale"] == "two conflicting statements"
 
-    def test_build_run_provenance_shape(self, service):
+    def test_build_run_provenance_shape(self):
         # Per-section snapshot of how the suggestions were generated; params come
         # from the single-source extractor constants so they can't drift from
         # what was actually sent. No prompt_text — the system prompt lives in the
         # prompt_composition (a duplicate flat copy serves no reader).
-        service.user_id = "user-123"
-        service._engine = LlmTarget(provider="openai", model="gpt-4o-mini")
-        prov = service._build_run_provenance(
+        prov = build_run_provenance(
+            ran_by_user_id="user-123",
+            engine=LlmTarget(provider="openai", model="gpt-4o-mini"),
+            key_scope=None,
             prompt_name="section_extraction",
             prompt_version="v3",
         )
@@ -1405,7 +1418,10 @@ class TestCreateSuggestions:
             PromptCompositionArticleRef,
         )
 
-        snap = service._build_run_provenance(
+        snap = build_run_provenance(
+            ran_by_user_id=service.user_id,
+            engine=service._engine,
+            key_scope=None,
             prompt_name="section_extraction",
             prompt_version="v1",
             usage=LlmUsage(prompt_tokens=10, completion_tokens=5),
@@ -1425,7 +1441,13 @@ class TestCreateSuggestions:
     def test_build_run_provenance_omits_optional_keys_when_absent(self, service):
         # No usage / no composition → those keys are simply absent (the no-LLM
         # and legacy-caller shapes), never null placeholders.
-        snap = service._build_run_provenance(prompt_name="section_extraction", prompt_version="v1")
+        snap = build_run_provenance(
+            ran_by_user_id=service.user_id,
+            engine=service._engine,
+            key_scope=None,
+            prompt_name="section_extraction",
+            prompt_version="v1",
+        )
         assert "tokens" not in snap
         assert "prompt_composition" not in snap
 

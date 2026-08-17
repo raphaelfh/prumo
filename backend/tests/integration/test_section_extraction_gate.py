@@ -280,7 +280,12 @@ async def test_session_run_extraction_persists_provenance(
     async def _fake_extract(**_kwargs: Any) -> tuple[dict[str, Any], LlmUsage]:
         # Mirror the real _extract_with_llm, which builds the per-section run
         # provenance snapshot (tokens baked in, keyed later by entity_type_id).
-        service._run_provenance = service._build_run_provenance(
+        from app.services.run_engine_freeze import build_run_provenance
+
+        service._run_provenance = build_run_provenance(
+            ran_by_user_id=service.user_id,
+            engine=service._engine,
+            key_scope=service._key_scope,
             prompt_name="section_extraction",
             prompt_version="1",
             usage=LlmUsage(prompt_tokens=100, completion_tokens=20),

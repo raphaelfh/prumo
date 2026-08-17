@@ -88,7 +88,7 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 | `DATABASE_URL` | Supabase pooler (used for app traffic) |
 | `DIRECT_DATABASE_URL` | Supabase direct (used by Alembic at boot) |
 | `OPENAI_API_KEY` | OpenAI dashboard |
-| `LLM_DEFAULT_MODEL` | `gpt-4o-mini` — set with `LLM_PROVIDER`; MUST be the same value across web + worker (the engine is server-owned, and the two services resolve it independently: `/api/v1/extraction/models` runs synchronously and resolves it in **web**, while `/api/v1/extraction/sections` enqueues and resolves it in the **worker** — a per-service mismatch silently runs two different engines). The former `OPENAI_DEFAULT_MODEL` was defined but never read at runtime |
+| `LLM_DEFAULT_MODEL` | `gpt-4o-mini` — set with `LLM_PROVIDER`; since C1b this pair is the FALLBACK for projects with no stored `llm_engine` setting (the ⚙ popover writes `projects.settings.llm_engine`, which wins). MUST still be the same value across web + worker: unset projects resolve it independently in each service (`/api/v1/extraction/models` in **web**, `/api/v1/extraction/sections` in the **worker**) — a per-service mismatch silently runs two different engines for those projects. The former `OPENAI_DEFAULT_MODEL` was defined but never read at runtime |
 | `DEBUG` | `false` |
 | `RATE_LIMIT_PER_MINUTE` | `60` |
 | `PROJECT_NAME` | `Prumo API` |
