@@ -368,8 +368,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             <LlmEngineChip projectId={projectId} />
             {activeTemplate ? (
               // Dashboard regime: the page never scrolls — the grid card
-              // absorbs the leftover height and scrolls internally.
-              <div className="min-h-0 flex-1">{renderConfigurationBody()}</div>
+              // absorbs the leftover height and scrolls internally. The
+              // overflow-y-auto is the short-viewport escape hatch (zoom,
+              // landscape phone, expanded instruction editor): when the
+              // editor's FIXED rows outgrow the area, this column scrolls
+              // instead of clipping controls unreachable — the chip and
+              // tab chrome above stay fixed either way.
+              <div className="min-h-0 flex-1 overflow-y-auto">{renderConfigurationBody()}</div>
             ) : (
               // No template yet: a plain content card; scroll the area.
               <div className="min-h-0 flex-1 overflow-y-auto pb-4">{renderConfigurationBody()}</div>
