@@ -144,6 +144,15 @@ async def _proposal_values(db: AsyncSession, run_id: UUID) -> list[dict[str, Any
     return list(rows.scalars().all())
 
 
+async def _run_pinned_verified(db: AsyncSession) -> ExtractionRun:
+    """A fresh EXTRACT-stage run pre-pinned to the env-default engine in Verified."""
+    run = await engine_setup.run_in_extract(db)
+    await engine_setup.pin_run(
+        db, run, settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL, mode="verified"
+    )
+    return run
+
+
 async def _extract_once(
     db: AsyncSession,
     run: ExtractionRun,
@@ -625,10 +634,7 @@ async def test_verified_pin_runs_verify_and_annotates_proposals(
     section token totals."""
     _stub_llm_seams(monkeypatch)
     verify_log = _stub_verify_pass(monkeypatch)
-    run = await engine_setup.run_in_extract(db_session)
-    await engine_setup.pin_run(
-        db_session, run, settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL, mode="verified"
-    )
+    run = await _run_pinned_verified(db_session)
 
     await _extract_once(db_session, run, "verified-success")
     await db_session.refresh(run)
@@ -687,10 +693,7 @@ async def test_verified_pin_verify_failure_degrades_to_fast(
     while mode_requested still records the ask."""
     _stub_llm_seams(monkeypatch)
     verify_log = _stub_verify_pass(monkeypatch, outcome=None)
-    run = await engine_setup.run_in_extract(db_session)
-    await engine_setup.pin_run(
-        db_session, run, settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL, mode="verified"
-    )
+    run = await _run_pinned_verified(db_session)
 
     await _extract_once(db_session, run, "verified-degrade")
     await db_session.refresh(run)
@@ -754,10 +757,7 @@ async def test_verified_no_info_proposal_carries_no_verification_key(
             }
         },
     )
-    run = await engine_setup.run_in_extract(db_session)
-    await engine_setup.pin_run(
-        db_session, run, settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL, mode="verified"
-    )
+    run = await _run_pinned_verified(db_session)
 
     await _extract_once(db_session, run, "verified-no-info")
     await db_session.refresh(run)
@@ -801,11 +801,8 @@ async def test_verified_qa_run_skips_the_verifier(
         ),
         {"tid": str(SEED.primary_template)},
     )
-    run = await engine_setup.run_in_extract(db_session)
+    run = await _run_pinned_verified(db_session)
     assert run.kind == "quality_assessment", "the run must derive the QA kind"
-    await engine_setup.pin_run(
-        db_session, run, settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL, mode="verified"
-    )
 
     with capture_logs() as entries:
         await _extract_once(db_session, run, "verified-qa-skip")
