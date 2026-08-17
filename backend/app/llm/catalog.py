@@ -79,7 +79,9 @@ CATALOG: tuple[CatalogEntry, ...] = (
         label="Claude Haiku 4.5",
         best_for="Fast Claude option for high-volume extraction",
         context_window=200_000,
-        cost_tier="$",
+        # $1/$5 per MTok sits with terra ($2/$12), not with luna ($0.20/$1.20):
+        # tiers are honest across providers, not within one.
+        cost_tier="$$",
         byok_only=True,
     ),
     CatalogEntry(

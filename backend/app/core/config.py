@@ -108,8 +108,11 @@ class Settings(BaseSettings):
     # Token budget for the per-run block-markdown assembly window (A1). A paper
     # under this budget is sent in full; above it the assembler drops whole
     # low-priority sections (IMRaD ranking) and logs AssemblyInfo.truncated.
-    # Leaves headroom on a 128k-context model for system prompt + schema + output
-    # + reask. No hard per-run cost ceiling (logged, not enforced — spec §8.5).
+    # Sized against the SMALLEST context window in app.llm.catalog.CATALOG
+    # (currently gpt-4o-mini at 128k), NOT the default model — a budget that
+    # fits only the flagship windows overflows legacy-pinned projects. Leaves
+    # headroom for system prompt + schema + output + reask. No hard per-run
+    # cost ceiling (logged, not enforced — spec §8.5).
     LLM_ASSEMBLY_BUDGET_TOKENS: int = 96_000
 
     # =================== PARSING ===================
