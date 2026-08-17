@@ -15,6 +15,7 @@ key. Keep the flag in sync when a global key is introduced for a provider.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -26,7 +27,7 @@ class CatalogEntry:
     label: str
     best_for: str
     context_window: int
-    cost_tier: str  # "$" | "$$" | "$$$"
+    cost_tier: Literal["$", "$$", "$$$"]
     byok_only: bool = False
 
 

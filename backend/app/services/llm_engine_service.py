@@ -21,12 +21,15 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.llm.catalog import find_entry
+from app.llm.catalog import CATALOG, canonical, find_entry
+from app.models.user import Profile
 from app.repositories.project_repository import ProjectRepository
-from app.schemas.llm_engine import LlmEngineStored
+from app.schemas.llm_engine import LlmEngineCatalogEntryRead, LlmEngineRead, LlmEngineStored
+from app.services.api_key_service import APIKeyService
 from app.services.parser_settings_service import ProjectNotFoundError
 
 __all__ = [
@@ -63,6 +66,20 @@ def _stored_engine(project_settings: dict[str, Any] | None) -> LlmEngineStored |
         return LlmEngineStored.model_validate(raw)
     except ValidationError:
         return None
+
+
+async def _profile_names(db: AsyncSession, ids: set[UUID]) -> dict[UUID, str | None]:
+    """Display names for the given profiles, one query for all of them.
+
+    A profile with no ``full_name`` maps to ``None`` rather than to its
+    uuid: the popover renders a fallback, never a raw id dressed as a name.
+    (The B-9f ``_publisher_names`` shape.)
+    """
+    rows = await db.execute(select(Profile.id, Profile.full_name).where(Profile.id.in_(ids)))
+    names: dict[UUID, str | None] = {}
+    for profile_id, full_name in rows.all():
+        names[profile_id] = full_name
+    return names
 
 
 class LlmEngineService:
@@ -132,3 +149,49 @@ class LlmEngineService:
         project.settings = new_settings
         await self.db.flush()
         return stored
+
+    async def get_engine_read(self, project_id: UUID, viewer_id: UUID) -> LlmEngineRead:
+        """The whole member-visible read model for the ⚙ popover.
+
+        Resolved engine + attribution name (batched profile select) + the
+        server-curated roster + the CALLER's per-provider availability —
+        booleans only (``has_key_for_provider`` is an existence probe: no
+        decrypt, no ``update_last_used`` write). Never another user's keys.
+        """
+        resolved = await self.get_for_project(project_id)
+        stored = resolved.stored
+
+        updated_by_name: str | None = None
+        if stored is not None and stored.updated_by is not None:
+            names = await _profile_names(self.db, {stored.updated_by})
+            updated_by_name = names.get(stored.updated_by)
+
+        keys = APIKeyService(self.db, viewer_id)
+        availability: dict[str, bool] = {}
+        for provider in sorted({entry.provider for entry in CATALOG}):
+            availability[provider] = await keys.has_key_for_provider(provider)
+
+        return LlmEngineRead(
+            provider=resolved.provider,
+            model=resolved.model,
+            mode="fast",
+            source=resolved.source,
+            retired=resolved.retired,
+            updated_by_name=updated_by_name,
+            updated_at=stored.updated_at if stored is not None else None,
+            previous_model=stored.previous_model if stored is not None else None,
+            catalog=[
+                LlmEngineCatalogEntryRead(
+                    provider=entry.provider,
+                    model=entry.model,
+                    canonical=canonical(entry),
+                    label=entry.label,
+                    best_for=entry.best_for,
+                    context_window=entry.context_window,
+                    cost_tier=entry.cost_tier,
+                    byok_only=entry.byok_only,
+                )
+                for entry in CATALOG
+            ],
+            availability=availability,
+        )

@@ -1262,6 +1262,54 @@
         "title": "ApiResponse[ListProvidersData]",
         "type": "object"
       },
+      "ApiResponse_LlmEngineRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LlmEngineRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[LlmEngineRead]",
+        "type": "object"
+      },
       "ApiResponse_ManagerReviewVisibilityRead_": {
         "properties": {
           "data": {
@@ -5106,6 +5154,175 @@
           "providers"
         ],
         "title": "ListProvidersData",
+        "type": "object"
+      },
+      "LlmEngineCatalogEntryRead": {
+        "description": "One selectable engine as the picker renders it.",
+        "properties": {
+          "best_for": {
+            "title": "Best For",
+            "type": "string"
+          },
+          "byok_only": {
+            "title": "Byok Only",
+            "type": "boolean"
+          },
+          "canonical": {
+            "title": "Canonical",
+            "type": "string"
+          },
+          "context_window": {
+            "title": "Context Window",
+            "type": "integer"
+          },
+          "cost_tier": {
+            "enum": [
+              "$",
+              "$$",
+              "$$$"
+            ],
+            "title": "Cost Tier",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "canonical",
+          "label",
+          "best_for",
+          "context_window",
+          "cost_tier",
+          "byok_only"
+        ],
+        "title": "LlmEngineCatalogEntryRead",
+        "type": "object"
+      },
+      "LlmEngineRead": {
+        "description": "The resolved engine view the \u2699 popover renders.\n\n``source`` says whether the pair is the project's stored choice or the\nserver's env default; ``retired`` flags a stored pair the catalogue no\nlonger lists (new runs are refused until a manager re-chooses).\n``availability`` maps provider \u2192 whether the CALLER can run it (their\nown stored key, or a global service key) \u2014 booleans only, never key\nmaterial or metadata.",
+        "properties": {
+          "availability": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Availability",
+            "type": "object"
+          },
+          "catalog": {
+            "items": {
+              "$ref": "#/components/schemas/LlmEngineCatalogEntryRead"
+            },
+            "title": "Catalog",
+            "type": "array"
+          },
+          "mode": {
+            "const": "fast",
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "previous_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Model"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "retired": {
+            "title": "Retired",
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "project",
+              "default"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Name"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "mode",
+          "source",
+          "retired",
+          "catalog",
+          "availability"
+        ],
+        "title": "LlmEngineRead",
+        "type": "object"
+      },
+      "LlmEngineUpdateRequest": {
+        "additionalProperties": false,
+        "description": "PUT body for the project engine.\n\n``mode: Literal[\"fast\"]`` refuses ``verified`` with a free 422 until\nVerified ships (\u00a75 \u2014 the Literal itself is the enum landing in C1);\n``extra=\"forbid\"`` blocks smuggled keys (no temperature/seed, by design).",
+        "properties": {
+          "mode": {
+            "const": "fast",
+            "default": "fast",
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model"
+        ],
+        "title": "LlmEngineUpdateRequest",
         "type": "object"
       },
       "ManagerReviewVisibilityPayload": {
@@ -10446,6 +10663,112 @@
         "summary": "Upsert Project Hitl Config",
         "tags": [
           "hitl-configs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/llm-engine": {
+      "get": {
+        "description": "Resolved engine + catalogue + the caller's per-provider availability.",
+        "operationId": "get_llm_engine_api_v1_projects__project_id__llm_engine_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmEngineRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Llm Engine",
+        "tags": [
+          "projects"
+        ]
+      },
+      "put": {
+        "description": "Persist the project's engine choice (catalogue-validated, attributed).",
+        "operationId": "set_llm_engine_api_v1_projects__project_id__llm_engine_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmEngineUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmEngineRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Set Llm Engine",
+        "tags": [
+          "projects"
         ]
       }
     },

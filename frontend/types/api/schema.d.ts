@@ -567,6 +567,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/llm-engine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Llm Engine
+         * @description Resolved engine + catalogue + the caller's per-provider availability.
+         */
+        get: operations["get_llm_engine_api_v1_projects__project_id__llm_engine_get"];
+        /**
+         * Set Llm Engine
+         * @description Persist the project's engine choice (catalogue-validated, attributed).
+         */
+        put: operations["set_llm_engine_api_v1_projects__project_id__llm_engine_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/manager-review-visibility": {
         parameters: {
             query?: never;
@@ -1960,6 +1984,23 @@ export interface components {
         ApiResponse_ListProvidersData_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ListProvidersData"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[LlmEngineRead] */
+        ApiResponse_LlmEngineRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["LlmEngineRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3606,6 +3647,92 @@ export interface components {
         ListProvidersData: {
             /** Providers */
             providers: components["schemas"]["ProviderInfo"][];
+        };
+        /**
+         * LlmEngineCatalogEntryRead
+         * @description One selectable engine as the picker renders it.
+         */
+        LlmEngineCatalogEntryRead: {
+            /** Best For */
+            best_for: string;
+            /** Byok Only */
+            byok_only: boolean;
+            /** Canonical */
+            canonical: string;
+            /** Context Window */
+            context_window: number;
+            /**
+             * Cost Tier
+             * @enum {string}
+             */
+            cost_tier: "$" | "$$" | "$$$";
+            /** Label */
+            label: string;
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+        };
+        /**
+         * LlmEngineRead
+         * @description The resolved engine view the ⚙ popover renders.
+         *
+         *     ``source`` says whether the pair is the project's stored choice or the
+         *     server's env default; ``retired`` flags a stored pair the catalogue no
+         *     longer lists (new runs are refused until a manager re-chooses).
+         *     ``availability`` maps provider → whether the CALLER can run it (their
+         *     own stored key, or a global service key) — booleans only, never key
+         *     material or metadata.
+         */
+        LlmEngineRead: {
+            /** Availability */
+            availability: {
+                [key: string]: boolean;
+            };
+            /** Catalog */
+            catalog: components["schemas"]["LlmEngineCatalogEntryRead"][];
+            /**
+             * Mode
+             * @constant
+             */
+            mode: "fast";
+            /** Model */
+            model: string;
+            /** Previous Model */
+            previous_model?: string | null;
+            /** Provider */
+            provider: string;
+            /** Retired */
+            retired: boolean;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "project" | "default";
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By Name */
+            updated_by_name?: string | null;
+        };
+        /**
+         * LlmEngineUpdateRequest
+         * @description PUT body for the project engine.
+         *
+         *     ``mode: Literal["fast"]`` refuses ``verified`` with a free 422 until
+         *     Verified ships (§5 — the Literal itself is the enum landing in C1);
+         *     ``extra="forbid"`` blocks smuggled keys (no temperature/seed, by design).
+         */
+        LlmEngineUpdateRequest: {
+            /**
+             * Mode
+             * @default fast
+             * @constant
+             */
+            mode: "fast";
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
         };
         /** ManagerReviewVisibilityPayload */
         ManagerReviewVisibilityPayload: {
@@ -6319,6 +6446,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_HitlConfigRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_llm_engine_api_v1_projects__project_id__llm_engine_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmEngineRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_llm_engine_api_v1_projects__project_id__llm_engine_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmEngineUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmEngineRead_"];
                 };
             };
             /** @description Validation Error */

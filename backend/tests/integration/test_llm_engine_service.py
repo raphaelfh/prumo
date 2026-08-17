@@ -142,6 +142,41 @@ async def test_retired_flips_when_the_roster_drops_the_entry(
 
 
 @pytest.mark.asyncio
+async def test_get_engine_read_serves_catalog_and_caller_availability(
+    db_session: AsyncSession,
+) -> None:
+    """The whole read model comes from the service: resolved engine, the
+    roster, and the CALLER's per-provider availability (booleans only)."""
+    read = await LlmEngineService(db_session).get_engine_read(
+        SEED.primary_project, SEED.reviewer_profile
+    )
+    assert read.source == "default"
+    assert read.model == settings.LLM_DEFAULT_MODEL
+    assert read.updated_by_name is None
+    pairs = {(e.provider, e.model) for e in read.catalog}
+    assert ("openai", "gpt-4o-mini") in pairs
+    assert set(read.availability) == {e.provider for e in read.catalog}
+    # The reviewer stores no anthropic key and no global anthropic key exists.
+    assert read.availability["anthropic"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_engine_read_names_the_updater(db_session: AsyncSession) -> None:
+    service = LlmEngineService(db_session)
+    await service.set_for_project(
+        project_id=SEED.primary_project,
+        provider="openai",
+        model="gpt-4o",
+        mode="fast",
+        updated_by=SEED.primary_profile,
+    )
+    read = await service.get_engine_read(SEED.primary_project, SEED.primary_profile)
+    assert read.source == "project"
+    assert read.updated_by_name == "Integration Primary"
+    assert read.updated_at is not None
+
+
+@pytest.mark.asyncio
 async def test_sibling_parsing_key_survives_an_engine_write(db_session: AsyncSession) -> None:
     """The service writes ONLY its own ``llm_engine`` sub-key."""
     await ParserSettingsService(db_session).set_for_project(

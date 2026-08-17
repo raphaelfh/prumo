@@ -296,6 +296,21 @@ class APIKeyService(LoggerMixin):
 
         return None
 
+    async def has_key_for_provider(self, provider: str) -> bool:
+        """Whether the caller could run ``provider`` — existence probe ONLY.
+
+        The member-visible engine popover (C1b) asks this for every
+        catalogue provider on each open. Unlike ``get_key_for_provider``
+        it never decrypts and never writes ``update_last_used``: a read
+        endpoint must not mutate usage bookkeeping, and key material has
+        no business being touched to answer a boolean.
+        """
+        if self._user_id is not None:
+            default_key = await self._repo.get_default(self._user_id, provider)
+            if default_key is not None and default_key.encrypted_api_key:
+                return True
+        return self._get_global_key(provider) is not None
+
     async def get_decrypted_key(
         self,
         key_id: UUID | str,
