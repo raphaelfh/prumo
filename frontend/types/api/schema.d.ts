@@ -582,6 +582,10 @@ export interface paths {
         /**
          * Set Llm Engine
          * @description Persist the project's engine choice (catalogue-validated, attributed).
+         *
+         *     ``alternates`` rides the same write: ``None`` (field absent) keeps the
+         *     stored list, ``[]`` clears it, a list replaces it — every entry
+         *     catalogue-validated by the service (unknown pair → 400).
          */
         put: operations["set_llm_engine_api_v1_projects__project_id__llm_engine_put"];
         post?: never;
@@ -3651,6 +3655,32 @@ export interface components {
             providers: components["schemas"]["ProviderInfo"][];
         };
         /**
+         * LlmEngineAlternate
+         * @description One fallback engine pair — the stored and request entry shape.
+         */
+        LlmEngineAlternate: {
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+        };
+        /**
+         * LlmEngineAlternateRead
+         * @description One alternate as the popover renders it: the pair plus its canonical
+         *     catalogue id and a per-entry ``retired`` flag (the catalogue no longer
+         *     lists that pair).
+         */
+        LlmEngineAlternateRead: {
+            /** Canonical */
+            canonical: string;
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+            /** Retired */
+            retired: boolean;
+        };
+        /**
          * LlmEngineCatalogEntryRead
          * @description One selectable engine as the picker renders it.
          */
@@ -3684,9 +3714,15 @@ export interface components {
          *     longer lists (new runs are refused until a manager re-chooses).
          *     ``availability`` maps provider → whether the CALLER can run it (their
          *     own stored key, or a global service key) — booleans only, never key
-         *     material or metadata.
+         *     material or metadata. ``alternates`` is the stored fallback list with
+         *     a per-entry ``retired`` flag.
          */
         LlmEngineRead: {
+            /**
+             * Alternates
+             * @default []
+             */
+            alternates: components["schemas"]["LlmEngineAlternateRead"][];
             /** Availability */
             availability: {
                 [key: string]: boolean;
@@ -3723,8 +3759,12 @@ export interface components {
          *     ``mode: Literal["fast", "verified"]`` is the closed write gate (§5 —
          *     Verified shipped with the verify pass; anything else is a free 422);
          *     ``extra="forbid"`` blocks smuggled keys (no temperature/seed, by design).
+         *     ``alternates`` is tri-state: ``None`` (field absent) keeps the stored
+         *     list, ``[]`` clears it, a list replaces it.
          */
         LlmEngineUpdateRequest: {
+            /** Alternates */
+            alternates?: components["schemas"]["LlmEngineAlternate"][] | null;
             /**
              * Mode
              * @default fast
