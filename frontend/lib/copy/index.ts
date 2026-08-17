@@ -20,6 +20,7 @@ import {pdf} from './pdf';
 import {runs} from './runs';
 import {parsing} from './parsing';
 import {templateConfig} from './templateConfig';
+import {llmEngine} from './llmEngine';
 
 export {
     common,
@@ -40,6 +41,7 @@ export {
     runs,
     parsing,
     templateConfig,
+    llmEngine,
 };
 
 const copy = {
@@ -61,6 +63,7 @@ const copy = {
     runs,
     parsing,
     templateConfig,
+    llmEngine,
 } as const;
 
 export type CopyNamespace = keyof typeof copy;

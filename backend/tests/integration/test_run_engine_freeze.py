@@ -34,12 +34,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.llm.extractor import LlmUsage
-from app.models.extraction import ExtractionRun, ExtractionRunStage
+from app.models.extraction import ExtractionRun
 from app.schemas.extraction import SectionExtractionRequest
+from app.schemas.llm_target import LlmTarget
 from app.services import section_extraction_service as ses
-from app.services.api_key_service import KeyScope
-from app.services.run_lifecycle_service import RunLifecycleService
+from app.services.api_key_service import KeyScope, ResolvedKey
 from tests.integration.conftest import SEED
+from tests.integration.helpers import engine_setup
 
 #: Stands in for real key material. It must never reach the run row.
 _SECRET_KEY = "sk-must-never-be-recorded"
@@ -47,35 +48,6 @@ _SECRET_KEY = "sk-must-never-be-recorded"
 #: What the tests treat as "the setting changed under a retry".
 _OTHER_PROVIDER = "anthropic"
 _OTHER_MODEL = "claude-sonnet-4-5"
-
-
-async def _run_in_extract(db: AsyncSession) -> ExtractionRun:
-    """A fresh run for the seeded coordinate, advanced to EXTRACT."""
-    await db.execute(
-        text(
-            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
-            "AND article_id = :aid AND template_id = :tid"
-        ),
-        {
-            "pid": str(SEED.primary_project),
-            "aid": str(SEED.primary_article),
-            "tid": str(SEED.primary_template),
-        },
-    )
-    lifecycle = RunLifecycleService(db)
-    run = await lifecycle.create_run(
-        project_id=SEED.primary_project,
-        article_id=SEED.primary_article,
-        project_template_id=SEED.primary_template,
-        user_id=SEED.primary_profile,
-    )
-    run = await lifecycle.advance_stage(
-        run_id=run.id,
-        target_stage=ExtractionRunStage.EXTRACT,
-        user_id=SEED.primary_profile,
-    )
-    await db.flush()
-    return run
 
 
 def _service(
@@ -175,7 +147,7 @@ async def test_fresh_run_resolves_engine_from_settings_and_persists_it(
 ) -> None:
     """A run with no engine recorded resolves from settings and stores it."""
     calls = _stub_llm_seams(monkeypatch)
-    run = await _run_in_extract(db_session)
+    run = await engine_setup.run_in_extract(db_session)
 
     await _extract_once(db_session, run, "freeze-fresh")
     await db_session.refresh(run)
@@ -183,6 +155,8 @@ async def test_fresh_run_resolves_engine_from_settings_and_persists_it(
     assert _engine_of(run) == {
         "provider": settings.LLM_PROVIDER,
         "model": settings.LLM_DEFAULT_MODEL,
+        "mode_requested": "fast",
+        "mode_executed": "fast",
     }, f"engine not frozen on the run: results={run.results}"
     assert calls, "build_model was never called — the stub is not wired"
     assert calls[0] == (settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL)
@@ -202,7 +176,7 @@ async def test_retry_after_settings_change_keeps_the_first_engine(
     original_provider = settings.LLM_PROVIDER
     original_model = settings.LLM_DEFAULT_MODEL
 
-    run = await _run_in_extract(db_session)
+    run = await engine_setup.run_in_extract(db_session)
     await _extract_once(db_session, run, "freeze-attempt-1")
 
     # The manager flips the engine between the two attempts.
@@ -217,7 +191,12 @@ async def test_retry_after_settings_change_keeps_the_first_engine(
     assert calls == [(original_provider, original_model)] * len(calls), (
         f"attempt 2 ran a different engine than attempt 1: {calls}"
     )
-    assert _engine_of(run) == {"provider": original_provider, "model": original_model}
+    assert _engine_of(run) == {
+        "provider": original_provider,
+        "model": original_model,
+        "mode_requested": "fast",
+        "mode_executed": "fast",
+    }
 
 
 @pytest.mark.asyncio
@@ -227,7 +206,7 @@ async def test_recorded_engine_is_never_overwritten(
 ) -> None:
     """First writer wins: a run that already names an engine keeps it."""
     calls = _stub_llm_seams(monkeypatch)
-    run = await _run_in_extract(db_session)
+    run = await engine_setup.run_in_extract(db_session)
 
     # NB: jsonb_set cannot create the intermediate ``provenance`` object, so
     # write the whole bag — a jsonb_set here silently no-ops and the test
@@ -248,12 +227,70 @@ async def test_recorded_engine_is_never_overwritten(
     await _extract_once(db_session, run, "freeze-existing")
     await db_session.refresh(run)
 
+    # Deliberately mode-less: a pre-C1b pinned snapshot must be tolerated
+    # (LlmTarget's mode fields default on validate) and never rewritten —
+    # first writer wins means the stored dict stays byte-identical.
     assert _engine_of(run) == {"provider": _OTHER_PROVIDER, "model": _OTHER_MODEL}, (
         "the pre-recorded engine was overwritten"
     )
     assert calls == [(_OTHER_PROVIDER, _OTHER_MODEL)] * len(calls), (
         f"the run's own engine was ignored in favour of settings: {calls}"
     )
+
+
+@pytest.mark.asyncio
+async def test_fresh_run_freezes_the_project_engine(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C1b: a project WITH ``llm_engine`` set freezes THAT pair, not the env
+    default — asserted on the run row AND on what reached ``build_model``.
+    Without this, the #609 regression guard stops guarding the real path."""
+    calls = _stub_llm_seams(monkeypatch)
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o")
+    run = await engine_setup.run_in_extract(db_session)
+
+    await _extract_once(db_session, run, "freeze-project-pair")
+    await db_session.refresh(run)
+
+    assert _engine_of(run) == {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "mode_requested": "fast",
+        "mode_executed": "fast",
+    }, f"the project engine was not frozen: results={run.results}"
+    assert calls, "build_model was never called — the stub is not wired"
+    assert calls == [("openai", "gpt-4o")] * len(calls)
+
+
+@pytest.mark.asyncio
+async def test_retry_after_set_for_project_flip_keeps_attempt_1_pair(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A manager flips the PROJECT engine between two attempts of one job —
+    attempt 2 must stay on attempt 1's frozen pair (retries stay pinned)."""
+    calls = _stub_llm_seams(monkeypatch)
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o")
+    run = await engine_setup.run_in_extract(db_session)
+    await _extract_once(db_session, run, "flip-attempt-1")
+
+    await engine_setup.set_project_engine(db_session, "anthropic", "claude-haiku-4-5")
+    calls.clear()
+
+    await _extract_once(db_session, run, "flip-attempt-2")
+    await db_session.refresh(run)
+
+    assert calls, "attempt 2 never reached build_model"
+    assert calls == [("openai", "gpt-4o")] * len(calls), (
+        f"attempt 2 followed the flipped project engine: {calls}"
+    )
+    assert _engine_of(run) == {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "mode_requested": "fast",
+        "mode_executed": "fast",
+    }
 
 
 @pytest.mark.asyncio
@@ -270,7 +307,7 @@ async def test_section_provenance_records_the_frozen_provider(
     original_provider = settings.LLM_PROVIDER
     original_model = settings.LLM_DEFAULT_MODEL
 
-    run = await _run_in_extract(db_session)
+    run = await engine_setup.run_in_extract(db_session)
     await _extract_once(db_session, run, "freeze-provenance")
 
     # The env var moves after the run — the snapshot must not follow it.
@@ -302,7 +339,7 @@ async def test_provenance_records_the_key_scope_and_never_the_key(
     expect it in.
     """
     _stub_llm_seams(monkeypatch)
-    run = await _run_in_extract(db_session)
+    run = await engine_setup.run_in_extract(db_session)
 
     await _extract_once(db_session, run, "key-scope", KeyScope.USER_BYOK)
     await db_session.refresh(run)
@@ -327,7 +364,7 @@ async def test_provenance_key_scope_is_null_when_the_caller_did_not_resolve_one(
     an absent one when the record is what an auditor reads.
     """
     _stub_llm_seams(monkeypatch)
-    run = await _run_in_extract(db_session)
+    run = await engine_setup.run_in_extract(db_session)
 
     await _extract_once(db_session, run, "key-scope-none")
     await db_session.refresh(run)
@@ -335,3 +372,191 @@ async def test_provenance_key_scope_is_null_when_the_caller_did_not_resolve_one(
     snapshot = _section_provenance(run, SEED.primary_entity_type)
     assert snapshot, "no section provenance was written"
     assert snapshot.get("key_scope") is None
+
+
+# ---------------------------------------------------------------------------
+# F1 — the key must match the ADOPTED engine's provider, not the kickoff's
+# ---------------------------------------------------------------------------
+
+
+def _stub_keyed_build_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[tuple[str, str, str | None]]:
+    """Re-patch ``build_model`` to also record the api_key it was handed.
+
+    Call AFTER ``_stub_llm_seams`` (which wires the other seams); the
+    (provider, model, api_key) triple is the ground truth for which engine
+    ran on whose key.
+    """
+    calls: list[tuple[str, str, str | None]] = []
+
+    def _fake_build_model(provider: str, model_name: str, **kw: Any) -> MagicMock:
+        calls.append((provider, model_name, kw.get("api_key")))
+        return MagicMock()
+
+    monkeypatch.setattr(ses, "build_model", _fake_build_model)
+    return calls
+
+
+def _stub_key_service(
+    monkeypatch: pytest.MonkeyPatch,
+    resolved: ResolvedKey | None,
+) -> list[str]:
+    """Patch the service-module ``APIKeyService`` seam; return the providers
+    the service asked a key for (empty = it never re-keyed)."""
+    asked: list[str] = []
+
+    class _RecordingKeys:
+        def __init__(self, _db: Any, _user_id: Any) -> None:
+            pass
+
+        async def get_key_for_provider(self, provider: str) -> ResolvedKey | None:
+            asked.append(provider)
+            return resolved
+
+    monkeypatch.setattr(ses, "APIKeyService", _RecordingKeys)
+    return asked
+
+
+def _keyed_service(db: AsyncSession, trace_id: str, key_provider: str) -> Any:
+    """A service built the way the worker builds one AFTER resolving a key
+    for ``key_provider`` (the freshly-resolved project provider)."""
+    return ses.SectionExtractionService(
+        db=db,
+        user_id=str(SEED.primary_profile),
+        storage=MagicMock(),
+        trace_id=trace_id,
+        openai_api_key=f"key-for-{key_provider}",
+        key_scope=KeyScope.USER_BYOK,
+        key_provider=key_provider,
+    )
+
+
+@pytest.mark.asyncio
+async def test_standalone_kickoff_rekeys_for_the_adopted_pinned_provider(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """F1: a ``run_id=None`` kickoff REUSES the coordinate's live run, so
+    ``_adopt_frozen_engine`` can settle on a pin from BEFORE a manager's
+    provider flip — after the worker already keyed the freshly-resolved
+    project provider. The service must re-resolve key + scope for the
+    ADOPTED provider: pairing the anthropic key with the pinned openai
+    engine 401s (BYOK), and the recorded ``key_scope`` would name the
+    wrong resolution (§5.2)."""
+    _stub_llm_seams(monkeypatch)
+    keyed_calls = _stub_keyed_build_model(monkeypatch)
+    asked = _stub_key_service(monkeypatch, ResolvedKey("key-for-openai", KeyScope.GLOBAL_SERVICE))
+
+    run = await engine_setup.run_in_extract(db_session)
+    await engine_setup.pin_run(db_session, run, "openai", "gpt-4o-mini")
+    # The manager flips the project provider between pin and kickoff.
+    await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-4-5")
+
+    service = _keyed_service(db_session, "f1-standalone-rekey", key_provider="anthropic")
+    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
+        return_value="ARTICLE BODY"
+    )
+    await service.run_from_request(
+        SectionExtractionRequest(
+            projectId=SEED.primary_project,
+            articleId=SEED.primary_article,
+            templateId=SEED.primary_template,
+            entityTypeId=SEED.primary_entity_type,
+            # NO runId: the standalone path resolves the coordinate's live run.
+        ),
+        engine=LlmTarget(provider="anthropic", model="claude-sonnet-4-5"),
+    )
+    await db_session.refresh(run)
+
+    assert keyed_calls, "build_model was never called — the stub is not wired"
+    assert all(c[:2] == ("openai", "gpt-4o-mini") for c in keyed_calls), (
+        f"the pinned engine did not win: {keyed_calls}"
+    )
+    assert all(c[2] == "key-for-openai" for c in keyed_calls), (
+        f"build_model got the kickoff-provider key, not the re-resolved one: {keyed_calls}"
+    )
+    assert asked == ["openai"], f"expected exactly one re-resolution for openai, got {asked}"
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot.get("key_scope") == KeyScope.GLOBAL_SERVICE.value, (
+        "provenance must carry the RE-RESOLVED scope, not the stale kickoff one"
+    )
+
+
+@pytest.mark.asyncio
+async def test_pinned_run_kickoff_with_matching_key_provider_never_rekeys(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The explicit-``run_id`` branch reads the pin before keying, so the
+    providers match — the mechanism must not double-key (no second
+    ``get_key_for_provider`` and no scope rewrite)."""
+    _stub_llm_seams(monkeypatch)
+    asked = _stub_key_service(monkeypatch, ResolvedKey("must-not-be-used", KeyScope.GLOBAL_SERVICE))
+
+    run = await engine_setup.run_in_extract(db_session)
+    await engine_setup.pin_run(db_session, run, "openai", "gpt-4o-mini")
+
+    service = _keyed_service(db_session, "f1-no-double-key", key_provider="openai")
+    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
+        return_value="ARTICLE BODY"
+    )
+    await service.run_from_request(
+        SectionExtractionRequest(
+            projectId=SEED.primary_project,
+            articleId=SEED.primary_article,
+            templateId=SEED.primary_template,
+            entityTypeId=SEED.primary_entity_type,
+            runId=run.id,
+        ),
+        engine=LlmTarget(provider="openai", model="gpt-4o-mini"),
+    )
+    await db_session.refresh(run)
+
+    assert asked == [], f"the service re-keyed on a matching provider: {asked}"
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot.get("key_scope") == KeyScope.USER_BYOK.value, (
+        "the caller's scope was rewritten although the providers matched"
+    )
+
+
+@pytest.mark.asyncio
+async def test_rekey_with_no_key_for_the_adopted_provider_degrades_to_none(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A mismatch whose re-resolution finds nothing degrades to no key + no
+    scope — never raises — leaving ``build_model``'s global fallback as the
+    last resort, with ``key_scope: null`` truthfully recorded."""
+    _stub_llm_seams(monkeypatch)
+    keyed_calls = _stub_keyed_build_model(monkeypatch)
+    asked = _stub_key_service(monkeypatch, None)
+
+    run = await engine_setup.run_in_extract(db_session)
+    await engine_setup.pin_run(db_session, run, "openai", "gpt-4o-mini")
+    await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-4-5")
+
+    service = _keyed_service(db_session, "f1-rekey-none", key_provider="anthropic")
+    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
+        return_value="ARTICLE BODY"
+    )
+    await service.run_from_request(
+        SectionExtractionRequest(
+            projectId=SEED.primary_project,
+            articleId=SEED.primary_article,
+            templateId=SEED.primary_template,
+            entityTypeId=SEED.primary_entity_type,
+        ),
+        engine=LlmTarget(provider="anthropic", model="claude-sonnet-4-5"),
+    )
+    await db_session.refresh(run)
+
+    assert asked == ["openai"]
+    assert keyed_calls and all(c[2] is None for c in keyed_calls), (
+        f"the stale anthropic key leaked into build_model: {keyed_calls}"
+    )
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot, "no section provenance was written"
+    assert snapshot.get("key_scope") is None, (
+        "a scope was invented for a key that was never resolved"
+    )

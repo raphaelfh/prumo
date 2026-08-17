@@ -1,0 +1,136 @@
+/**
+ * useLlmEngine / useSetLlmEngine — TanStack hooks for the project engine
+ * (C1b T5).
+ *
+ * The service module is mocked, so each test asserts the hook's contract:
+ * the key comes from `projectKeys.llmEngine`, a failed read surfaces as
+ * the query's error state (the chip's render-nothing branch), and a
+ * successful mutation invalidates the owning key family.
+ */
+import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
+import {renderHook, waitFor} from '@testing-library/react';
+import type {ReactNode} from 'react';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
+
+vi.mock('@/services/llmEngineService', () => ({
+  fetchLlmEngine: vi.fn(),
+  setLlmEngine: vi.fn(),
+}));
+
+import {projectKeys} from '@/lib/query-keys';
+import {fetchLlmEngine, setLlmEngine} from '@/services/llmEngineService';
+import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
+
+const fetchMock = vi.mocked(fetchLlmEngine);
+const setMock = vi.mocked(setLlmEngine);
+
+const ENGINE_READ = {
+  provider: 'openai',
+  model: 'gpt-4o-mini',
+  mode: 'fast' as const,
+  source: 'default' as const,
+  retired: false,
+  updated_by_name: null,
+  updated_at: null,
+  previous_model: null,
+  catalog: [],
+  availability: {openai: true, anthropic: false},
+};
+
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {retry: false},
+      mutations: {retry: false},
+    },
+  });
+  const wrapper = ({children}: {children: ReactNode}) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  return {wrapper, queryClient};
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe('projectKeys.llmEngine', () => {
+  it('is part of the projects key family', () => {
+    expect(projectKeys.llmEngine('p1')).toEqual([
+      'projects',
+      'llm-engine',
+      'p1',
+    ]);
+  });
+});
+
+describe('useLlmEngine', () => {
+  it('reads through the service and exposes the resolved engine', async () => {
+    fetchMock.mockResolvedValue({ok: true, data: ENGINE_READ});
+    const {wrapper} = createWrapper();
+
+    const {result} = renderHook(() => useLlmEngine('p1'), {wrapper});
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(fetchMock).toHaveBeenCalledWith('p1');
+    expect(result.current.data?.provider).toBe('openai');
+  });
+
+  it('stays disabled when projectId is falsy', () => {
+    const {wrapper} = createWrapper();
+
+    const {result} = renderHook(() => useLlmEngine(undefined), {wrapper});
+
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an ErrorResult as the query error state', async () => {
+    fetchMock.mockResolvedValue({ok: false, error: new Error('Not Found')});
+    const {wrapper} = createWrapper();
+
+    const {result} = renderHook(() => useLlmEngine('p1'), {wrapper});
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error?.message).toBe('Not Found');
+  });
+});
+
+describe('useSetLlmEngine', () => {
+  it('PUTs through the service and invalidates the key family', async () => {
+    setMock.mockResolvedValue({ok: true, data: ENGINE_READ});
+    const {wrapper, queryClient} = createWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const {result} = renderHook(() => useSetLlmEngine('p1'), {wrapper});
+    await result.current.mutateAsync({
+      provider: 'anthropic',
+      model: 'claude-haiku-4-5',
+      mode: 'fast',
+    });
+
+    expect(setMock).toHaveBeenCalledWith('p1', {
+      provider: 'anthropic',
+      model: 'claude-haiku-4-5',
+      mode: 'fast',
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: projectKeys.llmEngine('p1'),
+    });
+  });
+
+  it('rejects (mutation error state) when the service refuses', async () => {
+    setMock.mockResolvedValue({ok: false, error: new Error('unknown model')});
+    const {wrapper} = createWrapper();
+
+    const {result} = renderHook(() => useSetLlmEngine('p1'), {wrapper});
+
+    await expect(
+      result.current.mutateAsync({
+        provider: 'openai',
+        model: 'nope',
+        mode: 'fast',
+      }),
+    ).rejects.toThrow('unknown model');
+  });
+});

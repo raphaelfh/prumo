@@ -20,7 +20,6 @@ from fastapi.responses import JSONResponse
 from redis import Redis
 
 from app.api.deps.security import ensure_project_member, get_current_user_sub
-from app.core.config import settings
 from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
@@ -32,6 +31,7 @@ from app.schemas.extraction import (
     SectionExtractionRequest,
 )
 from app.services.extraction_run_read_service import RunNotFoundError, get_run_or_raise
+from app.services.llm_engine_service import resolve_project_engine
 from app.utils.rate_limiter import limiter
 from app.worker.celery_app import REDIS_URL
 from app.worker.tasks.extraction_tasks import run_section_extraction_task
@@ -166,6 +166,22 @@ async def extract_section(
 
     await _check_request_scope(db, payload, current_user_sub)
 
+    # C1b enqueue-time gate, AFTER the membership scope (auth precedes engine
+    # work — an outsider gets 403, never this 409). Policy: retired entries
+    # block NEW runs only, so the gate runs ONLY when the payload names no
+    # run. A ``run_id`` continuation is not a new run — the worker honors the
+    # run's pinned engine, and an UNPINNED run resolving a retired pair
+    # mid-flight already classifies to the friendly ENGINE_RETIRED task code.
+    # Gating continuations here would brick a valid pinned run behind a 409
+    # it can never clear. A retired NEW-run kickoff raises EngineRetiredError
+    # → the registered AppError handler serves the typed 409 (error.code
+    # LLM_ENGINE_RETIRED). The worker re-resolves at execution time
+    # (pinned-run pair first), so this only fails fast.
+    engine_at_enqueue: str | None = None
+    if payload.run_id is None:
+        engine = await resolve_project_engine(db, payload.project_id)
+        engine_at_enqueue = f"{engine.provider}:{engine.model}"
+
     if not _is_queue_available():
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -185,11 +201,12 @@ async def extract_section(
         template_id=str(payload.template_id),
         entity_type_id=str(payload.entity_type_id) if payload.entity_type_id else None,
         extract_all_sections=payload.extract_all_sections,
-        # Config of the WEB process at enqueue time, not a record of what ran:
-        # the worker re-resolves the model when it executes the task. The
-        # authoritative record is the run provenance snapshot the worker writes
-        # (``section_extraction_service._build_run_provenance``).
-        default_model_at_enqueue=settings.LLM_DEFAULT_MODEL,
+        # The engine RESOLVED at enqueue time (None for a run_id continuation,
+        # which skips the gate), not a record of what ran: the worker
+        # re-resolves when it executes the task (pinned-run pair first). The
+        # authoritative record is the run provenance snapshot the worker
+        # writes (``run_engine_freeze.build_run_provenance``).
+        engine_at_enqueue=engine_at_enqueue,
     )
 
     task = run_section_extraction_task.delay(

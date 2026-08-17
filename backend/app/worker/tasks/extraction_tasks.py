@@ -15,9 +15,13 @@ from uuid import UUID
 
 from celery import Task
 
-from app.core.config import settings
 from app.llm.errors import is_transient_llm_error
 from app.services.extraction_errors import ExtractionTaskError, classify_extraction_error
+
+# Module-level on purpose: these are the patchable seams the task tests pin
+# (``extraction_tasks.resolve_project_engine`` / ``.read_pinned_engine``).
+from app.services.llm_engine_service import resolve_project_engine
+from app.services.run_engine_freeze import read_pinned_engine
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
 
@@ -79,13 +83,24 @@ def extract_section_task(
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
 
+                # DEAD ENTRY POINT: no production enqueue sites remain (the
+                # live path is run_section_extraction_task). Real invariant
+                # before re-arming: pin first when a run exists — read the
+                # run's pinned engine BEFORE keying, the way
+                # run_section_extraction_task does; resolving only the
+                # project engine lets a manager flip re-route a pinned run.
+                # This task carries no run_id, so it resolves the project
+                # engine and relies on the service's re-key (key_provider)
+                # when a reused run's pin settles on another provider.
+                engine = await resolve_project_engine(session, UUID(project_id))
+
                 # Resolve user API key if not provided
                 api_key = openai_api_key
                 # An api_key handed in through the message is the caller's own.
                 key_scope: KeyScope | None = KeyScope.USER_BYOK if api_key else None
                 if not api_key:
                     api_key_service = APIKeyService(db=session, user_id=user_id)
-                    resolved = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                    resolved = await api_key_service.get_key_for_provider(engine.provider)
                     if resolved is not None:
                         api_key, key_scope = resolved.key, resolved.scope
 
@@ -96,6 +111,7 @@ def extract_section_task(
                     trace_id=self.request.id,
                     openai_api_key=api_key,
                     key_scope=key_scope,
+                    key_provider=engine.provider,
                 )
 
                 result = await service.extract_section(
@@ -104,6 +120,7 @@ def extract_section_task(
                     template_id=UUID(template_id),
                     entity_type_id=UUID(entity_type_id),
                     parent_instance_id=UUID(parent_instance_id) if parent_instance_id else None,
+                    engine=engine,
                 )
 
                 await session.commit()
@@ -166,13 +183,22 @@ def extract_models_task(
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
 
+                # DEAD ENTRY POINT: no production enqueue sites remain (only
+                # the equally-unenqueued batch_extract_task fans out here).
+                # Real invariant before re-arming: pin first when a run
+                # exists — the endpoint path reads the run's pinned engine
+                # before keying (resolve_engine_for_run); this task carries
+                # no run_id, so it resolves the project engine only. Align
+                # with the endpoint before re-use.
+                engine = await resolve_project_engine(session, UUID(project_id))
+
                 # Resolve user API key if not provided
                 api_key = openai_api_key
                 if not api_key:
                     api_key_service = APIKeyService(db=session, user_id=user_id)
                     # Scope is dropped here on purpose: this service writes no
                     # provenance, so there is nothing to record it against.
-                    resolved = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                    resolved = await api_key_service.get_key_for_provider(engine.provider)
                     api_key = resolved.key if resolved is not None else None
 
                 service = ModelExtractionService(
@@ -187,6 +213,7 @@ def extract_models_task(
                     project_id=UUID(project_id),
                     article_id=UUID(article_id),
                     template_id=UUID(template_id),
+                    engine=engine,
                 )
 
                 await session.commit()
@@ -279,8 +306,24 @@ def run_section_extraction_task(
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
 
+                request = SectionExtractionRequest(**payload_json)
+
+                # C1b ordering (panel, security): freeze — or read the
+                # already-pinned engine — FIRST, and only then resolve the
+                # key for the PINNED provider. A retry after a manager's
+                # provider flip must not look up a key for a provider the
+                # frozen engine does not use (spurious MissingLLMKeyError +
+                # key_scope recorded against the wrong provider).
+                engine = (
+                    await read_pinned_engine(session, request.run_id)
+                    if request.run_id is not None
+                    else None
+                )
+                if engine is None:
+                    engine = await resolve_project_engine(session, request.project_id)
+
                 api_key_service = APIKeyService(db=session, user_id=user_id)
-                resolved = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                resolved = await api_key_service.get_key_for_provider(engine.provider)
 
                 service = SectionExtractionService(
                     db=session,
@@ -289,10 +332,16 @@ def run_section_extraction_task(
                     trace_id=trace_id or self.request.id or "worker-missing-trace",
                     openai_api_key=resolved.key if resolved is not None else None,
                     key_scope=resolved.scope if resolved is not None else None,
+                    # F1: the provider this key was resolved FOR. The
+                    # standalone branch (run_id=None) can still ADOPT the
+                    # coordinate's live run's pin inside the service — a
+                    # provider flip between pin and kickoff would pair this
+                    # key with an engine it does not fit, so the service
+                    # re-keys itself when the adopted provider differs.
+                    key_provider=engine.provider,
                 )
 
-                request = SectionExtractionRequest(**payload_json)
-                res = await service.run_from_request(request)
+                res = await service.run_from_request(request, engine=engine)
 
                 await session.commit()
 

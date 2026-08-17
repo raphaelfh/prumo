@@ -23,6 +23,7 @@ import {computeRowProgress} from '@/lib/extraction/progress';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
 import {ExtractionExportDialog} from './ExtractionExportDialog';
+import {LlmEngineChip} from './LlmEngineChip';
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 import {useAuth} from '@/contexts/AuthContext';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
@@ -358,7 +359,42 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         return renderDashboard();
       
       case 'configuration':
+        return (
+          <div className="space-y-4">
+            {/* Project-regime chrome (§5, C1b): the engine chip lives ABOVE
+                the versioned template card — choosing an engine never arms
+                the Draft chip and never enters the Publish diff. The chip
+                OWNS its flex row, so a failed read renders no empty strip. */}
+            <LlmEngineChip projectId={projectId} />
+            {renderConfigurationBody()}
+          </div>
+        );
+
+      default:
         return activeTemplate ? (
+          <ArticleExtractionTable
+            projectId={projectId}
+            templateId={activeTemplate.id}
+          />
+        ) : isManager ? (
+            <ConfigureTemplateFirst onConfigureClick={() => setActiveTab('configuration')}/>
+        ) : (
+            <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
+                <CardContent className="pt-6 pb-6">
+                    <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
+                        <AlertCircle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" strokeWidth={1.5}/>
+                        <p>{t('extraction', 'configContactManagerToConfigure')}</p>
+                    </div>
+                </CardContent>
+            </Card>
+        );
+    }
+  };
+
+  // The versioned-card side of the Configuration tab (everything BELOW the
+  // project-regime chrome row that hosts the engine chip).
+  const renderConfigurationBody = () => {
+    return activeTemplate ? (
           <TemplateConfigEditor
             projectId={projectId}
             templateId={activeTemplate.id}
@@ -475,26 +511,6 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             </CardContent>
           </Card>
         );
-      
-      default:
-        return activeTemplate ? (
-          <ArticleExtractionTable 
-            projectId={projectId} 
-            templateId={activeTemplate.id}
-          />
-        ) : isManager ? (
-            <ConfigureTemplateFirst onConfigureClick={() => setActiveTab('configuration')}/>
-        ) : (
-            <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
-                <CardContent className="pt-6 pb-6">
-                    <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
-                        <AlertCircle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" strokeWidth={1.5}/>
-                        <p>{t('extraction', 'configContactManagerToConfigure')}</p>
-                    </div>
-                </CardContent>
-            </Card>
-        );
-    }
   };
 
     return (

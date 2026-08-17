@@ -49,11 +49,17 @@ def classify_extraction_error(exc: BaseException) -> tuple[ExtractionErrorCode, 
     # Lazy import: ``app.llm.provider`` pulls in pydantic-ai model classes, and
     # this module is imported on the API process too (only for the enum/type).
     from app.llm.provider import MissingLLMKeyError
+    from app.services.llm_engine_service import EngineRetiredError
 
     if isinstance(exc, MissingLLMKeyError):
         # The provider message already tells the user how to fix it (BYOK key
         # or env var) — keep it verbatim.
         return ExtractionErrorCode.MISSING_API_KEY, str(exc).strip() or _GENERIC_MESSAGE
+
+    if isinstance(exc, EngineRetiredError):
+        # Roster change mid-flight (enqueue-time validation passed). The
+        # message already says a manager must choose a new model.
+        return ExtractionErrorCode.ENGINE_RETIRED, str(exc).strip() or _GENERIC_MESSAGE
 
     if isinstance(exc, FileNotFoundError):
         # The raw message is "No PDF for article <uuid>"; surface the friendly,

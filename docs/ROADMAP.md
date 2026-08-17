@@ -25,13 +25,11 @@ This file records only the **top-level milestones** (one bullet each) — the
 
 ## Deferred to a future spec
 
-Carved out of the template-config redesign (`docs/superpowers/specs/2026-08-05-template-config-ux-redesign-design.md`, §5). The backend half shipped — the server owns which model runs, the engine is frozen per run, and provenance records the resolved engine plus whose key paid. What remains is the surface, which needs its own spec rather than a slice:
+Carved out of the template-config redesign (`docs/superpowers/specs/2026-08-05-template-config-ux-redesign-design.md`, §5). The backend half shipped first (server-owned model, per-run engine freeze, key-scope provenance), and **the §5 surface shipped as C1b** (`docs/superpowers/plans/2026-08-17-c1b-engine-surface.md`): the server-curated catalogue + model picker, the per-project `projects.settings.llm_engine` setting with its one-line attribution, retired-engine blocking (typed 409), and the Fast/Verified selector — Verified visible but disabled, with the mode enum and `mode_requested`/`mode_executed` provenance keys already recorded. Still deferred to their own spec:
 
-- [ ] **Engine catalogue + model picker** — a server-curated list (3–6 models per provider; never free text, never a model `build_model` rejects), with plain-language labels, context window, cost tier, and the canonical `provider:model` string that provenance carries. BYOK-only providers render locked with an "Add your key" CTA rather than visible-but-failing. Retired entries must preserve stored strings while blocking new runs.
-- [ ] **Per-project engine setting** — `projects.settings.llm_engine` owned by a service, with one attribution line ("Model changed by …"), not an audit trail.
-- [ ] **Fast / Verified mode** — segmented selector; `Verified` (extract → independent verify) is the second pass. The enum and provenance key should land with the selector so records stay stable before the verify pass exists.
-
-Two follow-ups from §5.1/§7 depend on the above and are deferred with them: reviewer-facing engine surfaces with trigger-time key resolution, and the per-field "Probe with another model" side-artifact.
+- [ ] **Verified mode execution** — the extract → independent-verify second pass behind the already-shipped selector.
+- [ ] **Alternates + custom endpoints (§5, C2)** — manager-curated alternate engines and the project-scoped `llm_endpoints` table.
+- [ ] **Reviewer surfaces + trigger-time resolution (§5.1) and the per-field "Probe with another model" side-artifact (§7)** — the per-article cost preview lands with this trigger-time UX.
 
 ## Recently shipped (2026-Q2)
 
