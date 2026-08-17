@@ -110,15 +110,32 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
   );
   const chipLabel = currentEntry?.label ?? engine.model;
 
+  const mutationCallbacks = {
+    onSuccess: () => toast.success(t('llmEngine', 'saveSuccess')),
+    // A 422 from an old backend (deploy window, panel B3) surfaces the
+    // client's generic message here; no optimistic update means the
+    // toggle re-derives from the cached read and is never stuck.
+    onError: (error: Error) =>
+      toast.error(`${t('llmEngine', 'saveError')}: ${error.message}`),
+  };
+
   const handleSelect = (entry: LlmEngineCatalogEntry) => {
     setOpen(false);
+    // The CURRENT mode rides along explicitly — omitting it would let the
+    // server-side default silently downgrade a verified project (panel B2).
     setEngine.mutate(
-      {provider: entry.provider, model: entry.model, mode: 'fast'},
-      {
-        onSuccess: () => toast.success(t('llmEngine', 'saveSuccess')),
-        onError: (error) =>
-          toast.error(`${t('llmEngine', 'saveError')}: ${error.message}`),
-      },
+      {provider: entry.provider, model: entry.model, mode: engine.mode},
+      mutationCallbacks,
+    );
+  };
+
+  const handleModeChange = (next: string) => {
+    // Radix fires '' when the active item is re-clicked (deselect) — a mode
+    // can't be unset, so only the two literals ever mutate.
+    if (next !== 'fast' && next !== 'verified') return;
+    setEngine.mutate(
+      {provider: engine.provider, model: engine.model, mode: next},
+      mutationCallbacks,
     );
   };
 
@@ -141,7 +158,12 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                   {chipLabel}
                 </span>
                 <span aria-hidden="true">·</span>
-                <span>{t('llmEngine', 'modeFast')}</span>
+                <span>
+                  {t(
+                    'llmEngine',
+                    engine.mode === 'verified' ? 'modeVerified' : 'modeFast',
+                  )}
+                </span>
               </Button>
             </PopoverTrigger>
           </TooltipTrigger>
@@ -152,7 +174,8 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
         <div className="space-y-2 border-b border-border/40 p-2.5">
           <ToggleGroup
             type="single"
-            value="fast"
+            value={engine.mode}
+            onValueChange={handleModeChange}
             variant="outline"
             size="sm"
             className="justify-start"
@@ -167,14 +190,10 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
             </ToggleGroupItem>
             <ToggleGroupItem
               value="verified"
-              disabled
-              className="h-7 gap-1 px-2.5 text-xs"
+              className="h-7 px-2.5 text-xs"
               aria-label={t('llmEngine', 'modeVerified')}
             >
               {t('llmEngine', 'modeVerified')}
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                {t('llmEngine', 'modeVerifiedSoon')}
-              </span>
             </ToggleGroupItem>
           </ToggleGroup>
           {engine.retired && (
