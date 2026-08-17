@@ -276,12 +276,13 @@ describe('popover', () => {
       within(cta).getByText(copy.lockedAddKeyItem),
     ).toBeInTheDocument();
 
-    // Arrow past the end of the list: the LAST enabled item is the CTA
-    // (the locked model row before it is skipped by cmdk).
+    // End jumps to the LAST enabled item — the CTA (the locked model row
+    // before it is skipped by cmdk). Assert the focus landed there before
+    // committing with Enter.
     await userEvent.click(screen.getByPlaceholderText(copy.searchPlaceholder));
-    await userEvent.keyboard(
-      '{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}',
-    );
+    await userEvent.keyboard('{End}');
+    expect(cta).toHaveAttribute('data-selected', 'true');
+    await userEvent.keyboard('{Enter}');
 
     expect(screen.getByTestId('location-spy')).toHaveTextContent(
       '/settings?tab=integrations',
@@ -447,6 +448,16 @@ describe('alternates section', () => {
     await userEvent.click(
       screen.getByRole('button', {name: copy.alternatesAddLabel}),
     );
+
+    // a11y: managing mode is a multiselect — each membership row exposes
+    // its state as aria-checked (role=option supports it).
+    expect(
+      screen.getByTestId('llm-engine-option-openai:gpt-4.1-mini'),
+    ).toHaveAttribute('aria-checked', 'true');
+    expect(
+      screen.getByTestId('llm-engine-option-openai:gpt-4o'),
+    ).toHaveAttribute('aria-checked', 'false');
+
     await userEvent.click(
       screen.getByTestId('llm-engine-option-openai:gpt-4.1-mini'),
     );
@@ -527,24 +538,105 @@ describe('alternates section', () => {
       alternates: [{provider: 'anthropic', model: 'claude-sonnet-4-5'}],
     });
   });
+
+  it('a successful membership toggle toasts the alternates-specific copy', async () => {
+    mutateMock.mockImplementation(
+      (_body: unknown, opts?: {onSuccess?: () => void}) => opts?.onSuccess?.(),
+    );
+    await renderOpenPopover();
+
+    await userEvent.click(
+      screen.getByRole('button', {name: copy.alternatesAddLabel}),
+    );
+    await userEvent.click(screen.getByTestId('llm-engine-option-openai:gpt-4o'));
+
+    expect(toast.success).toHaveBeenCalledWith(copy.alternatesSaveSuccess);
+  });
+
+  it('a failed remove toasts the alternates-specific error copy', async () => {
+    mutateMock.mockImplementation(
+      (_body: unknown, opts?: {onError?: (e: Error) => void}) =>
+        opts?.onError?.(new Error('boom')),
+    );
+    await renderOpenPopover({alternates: [ALT_GPT41]});
+
+    const row = screen.getByTestId('llm-engine-alternate-openai:gpt-4.1-mini');
+    await userEvent.click(
+      within(row).getByRole('button', {name: copy.alternatesRemoveAria}),
+    );
+
+    expect(toast.error).toHaveBeenCalledWith(
+      `${copy.alternatesSaveError}: boom`,
+    );
+  });
+
+  it('a model change keeps the existing generic save toast', async () => {
+    mutateMock.mockImplementation(
+      (_body: unknown, opts?: {onSuccess?: () => void}) => opts?.onSuccess?.(),
+    );
+    await renderOpenPopover();
+
+    await userEvent.click(screen.getByTestId('llm-engine-option-openai:gpt-4o'));
+
+    expect(toast.success).toHaveBeenCalledWith(copy.saveSuccess);
+  });
+});
+
+describe('pending mutation guards (lost-update race)', () => {
+  // Back-to-back mutations both computed `next` from the SAME stale list —
+  // the second PUT silently reverted the first. While one is in flight the
+  // membership toggles and remove buttons are disabled and inert.
+  beforeEach(() => {
+    useSetLlmEngineMock.mockReturnValue({
+      mutate: mutateMock,
+      isPending: true,
+    } as unknown as ReturnType<typeof useSetLlmEngine>);
+  });
+
+  it('disables the remove button while the mutation is pending', async () => {
+    await renderOpenPopover({alternates: [ALT_GPT41]});
+
+    const row = screen.getByTestId('llm-engine-alternate-openai:gpt-4.1-mini');
+    const removeButton = within(row).getByRole('button', {
+      name: copy.alternatesRemoveAria,
+    });
+    expect(removeButton).toBeDisabled();
+
+    await userEvent.click(removeButton);
+    expect(mutateMock).not.toHaveBeenCalled();
+  });
+
+  it('disables the managing-mode membership toggles while the mutation is pending', async () => {
+    await renderOpenPopover();
+
+    await userEvent.click(
+      screen.getByRole('button', {name: copy.alternatesAddLabel}),
+    );
+
+    const option = screen.getByTestId('llm-engine-option-openai:gpt-4o');
+    expect(option).toHaveAttribute('aria-disabled', 'true');
+
+    await userEvent.click(option);
+    expect(mutateMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('alternates — deploy-window tolerance (old backend omits the field)', () => {
-  /** The read as an OLD backend serves it: no alternates keys at all. */
+  /**
+   * The read as the SERVICE normalizes an old backend's payload (wire body
+   * without the `alternates` field): `alternates: []` plus
+   * `hasAlternates: false` — the service's REAL normalized shape, never a
+   * hand-stripped object the service could not actually produce.
+   */
   function mockLegacyRead() {
-    const {
-      alternates: _alternates,
-      hasAlternates: _hasAlternates,
-      ...legacyRead
-    } = ENGINE_READ;
     useLlmEngineMock.mockReturnValue({
-      data: legacyRead,
+      data: {...ENGINE_READ, alternates: [], hasAlternates: false},
       isError: false,
       isPending: false,
     } as unknown as ReturnType<typeof useLlmEngine>);
   }
 
-  it('renders the popover without crashing on a payload missing the fields', async () => {
+  it('renders the popover without crashing on a legacy payload', async () => {
     mockLegacyRead();
     renderChip();
     await userEvent.click(screen.getByRole('button', {name: copy.chipAria}));
@@ -553,6 +645,16 @@ describe('alternates — deploy-window tolerance (old backend omits the field)',
     expect(
       screen.getByPlaceholderText(copy.searchPlaceholder),
     ).toBeInTheDocument();
+  });
+
+  it('hides the Add-alternate affordance on a legacy payload (old backend 422s alternates writes)', async () => {
+    mockLegacyRead();
+    renderChip();
+    await userEvent.click(screen.getByRole('button', {name: copy.chipAria}));
+
+    expect(
+      screen.queryByRole('button', {name: copy.alternatesAddLabel}),
+    ).not.toBeInTheDocument();
   });
 
   it('a model change fires the PUT WITHOUT the alternates key', async () => {

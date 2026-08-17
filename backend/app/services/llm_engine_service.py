@@ -206,35 +206,27 @@ class LlmEngineService:
         from the stored value — never client-supplied.
 
         ``alternates`` is tri-state: ``None`` keeps the previously stored
-        list verbatim, ``[]`` clears it, a list replaces it. Every entry
-        must be in the server catalogue (alternates are catalogue-only in
-        C2); duplicates collapse to the first occurrence and the primary
-        pair is silently filtered out.
+        list (minus the new primary — a kept list must never contain it),
+        ``[]`` clears it, a list replaces it. NEW entries must be in the
+        server catalogue (alternates are catalogue-only in C2); entries
+        already stored are kept even when the catalogue retired them — the
+        A4 frontend echoes the FULL stored list on every mutation, so a
+        stored-then-retired pair must not brick every PUT (the read flags
+        it amber; a removal echo simply omits it). Duplicates collapse to
+        the first occurrence and the primary pair is silently filtered out.
         """
         if find_entry(provider, model) is None:
             raise ValueError(f"Unknown engine {provider}:{model} — not in the server catalogue")
-        curated: list[LlmEngineAlternate] | None = None
-        if alternates is not None:
-            seen: set[tuple[str, str]] = set()
-            curated = []
-            for alternate in alternates:
-                if find_entry(alternate.provider, alternate.model) is None:
-                    raise ValueError(
-                        f"Unknown alternate engine {alternate.provider}:{alternate.model} "
-                        "— not in the server catalogue"
-                    )
-                pair = (alternate.provider, alternate.model)
-                if pair == (provider, model) or pair in seen:
-                    continue
-                seen.add(pair)
-                curated.append(alternate)
         # Row-locked read for the read-modify-reassign below (mirrors
         # ``freeze_engine``'s reasoning in ``extraction_run_repository``):
         # ``settings`` is a whole-column JSONB write shared with
         # ``ParserSettingsService``, so two unlocked writers interleaving
         # (read A, read B, write A, write B) would silently drop one
         # sub-key. ``populate_existing`` refreshes any stale identity-map
-        # copy — the lock is useless if a pre-lock read is served.
+        # copy — the lock is useless if a pre-lock read is served. The
+        # alternates curation sits AFTER the lock on purpose: telling a NEW
+        # entry from an already-stored one needs the same locked read that
+        # feeds previous_model.
         project = (
             await self.db.execute(
                 select(Project)
@@ -246,10 +238,28 @@ class LlmEngineService:
         if project is None:
             raise ProjectNotFoundError(f"Project {project_id} not found")
         previous = _stored_engine(project.settings)
-        if curated is None:
-            # None = keep: the previously stored list, verbatim, from the
-            # same row-locked read that feeds previous_model.
-            curated = list(previous.alternates) if previous is not None else []
+        previous_alternates = list(previous.alternates) if previous is not None else []
+        previous_pairs = {(a.provider, a.model) for a in previous_alternates}
+        curated: list[LlmEngineAlternate]
+        if alternates is None:
+            # None = keep: the previously stored list from the same
+            # row-locked read that feeds previous_model — minus the NEW
+            # primary (promoting an alternate must not leave it listed).
+            curated = [a for a in previous_alternates if (a.provider, a.model) != (provider, model)]
+        else:
+            seen: set[tuple[str, str]] = set()
+            curated = []
+            for alternate in alternates:
+                pair = (alternate.provider, alternate.model)
+                if pair not in previous_pairs and find_entry(*pair) is None:
+                    raise ValueError(
+                        f"Unknown alternate engine {alternate.provider}:{alternate.model} "
+                        "— not in the server catalogue"
+                    )
+                if pair == (provider, model) or pair in seen:
+                    continue
+                seen.add(pair)
+                curated.append(alternate)
         stored = LlmEngineStored(
             provider=provider,
             model=model,

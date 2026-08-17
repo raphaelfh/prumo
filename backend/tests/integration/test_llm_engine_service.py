@@ -301,6 +301,79 @@ async def test_engine_read_flags_retired_alternate(
     ]
 
 
+@pytest.mark.asyncio
+async def test_set_alternates_keeps_already_stored_retired_pair(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PR-A must-fix 1: the A4 frontend echoes the FULL stored list on every
+    mutation, so a stored-then-retired alternate must not brick every PUT.
+    Catalogue validation applies only to entries NOT already stored; a NEW
+    unknown pair is still refused."""
+    await engine_setup.set_project_engine(
+        db_session,
+        "openai",
+        "gpt-5.6-terra",
+        alternates=[
+            LlmEngineAlternate(provider="openai", model="gpt-4o-mini"),
+            LlmEngineAlternate(provider="anthropic", model="claude-sonnet-5"),
+        ],
+    )
+
+    # The roster moves on: gpt-4o-mini alone drops off the catalogue.
+    monkeypatch.setattr(
+        "app.services.llm_engine_service.find_entry",
+        lambda provider, model: (
+            None if (provider, model) == ("openai", "gpt-4o-mini") else find_entry(provider, model)
+        ),
+    )
+
+    # Mode change: the frontend echoes the stored list verbatim — retired
+    # entry included. The write must succeed and keep the list untouched.
+    stored = await engine_setup.set_project_engine(
+        db_session,
+        "openai",
+        "gpt-5.6-terra",
+        mode="verified",
+        alternates=[
+            LlmEngineAlternate(provider="openai", model="gpt-4o-mini"),
+            LlmEngineAlternate(provider="anthropic", model="claude-sonnet-5"),
+        ],
+    )
+    assert stored.mode == "verified"
+    assert [(a.provider, a.model) for a in stored.alternates] == [
+        ("openai", "gpt-4o-mini"),
+        ("anthropic", "claude-sonnet-5"),
+    ]
+
+    # A NEW pair the catalogue does not list is still refused.
+    with pytest.raises(ValueError, match="alternate engine"):
+        await engine_setup.set_project_engine(
+            db_session,
+            "openai",
+            "gpt-5.6-terra",
+            alternates=[
+                LlmEngineAlternate(provider="openai", model="gpt-4o-mini"),
+                LlmEngineAlternate(provider="anthropic", model="claude-sonnet-5"),
+                LlmEngineAlternate(provider="openai", model="gpt-99-does-not-exist"),
+            ],
+        )
+
+
+@pytest.mark.asyncio
+async def test_set_alternates_none_keep_filters_new_primary(db_session: AsyncSession) -> None:
+    """The None=keep path applies the primary-pair filter too: promoting a
+    stored alternate to primary must not leave it in the kept list."""
+    await engine_setup.set_project_engine(
+        db_session,
+        "openai",
+        "gpt-5.6-terra",
+        alternates=[LlmEngineAlternate(provider="openai", model="gpt-4o-mini")],
+    )
+    stored = await engine_setup.set_project_engine(db_session, "openai", "gpt-4o-mini")
+    assert [(a.provider, a.model) for a in stored.alternates] == []
+
+
 # ---------------------------------------------------------------------------
 # resolve_project_engine — read boundary #2 (T4)
 # ---------------------------------------------------------------------------

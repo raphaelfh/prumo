@@ -30,6 +30,8 @@ export const llmEngine = {
         "BYOK-only — won't unblock reviewers without their own key.",
     alternatesAddLabel: 'Add alternate',
     alternatesDoneLabel: 'Done',
+    alternatesSaveSuccess: 'Alternates updated.',
+    alternatesSaveError: 'Failed to update alternates',
     saveSuccess: 'Extraction model updated.',
     saveError: 'Failed to update the extraction model',
 } as const;

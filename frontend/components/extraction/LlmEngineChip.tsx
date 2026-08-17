@@ -138,6 +138,14 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
       toast.error(`${t('llmEngine', 'saveError')}: ${error.message}`),
   };
 
+  // Alternates edits get their own copy — "Extraction model updated." on a
+  // membership toggle would report a change that never happened.
+  const alternatesMutationCallbacks = {
+    onSuccess: () => toast.success(t('llmEngine', 'alternatesSaveSuccess')),
+    onError: (error: Error) =>
+      toast.error(`${t('llmEngine', 'alternatesSaveError')}: ${error.message}`),
+  };
+
   const handleSelect = (entry: LlmEngineCatalogEntry) => {
     setOpen(false);
     // toUpdateBody rides the CURRENT mode along explicitly (omitting it
@@ -166,6 +174,10 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
     alternates.some((a) => a.provider === provider && a.model === model);
 
   const toggleAlternate = (entry: LlmEngineCatalogEntry) => {
+    // While a mutation is in flight the toggles render disabled AND no-op:
+    // a back-to-back toggle would compute `next` from the pre-PUT list and
+    // silently revert the change still in flight (lost-update race).
+    if (setEngine.isPending) return;
     const next = isAlternate(entry.provider, entry.model)
       ? alternates
           .filter(
@@ -175,17 +187,18 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
       : [...alternates.map(toPair), toPair(entry)];
     setEngine.mutate(
       toUpdateBody(engine, {alternates: next}),
-      mutationCallbacks,
+      alternatesMutationCallbacks,
     );
   };
 
   const removeAlternate = (alt: LlmEngineAlternateRead) => {
+    if (setEngine.isPending) return;
     const next = alternates
       .filter((a) => !(a.provider === alt.provider && a.model === alt.model))
       .map(toPair);
     setEngine.mutate(
       toUpdateBody(engine, {alternates: next}),
-      mutationCallbacks,
+      alternatesMutationCallbacks,
     );
   };
 
@@ -276,18 +289,23 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
             <span className="text-xs font-medium">
               {t('llmEngine', 'alternatesTitle')}
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
-              onClick={() => setManagingAlternates(!managingAlternates)}
-              data-testid="llm-engine-alternates-manage"
-            >
-              {t(
-                'llmEngine',
-                managingAlternates ? 'alternatesDoneLabel' : 'alternatesAddLabel',
-              )}
-            </Button>
+            {/* Deploy window: an old backend 422s ANY alternates write, so
+                the management affordances hide until the read carries the
+                field — the (empty) list itself still renders. */}
+            {engine.hasAlternates && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                onClick={() => setManagingAlternates(!managingAlternates)}
+                data-testid="llm-engine-alternates-manage"
+              >
+                {t(
+                  'llmEngine',
+                  managingAlternates ? 'alternatesDoneLabel' : 'alternatesAddLabel',
+                )}
+              </Button>
+            )}
           </div>
           <p className="text-[11px] text-muted-foreground">
             {t('llmEngine', 'alternatesHelper')}
@@ -331,24 +349,27 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                         </span>
                       )}
                     </div>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
-                            aria-label={t('llmEngine', 'alternatesRemoveAria')}
-                            onClick={() => removeAlternate(alt)}
-                          >
-                            <X className="h-3 w-3" strokeWidth={1.5} />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {t('llmEngine', 'alternatesRemoveAria')}
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                    {engine.hasAlternates && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
+                              aria-label={t('llmEngine', 'alternatesRemoveAria')}
+                              disabled={setEngine.isPending}
+                              onClick={() => removeAlternate(alt)}
+                            >
+                              <X className="h-3 w-3" strokeWidth={1.5} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {t('llmEngine', 'alternatesRemoveAria')}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
                   </li>
                 );
               })}
@@ -387,8 +408,16 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                       value={`${entry.label} ${entry.canonical}`}
                       // Managing mode: any pair may be a fallback (a locked
                       // provider still unblocks reviewers with their own
-                      // key) — only the current default is off the table.
-                      disabled={managingAlternates ? isCurrent : !runnable}
+                      // key) — only the current default is off the table,
+                      // plus every row while a mutation is in flight (a
+                      // back-to-back toggle computes from a stale list).
+                      disabled={
+                        managingAlternates
+                          ? isCurrent || setEngine.isPending
+                          : !runnable
+                      }
+                      // Multiselect a11y: membership state on the option.
+                      aria-checked={managingAlternates ? isMember : undefined}
                       onSelect={() =>
                         managingAlternates
                           ? toggleAlternate(entry)

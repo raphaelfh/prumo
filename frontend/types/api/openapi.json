@@ -5158,13 +5158,16 @@
         "type": "object"
       },
       "LlmEngineAlternate": {
-        "description": "One fallback engine pair \u2014 the stored and request entry shape.",
+        "additionalProperties": false,
+        "description": "One fallback engine pair \u2014 the stored and request entry shape.\n\n``extra=\"forbid\"`` + bounded field lengths: a REQUEST entry smuggling\nkeys (temperature/seed \u2014 same posture as ``LlmEngineUpdateRequest``) or\nan oversized value is a hard 422; a hand-written STORED entry with the\nsame defects is dropped by the tolerant per-entry validator on\n``LlmEngineStored.alternates`` \u2014 the entry degrades, never the payload.",
         "properties": {
           "model": {
+            "maxLength": 200,
             "title": "Model",
             "type": "string"
           },
           "provider": {
+            "maxLength": 200,
             "title": "Provider",
             "type": "string"
           }

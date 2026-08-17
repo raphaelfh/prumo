@@ -152,6 +152,51 @@ def test_update_request_still_forbids_extras() -> None:
         )
 
 
+def test_stored_alternate_with_extra_key_is_dropped_entry_not_payload() -> None:
+    """``extra="forbid"`` on the entry shape: a hand-written STORED entry
+    smuggling keys (temperature/seed) is dropped by the tolerant per-entry
+    validator — with the ``llm_engine_alternate_entry_dropped`` warning —
+    while the payload and the well-formed siblings survive."""
+    stored = LlmEngineStored.model_validate(
+        {
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "alternates": [
+                {"provider": "openai", "model": "gpt-5.6-luna", "temperature": 2},
+                {"provider": "anthropic", "model": "claude-sonnet-5"},
+            ],
+        }
+    )
+    assert [(a.provider, a.model) for a in stored.alternates] == [("anthropic", "claude-sonnet-5")]
+
+
+def test_stored_alternate_oversized_field_is_dropped() -> None:
+    """A field beyond the 200-char bound degrades that ENTRY, never the payload."""
+    stored = LlmEngineStored.model_validate(
+        {
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "alternates": [{"provider": "openai", "model": "x" * 201}],
+        }
+    )
+    assert stored.alternates == []
+
+
+def test_request_alternate_with_extra_key_is_refused() -> None:
+    """Request-side, the same smuggled key is a hard 422 — no tolerance on
+    the write gate."""
+    with pytest.raises(ValidationError) as exc:
+        LlmEngineUpdateRequest.model_validate(
+            {
+                "provider": "openai",
+                "model": "gpt-5.6-luna",
+                "mode": "fast",
+                "alternates": [{"provider": "openai", "model": "gpt-4o-mini", "temperature": 2}],
+            }
+        )
+    assert any(e["type"] == "extra_forbidden" for e in exc.value.errors())
+
+
 def test_read_alternates_default_empty() -> None:
     """``LlmEngineRead`` validates without the field — alternates default []."""
     read = LlmEngineRead.model_validate(

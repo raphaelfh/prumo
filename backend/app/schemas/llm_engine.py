@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.core.logging import get_logger
 
@@ -29,10 +29,19 @@ logger = get_logger(__name__)
 
 
 class LlmEngineAlternate(BaseModel):
-    """One fallback engine pair — the stored and request entry shape."""
+    """One fallback engine pair — the stored and request entry shape.
 
-    provider: str
-    model: str
+    ``extra="forbid"`` + bounded field lengths: a REQUEST entry smuggling
+    keys (temperature/seed — same posture as ``LlmEngineUpdateRequest``) or
+    an oversized value is a hard 422; a hand-written STORED entry with the
+    same defects is dropped by the tolerant per-entry validator on
+    ``LlmEngineStored.alternates`` — the entry degrades, never the payload.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = Field(max_length=200)
+    model: str = Field(max_length=200)
 
 
 class LlmEngineStored(BaseModel):

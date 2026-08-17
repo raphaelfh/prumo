@@ -3657,6 +3657,12 @@ export interface components {
         /**
          * LlmEngineAlternate
          * @description One fallback engine pair — the stored and request entry shape.
+         *
+         *     ``extra="forbid"`` + bounded field lengths: a REQUEST entry smuggling
+         *     keys (temperature/seed — same posture as ``LlmEngineUpdateRequest``) or
+         *     an oversized value is a hard 422; a hand-written STORED entry with the
+         *     same defects is dropped by the tolerant per-entry validator on
+         *     ``LlmEngineStored.alternates`` — the entry degrades, never the payload.
          */
         LlmEngineAlternate: {
             /** Model */
