@@ -27,7 +27,14 @@ class LlmTarget(BaseModel):
     ``mode_requested`` / ``mode_executed`` (C1b, §5) ride on the same spine so
     the freeze dump/validate contract stays single-sourced; they default to
     ``"fast"`` so pre-C1b pinned snapshots (which carry only the pair) still
-    validate. They diverge only once Verified ships and has a fallback path.
+    validate. Both frozen fields are a REQUEST-ECHO — frozen before
+    execution, per-run; sections can diverge individually — never an
+    execution claim. Execution truth lives ONLY in
+    ``results.provenance.sections[et_id].mode_executed`` / ``passes``;
+    renderers must never surface these engine-level fields as what actually
+    ran. They stay bare ``str`` on purpose: ``read_pinned_engine``
+    model_validates legacy pinned snapshots, and a Literal would turn a
+    corrupt old snapshot into a hard read failure on a pinned run.
     """
 
     provider: str

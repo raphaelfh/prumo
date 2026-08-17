@@ -242,3 +242,20 @@ async def test_resolve_treats_structural_garbage_as_unset(db_session: AsyncSessi
     await _bypass_write_llm_engine(db_session, '"gpt-4o"')
     target = await resolve_project_engine(db_session, SEED.primary_project)
     assert (target.provider, target.model) == (settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL)
+
+
+@pytest.mark.asyncio
+async def test_resolve_normalizes_a_non_string_mode_and_keeps_the_pair(
+    db_session: AsyncSession,
+) -> None:
+    """F6c: NUMERIC garbage in ``mode`` (hand-written JSONB) normalizes to
+    fast at the read — the engine PAIR keeps the manager's choice instead of
+    the whole payload degrading to the env default."""
+    await _bypass_write_llm_engine(
+        db_session, '{"provider": "openai", "model": "gpt-4o", "mode": 123}'
+    )
+    target = await resolve_project_engine(db_session, SEED.primary_project)
+    assert (target.provider, target.model) == ("openai", "gpt-4o"), (
+        "a garbage MODE must not throw the stored PAIR away"
+    )
+    assert (target.mode_requested, target.mode_executed) == ("fast", "fast")

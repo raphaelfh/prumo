@@ -118,19 +118,30 @@ async def run_in_extract(db: AsyncSession) -> ExtractionRun:
     return run
 
 
-async def pin_run(db: AsyncSession, run: ExtractionRun, provider: str, model: str) -> None:
-    """Pre-pin the run the way a prior attempt's freeze write would have."""
+async def pin_run(
+    db: AsyncSession, run: ExtractionRun, provider: str, model: str, mode: str = "fast"
+) -> None:
+    """Pre-pin the run the way a prior attempt's freeze write would have.
+
+    ``mode`` fills both frozen mode fields (the freeze is a request-echo;
+    execution truth lives on the section snapshot, never here).
+    """
     await ExtractionRunRepository(db).freeze_engine(
-        run.id, LlmTarget(provider=provider, model=model).model_dump()
+        run.id,
+        LlmTarget(
+            provider=provider, model=model, mode_requested=mode, mode_executed=mode
+        ).model_dump(),
     )
 
 
-async def set_project_engine(db: AsyncSession, provider: str, model: str) -> LlmEngineStored:
+async def set_project_engine(
+    db: AsyncSession, provider: str, model: str, mode: str = "fast"
+) -> LlmEngineStored:
     """The seeded project's engine choice, written by the primary manager."""
     return await LlmEngineService(db).set_for_project(
         project_id=SEED.primary_project,
         provider=provider,
         model=model,
-        mode="fast",
+        mode=mode,  # type: ignore[arg-type]
         updated_by=SEED.primary_profile,
     )

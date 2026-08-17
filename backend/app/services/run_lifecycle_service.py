@@ -36,7 +36,7 @@ from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_config_service import HitlConfigService
-from app.services.value_semantics import is_value_filled
+from app.services.value_semantics import is_value_filled, strip_verification
 
 logger = get_logger(__name__)
 
@@ -546,12 +546,11 @@ class RunLifecycleService:
         """Each reviewer's current non-empty resolved value envelope per coord:
         ``(instance_id, field_id, envelope)``.
 
-        ``reject`` decisions are skipped; an ``accept_proposal`` whose decision row
-        carries no value resolves through the referenced proposal's
-        ``proposed_value``; empty values (``None`` / ``""`` after one envelope peel)
-        are dropped. Shared by the finalize completeness gate (``_filled_coords``)
-        and the approve-all resolver (``_agreed_unpublished_values``) so the
-        resolution semantics live in one place.
+        ``reject`` is skipped; an ``accept_proposal`` with no decision-row value
+        resolves through the referenced proposal; empty values (``None``/``""``
+        after one peel) are dropped; the Verified-mode ``verification`` sibling
+        is stripped (annotated accept == clean edit; approve-all publishes
+        clean). Shared by ``_filled_coords`` and ``_agreed_unpublished_values``.
         """
         proposal_values: dict[UUID, Any] = dict(
             (
@@ -593,7 +592,7 @@ class RunLifecycleService:
             if resolved is None and proposal_record_id is not None:
                 resolved = proposal_values.get(proposal_record_id)
             if is_value_filled(resolved):
-                resolved_values.append((instance_id, field_id, resolved))
+                resolved_values.append((instance_id, field_id, strip_verification(resolved)))
         return resolved_values
 
     async def reopen_to_extract(
@@ -786,7 +785,8 @@ class RunLifecycleService:
                     instance_id=pub.instance_id,
                     field_id=pub.field_id,
                     source=ExtractionProposalSource.SYSTEM.value,
-                    proposed_value=pub.value,
+                    # Stale-data heal: a verdict never outlives its run.
+                    proposed_value=strip_verification(pub.value),
                     rationale=(f"Carried over from previous published version (run {old_run.id})."),
                 )
             )

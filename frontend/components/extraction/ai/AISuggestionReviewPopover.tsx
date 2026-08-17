@@ -43,6 +43,22 @@ const GenerationDetailsDialog = lazy(() =>
 
 const LOW_CONFIDENCE = 0.5;
 
+/** Verified-mode verdict chip (§5): copy key + tone per closed verdict. */
+const VERDICT_CHIP = {
+  confirmed: {
+    labelKey: 'verificationConfirmed',
+    className: 'border-success/30 bg-success/10 text-success',
+  },
+  unsupported: {
+    labelKey: 'verificationUnsupported',
+    className: 'border-warning/30 bg-warning/10 text-warning',
+  },
+  uncertain: {
+    labelKey: 'verificationUncertain',
+    className: 'border-border/60 bg-muted/40 text-muted-foreground',
+  },
+} as const;
+
 function formatTimestamp(date: Date | string): string {
   const d = date instanceof Date ? date : new Date(date);
   if (isNaN(d.getTime())) return t('extraction', 'historyInvalidDate');
@@ -206,6 +222,19 @@ function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpe
             <Badge variant="outline" className="bg-ai/10 text-xs text-ai border-ai/30">
               {confidencePercent}%{isLow ? ` · ${t('extraction', 'reviewLowConfidence')}` : ''}
             </Badge>
+          )}
+          {version.verification && (
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium',
+                VERDICT_CHIP[version.verification.verdict].className,
+              )}
+            >
+              {version.verification.verdict === 'confirmed' && (
+                <Check className="h-3 w-3" aria-hidden="true" />
+              )}
+              {t('extraction', VERDICT_CHIP[version.verification.verdict].labelKey)}
+            </span>
           )}
           {adoptedNames.length > 0 && (
             <span className="inline-flex items-center rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">

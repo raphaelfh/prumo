@@ -144,6 +144,25 @@ describe('GenerationDetailsDialog', () => {
     expect(refetch).toHaveBeenCalled();
   });
 
+  it('renders the section-snapshot mode/passes keys as generic rows (§IX execution record)', () => {
+    // These survive today only because the mapper rest-spreads unknown keys
+    // and this dialog renders leftovers generically — a future cleanup of
+    // either layer must not silently drop the Verified-mode execution truth.
+    const withModes: RunProvenance = {
+      model: 'gpt-4o-mini',
+      mode_requested: 'verified',
+      mode_executed: 'fast',
+      passes: 1,
+    };
+    render(<GenerationDetailsDialog provenance={withModes} open onOpenChange={() => {}} />);
+    expect(screen.getByText('mode_requested')).toBeInTheDocument();
+    expect(screen.getByText('verified')).toBeInTheDocument();
+    expect(screen.getByText('mode_executed')).toBeInTheDocument();
+    expect(screen.getByText('fast')).toBeInTheDocument();
+    expect(screen.getByText('passes')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+  });
+
   it('hides the Ran-by surfaces without the peer-identity grant (fail-closed)', () => {
     // Provider-less render = no grant: the runner's name must not appear in
     // the context pill nor as a "Ran by" params row (D3 display consistency).

@@ -2,9 +2,10 @@
 
 The stored shape is ONE typed spine, written via ``.model_dump(mode="json")``
 at the single write site and ``model_validate``d at the two read boundaries.
-The request schema types ``mode: Literal["fast"]`` so Pydantic refuses
-``verified`` with a free 422 — no typed-error class, no branch; the Literal
-widens compatibly when Verified ships.
+The request schema types ``mode: Literal["fast", "verified"]`` — the write
+gate is a closed enum, while the STORED mode is a plain ``str`` (an old
+reader must never degrade a project to the env default over a mode it does
+not know; reads normalize unknown modes to "fast" instead).
 """
 
 from __future__ import annotations
@@ -65,10 +66,27 @@ def test_stored_roundtrips_through_its_json_dump() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_request_refuses_verified_mode_at_the_schema() -> None:
+def test_request_accepts_verified_mode() -> None:
+    # Verified shipped: the write gate's Literal widened to the closed pair.
+    body = LlmEngineUpdateRequest(provider="openai", model="gpt-4o-mini", mode="verified")
+    assert body.mode == "verified"
+
+
+def test_request_still_refuses_unknown_modes() -> None:
     with pytest.raises(ValidationError) as exc:
-        LlmEngineUpdateRequest(provider="openai", model="gpt-4o-mini", mode="verified")
+        LlmEngineUpdateRequest(provider="openai", model="gpt-4o-mini", mode="turbo")
     assert any(e["loc"] == ("mode",) for e in exc.value.errors())
+
+
+def test_stored_mode_is_a_plain_str() -> None:
+    # The stored spine tolerates modes this build does not know (panel
+    # migration B1): validation must not throw the payload away — the READ
+    # normalizes. Otherwise an old reader silently degrades the manager's
+    # engine choice to the env default.
+    stored = LlmEngineStored.model_validate(
+        {"provider": "openai", "model": "gpt-4o-mini", "mode": "someday-mode"}
+    )
+    assert stored.mode == "someday-mode"
 
 
 def test_request_forbids_unknown_fields() -> None:

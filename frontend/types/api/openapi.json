@@ -5229,7 +5229,10 @@
             "type": "array"
           },
           "mode": {
-            "const": "fast",
+            "enum": [
+              "fast",
+              "verified"
+            ],
             "title": "Mode",
             "type": "string"
           },
@@ -5302,11 +5305,14 @@
       },
       "LlmEngineUpdateRequest": {
         "additionalProperties": false,
-        "description": "PUT body for the project engine.\n\n``mode: Literal[\"fast\"]`` refuses ``verified`` with a free 422 until\nVerified ships (\u00a75 \u2014 the Literal itself is the enum landing in C1);\n``extra=\"forbid\"`` blocks smuggled keys (no temperature/seed, by design).",
+        "description": "PUT body for the project engine.\n\n``mode: Literal[\"fast\", \"verified\"]`` is the closed write gate (\u00a75 \u2014\nVerified shipped with the verify pass; anything else is a free 422);\n``extra=\"forbid\"`` blocks smuggled keys (no temperature/seed, by design).",
         "properties": {
           "mode": {
-            "const": "fast",
             "default": "fast",
+            "enum": [
+              "fast",
+              "verified"
+            ],
             "title": "Mode",
             "type": "string"
           },

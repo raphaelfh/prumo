@@ -246,6 +246,50 @@ describe('AISuggestionReviewPopover — consensus reuse (D2/D3)', () => {
   });
 });
 
+describe('AISuggestionReviewPopover — verdict chip (Verified mode §5)', () => {
+  it('renders each of the three verdicts beside the confidence badge', async () => {
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [
+          v({ id: 'p3', verification: { verdict: 'confirmed' } }),
+          v({ id: 'p2', verification: { verdict: 'unsupported' } }),
+          v({ id: 'p1', verification: { verdict: 'uncertain' } }),
+        ]}
+        selectedProposalId="p3"
+        onSelect={vi.fn()}
+        trigger={<button>open</button>}
+      />,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findAllByText('Retrospective cohort');
+    expect(screen.getByText('verificationConfirmed')).toBeInTheDocument();
+    expect(screen.getByText('verificationUnsupported')).toBeInTheDocument();
+    expect(screen.getByText('verificationUncertain')).toBeInTheDocument();
+  });
+
+  it('renders no chip when the verification key is absent (unverified stays unambiguous)', async () => {
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({ id: 'p1' })]}
+        selectedProposalId="p1"
+        onSelect={vi.fn()}
+        trigger={<button>open</button>}
+      />,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findByText('Retrospective cohort');
+    expect(screen.queryByText('verificationConfirmed')).not.toBeInTheDocument();
+    expect(screen.queryByText('verificationUnsupported')).not.toBeInTheDocument();
+    expect(screen.queryByText('verificationUncertain')).not.toBeInTheDocument();
+  });
+});
+
 describe('AISuggestionReviewPopover — ran-by run headers (D3)', () => {
   const historyWithRanBy = [
     v({ id: 'p1', provenance: { ranByName: 'Carla' } }),

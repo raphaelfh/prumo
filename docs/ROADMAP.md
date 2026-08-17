@@ -25,9 +25,9 @@ This file records only the **top-level milestones** (one bullet each) — the
 
 ## Deferred to a future spec
 
-Carved out of the template-config redesign (`docs/superpowers/specs/2026-08-05-template-config-ux-redesign-design.md`, §5). The backend half shipped first (server-owned model, per-run engine freeze, key-scope provenance), and **the §5 surface shipped as C1b** (`docs/superpowers/plans/2026-08-17-c1b-engine-surface.md`): the server-curated catalogue + model picker, the per-project `projects.settings.llm_engine` setting with its one-line attribution, retired-engine blocking (typed 409), and the Fast/Verified selector — Verified visible but disabled, with the mode enum and `mode_requested`/`mode_executed` provenance keys already recorded. Still deferred to their own spec:
+Carved out of the template-config redesign (`docs/superpowers/specs/2026-08-05-template-config-ux-redesign-design.md`, §5). The backend half shipped first (server-owned model, per-run engine freeze, key-scope provenance), and **the §5 surface shipped as C1b** (`docs/superpowers/plans/2026-08-17-c1b-engine-surface.md`): the server-curated catalogue + model picker, the per-project `projects.settings.llm_engine` setting with its one-line attribution, retired-engine blocking (typed 409), and the Fast/Verified selector — **Verified now live** (execution pass shipped 2026-08-17), with the mode enum and `mode_requested`/`mode_executed` provenance keys recorded. Still deferred to their own spec:
 
-- [ ] **Verified mode execution** — the extract → independent-verify second pass behind the already-shipped selector.
+- [x] **Verified mode execution** — shipped 2026-08-17 (`docs/superpowers/plans/2026-08-17-verified-mode.md`): the second same-engine pass annotates each AI value with a `confirmed`/`unsupported`/`uncertain` verdict chip; per-section provenance records `mode_requested`/`mode_executed`/`passes`, degrading to Fast honestly on verify failure.
 - [ ] **Alternates + custom endpoints (§5, C2)** — manager-curated alternate engines and the project-scoped `llm_endpoints` table.
 - [ ] **Reviewer surfaces + trigger-time resolution (§5.1) and the per-field "Probe with another model" side-artifact (§7)** — the per-article cost preview lands with this trigger-time UX.
 

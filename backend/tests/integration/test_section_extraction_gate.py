@@ -278,17 +278,20 @@ async def test_session_run_extraction_persists_provenance(
     monkeypatch.setattr(service, "_assemble_prompt_text", _fake_assemble)
 
     async def _fake_extract(**_kwargs: Any) -> tuple[dict[str, Any], LlmUsage]:
-        # Mirror the real _extract_with_llm, which builds the per-section run
-        # provenance snapshot (tokens baked in, keyed later by entity_type_id).
-        from app.services.run_engine_freeze import build_run_provenance
+        # Mirror the real _extract_with_llm: stash the snapshot INPUTS; the
+        # glue builds the section snapshot ONCE, post-verify, at the call
+        # site (verified_mode.build_section_snapshot).
+        from app.services.verified_mode import SectionSnapshotInputs
 
-        service._run_provenance = build_run_provenance(
-            ran_by_user_id=service.user_id,
-            engine=service._engine,
-            key_scope=service._key_scope,
+        service._snapshot_inputs = SectionSnapshotInputs(
             prompt_name="section_extraction",
             prompt_version="1",
-            usage=LlmUsage(prompt_tokens=100, completion_tokens=20),
+            section_name="population",
+            section_label="Population",
+            system_prompt="SYS",
+            section_instruction="INSTR",
+            fields=[],
+            llm_calls=1,
         )
         data = {
             "sample_size": {
@@ -323,6 +326,12 @@ async def test_session_run_extraction_persists_provenance(
     assert section["model"] == "gpt-4o-mini"
     assert section["provider"] == settings.LLM_PROVIDER
     assert section["tokens"]["total"] == 120
+    # Execution truth (§5 design 3) lives on the SECTION snapshot: this fast
+    # run records mode_requested/mode_executed/passes here, never on the
+    # frozen engine dict (a request-echo).
+    assert section["mode_requested"] == "fast"
+    assert section["mode_executed"] == "fast"
+    assert section["passes"] == 1
     # The session run must stay editable (NOT completed by this call).
     assert refreshed.stage == ExtractionRunStage.EXTRACT.value
 

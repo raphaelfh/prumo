@@ -3,6 +3,7 @@ prompt AND to the persisted composition re-render (constitution §IX —
 provenance must record the prompt actually sent)."""
 
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 
@@ -63,11 +64,13 @@ async def test_extract_with_llm_prepends_general_instructions(monkeypatch) -> No
         storage=MagicMock(),
         trace_id="t",
     )
-    await service._extract_with_llm(
+    data, usage = await service._extract_with_llm(
         pdf_text="ARTICLE",
         entity_type=_EntityType(),
         general_instructions="Report values exactly as stated.",
     )
+    # The glue builds the snapshot post-verify (fast mode → pure no-op).
+    await service._maybe_verify(uuid4(), uuid4(), "extraction", "ARTICLE", data, usage)
     # Threading is under test here; the block's exact wording is golden-
     # tested in tests/unit/llm/test_prompts.py, so build the expected
     # prefix through the renderer instead of duplicating the literal.
