@@ -648,6 +648,34 @@ async def test_verified_pin_runs_verify_and_annotates_proposals(
 
 
 @pytest.mark.asyncio
+async def test_fresh_run_freezes_the_stored_verified_mode(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T3: a project whose STORED engine says verified freezes that mode into
+    the engine dict (exact dict — a request-echo) and the section snapshot
+    records the executed verify pass."""
+    _stub_llm_seams(monkeypatch)
+    verify_log = _stub_verify_pass(monkeypatch)
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o", mode="verified")
+    run = await engine_setup.run_in_extract(db_session)
+
+    await _extract_once(db_session, run, "freeze-stored-verified")
+    await db_session.refresh(run)
+
+    assert _engine_of(run) == {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "mode_requested": "verified",
+        "mode_executed": "verified",
+    }, f"the stored verified mode was not frozen: results={run.results}"
+    assert len(verify_log) == 1
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot["mode_executed"] == "verified"
+    assert snapshot["passes"] == 2
+
+
+@pytest.mark.asyncio
 async def test_verified_pin_verify_failure_degrades_to_fast(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,

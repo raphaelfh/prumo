@@ -5,14 +5,18 @@ Role matrix through the real ASGI app + real Postgres membership rows:
   reviewer 200.
 - PUT is manager-only (``require_project_manager``): reviewer 403,
   manager 200 (with attribution), outsider 403.
-- The body contract: unknown model 400, ``verified`` 422 (schema-level),
-  smuggled keys 422 (``extra="forbid"``).
+- The body contract: unknown model 400, ``verified`` round-trips (the
+  Verified-mode write gate), unknown modes 422, smuggled keys 422
+  (``extra="forbid"``); a stored unknown mode normalizes to "fast" on
+  the read.
 """
 
 from __future__ import annotations
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from tests.integration.conftest import SEED
@@ -100,11 +104,53 @@ async def test_manager_put_unknown_model_is_400(client_as_manager: AsyncClient) 
 
 
 @pytest.mark.asyncio
-async def test_put_verified_mode_is_422(client_as_manager: AsyncClient) -> None:
+async def test_put_verified_mode_round_trips(client_as_manager: AsyncClient) -> None:
+    """Verified shipped: the PUT persists ``mode: "verified"`` and the GET
+    reflects it (the C1b 422 flipped with the §5 verify pass)."""
     r = await client_as_manager.put(
         _url(), json={"provider": "openai", "model": "gpt-4o", "mode": "verified"}
     )
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["mode"] == "verified"
+
+    r2 = await client_as_manager.get(_url())
+    assert r2.status_code == 200
+    data = r2.json()["data"]
+    assert data["mode"] == "verified"
+    assert data["source"] == "project"
+
+
+@pytest.mark.asyncio
+async def test_put_unknown_mode_is_422(client_as_manager: AsyncClient) -> None:
+    r = await client_as_manager.put(
+        _url(), json={"provider": "openai", "model": "gpt-4o", "mode": "turbo"}
+    )
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_normalizes_a_stored_unknown_mode_to_fast(
+    client_as_manager: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """A hand-written (or future-build) stored mode this build does not know
+    must NOT 500 the read or degrade the pair to the env default: the read
+    normalizes the mode to "fast" and keeps the stored engine pair."""
+    await db_session.execute(
+        text(
+            "UPDATE public.projects SET settings = "
+            "jsonb_set(COALESCE(settings, '{}'::jsonb), '{llm_engine}', "
+            """'{"provider": "openai", "model": "gpt-4o", "mode": "turbo"}'::jsonb) """
+            "WHERE id = :pid"
+        ),
+        {"pid": str(SEED.primary_project)},
+    )
+    r = await client_as_manager.get(_url())
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["mode"] == "fast"
+    assert (data["provider"], data["model"]) == ("openai", "gpt-4o")
+    assert data["source"] == "project"
 
 
 @pytest.mark.asyncio

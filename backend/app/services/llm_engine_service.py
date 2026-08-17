@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.error_handler import AppError
+from app.core.logging import get_logger
 from app.llm.catalog import CATALOG, canonical, find_entry
 from app.models.project import Project
 from app.models.user import Profile
@@ -43,6 +44,8 @@ __all__ = [
     "resolve_project_engine",
 ]
 
+logger = get_logger(__name__)
+
 
 class EngineRetiredError(AppError):
     """The project's stored engine left the server catalogue.
@@ -58,6 +61,24 @@ class EngineRetiredError(AppError):
         super().__init__(code="LLM_ENGINE_RETIRED", message=message, status_code=409)
 
 
+def _normalized_mode(stored: LlmEngineStored, project_id: UUID) -> Literal["fast", "verified"]:
+    """The stored mode, normalized to the closed vocabulary at the read.
+
+    The stored spine keeps ``mode`` a plain ``str`` (see ``LlmEngineStored``)
+    so an old reader never throws a whole payload away over a mode it does
+    not know; an unknown mode degrades to ``"fast"`` here — loudly, never
+    silently — while the engine PAIR keeps the manager's choice.
+    """
+    if stored.mode in ("fast", "verified"):
+        return stored.mode  # type: ignore[return-value]
+    logger.warning(
+        "llm_engine_unknown_mode_normalized",
+        project_id=str(project_id),
+        stored_mode=stored.mode,
+    )
+    return "fast"
+
+
 async def resolve_project_engine(db: AsyncSession, project_id: UUID) -> LlmTarget:
     """The engine an extraction kicked off in ``project_id`` runs on.
 
@@ -68,7 +89,7 @@ async def resolve_project_engine(db: AsyncSession, project_id: UUID) -> LlmTarge
     lists raises :class:`EngineRetiredError`.
 
     The returned target carries the mode fields too — the freeze pins the
-    whole spine.
+    whole spine (as a request-echo; execution truth is per-section).
     """
     project = await db.get(Project, project_id)
     stored = _stored_engine(project.settings if project is not None else None)
@@ -79,11 +100,12 @@ async def resolve_project_engine(db: AsyncSession, project_id: UUID) -> LlmTarge
             f"The project's stored engine {stored.provider}:{stored.model} is no longer "
             "available. Ask a project manager to choose a new model."
         )
+    mode = _normalized_mode(stored, project_id)
     return LlmTarget(
         provider=stored.provider,
         model=stored.model,
-        mode_requested=stored.mode,
-        mode_executed=stored.mode,
+        mode_requested=mode,
+        mode_executed=mode,
     )
 
 
@@ -93,7 +115,7 @@ class ResolvedProjectEngine:
 
     provider: str
     model: str
-    mode: Literal["fast"]
+    mode: Literal["fast", "verified"]
     source: Literal["project", "default"]
     retired: bool
     stored: LlmEngineStored | None
@@ -155,7 +177,7 @@ class LlmEngineService:
         return ResolvedProjectEngine(
             provider=stored.provider,
             model=stored.model,
-            mode=stored.mode,
+            mode=_normalized_mode(stored, project_id),
             source="project",
             retired=find_entry(stored.provider, stored.model) is None,
             stored=stored,
@@ -167,7 +189,7 @@ class LlmEngineService:
         project_id: UUID,
         provider: str,
         model: str,
-        mode: Literal["fast"],
+        mode: Literal["fast", "verified"],
         updated_by: UUID,
     ) -> LlmEngineStored:
         """Persist a catalogue-validated engine choice with attribution.

@@ -3695,9 +3695,9 @@ export interface components {
             catalog: components["schemas"]["LlmEngineCatalogEntryRead"][];
             /**
              * Mode
-             * @constant
+             * @enum {string}
              */
-            mode: "fast";
+            mode: "fast" | "verified";
             /** Model */
             model: string;
             /** Previous Model */
@@ -3720,17 +3720,17 @@ export interface components {
          * LlmEngineUpdateRequest
          * @description PUT body for the project engine.
          *
-         *     ``mode: Literal["fast"]`` refuses ``verified`` with a free 422 until
-         *     Verified ships (§5 — the Literal itself is the enum landing in C1);
+         *     ``mode: Literal["fast", "verified"]`` is the closed write gate (§5 —
+         *     Verified shipped with the verify pass; anything else is a free 422);
          *     ``extra="forbid"`` blocks smuggled keys (no temperature/seed, by design).
          */
         LlmEngineUpdateRequest: {
             /**
              * Mode
              * @default fast
-             * @constant
+             * @enum {string}
              */
-            mode: "fast";
+            mode: "fast" | "verified";
             /** Model */
             model: string;
             /** Provider */

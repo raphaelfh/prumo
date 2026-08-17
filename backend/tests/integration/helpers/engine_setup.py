@@ -134,12 +134,14 @@ async def pin_run(
     )
 
 
-async def set_project_engine(db: AsyncSession, provider: str, model: str) -> LlmEngineStored:
+async def set_project_engine(
+    db: AsyncSession, provider: str, model: str, mode: str = "fast"
+) -> LlmEngineStored:
     """The seeded project's engine choice, written by the primary manager."""
     return await LlmEngineService(db).set_for_project(
         project_id=SEED.primary_project,
         provider=provider,
         model=model,
-        mode="fast",
+        mode=mode,  # type: ignore[arg-type]
         updated_by=SEED.primary_profile,
     )
