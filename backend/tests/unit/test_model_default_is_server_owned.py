@@ -7,16 +7,15 @@ the real hole open: the frontend is not the only client, and any browser
 could POST `{"model": "<anything>"}` and have that string reach
 `build_model()` with no allow-list in between.
 
-C1a deleted the field. These tests pin that a client-supplied `model` can no
-longer reach `build_model()`, by either of two mechanisms
-(`app/schemas/extraction.py` records why the two schemas differ):
-
-- `ModelExtractionRequest` sets `extra='forbid'` and REJECTS the key with a
-  422, rather than dropping the caller's choice in silence.
-- `SectionExtractionRequest` / `ExtractionOptions` keep pydantic's
-  `extra='ignore'` default, so the key is DROPPED: it never becomes an
-  attribute and never survives the `model_dump(mode='json')` round-trip that
-  carries the payload to the Celery worker.
+C1a deleted the field; all three schemas now set `extra='forbid'` and REJECT
+an unknown key with a loud 422 rather than dropping the caller's choice in
+silence. `SectionExtractionRequest` / `ExtractionOptions` arrived one release
+later than `ModelExtractionRequest`, on purpose: they round-trip through
+Celery, and a job queued by a pre-C1a web process still carried the dropped
+key — under `forbid` that rebuild dies terminally, with no retry. The pre-C1a
+era reached prod on 2026-08-11 and the queue drains in minutes, so by
+2026-08-16 the straddle window was provably empty
+(`app/schemas/extraction.py` records the full sequencing).
 
 The engine actually resolved in its place — `settings.LLM_DEFAULT_MODEL`, on
 every dispatch branch — is pinned in `test_run_from_request.py`.
@@ -40,20 +39,29 @@ _IDS = {
 }
 
 
-def test_the_section_request_ignores_a_client_supplied_model() -> None:
+def test_the_section_request_rejects_a_client_supplied_model() -> None:
     assert "model" not in SectionExtractionRequest.model_fields
 
+    with pytest.raises(ValidationError) as exc:
+        SectionExtractionRequest(
+            **_IDS,
+            entityTypeId="ffffffff-9999-0004-0000-000000000001",
+            model="gpt-5",  # type: ignore[call-arg]
+        )
+
+    assert exc.value.errors()[0]["type"] == "extra_forbidden"
+
+
+def test_the_worker_rebuild_of_a_current_payload_still_validates() -> None:
+    """The other half of the forbid trade: `forbid` must reject smuggled keys
+    WITHOUT breaking the Celery round-trip for payloads the current web
+    process actually enqueues. This is the replay the deferral protected."""
     payload = SectionExtractionRequest(
         **_IDS,
         entityTypeId="ffffffff-9999-0004-0000-000000000001",
-        model="gpt-5",  # type: ignore[call-arg]
     )
-
-    assert not hasattr(payload, "model")
-    assert payload.model_extra is None
-    # The endpoint hands `model_dump(mode='json')` to Celery and the worker
-    # rebuilds the request from it — the smuggled key must not survive.
-    assert "model" not in payload.model_dump(mode="json", by_alias=True)
+    rebuilt = SectionExtractionRequest(**payload.model_dump(mode="json"))
+    assert rebuilt == payload
 
 
 def test_the_model_extraction_request_rejects_a_client_supplied_model() -> None:
@@ -65,10 +73,10 @@ def test_the_model_extraction_request_rejects_a_client_supplied_model() -> None:
     assert exc.value.errors()[0]["type"] == "extra_forbidden"
 
 
-def test_extraction_options_ignore_a_client_supplied_model() -> None:
+def test_extraction_options_reject_a_client_supplied_model() -> None:
     assert "model" not in ExtractionOptions.model_fields
 
-    opts = ExtractionOptions(model="gpt-5")  # type: ignore[call-arg]
+    with pytest.raises(ValidationError) as exc:
+        ExtractionOptions(model="gpt-5")  # type: ignore[call-arg]
 
-    assert not hasattr(opts, "model")
-    assert "model" not in opts.model_dump()
+    assert exc.value.errors()[0]["type"] == "extra_forbidden"
