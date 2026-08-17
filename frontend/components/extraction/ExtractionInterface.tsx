@@ -360,13 +360,25 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       
       case 'configuration':
         return (
-          <div className="space-y-4">
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
             {/* Project-regime chrome (§5, C1b): the engine chip lives ABOVE
                 the versioned template card — choosing an engine never arms
                 the Draft chip and never enters the Publish diff. The chip
                 OWNS its flex row, so a failed read renders no empty strip. */}
             <LlmEngineChip projectId={projectId} />
-            {renderConfigurationBody()}
+            {activeTemplate ? (
+              // Dashboard regime: the page never scrolls — the grid card
+              // absorbs the leftover height and scrolls internally. The
+              // overflow-y-auto is the short-viewport escape hatch (zoom,
+              // landscape phone, expanded instruction editor): when the
+              // editor's FIXED rows outgrow the area, this column scrolls
+              // instead of clipping controls unreachable — the chip and
+              // tab chrome above stay fixed either way.
+              <div className="min-h-0 flex-1 overflow-y-auto">{renderConfigurationBody()}</div>
+            ) : (
+              // No template yet: a plain content card; scroll the area.
+              <div className="min-h-0 flex-1 overflow-y-auto pb-4">{renderConfigurationBody()}</div>
+            )}
           </div>
         );
 
@@ -543,7 +555,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                             ))}
                         </div>
           </div>
-                ) : activeTab === 'extraction' ? (
+                ) : activeTab === 'extraction' || activeTab === 'configuration' ? (
                     <div className="flex min-h-0 flex-1 flex-col">{renderTabContent()}</div>
                 ) : (
                     <div className="min-h-0 flex-1 overflow-y-auto pb-4">{renderTabContent()}</div>
