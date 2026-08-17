@@ -179,7 +179,21 @@ class LlmEngineService:
         """
         if find_entry(provider, model) is None:
             raise ValueError(f"Unknown engine {provider}:{model} — not in the server catalogue")
-        project = await self._projects.get_by_id(project_id)
+        # Row-locked read for the read-modify-reassign below (mirrors
+        # ``freeze_engine``'s reasoning in ``extraction_run_repository``):
+        # ``settings`` is a whole-column JSONB write shared with
+        # ``ParserSettingsService``, so two unlocked writers interleaving
+        # (read A, read B, write A, write B) would silently drop one
+        # sub-key. ``populate_existing`` refreshes any stale identity-map
+        # copy — the lock is useless if a pre-lock read is served.
+        project = (
+            await self.db.execute(
+                select(Project)
+                .where(Project.id == project_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
         if project is None:
             raise ProjectNotFoundError(f"Project {project_id} not found")
         previous = _stored_engine(project.settings)

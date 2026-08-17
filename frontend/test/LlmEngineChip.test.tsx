@@ -15,7 +15,7 @@
  */
 import {render, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {MemoryRouter} from 'react-router';
+import {MemoryRouter, useLocation} from 'react-router';
 import {beforeAll, beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/hooks/extraction/useLlmEngine', () => ({
@@ -62,6 +62,17 @@ const CATALOG = [
     byok_only: false,
   },
   {
+    provider: 'openai',
+    model: 'gpt-4.1-mini',
+    canonical: 'openai:gpt-4.1-mini',
+    label: 'GPT-4.1 mini',
+    best_for: 'Very long articles',
+    // Just over 1M: must render "1M", never "1048k".
+    context_window: 1047576,
+    cost_tier: '$' as const,
+    byok_only: false,
+  },
+  {
     provider: 'anthropic',
     model: 'claude-sonnet-4-5',
     canonical: 'anthropic:claude-sonnet-4-5',
@@ -97,10 +108,19 @@ function mockRead(overrides: Partial<LlmEngineRead> = {}, state = {}) {
   } as unknown as ReturnType<typeof useLlmEngine>);
 }
 
+/** Reflects router navigations (the group-level Add-your-key item). */
+function LocationSpy() {
+  const location = useLocation();
+  return (
+    <div data-testid="location-spy">{`${location.pathname}${location.search}`}</div>
+  );
+}
+
 function renderChip() {
   return render(
     <MemoryRouter>
       <div data-testid="tab-sibling">sibling content</div>
+      <LocationSpy />
       <LlmEngineChip projectId="p1" />
     </MemoryRouter>,
   );
@@ -171,6 +191,8 @@ describe('popover', () => {
     expect(screen.getByText('Fast bulk extraction')).toBeInTheDocument();
     expect(screen.getByText('openai:gpt-4o-mini')).toBeInTheDocument();
     expect(screen.getByText('200k')).toBeInTheDocument();
+    // Million-token windows round to "M", never a five-digit "k".
+    expect(screen.getByText('1M')).toBeInTheDocument();
   });
 
   it('renders a locked row disabled with the Add-your-key CTA deep link', async () => {
@@ -213,6 +235,33 @@ describe('popover', () => {
     expect(mutateMock).not.toHaveBeenCalled();
   });
 
+  it('reaches the Add-your-key item by keyboard and navigates on Enter', async () => {
+    // cmdk skips disabled items with the arrow keys, so the per-row CTA
+    // (inside a disabled row) is mouse-only. The locked group must carry
+    // ONE enabled item that the combobox's own navigation can reach.
+    mockRead();
+    renderChip();
+    await openPopover();
+
+    const cta = screen.getByTestId('llm-engine-add-key-anthropic');
+    expect(
+      within(cta).getByText(copy.lockedAddKeyItem),
+    ).toBeInTheDocument();
+
+    // Arrow past the end of the list: the LAST enabled item is the CTA
+    // (the locked model row before it is skipped by cmdk).
+    await userEvent.click(screen.getByPlaceholderText(copy.searchPlaceholder));
+    await userEvent.keyboard(
+      '{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}',
+    );
+
+    expect(screen.getByTestId('location-spy')).toHaveTextContent(
+      '/settings?tab=integrations',
+    );
+    // The locked model rows stay unselectable: no mutation fired on the way.
+    expect(mutateMock).not.toHaveBeenCalled();
+  });
+
   it('shows Fast selected and Verified disabled with the soon hint', async () => {
     mockRead();
     renderChip();
@@ -240,7 +289,15 @@ describe('popover', () => {
 
     const expected = copy.attribution
       .replace('{{name}}', 'Alice Reviewer')
-      .replace('{{date}}', new Date('2026-08-15T12:00:00Z').toLocaleDateString())
+      .replace(
+        '{{date}}',
+        // Compact "Aug 15" shape — the popover line must not carry a full
+        // locale date.
+        new Date('2026-08-15T12:00:00Z').toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+        }),
+      )
       .replace('{{model}}', 'gpt-4o');
     expect(screen.getByText(expected)).toBeInTheDocument();
   });

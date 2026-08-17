@@ -21,6 +21,8 @@ async def test_extract_for_run_raises_when_all_sections_fail():
     svc.trace_id = "t"
     # __new__ skips __init__ — supply the env-default candidate it would set.
     svc._engine = LlmTarget(provider="openai", model="m")
+    # ...and the key-provider marker (None = unknown caller, never re-keyed).
+    svc._key_provider = None
 
     run = SimpleNamespace(
         id="r",

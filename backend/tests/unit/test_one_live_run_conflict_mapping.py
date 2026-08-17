@@ -204,13 +204,13 @@ async def _call_extract_models(payload, service, caller):
     request.state.trace_id = None
     with (
         patch(f"{_MODEL_EP}.ensure_project_member", AsyncMock()),
-        # Pin the C1b resolver explicitly: left unpatched on a MagicMock db it
-        # happens to fall back to the env default today, but an EngineRetired
-        # raise here would 409 and make the one-live-run 409 test pass FOR THE
-        # WRONG REASON.
+        # Pin the C1b/F4 resolver explicitly: left unpatched on a MagicMock db
+        # it happens to fall back to the env default today, but an
+        # EngineRetired raise here would 409 and make the one-live-run 409
+        # test pass FOR THE WRONG REASON.
         patch(
-            f"{_MODEL_EP}.resolve_project_engine",
-            AsyncMock(return_value=(LlmTarget(provider="openai", model="m-x"), "fast")),
+            f"{_MODEL_EP}.resolve_engine_for_run",
+            AsyncMock(return_value=LlmTarget(provider="openai", model="m-x")),
         ),
         patch(f"{_MODEL_EP}.create_storage_adapter", return_value=MagicMock()),
         patch(f"{_MODEL_EP}.APIKeyService") as api_key_service,

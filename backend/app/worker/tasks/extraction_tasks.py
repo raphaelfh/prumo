@@ -83,9 +83,15 @@ def extract_section_task(
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
 
-                # C1b ordering: resolve the engine FIRST, then the key for
-                # ITS provider — a settings re-read here could pair an
-                # openai key with an anthropic project engine.
+                # DEAD ENTRY POINT: no production enqueue sites remain (the
+                # live path is run_section_extraction_task). Real invariant
+                # before re-arming: pin first when a run exists — read the
+                # run's pinned engine BEFORE keying, the way
+                # run_section_extraction_task does; resolving only the
+                # project engine lets a manager flip re-route a pinned run.
+                # This task carries no run_id, so it resolves the project
+                # engine and relies on the service's re-key (key_provider)
+                # when a reused run's pin settles on another provider.
                 engine, _mode = await resolve_project_engine(session, UUID(project_id))
 
                 # Resolve user API key if not provided
@@ -105,6 +111,7 @@ def extract_section_task(
                     trace_id=self.request.id,
                     openai_api_key=api_key,
                     key_scope=key_scope,
+                    key_provider=engine.provider,
                 )
 
                 result = await service.extract_section(
@@ -176,7 +183,13 @@ def extract_models_task(
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
 
-                # C1b ordering: engine first, then the key for ITS provider.
+                # DEAD ENTRY POINT: no production enqueue sites remain (only
+                # the equally-unenqueued batch_extract_task fans out here).
+                # Real invariant before re-arming: pin first when a run
+                # exists — the endpoint path reads the run's pinned engine
+                # before keying (resolve_engine_for_run); this task carries
+                # no run_id, so it resolves the project engine only. Align
+                # with the endpoint before re-use.
                 engine, _mode = await resolve_project_engine(session, UUID(project_id))
 
                 # Resolve user API key if not provided
@@ -319,6 +332,13 @@ def run_section_extraction_task(
                     trace_id=trace_id or self.request.id or "worker-missing-trace",
                     openai_api_key=resolved.key if resolved is not None else None,
                     key_scope=resolved.scope if resolved is not None else None,
+                    # F1: the provider this key was resolved FOR. The
+                    # standalone branch (run_id=None) can still ADOPT the
+                    # coordinate's live run's pin inside the service — a
+                    # provider flip between pin and kickoff would pair this
+                    # key with an engine it does not fit, so the service
+                    # re-keys itself when the adopted provider differs.
+                    key_provider=engine.provider,
                 )
 
                 res = await service.run_from_request(request, engine=engine)

@@ -19,11 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.llm.extractor import LLM_TEMPERATURE, OUTPUT_RETRIES_DEFAULT, LlmUsage
 from app.models.extraction import ExtractionRun
+from app.repositories import ExtractionRunRepository
 from app.schemas.llm_target import LlmTarget
 from app.schemas.prompt_composition import PromptComposition
+from app.services.llm_engine_service import resolve_project_engine
 
 if TYPE_CHECKING:
-    from app.repositories import ExtractionRunRepository
     from app.services.api_key_service import KeyScope
 
 
@@ -59,6 +60,31 @@ async def read_pinned_engine(db: AsyncSession, run_id: UUID) -> LlmTarget | None
     if isinstance(pinned, dict) and pinned:
         return LlmTarget.model_validate(pinned)
     return None
+
+
+async def resolve_engine_for_run(
+    db: AsyncSession, *, run_id: UUID | None, project_id: UUID
+) -> LlmTarget:
+    """The engine a kickoff must run on, pin included (endpoint-callable).
+
+    A run's PINNED engine wins and is read FIRST — before the project
+    resolve, which could 409 a retired pair the run is legitimately pinned
+    to — so a pinned run can never execute a second engine while
+    ``provenance.engine`` names the first. An unpinned (or absent — the
+    service 404s it later) run resolves the project engine and freezes it
+    onto the run so the record exists before any LLM call; ``run_id=None``
+    is a plain project resolve. Lives in the service layer because the
+    freeze needs ``ExtractionRunRepository``, which the api layer must not
+    import (``check_layered_arch``).
+    """
+    if run_id is not None:
+        pinned = await read_pinned_engine(db, run_id)
+        if pinned is not None:
+            return pinned
+    engine, _mode = await resolve_project_engine(db, project_id)
+    if run_id is not None:
+        engine = await freeze_run_engine(ExtractionRunRepository(db), run_id, engine)
+    return engine
 
 
 def build_run_provenance(

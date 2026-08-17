@@ -15,8 +15,8 @@
  * backend without the route.
  */
 import {useState} from 'react';
-import {Link} from 'react-router';
-import {AlertTriangle, Check, Lock, Settings} from 'lucide-react';
+import {Link, useNavigate} from 'react-router';
+import {AlertTriangle, Check, KeyRound, Lock, Settings} from 'lucide-react';
 import {toast} from 'sonner';
 
 import {Button} from '@/components/ui/button';
@@ -52,14 +52,19 @@ const PROVIDER_LABELS: Record<string, string> = {
 const providerLabel = (provider: string): string =>
   PROVIDER_LABELS[provider] ?? provider;
 
-/** 128000 → "128k" — a display rounding, not copy. */
+/** 128000 → "128k", 1047576 → "1M" — a display rounding, not copy. */
 const formatContextWindow = (contextWindow: number): string =>
-  `${Math.round(contextWindow / 1000)}k`;
+  contextWindow >= 1_000_000
+    ? `${Math.round(contextWindow / 1_000_000)}M`
+    : `${Math.round(contextWindow / 1000)}k`;
 
 function attributionLine(engine: LlmEngineRead): string {
   const name = engine.updated_by_name ?? '—';
   const date = engine.updated_at
-    ? new Date(engine.updated_at).toLocaleDateString()
+    ? new Date(engine.updated_at).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+      })
     : '—';
   const template = engine.previous_model
     ? t('llmEngine', 'attribution').replace('{{model}}', engine.previous_model)
@@ -89,11 +94,14 @@ function groupByProvider(catalog: LlmEngineCatalogEntry[]): ProviderGroup[] {
 
 export function LlmEngineChip({projectId}: {projectId: string}) {
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
   const query = useLlmEngine(projectId);
   const setEngine = useSetLlmEngine(projectId);
 
-  // Pending AND error both render nothing: the chip is optional chrome,
-  // never a blocker for the tab (deploy-race 404 window included).
+  // Pending AND error both render nothing — the chrome ROW included, so
+  // the Configuration tab never shows an empty flex strip: the chip is
+  // optional chrome, never a blocker for the tab (deploy-race 404 window
+  // included).
   const engine = query.data;
   if (!engine) return null;
 
@@ -115,8 +123,9 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <TooltipProvider>
+    <div className="flex items-center justify-end">
+      <Popover open={open} onOpenChange={setOpen}>
+        <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
             <PopoverTrigger asChild>
@@ -272,11 +281,34 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                     </CommandItem>
                   );
                 })}
+                {engine.availability[group.provider] !== true && (
+                  // cmdk's arrow keys skip disabled items, so the per-row
+                  // "Add your key" link (inside a disabled row) is
+                  // mouse-only. One ENABLED item per locked group keeps
+                  // the CTA reachable the way the combobox teaches.
+                  <CommandItem
+                    value={`${providerLabel(group.provider)} ${t('llmEngine', 'lockedAddKeyItem')}`}
+                    onSelect={() => {
+                      setOpen(false);
+                      navigate(KEY_SETTINGS_ROUTE);
+                    }}
+                    className="gap-2 px-2 py-2 text-[13px] font-medium text-primary"
+                    data-testid={`llm-engine-add-key-${group.provider}`}
+                  >
+                    <KeyRound
+                      className="h-3.5 w-3.5 shrink-0"
+                      strokeWidth={1.5}
+                      aria-hidden="true"
+                    />
+                    {t('llmEngine', 'lockedAddKeyItem')}
+                  </CommandItem>
+                )}
               </CommandGroup>
             ))}
           </CommandList>
         </Command>
       </PopoverContent>
-    </Popover>
+      </Popover>
+    </div>
   );
 }

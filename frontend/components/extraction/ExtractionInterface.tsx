@@ -363,10 +363,9 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           <div className="space-y-4">
             {/* Project-regime chrome (§5, C1b): the engine chip lives ABOVE
                 the versioned template card — choosing an engine never arms
-                the Draft chip and never enters the Publish diff. */}
-            <div className="flex items-center justify-end">
-              <LlmEngineChip projectId={projectId} />
-            </div>
+                the Draft chip and never enters the Publish diff. The chip
+                OWNS its flex row, so a failed read renders no empty strip. */}
+            <LlmEngineChip projectId={projectId} />
             {renderConfigurationBody()}
           </div>
         );

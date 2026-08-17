@@ -167,11 +167,20 @@ async def extract_section(
     await _check_request_scope(db, payload, current_user_sub)
 
     # C1b enqueue-time gate, AFTER the membership scope (auth precedes engine
-    # work — an outsider gets 403, never this 409). A retired stored engine
-    # raises EngineRetiredError → the registered AppError handler serves the
-    # typed 409 (error.code LLM_ENGINE_RETIRED). The worker re-resolves at
-    # execution time (pinned-run pair first), so this only fails fast.
-    engine, _mode = await resolve_project_engine(db, payload.project_id)
+    # work — an outsider gets 403, never this 409). Policy: retired entries
+    # block NEW runs only, so the gate runs ONLY when the payload names no
+    # run. A ``run_id`` continuation is not a new run — the worker honors the
+    # run's pinned engine, and an UNPINNED run resolving a retired pair
+    # mid-flight already classifies to the friendly ENGINE_RETIRED task code.
+    # Gating continuations here would brick a valid pinned run behind a 409
+    # it can never clear. A retired NEW-run kickoff raises EngineRetiredError
+    # → the registered AppError handler serves the typed 409 (error.code
+    # LLM_ENGINE_RETIRED). The worker re-resolves at execution time
+    # (pinned-run pair first), so this only fails fast.
+    engine_at_enqueue: str | None = None
+    if payload.run_id is None:
+        engine, _mode = await resolve_project_engine(db, payload.project_id)
+        engine_at_enqueue = f"{engine.provider}:{engine.model}"
 
     if not _is_queue_available():
         return JSONResponse(
@@ -192,11 +201,12 @@ async def extract_section(
         template_id=str(payload.template_id),
         entity_type_id=str(payload.entity_type_id) if payload.entity_type_id else None,
         extract_all_sections=payload.extract_all_sections,
-        # The engine RESOLVED at enqueue time, not a record of what ran: the
-        # worker re-resolves when it executes the task (pinned-run pair
-        # first). The authoritative record is the run provenance snapshot the
-        # worker writes (``run_engine_freeze.build_run_provenance``).
-        engine_at_enqueue=f"{engine.provider}:{engine.model}",
+        # The engine RESOLVED at enqueue time (None for a run_id continuation,
+        # which skips the gate), not a record of what ran: the worker
+        # re-resolves when it executes the task (pinned-run pair first). The
+        # authoritative record is the run provenance snapshot the worker
+        # writes (``run_engine_freeze.build_run_provenance``).
+        engine_at_enqueue=engine_at_enqueue,
     )
 
     task = run_section_extraction_task.delay(

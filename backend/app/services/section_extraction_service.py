@@ -50,7 +50,7 @@ from app.repositories import (
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
 from app.schemas.prompt_composition import PromptComposition, PromptCompositionArticleRef
-from app.services.api_key_service import KeyScope
+from app.services.api_key_service import APIKeyService, KeyScope
 from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
@@ -137,6 +137,7 @@ class SectionExtractionService(LoggerMixin):
         trace_id: str,
         openai_api_key: str | None = None,
         key_scope: KeyScope | None = None,
+        key_provider: str | None = None,
     ):
         """Initialize service instance.
 
@@ -144,6 +145,13 @@ class SectionExtractionService(LoggerMixin):
             openai_api_key: Custom API key (BYOK). If None, uses global key.
             key_scope: WHOSE key that is, for provenance (§5.2) — resolved by
                 the caller, since only it knows which lookup branch won.
+            key_provider: The provider the injected key was resolved FOR.
+                When ``_adopt_frozen_engine`` settles on a pin whose provider
+                differs (a manager flip between key resolution and adoption —
+                the standalone path REUSES the coordinate's live run), the
+                service re-resolves key + scope for the adopted provider.
+                ``None`` means unknown (direct/legacy callers): the injected
+                key is used as-is, never re-resolved.
         """
         self.db = db
         self.user_id = user_id
@@ -151,6 +159,7 @@ class SectionExtractionService(LoggerMixin):
         self.trace_id = trace_id
         self._llm_api_key = openai_api_key
         self._key_scope = key_scope
+        self._key_provider = key_provider
 
         # Repositories
         self._article_files = ArticleFileRepository(db)
@@ -178,9 +187,44 @@ class SectionExtractionService(LoggerMixin):
         self._engine = LlmTarget(provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL)
 
     async def _adopt_frozen_engine(self, run_id: UUID, candidate: LlmTarget) -> str:
-        """Freeze-or-read the run's engine, adopt it, return its model."""
+        """Freeze-or-read the run's engine, adopt it, return its model.
+
+        Adoption can settle on a DIFFERENT provider than the caller keyed
+        for (the run's pin wins over the candidate), so the key is
+        re-checked against the settled provider before any LLM call.
+        """
         self._engine = await freeze_run_engine(self._runs, run_id, candidate)
+        await self._rekey_for_adopted_provider()
         return self._engine.model
+
+    async def _rekey_for_adopted_provider(self) -> None:
+        """Re-resolve key + scope when the settled engine's provider is not
+        the one the injected key was resolved for.
+
+        The standalone path (``run_id=None``) REUSES the coordinate's live
+        run, so ``_adopt_frozen_engine`` can settle on a pin from BEFORE a
+        manager's provider flip — while the caller keyed the freshly-resolved
+        project provider. Pairing that key with the pinned engine 401s (BYOK)
+        or records a ``key_scope`` that names the wrong resolution (§5.2). A
+        ``None`` result degrades to no key + no scope — never raises —
+        leaving ``build_model``'s global fallback as the last resort.
+        ``_key_provider`` is updated either way so a later adoption on the
+        same service never double-keys.
+        """
+        if self._key_provider is None or self._key_provider == self._engine.provider:
+            return
+        resolved = await APIKeyService(self.db, self.user_id).get_key_for_provider(
+            self._engine.provider
+        )
+        self._llm_api_key = resolved.key if resolved is not None else None
+        self._key_scope = resolved.scope if resolved is not None else None
+        self._key_provider = self._engine.provider
+        self.logger.info(
+            "section_extraction_rekeyed_for_pinned_provider",
+            trace_id=self.trace_id,
+            provider=self._engine.provider,
+            key_scope=self._key_scope.value if self._key_scope is not None else None,
+        )
 
     async def _assemble_prompt_text(self, article_id: UUID, model: str) -> str:
         """Budgeted block-markdown prompt input; stashes assembly info on self."""

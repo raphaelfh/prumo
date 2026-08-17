@@ -181,6 +181,39 @@ async def test_get_engine_read_names_the_updater(db_session: AsyncSession) -> No
 
 
 @pytest.mark.asyncio
+async def test_set_for_project_locks_the_project_row(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """F3: the engine write is a whole-column read-modify-reassign of
+    ``projects.settings``, shared with ``ParserSettingsService`` — an
+    unlocked read lets two writers interleave (read A, read B, write A,
+    write B) and silently drop one sub-key. The read must take the row
+    lock (``SELECT … FOR UPDATE``), mirroring ``freeze_engine``'s
+    reasoning in ``extraction_run_repository``."""
+    executed: list[str] = []
+    real_execute = db_session.execute
+
+    async def _spy(statement, *args, **kwargs):  # type: ignore[no-untyped-def]
+        executed.append(str(statement))
+        return await real_execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "execute", _spy)
+
+    await LlmEngineService(db_session).set_for_project(
+        project_id=SEED.primary_project,
+        provider="openai",
+        model="gpt-4o",
+        mode="fast",
+        updated_by=SEED.primary_profile,
+    )
+
+    assert any("projects" in sql and "FOR UPDATE" in sql for sql in executed), (
+        f"set_for_project read the project row without FOR UPDATE — statements executed: {executed}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_sibling_parsing_key_survives_an_engine_write(db_session: AsyncSession) -> None:
     """The service writes ONLY its own ``llm_engine`` sub-key."""
     await ParserSettingsService(db_session).set_for_project(

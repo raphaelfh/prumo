@@ -28,9 +28,9 @@ from app.schemas.extraction import (
     ModelHierarchyChildResponse,
 )
 from app.services.api_key_service import APIKeyService
-from app.services.llm_engine_service import resolve_project_engine
 from app.services.model_extraction_service import ModelExtractionService
 from app.services.model_hierarchy_service import ModelHierarchyService
+from app.services.run_engine_freeze import resolve_engine_for_run
 from app.services.run_lifecycle_service import (
     CreateRunInputError,
     TemplateNotFoundError,
@@ -156,10 +156,15 @@ async def extract_models(
 
     await ensure_project_member(db, payload.project_id, current_user_sub)
 
-    # C1b: resolve the project engine BEFORE any work (and outside the broad
-    # try below, so EngineRetiredError reaches its registered AppError handler
-    # — a typed 409 — instead of being swallowed into the generic 500).
-    engine, _mode = await resolve_project_engine(db, payload.project_id)
+    # C1b/F4: the run's PINNED engine wins — read before any project resolve,
+    # so a pinned run can never execute a second engine while
+    # ``provenance.engine`` names the first (and a retired project pair
+    # cannot 409 a legitimately pinned continuation). An unpinned run
+    # freezes the resolved pair so the record exists before any LLM call.
+    # Kept outside the broad try below, so EngineRetiredError reaches its
+    # registered AppError handler — a typed 409 — instead of being swallowed
+    # into the generic 500.
+    engine = await resolve_engine_for_run(db, run_id=payload.run_id, project_id=payload.project_id)
 
     try:
         # Create storage adapter via factory

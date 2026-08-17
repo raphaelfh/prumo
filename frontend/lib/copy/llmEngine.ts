@@ -15,6 +15,7 @@ export const llmEngine = {
     providerAnthropic: 'Anthropic',
     byokGroupNote: 'each user runs on their own key',
     lockedAddKeyCta: 'Add your key',
+    lockedAddKeyItem: 'Add your key…',
     currentModelAria: 'Current model',
     attribution: 'Model changed by {{name}} · {{date}} · was {{model}}',
     attributionNoPrevious: 'Model changed by {{name}} · {{date}}',

@@ -14,6 +14,7 @@ end: stored pair → catalogue miss → EngineRetiredError → AppError handler.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
@@ -24,6 +25,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_db, get_supabase
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+from app.models.extraction import ExtractionRun, ExtractionRunStage
+from app.repositories import ExtractionRunRepository
+from app.schemas.llm_target import LlmTarget
+from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
 
 
@@ -141,3 +146,65 @@ async def test_outsider_on_retired_project_gets_403_not_409(
     assert r.status_code == 403, r.text
     r2 = await client_as_outsider.post("/api/v1/extraction/models", json=_models_payload())
     assert r2.status_code == 403, r2.text
+
+
+async def _pinned_run_in_extract(db: AsyncSession) -> ExtractionRun:
+    """A fresh run at the seeded coordinate, in EXTRACT, pinned to a pair."""
+    await db.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
+            "AND article_id = :aid AND template_id = :tid"
+        ),
+        {
+            "pid": str(SEED.primary_project),
+            "aid": str(SEED.primary_article),
+            "tid": str(SEED.primary_template),
+        },
+    )
+    lifecycle = RunLifecycleService(db)
+    run = await lifecycle.create_run(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        project_template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+    )
+    run = await lifecycle.advance_stage(
+        run_id=run.id,
+        target_stage=ExtractionRunStage.EXTRACT,
+        user_id=SEED.primary_profile,
+    )
+    await ExtractionRunRepository(db).freeze_engine(
+        run.id, LlmTarget(provider="openai", model="gpt-4o-mini").model_dump()
+    )
+    await db.flush()
+    return run
+
+
+@pytest.mark.asyncio
+async def test_section_continuation_with_run_id_skips_the_retired_gate(
+    client_as_manager: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """F2: retired entries block NEW runs only — a ``run_id`` continuation
+    is not a new run. The enqueue-time 409 must not brick a valid pinned
+    run: the worker honors the pin, and an unpinned run resolving retired
+    mid-flight already classifies to the friendly ENGINE_RETIRED code."""
+    run = await _pinned_run_in_extract(db_session)
+    await _retire_project_engine(db_session)
+
+    # Queue seams stubbed: the policy under test is the enqueue gate, not
+    # Redis/Celery transport.
+    from app.api.v1.endpoints import section_extraction as se
+
+    monkeypatch.setattr(se, "_is_queue_available", lambda: True)
+    fake_task = MagicMock()
+    fake_task.id = "job-f2-continuation"
+    monkeypatch.setattr(
+        se, "run_section_extraction_task", MagicMock(delay=MagicMock(return_value=fake_task))
+    )
+
+    payload = {**_section_payload(), "runId": str(run.id)}
+    r = await client_as_manager.post("/api/v1/extraction/sections", json=payload)
+    assert r.status_code == 202, r.text
+    assert r.json()["ok"] is True
