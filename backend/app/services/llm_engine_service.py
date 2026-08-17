@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.error_handler import AppError
 from app.core.logging import get_logger
-from app.llm.catalog import CATALOG, canonical, find_entry
+from app.llm.catalog import CATALOG, canonical, canonical_pair, find_entry
 from app.models.project import Project
 from app.models.user import Profile
 from app.repositories.project_repository import ProjectRepository
@@ -240,26 +240,32 @@ class LlmEngineService:
         previous = _stored_engine(project.settings)
         previous_alternates = list(previous.alternates) if previous is not None else []
         previous_pairs = {(a.provider, a.model) for a in previous_alternates}
-        curated: list[LlmEngineAlternate]
         if alternates is None:
             # None = keep: the previously stored list from the same
-            # row-locked read that feeds previous_model — minus the NEW
-            # primary (promoting an alternate must not leave it listed).
-            curated = [a for a in previous_alternates if (a.provider, a.model) != (provider, model)]
+            # row-locked read that feeds previous_model.
+            candidates = previous_alternates
         else:
-            seen: set[tuple[str, str]] = set()
-            curated = []
+            # A replacement list: only entries the project does not already
+            # store have to be in the catalogue today (see the docstring).
             for alternate in alternates:
-                pair = (alternate.provider, alternate.model)
-                if pair not in previous_pairs and find_entry(*pair) is None:
+                if (alternate.provider, alternate.model) not in previous_pairs and (
+                    find_entry(alternate.provider, alternate.model) is None
+                ):
                     raise ValueError(
                         f"Unknown alternate engine {alternate.provider}:{alternate.model} "
                         "— not in the server catalogue"
                     )
-                if pair == (provider, model) or pair in seen:
-                    continue
-                seen.add(pair)
-                curated.append(alternate)
+            candidates = alternates
+        # One curation pass for both paths: first occurrence wins, and the
+        # NEW primary never stays listed (promoting an alternate drops it).
+        curated: list[LlmEngineAlternate] = []
+        seen: set[tuple[str, str]] = set()
+        for alternate in candidates:
+            pair = (alternate.provider, alternate.model)
+            if pair == (provider, model) or pair in seen:
+                continue
+            seen.add(pair)
+            curated.append(alternate)
         stored = LlmEngineStored(
             provider=provider,
             model=model,
@@ -330,7 +336,7 @@ class LlmEngineService:
                 LlmEngineAlternateRead(
                     provider=a.provider,
                     model=a.model,
-                    canonical=f"{a.provider}:{a.model}",
+                    canonical=canonical_pair(a.provider, a.model),
                     retired=find_entry(a.provider, a.model) is None,
                 )
                 for a in (stored.alternates if stored is not None else [])

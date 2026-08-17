@@ -40,6 +40,8 @@ import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
 import {llmEngine as copy} from '@/lib/copy';
 import type {LlmEngineRead} from '@/services/llmEngineService';
 
+import {makeEngineRead} from './mocks/llmEngineRead';
+
 const useLlmEngineMock = vi.mocked(useLlmEngine);
 const useSetLlmEngineMock = vi.mocked(useSetLlmEngine);
 
@@ -87,20 +89,7 @@ const CATALOG = [
   },
 ];
 
-const ENGINE_READ: LlmEngineRead = {
-  provider: 'openai',
-  model: 'gpt-4o-mini',
-  mode: 'fast',
-  source: 'default',
-  retired: false,
-  updated_by_name: null,
-  updated_at: null,
-  previous_model: null,
-  catalog: CATALOG,
-  availability: {openai: true, anthropic: false},
-  alternates: [],
-  hasAlternates: true,
-};
+const ENGINE_READ = makeEngineRead({catalog: CATALOG});
 
 const ALT_GPT41 = {
   provider: 'openai',

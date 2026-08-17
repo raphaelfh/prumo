@@ -42,6 +42,18 @@ function normalizeEngineRead(data: LlmEngineReadWire): LlmEngineRead {
   };
 }
 
+/** The identity every alternates entry carries, whatever else it holds. */
+export type LlmEngineAlternatePair = {provider: string; model: string};
+
+/**
+ * Overrides `toUpdateBody` accepts: the request fields, except `alternates`
+ * may be ANY pair-bearing entries (catalogue entries, the read's own
+ * alternates) — callers hand over what they have and the builder strips.
+ */
+export type LlmEngineUpdateOverrides = Partial<
+  Omit<LlmEngineUpdateRequest, 'alternates'>
+> & {alternates?: readonly LlmEngineAlternatePair[]};
+
 /**
  * PUT body builder — EVERY mutation site goes through this. Always sends
  * the explicit mode (omitting it would let the server default silently
@@ -51,20 +63,33 @@ function normalizeEngineRead(data: LlmEngineReadWire): LlmEngineRead {
  */
 export function toUpdateBody(
   engine: LlmEngineRead,
-  overrides: Partial<LlmEngineUpdateRequest> = {},
+  overrides: LlmEngineUpdateOverrides = {},
 ): LlmEngineUpdateRequest {
-  const base: LlmEngineUpdateRequest = {
+  const merged = {
     provider: engine.provider,
     model: engine.model,
     mode: engine.mode,
+    // The stored list rides along only when the read carried the field AND
+    // the caller is not replacing it — deriving it otherwise is dead work.
+    ...(engine.hasAlternates && overrides.alternates === undefined
+      ? {alternates: engine.alternates}
+      : {}),
+    ...overrides,
   };
-  if (engine.hasAlternates) {
-    base.alternates = (engine.alternates ?? []).map(({provider, model}) => ({
+  const body: LlmEngineUpdateRequest = {
+    provider: merged.provider,
+    model: merged.model,
+    mode: merged.mode,
+  };
+  // Key ABSENT when neither side resolved a list — an old backend with
+  // extra="forbid" 422s on the key itself, undefined value included.
+  if (merged.alternates !== undefined) {
+    body.alternates = merged.alternates.map(({provider, model}) => ({
       provider,
       model,
     }));
   }
-  return {...base, ...overrides};
+  return body;
 }
 
 export function fetchLlmEngine(

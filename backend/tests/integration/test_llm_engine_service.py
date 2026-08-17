@@ -26,6 +26,15 @@ from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
 
 
+def _retire_pair(monkeypatch: pytest.MonkeyPatch, provider: str, model: str) -> None:
+    """Simulate the roster dropping one pair: the service's catalogue lookup
+    misses for it and answers normally for every other pair."""
+    monkeypatch.setattr(
+        "app.services.llm_engine_service.find_entry",
+        lambda p, m: None if (p, m) == (provider, model) else find_entry(p, m),
+    )
+
+
 async def _raw_settings(db: AsyncSession, project_id) -> dict:
     row = (
         await db.execute(
@@ -284,12 +293,7 @@ async def test_engine_read_flags_retired_alternate(
     )
 
     # The roster moves on: gpt-4o-mini alone drops off the catalogue.
-    monkeypatch.setattr(
-        "app.services.llm_engine_service.find_entry",
-        lambda provider, model: (
-            None if (provider, model) == ("openai", "gpt-4o-mini") else find_entry(provider, model)
-        ),
-    )
+    _retire_pair(monkeypatch, "openai", "gpt-4o-mini")
 
     read = await LlmEngineService(db_session).get_engine_read(
         SEED.primary_project, SEED.primary_profile
@@ -321,12 +325,7 @@ async def test_set_alternates_keeps_already_stored_retired_pair(
     )
 
     # The roster moves on: gpt-4o-mini alone drops off the catalogue.
-    monkeypatch.setattr(
-        "app.services.llm_engine_service.find_entry",
-        lambda provider, model: (
-            None if (provider, model) == ("openai", "gpt-4o-mini") else find_entry(provider, model)
-        ),
-    )
+    _retire_pair(monkeypatch, "openai", "gpt-4o-mini")
 
     # Mode change: the frontend echoes the stored list verbatim — retired
     # entry included. The write must succeed and keep the list untouched.

@@ -48,7 +48,7 @@ import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 import {toUpdateBody} from '@/services/llmEngineService';
 import type {
-  LlmEngineAlternate,
+  LlmEngineAlternatePair,
   LlmEngineAlternateRead,
   LlmEngineCatalogEntry,
   LlmEngineRead,
@@ -119,10 +119,13 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
   const engine = query.data;
   if (!engine) return null;
 
-  // `?? []` mirrors the service normalization for a payload an old
-  // backend served without the field (deploy window) — the section still
-  // renders and toUpdateBody keeps `alternates` out of plain PUTs.
-  const alternates = engine.alternates ?? [];
+  // Identity is the canonical `provider:model` string the wire carries on
+  // BOTH sides (alternates and catalogue) — one comparison instead of a
+  // hand-rolled two-field predicate at every membership site.
+  const alternateKeys = new Set(engine.alternates.map((a) => a.canonical));
+  const catalogByCanonical = new Map(
+    engine.catalog.map((entry) => [entry.canonical, entry]),
+  );
 
   const currentEntry = engine.catalog.find(
     (e) => e.provider === engine.provider && e.model === engine.model,
@@ -165,40 +168,30 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
     setEngine.mutate(toUpdateBody(engine, {mode: next}), mutationCallbacks);
   };
 
-  const toPair = (a: {provider: string; model: string}): LlmEngineAlternate => ({
-    provider: a.provider,
-    model: a.model,
-  });
-
-  const isAlternate = (provider: string, model: string): boolean =>
-    alternates.some((a) => a.provider === provider && a.model === model);
-
-  const toggleAlternate = (entry: LlmEngineCatalogEntry) => {
+  // The single alternates write: toUpdateBody strips the entries to bare
+  // pairs, so callers pass whatever they hold (reads or catalogue entries).
+  const saveAlternates = (next: readonly LlmEngineAlternatePair[]) => {
     // While a mutation is in flight the toggles render disabled AND no-op:
     // a back-to-back toggle would compute `next` from the pre-PUT list and
     // silently revert the change still in flight (lost-update race).
     if (setEngine.isPending) return;
-    const next = isAlternate(entry.provider, entry.model)
-      ? alternates
-          .filter(
-            (a) => !(a.provider === entry.provider && a.model === entry.model),
-          )
-          .map(toPair)
-      : [...alternates.map(toPair), toPair(entry)];
     setEngine.mutate(
       toUpdateBody(engine, {alternates: next}),
       alternatesMutationCallbacks,
     );
   };
 
+  const toggleAlternate = (entry: LlmEngineCatalogEntry) => {
+    saveAlternates(
+      alternateKeys.has(entry.canonical)
+        ? engine.alternates.filter((a) => a.canonical !== entry.canonical)
+        : [...engine.alternates, entry],
+    );
+  };
+
   const removeAlternate = (alt: LlmEngineAlternateRead) => {
-    if (setEngine.isPending) return;
-    const next = alternates
-      .filter((a) => !(a.provider === alt.provider && a.model === alt.model))
-      .map(toPair);
-    setEngine.mutate(
-      toUpdateBody(engine, {alternates: next}),
-      alternatesMutationCallbacks,
+    saveAlternates(
+      engine.alternates.filter((a) => a.canonical !== alt.canonical),
     );
   };
 
@@ -210,8 +203,11 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
 
   return (
     <div className="flex items-center justify-end">
+      {/* ONE provider for the whole chip: the trigger tooltip and every
+          alternate row's remove tooltip share it (PopoverContent portals,
+          which preserves React context). */}
+      <TooltipProvider>
       <Popover open={open} onOpenChange={handleOpenChange}>
-        <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
             <PopoverTrigger asChild>
@@ -238,7 +234,6 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
           </TooltipTrigger>
           <TooltipContent>{t('llmEngine', 'chipTooltip')}</TooltipContent>
         </Tooltip>
-      </TooltipProvider>
       <PopoverContent align="end" className="w-[22rem] p-0">
         <div className="space-y-2 border-b border-border/40 p-2.5">
           <ToggleGroup
@@ -310,16 +305,14 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
           <p className="text-[11px] text-muted-foreground">
             {t('llmEngine', 'alternatesHelper')}
           </p>
-          {alternates.length === 0 ? (
+          {engine.alternates.length === 0 ? (
             <p className="text-[11px] text-muted-foreground">
               {t('llmEngine', 'alternatesEmpty')}
             </p>
           ) : (
             <ul className="space-y-1">
-              {alternates.map((alt) => {
-                const entry = engine.catalog.find(
-                  (e) => e.provider === alt.provider && e.model === alt.model,
-                );
+              {engine.alternates.map((alt) => {
+                const entry = catalogByCanonical.get(alt.canonical);
                 return (
                   <li
                     key={alt.canonical}
@@ -350,25 +343,23 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                       )}
                     </div>
                     {engine.hasAlternates && (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
-                              aria-label={t('llmEngine', 'alternatesRemoveAria')}
-                              disabled={setEngine.isPending}
-                              onClick={() => removeAlternate(alt)}
-                            >
-                              <X className="h-3 w-3" strokeWidth={1.5} />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {t('llmEngine', 'alternatesRemoveAria')}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
+                            aria-label={t('llmEngine', 'alternatesRemoveAria')}
+                            disabled={setEngine.isPending}
+                            onClick={() => removeAlternate(alt)}
+                          >
+                            <X className="h-3 w-3" strokeWidth={1.5} />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {t('llmEngine', 'alternatesRemoveAria')}
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </li>
                 );
@@ -401,7 +392,7 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                   const isCurrent =
                     entry.provider === engine.provider &&
                     entry.model === engine.model;
-                  const isMember = isAlternate(entry.provider, entry.model);
+                  const isMember = alternateKeys.has(entry.canonical);
                   return (
                     <CommandItem
                       key={entry.canonical}
@@ -517,6 +508,7 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
         </Command>
       </PopoverContent>
       </Popover>
+      </TooltipProvider>
     </div>
   );
 }

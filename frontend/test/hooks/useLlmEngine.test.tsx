@@ -21,23 +21,12 @@ import {projectKeys} from '@/lib/query-keys';
 import {fetchLlmEngine, setLlmEngine} from '@/services/llmEngineService';
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
 
+import {makeEngineRead} from '../mocks/llmEngineRead';
+
 const fetchMock = vi.mocked(fetchLlmEngine);
 const setMock = vi.mocked(setLlmEngine);
 
-const ENGINE_READ = {
-  provider: 'openai',
-  model: 'gpt-4o-mini',
-  mode: 'fast' as const,
-  source: 'default' as const,
-  retired: false,
-  updated_by_name: null,
-  updated_at: null,
-  previous_model: null,
-  catalog: [],
-  availability: {openai: true, anthropic: false},
-  alternates: [],
-  hasAlternates: true,
-};
+const ENGINE_READ = makeEngineRead();
 
 function createWrapper() {
   const queryClient = new QueryClient({

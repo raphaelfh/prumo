@@ -35,19 +35,13 @@ import {
 } from '@/services/llmEngineService';
 import {t} from '@/lib/copy';
 
-/** Old-backend read payload: pre-C2, no `alternates` key on the wire. */
-const LEGACY_READ = {
-  provider: 'openai',
-  model: 'gpt-4o-mini',
-  mode: 'fast' as const,
-  source: 'default' as const,
-  retired: false,
-  updated_by_name: null,
-  updated_at: null,
-  previous_model: null,
-  catalog: [],
+import {makeEngineReadWire} from '../mocks/llmEngineRead';
+
+/** Old-backend read payload: pre-C2, no `alternates` key on the wire —
+ * the current wire shape with that field destructured OFF. */
+const {alternates: _alternates, ...LEGACY_READ} = makeEngineReadWire({
   availability: {openai: true},
-};
+});
 
 describe('setLlmEngine — old-backend 422 detail body (panel B3)', () => {
   it('returns the generic error, never leaking the FastAPI detail chain', async () => {

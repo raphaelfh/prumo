@@ -36,22 +36,12 @@ import {
   fetchLlmEngine,
   setLlmEngine,
   toUpdateBody,
-  type LlmEngineRead,
 } from '@/services/llmEngineService';
 
-const ENGINE_READ = {
-  provider: 'openai',
-  model: 'gpt-4o-mini',
-  mode: 'fast' as const,
-  source: 'default' as const,
-  retired: false,
-  updated_by_name: null,
-  updated_at: null,
-  previous_model: null,
-  catalog: [],
-  availability: {openai: true, anthropic: false},
-  alternates: [],
-};
+import {makeEngineRead, makeEngineReadWire} from '../mocks/llmEngineRead';
+
+/** Upstream of the service: the payload apiClient resolves with. */
+const ENGINE_READ = makeEngineReadWire();
 
 const ALTERNATE_READ = {
   provider: 'openai',
@@ -159,12 +149,10 @@ describe('setLlmEngine', () => {
 });
 
 describe('toUpdateBody', () => {
-  const NORMALIZED: LlmEngineRead = {
-    ...ENGINE_READ,
+  const NORMALIZED = makeEngineRead({
     mode: 'verified',
     alternates: [{...ALTERNATE_READ, retired: true}],
-    hasAlternates: true,
-  };
+  });
 
   it('includes stripped alternates and the explicit mode when the read carried the field', () => {
     const body = toUpdateBody(NORMALIZED);
