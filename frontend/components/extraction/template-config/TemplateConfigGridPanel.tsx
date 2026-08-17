@@ -566,7 +566,7 @@ export function TemplateConfigGridPanel({
 
   return (
     <div
-      className="overflow-hidden rounded-md border bg-card"
+      className="flex max-h-full min-h-0 flex-col overflow-hidden rounded-md border bg-card"
       onKeyDown={(event) => {
         if (event.key === 'Escape') handleEscapeEscalate();
         // ⌘. toggles the inspector (Task 5). Panel-scoped on purpose: the
@@ -614,7 +614,7 @@ export function TemplateConfigGridPanel({
 
       <div
         ref={containerRef}
-        className="@container/grid flex max-h-[70vh] items-stretch"
+        className="@container/grid flex min-h-0 flex-auto items-stretch"
       >
           <TemplateOutlineRail
             className="hidden @[52rem]/grid:block"

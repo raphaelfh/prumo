@@ -43,7 +43,7 @@ export function TemplateConfigToolbar({
   onToggleInspector: () => void;
 }) {
   return (
-    <div className="flex h-12 items-center gap-2 border-b px-3">
+    <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
       <div className="relative w-[240px]">
         <Search
           className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"

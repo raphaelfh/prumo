@@ -242,9 +242,14 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   }
 
   return (
-    <div className="space-y-6">
+    // h-full keeps the height chain DEFINITE (the grid card's max-h-full
+    // depends on it). When the fixed rows outgrow the area, they overflow
+    // this box and the parent's overflow-y-auto scrolls to them — growth
+    // via min-h-full would instead make every height below indefinite and
+    // un-cap the grid card.
+    <div className="flex h-full min-h-0 flex-col gap-6">
       {/* Thin command bar (replaces the tall header Card). */}
-      <div className="flex h-12 items-center justify-between gap-3 rounded-md border border-border/40 bg-card px-4">
+      <div className="flex h-12 shrink-0 items-center justify-between gap-3 rounded-md border border-border/40 bg-card px-4">
         <div className="flex min-w-0 items-center gap-2">
           <Settings className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
           <span className="truncate text-sm font-medium">{t('extraction', 'configHeaderTitle')}</span>
@@ -285,7 +290,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         <div
           role="alert"
           data-testid="template-config-refresh-failed"
-          className="flex items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-xs text-warning"
+          className="flex shrink-0 items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-xs text-warning"
         >
           <AlertTriangle className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden />
           <span className="min-w-0 flex-1">
@@ -305,6 +310,11 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
       <TemplateInstructionRow projectId={projectId} templateId={templateId} />
 
       {entityTypes.length > 0 && (
+      // The grid absorbs the leftover column height (dashboard regime:
+      // the panel scrolls inside, never the page). min-h-48 keeps the
+      // field list useful when the fixed rows squeeze it (the column's
+      // overflow escape hatch scrolls instead).
+      <div className="min-h-48 flex-1">
       <TemplateConfigGridPanel
         projectId={projectId}
         templateId={templateId}
@@ -325,6 +335,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         onAddSection={() => setAddSectionMode({kind: 'root'})}
         onAddGroup={() => setAddSectionMode({kind: 'group'})}
       />
+      </div>
       )}
 
       {entityTypes.length === 0 && (

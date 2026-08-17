@@ -335,8 +335,12 @@ export function FieldRow({
         {/* A REAL checkbox toggling on the first click; sr-only input +
             the 14px visual keep the compact look. Space toggles natively;
             Enter arrives via the model's activateControl interpretation
-            (native checkboxes ignore Enter). */}
-        <label className="inline-flex cursor-pointer items-center align-middle">
+            (native checkboxes ignore Enter). `relative` anchors the sr-only
+            (absolutely positioned) input to this row: without a positioned
+            ancestor its static position resolves against BODY, escaping the
+            grid's overflow clip and stretching the page scroll area by the
+            table's full height (the phantom page scroll below the card). */}
+        <label className="relative inline-flex cursor-pointer items-center align-middle">
           <input
             type="checkbox"
             checked={field.isRequired}

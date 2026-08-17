@@ -557,6 +557,14 @@ class TestAssembleForModel:
         n = estimate_tokens("word " * 400, "gpt-4o-mini")
         assert 300 < n < 500
 
+    def test_unknown_gpt_model_uses_o200k_base_not_the_heuristic(self) -> None:
+        # tiktoken lags new OpenAI releases: an unknown gpt-* name must count
+        # with o200k_base (what every current OpenAI model resolves to), never
+        # degrade the assembly gate to the chars/4 heuristic.
+        text = "supercalifragilistic " * 200
+        assert estimate_tokens(text, "gpt-5.6-luna") == estimate_tokens(text, "gpt-4o-mini")
+        assert estimate_tokens(text, "gpt-5.6-luna") != max(1, len(text) // 4)
+
     def test_heuristic_skew_for_anthropic_model(self) -> None:
         # Anthropic models are not encodable by tiktoken → char/4 heuristic. Document
         # the skew: the heuristic differs from the OpenAI tokeniser for the same text.

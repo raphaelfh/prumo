@@ -48,7 +48,7 @@ _SECRET_KEY = "sk-must-never-be-recorded"
 
 #: What the tests treat as "the setting changed under a retry".
 _OTHER_PROVIDER = "anthropic"
-_OTHER_MODEL = "claude-sonnet-4-5"
+_OTHER_MODEL = "claude-sonnet-5"
 
 
 def _service(
@@ -299,7 +299,7 @@ async def test_fresh_run_freezes_the_project_engine(
     default — asserted on the run row AND on what reached ``build_model``.
     Without this, the #609 regression guard stops guarding the real path."""
     calls = _stub_llm_seams(monkeypatch)
-    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o")
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
     run = await engine_setup.run_in_extract(db_session)
 
     await _extract_once(db_session, run, "freeze-project-pair")
@@ -307,12 +307,12 @@ async def test_fresh_run_freezes_the_project_engine(
 
     assert _engine_of(run) == {
         "provider": "openai",
-        "model": "gpt-4o",
+        "model": "gpt-5.6-terra",
         "mode_requested": "fast",
         "mode_executed": "fast",
     }, f"the project engine was not frozen: results={run.results}"
     assert calls, "build_model was never called — the stub is not wired"
-    assert calls == [("openai", "gpt-4o")] * len(calls)
+    assert calls == [("openai", "gpt-5.6-terra")] * len(calls)
 
 
 @pytest.mark.asyncio
@@ -323,7 +323,7 @@ async def test_retry_after_set_for_project_flip_keeps_attempt_1_pair(
     """A manager flips the PROJECT engine between two attempts of one job —
     attempt 2 must stay on attempt 1's frozen pair (retries stay pinned)."""
     calls = _stub_llm_seams(monkeypatch)
-    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o")
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
     run = await engine_setup.run_in_extract(db_session)
     await _extract_once(db_session, run, "flip-attempt-1")
 
@@ -334,12 +334,12 @@ async def test_retry_after_set_for_project_flip_keeps_attempt_1_pair(
     await db_session.refresh(run)
 
     assert calls, "attempt 2 never reached build_model"
-    assert calls == [("openai", "gpt-4o")] * len(calls), (
+    assert calls == [("openai", "gpt-5.6-terra")] * len(calls), (
         f"attempt 2 followed the flipped project engine: {calls}"
     )
     assert _engine_of(run) == {
         "provider": "openai",
-        "model": "gpt-4o",
+        "model": "gpt-5.6-terra",
         "mode_requested": "fast",
         "mode_executed": "fast",
     }
@@ -503,7 +503,7 @@ async def test_standalone_kickoff_rekeys_for_the_adopted_pinned_provider(
     run = await engine_setup.run_in_extract(db_session)
     await engine_setup.pin_run(db_session, run, "openai", "gpt-4o-mini")
     # The manager flips the project provider between pin and kickoff.
-    await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-4-5")
+    await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-5")
 
     service = _keyed_service(db_session, "f1-standalone-rekey", key_provider="anthropic")
     service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
@@ -517,7 +517,7 @@ async def test_standalone_kickoff_rekeys_for_the_adopted_pinned_provider(
             entityTypeId=SEED.primary_entity_type,
             # NO runId: the standalone path resolves the coordinate's live run.
         ),
-        engine=LlmTarget(provider="anthropic", model="claude-sonnet-4-5"),
+        engine=LlmTarget(provider="anthropic", model="claude-sonnet-5"),
     )
     await db_session.refresh(run)
 
@@ -586,7 +586,7 @@ async def test_rekey_with_no_key_for_the_adopted_provider_degrades_to_none(
 
     run = await engine_setup.run_in_extract(db_session)
     await engine_setup.pin_run(db_session, run, "openai", "gpt-4o-mini")
-    await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-4-5")
+    await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-5")
 
     service = _keyed_service(db_session, "f1-rekey-none", key_provider="anthropic")
     service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
@@ -599,7 +599,7 @@ async def test_rekey_with_no_key_for_the_adopted_provider_degrades_to_none(
             templateId=SEED.primary_template,
             entityTypeId=SEED.primary_entity_type,
         ),
-        engine=LlmTarget(provider="anthropic", model="claude-sonnet-4-5"),
+        engine=LlmTarget(provider="anthropic", model="claude-sonnet-5"),
     )
     await db_session.refresh(run)
 
@@ -665,7 +665,7 @@ async def test_fresh_run_freezes_the_stored_verified_mode(
     records the executed verify pass."""
     _stub_llm_seams(monkeypatch)
     verify_log = _stub_verify_pass(monkeypatch)
-    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o", mode="verified")
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra", mode="verified")
     run = await engine_setup.run_in_extract(db_session)
 
     await _extract_once(db_session, run, "freeze-stored-verified")
@@ -673,7 +673,7 @@ async def test_fresh_run_freezes_the_stored_verified_mode(
 
     assert _engine_of(run) == {
         "provider": "openai",
-        "model": "gpt-4o",
+        "model": "gpt-5.6-terra",
         "mode_requested": "verified",
         "mode_executed": "verified",
     }, f"the stored verified mode was not frozen: results={run.results}"
