@@ -495,6 +495,8 @@ class SectionExtractionService(LoggerMixin):
         prompt.
         """
         start_time = perf_counter()
+        if engine is None:
+            engine = self._engine
 
         run = await self.db.get(ExtractionRun, run_id)
         if run is None:
@@ -507,9 +509,7 @@ class SectionExtractionService(LoggerMixin):
         kind = run.kind
 
         await self._runs.start_run(run.id)
-        model = await self._adopt_frozen_engine(
-            run.id, engine if engine is not None else self._engine
-        )
+        model = await self._adopt_frozen_engine(run.id, engine)
 
         section_results: list[dict[str, Any]] = []
         total_suggestions = 0
@@ -1735,7 +1735,7 @@ class SectionExtractionService(LoggerMixin):
         # C1a: server-owned, never client-chosen. C1b: the candidate is the
         # project's resolved engine, not a ``settings`` re-read.
         if engine is None:
-            engine, _mode = await resolve_project_engine(self.db, payload.project_id)
+            engine = await resolve_project_engine(self.db, payload.project_id)
 
         if payload.entity_type_id is not None:
             return await self.extract_section(

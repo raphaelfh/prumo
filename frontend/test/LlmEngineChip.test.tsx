@@ -99,12 +99,11 @@ const ENGINE_READ: LlmEngineRead = {
 
 const mutateMock = vi.fn();
 
-function mockRead(overrides: Partial<LlmEngineRead> = {}, state = {}) {
+function mockRead(overrides: Partial<LlmEngineRead> = {}) {
   useLlmEngineMock.mockReturnValue({
     data: {...ENGINE_READ, ...overrides},
     isError: false,
     isPending: false,
-    ...state,
   } as unknown as ReturnType<typeof useLlmEngine>);
 }
 
@@ -126,7 +125,10 @@ function renderChip() {
   );
 }
 
-async function openPopover() {
+/** Every popover assertion starts here: read mocked, chip rendered, open. */
+async function renderOpenPopover(overrides: Partial<LlmEngineRead> = {}) {
+  mockRead(overrides);
+  renderChip();
   await userEvent.click(screen.getByRole('button', {name: copy.chipAria}));
 }
 
@@ -179,9 +181,7 @@ describe('chip', () => {
 
 describe('popover', () => {
   it('groups the catalogue by provider, with the BYOK-only group note', async () => {
-    mockRead();
-    renderChip();
-    await openPopover();
+    await renderOpenPopover();
 
     expect(screen.getByText(copy.providerOpenai)).toBeInTheDocument();
     expect(screen.getByText(copy.providerAnthropic)).toBeInTheDocument();
@@ -196,9 +196,7 @@ describe('popover', () => {
   });
 
   it('renders a locked row disabled with the Add-your-key CTA deep link', async () => {
-    mockRead();
-    renderChip();
-    await openPopover();
+    await renderOpenPopover();
 
     const locked = screen.getByTestId(
       'llm-engine-option-anthropic:claude-sonnet-4-5',
@@ -209,9 +207,7 @@ describe('popover', () => {
   });
 
   it('fires the mutation with the canonical pair on selection', async () => {
-    mockRead();
-    renderChip();
-    await openPopover();
+    await renderOpenPopover();
 
     await userEvent.click(screen.getByTestId('llm-engine-option-openai:gpt-4o'));
 
@@ -224,9 +220,7 @@ describe('popover', () => {
   });
 
   it('does not fire the mutation from a locked row', async () => {
-    mockRead();
-    renderChip();
-    await openPopover();
+    await renderOpenPopover();
 
     await userEvent.click(
       screen.getByTestId('llm-engine-option-anthropic:claude-sonnet-4-5'),
@@ -239,9 +233,7 @@ describe('popover', () => {
     // cmdk skips disabled items with the arrow keys, so the per-row CTA
     // (inside a disabled row) is mouse-only. The locked group must carry
     // ONE enabled item that the combobox's own navigation can reach.
-    mockRead();
-    renderChip();
-    await openPopover();
+    await renderOpenPopover();
 
     const cta = screen.getByTestId('llm-engine-add-key-anthropic');
     expect(
@@ -263,9 +255,7 @@ describe('popover', () => {
   });
 
   it('shows Fast selected and Verified disabled with the soon hint', async () => {
-    mockRead();
-    renderChip();
-    await openPopover();
+    await renderOpenPopover();
 
     const verified = screen.getByRole('radio', {
       name: new RegExp(copy.modeVerified),
@@ -278,14 +268,12 @@ describe('popover', () => {
   });
 
   it('renders the attribution line only when the source is the project', async () => {
-    mockRead({
+    await renderOpenPopover({
       source: 'project',
       updated_by_name: 'Alice Reviewer',
       updated_at: '2026-08-15T12:00:00Z',
       previous_model: 'gpt-4o',
     });
-    renderChip();
-    await openPopover();
 
     const expected = copy.attribution
       .replace('{{name}}', 'Alice Reviewer')
@@ -303,9 +291,7 @@ describe('popover', () => {
   });
 
   it('omits the attribution line for the env default', async () => {
-    mockRead();
-    renderChip();
-    await openPopover();
+    await renderOpenPopover();
 
     expect(
       screen.queryByText(/Model changed by/),
@@ -313,9 +299,7 @@ describe('popover', () => {
   });
 
   it('flags a retired stored engine with the amber re-choose note', async () => {
-    mockRead({model: 'gpt-3.5-turbo', retired: true, source: 'project'});
-    renderChip();
-    await openPopover();
+    await renderOpenPopover({model: 'gpt-3.5-turbo', retired: true, source: 'project'});
 
     expect(screen.getByRole('alert')).toHaveTextContent(copy.retiredNote);
   });

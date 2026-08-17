@@ -53,7 +53,7 @@ def engine_seams(monkeypatch: pytest.MonkeyPatch) -> LlmTarget:
     monkeypatch.setattr(
         extraction_tasks,
         "resolve_project_engine",
-        AsyncMock(return_value=(target, "fast")),
+        AsyncMock(return_value=target),
     )
     monkeypatch.setattr(extraction_tasks, "read_pinned_engine", AsyncMock(return_value=None))
     return target

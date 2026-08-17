@@ -179,7 +179,7 @@ async def extract_section(
     # (pinned-run pair first), so this only fails fast.
     engine_at_enqueue: str | None = None
     if payload.run_id is None:
-        engine, _mode = await resolve_project_engine(db, payload.project_id)
+        engine = await resolve_project_engine(db, payload.project_id)
         engine_at_enqueue = f"{engine.provider}:{engine.model}"
 
     if not _is_queue_available():

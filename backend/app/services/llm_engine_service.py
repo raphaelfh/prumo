@@ -58,7 +58,7 @@ class EngineRetiredError(AppError):
         super().__init__(code="LLM_ENGINE_RETIRED", message=message, status_code=409)
 
 
-async def resolve_project_engine(db: AsyncSession, project_id: UUID) -> tuple[LlmTarget, str]:
+async def resolve_project_engine(db: AsyncSession, project_id: UUID) -> LlmTarget:
     """The engine an extraction kicked off in ``project_id`` runs on.
 
     Read boundary #2 (with :meth:`LlmEngineService.get_for_project`): the
@@ -67,26 +67,24 @@ async def resolve_project_engine(db: AsyncSession, project_id: UUID) -> tuple[Ll
     back to the env default pair. A well-formed pair the catalogue no longer
     lists raises :class:`EngineRetiredError`.
 
-    Returns the target (mode fields included — the freeze pins the whole
-    spine) plus the mode for callers that only want it.
+    The returned target carries the mode fields too — the freeze pins the
+    whole spine.
     """
     project = await db.get(Project, project_id)
     stored = _stored_engine(project.settings if project is not None else None)
     if stored is None:
-        target = LlmTarget(provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL)
-        return target, target.mode_executed
+        return LlmTarget(provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL)
     if find_entry(stored.provider, stored.model) is None:
         raise EngineRetiredError(
             f"The project's stored engine {stored.provider}:{stored.model} is no longer "
             "available. Ask a project manager to choose a new model."
         )
-    target = LlmTarget(
+    return LlmTarget(
         provider=stored.provider,
         model=stored.model,
         mode_requested=stored.mode,
         mode_executed=stored.mode,
     )
-    return target, stored.mode
 
 
 @dataclass(frozen=True)
@@ -95,7 +93,7 @@ class ResolvedProjectEngine:
 
     provider: str
     model: str
-    mode: str
+    mode: Literal["fast"]
     source: Literal["project", "default"]
     retired: bool
     stored: LlmEngineStored | None
@@ -238,7 +236,7 @@ class LlmEngineService:
         return LlmEngineRead(
             provider=resolved.provider,
             model=resolved.model,
-            mode="fast",
+            mode=resolved.mode,
             source=resolved.source,
             retired=resolved.retired,
             updated_by_name=updated_by_name,

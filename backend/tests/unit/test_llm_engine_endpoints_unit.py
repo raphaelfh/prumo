@@ -119,9 +119,17 @@ async def test_put_writes_named_fields_and_returns_the_fresh_read() -> None:
 
 
 @pytest.mark.asyncio
-async def test_put_maps_unknown_engine_to_400() -> None:
+@pytest.mark.parametrize(
+    ("raised", "expected_status"),
+    [
+        (ValueError("Unknown engine"), 400),
+        (ProjectNotFoundError("Project x not found"), 404),
+    ],
+    ids=["unknown-engine", "missing-project"],
+)
+async def test_put_maps_service_errors_to_status(raised: Exception, expected_status: int) -> None:
     service = MagicMock()
-    service.set_for_project = AsyncMock(side_effect=ValueError("Unknown engine"))
+    service.set_for_project = AsyncMock(side_effect=raised)
 
     with (
         patch(f"{_EP}.LlmEngineService", return_value=service),
@@ -135,24 +143,4 @@ async def test_put_maps_unknown_engine_to_400() -> None:
             manager_id=uuid4(),
         )
 
-    assert exc_info.value.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_put_maps_missing_project_to_404() -> None:
-    service = MagicMock()
-    service.set_for_project = AsyncMock(side_effect=ProjectNotFoundError("Project x not found"))
-
-    with (
-        patch(f"{_EP}.LlmEngineService", return_value=service),
-        pytest.raises(HTTPException) as exc_info,
-    ):
-        await _put(
-            project_id=uuid4(),
-            body=LlmEngineUpdateRequest(provider="openai", model="gpt-4o"),
-            request=_request(),
-            db=AsyncMock(),
-            manager_id=uuid4(),
-        )
-
-    assert exc_info.value.status_code == 404
+    assert exc_info.value.status_code == expected_status

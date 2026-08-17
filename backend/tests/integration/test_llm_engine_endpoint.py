@@ -11,66 +11,16 @@ Role matrix through the real ASGI app + real Postgres membership rows:
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-
 import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from httpx import AsyncClient
 
 from app.core.config import settings
-from app.core.deps import get_db
-from app.core.security import TokenPayload, get_current_user
-from app.main import app
 from tests.integration.conftest import SEED
+from tests.integration.helpers import engine_setup
 
-
-def _make_token(profile_id: str) -> TokenPayload:
-    return TokenPayload(
-        sub=profile_id,
-        email=f"{profile_id}@integration-test.prumo.local",
-        role="authenticated",
-        aal="aal1",
-    )
-
-
-def _client_as(profile_id: str, db_session: AsyncSession) -> AsyncClient:
-    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
-        yield db_session
-
-    async def override_get_current_user() -> TokenPayload:
-        return _make_token(profile_id)
-
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_user] = override_get_current_user
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
-
-
-@pytest_asyncio.fixture
-async def client_as_manager(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    try:
-        async with _client_as(str(SEED.primary_profile), db_session) as ac:
-            yield ac
-    finally:
-        app.dependency_overrides.clear()
-
-
-@pytest_asyncio.fixture
-async def client_as_reviewer(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    try:
-        async with _client_as(str(SEED.reviewer_profile), db_session) as ac:
-            yield ac
-    finally:
-        app.dependency_overrides.clear()
-
-
-@pytest_asyncio.fixture
-async def client_as_outsider(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    try:
-        async with _client_as(str(SEED.outsider_profile), db_session) as ac:
-            yield ac
-    finally:
-        app.dependency_overrides.clear()
+client_as_manager = engine_setup.client_as_manager
+client_as_reviewer = engine_setup.client_as_reviewer
+client_as_outsider = engine_setup.client_as_outsider
 
 
 def _url() -> str:

@@ -34,14 +34,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.llm.extractor import LlmUsage
-from app.models.extraction import ExtractionRun, ExtractionRunStage
-from app.repositories import ExtractionRunRepository
+from app.models.extraction import ExtractionRun
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
 from app.services import section_extraction_service as ses
 from app.services.api_key_service import KeyScope, ResolvedKey
-from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
+from tests.integration.helpers import engine_setup
 
 #: Stands in for real key material. It must never reach the run row.
 _SECRET_KEY = "sk-must-never-be-recorded"
@@ -49,35 +48,6 @@ _SECRET_KEY = "sk-must-never-be-recorded"
 #: What the tests treat as "the setting changed under a retry".
 _OTHER_PROVIDER = "anthropic"
 _OTHER_MODEL = "claude-sonnet-4-5"
-
-
-async def _run_in_extract(db: AsyncSession) -> ExtractionRun:
-    """A fresh run for the seeded coordinate, advanced to EXTRACT."""
-    await db.execute(
-        text(
-            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
-            "AND article_id = :aid AND template_id = :tid"
-        ),
-        {
-            "pid": str(SEED.primary_project),
-            "aid": str(SEED.primary_article),
-            "tid": str(SEED.primary_template),
-        },
-    )
-    lifecycle = RunLifecycleService(db)
-    run = await lifecycle.create_run(
-        project_id=SEED.primary_project,
-        article_id=SEED.primary_article,
-        project_template_id=SEED.primary_template,
-        user_id=SEED.primary_profile,
-    )
-    run = await lifecycle.advance_stage(
-        run_id=run.id,
-        target_stage=ExtractionRunStage.EXTRACT,
-        user_id=SEED.primary_profile,
-    )
-    await db.flush()
-    return run
 
 
 def _service(
@@ -177,7 +147,7 @@ async def test_fresh_run_resolves_engine_from_settings_and_persists_it(
 ) -> None:
     """A run with no engine recorded resolves from settings and stores it."""
     calls = _stub_llm_seams(monkeypatch)
-    run = await _run_in_extract(db_session)
+    run = await engine_setup.run_in_extract(db_session)
 
     await _extract_once(db_session, run, "freeze-fresh")
     await db_session.refresh(run)
@@ -206,7 +176,7 @@ async def test_retry_after_settings_change_keeps_the_first_engine(
     original_provider = settings.LLM_PROVIDER
     original_model = settings.LLM_DEFAULT_MODEL
 
-    run = await _run_in_extract(db_session)
+    run = await engine_setup.run_in_extract(db_session)
     await _extract_once(db_session, run, "freeze-attempt-1")
 
     # The manager flips the engine between the two attempts.
@@ -236,7 +206,7 @@ async def test_recorded_engine_is_never_overwritten(
 ) -> None:
     """First writer wins: a run that already names an engine keeps it."""
     calls = _stub_llm_seams(monkeypatch)
-    run = await _run_in_extract(db_session)
+    run = await engine_setup.run_in_extract(db_session)
 
     # NB: jsonb_set cannot create the intermediate ``provenance`` object, so
     # write the whole bag — a jsonb_set here silently no-ops and the test
@@ -268,18 +238,6 @@ async def test_recorded_engine_is_never_overwritten(
     )
 
 
-async def _set_project_engine(db: AsyncSession, provider: str, model: str) -> None:
-    from app.services.llm_engine_service import LlmEngineService
-
-    await LlmEngineService(db).set_for_project(
-        project_id=SEED.primary_project,
-        provider=provider,
-        model=model,
-        mode="fast",
-        updated_by=SEED.primary_profile,
-    )
-
-
 @pytest.mark.asyncio
 async def test_fresh_run_freezes_the_project_engine(
     db_session: AsyncSession,
@@ -289,8 +247,8 @@ async def test_fresh_run_freezes_the_project_engine(
     default — asserted on the run row AND on what reached ``build_model``.
     Without this, the #609 regression guard stops guarding the real path."""
     calls = _stub_llm_seams(monkeypatch)
-    await _set_project_engine(db_session, "openai", "gpt-4o")
-    run = await _run_in_extract(db_session)
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o")
+    run = await engine_setup.run_in_extract(db_session)
 
     await _extract_once(db_session, run, "freeze-project-pair")
     await db_session.refresh(run)
@@ -313,11 +271,11 @@ async def test_retry_after_set_for_project_flip_keeps_attempt_1_pair(
     """A manager flips the PROJECT engine between two attempts of one job —
     attempt 2 must stay on attempt 1's frozen pair (retries stay pinned)."""
     calls = _stub_llm_seams(monkeypatch)
-    await _set_project_engine(db_session, "openai", "gpt-4o")
-    run = await _run_in_extract(db_session)
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o")
+    run = await engine_setup.run_in_extract(db_session)
     await _extract_once(db_session, run, "flip-attempt-1")
 
-    await _set_project_engine(db_session, "anthropic", "claude-haiku-4-5")
+    await engine_setup.set_project_engine(db_session, "anthropic", "claude-haiku-4-5")
     calls.clear()
 
     await _extract_once(db_session, run, "flip-attempt-2")
@@ -349,7 +307,7 @@ async def test_section_provenance_records_the_frozen_provider(
     original_provider = settings.LLM_PROVIDER
     original_model = settings.LLM_DEFAULT_MODEL
 
-    run = await _run_in_extract(db_session)
+    run = await engine_setup.run_in_extract(db_session)
     await _extract_once(db_session, run, "freeze-provenance")
 
     # The env var moves after the run — the snapshot must not follow it.
@@ -381,7 +339,7 @@ async def test_provenance_records_the_key_scope_and_never_the_key(
     expect it in.
     """
     _stub_llm_seams(monkeypatch)
-    run = await _run_in_extract(db_session)
+    run = await engine_setup.run_in_extract(db_session)
 
     await _extract_once(db_session, run, "key-scope", KeyScope.USER_BYOK)
     await db_session.refresh(run)
@@ -406,7 +364,7 @@ async def test_provenance_key_scope_is_null_when_the_caller_did_not_resolve_one(
     an absent one when the record is what an auditor reads.
     """
     _stub_llm_seams(monkeypatch)
-    run = await _run_in_extract(db_session)
+    run = await engine_setup.run_in_extract(db_session)
 
     await _extract_once(db_session, run, "key-scope-none")
     await db_session.refresh(run)
@@ -419,13 +377,6 @@ async def test_provenance_key_scope_is_null_when_the_caller_did_not_resolve_one(
 # ---------------------------------------------------------------------------
 # F1 — the key must match the ADOPTED engine's provider, not the kickoff's
 # ---------------------------------------------------------------------------
-
-
-async def _pin_run(db: AsyncSession, run: ExtractionRun, provider: str, model: str) -> None:
-    """Pre-pin the run the way a prior attempt's freeze write would have."""
-    await ExtractionRunRepository(db).freeze_engine(
-        run.id, LlmTarget(provider=provider, model=model).model_dump()
-    )
 
 
 def _stub_keyed_build_model(
@@ -497,10 +448,10 @@ async def test_standalone_kickoff_rekeys_for_the_adopted_pinned_provider(
     keyed_calls = _stub_keyed_build_model(monkeypatch)
     asked = _stub_key_service(monkeypatch, ResolvedKey("key-for-openai", KeyScope.GLOBAL_SERVICE))
 
-    run = await _run_in_extract(db_session)
-    await _pin_run(db_session, run, "openai", "gpt-4o-mini")
+    run = await engine_setup.run_in_extract(db_session)
+    await engine_setup.pin_run(db_session, run, "openai", "gpt-4o-mini")
     # The manager flips the project provider between pin and kickoff.
-    await _set_project_engine(db_session, "anthropic", "claude-sonnet-4-5")
+    await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-4-5")
 
     service = _keyed_service(db_session, "f1-standalone-rekey", key_provider="anthropic")
     service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
@@ -543,8 +494,8 @@ async def test_pinned_run_kickoff_with_matching_key_provider_never_rekeys(
     _stub_llm_seams(monkeypatch)
     asked = _stub_key_service(monkeypatch, ResolvedKey("must-not-be-used", KeyScope.GLOBAL_SERVICE))
 
-    run = await _run_in_extract(db_session)
-    await _pin_run(db_session, run, "openai", "gpt-4o-mini")
+    run = await engine_setup.run_in_extract(db_session)
+    await engine_setup.pin_run(db_session, run, "openai", "gpt-4o-mini")
 
     service = _keyed_service(db_session, "f1-no-double-key", key_provider="openai")
     service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
@@ -581,9 +532,9 @@ async def test_rekey_with_no_key_for_the_adopted_provider_degrades_to_none(
     keyed_calls = _stub_keyed_build_model(monkeypatch)
     asked = _stub_key_service(monkeypatch, None)
 
-    run = await _run_in_extract(db_session)
-    await _pin_run(db_session, run, "openai", "gpt-4o-mini")
-    await _set_project_engine(db_session, "anthropic", "claude-sonnet-4-5")
+    run = await engine_setup.run_in_extract(db_session)
+    await engine_setup.pin_run(db_session, run, "openai", "gpt-4o-mini")
+    await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-4-5")
 
     service = _keyed_service(db_session, "f1-rekey-none", key_provider="anthropic")
     service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]

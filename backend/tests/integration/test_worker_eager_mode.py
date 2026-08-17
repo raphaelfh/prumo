@@ -321,7 +321,7 @@ def test_extract_section_task_signature_and_kwargs_alignment() -> None:
         ),
         patch(
             "app.worker.tasks.extraction_tasks.resolve_project_engine",
-            AsyncMock(return_value=(resolved_engine, "fast")),
+            AsyncMock(return_value=resolved_engine),
         ),
         patch(
             "app.core.factories.create_storage_adapter",

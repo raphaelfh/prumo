@@ -81,7 +81,7 @@ async def resolve_engine_for_run(
         pinned = await read_pinned_engine(db, run_id)
         if pinned is not None:
             return pinned
-    engine, _mode = await resolve_project_engine(db, project_id)
+    engine = await resolve_project_engine(db, project_id)
     if run_id is not None:
         engine = await freeze_run_engine(ExtractionRunRepository(db), run_id, engine)
     return engine

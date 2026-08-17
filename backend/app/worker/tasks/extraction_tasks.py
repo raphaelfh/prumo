@@ -92,7 +92,7 @@ def extract_section_task(
                 # This task carries no run_id, so it resolves the project
                 # engine and relies on the service's re-key (key_provider)
                 # when a reused run's pin settles on another provider.
-                engine, _mode = await resolve_project_engine(session, UUID(project_id))
+                engine = await resolve_project_engine(session, UUID(project_id))
 
                 # Resolve user API key if not provided
                 api_key = openai_api_key
@@ -190,7 +190,7 @@ def extract_models_task(
                 # before keying (resolve_engine_for_run); this task carries
                 # no run_id, so it resolves the project engine only. Align
                 # with the endpoint before re-use.
-                engine, _mode = await resolve_project_engine(session, UUID(project_id))
+                engine = await resolve_project_engine(session, UUID(project_id))
 
                 # Resolve user API key if not provided
                 api_key = openai_api_key
@@ -320,7 +320,7 @@ def run_section_extraction_task(
                     else None
                 )
                 if engine is None:
-                    engine, _mode = await resolve_project_engine(session, request.project_id)
+                    engine = await resolve_project_engine(session, request.project_id)
 
                 api_key_service = APIKeyService(db=session, user_id=user_id)
                 resolved = await api_key_service.get_key_for_provider(engine.provider)

@@ -39,7 +39,7 @@ def resolve_seam():
     """Patch the module-level resolver seam for every test in this file."""
     with patch(
         "app.services.section_extraction_service.resolve_project_engine",
-        AsyncMock(return_value=(_RESOLVED, "fast")),
+        AsyncMock(return_value=_RESOLVED),
     ) as mock:
         yield mock
 
