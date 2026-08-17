@@ -88,7 +88,7 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
 
 # OpenAI
 OPENAI_API_KEY=sk-...
-OPENAI_DEFAULT_MODEL=gpt-4o-mini
+# LLM_DEFAULT_MODEL — code default is gpt-5.6-luna; see app/core/config.py
 
 # Security
 ENCRYPTION_KEY=sua-chave-de-criptografia-32-caracteres

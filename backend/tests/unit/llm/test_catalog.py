@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.config import settings
 from app.llm.catalog import CATALOG, CatalogEntry, canonical, find_entry
 from app.llm.provider import build_model
 
@@ -53,6 +54,12 @@ def test_canonical_is_provider_colon_model() -> None:
 
 def test_cost_tiers_are_valid() -> None:
     assert all(entry.cost_tier in _VALID_COST_TIERS for entry in CATALOG)
+
+
+def test_default_engine_is_in_the_catalog() -> None:
+    """A default that falls off the roster reads as retired and blocks every
+    project that never chose an engine (typed 409 at kickoff)."""
+    assert find_entry(settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL) is not None
 
 
 @pytest.mark.parametrize(

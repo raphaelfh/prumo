@@ -44,7 +44,9 @@ by design. Canonical `provider:model` string is what provenance carries.
 
 **T1 — catalogue module** `backend/app/llm/catalog.py`.
 `CatalogEntry` (frozen dataclass: provider, model, label, best_for,
-context_window, cost_tier `$|$$|$$$`), `CATALOG` tuple (openai:
+context_window, cost_tier `$|$$|$$$`), `CATALOG` tuple (point-in-time
+roster; refreshed to the GPT-5.6/Claude-5 generation on 2026-08-17 —
+`app/llm/catalog.py` is the source of truth, not this list: openai:
 gpt-4o-mini, gpt-4o, gpt-4.1-mini; anthropic: claude-sonnet-4-5,
 claude-haiku-4-5), `find_entry(provider, model)`, `canonical(entry)` →
 `"provider:model"`. Curated data, deliberately small; a roster edit is a

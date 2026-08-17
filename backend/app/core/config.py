@@ -98,14 +98,21 @@ class Settings(BaseSettings):
     # OPENAI_DEFAULT_MODEL was defined but never read at runtime; it is
     # collapsed here. Claude is selectable by setting LLM_PROVIDER="anthropic"
     # plus an "anthropic" BYOK key (no global Anthropic key is configured).
+    # The default must stay in app.llm.catalog.CATALOG — a default that falls
+    # off the roster reads as "retired" and blocks every run that never chose
+    # an engine. No Railway env override exists for it: prod follows this code
+    # default at deploy time.
     LLM_PROVIDER: str = "openai"
-    LLM_DEFAULT_MODEL: str = "gpt-4o-mini"
+    LLM_DEFAULT_MODEL: str = "gpt-5.6-luna"
     LLM_TIMEOUT_SECONDS: float = 120.0
     # Token budget for the per-run block-markdown assembly window (A1). A paper
     # under this budget is sent in full; above it the assembler drops whole
     # low-priority sections (IMRaD ranking) and logs AssemblyInfo.truncated.
-    # Leaves headroom on a 128k-context model for system prompt + schema + output
-    # + reask. No hard per-run cost ceiling (logged, not enforced — spec §8.5).
+    # Sized against the SMALLEST context window in app.llm.catalog.CATALOG
+    # (currently gpt-4o-mini at 128k), NOT the default model — a budget that
+    # fits only the flagship windows overflows legacy-pinned projects. Leaves
+    # headroom for system prompt + schema + output + reask. No hard per-run
+    # cost ceiling (logged, not enforced — spec §8.5).
     LLM_ASSEMBLY_BUDGET_TOKENS: int = 96_000
 
     # =================== PARSING ===================

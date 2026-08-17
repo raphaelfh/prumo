@@ -53,8 +53,9 @@ async def test_member_get_returns_resolved_view(client_as_reviewer: AsyncClient)
     assert data["retired"] is False
     # The server-curated roster rides along for the picker.
     pairs = {(e["provider"], e["model"]) for e in data["catalog"]}
-    assert ("openai", "gpt-4o-mini") in pairs
-    assert ("anthropic", "claude-sonnet-4-5") in pairs
+    assert ("openai", "gpt-5.6-luna") in pairs
+    assert ("openai", "gpt-4o-mini") in pairs  # kept for existing projects
+    assert ("anthropic", "claude-sonnet-5") in pairs
     assert all("canonical" in e and "byok_only" in e for e in data["catalog"])
     # Availability: booleans only — never key ids / metadata.
     availability = data["availability"]
@@ -71,30 +72,30 @@ async def test_member_get_returns_resolved_view(client_as_reviewer: AsyncClient)
 
 @pytest.mark.asyncio
 async def test_outsider_put_is_403(client_as_outsider: AsyncClient) -> None:
-    r = await client_as_outsider.put(_url(), json={"provider": "openai", "model": "gpt-4o"})
+    r = await client_as_outsider.put(_url(), json={"provider": "openai", "model": "gpt-5.6-terra"})
     assert r.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_reviewer_put_is_403(client_as_reviewer: AsyncClient) -> None:
-    r = await client_as_reviewer.put(_url(), json={"provider": "openai", "model": "gpt-4o"})
+    r = await client_as_reviewer.put(_url(), json={"provider": "openai", "model": "gpt-5.6-terra"})
     assert r.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_manager_put_persists_and_attributes(client_as_manager: AsyncClient) -> None:
-    r = await client_as_manager.put(_url(), json={"provider": "openai", "model": "gpt-4o"})
+    r = await client_as_manager.put(_url(), json={"provider": "openai", "model": "gpt-5.6-terra"})
     assert r.status_code == 200, r.text
     data = r.json()["data"]
     assert data["source"] == "project"
-    assert (data["provider"], data["model"]) == ("openai", "gpt-4o")
+    assert (data["provider"], data["model"]) == ("openai", "gpt-5.6-terra")
     assert data["updated_by_name"] == "Integration Primary"
     assert data["updated_at"] is not None
 
     # The GET reflects the write (same session — SAVEPOINT-isolated).
     r2 = await client_as_manager.get(_url())
     assert r2.status_code == 200
-    assert r2.json()["data"]["model"] == "gpt-4o"
+    assert r2.json()["data"]["model"] == "gpt-5.6-terra"
 
 
 @pytest.mark.asyncio
@@ -108,7 +109,7 @@ async def test_put_verified_mode_round_trips(client_as_manager: AsyncClient) -> 
     """Verified shipped: the PUT persists ``mode: "verified"`` and the GET
     reflects it (the C1b 422 flipped with the §5 verify pass)."""
     r = await client_as_manager.put(
-        _url(), json={"provider": "openai", "model": "gpt-4o", "mode": "verified"}
+        _url(), json={"provider": "openai", "model": "gpt-5.6-terra", "mode": "verified"}
     )
     assert r.status_code == 200, r.text
     assert r.json()["data"]["mode"] == "verified"
@@ -123,7 +124,7 @@ async def test_put_verified_mode_round_trips(client_as_manager: AsyncClient) -> 
 @pytest.mark.asyncio
 async def test_put_unknown_mode_is_422(client_as_manager: AsyncClient) -> None:
     r = await client_as_manager.put(
-        _url(), json={"provider": "openai", "model": "gpt-4o", "mode": "turbo"}
+        _url(), json={"provider": "openai", "model": "gpt-5.6-terra", "mode": "turbo"}
     )
     assert r.status_code == 422
 
@@ -140,7 +141,7 @@ async def test_get_normalizes_a_stored_unknown_mode_to_fast(
         text(
             "UPDATE public.projects SET settings = "
             "jsonb_set(COALESCE(settings, '{}'::jsonb), '{llm_engine}', "
-            """'{"provider": "openai", "model": "gpt-4o", "mode": "turbo"}'::jsonb) """
+            """'{"provider": "openai", "model": "gpt-5.6-terra", "mode": "turbo"}'::jsonb) """
             "WHERE id = :pid"
         ),
         {"pid": str(SEED.primary_project)},
@@ -149,13 +150,13 @@ async def test_get_normalizes_a_stored_unknown_mode_to_fast(
     assert r.status_code == 200, r.text
     data = r.json()["data"]
     assert data["mode"] == "fast"
-    assert (data["provider"], data["model"]) == ("openai", "gpt-4o")
+    assert (data["provider"], data["model"]) == ("openai", "gpt-5.6-terra")
     assert data["source"] == "project"
 
 
 @pytest.mark.asyncio
 async def test_put_smuggled_key_is_422(client_as_manager: AsyncClient) -> None:
     r = await client_as_manager.put(
-        _url(), json={"provider": "openai", "model": "gpt-4o", "temperature": 0}
+        _url(), json={"provider": "openai", "model": "gpt-5.6-terra", "temperature": 0}
     )
     assert r.status_code == 422

@@ -323,7 +323,7 @@ async def test_session_run_extraction_persists_provenance(
     )
     # Provenance is now stored per section under provenance.sections[entity_type_id].
     section = refreshed.results["provenance"]["sections"][str(SEED.primary_entity_type)]
-    assert section["model"] == "gpt-4o-mini"
+    assert section["model"] == settings.LLM_DEFAULT_MODEL
     assert section["provider"] == settings.LLM_PROVIDER
     assert section["tokens"]["total"] == 120
     # Execution truth (§5 design 3) lives on the SECTION snapshot: this fast
