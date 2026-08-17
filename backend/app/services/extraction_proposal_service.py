@@ -23,6 +23,17 @@ class InvalidProposalError(Exception):
     """Raised when a proposal violates business rules (stage / source / coords)."""
 
 
+def _dedupe_view(proposed_value: dict[str, Any]) -> dict[str, Any]:
+    """The replay-compare view of a ``proposed_value`` bag.
+
+    The Verified-mode ``verification`` ANNOTATION sibling is ignored (the
+    compare is value + absent_reason only): a re-extract whose verify pass
+    flaked — or newly succeeded — must not append a duplicate audit row for
+    an unchanged value.
+    """
+    return {k: v for k, v in proposed_value.items() if k != "verification"}
+
+
 class ExtractionProposalService:
     """Append-only proposal writes with rule validation."""
 
@@ -107,7 +118,9 @@ class ExtractionProposalService:
         latest = await self._repo.get_latest_for_coord(
             run_id, instance_id, field_id, source_value, source_user_id
         )
-        if latest is not None and latest.proposed_value == proposed_value:
+        if latest is not None and _dedupe_view(latest.proposed_value) == _dedupe_view(
+            proposed_value
+        ):
             return latest
 
         record = ExtractionProposalRecord(

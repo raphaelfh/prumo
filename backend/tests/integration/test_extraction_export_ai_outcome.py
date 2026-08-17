@@ -1020,3 +1020,48 @@ async def test_model_used_empty_when_neither_provenance_nor_parameters(
     )
     assert len(rows) == 1
     assert rows[0].model_used == ""
+
+
+async def test_annotated_proposal_exports_the_value_not_the_verification_sibling(
+    db_session: AsyncSession,
+) -> None:
+    """Verified-mode smoke: a proposal carrying the server-written
+    ``verification`` ANNOTATION sibling exports its ``.value`` exactly like an
+    unannotated row — the sibling never leaks into a cell (the
+    exports-only-read-``.value`` claim, verified rather than assumed)."""
+    coord = await _coord(db_session)
+    if coord is None:
+        pytest.skip("dev DB not seeded with an extraction instance")
+    project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
+
+    run = await _make_run(
+        db_session,
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+        profile_id=profile_id,
+    )
+    db_session.add(
+        ExtractionProposalRecord(
+            id=uuid4(),
+            run_id=run.id,
+            instance_id=instance_id,
+            field_id=field_id,
+            source=ExtractionProposalSource.AI.value,
+            proposed_value={"value": "annotated", "verification": {"verdict": "confirmed"}},
+            created_at=_SHARED_TS,
+        )
+    )
+    await db_session.flush()
+
+    rows = await _ai_metadata_rows(
+        db_session,
+        run=run,
+        profile_id=profile_id,
+        article_id=article_id,
+        entity_type_id=entity_type_id,
+        instance_id=instance_id,
+        field_id=field_id,
+    )
+    assert len(rows) == 1
+    assert rows[0].ai_proposed_value == "annotated"

@@ -102,6 +102,48 @@ async def test_identical_proposal_rerecord_is_a_noop(db_session: AsyncSession) -
 
 
 @pytest.mark.asyncio
+async def test_verification_sibling_is_ignored_by_the_replay_dedupe(
+    db_session: AsyncSession,
+) -> None:
+    """The Verified-mode ``verification`` ANNOTATION never makes two equal
+    values look different: a re-extract whose verify pass flaked (annotation
+    absent the second time) must not append a duplicate audit row for an
+    unchanged value. The compare is value + absent_reason only."""
+    fx = await _coord(db_session)
+    if fx is None:
+        pytest.skip("Seed graph incomplete")
+    project_id, article_id, template_id, user_id, instance_id, field_id = fx
+
+    lc = RunLifecycleService(db_session)
+    run = await lc.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=user_id,
+    )
+    await lc.advance_stage(run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=user_id)
+
+    svc = ExtractionProposalService(db_session)
+    args = {
+        "run_id": run.id,
+        "instance_id": instance_id,
+        "field_id": field_id,
+        "source": ExtractionProposalSource.AI,
+        "proposed_value": {"value": "v", "verification": {"verdict": "confirmed"}},
+    }
+    first = await svc.record_proposal(**args)
+    # Re-extract, verify flaked: same value, no annotation. Must dedupe.
+    second = await svc.record_proposal(**{**args, "proposed_value": {"value": "v"}})
+    assert second.id == first.id, "a flaked verify must not create a duplicate row"
+
+    # A genuinely changed value still appends, annotation or not.
+    changed = await svc.record_proposal(
+        **{**args, "proposed_value": {"value": "v2", "verification": {"verdict": "unsupported"}}}
+    )
+    assert changed.id != first.id
+
+
+@pytest.mark.asyncio
 async def test_identical_decision_rerecord_is_a_noop(db_session: AsyncSession) -> None:
     fx = await _coord(db_session)
     if fx is None:

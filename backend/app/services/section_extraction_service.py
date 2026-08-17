@@ -23,10 +23,10 @@ from app.infrastructure.storage import StorageAdapter
 from app.llm.claim_value import value_str_for_claim
 from app.llm.entailment import GateSpec, run_entailment_gate
 from app.llm.extractor import LlmUsage, extract_structured
-from app.llm.prompts import quality_assessment, section_extraction
 from app.llm.provider import build_model
 from app.llm.schema import build_output_models, dump_extraction
 from app.llm.validators import evidence_is_plausible
+from app.llm.verify import VerificationAnnotation
 from app.models.extraction import (
     ExtractionEvidence,
     ExtractionInstance,
@@ -49,7 +49,6 @@ from app.repositories import (
 )
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
-from app.schemas.prompt_composition import PromptComposition, PromptCompositionArticleRef
 from app.services.api_key_service import APIKeyService, KeyScope
 from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
@@ -59,9 +58,14 @@ from app.services.extraction_snapshot import (
     general_instructions_for_version,
 )
 from app.services.llm_engine_service import resolve_project_engine
-from app.services.run_engine_freeze import build_run_provenance, freeze_run_engine
+from app.services.run_engine_freeze import freeze_run_engine
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.value_semantics import AbsentReason
+from app.services.verified_mode import (
+    SectionSnapshotInputs,
+    render_section_prompts,
+    verify_and_snapshot,
+)
 
 # Maximum number of evidence rows written per extracted field.
 EVIDENCE_CAP = 3
@@ -178,8 +182,9 @@ class SectionExtractionService(LoggerMixin):
         # Assembly info from the last prompt build (truncation, token estimate,
         # source file) — feeds the per-section prompt_composition provenance.
         self._prompt_input_info: PromptInputInfo | None = None
-        # Run provenance snapshot, set by _extract_with_llm and merged into the
-        # run's results at completion (how the suggestions were generated).
+        # Snapshot inputs stashed by _extract_with_llm; _maybe_verify builds
+        # the section snapshot from them, post-verify, into _run_provenance.
+        self._snapshot_inputs: SectionSnapshotInputs | None = None
         self._run_provenance: dict[str, Any] | None = None
         # Engine for every LLM call here: the env-default candidate until a
         # caller passes a resolved one; ``freeze_run_engine`` rebinds it to
@@ -358,6 +363,10 @@ class SectionExtractionService(LoggerMixin):
                 fields_override=fields_override,
                 general_instructions=general_instructions,
             )
+            # 6. Verify pass (Verified mode; mode check inside) + snapshot.
+            verdicts, llm_usage = await self._maybe_verify(
+                run.id, entity_type_id, pdf_text, extracted_data, llm_usage
+            )
             phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
             # 7. Create suggestions in database
@@ -369,6 +378,7 @@ class SectionExtractionService(LoggerMixin):
                 parent_instance_id=parent_instance_id,
                 extracted_data=extracted_data,
                 run=run,
+                verdicts=verdicts,
             )
             phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -692,6 +702,9 @@ class SectionExtractionService(LoggerMixin):
             fields_override=fields_override,
             general_instructions=general_instructions,
         )
+        verdicts, llm_usage = await self._maybe_verify(
+            run.id, entity_type.id, pdf_text, extracted_data, llm_usage
+        )
         suggestions_created = await self._create_suggestions(
             project_id=run.project_id,
             article_id=run.article_id,
@@ -699,6 +712,7 @@ class SectionExtractionService(LoggerMixin):
             parent_instance_id=None,
             extracted_data=extracted_data,
             run=run,
+            verdicts=verdicts,
         )
         return {
             "suggestions_created": suggestions_created,
@@ -1132,6 +1146,9 @@ class SectionExtractionService(LoggerMixin):
             fields_override=pinned_fields,
             general_instructions=general_instructions,
         )
+        verdicts, llm_usage = await self._maybe_verify(
+            run.id, entity_type.id, pdf_text, extracted_data, llm_usage
+        )
         section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
         # Create suggestions
@@ -1143,6 +1160,7 @@ class SectionExtractionService(LoggerMixin):
             parent_instance_id=parent_instance_id,
             extracted_data=extracted_data,
             run=run,
+            verdicts=verdicts,
         )
         section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -1280,54 +1298,34 @@ class SectionExtractionService(LoggerMixin):
         fields_override: list[Any] | None = None,
         general_instructions: str | None = None,
     ) -> tuple[dict[str, Any], LlmUsage]:
-        """
-        Run extraction using the typed LLM call layer.
+        """Run extraction using the typed LLM call layer.
 
-        Args:
-            pdf_text: PDF text.
-            entity_type: Entity type to extract (fields drive the output model).
-            memory_context: Summarized memory context (optional).
-            kind: 'extraction' or 'quality_assessment' — selects the prompt
-                pair. The response shape is identical either way, so
-                downstream proposal writes are unchanged.
-            framework: When kind=='quality_assessment', the assessment
-                framework (PROBAST / QUADAS-2) the prompts ground in.
-            fields_override: Exact field list for the LLM (e.g. human-settled
-                fields removed); avoids mutating ``entity_type.fields``.
-            general_instructions: Template-level instruction from the
-                run-pinned snapshot (never the live column); prepended to
-                the user prompt when present.
-
-        Returns:
-            Tuple of extracted data ({field_name: {value, confidence,
-            reasoning, evidence}}) and token usage. Templates larger than
-            the strict-mode property budget are split into multiple calls
-            and merged transparently.
+        ``kind`` selects the prompt pair ('extraction' /
+        'quality_assessment', ``framework`` naming the instrument);
+        ``fields_override`` is the exact field list to send (never mutate
+        ``entity_type.fields``); ``general_instructions`` comes from the
+        run-pinned snapshot, never the live column. Returns ({field_name:
+        {value, confidence, reasoning, evidence}}, usage) — oversized
+        templates are split into multiple calls and merged transparently.
+        Side effect: stashes the section-snapshot INPUTS on
+        ``self._snapshot_inputs`` for ``_maybe_verify``'s post-verify build.
         """
         entity_name = entity_type.name if hasattr(entity_type, "name") else "data"
         entity_description = entity_type.description if hasattr(entity_type, "description") else ""
 
-        if kind == "quality_assessment":
-            prompt_module: Any = quality_assessment
-            system_prompt = quality_assessment.system_prompt(framework)
-            user_prompt = quality_assessment.render(
-                entity_name=entity_name,
-                entity_description=entity_description,
-                article_text=pdf_text,
+        # One glue call renders both the real-article and marker prompts.
+        prompt_name, prompt_version, system_prompt, user_prompt, section_instruction = (
+            render_section_prompts(
+                kind=kind,
                 framework=framework,
-                memory_context=memory_context,
-                general_instructions=general_instructions,
-            )
-        else:
-            prompt_module = section_extraction
-            system_prompt = section_extraction.SYSTEM_PROMPT
-            user_prompt = section_extraction.render(
                 entity_name=entity_name,
                 entity_description=entity_description,
                 article_text=pdf_text,
+                article_marker=ARTICLE_MARKDOWN_MARKER,
                 memory_context=memory_context,
                 general_instructions=general_instructions,
             )
+        )
 
         output_models = build_output_models(entity_type, fields=fields_override)
         if not output_models:
@@ -1336,6 +1334,7 @@ class SectionExtractionService(LoggerMixin):
                 trace_id=self.trace_id,
                 entity_type_name=entity_name,
             )
+            self._snapshot_inputs = None  # no LLM ran — nothing to snapshot
             return {}, LlmUsage()
 
         engine = self._engine
@@ -1349,64 +1348,61 @@ class SectionExtractionService(LoggerMixin):
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 model=llm_model,
-                prompt_name=prompt_module.NAME,
-                prompt_version=prompt_module.VERSION,
+                prompt_name=prompt_name,
+                prompt_version=prompt_version,
                 validators=[evidence_is_plausible],
             )
             extracted_data.update(dump_extraction(output))
             usage = usage + call_usage
 
-        # Re-render the user template with the article replaced by a marker, so
-        # the persisted composition is byte-faithful to what was sent (minus the
-        # duplicated article text). Same prompt pair the calls above used.
-        if kind == "quality_assessment":
-            section_instruction = quality_assessment.render(
-                entity_name=entity_name,
-                entity_description=entity_description,
-                article_text=ARTICLE_MARKDOWN_MARKER,
-                framework=framework,
-                memory_context=memory_context,
-                general_instructions=general_instructions,
-            )
-        else:
-            section_instruction = section_extraction.render(
-                entity_name=entity_name,
-                entity_description=entity_description,
-                article_text=ARTICLE_MARKDOWN_MARKER,
-                memory_context=memory_context,
-                general_instructions=general_instructions,
-            )
-        info = self._prompt_input_info
-        # The fields actually sent to the LLM: the human-settled override when the
-        # QA re-run filtered some out (#481), else the entity type's full set.
-        effective_fields = (
-            fields_override
-            if fields_override is not None
-            else (getattr(entity_type, "fields", None) or [])
-        )
-        composition = PromptComposition(
+        # Snapshot INPUTS only — _maybe_verify builds the snapshot ONCE,
+        # post-verify, with mode_executed/passes as typed params.
+        self._snapshot_inputs = SectionSnapshotInputs(
+            prompt_name=prompt_name,
+            prompt_version=prompt_version,
             section_name=entity_name,
             system_prompt=system_prompt,
             section_instruction=section_instruction,
-            article_ref=PromptCompositionArticleRef(
-                file_id=str(info.anchor_file_id) if info and info.anchor_file_id else None,
-                file_name=info.file_name if info else None,
-                truncated=info.truncated if info else False,
-                est_tokens=info.est_tokens if info else None,
+            # The fields actually sent to the LLM: the human-settled override
+            # when the QA re-run filtered some out (#481), else the full set.
+            fields=(
+                fields_override
+                if fields_override is not None
+                else (getattr(entity_type, "fields", None) or [])
             ),
-            fields_requested=[str(f.name) for f in effective_fields],
             llm_calls=len(output_models),
         )
-        self._run_provenance = build_run_provenance(
-            ran_by_user_id=self.user_id,
-            engine=self._engine,
-            key_scope=self._key_scope,
-            prompt_name=prompt_module.NAME,
-            prompt_version=prompt_module.VERSION,
-            usage=usage,
-            prompt_composition=composition,
-        )
         return extracted_data, usage
+
+    async def _maybe_verify(
+        self,
+        run_id: UUID,
+        entity_type_id: UUID,
+        pdf_text: str,
+        extracted_data: dict[str, Any],
+        usage: LlmUsage,
+    ) -> tuple[dict[str, str] | None, LlmUsage]:
+        """Verify pass (mode check inside the glue) + the ONE post-verify
+        section-snapshot build. The returned usage includes the verify
+        tokens, so every run total the callers write is the summed one."""
+        verdicts, usage, snapshot = await verify_and_snapshot(
+            engine=self._engine,
+            api_key=self._llm_api_key,
+            key_scope=self._key_scope,
+            ran_by_user_id=self.user_id,
+            pdf_text=pdf_text,
+            extracted_data=extracted_data,
+            extract_usage=usage,
+            inputs=self._snapshot_inputs,
+            prompt_input_info=self._prompt_input_info,
+            run_id=run_id,
+            entity_type_id=entity_type_id,
+            trace_id=self.trace_id,
+            logger=self.logger,
+        )
+        if snapshot is not None:
+            self._run_provenance = snapshot
+        return verdicts, usage
 
     async def _create_suggestions(
         self,
@@ -1416,26 +1412,17 @@ class SectionExtractionService(LoggerMixin):
         parent_instance_id: UUID | None,
         extracted_data: dict[str, Any],
         run: ExtractionRun,
+        verdicts: dict[str, str] | None = None,
     ) -> int:
-        """
-        Create extraction suggestions in database via repository.
+        """Create extraction suggestions in database via repository.
 
-        Automatically create an instance when missing.
-        Link suggestions to extraction_run_id for traceability. As the single
-        choke-point for AI proposals, this also persists the per-section
-        ``provenance`` snapshot (built in ``_extract_with_llm``, tokens +
-        prompt composition included) keyed by ``entity_type_id`` (see below).
-
-        Args:
-            project_id: Project ID.
-            article_id: Article ID.
-            entity_type_id: entity type — also the provenance section key.
-            parent_instance_id: Parent instance ID.
-            extracted_data: Extracted data.
-            run: ExtractionRun used to link suggestions.
-
-        Returns:
-            Number of created suggestions.
+        Auto-creates the instance when missing; links proposals to the run.
+        As the single choke-point for AI proposals it also persists the
+        per-section ``provenance`` snapshot (built post-verify by
+        ``_maybe_verify``) keyed by ``entity_type_id``. ``verdicts`` are the
+        Verified-mode per-field verdicts — ANNOTATION only, written as the
+        ``verification`` sibling on found fields. Returns the number of
+        created suggestions.
         """
         count = 0
 
@@ -1469,6 +1456,11 @@ class SectionExtractionService(LoggerMixin):
                 field.label if hasattr(field, "label") and field.label else field.name
             )
             field_by_name[field.name] = field
+
+        # Verified-mode drift guard (panel A4): a verdict keyed outside the
+        # field vocabulary would silently annotate nothing — be loud instead.
+        for _vk in set(verdicts or ()) - set(field_map):
+            self.logger.warning("verify_verdict_unmatched", trace_id=self.trace_id, field=_vk)
 
         # Fetch existing instance
         instances = await self._instances.get_by_article(article_id, entity_type_id)
@@ -1608,6 +1600,13 @@ class SectionExtractionService(LoggerMixin):
                 # affirmative "the source is silent" answer (ADR-0016), so the
                 # coordinate counts as filled once a reviewer accepts it.
                 proposed_value["absent_reason"] = AbsentReason.NO_INFORMATION.value
+            elif verdicts and field_name in verdicts:
+                # Verified mode: the verdict is ANNOTATION, never mutation
+                # (§IX) — the ``absent_reason`` sibling-key precedent. Found
+                # fields only; the glue never verifies a no-info proposal.
+                proposed_value["verification"] = VerificationAnnotation(
+                    verdict=verdicts[field_name]  # type: ignore[arg-type]
+                ).model_dump()
 
             proposal = await self._proposals.record_proposal(
                 run_id=run.id,
@@ -1694,8 +1693,8 @@ class SectionExtractionService(LoggerMixin):
         # section's suggestions were generated, keyed by entity_type_id, wherever
         # proposals are recorded — so no extraction path can silently omit it and
         # concurrent sections on one run don't clobber each other. The snapshot
-        # (tokens + prompt composition) was built section-scoped in
-        # _extract_with_llm. Skipped when no LLM ran (``_run_provenance`` None).
+        # (tokens + prompt composition + mode/passes) was built section-scoped,
+        # post-verify, in _maybe_verify. Skipped when no LLM ran (None).
         if count and self._run_provenance is not None:
             await self._runs.merge_provenance_section(run.id, entity_type_id, self._run_provenance)
 

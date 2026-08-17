@@ -106,6 +106,17 @@ class TestCreateProposalRequest:
         with pytest.raises(ValidationError):
             CreateProposalRequest(**self._kwargs(source_user_id=uuid4()))
 
+    def test_client_verification_sibling_rejected(self) -> None:
+        """``proposed_value.verification`` is the server-written Verified-mode
+        verdict (provenance): a client-sent copy is a loud 422 — the
+        ``source_user_id`` forgery precedent — never a silently-stored one."""
+        with pytest.raises(ValidationError):
+            CreateProposalRequest(
+                **self._kwargs(
+                    proposed_value={"value": 1, "verification": {"verdict": "confirmed"}}
+                )
+            )
+
     def test_missing_proposed_value_rejected(self) -> None:
         kwargs = self._kwargs()
         del kwargs["proposed_value"]

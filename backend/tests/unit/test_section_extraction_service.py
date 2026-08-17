@@ -1388,6 +1388,65 @@ class TestCreateSuggestions:
         assert prop["confidence_score"] == 0.3
         assert prop["rationale"] == "two conflicting statements"
 
+    @pytest.mark.asyncio
+    async def test_verdict_annotates_found_proposal(self, service):
+        # Verified mode: the verdict is a TYPED-dump ANNOTATION sibling on
+        # proposed_value — the absent_reason precedent — never a mutation of
+        # the value or the confidence (§IX).
+        self._wire_one_field(service)
+        run = self._make_run()
+        await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={
+                "f1": {
+                    "value": "x",
+                    "confidence": 0.9,
+                    "reasoning": None,
+                    "evidence": [],
+                    "status": "found",
+                }
+            },
+            run=run,
+            verdicts={"f1": "unsupported"},
+        )
+        kwargs = service._proposals.record_proposal.await_args.kwargs
+        assert kwargs["proposed_value"] == {
+            "value": "x",
+            "verification": {"verdict": "unsupported"},
+        }
+        assert kwargs["confidence_score"] == 0.9  # never rewritten
+
+    @pytest.mark.asyncio
+    async def test_unmatched_verdict_key_logs_a_warning(self, service, monkeypatch):
+        # Panel A4: a verdict keyed outside the field vocabulary would
+        # silently annotate nothing — the drift must be loud.
+        self._wire_one_field(service)
+        mock_logger = MagicMock()
+        monkeypatch.setattr(SectionExtractionService, "logger", mock_logger)
+        run = self._make_run()
+        await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={
+                "f1": {
+                    "value": "x",
+                    "confidence": 0.9,
+                    "reasoning": None,
+                    "evidence": [],
+                    "status": "found",
+                }
+            },
+            run=run,
+            verdicts={"f1": "confirmed", "ghost": "confirmed"},
+        )
+        events = [c.args[0] for c in mock_logger.warning.call_args_list]
+        assert "verify_verdict_unmatched" in events
+
     def test_build_run_provenance_shape(self):
         # Per-section snapshot of how the suggestions were generated; params come
         # from the single-source extractor constants so they can't drift from
@@ -2368,7 +2427,11 @@ class TestExtractWithLlmWiring:
             patch("app.services.section_extraction_service.extract_structured", mock_x),
             patch("app.services.section_extraction_service.build_model", MagicMock()),
         ):
-            await service._extract_with_llm(pdf_text="ARTICLE BODY", entity_type=entity_type)
+            data, usage = await service._extract_with_llm(
+                pdf_text="ARTICLE BODY", entity_type=entity_type
+            )
+        # The glue builds the snapshot post-verify (fast mode → pure no-op).
+        await service._maybe_verify(uuid4(), uuid4(), "ARTICLE BODY", data, usage)
 
         comp = service._run_provenance["prompt_composition"]
         # The article is replaced by a marker in the persisted instruction, and
@@ -2406,12 +2469,14 @@ class TestExtractWithLlmWiring:
             patch("app.services.section_extraction_service.extract_structured", mock_x),
             patch("app.services.section_extraction_service.build_model", MagicMock()),
         ):
-            await service._extract_with_llm(
+            data, usage = await service._extract_with_llm(
                 pdf_text="text",
                 entity_type=entity_type,
                 kind="quality_assessment",
                 framework="PROBAST",
             )
+        # The glue builds the snapshot post-verify (fast mode → pure no-op).
+        await service._maybe_verify(uuid4(), uuid4(), "text", data, usage)
         comp = service._run_provenance["prompt_composition"]
         # QA composition uses the QA template (framework rendered) + the marker.
         assert "PROBAST" in comp["section_instruction"]

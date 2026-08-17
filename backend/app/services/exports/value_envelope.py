@@ -46,6 +46,14 @@ def resolve_value(raw: Any, *, field: _FieldLike | None = None) -> ResolvedScala
     if raw is None:
         return None
 
+    # --- verification annotation (§5 Verified mode) -----------------------
+    # ``verification`` is a server-written ANNOTATION sibling on AI proposal
+    # envelopes — never part of the value. Strip it before the key-set
+    # branches so an annotated row resolves exactly like a bare one (and
+    # never reaches the catch-all dict-stringify below).
+    if isinstance(raw, dict) and "verification" in raw:
+        raw = {k: v for k, v in raw.items() if k != "verification"}
+
     # --- coded absent_reason marker (ADR-0016) ---------------------------
     # A resolved disposition ({"value": null, "absent_reason": <code>}) is a
     # first-class answer, not a value. Emit its stable label BEFORE the

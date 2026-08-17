@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ----- Request schemas -----
 
@@ -28,6 +28,19 @@ class CreateProposalRequest(BaseModel):
     proposed_value: dict[str, Any]
     confidence_score: float | None = None
     rationale: str | None = None
+
+    @field_validator("proposed_value")
+    @classmethod
+    def _reject_server_owned_verification(cls, v: dict[str, Any]) -> dict[str, Any]:
+        # The Verified-mode verdict is server-written provenance (the
+        # ``source_user_id`` precedent): a client-sent copy is a loud 422,
+        # never a silently-stored forgery.
+        if "verification" in v:
+            raise ValueError(
+                "proposed_value.verification is server-written provenance "
+                "and cannot be client-supplied"
+            )
+        return v
 
 
 class CreateDecisionRequest(BaseModel):
