@@ -57,7 +57,11 @@ class ExtractionOptions(BaseModel):
         json_schema_extra={"deprecated": True},
     )
 
-    model_config = ConfigDict(populate_by_name=True)
+    # extra="forbid" landed 2026-08-16, one release after the ``model`` field
+    # was dropped: queued Celery payloads from the pre-C1a era (whose options
+    # could carry ``model``) drained days ago, so an unknown key here is now
+    # always a live client's mistake and deserves a loud 422.
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
 class EvidencePassage(BaseModel):
@@ -133,16 +137,15 @@ class SectionExtractionRequest(BaseModel):
         alias="skipFieldsWithHumanProposals",
     )
 
-    # NOTE: ``extra="forbid"`` is deliberately NOT set here yet (unlike
-    # ``ModelExtractionRequest``, which has no queue hop). This payload is
-    # enqueued to Celery as ``model_dump(mode="json")`` and rebuilt in the
-    # worker via ``SectionExtractionRequest(**payload_json)``, so jobs queued
-    # by a pre-C1a web process still carry the dropped ``model`` key. Under
-    # ``forbid`` that rebuild raises ValidationError, which
-    # ``is_transient_llm_error`` classifies as non-transient — the job would
-    # die terminally with no retry. Tighten in a LATER deploy, once no
-    # in-flight payload can still carry ``model``.
-    model_config = ConfigDict(populate_by_name=True)
+    # extra="forbid" was deliberately deferred one release behind the
+    # ``model`` field's removal: this payload round-trips through Celery
+    # (``model_dump(mode="json")`` -> ``SectionExtractionRequest(**payload_json)``
+    # in the worker), and a job queued by a pre-C1a web process still carried
+    # the dropped key — under ``forbid`` that rebuild dies terminally, no
+    # retry. The pre-C1a era reached prod 2026-08-11 and the queue drains in
+    # minutes, so as of 2026-08-16 an unknown key is always a live client's
+    # mistake: a loud 422, matching ``CreateProposalRequest``'s precedent.
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     @model_validator(mode="after")
     def validate_extraction_mode(self) -> "SectionExtractionRequest":

@@ -4616,6 +4616,7 @@
         "type": "object"
       },
       "ExtractionOptions": {
+        "additionalProperties": false,
         "description": "Extraction options \u2014 entirely inert.\n\nC1a removed ``model``: the engine is server-owned, so a client can no\nlonger choose it. The two fields left are inert too \u2014 nothing in\n``backend/app`` dereferences ``payload.options``, and what actually\nreaches the LLM are the constants in ``app/llm/extractor.py``. They are\nflagged ``deprecated`` in the OpenAPI contract while staying accepted on\nthe wire, so clients can be migrated off them before they are removed.",
         "properties": {
           "max_tokens": {
@@ -6686,6 +6687,7 @@
         "type": "object"
       },
       "SectionExtractionRequest": {
+        "additionalProperties": false,
         "description": "Request for extraction de section.",
         "properties": {
           "articleId": {
