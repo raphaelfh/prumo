@@ -23,7 +23,14 @@ class LlmTarget(BaseModel):
     Frozen on the run's first LLM call and reused by every later one — a Celery
     retry re-enters with the same payload but a fresh ``settings`` read, so
     without the pin attempt 2 could run a different engine than attempt 1.
+
+    ``mode_requested`` / ``mode_executed`` (C1b, §5) ride on the same spine so
+    the freeze dump/validate contract stays single-sourced; they default to
+    ``"fast"`` so pre-C1b pinned snapshots (which carry only the pair) still
+    validate. They diverge only once Verified ships and has a fallback path.
     """
 
     provider: str
     model: str
+    mode_requested: str = "fast"
+    mode_executed: str = "fast"

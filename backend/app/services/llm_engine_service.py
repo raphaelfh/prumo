@@ -25,18 +25,68 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.error_handler import AppError
 from app.llm.catalog import CATALOG, canonical, find_entry
+from app.models.project import Project
 from app.models.user import Profile
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.llm_engine import LlmEngineCatalogEntryRead, LlmEngineRead, LlmEngineStored
+from app.schemas.llm_target import LlmTarget
 from app.services.api_key_service import APIKeyService
 from app.services.parser_settings_service import ProjectNotFoundError
 
 __all__ = [
+    "EngineRetiredError",
     "LlmEngineService",
     "ProjectNotFoundError",
     "ResolvedProjectEngine",
+    "resolve_project_engine",
 ]
+
+
+class EngineRetiredError(AppError):
+    """The project's stored engine left the server catalogue.
+
+    New extraction kickoffs are refused until a manager picks a new model
+    (§5 never-visible-but-fails). As an :class:`AppError` the registered
+    handler serves the typed envelope — ``error.code = "LLM_ENGINE_RETIRED"``,
+    HTTP 409 — instead of the bare ``HTTP_ERROR`` an HTTPException would
+    hardcode; the worker classifies it by type into a friendly task code.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(code="LLM_ENGINE_RETIRED", message=message, status_code=409)
+
+
+async def resolve_project_engine(db: AsyncSession, project_id: UUID) -> tuple[LlmTarget, str]:
+    """The engine an extraction kicked off in ``project_id`` runs on.
+
+    Read boundary #2 (with :meth:`LlmEngineService.get_for_project`): the
+    stored payload is ``model_validate``d here, never re-parsed downstream.
+    Unset — or structurally unparseable (see :func:`_stored_engine`) — falls
+    back to the env default pair. A well-formed pair the catalogue no longer
+    lists raises :class:`EngineRetiredError`.
+
+    Returns the target (mode fields included — the freeze pins the whole
+    spine) plus the mode for callers that only want it.
+    """
+    project = await db.get(Project, project_id)
+    stored = _stored_engine(project.settings if project is not None else None)
+    if stored is None:
+        target = LlmTarget(provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL)
+        return target, target.mode_executed
+    if find_entry(stored.provider, stored.model) is None:
+        raise EngineRetiredError(
+            f"The project's stored engine {stored.provider}:{stored.model} is no longer "
+            "available. Ask a project manager to choose a new model."
+        )
+    target = LlmTarget(
+        provider=stored.provider,
+        model=stored.model,
+        mode_requested=stored.mode,
+        mode_executed=stored.mode,
+    )
+    return target, stored.mode
 
 
 @dataclass(frozen=True)

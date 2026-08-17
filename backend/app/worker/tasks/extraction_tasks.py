@@ -15,9 +15,13 @@ from uuid import UUID
 
 from celery import Task
 
-from app.core.config import settings
 from app.llm.errors import is_transient_llm_error
 from app.services.extraction_errors import ExtractionTaskError, classify_extraction_error
+
+# Module-level on purpose: these are the patchable seams the task tests pin
+# (``extraction_tasks.resolve_project_engine`` / ``.read_pinned_engine``).
+from app.services.llm_engine_service import resolve_project_engine
+from app.services.run_engine_freeze import read_pinned_engine
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
 
@@ -79,13 +83,18 @@ def extract_section_task(
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
 
+                # C1b ordering: resolve the engine FIRST, then the key for
+                # ITS provider — a settings re-read here could pair an
+                # openai key with an anthropic project engine.
+                engine, _mode = await resolve_project_engine(session, UUID(project_id))
+
                 # Resolve user API key if not provided
                 api_key = openai_api_key
                 # An api_key handed in through the message is the caller's own.
                 key_scope: KeyScope | None = KeyScope.USER_BYOK if api_key else None
                 if not api_key:
                     api_key_service = APIKeyService(db=session, user_id=user_id)
-                    resolved = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                    resolved = await api_key_service.get_key_for_provider(engine.provider)
                     if resolved is not None:
                         api_key, key_scope = resolved.key, resolved.scope
 
@@ -104,6 +113,7 @@ def extract_section_task(
                     template_id=UUID(template_id),
                     entity_type_id=UUID(entity_type_id),
                     parent_instance_id=UUID(parent_instance_id) if parent_instance_id else None,
+                    engine=engine,
                 )
 
                 await session.commit()
@@ -166,13 +176,16 @@ def extract_models_task(
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
 
+                # C1b ordering: engine first, then the key for ITS provider.
+                engine, _mode = await resolve_project_engine(session, UUID(project_id))
+
                 # Resolve user API key if not provided
                 api_key = openai_api_key
                 if not api_key:
                     api_key_service = APIKeyService(db=session, user_id=user_id)
                     # Scope is dropped here on purpose: this service writes no
                     # provenance, so there is nothing to record it against.
-                    resolved = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                    resolved = await api_key_service.get_key_for_provider(engine.provider)
                     api_key = resolved.key if resolved is not None else None
 
                 service = ModelExtractionService(
@@ -187,6 +200,7 @@ def extract_models_task(
                     project_id=UUID(project_id),
                     article_id=UUID(article_id),
                     template_id=UUID(template_id),
+                    engine=engine,
                 )
 
                 await session.commit()
@@ -279,8 +293,24 @@ def run_section_extraction_task(
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
 
+                request = SectionExtractionRequest(**payload_json)
+
+                # C1b ordering (panel, security): freeze — or read the
+                # already-pinned engine — FIRST, and only then resolve the
+                # key for the PINNED provider. A retry after a manager's
+                # provider flip must not look up a key for a provider the
+                # frozen engine does not use (spurious MissingLLMKeyError +
+                # key_scope recorded against the wrong provider).
+                engine = (
+                    await read_pinned_engine(session, request.run_id)
+                    if request.run_id is not None
+                    else None
+                )
+                if engine is None:
+                    engine, _mode = await resolve_project_engine(session, request.project_id)
+
                 api_key_service = APIKeyService(db=session, user_id=user_id)
-                resolved = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                resolved = await api_key_service.get_key_for_provider(engine.provider)
 
                 service = SectionExtractionService(
                     db=session,
@@ -291,8 +321,7 @@ def run_section_extraction_task(
                     key_scope=resolved.scope if resolved is not None else None,
                 )
 
-                request = SectionExtractionRequest(**payload_json)
-                res = await service.run_from_request(request)
+                res = await service.run_from_request(request, engine=engine)
 
                 await session.commit()
 

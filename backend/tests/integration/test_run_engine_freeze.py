@@ -183,6 +183,8 @@ async def test_fresh_run_resolves_engine_from_settings_and_persists_it(
     assert _engine_of(run) == {
         "provider": settings.LLM_PROVIDER,
         "model": settings.LLM_DEFAULT_MODEL,
+        "mode_requested": "fast",
+        "mode_executed": "fast",
     }, f"engine not frozen on the run: results={run.results}"
     assert calls, "build_model was never called — the stub is not wired"
     assert calls[0] == (settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL)
@@ -217,7 +219,12 @@ async def test_retry_after_settings_change_keeps_the_first_engine(
     assert calls == [(original_provider, original_model)] * len(calls), (
         f"attempt 2 ran a different engine than attempt 1: {calls}"
     )
-    assert _engine_of(run) == {"provider": original_provider, "model": original_model}
+    assert _engine_of(run) == {
+        "provider": original_provider,
+        "model": original_model,
+        "mode_requested": "fast",
+        "mode_executed": "fast",
+    }
 
 
 @pytest.mark.asyncio
@@ -248,12 +255,82 @@ async def test_recorded_engine_is_never_overwritten(
     await _extract_once(db_session, run, "freeze-existing")
     await db_session.refresh(run)
 
+    # Deliberately mode-less: a pre-C1b pinned snapshot must be tolerated
+    # (LlmTarget's mode fields default on validate) and never rewritten —
+    # first writer wins means the stored dict stays byte-identical.
     assert _engine_of(run) == {"provider": _OTHER_PROVIDER, "model": _OTHER_MODEL}, (
         "the pre-recorded engine was overwritten"
     )
     assert calls == [(_OTHER_PROVIDER, _OTHER_MODEL)] * len(calls), (
         f"the run's own engine was ignored in favour of settings: {calls}"
     )
+
+
+async def _set_project_engine(db: AsyncSession, provider: str, model: str) -> None:
+    from app.services.llm_engine_service import LlmEngineService
+
+    await LlmEngineService(db).set_for_project(
+        project_id=SEED.primary_project,
+        provider=provider,
+        model=model,
+        mode="fast",
+        updated_by=SEED.primary_profile,
+    )
+
+
+@pytest.mark.asyncio
+async def test_fresh_run_freezes_the_project_engine(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C1b: a project WITH ``llm_engine`` set freezes THAT pair, not the env
+    default — asserted on the run row AND on what reached ``build_model``.
+    Without this, the #609 regression guard stops guarding the real path."""
+    calls = _stub_llm_seams(monkeypatch)
+    await _set_project_engine(db_session, "openai", "gpt-4o")
+    run = await _run_in_extract(db_session)
+
+    await _extract_once(db_session, run, "freeze-project-pair")
+    await db_session.refresh(run)
+
+    assert _engine_of(run) == {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "mode_requested": "fast",
+        "mode_executed": "fast",
+    }, f"the project engine was not frozen: results={run.results}"
+    assert calls, "build_model was never called — the stub is not wired"
+    assert calls == [("openai", "gpt-4o")] * len(calls)
+
+
+@pytest.mark.asyncio
+async def test_retry_after_set_for_project_flip_keeps_attempt_1_pair(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A manager flips the PROJECT engine between two attempts of one job —
+    attempt 2 must stay on attempt 1's frozen pair (retries stay pinned)."""
+    calls = _stub_llm_seams(monkeypatch)
+    await _set_project_engine(db_session, "openai", "gpt-4o")
+    run = await _run_in_extract(db_session)
+    await _extract_once(db_session, run, "flip-attempt-1")
+
+    await _set_project_engine(db_session, "anthropic", "claude-haiku-4-5")
+    calls.clear()
+
+    await _extract_once(db_session, run, "flip-attempt-2")
+    await db_session.refresh(run)
+
+    assert calls, "attempt 2 never reached build_model"
+    assert calls == [("openai", "gpt-4o")] * len(calls), (
+        f"attempt 2 followed the flipped project engine: {calls}"
+    )
+    assert _engine_of(run) == {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "mode_requested": "fast",
+        "mode_executed": "fast",
+    }
 
 
 @pytest.mark.asyncio

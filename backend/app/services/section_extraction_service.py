@@ -22,12 +22,7 @@ from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.llm.claim_value import value_str_for_claim
 from app.llm.entailment import GateSpec, run_entailment_gate
-from app.llm.extractor import (
-    LLM_TEMPERATURE,
-    OUTPUT_RETRIES_DEFAULT,
-    LlmUsage,
-    extract_structured,
-)
+from app.llm.extractor import LlmUsage, extract_structured
 from app.llm.prompts import quality_assessment, section_extraction
 from app.llm.provider import build_model
 from app.llm.schema import build_output_models, dump_extraction
@@ -63,6 +58,8 @@ from app.services.extraction_snapshot import (
     entity_types_for_version,
     general_instructions_for_version,
 )
+from app.services.llm_engine_service import resolve_project_engine
+from app.services.run_engine_freeze import build_run_provenance, freeze_run_engine
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.value_semantics import AbsentReason
 
@@ -175,52 +172,15 @@ class SectionExtractionService(LoggerMixin):
         # Run provenance snapshot, set by _extract_with_llm and merged into the
         # run's results at completion (how the suggestions were generated).
         self._run_provenance: dict[str, Any] | None = None
-        # Engine for every LLM call here; ``_freeze_engine`` rebinds it to the run's.
+        # Engine for every LLM call here: the env-default candidate until a
+        # caller passes a resolved one; ``freeze_run_engine`` rebinds it to
+        # the run's pinned target before any LLM call.
         self._engine = LlmTarget(provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL)
 
-    async def _freeze_engine(self, run_id: UUID, candidate: str) -> str:
-        """Pin the run's engine on first write and adopt it; returns its model.
-        A Celery retry re-enters with the same payload and a fresh ``settings``
-        read, so only a run-scoped pin keeps attempt 2 on attempt 1's engine."""
-        target = LlmTarget(provider=settings.LLM_PROVIDER, model=candidate)
-        pinned = await self._runs.freeze_engine(run_id, target.model_dump())
-        self._engine = LlmTarget.model_validate(pinned) if pinned else target
+    async def _adopt_frozen_engine(self, run_id: UUID, candidate: LlmTarget) -> str:
+        """Freeze-or-read the run's engine, adopt it, return its model."""
+        self._engine = await freeze_run_engine(self._runs, run_id, candidate)
         return self._engine.model
-
-    def _build_run_provenance(
-        self,
-        *,
-        prompt_name: str,
-        prompt_version: str,
-        usage: LlmUsage | None = None,
-        prompt_composition: PromptComposition | None = None,
-    ) -> dict[str, Any]:
-        """Per-section snapshot of how a section's suggestions were generated.
-        Engine, key scope and params come from the run-frozen target and the
-        single-source extractor constants, so a later ``settings`` change cannot
-        rewrite what this run reports. The key itself is never recorded (§5.2)."""
-        snapshot: dict[str, Any] = {
-            "ran_by_user_id": self.user_id,
-            "provider": self._engine.provider,
-            "model": self._engine.model,
-            "key_scope": self._key_scope.value if self._key_scope is not None else None,
-            "strategy": prompt_name,
-            "prompt_version": prompt_version,
-            "params": {
-                "temperature": LLM_TEMPERATURE,
-                "output_retries": OUTPUT_RETRIES_DEFAULT,
-                "timeout_seconds": settings.LLM_TIMEOUT_SECONDS,
-            },
-        }
-        if usage is not None:
-            snapshot["tokens"] = {
-                "prompt": usage.prompt_tokens,
-                "completion": usage.completion_tokens,
-                "total": usage.total_tokens,
-            }
-        if prompt_composition is not None:
-            snapshot["prompt_composition"] = prompt_composition.model_dump()
-        return snapshot
 
     async def _assemble_prompt_text(self, article_id: UUID, model: str) -> str:
         """Budgeted block-markdown prompt input; stashes assembly info on self."""
@@ -246,7 +206,7 @@ class SectionExtractionService(LoggerMixin):
         template_id: UUID,
         entity_type_id: UUID,
         parent_instance_id: UUID | None = None,
-        model: str = settings.LLM_DEFAULT_MODEL,
+        engine: LlmTarget | None = None,
         run_id: UUID | None = None,
     ) -> SectionExtractionResult:
         """
@@ -258,7 +218,9 @@ class SectionExtractionService(LoggerMixin):
             template_id: Template ID.
             entity_type_id: Entity type ID to extract.
             parent_instance_id: Parent instance ID (optional).
-            model: Candidate engine; used only if the run has none pinned yet.
+            engine: Candidate engine (the caller's resolved project engine);
+                used only if the run has none pinned yet. ``None`` falls back
+                to the service's env-default candidate.
             run_id: Existing run to append proposals to. When provided
                 (the extraction surface path), the proposals are added
                 to that run instead of creating a fresh one — so the
@@ -271,6 +233,8 @@ class SectionExtractionService(LoggerMixin):
         """
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
+        if engine is None:
+            engine = self._engine
 
         # When the caller passes a ``run_id`` (extraction surface via the
         # HITL session service), append proposals to that run and skip the
@@ -299,7 +263,7 @@ class SectionExtractionService(LoggerMixin):
                 project_template_id=template_id,
                 user_id=UUID(self.user_id),
                 parameters={
-                    "model": model,
+                    "model": engine.model,
                     "entity_type_id": str(entity_type_id),
                     "parent_instance_id": (str(parent_instance_id) if parent_instance_id else None),
                 },
@@ -307,7 +271,7 @@ class SectionExtractionService(LoggerMixin):
             if manage_lifecycle:
                 await self._runs.start_run(run.id)
 
-        model = await self._freeze_engine(run.id, model)
+        model = await self._adopt_frozen_engine(run.id, engine)
         self.logger.info(
             "section_extraction_start",
             trace_id=self.trace_id,
@@ -449,7 +413,7 @@ class SectionExtractionService(LoggerMixin):
         run_id: UUID,
         skip_fields_with_human_proposals: bool = False,
         auto_advance_to_review: bool = True,
-        model: str = settings.LLM_DEFAULT_MODEL,
+        engine: LlmTarget | None = None,
     ) -> BatchExtractionResult:
         """
         Run AI extraction over an *existing* Run, iterating top-level
@@ -499,7 +463,9 @@ class SectionExtractionService(LoggerMixin):
         kind = run.kind
 
         await self._runs.start_run(run.id)
-        model = await self._freeze_engine(run.id, model)
+        model = await self._adopt_frozen_engine(
+            run.id, engine if engine is not None else self._engine
+        )
 
         section_results: list[dict[str, Any]] = []
         total_suggestions = 0
@@ -843,7 +809,7 @@ class SectionExtractionService(LoggerMixin):
         parent_instance_id: UUID,
         section_ids: list[UUID] | None = None,
         pdf_text: str | None = None,
-        model: str = settings.LLM_DEFAULT_MODEL,
+        engine: LlmTarget | None = None,
         run_id: UUID | None = None,
     ) -> BatchExtractionResult:
         """
@@ -861,7 +827,9 @@ class SectionExtractionService(LoggerMixin):
             parent_instance_id: Parent instance ID.
             section_ids: Specific IDs to extract (optional).
             pdf_text: Preprocessed PDF text (optional).
-            model: Candidate engine; used only if the run has none pinned yet.
+            engine: Candidate engine (the caller's resolved project engine);
+                used only if the run has none pinned yet. ``None`` falls back
+                to the service's env-default candidate.
             run_id: Existing run to append to. When set (the extraction surface),
                 the run is REUSED and its lifecycle left to the HITL session, so
                 a reviewer's decisions are never orphaned onto a forked run.
@@ -872,6 +840,8 @@ class SectionExtractionService(LoggerMixin):
         """
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
+        if engine is None:
+            engine = self._engine
 
         # Resolve the run. When a ``run_id`` is passed, REUSE the session-owned
         # run (append child-section proposals) and leave its lifecycle to the
@@ -899,7 +869,7 @@ class SectionExtractionService(LoggerMixin):
                 project_template_id=template_id,
                 user_id=UUID(self.user_id),
                 parameters={
-                    "model": model,
+                    "model": engine.model,
                     "batch_extraction": True,
                     "parent_instance_id": str(parent_instance_id),
                     "section_ids": [str(sid) for sid in section_ids] if section_ids else None,
@@ -908,7 +878,7 @@ class SectionExtractionService(LoggerMixin):
             if manage_lifecycle:
                 await self._runs.start_run(run.id)
 
-        model = await self._freeze_engine(run.id, model)
+        model = await self._adopt_frozen_engine(run.id, engine)
         self.logger.info(
             "batch_extraction_start",
             trace_id=self.trace_id,
@@ -1383,7 +1353,10 @@ class SectionExtractionService(LoggerMixin):
             fields_requested=[str(f.name) for f in effective_fields],
             llm_calls=len(output_models),
         )
-        self._run_provenance = self._build_run_provenance(
+        self._run_provenance = build_run_provenance(
+            ran_by_user_id=self.user_id,
+            engine=self._engine,
+            key_scope=self._key_scope,
             prompt_name=prompt_module.NAME,
             prompt_version=prompt_module.VERSION,
             usage=usage,
@@ -1687,6 +1660,7 @@ class SectionExtractionService(LoggerMixin):
     async def run_from_request(
         self,
         payload: SectionExtractionRequest,
+        engine: LlmTarget | None = None,
     ) -> SectionExtractionResult | BatchExtractionResult:
         """Dispatch a SectionExtractionRequest to the correct extraction method.
 
@@ -1694,6 +1668,11 @@ class SectionExtractionService(LoggerMixin):
         the same logic can be reused from a Celery task without touching the
         HTTP layer.  The caller is responsible for committing (or rolling back)
         the session — this method does not commit.
+
+        ``engine`` is the effective candidate: the worker passes the one it
+        already resolved (pinned-run pair, or the project engine) so the key
+        it looked up matches; when ``None`` the project engine is resolved
+        here (C1b — raises ``EngineRetiredError`` for a retired stored pair).
 
         Branch priority (first match wins):
         1. ``entity_type_id`` present → single-section path via
@@ -1709,7 +1688,10 @@ class SectionExtractionService(LoggerMixin):
            ``extract_for_run`` iterates every top-level entity_type of that
            run's template (QA / full-run surface).
         """
-        model = settings.LLM_DEFAULT_MODEL  # C1a: server-owned, never client-chosen
+        # C1a: server-owned, never client-chosen. C1b: the candidate is the
+        # project's resolved engine, not a ``settings`` re-read.
+        if engine is None:
+            engine, _mode = await resolve_project_engine(self.db, payload.project_id)
 
         if payload.entity_type_id is not None:
             return await self.extract_section(
@@ -1718,7 +1700,7 @@ class SectionExtractionService(LoggerMixin):
                 template_id=payload.template_id,
                 entity_type_id=payload.entity_type_id,
                 parent_instance_id=payload.parent_instance_id,
-                model=model,
+                engine=engine,
                 run_id=payload.run_id,
             )
 
@@ -1730,7 +1712,7 @@ class SectionExtractionService(LoggerMixin):
                 parent_instance_id=payload.parent_instance_id,
                 section_ids=payload.section_ids,
                 pdf_text=payload.pdf_text,
-                model=model,
+                engine=engine,
                 run_id=payload.run_id,
             )
 
@@ -1739,7 +1721,7 @@ class SectionExtractionService(LoggerMixin):
                 run_id=payload.run_id,
                 skip_fields_with_human_proposals=payload.skip_fields_with_human_proposals,
                 auto_advance_to_review=payload.auto_advance_to_review,
-                model=model,
+                engine=engine,
             )
 
         # The request validator requires one of entity_type_id / parent_instance_id

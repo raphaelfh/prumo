@@ -280,12 +280,17 @@ def test_import_zotero_collection_task_signature_and_kwargs_alignment() -> None:
 def test_extract_section_task_signature_and_kwargs_alignment() -> None:
     """The section extractor with BYOK fallback — when ``openai_api_key``
     is ``None`` the task constructs an APIKeyService and resolves it
-    from the user's stored key.
+    from the user's stored key, for the RESOLVED engine's provider (C1b:
+    the key lookup follows the project engine, never ``settings``).
     """
+    from app.schemas.llm_target import LlmTarget
     from app.services.section_extraction_service import SectionExtractionResult
     from app.worker.tasks.extraction_tasks import extract_section_task
 
     session = _FakeAsyncSession()
+    # The resolver is a task-module seam (_FakeAsyncSession has no
+    # ``execute``); an anthropic target proves the key lookup follows it.
+    resolved_engine = LlmTarget(provider="anthropic", model="claude-haiku-4-5")
 
     fake_extraction_service = MagicMock()
     fake_extraction_service.extract_section = AsyncMock(
@@ -315,6 +320,10 @@ def test_extract_section_task_signature_and_kwargs_alignment() -> None:
             return_value=fake_api_key_service,
         ),
         patch(
+            "app.worker.tasks.extraction_tasks.resolve_project_engine",
+            AsyncMock(return_value=(resolved_engine, "fast")),
+        ),
+        patch(
             "app.core.factories.create_storage_adapter",
             return_value=MagicMock(),
         ),
@@ -342,6 +351,9 @@ def test_extract_section_task_signature_and_kwargs_alignment() -> None:
 
     assert result["suggestions_created"] == 3
     assert result["duration_ms"] == 1234
-    fake_api_key_service.get_key_for_provider.assert_awaited_once_with("openai")
+    # C1b ordering: the engine is resolved FIRST and the key lookup follows
+    # its provider — a settings re-read here would say "openai".
+    fake_api_key_service.get_key_for_provider.assert_awaited_once_with("anthropic")
     fake_extraction_service.extract_section.assert_awaited_once()
+    assert fake_extraction_service.extract_section.await_args.kwargs["engine"] == resolved_engine
     session.commit.assert_awaited()

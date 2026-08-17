@@ -12,7 +12,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.services.llm_engine_service import LlmEngineService
+from app.services.llm_engine_service import (
+    EngineRetiredError,
+    LlmEngineService,
+    resolve_project_engine,
+)
 from app.services.parser_settings_service import ParserSettingsService, ProjectNotFoundError
 from tests.integration.conftest import SEED
 
@@ -203,3 +207,69 @@ async def test_sibling_parsing_key_survives_an_engine_write(db_session: AsyncSes
     )
     raw = await _raw_settings(db_session, SEED.primary_project)
     assert raw.get("llm_engine", {}).get("model") == "gpt-4o"
+
+
+# ---------------------------------------------------------------------------
+# resolve_project_engine — read boundary #2 (T4)
+# ---------------------------------------------------------------------------
+
+
+async def _bypass_write_llm_engine(db: AsyncSession, payload: str) -> None:
+    """Simulate a manager hand-writing raw JSONB through PostgREST,
+    bypassing the endpoint's catalogue validation."""
+    await db.execute(
+        text(
+            "UPDATE public.projects "
+            "SET settings = COALESCE(settings, '{}'::jsonb) "
+            "|| jsonb_build_object('llm_engine', CAST(:payload AS jsonb)) "
+            "WHERE id = :pid"
+        ),
+        {"payload": payload, "pid": str(SEED.primary_project)},
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_unset_falls_back_to_the_env_default(db_session: AsyncSession) -> None:
+    target, mode = await resolve_project_engine(db_session, SEED.primary_project)
+    assert (target.provider, target.model) == (settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL)
+    assert (target.mode_requested, target.mode_executed) == ("fast", "fast")
+    assert mode == "fast"
+
+
+@pytest.mark.asyncio
+async def test_resolve_returns_the_project_pair(db_session: AsyncSession) -> None:
+    await LlmEngineService(db_session).set_for_project(
+        project_id=SEED.primary_project,
+        provider="anthropic",
+        model="claude-sonnet-4-5",
+        mode="fast",
+        updated_by=SEED.primary_profile,
+    )
+    target, mode = await resolve_project_engine(db_session, SEED.primary_project)
+    assert (target.provider, target.model) == ("anthropic", "claude-sonnet-4-5")
+    assert (target.mode_requested, target.mode_executed) == ("fast", "fast")
+    assert mode == "fast"
+
+
+@pytest.mark.asyncio
+async def test_resolve_raises_retired_for_a_bypass_written_unknown_pair(
+    db_session: AsyncSession,
+) -> None:
+    """Validate-on-read stays even though the write validates: a raw-JSONB
+    pair the catalogue never listed is refused with the typed error."""
+    await _bypass_write_llm_engine(
+        db_session, '{"provider": "openai", "model": "gpt-net-new-nonsense"}'
+    )
+    with pytest.raises(EngineRetiredError) as exc_info:
+        await resolve_project_engine(db_session, SEED.primary_project)
+    assert exc_info.value.code == "LLM_ENGINE_RETIRED"
+    assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_resolve_treats_structural_garbage_as_unset(db_session: AsyncSession) -> None:
+    """A payload that does not even parse degrades to the env default —
+    contained, never a 500 on every read."""
+    await _bypass_write_llm_engine(db_session, '"gpt-4o"')
+    target, _mode = await resolve_project_engine(db_session, SEED.primary_project)
+    assert (target.provider, target.model) == (settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL)

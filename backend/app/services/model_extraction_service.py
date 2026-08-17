@@ -36,6 +36,7 @@ from app.repositories import (
     ExtractionTemplateRepository,
     GlobalTemplateRepository,
 )
+from app.schemas.llm_target import LlmTarget
 from app.services.extraction_prompt_input import build_prompt_input
 from app.services.extraction_snapshot import (
     entity_types_for_version,
@@ -90,6 +91,10 @@ class ModelExtractionService(LoggerMixin):
         self.storage = storage
         self.trace_id = trace_id
         self._llm_api_key = openai_api_key
+        # Engine for every LLM call: the env-default candidate until the
+        # caller passes its resolved one into ``extract`` (C1b). Constructed
+        # at call time — never an import-time default-parameter value.
+        self._engine = LlmTarget(provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL)
 
         # Repositories
         self._article_files = ArticleFileRepository(db)
@@ -107,7 +112,7 @@ class ModelExtractionService(LoggerMixin):
         project_id: UUID,
         article_id: UUID,
         template_id: UUID,
-        model: str = settings.LLM_DEFAULT_MODEL,
+        engine: LlmTarget | None = None,
         run_id: UUID | None = None,
     ) -> ModelExtractionResult:
         """
@@ -117,7 +122,9 @@ class ModelExtractionService(LoggerMixin):
             project_id: Project ID.
             article_id: Article ID.
             template_id: Template ID.
-            model: OpenAI model to use.
+            engine: The caller's resolved engine (C1b — endpoint/worker
+                resolve the project engine and the matching key together).
+                ``None`` falls back to the env-default candidate.
             run_id: Existing run to append the model instances/proposals to.
                 When provided (the extraction surface, via the HITL session),
                 the run is REUSED instead of creating a fresh one — so the
@@ -130,6 +137,9 @@ class ModelExtractionService(LoggerMixin):
         """
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
+        if engine is not None:
+            self._engine = engine
+        model = self._engine.model
 
         # 1. Resolve the run. When ``run_id`` is passed (extraction surface),
         # REUSE that session-owned run and leave its lifecycle to the HITL
@@ -379,7 +389,7 @@ class ModelExtractionService(LoggerMixin):
                 article_text=pdf_text,
                 general_instructions=general_instructions,
             ),
-            model=build_model(settings.LLM_PROVIDER, model, api_key=self._llm_api_key),
+            model=build_model(self._engine.provider, model, api_key=self._llm_api_key),
             prompt_name=model_identification.NAME,
             prompt_version=model_identification.VERSION,
         )

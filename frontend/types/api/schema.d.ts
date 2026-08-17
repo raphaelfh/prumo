@@ -3303,10 +3303,12 @@ export interface components {
          *
          *     - ``PDF_NOT_FOUND``    — the article has no stored PDF (``FileNotFoundError``).
          *     - ``MISSING_API_KEY``  — no usable LLM key, BYOK or global (``MissingLLMKeyError``).
+         *     - ``ENGINE_RETIRED``   — the project's stored engine left the catalogue
+         *       mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).
          *     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
          * @enum {string}
          */
-        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "EXTRACTION_FAILED";
+        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "EXTRACTION_FAILED";
         /**
          * ExtractionExportCancelResponse
          * @description Cancel endpoint payload.

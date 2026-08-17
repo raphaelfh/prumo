@@ -21,13 +21,16 @@ import pytest
 
 from app.llm.provider import MissingLLMKeyError
 from app.schemas.extraction import ExtractionErrorCode
+from app.schemas.llm_target import LlmTarget
 from app.services.extraction_errors import ExtractionTaskError
+from app.services.llm_engine_service import EngineRetiredError
 from app.services.section_extraction_service import (
     BatchAllSectionsFailed,
     BatchExtractionResult,
     SectionExtractionResult,
 )
 from app.worker.celery_app import celery_app
+from app.worker.tasks import extraction_tasks
 from app.worker.tasks.extraction_tasks import run_section_extraction_task
 
 # ---------------------------------------------------------------------------
@@ -40,6 +43,20 @@ def eager_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     """Run every Celery task synchronously in the pytest process."""
     monkeypatch.setattr(celery_app.conf, "task_always_eager", True)
     monkeypatch.setattr(celery_app.conf, "task_eager_propagates", True)
+
+
+@pytest.fixture(autouse=True)
+def engine_seams(monkeypatch: pytest.MonkeyPatch) -> LlmTarget:
+    """Patch the task-module engine seams — ``_FakeSession`` has no ``execute``
+    or ``get``, so the real resolver / pin-reader cannot run here."""
+    target = LlmTarget(provider="openai", model="task-resolved-model")
+    monkeypatch.setattr(
+        extraction_tasks,
+        "resolve_project_engine",
+        AsyncMock(return_value=(target, "fast")),
+    )
+    monkeypatch.setattr(extraction_tasks, "read_pinned_engine", AsyncMock(return_value=None))
+    return target
 
 
 class _FakeSession:
@@ -371,3 +388,47 @@ class TestRunSectionExtractionTaskErrorCode:
         )
         assert err.error_code == ExtractionErrorCode.MISSING_API_KEY.value
         assert str(err) == "No OpenAI API key available: pass a BYOK key."
+
+
+class TestRunSectionExtractionTaskEngineRetired:
+    def test_retired_mid_flight_carries_engine_retired_code(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The roster can drop the stored pair AFTER enqueue-time validation
+        passed. The terminal classify path must ship the friendly code, not
+        EXTRACTION_FAILED — the frontend copy depends on it."""
+        user_id = str(uuid4())
+        payload_dict = {
+            "projectId": str(uuid4()),
+            "articleId": str(uuid4()),
+            "templateId": str(uuid4()),
+            "entityTypeId": str(uuid4()),
+        }
+
+        monkeypatch.setattr(
+            extraction_tasks,
+            "resolve_project_engine",
+            AsyncMock(
+                side_effect=EngineRetiredError(
+                    "The project's stored engine openai:gone is no longer available."
+                )
+            ),
+        )
+
+        session = _FakeSession()
+        fake_api_key = MagicMock()
+        fake_api_key.get_key_for_provider = AsyncMock(return_value=None)
+
+        with (
+            patch("app.services.api_key_service.APIKeyService", return_value=fake_api_key),
+            patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
+            patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+            patch("app.worker._session.worker_session", new=_session_factory(session)),
+            pytest.raises(ExtractionTaskError) as exc_info,
+        ):
+            _apply(payload_dict, user_id)
+
+        assert exc_info.value.error_code == ExtractionErrorCode.ENGINE_RETIRED.value
+        assert "no longer available" in str(exc_info.value)
+        session.rollback.assert_awaited_once()
+        session.commit.assert_not_awaited()
