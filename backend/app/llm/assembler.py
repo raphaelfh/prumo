@@ -345,7 +345,12 @@ def estimate_tokens(text: str, model_name: str) -> int:
         try:
             return len(tiktoken.encoding_for_model(model_name).encode(text))
         except KeyError:
-            pass
+            # tiktoken lags new OpenAI releases (e.g. the gpt-5.6 family):
+            # approximate with o200k_base — the encoding every current OpenAI
+            # model resolves to — instead of degrading the assembly gate to
+            # the chars/4 heuristic for the fleet default.
+            if model_name.startswith("gpt-"):
+                return len(tiktoken.get_encoding("o200k_base").encode(text))
     return max(1, len(text) // _CHARS_PER_TOKEN)
 
 

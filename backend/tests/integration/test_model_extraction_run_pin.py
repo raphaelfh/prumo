@@ -102,7 +102,7 @@ async def test_pinned_run_model_extraction_uses_the_pinned_pair(
 
     run = await engine_setup.run_in_extract(db_session)
     await engine_setup.pin_run(db_session, run, "openai", "gpt-4o-mini")
-    await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-4-5")
+    await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-5")
 
     r = await client_as_manager.post("/api/v1/extraction/models", json=_payload(run_id=str(run.id)))
     assert r.status_code == 200, r.text
@@ -126,16 +126,16 @@ async def test_unpinned_run_model_extraction_freezes_the_resolved_pair(
     _stub_key_service(monkeypatch)
 
     run = await engine_setup.run_in_extract(db_session)
-    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o")
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
 
     r = await client_as_manager.post("/api/v1/extraction/models", json=_payload(run_id=str(run.id)))
     assert r.status_code == 200, r.text
 
     engine = captured["extract"]["engine"]
-    assert (engine.provider, engine.model) == ("openai", "gpt-4o")
+    assert (engine.provider, engine.model) == ("openai", "gpt-5.6-terra")
 
     await db_session.refresh(run)
     pinned = _pinned_engine_of(run)
-    assert (pinned.get("provider"), pinned.get("model")) == ("openai", "gpt-4o"), (
+    assert (pinned.get("provider"), pinned.get("model")) == ("openai", "gpt-5.6-terra"), (
         f"the resolved pair was not frozen onto the run: results={run.results}"
     )

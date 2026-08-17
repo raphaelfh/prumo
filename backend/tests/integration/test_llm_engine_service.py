@@ -48,13 +48,13 @@ async def test_default_when_unset(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_set_then_get_roundtrip(db_session: AsyncSession) -> None:
-    stored = await engine_setup.set_project_engine(db_session, "openai", "gpt-4o")
+    stored = await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
     assert stored.updated_by == SEED.primary_profile
     assert stored.updated_at is not None
 
     resolved = await LlmEngineService(db_session).get_for_project(SEED.primary_project)
     assert resolved.source == "project"
-    assert (resolved.provider, resolved.model) == ("openai", "gpt-4o")
+    assert (resolved.provider, resolved.model) == ("openai", "gpt-5.6-terra")
     assert resolved.retired is False
     assert resolved.stored is not None
     assert resolved.stored.updated_by == SEED.primary_profile
@@ -79,11 +79,11 @@ async def test_previous_model_chains(db_session: AsyncSession) -> None:
     first = await engine_setup.set_project_engine(db_session, "openai", "gpt-4o-mini")
     assert first.previous_model is None  # was unset (env default)
 
-    second = await engine_setup.set_project_engine(db_session, "openai", "gpt-4o")
+    second = await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
     assert second.previous_model == "gpt-4o-mini"
 
-    third = await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-4-5")
-    assert third.previous_model == "gpt-4o"
+    third = await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-5")
+    assert third.previous_model == "gpt-5.6-terra"
 
 
 @pytest.mark.asyncio
@@ -92,7 +92,7 @@ async def test_retired_flips_when_the_roster_drops_the_entry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A stored pair the catalogue no longer lists reads as retired."""
-    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o")
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
 
     # The roster moves on: the service's catalogue lookup now misses.
     monkeypatch.setattr(
@@ -103,7 +103,7 @@ async def test_retired_flips_when_the_roster_drops_the_entry(
     resolved = await LlmEngineService(db_session).get_for_project(SEED.primary_project)
     assert resolved.source == "project"
     assert resolved.retired is True
-    assert (resolved.provider, resolved.model) == ("openai", "gpt-4o")
+    assert (resolved.provider, resolved.model) == ("openai", "gpt-5.6-terra")
 
 
 @pytest.mark.asyncio
@@ -127,7 +127,7 @@ async def test_get_engine_read_serves_catalog_and_caller_availability(
 
 @pytest.mark.asyncio
 async def test_get_engine_read_names_the_updater(db_session: AsyncSession) -> None:
-    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o")
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
     read = await LlmEngineService(db_session).get_engine_read(
         SEED.primary_project, SEED.primary_profile
     )
@@ -156,7 +156,7 @@ async def test_set_for_project_locks_the_project_row(
 
     monkeypatch.setattr(db_session, "execute", _spy)
 
-    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o")
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
 
     assert any("projects" in sql and "FOR UPDATE" in sql for sql in executed), (
         f"set_for_project read the project row without FOR UPDATE — statements executed: {executed}"
@@ -170,12 +170,12 @@ async def test_sibling_parsing_key_survives_an_engine_write(db_session: AsyncSes
         project_id=SEED.primary_project,
         parser_type="docling",
     )
-    await engine_setup.set_project_engine(db_session, "openai", "gpt-4o")
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
     await db_session.flush()
 
     raw = await _raw_settings(db_session, SEED.primary_project)
     assert raw.get("parsing") == {"type": "docling"}, "sibling key clobbered by the engine write"
-    assert raw.get("llm_engine", {}).get("model") == "gpt-4o"
+    assert raw.get("llm_engine", {}).get("model") == "gpt-5.6-terra"
 
     # And the reverse: a parser write must not clobber the engine.
     await ParserSettingsService(db_session).set_for_project(
@@ -183,7 +183,7 @@ async def test_sibling_parsing_key_survives_an_engine_write(db_session: AsyncSes
         parser_type="auto",
     )
     raw = await _raw_settings(db_session, SEED.primary_project)
-    assert raw.get("llm_engine", {}).get("model") == "gpt-4o"
+    assert raw.get("llm_engine", {}).get("model") == "gpt-5.6-terra"
 
 
 # ---------------------------------------------------------------------------
@@ -214,9 +214,9 @@ async def test_resolve_unset_falls_back_to_the_env_default(db_session: AsyncSess
 
 @pytest.mark.asyncio
 async def test_resolve_returns_the_project_pair(db_session: AsyncSession) -> None:
-    await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-4-5")
+    await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-5")
     target = await resolve_project_engine(db_session, SEED.primary_project)
-    assert (target.provider, target.model) == ("anthropic", "claude-sonnet-4-5")
+    assert (target.provider, target.model) == ("anthropic", "claude-sonnet-5")
     assert (target.mode_requested, target.mode_executed) == ("fast", "fast")
 
 
@@ -239,7 +239,7 @@ async def test_resolve_raises_retired_for_a_bypass_written_unknown_pair(
 async def test_resolve_treats_structural_garbage_as_unset(db_session: AsyncSession) -> None:
     """A payload that does not even parse degrades to the env default —
     contained, never a 500 on every read."""
-    await _bypass_write_llm_engine(db_session, '"gpt-4o"')
+    await _bypass_write_llm_engine(db_session, '"gpt-5.6-terra"')
     target = await resolve_project_engine(db_session, SEED.primary_project)
     assert (target.provider, target.model) == (settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL)
 
@@ -252,10 +252,10 @@ async def test_resolve_normalizes_a_non_string_mode_and_keeps_the_pair(
     fast at the read — the engine PAIR keeps the manager's choice instead of
     the whole payload degrading to the env default."""
     await _bypass_write_llm_engine(
-        db_session, '{"provider": "openai", "model": "gpt-4o", "mode": 123}'
+        db_session, '{"provider": "openai", "model": "gpt-5.6-terra", "mode": 123}'
     )
     target = await resolve_project_engine(db_session, SEED.primary_project)
-    assert (target.provider, target.model) == ("openai", "gpt-4o"), (
+    assert (target.provider, target.model) == ("openai", "gpt-5.6-terra"), (
         "a garbage MODE must not throw the stored PAIR away"
     )
     assert (target.mode_requested, target.mode_executed) == ("fast", "fast")
