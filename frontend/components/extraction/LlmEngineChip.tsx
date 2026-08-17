@@ -13,10 +13,17 @@
  * On a failed read the chip renders NOTHING and the rest of the tab is
  * unaffected — the deploy-race window where a new frontend hits an old
  * backend without the route.
+ *
+ * C2 A4: the popover also manages the ALTERNATE engine list (fallback
+ * pairs reviewers may run when they can't run the default, labeled as
+ * deviations). "Add alternate" flips the SAME Command list into a
+ * multi-select that toggles membership; every mutation goes through
+ * `toUpdateBody`, which omits `alternates` when the read didn't carry
+ * the field (old backend during the promotion window).
  */
 import {useState} from 'react';
 import {Link, useNavigate} from 'react-router';
-import {AlertTriangle, Check, KeyRound, Lock, Settings} from 'lucide-react';
+import {AlertTriangle, Check, KeyRound, Lock, Settings, X} from 'lucide-react';
 import {toast} from 'sonner';
 
 import {Button} from '@/components/ui/button';
@@ -39,7 +46,13 @@ import {
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
-import type {LlmEngineCatalogEntry, LlmEngineRead} from '@/services/llmEngineService';
+import {toUpdateBody} from '@/services/llmEngineService';
+import type {
+  LlmEngineAlternate,
+  LlmEngineAlternateRead,
+  LlmEngineCatalogEntry,
+  LlmEngineRead,
+} from '@/services/llmEngineService';
 
 /** The existing key-settings surface (UserSettings → Integrations → API keys). */
 const KEY_SETTINGS_ROUTE = '/settings?tab=integrations';
@@ -94,6 +107,7 @@ function groupByProvider(catalog: LlmEngineCatalogEntry[]): ProviderGroup[] {
 
 export function LlmEngineChip({projectId}: {projectId: string}) {
   const [open, setOpen] = useState(false);
+  const [managingAlternates, setManagingAlternates] = useState(false);
   const navigate = useNavigate();
   const query = useLlmEngine(projectId);
   const setEngine = useSetLlmEngine(projectId);
@@ -104,6 +118,11 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
   // included).
   const engine = query.data;
   if (!engine) return null;
+
+  // `?? []` mirrors the service normalization for a payload an old
+  // backend served without the field (deploy window) — the section still
+  // renders and toUpdateBody keeps `alternates` out of plain PUTs.
+  const alternates = engine.alternates ?? [];
 
   const currentEntry = engine.catalog.find(
     (e) => e.provider === engine.provider && e.model === engine.model,
@@ -121,10 +140,12 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
 
   const handleSelect = (entry: LlmEngineCatalogEntry) => {
     setOpen(false);
-    // The CURRENT mode rides along explicitly — omitting it would let the
-    // server-side default silently downgrade a verified project (panel B2).
+    // toUpdateBody rides the CURRENT mode along explicitly (omitting it
+    // would let the server-side default silently downgrade a verified
+    // project, panel B2) and the stored alternates when the read carried
+    // them (C2 A4 mutation invariant).
     setEngine.mutate(
-      {provider: entry.provider, model: entry.model, mode: engine.mode},
+      toUpdateBody(engine, {provider: entry.provider, model: entry.model}),
       mutationCallbacks,
     );
   };
@@ -133,15 +154,50 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
     // Radix fires '' when the active item is re-clicked (deselect) — a mode
     // can't be unset, so only the two literals ever mutate.
     if (next !== 'fast' && next !== 'verified') return;
+    setEngine.mutate(toUpdateBody(engine, {mode: next}), mutationCallbacks);
+  };
+
+  const toPair = (a: {provider: string; model: string}): LlmEngineAlternate => ({
+    provider: a.provider,
+    model: a.model,
+  });
+
+  const isAlternate = (provider: string, model: string): boolean =>
+    alternates.some((a) => a.provider === provider && a.model === model);
+
+  const toggleAlternate = (entry: LlmEngineCatalogEntry) => {
+    const next = isAlternate(entry.provider, entry.model)
+      ? alternates
+          .filter(
+            (a) => !(a.provider === entry.provider && a.model === entry.model),
+          )
+          .map(toPair)
+      : [...alternates.map(toPair), toPair(entry)];
     setEngine.mutate(
-      {provider: engine.provider, model: engine.model, mode: next},
+      toUpdateBody(engine, {alternates: next}),
       mutationCallbacks,
     );
   };
 
+  const removeAlternate = (alt: LlmEngineAlternateRead) => {
+    const next = alternates
+      .filter((a) => !(a.provider === alt.provider && a.model === alt.model))
+      .map(toPair);
+    setEngine.mutate(
+      toUpdateBody(engine, {alternates: next}),
+      mutationCallbacks,
+    );
+  };
+
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    // Reopening always starts in pick-a-default mode.
+    if (!next) setManagingAlternates(false);
+  };
+
   return (
     <div className="flex items-center justify-end">
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={handleOpenChange}>
         <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -215,6 +271,90 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
             </p>
           )}
         </div>
+        <div className="space-y-1.5 border-b border-border/40 p-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium">
+              {t('llmEngine', 'alternatesTitle')}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+              onClick={() => setManagingAlternates(!managingAlternates)}
+              data-testid="llm-engine-alternates-manage"
+            >
+              {t(
+                'llmEngine',
+                managingAlternates ? 'alternatesDoneLabel' : 'alternatesAddLabel',
+              )}
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {t('llmEngine', 'alternatesHelper')}
+          </p>
+          {alternates.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground">
+              {t('llmEngine', 'alternatesEmpty')}
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {alternates.map((alt) => {
+                const entry = engine.catalog.find(
+                  (e) => e.provider === alt.provider && e.model === alt.model,
+                );
+                return (
+                  <li
+                    key={alt.canonical}
+                    data-testid={`llm-engine-alternate-${alt.canonical}`}
+                    className={cn(
+                      'flex items-start gap-2 rounded-md px-1.5 py-1 text-xs',
+                      // Same amber treatment as the retiredNote above: the
+                      // pair left the catalogue, runs on it will block.
+                      alt.retired &&
+                        'border border-warning/50 bg-warning/10 text-warning',
+                    )}
+                  >
+                    {alt.retired && (
+                      <AlertTriangle
+                        className="mt-0.5 h-3 w-3 shrink-0"
+                        strokeWidth={1.5}
+                        aria-hidden="true"
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">
+                        {entry?.label ?? alt.canonical}
+                      </span>
+                      {entry?.byok_only === true && (
+                        <span className="block text-[11px] text-muted-foreground">
+                          {t('llmEngine', 'alternatesByokWarn')}
+                        </span>
+                      )}
+                    </div>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
+                            aria-label={t('llmEngine', 'alternatesRemoveAria')}
+                            onClick={() => removeAlternate(alt)}
+                          >
+                            <X className="h-3 w-3" strokeWidth={1.5} />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {t('llmEngine', 'alternatesRemoveAria')}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
         <Command>
           <CommandInput placeholder={t('llmEngine', 'searchPlaceholder')} />
           <CommandList>
@@ -240,18 +380,26 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                   const isCurrent =
                     entry.provider === engine.provider &&
                     entry.model === engine.model;
+                  const isMember = isAlternate(entry.provider, entry.model);
                   return (
                     <CommandItem
                       key={entry.canonical}
                       value={`${entry.label} ${entry.canonical}`}
-                      disabled={!runnable}
-                      onSelect={() => handleSelect(entry)}
+                      // Managing mode: any pair may be a fallback (a locked
+                      // provider still unblocks reviewers with their own
+                      // key) — only the current default is off the table.
+                      disabled={managingAlternates ? isCurrent : !runnable}
+                      onSelect={() =>
+                        managingAlternates
+                          ? toggleAlternate(entry)
+                          : handleSelect(entry)
+                      }
                       className="items-start gap-2 px-2 py-2"
                       data-testid={`llm-engine-option-${entry.canonical}`}
                     >
                       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span className="flex items-center gap-1.5">
-                          {!runnable && (
+                          {!runnable && !managingAlternates && (
                             <Lock
                               className="h-3 w-3 shrink-0 text-muted-foreground"
                               strokeWidth={1.5}
@@ -268,6 +416,13 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                               aria-label={t('llmEngine', 'currentModelAria')}
                             />
                           )}
+                          {managingAlternates && !isCurrent && isMember && (
+                            <Check
+                              className="h-3.5 w-3.5 shrink-0 text-primary"
+                              strokeWidth={1.5}
+                              aria-hidden="true"
+                            />
+                          )}
                         </span>
                         <span className="truncate text-xs text-muted-foreground">
                           {entry.best_for}
@@ -275,7 +430,12 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                         <span className="truncate font-mono text-[11px] text-muted-foreground/80">
                           {entry.canonical}
                         </span>
-                        {!runnable && (
+                        {managingAlternates && isCurrent && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {t('llmEngine', 'alternatesPrimaryNote')}
+                          </span>
+                        )}
+                        {!runnable && !managingAlternates && (
                           <Link
                             to={KEY_SETTINGS_ROUTE}
                             onClick={() => setOpen(false)}

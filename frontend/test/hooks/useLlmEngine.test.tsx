@@ -35,6 +35,8 @@ const ENGINE_READ = {
   previous_model: null,
   catalog: [],
   availability: {openai: true, anthropic: false},
+  alternates: [],
+  hasAlternates: true,
 };
 
 function createWrapper() {
@@ -107,12 +109,16 @@ describe('useSetLlmEngine', () => {
       provider: 'anthropic',
       model: 'claude-haiku-4-5',
       mode: 'fast',
+      alternates: [{provider: 'openai', model: 'gpt-4o-mini'}],
     });
 
+    // The body passes through VERBATIM — the hook never adds or strips
+    // the alternates key (that responsibility lives in toUpdateBody).
     expect(setMock).toHaveBeenCalledWith('p1', {
       provider: 'anthropic',
       model: 'claude-haiku-4-5',
       mode: 'fast',
+      alternates: [{provider: 'openai', model: 'gpt-4o-mini'}],
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: projectKeys.llmEngine('p1'),

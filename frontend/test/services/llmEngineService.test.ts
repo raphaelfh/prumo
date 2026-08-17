@@ -32,7 +32,12 @@ vi.mock('@/integrations/api/client', () => ({
   ApiError,
 }));
 
-import {fetchLlmEngine, setLlmEngine} from '@/services/llmEngineService';
+import {
+  fetchLlmEngine,
+  setLlmEngine,
+  toUpdateBody,
+  type LlmEngineRead,
+} from '@/services/llmEngineService';
 
 const ENGINE_READ = {
   provider: 'openai',
@@ -45,6 +50,14 @@ const ENGINE_READ = {
   previous_model: null,
   catalog: [],
   availability: {openai: true, anthropic: false},
+  alternates: [],
+};
+
+const ALTERNATE_READ = {
+  provider: 'openai',
+  model: 'gpt-4o',
+  canonical: 'openai:gpt-4o',
+  retired: false,
 };
 
 beforeEach(() => {
@@ -74,23 +87,55 @@ describe('fetchLlmEngine', () => {
     if (result.ok) return;
     expect(result.error.message).toContain('Not Found');
   });
+
+  it('flags hasAlternates when the wire payload carries the field', async () => {
+    apiClientMock.mockResolvedValue({
+      ...ENGINE_READ,
+      alternates: [ALTERNATE_READ],
+    });
+
+    const result = await fetchLlmEngine('p1');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.alternates).toEqual([ALTERNATE_READ]);
+    expect(result.data.hasAlternates).toBe(true);
+  });
+
+  it('defaults alternates to [] with hasAlternates false when the wire omits the field (old backend)', async () => {
+    const {alternates: _alternates, ...legacyPayload} = ENGINE_READ;
+    apiClientMock.mockResolvedValue(legacyPayload);
+
+    const result = await fetchLlmEngine('p1');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.alternates).toEqual([]);
+    expect(result.data.hasAlternates).toBe(false);
+  });
 });
 
 describe('setLlmEngine', () => {
-  it('PUTs the canonical pair with mode fast', async () => {
+  it('PUTs the canonical pair with mode fast, passing alternates through verbatim', async () => {
     apiClientMock.mockResolvedValue(ENGINE_READ);
 
     const result = await setLlmEngine('p1', {
       provider: 'anthropic',
       model: 'claude-haiku-4-5',
       mode: 'fast',
+      alternates: [{provider: 'openai', model: 'gpt-4o-mini'}],
     });
 
     expect(apiClientMock).toHaveBeenCalledWith(
       '/api/v1/projects/p1/llm-engine',
       {
         method: 'PUT',
-        body: {provider: 'anthropic', model: 'claude-haiku-4-5', mode: 'fast'},
+        body: {
+          provider: 'anthropic',
+          model: 'claude-haiku-4-5',
+          mode: 'fast',
+          alternates: [{provider: 'openai', model: 'gpt-4o-mini'}],
+        },
       },
     );
     expect(result.ok).toBe(true);
@@ -110,5 +155,63 @@ describe('setLlmEngine', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.message).toContain('unknown model');
+  });
+});
+
+describe('toUpdateBody', () => {
+  const NORMALIZED: LlmEngineRead = {
+    ...ENGINE_READ,
+    mode: 'verified',
+    alternates: [{...ALTERNATE_READ, retired: true}],
+    hasAlternates: true,
+  };
+
+  it('includes stripped alternates and the explicit mode when the read carried the field', () => {
+    const body = toUpdateBody(NORMALIZED);
+
+    // toEqual is exact: canonical/retired stripped down to the pair.
+    expect(body).toEqual({
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      mode: 'verified',
+      alternates: [{provider: 'openai', model: 'gpt-4o'}],
+    });
+  });
+
+  it('omits the alternates KEY entirely when the read lacked the field (old backend)', () => {
+    const body = toUpdateBody({
+      ...NORMALIZED,
+      alternates: [],
+      hasAlternates: false,
+    });
+
+    expect(body).toEqual({
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      mode: 'verified',
+    });
+    expect('alternates' in body).toBe(false);
+  });
+
+  it('spreads overrides over the read values, keeping the stored alternates', () => {
+    const body = toUpdateBody(NORMALIZED, {model: 'gpt-4o', mode: 'fast'});
+
+    expect(body).toEqual({
+      provider: 'openai',
+      model: 'gpt-4o',
+      mode: 'fast',
+      alternates: [{provider: 'openai', model: 'gpt-4o'}],
+    });
+  });
+
+  it('an explicit alternates override replaces the stored list', () => {
+    const body = toUpdateBody(NORMALIZED, {alternates: []});
+
+    expect(body).toEqual({
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      mode: 'verified',
+      alternates: [],
+    });
   });
 });
