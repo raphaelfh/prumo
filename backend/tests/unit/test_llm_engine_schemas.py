@@ -16,7 +16,11 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.llm_engine import LlmEngineStored, LlmEngineUpdateRequest
+from app.schemas.llm_engine import (
+    LlmEngineRead,
+    LlmEngineStored,
+    LlmEngineUpdateRequest,
+)
 
 # ---------------------------------------------------------------------------
 # LlmEngineStored — the persisted spine
@@ -102,3 +106,63 @@ def test_request_forbids_unknown_fields() -> None:
 def test_request_mode_defaults_to_fast() -> None:
     body = LlmEngineUpdateRequest(provider="openai", model="gpt-4o-mini")
     assert body.mode == "fast"
+
+
+# ---------------------------------------------------------------------------
+# Alternates (C2 A1) — stored spine, PUT body, read model
+# ---------------------------------------------------------------------------
+
+
+def test_stored_alternates_default_empty_for_old_payloads() -> None:
+    """Payloads persisted before alternates existed keep validating (every
+    non-identity field defaults) and read back an empty list."""
+    stored = LlmEngineStored.model_validate({"provider": "openai", "model": "gpt-5.6-luna"})
+    assert stored.alternates == []
+
+
+def test_stored_alternates_garbage_entry_degrades_entry_not_payload() -> None:
+    """A garbage entry (non-dict, or a dict missing the pair) degrades that
+    ENTRY, never the payload — the primary pair keeps the manager's choice."""
+    stored = LlmEngineStored.model_validate(
+        {
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "alternates": [
+                {"provider": "anthropic", "model": "claude-sonnet-5"},
+                "garbage",
+                42,
+            ],
+        }
+    )
+    assert [(a.provider, a.model) for a in stored.alternates] == [("anthropic", "claude-sonnet-5")]
+
+
+def test_update_request_alternates_default_none_keeps() -> None:
+    # None (field absent) = keep the stored list; [] would clear it.
+    req = LlmEngineUpdateRequest.model_validate(
+        {"provider": "openai", "model": "gpt-5.6-luna", "mode": "fast"}
+    )
+    assert req.alternates is None
+
+
+def test_update_request_still_forbids_extras() -> None:
+    with pytest.raises(ValidationError):
+        LlmEngineUpdateRequest.model_validate(
+            {"provider": "openai", "model": "x", "mode": "fast", "temperature": 1}
+        )
+
+
+def test_read_alternates_default_empty() -> None:
+    """``LlmEngineRead`` validates without the field — alternates default []."""
+    read = LlmEngineRead.model_validate(
+        {
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "mode": "fast",
+            "source": "default",
+            "retired": False,
+            "catalog": [],
+            "availability": {},
+        }
+    )
+    assert read.alternates == []
