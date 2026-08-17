@@ -16,22 +16,15 @@ from app.repositories.extraction_proposal_repository import (
 )
 from app.services._extraction_run_lock import load_run_for_update
 from app.services.coordinate_coherence import assert_coords_coherent
-from app.services.value_semantics import disposition_to_marker, is_disposition_candidate
+from app.services.value_semantics import (
+    disposition_to_marker,
+    is_disposition_candidate,
+    strip_verification,
+)
 
 
 class InvalidProposalError(Exception):
     """Raised when a proposal violates business rules (stage / source / coords)."""
-
-
-def _dedupe_view(proposed_value: dict[str, Any]) -> dict[str, Any]:
-    """The replay-compare view of a ``proposed_value`` bag.
-
-    The Verified-mode ``verification`` ANNOTATION sibling is ignored (the
-    compare is value + absent_reason only): a re-extract whose verify pass
-    flaked — or newly succeeded — must not append a duplicate audit row for
-    an unchanged value.
-    """
-    return {k: v for k, v in proposed_value.items() if k != "verification"}
 
 
 class ExtractionProposalService:
@@ -114,13 +107,30 @@ class ExtractionProposalService:
         # Idempotent re-record: a client replaying an unchanged value (form
         # remount, debounce double-fire, retry) must not append a duplicate
         # row. The audit trail captures value *changes*, not redundant
-        # replays. A genuinely changed value still appends.
+        # replays. A genuinely changed value still appends. The compare
+        # ignores the Verified-mode ``verification`` ANNOTATION sibling
+        # (value + absent_reason only): a re-extract whose verify pass
+        # flaked — or newly succeeded — is still the same value.
         latest = await self._repo.get_latest_for_coord(
             run_id, instance_id, field_id, source_value, source_user_id
         )
-        if latest is not None and _dedupe_view(latest.proposed_value) == _dedupe_view(
+        if latest is not None and strip_verification(latest.proposed_value) == strip_verification(
             proposed_value
         ):
+            # Same value, but the verify verdict moved (flip, or a heal after
+            # a flaked pass): refresh the server-owned ANNOTATION in place —
+            # no new audit row, the value did not change. An incoming bag
+            # WITHOUT the sibling (fast re-run / flaked verify) never clears
+            # a stored verdict.
+            incoming_verdict = proposed_value.get("verification")
+            if incoming_verdict is not None and incoming_verdict != latest.proposed_value.get(
+                "verification"
+            ):
+                latest.proposed_value = {
+                    **latest.proposed_value,
+                    "verification": incoming_verdict,
+                }
+                await self.db.flush()
             return latest
 
         record = ExtractionProposalRecord(

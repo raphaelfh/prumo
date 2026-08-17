@@ -25,8 +25,13 @@ from tests.integration.conftest import SEED
 
 async def _setup_consensus_run(
     db: AsyncSession,
+    proposed_value: dict | None = None,
 ) -> tuple[UUID, UUID, UUID, UUID, UUID] | None:
-    """Build run, advance to consensus stage, return (run_id, instance_id, field_id, profile_id, decision_id)."""
+    """Build run, advance to consensus stage, return (run_id, instance_id, field_id, profile_id, decision_id).
+
+    ``proposed_value`` overrides the accepted AI proposal's bag (recorded
+    while the run is still in EXTRACT — the only stage proposals accept).
+    """
     project_id = (
         await db.execute(
             text("SELECT id FROM public.projects WHERE id = :pid"),
@@ -94,7 +99,7 @@ async def _setup_consensus_run(
         instance_id=instance_id,
         field_id=field_id,
         source=ExtractionProposalSource.AI,
-        proposed_value={"v": "candidate"},
+        proposed_value=proposed_value if proposed_value is not None else {"v": "candidate"},
     )
     decision = await ExtractionReviewService(db).record_decision(
         run_id=run.id,
@@ -132,6 +137,36 @@ async def test_record_select_existing_consensus_publishes_state(
     )
     assert consensus.mode == "select_existing"
     assert published.version == 1
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_select_existing_on_annotated_proposal_publishes_clean_value(
+    db_session: AsyncSession,
+) -> None:
+    """F1: ``select_existing`` resolving through an ANNOTATED AI proposal must
+    not copy the Verified-mode ``verification`` sibling into
+    ``PublishedState.value`` — the verdict belongs to the proposal row only,
+    and a stale verdict must never outlive its run as canonical data."""
+    fx = await _setup_consensus_run(
+        db_session,
+        proposed_value={"value": "42", "verification": {"verdict": "confirmed"}},
+    )
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, profile_id, decision_id = fx
+
+    _, published = await ExtractionConsensusService(db_session).record_consensus(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        consensus_user_id=profile_id,
+        mode=ExtractionConsensusMode.SELECT_EXISTING,
+        selected_decision_id=decision_id,
+    )
+    assert published.value == {"value": "42"}, (
+        f"PublishedState must carry the CLEAN envelope, got {published.value}"
+    )
     await db_session.rollback()
 
 

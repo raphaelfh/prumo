@@ -66,15 +66,16 @@ def _normalized_mode(stored: LlmEngineStored, project_id: UUID) -> Literal["fast
 
     The stored spine keeps ``mode`` a plain ``str`` (see ``LlmEngineStored``)
     so an old reader never throws a whole payload away over a mode it does
-    not know; an unknown mode degrades to ``"fast"`` here — loudly, never
-    silently — while the engine PAIR keeps the manager's choice.
+    not know; an unknown — or non-string, belt-and-braces under the schema's
+    stringify — mode degrades to ``"fast"`` here — loudly, never silently —
+    while the engine PAIR keeps the manager's choice.
     """
-    if stored.mode in ("fast", "verified"):
+    if isinstance(stored.mode, str) and stored.mode in ("fast", "verified"):
         return stored.mode  # type: ignore[return-value]
     logger.warning(
         "llm_engine_unknown_mode_normalized",
         project_id=str(project_id),
-        stored_mode=stored.mode,
+        stored_mode=str(stored.mode),
     )
     return "fast"
 

@@ -634,6 +634,8 @@ async def test_verified_pin_runs_verify_and_annotates_proposals(
     await db_session.refresh(run)
 
     assert len(verify_log) == 1, "the verifier must run exactly once per section"
+    # F6a: the verify prompt grounds in the entity's human LABEL, not the name.
+    assert verify_log[0]["entity_type_label"] == "Participants"
     snapshot = _section_provenance(run, SEED.primary_entity_type)
     assert snapshot["mode_requested"] == "verified"
     assert snapshot["mode_executed"] == "verified"
@@ -733,8 +735,10 @@ async def test_verified_no_info_proposal_carries_no_verification_key(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No-info proposals are NOT verified — there is no value to check; the
-    absent marker stays untouched and the verifier gets an empty list."""
+    """No-info proposals are NOT verified — there is no value to check. F5:
+    an all-no-info section never invokes the verifier at all, and its
+    snapshot says verified/1 — ``passes`` counts LLM passes that RAN, and
+    "nothing needed verifying" is not a degrade."""
     _stub_llm_seams(monkeypatch)
     verify_log = _stub_verify_pass(monkeypatch)
     monkeypatch.setattr(
@@ -758,7 +762,63 @@ async def test_verified_no_info_proposal_carries_no_verification_key(
     await _extract_once(db_session, run, "verified-no-info")
     await db_session.refresh(run)
 
-    # Only found fields are sent — the abstention never reaches the verifier.
-    assert len(verify_log) == 1 and verify_log[0]["proposals"] == []
+    # Zero found fields -> the verify pass is skipped BEFORE any call.
+    assert verify_log == [], f"the verifier ran on an all-no-info section: {verify_log}"
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot["mode_requested"] == "verified"
+    assert snapshot["mode_executed"] == "verified"
+    assert snapshot["passes"] == 1
+    # Zero verify tokens — extract usage only.
+    assert snapshot["tokens"] == {"prompt": 1, "completion": 1, "total": 2}
     values = await _proposal_values(db_session, run.id)
     assert values == [{"value": None, "absent_reason": "no_information"}]
+
+
+@pytest.mark.asyncio
+async def test_verified_qa_run_skips_the_verifier(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """F4: the verify prompt judges whether the TEXT states a value —
+    inapplicable to evaluative QA judgments, which would draw systematic
+    amber chips on legitimate assessments. A ``quality_assessment`` run on a
+    verified engine skips the pass: verifier never called, proposals
+    unannotated, snapshot says requested-verified / executed-fast / 1 pass,
+    under the DISTINCT ``verify_skipped_qa_kind`` log (never confusable
+    with a flake)."""
+    from structlog.testing import capture_logs
+
+    _stub_llm_seams(monkeypatch)
+    verify_log = _stub_verify_pass(monkeypatch)
+    # Flip the TEMPLATE to the QA kind BEFORE the run exists: create_run
+    # derives run.kind from the template, and the composite FK
+    # fk_extraction_runs_template_kind_coherence forbids flipping either
+    # side once the pair is referenced.
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET kind = 'quality_assessment' WHERE id = :tid"
+        ),
+        {"tid": str(SEED.primary_template)},
+    )
+    run = await engine_setup.run_in_extract(db_session)
+    assert run.kind == "quality_assessment", "the run must derive the QA kind"
+    await engine_setup.pin_run(
+        db_session, run, settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL, mode="verified"
+    )
+
+    with capture_logs() as entries:
+        await _extract_once(db_session, run, "verified-qa-skip")
+    await db_session.refresh(run)
+
+    assert verify_log == [], f"the verifier ran on a QA run: {verify_log}"
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot["mode_requested"] == "verified"
+    assert snapshot["mode_executed"] == "fast"
+    assert snapshot["passes"] == 1
+    values = await _proposal_values(db_session, run.id)
+    assert values, "no proposal rows were written"
+    assert all("verification" not in pv for pv in values)
+    assert any(e["event"] == "verify_skipped_qa_kind" for e in entries), (
+        "the QA skip must be logged under its own event, distinct from a flake"
+    )

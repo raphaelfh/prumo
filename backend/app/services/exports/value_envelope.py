@@ -18,7 +18,11 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from app.models.extraction import ExtractionFieldType
-from app.services.value_semantics import ABSENT_REASON_LABELS, value_absent_reason
+from app.services.value_semantics import (
+    ABSENT_REASON_LABELS,
+    strip_verification,
+    value_absent_reason,
+)
 
 # An openpyxl-writable scalar. NEVER a dict, NEVER a list.
 ResolvedScalar = str | int | float | bool | None
@@ -48,11 +52,10 @@ def resolve_value(raw: Any, *, field: _FieldLike | None = None) -> ResolvedScala
 
     # --- verification annotation (§5 Verified mode) -----------------------
     # ``verification`` is a server-written ANNOTATION sibling on AI proposal
-    # envelopes — never part of the value. Strip it before the key-set
-    # branches so an annotated row resolves exactly like a bare one (and
-    # never reaches the catch-all dict-stringify below).
-    if isinstance(raw, dict) and "verification" in raw:
-        raw = {k: v for k, v in raw.items() if k != "verification"}
+    # envelopes — never part of the value. Strip it (shared helper) before
+    # the key-set branches so an annotated row resolves exactly like a bare
+    # one (and never reaches the catch-all dict-stringify below).
+    raw = strip_verification(raw)
 
     # --- coded absent_reason marker (ADR-0016) ---------------------------
     # A resolved disposition ({"value": null, "absent_reason": <code>}) is a

@@ -15,10 +15,10 @@ parses the stored JSONB itself.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class LlmEngineStored(BaseModel):
@@ -37,6 +37,14 @@ class LlmEngineStored(BaseModel):
     updated_by: UUID | None = None
     updated_at: datetime | None = None
     previous_model: str | None = None
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _stringify_garbage_mode(cls, v: Any) -> Any:
+        # A hand-written NON-STRING mode (numeric JSONB via PostgREST) must
+        # not throw the WHOLE payload away — the pair keeps the manager's
+        # choice; the read normalizes the unknown mode to "fast", loudly.
+        return v if isinstance(v, str) else str(v)
 
 
 class LlmEngineUpdateRequest(BaseModel):

@@ -287,6 +287,7 @@ async def test_session_run_extraction_persists_provenance(
             prompt_name="section_extraction",
             prompt_version="1",
             section_name="population",
+            section_label="Population",
             system_prompt="SYS",
             section_instruction="INSTR",
             fields=[],

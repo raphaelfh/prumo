@@ -182,8 +182,7 @@ class SectionExtractionService(LoggerMixin):
         # Assembly info from the last prompt build (truncation, token estimate,
         # source file) — feeds the per-section prompt_composition provenance.
         self._prompt_input_info: PromptInputInfo | None = None
-        # Snapshot inputs stashed by _extract_with_llm; _maybe_verify builds
-        # the section snapshot from them, post-verify, into _run_provenance.
+        # Stashed by _extract_with_llm; _maybe_verify builds _run_provenance.
         self._snapshot_inputs: SectionSnapshotInputs | None = None
         self._run_provenance: dict[str, Any] | None = None
         # Engine for every LLM call here: the env-default candidate until a
@@ -363,9 +362,9 @@ class SectionExtractionService(LoggerMixin):
                 fields_override=fields_override,
                 general_instructions=general_instructions,
             )
-            # 6. Verify pass (Verified mode; mode check inside) + snapshot.
+            # 6. Verify pass (mode + kind checks inside the glue) + snapshot.
             verdicts, llm_usage = await self._maybe_verify(
-                run.id, entity_type_id, pdf_text, extracted_data, llm_usage
+                run.id, entity_type_id, run.kind, pdf_text, extracted_data, llm_usage
             )
             phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
@@ -703,7 +702,7 @@ class SectionExtractionService(LoggerMixin):
             general_instructions=general_instructions,
         )
         verdicts, llm_usage = await self._maybe_verify(
-            run.id, entity_type.id, pdf_text, extracted_data, llm_usage
+            run.id, entity_type.id, kind, pdf_text, extracted_data, llm_usage
         )
         suggestions_created = await self._create_suggestions(
             project_id=run.project_id,
@@ -1147,7 +1146,7 @@ class SectionExtractionService(LoggerMixin):
             general_instructions=general_instructions,
         )
         verdicts, llm_usage = await self._maybe_verify(
-            run.id, entity_type.id, pdf_text, extracted_data, llm_usage
+            run.id, entity_type.id, run.kind, pdf_text, extracted_data, llm_usage
         )
         section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
@@ -1355,16 +1354,16 @@ class SectionExtractionService(LoggerMixin):
             extracted_data.update(dump_extraction(output))
             usage = usage + call_usage
 
-        # Snapshot INPUTS only — _maybe_verify builds the snapshot ONCE,
-        # post-verify, with mode_executed/passes as typed params.
+        # Snapshot INPUTS only — _maybe_verify builds the snapshot ONCE post-verify.
         self._snapshot_inputs = SectionSnapshotInputs(
             prompt_name=prompt_name,
             prompt_version=prompt_version,
             section_name=entity_name,
+            section_label=str(getattr(entity_type, "label", None) or entity_name),
             system_prompt=system_prompt,
             section_instruction=section_instruction,
-            # The fields actually sent to the LLM: the human-settled override
-            # when the QA re-run filtered some out (#481), else the full set.
+            # The fields actually SENT to the LLM: the human-settled
+            # override (#481) when a QA re-run filtered, else the full set.
             fields=(
                 fields_override
                 if fields_override is not None
@@ -1378,16 +1377,17 @@ class SectionExtractionService(LoggerMixin):
         self,
         run_id: UUID,
         entity_type_id: UUID,
+        kind: str,
         pdf_text: str,
         extracted_data: dict[str, Any],
         usage: LlmUsage,
     ) -> tuple[dict[str, str] | None, LlmUsage]:
-        """Verify pass (mode check inside the glue) + the ONE post-verify
-        section-snapshot build. The returned usage includes the verify
-        tokens, so every run total the callers write is the summed one."""
+        """Verify pass (mode + kind gates in the glue; QA runs skip it) + the
+        ONE post-verify snapshot build; returned usage sums verify tokens."""
         verdicts, usage, snapshot = await verify_and_snapshot(
             engine=self._engine,
             api_key=self._llm_api_key,
+            kind=kind,
             key_scope=self._key_scope,
             ran_by_user_id=self.user_id,
             pdf_text=pdf_text,

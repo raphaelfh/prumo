@@ -162,6 +162,22 @@ class TestCreateDecisionRequest:
         assert req.proposal_record_id == pid
         assert req.value == {"v": 2}
 
+    def test_client_verification_sibling_rejected(self) -> None:
+        """F3: the decision ``value`` bag is the OTHER side of the agreement
+        mechanism — a smuggled ``verification`` key is refused exactly like
+        on the proposal bag, never stored."""
+        with pytest.raises(ValidationError):
+            CreateDecisionRequest(
+                **self._kwargs(
+                    decision="edit",
+                    value={"value": 1, "verification": {"verdict": "confirmed"}},
+                )
+            )
+
+    def test_clean_value_still_accepted(self) -> None:
+        req = CreateDecisionRequest(**self._kwargs(decision="edit", value={"value": 1}))
+        assert req.value == {"value": 1}
+
 
 # --------------------------------------------------------------------------- #
 # CreateConsensusRequest  (mode pattern ^(select_existing|manual_override)$)
@@ -200,6 +216,22 @@ class TestCreateConsensusRequest:
         )
         assert req.selected_decision_id == did
         assert req.value == {"v": 3}
+
+    def test_client_verification_sibling_rejected(self) -> None:
+        """F3: a manual-override consensus value carrying ``verification``
+        would plant the server-owned verdict straight into PublishedState —
+        refused loudly, the proposal-bag precedent."""
+        with pytest.raises(ValidationError):
+            CreateConsensusRequest(
+                **self._kwargs(
+                    mode="manual_override",
+                    value={"value": 1, "verification": {"verdict": "confirmed"}},
+                )
+            )
+
+    def test_clean_value_still_accepted(self) -> None:
+        req = CreateConsensusRequest(**self._kwargs(mode="manual_override", value={"value": 1}))
+        assert req.value == {"value": 1}
 
 
 # --------------------------------------------------------------------------- #

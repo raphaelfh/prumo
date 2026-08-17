@@ -2431,7 +2431,7 @@ class TestExtractWithLlmWiring:
                 pdf_text="ARTICLE BODY", entity_type=entity_type
             )
         # The glue builds the snapshot post-verify (fast mode → pure no-op).
-        await service._maybe_verify(uuid4(), uuid4(), "ARTICLE BODY", data, usage)
+        await service._maybe_verify(uuid4(), uuid4(), "extraction", "ARTICLE BODY", data, usage)
 
         comp = service._run_provenance["prompt_composition"]
         # The article is replaced by a marker in the persisted instruction, and
@@ -2476,7 +2476,7 @@ class TestExtractWithLlmWiring:
                 framework="PROBAST",
             )
         # The glue builds the snapshot post-verify (fast mode → pure no-op).
-        await service._maybe_verify(uuid4(), uuid4(), "text", data, usage)
+        await service._maybe_verify(uuid4(), uuid4(), "quality_assessment", "text", data, usage)
         comp = service._run_provenance["prompt_composition"]
         # QA composition uses the QA template (framework rendered) + the marker.
         assert "PROBAST" in comp["section_instruction"]

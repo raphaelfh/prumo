@@ -47,6 +47,9 @@ class SectionSnapshotInputs:
     prompt_name: str
     prompt_version: str
     section_name: str
+    #: The entity type's human LABEL — what the verify prompt grounds its
+    #: ENTITY line in (the composition keeps ``section_name`` = the name).
+    section_label: str
     system_prompt: str
     section_instruction: str
     fields: list[Any]
@@ -105,6 +108,7 @@ async def verify_section(
     *,
     engine: LlmTarget,
     api_key: str | None,
+    kind: str,
     pdf_text: str,
     extracted_data: dict[str, Any],
     fields: list[Any],
@@ -118,14 +122,29 @@ async def verify_section(
     call site); returns ``(verdicts | None, verify_usage, mode_executed,
     passes)``.
 
-    Fast mode is a pure no-op. Verified runs one ``run_verify_pass`` on the
-    run's frozen engine over the FOUND fields only (a no-info proposal has
-    no value to check); any failure degrades to ``(None, zero usage,
-    "fast", 1)`` — recorded in the section snapshot, never aborting the run
-    (design 3).
+    Fast mode is a pure no-op. A ``quality_assessment`` run SKIPS the pass
+    even when the engine says verified: the prompt judges whether the text
+    states a value — inapplicable to evaluative PROBAST-style judgments,
+    which would draw systematic "uncertain" chips on legitimate assessments.
+    The skip records ``("fast", 1)`` under its own DISTINCT log
+    (``verify_skipped_qa_kind``), never confusable with a flake. Verified
+    runs one ``run_verify_pass`` on the run's frozen engine over the FOUND
+    fields only (a no-info proposal has no value to check); an all-no-info
+    section short-circuits as ``("verified", 1)`` — nothing needed
+    verifying, not a degrade, and ``passes`` counts LLM passes that RAN.
+    Any failure degrades to ``(None, zero usage, "fast", 1)`` — recorded in
+    the section snapshot, never aborting the run (design 3).
     """
     if engine.mode_requested != "verified":
         return None, LlmUsage(), engine.mode_requested, 1
+    context = {
+        "run_id": str(run_id),
+        "entity_type_id": str(entity_type_id),
+        "trace_id": trace_id,
+    }
+    if kind == "quality_assessment":
+        logger.info("verify_skipped_qa_kind", **context)
+        return None, LlmUsage(), "fast", 1
     by_name = {f.name: f for f in fields}
     proposals: list[tuple[str, str, str]] = []
     for field_name, value in extracted_data.items():
@@ -143,11 +162,9 @@ async def verify_section(
                 ),
             )
         )
-    context = {
-        "run_id": str(run_id),
-        "entity_type_id": str(entity_type_id),
-        "trace_id": trace_id,
-    }
+    if not proposals:
+        logger.info("verify_skipped_empty", **context)
+        return {}, LlmUsage(), "verified", 1
     try:
         model = build_model(engine.provider, engine.model, api_key=api_key)
     except Exception as exc:
@@ -171,6 +188,7 @@ async def verify_and_snapshot(
     *,
     engine: LlmTarget,
     api_key: str | None,
+    kind: str,
     key_scope: KeyScope | None,
     ran_by_user_id: str,
     pdf_text: str,
@@ -183,8 +201,9 @@ async def verify_and_snapshot(
     trace_id: str,
     logger: Any,
 ) -> tuple[dict[str, VerifyVerdict] | None, LlmUsage, dict[str, Any] | None]:
-    """The service's one glue call: verify (mode check inside), then the ONE
-    post-verify section-snapshot build with the extract + verify usage sum.
+    """The service's one glue call: verify (mode + kind checks inside), then
+    the ONE post-verify section-snapshot build with the extract + verify
+    usage sum.
 
     ``inputs is None`` (no LLM ran) is a pure pass-through — nothing to
     verify, nothing to snapshot.
@@ -194,10 +213,11 @@ async def verify_and_snapshot(
     verdicts, verify_usage, mode_executed, passes = await verify_section(
         engine=engine,
         api_key=api_key,
+        kind=kind,
         pdf_text=pdf_text,
         extracted_data=extracted_data,
         fields=inputs.fields,
-        entity_type_label=inputs.section_name,
+        entity_type_label=inputs.section_label,
         run_id=run_id,
         entity_type_id=entity_type_id,
         trace_id=trace_id,

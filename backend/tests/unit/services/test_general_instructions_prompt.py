@@ -70,7 +70,7 @@ async def test_extract_with_llm_prepends_general_instructions(monkeypatch) -> No
         general_instructions="Report values exactly as stated.",
     )
     # The glue builds the snapshot post-verify (fast mode → pure no-op).
-    await service._maybe_verify(uuid4(), uuid4(), "ARTICLE", data, usage)
+    await service._maybe_verify(uuid4(), uuid4(), "extraction", "ARTICLE", data, usage)
     # Threading is under test here; the block's exact wording is golden-
     # tested in tests/unit/llm/test_prompts.py, so build the expected
     # prefix through the renderer instead of duplicating the literal.
