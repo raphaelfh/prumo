@@ -26,7 +26,7 @@ from app.llm.extractor import LlmUsage, extract_structured
 from app.llm.provider import build_model
 from app.llm.schema import build_output_models, dump_extraction
 from app.llm.validators import evidence_is_plausible
-from app.llm.verify import VerificationAnnotation
+from app.llm.verify import VerificationAnnotation, VerifyVerdict
 from app.models.extraction import (
     ExtractionEvidence,
     ExtractionInstance,
@@ -1381,7 +1381,7 @@ class SectionExtractionService(LoggerMixin):
         pdf_text: str,
         extracted_data: dict[str, Any],
         usage: LlmUsage,
-    ) -> tuple[dict[str, str] | None, LlmUsage]:
+    ) -> tuple[dict[str, VerifyVerdict] | None, LlmUsage]:
         """Verify pass (mode + kind gates in the glue; QA runs skip it) + the
         ONE post-verify snapshot build; returned usage sums verify tokens."""
         verdicts, usage, snapshot = await verify_and_snapshot(
@@ -1412,7 +1412,7 @@ class SectionExtractionService(LoggerMixin):
         parent_instance_id: UUID | None,
         extracted_data: dict[str, Any],
         run: ExtractionRun,
-        verdicts: dict[str, str] | None = None,
+        verdicts: dict[str, VerifyVerdict] | None = None,
     ) -> int:
         """Create extraction suggestions in database via repository.
 
