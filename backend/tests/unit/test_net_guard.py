@@ -109,8 +109,11 @@ async def test_guard_rejects_public_name_resolving_private(monkeypatch):
     _patch_dns(monkeypatch, _fake_getaddrinfo({"api.example.com": ["10.0.0.5"]}))
     with pytest.raises(EndpointUrlError) as exc:
         await validate_endpoint_url("https://api.example.com/v1")
-    assert "private_address" in str(exc.value)
-    assert "api.example.com" in str(exc.value)
+    # Exact, not a substring probe: the sanitized contract is
+    # "<reason-class>: <host>" and nothing more (a substring assertion would
+    # also pass on a message that leaked resolver prose around the host —
+    # and CodeQL reads `"<domain>" in url` as incomplete URL sanitization).
+    assert str(exc.value) == "private_address: api.example.com"
 
 
 async def test_guard_accepts_public(monkeypatch):
