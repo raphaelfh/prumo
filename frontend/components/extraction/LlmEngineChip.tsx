@@ -45,10 +45,12 @@ import {
 } from '@/components/ui/tooltip';
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
 import {t} from '@/lib/copy';
+import {
+  toUpdateBody,
+  type LlmEngineAlternatePair,
+} from '@/lib/llmEngineUpdateBody';
 import {cn} from '@/lib/utils';
-import {toUpdateBody} from '@/services/llmEngineService';
 import type {
-  LlmEngineAlternatePair,
   LlmEngineAlternateRead,
   LlmEngineCatalogEntry,
   LlmEngineRead,

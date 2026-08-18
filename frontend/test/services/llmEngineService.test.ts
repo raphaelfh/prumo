@@ -32,11 +32,8 @@ vi.mock('@/integrations/api/client', () => ({
   ApiError,
 }));
 
-import {
-  fetchLlmEngine,
-  setLlmEngine,
-  toUpdateBody,
-} from '@/services/llmEngineService';
+import {toUpdateBody} from '@/lib/llmEngineUpdateBody';
+import {fetchLlmEngine, setLlmEngine} from '@/services/llmEngineService';
 
 import {makeEngineRead, makeEngineReadWire} from '../mocks/llmEngineRead';
 

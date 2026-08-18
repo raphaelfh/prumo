@@ -9,8 +9,9 @@
  * Deploy-window tolerance (C2 A4, blocking panel finding): an OLD backend
  * during the promotion window serves the read WITHOUT `alternates`. The
  * read is normalized (`alternates: [] `) and flagged with `hasAlternates`
- * so `toUpdateBody` can OMIT the key on plain model/mode PUTs — an old
- * backend with `extra="forbid"` 422s on the key itself.
+ * so `toUpdateBody` (`@/lib/llmEngineUpdateBody` — pure, importable by
+ * components without dragging the api client) can OMIT the key on plain
+ * model/mode PUTs — an old backend with `extra="forbid"` 422s on the key.
  */
 
 import {apiClient} from '@/integrations/api/client';
@@ -40,56 +41,6 @@ function normalizeEngineRead(data: LlmEngineReadWire): LlmEngineRead {
     alternates: data.alternates ?? [],
     hasAlternates: 'alternates' in data,
   };
-}
-
-/** The identity every alternates entry carries, whatever else it holds. */
-export type LlmEngineAlternatePair = {provider: string; model: string};
-
-/**
- * Overrides `toUpdateBody` accepts: the request fields, except `alternates`
- * may be ANY pair-bearing entries (catalogue entries, the read's own
- * alternates) — callers hand over what they have and the builder strips.
- */
-export type LlmEngineUpdateOverrides = Partial<
-  Omit<LlmEngineUpdateRequest, 'alternates'>
-> & {alternates?: readonly LlmEngineAlternatePair[]};
-
-/**
- * PUT body builder — EVERY mutation site goes through this. Always sends
- * the explicit mode (omitting it would let the server default silently
- * downgrade a verified project); includes `alternates` (stripped to bare
- * pairs) ONLY when the read carried the field, so plain model/mode PUTs
- * against an old backend stay 422-free during the promotion window.
- */
-export function toUpdateBody(
-  engine: LlmEngineRead,
-  overrides: LlmEngineUpdateOverrides = {},
-): LlmEngineUpdateRequest {
-  const merged = {
-    provider: engine.provider,
-    model: engine.model,
-    mode: engine.mode,
-    // The stored list rides along only when the read carried the field AND
-    // the caller is not replacing it — deriving it otherwise is dead work.
-    ...(engine.hasAlternates && overrides.alternates === undefined
-      ? {alternates: engine.alternates}
-      : {}),
-    ...overrides,
-  };
-  const body: LlmEngineUpdateRequest = {
-    provider: merged.provider,
-    model: merged.model,
-    mode: merged.mode,
-  };
-  // Key ABSENT when neither side resolved a list — an old backend with
-  // extra="forbid" 422s on the key itself, undefined value included.
-  if (merged.alternates !== undefined) {
-    body.alternates = merged.alternates.map(({provider, model}) => ({
-      provider,
-      model,
-    }));
-  }
-  return body;
 }
 
 export function fetchLlmEngine(

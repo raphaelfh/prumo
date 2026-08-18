@@ -28,11 +28,8 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
-import {
-  fetchLlmEngine,
-  setLlmEngine,
-  toUpdateBody,
-} from '@/services/llmEngineService';
+import {toUpdateBody} from '@/lib/llmEngineUpdateBody';
+import {fetchLlmEngine, setLlmEngine} from '@/services/llmEngineService';
 import {t} from '@/lib/copy';
 
 import {makeEngineReadWire} from '../mocks/llmEngineRead';
