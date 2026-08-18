@@ -56,6 +56,13 @@ class LlmEngineStored(BaseModel):
     ``alternates`` is the manager's ordered fallback list; entries are
     tolerated individually — a garbage entry is dropped with a warning,
     never the payload.
+
+    ``endpoint_id`` (C2 B8) points the engine at a project-scoped custom
+    endpoint (``project_llm_endpoints``); when set, ``provider`` is
+    ``"openai_compatible"`` and the pair is validated against the endpoint
+    (exists in this project, model allowed, verified) instead of the
+    catalogue. ``None`` — the default every pre-B8 payload reads back —
+    means a catalogue engine.
     """
 
     provider: str
@@ -65,6 +72,7 @@ class LlmEngineStored(BaseModel):
     updated_at: datetime | None = None
     previous_model: str | None = None
     alternates: list[LlmEngineAlternate] = []
+    endpoint_id: UUID | None = None
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -103,6 +111,11 @@ class LlmEngineUpdateRequest(BaseModel):
     ``extra="forbid"`` blocks smuggled keys (no temperature/seed, by design).
     ``alternates`` is tri-state: ``None`` (field absent) keeps the stored
     list, ``[]`` clears it, a list replaces it.
+
+    ``endpoint_id`` selects a project custom endpoint as the engine (C2
+    B8): it requires ``provider == "openai_compatible"`` and the service
+    validates the endpoint (project-scoped, model allowed, verified)
+    instead of the catalogue. Omitted/None = a catalogue engine.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -111,6 +124,7 @@ class LlmEngineUpdateRequest(BaseModel):
     model: str
     mode: Literal["fast", "verified"] = "fast"
     alternates: list[LlmEngineAlternate] | None = None
+    endpoint_id: UUID | None = None
 
 
 class LlmEngineAlternateRead(BaseModel):
@@ -147,6 +161,13 @@ class LlmEngineRead(BaseModel):
     own stored key, or a global service key) — booleans only, never key
     material or metadata. ``alternates`` is the stored fallback list with
     a per-entry ``retired`` flag.
+
+    ``endpoint_id`` / ``endpoint_label`` are the ONLY endpoint data on this
+    read (decision 12 — no embedded endpoints matrix; the picker's endpoint
+    groups come from the manager-only endpoints listing instead): the
+    stored pointer plus the row's label for the chip. ``endpoint_label`` is
+    ``None`` for catalogue engines AND for a dangling pointer (row gone —
+    ``retired`` is True then).
     """
 
     provider: str
@@ -160,3 +181,5 @@ class LlmEngineRead(BaseModel):
     catalog: list[LlmEngineCatalogEntryRead]
     availability: dict[str, bool]
     alternates: list[LlmEngineAlternateRead] = []
+    endpoint_id: UUID | None = None
+    endpoint_label: str | None = None

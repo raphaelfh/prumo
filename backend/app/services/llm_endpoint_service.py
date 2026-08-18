@@ -260,10 +260,10 @@ class LlmEndpointService:
             raise ProjectNotFoundError(f"Project {project_id} not found")
         row = await self.get(project_id, endpoint_id)
         engine_raw: Any = (project.settings or {}).get("llm_engine")
-        # Raw dict read ON PURPOSE (not LlmEngineStored): the stored spine
-        # gains endpoint_id only in B8, and today its validator IGNORES
-        # extra keys — validating here would silently drop the very pointer
-        # this guard exists to see. The raw key works pre- and post-B8.
+        # Raw dict read ON PURPOSE (not LlmEngineStored): a payload the
+        # spine cannot validate must still block the delete when it names
+        # this endpoint — the raw key works for pre-B8 hand-written JSONB
+        # and post-B8 stored payloads alike.
         pointed = engine_raw.get("endpoint_id") if isinstance(engine_raw, dict) else None
         if pointed is not None and str(pointed) == str(endpoint_id):
             raise EndpointUnavailableError(

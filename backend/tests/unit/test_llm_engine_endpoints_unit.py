@@ -92,8 +92,9 @@ async def test_get_maps_missing_project_to_404() -> None:
 @pytest.mark.asyncio
 async def test_put_writes_named_fields_and_returns_the_fresh_read() -> None:
     """The service receives NAMED validated fields — ``updated_by`` from the
-    auth dependency, never the body — and the response is the re-read view."""
-    project_id, manager = uuid4(), uuid4()
+    auth dependency, never the body — and the response is the re-read view.
+    ``endpoint_id`` (B8) rides the same named pass-through."""
+    project_id, manager, endpoint_id = uuid4(), uuid4(), uuid4()
     data = _read(model="gpt-4o")
     service = MagicMock()
     service.set_for_project = AsyncMock(
@@ -109,6 +110,7 @@ async def test_put_writes_named_fields_and_returns_the_fresh_read() -> None:
                 provider="openai",
                 model="gpt-4o",
                 alternates=[LlmEngineAlternate(provider="anthropic", model="claude-sonnet-5")],
+                endpoint_id=endpoint_id,
             ),
             request=_request(),
             db=db,
@@ -124,6 +126,7 @@ async def test_put_writes_named_fields_and_returns_the_fresh_read() -> None:
         mode="fast",
         updated_by=manager,
         alternates=[LlmEngineAlternate(provider="anthropic", model="claude-sonnet-5")],
+        endpoint_id=endpoint_id,
     )
     db.commit.assert_awaited_once()
 

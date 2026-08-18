@@ -211,3 +211,84 @@ def test_read_alternates_default_empty() -> None:
         }
     )
     assert read.alternates == []
+
+
+# ---------------------------------------------------------------------------
+# Endpoint-backed engines (C2 B8) — stored pointer, PUT body, read scalars
+# ---------------------------------------------------------------------------
+
+
+def test_stored_endpoint_id_defaults_none_for_old_payloads() -> None:
+    """Payloads persisted before endpoint engines existed keep validating
+    (every non-identity field defaults) and read back ``endpoint_id`` None."""
+    stored = LlmEngineStored.model_validate({"provider": "openai", "model": "gpt-5.6-luna"})
+    assert stored.endpoint_id is None
+
+
+def test_stored_endpoint_id_roundtrips_through_its_json_dump() -> None:
+    """The pointer survives the write-site dump (uuid → str) and the
+    read-boundary validate (str → uuid)."""
+    endpoint_id = uuid4()
+    stored = LlmEngineStored(
+        provider="openai_compatible", model="local-model", endpoint_id=endpoint_id
+    )
+    dumped = stored.model_dump(mode="json")
+    assert dumped["endpoint_id"] == str(endpoint_id)
+    assert LlmEngineStored.model_validate(dumped).endpoint_id == endpoint_id
+
+
+def test_update_request_endpoint_id_defaults_none() -> None:
+    """A catalogue-engine PUT (no field) means no endpoint pointer."""
+    req = LlmEngineUpdateRequest.model_validate({"provider": "openai", "model": "gpt-5.6-luna"})
+    assert req.endpoint_id is None
+
+
+def test_update_request_accepts_an_endpoint_id() -> None:
+    endpoint_id = uuid4()
+    req = LlmEngineUpdateRequest.model_validate(
+        {
+            "provider": "openai_compatible",
+            "model": "local-model",
+            "endpoint_id": str(endpoint_id),
+        }
+    )
+    assert req.endpoint_id == endpoint_id
+
+
+def test_read_endpoint_scalars_default_none() -> None:
+    """``LlmEngineRead`` gains ONLY the two scalars (decision 12): both
+    default None for catalogue engines, and there is NO embedded endpoints
+    matrix on the read."""
+    read = LlmEngineRead.model_validate(
+        {
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "mode": "fast",
+            "source": "default",
+            "retired": False,
+            "catalog": [],
+            "availability": {},
+        }
+    )
+    assert read.endpoint_id is None
+    assert read.endpoint_label is None
+    assert "endpoints" not in LlmEngineRead.model_fields
+
+
+def test_read_carries_the_endpoint_scalars() -> None:
+    endpoint_id = uuid4()
+    read = LlmEngineRead.model_validate(
+        {
+            "provider": "openai_compatible",
+            "model": "local-model",
+            "mode": "fast",
+            "source": "project",
+            "retired": False,
+            "catalog": [],
+            "availability": {},
+            "endpoint_id": str(endpoint_id),
+            "endpoint_label": "Lab Ollama",
+        }
+    )
+    assert read.endpoint_id == endpoint_id
+    assert read.endpoint_label == "Lab Ollama"

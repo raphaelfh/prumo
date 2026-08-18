@@ -99,6 +99,34 @@ async def test_outsider_on_retired_project_gets_403_not_409(
 
 
 @pytest.mark.asyncio
+async def test_kickoff_on_dangling_endpoint_engine_is_typed_409(
+    client_as_manager: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """B8 rule 6: the stored engine points at an endpoint whose row was
+    deleted (raw SQL — the service delete guard would have refused) — a NEW
+    kickoff gets the typed 409 ``LLM_ENDPOINT_UNAVAILABLE``, never a 500."""
+    endpoint_id = await engine_setup.make_endpoint(db_session, label="kickoff-dangling")
+    await engine_setup.set_project_engine(
+        db_session, "openai_compatible", "endpoint-model-x", endpoint_id=endpoint_id
+    )
+    await db_session.execute(
+        text("DELETE FROM public.project_llm_endpoints WHERE id = :eid"),
+        {"eid": str(endpoint_id)},
+    )
+
+    r = await client_as_manager.post("/api/v1/extraction/sections", json=_section_payload())
+    assert r.status_code == 409, r.text
+    body = r.json()
+    assert body["ok"] is False
+    assert body["error"]["code"] == "LLM_ENDPOINT_UNAVAILABLE"
+
+    r2 = await client_as_manager.post("/api/v1/extraction/models", json=_models_payload())
+    assert r2.status_code == 409, r2.text
+    assert r2.json()["error"]["code"] == "LLM_ENDPOINT_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
 async def test_section_continuation_with_run_id_skips_the_retired_gate(
     client_as_manager: AsyncClient,
     db_session: AsyncSession,

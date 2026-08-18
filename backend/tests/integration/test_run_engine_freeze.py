@@ -186,6 +186,58 @@ def _engine_of(run: ExtractionRun) -> dict[str, Any]:
     return provenance.get("engine") or {}
 
 
+# ---------------------------------------------------------------------------
+# B8 — the endpoint pointer rides the pinned spine (dump/validate roundtrip)
+# ---------------------------------------------------------------------------
+
+#: A fixed endpoint id — the pin stores it as a plain JSON string.
+_ENDPOINT_ID = "0b8f3d3e-8a54-4c1e-9d8e-1f2a3b4c5d6e"
+
+
+@pytest.mark.asyncio
+async def test_pinned_endpoint_engine_survives_the_freeze_roundtrip(
+    db_session: AsyncSession,
+) -> None:
+    """B8 rule 5 (freeze): a pinned ``LlmTarget`` carrying ``endpoint_id``
+    survives the write-site dump and the read-boundary validate — a retry
+    re-enters on the SAME endpoint, not a re-resolved one."""
+    from app.repositories import ExtractionRunRepository
+    from app.services.run_engine_freeze import freeze_run_engine, read_pinned_engine
+
+    run = await engine_setup.run_in_extract(db_session)
+    candidate = LlmTarget(
+        provider="openai_compatible", model="endpoint-model-x", endpoint_id=_ENDPOINT_ID
+    )
+
+    await freeze_run_engine(ExtractionRunRepository(db_session), run.id, candidate)
+    pinned = await read_pinned_engine(db_session, run.id)
+
+    assert pinned is not None
+    assert (pinned.provider, pinned.model) == ("openai_compatible", "endpoint-model-x")
+    assert pinned.endpoint_id == _ENDPOINT_ID
+
+
+@pytest.mark.asyncio
+async def test_old_pinned_snapshot_without_the_endpoint_key_reads_none(
+    db_session: AsyncSession,
+) -> None:
+    """B8 rule 5 (compat): a pre-B8 pinned snapshot (no ``endpoint_id`` key)
+    still validates — the field defaults to None, never a read failure on a
+    pinned run."""
+    from app.repositories import ExtractionRunRepository
+    from app.services.run_engine_freeze import read_pinned_engine
+
+    run = await engine_setup.run_in_extract(db_session)
+    await ExtractionRunRepository(db_session).freeze_engine(
+        run.id, {"provider": "openai", "model": "gpt-4o-mini"}
+    )
+
+    pinned = await read_pinned_engine(db_session, run.id)
+    assert pinned is not None
+    assert (pinned.provider, pinned.model) == ("openai", "gpt-4o-mini")
+    assert pinned.endpoint_id is None
+
+
 def _section_provenance(run: ExtractionRun, entity_type_id: UUID) -> dict[str, Any]:
     """One section's provenance snapshot off the run row."""
     provenance = (run.results or {}).get("provenance") or {}
@@ -209,6 +261,7 @@ async def test_fresh_run_resolves_engine_from_settings_and_persists_it(
         "model": settings.LLM_DEFAULT_MODEL,
         "mode_requested": "fast",
         "mode_executed": "fast",
+        "endpoint_id": None,
     }, f"engine not frozen on the run: results={run.results}"
     assert calls, "build_model was never called — the stub is not wired"
     assert calls[0] == (settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL)
@@ -248,6 +301,7 @@ async def test_retry_after_settings_change_keeps_the_first_engine(
         "model": original_model,
         "mode_requested": "fast",
         "mode_executed": "fast",
+        "endpoint_id": None,
     }
 
 
@@ -310,6 +364,7 @@ async def test_fresh_run_freezes_the_project_engine(
         "model": "gpt-5.6-terra",
         "mode_requested": "fast",
         "mode_executed": "fast",
+        "endpoint_id": None,
     }, f"the project engine was not frozen: results={run.results}"
     assert calls, "build_model was never called — the stub is not wired"
     assert calls == [("openai", "gpt-5.6-terra")] * len(calls)
@@ -342,6 +397,7 @@ async def test_retry_after_set_for_project_flip_keeps_attempt_1_pair(
         "model": "gpt-5.6-terra",
         "mode_requested": "fast",
         "mode_executed": "fast",
+        "endpoint_id": None,
     }
 
 
@@ -676,6 +732,7 @@ async def test_fresh_run_freezes_the_stored_verified_mode(
         "model": "gpt-5.6-terra",
         "mode_requested": "verified",
         "mode_executed": "verified",
+        "endpoint_id": None,
     }, f"the stored verified mode was not frozen: results={run.results}"
     assert len(verify_log) == 1
     snapshot = _section_provenance(run, SEED.primary_entity_type)
