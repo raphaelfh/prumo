@@ -29,8 +29,16 @@ export type LlmEngineUpdateOverrides = Partial<
  * PUT body builder — EVERY mutation site goes through this. Always sends
  * the explicit mode (omitting it would let the server default silently
  * downgrade a verified project); includes `alternates` (stripped to bare
- * pairs) ONLY when the read carried the field, so plain model/mode PUTs
- * against an old backend stay 422-free during the promotion window.
+ * pairs) and `endpoint_id` ONLY when the read carried the field, so plain
+ * model/mode PUTs against an old backend stay 422-free during the
+ * promotion window.
+ *
+ * `endpoint_id` (C2 C3) follows the same tolerance with one extra rule:
+ * with the field present, an EXPLICIT override is always sent (including
+ * `null`, which is how a catalogue selection clears an endpoint-backed
+ * engine), the stored pointer rides along when non-null, and a null
+ * stored pointer with no override omits the key — a catalogue-only
+ * project keeps sending exactly the body it sent before this feature.
  */
 export function toUpdateBody(
   engine: LlmEngineRead,
@@ -59,6 +67,15 @@ export function toUpdateBody(
       provider,
       model,
     }));
+  }
+  if (engine.hasEndpointId) {
+    // `in`, not a truthiness test: `endpoint_id: null` is a deliberate
+    // CLEAR and must survive to the wire.
+    const overridden = 'endpoint_id' in overrides;
+    const endpointId = overridden ? overrides.endpoint_id : engine.endpoint_id;
+    if (overridden || (endpointId ?? null) !== null) {
+      body.endpoint_id = endpointId ?? null;
+    }
   }
   return body;
 }

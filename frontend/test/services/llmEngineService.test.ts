@@ -100,6 +100,46 @@ describe('fetchLlmEngine', () => {
     expect(result.data.alternates).toEqual([]);
     expect(result.data.hasAlternates).toBe(false);
   });
+
+  it('normalizes the endpoint keys to null when the wire omits them (old backend)', async () => {
+    const {
+      endpoint_id: _id,
+      endpoint_label: _label,
+      ...legacyPayload
+    } = ENGINE_READ;
+    apiClientMock.mockResolvedValue(legacyPayload);
+
+    const result = await fetchLlmEngine('p1');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Explicit null, never undefined: the chip branches on
+    // `endpoint_id !== null` and the label renders from a scalar.
+    expect(result.data.endpoint_id).toBeNull();
+    expect(result.data.endpoint_label).toBeNull();
+    // The flag is what stops `toUpdateBody` from sending a key the old
+    // request model 422s on — the null value alone cannot tell the two
+    // backends apart.
+    expect(result.data.hasEndpointId).toBe(false);
+  });
+
+  it('passes an endpoint-backed engine through with its label', async () => {
+    apiClientMock.mockResolvedValue({
+      ...ENGINE_READ,
+      provider: 'openai_compatible',
+      model: 'qwen3-30b',
+      endpoint_id: 'e1',
+      endpoint_label: 'Lab vLLM',
+    });
+
+    const result = await fetchLlmEngine('p1');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.endpoint_id).toBe('e1');
+    expect(result.data.endpoint_label).toBe('Lab vLLM');
+    expect(result.data.hasEndpointId).toBe(true);
+  });
 });
 
 describe('setLlmEngine', () => {
@@ -197,6 +237,62 @@ describe('toUpdateBody', () => {
       model: 'gpt-4o-mini',
       mode: 'verified',
       alternates: [],
+    });
+  });
+
+  describe('endpoint_id (C2 C3)', () => {
+    const ENDPOINT_ENGINE = makeEngineRead({
+      provider: 'openai_compatible',
+      model: 'qwen3-30b',
+      endpoint_id: 'e1',
+      endpoint_label: 'Lab vLLM',
+    });
+
+    it('carries the stored pointer through an unrelated mutation', () => {
+      // A mode toggle on an endpoint-backed engine must not silently
+      // reset the project to a catalogue engine.
+      const body = toUpdateBody(ENDPOINT_ENGINE, {mode: 'verified'});
+
+      expect(body).toEqual({
+        provider: 'openai_compatible',
+        model: 'qwen3-30b',
+        mode: 'verified',
+        alternates: [],
+        endpoint_id: 'e1',
+      });
+    });
+
+    it('omits the key when the stored pointer is null (catalogue engine)', () => {
+      const body = toUpdateBody(NORMALIZED, {model: 'gpt-4o'});
+
+      expect('endpoint_id' in body).toBe(false);
+    });
+
+    it('an explicit null override clears the pointer', () => {
+      const body = toUpdateBody(ENDPOINT_ENGINE, {
+        provider: 'openai',
+        model: 'gpt-4o',
+        endpoint_id: null,
+      });
+
+      expect(body).toEqual({
+        provider: 'openai',
+        model: 'gpt-4o',
+        mode: 'fast',
+        alternates: [],
+        endpoint_id: null,
+      });
+    });
+
+    it('omits the key entirely on an old backend, explicit override included', () => {
+      // extra="forbid" on the old request model 422s on the KEY, so a
+      // deliberate `null` is just as fatal as a value.
+      const body = toUpdateBody(
+        {...ENDPOINT_ENGINE, hasEndpointId: false},
+        {endpoint_id: null},
+      );
+
+      expect('endpoint_id' in body).toBe(false);
     });
   });
 });

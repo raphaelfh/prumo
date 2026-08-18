@@ -23,10 +23,19 @@
  */
 import {useState} from 'react';
 import {Link, useNavigate} from 'react-router';
-import {AlertTriangle, Check, KeyRound, Lock, Settings, X} from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  KeyRound,
+  Lock,
+  Server,
+  Settings,
+  X,
+} from 'lucide-react';
 import {toast} from 'sonner';
 
 import {Button} from '@/components/ui/button';
+import {LlmEndpointsDialog} from '@/components/extraction/LlmEndpointsDialog';
 import {
   Command,
   CommandEmpty,
@@ -44,7 +53,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
+import {useLlmEndpoints} from '@/hooks/extraction/useLlmEndpoints';
 import {t} from '@/lib/copy';
+import {endpointHost} from '@/lib/llmEndpointHost';
 import {
   toUpdateBody,
   type LlmEngineAlternatePair,
@@ -110,9 +121,15 @@ function groupByProvider(catalog: LlmEngineCatalogEntry[]): ProviderGroup[] {
 export function LlmEngineChip({projectId}: {projectId: string}) {
   const [open, setOpen] = useState(false);
   const [managingAlternates, setManagingAlternates] = useState(false);
+  const [endpointsOpen, setEndpointsOpen] = useState(false);
   const navigate = useNavigate();
   const query = useLlmEngine(projectId);
   const setEngine = useSetLlmEngine(projectId);
+  // Decision 12: the picker's endpoint groups derive from the endpoints
+  // hook, never from a matrix on the engine read (which carries only the
+  // scalar `endpoint_label`, for the chip). A failed read (old backend
+  // without the routes) simply yields no groups.
+  const endpointsQuery = useLlmEndpoints(projectId);
 
   // Pending AND error both render nothing — the chrome ROW included, so
   // the Configuration tab never shows an empty flex strip: the chip is
@@ -132,7 +149,21 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
   const currentEntry = engine.catalog.find(
     (e) => e.provider === engine.provider && e.model === engine.model,
   );
-  const chipLabel = currentEntry?.label ?? engine.model;
+  // An endpoint engine has no catalogue entry to borrow a label from: it
+  // reads as "<model> · <endpoint>", from the read's scalar label.
+  const chipLabel =
+    engine.endpoint_id && engine.endpoint_label
+      ? `${engine.model} · ${engine.endpoint_label}`
+      : (currentEntry?.label ?? engine.model);
+
+  // Only a VERIFIED endpoint with at least one allowed model can back an
+  // extraction: a heading with zero rows under it is dead UI that implies
+  // models the endpoint does not offer.
+  const runnableEndpoints = (endpointsQuery.data ?? []).filter(
+    (endpoint) =>
+      endpoint.validation_status === 'ok' &&
+      endpoint.allowed_models.length > 0,
+  );
 
   const mutationCallbacks = {
     onSuccess: () => toast.success(t('llmEngine', 'saveSuccess')),
@@ -158,7 +189,27 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
     // project, panel B2) and the stored alternates when the read carried
     // them (C2 A4 mutation invariant).
     setEngine.mutate(
-      toUpdateBody(engine, {provider: entry.provider, model: entry.model}),
+      toUpdateBody(engine, {
+        provider: entry.provider,
+        model: entry.model,
+        // Clearing is EXPLICIT and only when there is something to clear:
+        // a catalogue pair carrying a live endpoint pointer would keep
+        // routing runs at the endpoint. A project that never had one
+        // keeps sending the pre-endpoints body.
+        ...(engine.endpoint_id ? {endpoint_id: null} : {}),
+      }),
+      mutationCallbacks,
+    );
+  };
+
+  const handleSelectEndpointModel = (endpointId: string, model: string) => {
+    setOpen(false);
+    setEngine.mutate(
+      toUpdateBody(engine, {
+        provider: 'openai_compatible',
+        model,
+        endpoint_id: endpointId,
+      }),
       mutationCallbacks,
     );
   };
@@ -506,11 +557,118 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                 )}
               </CommandGroup>
             ))}
+            {/* Endpoint groups stay out of managing mode: an alternate is
+                a CATALOGUE pair (the wire entry carries provider+model
+                only), so an endpoint model has nowhere to be stored. */}
+            {!managingAlternates &&
+              runnableEndpoints.map((endpoint) => {
+                // Decision 10: the backend REJECTS mode="verified" on a
+                // prompted-only endpoint. The management dialog carries
+                // the same warning, but a manager picking an engine need
+                // never open it — a colleague may have created and
+                // verified this endpoint. On a Verified project the rows
+                // are blocked WITH the way out (switching the project to
+                // Fast is one click above), never a dead click into a
+                // generic save-error toast.
+                const promptedOnly =
+                  endpoint.capabilities.output_mode === 'prompted';
+                const blocked = promptedOnly && engine.mode === 'verified';
+                return (
+                  <CommandGroup
+                    key={endpoint.id}
+                    heading={
+                      <span className="flex flex-col gap-0.5">
+                        <span className="flex items-baseline gap-2">
+                          {endpoint.label}
+                          <span className="truncate font-normal text-muted-foreground/80">
+                            {endpointHost(endpoint.base_url)}
+                          </span>
+                        </span>
+                        <span className="font-normal text-muted-foreground/80">
+                          {t('llmEngine', 'endpointGroupNote')}
+                        </span>
+                        {promptedOnly && (
+                          <span className="flex items-start gap-1.5 font-normal text-warning">
+                            <AlertTriangle
+                              className="mt-0.5 h-3 w-3 shrink-0"
+                              strokeWidth={1.5}
+                              aria-hidden="true"
+                            />
+                            <span className="min-w-0">
+                              {t('llmEngine', 'endpointPromptedGroupNote')}
+                            </span>
+                          </span>
+                        )}
+                      </span>
+                    }
+                  >
+                    {endpoint.allowed_models.map((model) => {
+                      const isCurrent =
+                        engine.endpoint_id === endpoint.id &&
+                        engine.model === model;
+                      return (
+                        <CommandItem
+                          key={`${endpoint.id}:${model}`}
+                          value={`${endpoint.label} ${model}`}
+                          disabled={blocked}
+                          onSelect={() =>
+                            handleSelectEndpointModel(endpoint.id, model)
+                          }
+                          className="items-start gap-2 px-2 py-2"
+                          data-testid={`llm-engine-endpoint-option-${endpoint.id}-${model}`}
+                        >
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="flex items-center gap-1.5">
+                              <span className="truncate font-mono text-[13px]">
+                                {model}
+                              </span>
+                              {isCurrent && (
+                                <Check
+                                  className="h-3.5 w-3.5 shrink-0 text-primary"
+                                  strokeWidth={1.5}
+                                  aria-label={t('llmEngine', 'currentModelAria')}
+                                />
+                              )}
+                            </span>
+                            {blocked && (
+                              <span className="text-[11px] text-muted-foreground">
+                                {t('llmEngine', 'endpointPromptedBlocked')}
+                              </span>
+                            )}
+                          </span>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                );
+              })}
           </CommandList>
         </Command>
+        <div className="border-t border-border/40 p-1.5">
+          {/* The popover closes first: a modal dialog opened from inside a
+              popover would otherwise fight it for the focus trap. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-full justify-start px-2 text-[11px] font-normal text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setOpen(false);
+              setEndpointsOpen(true);
+            }}
+            data-testid="llm-engine-manage-endpoints"
+          >
+            <Server className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            {t('llmEngine', 'manageEndpoints')}
+          </Button>
+        </div>
       </PopoverContent>
       </Popover>
       </TooltipProvider>
+      <LlmEndpointsDialog
+        projectId={projectId}
+        open={endpointsOpen}
+        onOpenChange={setEndpointsOpen}
+      />
     </div>
   );
 }
