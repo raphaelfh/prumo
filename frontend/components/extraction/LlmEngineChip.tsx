@@ -23,10 +23,19 @@
  */
 import {useState} from 'react';
 import {Link, useNavigate} from 'react-router';
-import {AlertTriangle, Check, KeyRound, Lock, Settings, X} from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  KeyRound,
+  Lock,
+  Server,
+  Settings,
+  X,
+} from 'lucide-react';
 import {toast} from 'sonner';
 
 import {Button} from '@/components/ui/button';
+import {LlmEndpointsDialog} from '@/components/extraction/LlmEndpointsDialog';
 import {
   Command,
   CommandEmpty,
@@ -110,6 +119,7 @@ function groupByProvider(catalog: LlmEngineCatalogEntry[]): ProviderGroup[] {
 export function LlmEngineChip({projectId}: {projectId: string}) {
   const [open, setOpen] = useState(false);
   const [managingAlternates, setManagingAlternates] = useState(false);
+  const [endpointsOpen, setEndpointsOpen] = useState(false);
   const navigate = useNavigate();
   const query = useLlmEngine(projectId);
   const setEngine = useSetLlmEngine(projectId);
@@ -508,9 +518,31 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
             ))}
           </CommandList>
         </Command>
+        <div className="border-t border-border/40 p-1.5">
+          {/* The popover closes first: a modal dialog opened from inside a
+              popover would otherwise fight it for the focus trap. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-full justify-start px-2 text-[11px] font-normal text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setOpen(false);
+              setEndpointsOpen(true);
+            }}
+            data-testid="llm-engine-manage-endpoints"
+          >
+            <Server className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            {t('llmEngine', 'manageEndpoints')}
+          </Button>
+        </div>
       </PopoverContent>
       </Popover>
       </TooltipProvider>
+      <LlmEndpointsDialog
+        projectId={projectId}
+        open={endpointsOpen}
+        onOpenChange={setEndpointsOpen}
+      />
     </div>
   );
 }

@@ -23,6 +23,16 @@ vi.mock('@/hooks/extraction/useLlmEngine', () => ({
   useLlmEngine: vi.fn(),
   useSetLlmEngine: vi.fn(),
 }));
+// The endpoints family is mocked too: the popover footer mounts the
+// management dialog, whose hooks would otherwise pull the real service —
+// and with it the api client, which needs supabase env at import time.
+vi.mock('@/hooks/extraction/useLlmEndpoints', () => ({
+  useLlmEndpoints: vi.fn(),
+  useCreateLlmEndpoint: vi.fn(),
+  useUpdateLlmEndpoint: vi.fn(),
+  useDeleteLlmEndpoint: vi.fn(),
+  useVerifyLlmEndpoint: vi.fn(),
+}));
 // Callable-with-methods shape — a namespace-only mock swallows `toast(...)`
 // calls and reports green for feedback that never fired.
 vi.mock('sonner', () => ({
@@ -37,13 +47,23 @@ import {toast} from 'sonner';
 
 import {LlmEngineChip} from '@/components/extraction/LlmEngineChip';
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
+import {
+  useCreateLlmEndpoint,
+  useDeleteLlmEndpoint,
+  useLlmEndpoints,
+  useUpdateLlmEndpoint,
+  useVerifyLlmEndpoint,
+} from '@/hooks/extraction/useLlmEndpoints';
 import {llmEngine as copy} from '@/lib/copy';
+import type {LlmEndpointRead} from '@/services/llmEndpointService';
 import type {LlmEngineRead} from '@/services/llmEngineService';
 
+import {makeEndpointRead} from './mocks/llmEndpointRead';
 import {makeEngineRead} from './mocks/llmEngineRead';
 
 const useLlmEngineMock = vi.mocked(useLlmEngine);
 const useSetLlmEngineMock = vi.mocked(useSetLlmEngine);
+const useLlmEndpointsMock = vi.mocked(useLlmEndpoints);
 
 const CATALOG = [
   {
@@ -114,6 +134,15 @@ const ALT_BYOK = {
 
 const mutateMock = vi.fn();
 
+/** Endpoint rows the popover derives its endpoint groups from (C2 C3). */
+function mockEndpoints(endpoints: LlmEndpointRead[] = []) {
+  useLlmEndpointsMock.mockReturnValue({
+    data: endpoints,
+    isError: false,
+    isPending: false,
+  } as unknown as ReturnType<typeof useLlmEndpoints>);
+}
+
 function mockRead(overrides: Partial<LlmEngineRead> = {}) {
   useLlmEngineMock.mockReturnValue({
     data: {...ENGINE_READ, ...overrides},
@@ -158,6 +187,21 @@ beforeEach(() => {
     mutate: mutateMock,
     isPending: false,
   } as unknown as ReturnType<typeof useSetLlmEngine>);
+  mockEndpoints();
+  // The dialog the footer mounts calls all four mutation hooks on render.
+  const idleMutation = {mutate: vi.fn(), isPending: false};
+  vi.mocked(useCreateLlmEndpoint).mockReturnValue(
+    idleMutation as unknown as ReturnType<typeof useCreateLlmEndpoint>,
+  );
+  vi.mocked(useUpdateLlmEndpoint).mockReturnValue(
+    idleMutation as unknown as ReturnType<typeof useUpdateLlmEndpoint>,
+  );
+  vi.mocked(useDeleteLlmEndpoint).mockReturnValue(
+    idleMutation as unknown as ReturnType<typeof useDeleteLlmEndpoint>,
+  );
+  vi.mocked(useVerifyLlmEndpoint).mockReturnValue(
+    idleMutation as unknown as ReturnType<typeof useVerifyLlmEndpoint>,
+  );
 });
 
 describe('chip', () => {
@@ -402,6 +446,20 @@ describe('popover', () => {
     await renderOpenPopover({model: 'gpt-3.5-turbo', retired: true, source: 'project'});
 
     expect(screen.getByRole('alert')).toHaveTextContent(copy.retiredNote);
+  });
+
+  it('the footer opens the custom-endpoint management dialog', async () => {
+    mockEndpoints([makeEndpointRead()]);
+    await renderOpenPopover();
+
+    await userEvent.click(
+      screen.getByRole('button', {name: copy.manageEndpoints}),
+    );
+
+    expect(
+      screen.getByRole('heading', {name: copy.endpointsTitle}),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Lab vLLM')).toBeInTheDocument();
   });
 });
 
