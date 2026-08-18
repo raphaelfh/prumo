@@ -237,3 +237,5 @@ toplevel
 ASGI
 undoable
 valueerror
+Fernet
+Ollama
