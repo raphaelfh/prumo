@@ -70,6 +70,7 @@ import {
   useVerifyLlmEndpoint,
 } from '@/hooks/extraction/useLlmEndpoints';
 import {t} from '@/lib/copy';
+import {endpointHost} from '@/lib/llmEndpointHost';
 import {cn} from '@/lib/utils';
 import type {
   LlmEndpointProbeResult,
@@ -78,16 +79,6 @@ import type {
 
 type OutputMode = LlmEndpointProbeResult['output_mode'];
 type ValidationStatus = LlmEndpointRead['validation_status'];
-
-/** Host only — the full base URL would blow the popover-family density. */
-function hostOf(baseUrl: string): string {
-  try {
-    return new URL(baseUrl).host;
-  } catch {
-    // A stored URL the browser can't parse still has to render as a row.
-    return baseUrl;
-  }
-}
 
 const MODE_COPY: Record<NonNullable<OutputMode>, string> = {
   tool: t('llmEngine', 'endpointModeTool'),
@@ -332,7 +323,7 @@ export function LlmEndpointsDialog({
                       </div>
                       <p className="flex min-w-0 items-baseline gap-1.5 text-[11px] text-muted-foreground">
                         <span className="truncate">
-                          {hostOf(endpoint.base_url)}
+                          {endpointHost(endpoint.base_url)}
                         </span>
                         <span aria-hidden="true">·</span>
                         <span className="shrink-0">

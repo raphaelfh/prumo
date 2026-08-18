@@ -58,7 +58,6 @@ import {llmEngine as copy} from '@/lib/copy';
 import type {LlmEndpointRead} from '@/services/llmEndpointService';
 import type {LlmEngineRead} from '@/services/llmEngineService';
 
-import {makeEndpointRead} from './mocks/llmEndpointRead';
 import {makeEngineRead} from './mocks/llmEngineRead';
 
 const useLlmEngineMock = vi.mocked(useLlmEngine);
@@ -134,7 +133,11 @@ const ALT_BYOK = {
 
 const mutateMock = vi.fn();
 
-/** Endpoint rows the popover derives its endpoint groups from (C2 C3). */
+/**
+ * Endpoint rows for the popover footer's dialog. The endpoint-specific
+ * assertions live in `LlmEngineChip.endpoints.test.tsx`; here the list is
+ * only kept empty so the footer's dialog has something to render.
+ */
 function mockEndpoints(endpoints: LlmEndpointRead[] = []) {
   useLlmEndpointsMock.mockReturnValue({
     data: endpoints,
@@ -446,20 +449,6 @@ describe('popover', () => {
     await renderOpenPopover({model: 'gpt-3.5-turbo', retired: true, source: 'project'});
 
     expect(screen.getByRole('alert')).toHaveTextContent(copy.retiredNote);
-  });
-
-  it('the footer opens the custom-endpoint management dialog', async () => {
-    mockEndpoints([makeEndpointRead()]);
-    await renderOpenPopover();
-
-    await userEvent.click(
-      screen.getByRole('button', {name: copy.manageEndpoints}),
-    );
-
-    expect(
-      screen.getByRole('heading', {name: copy.endpointsTitle}),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Lab vLLM')).toBeInTheDocument();
   });
 });
 

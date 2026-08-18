@@ -58,7 +58,7 @@ export const llmEngine = {
     endpointDeleteAria: 'Delete endpoint',
     endpointDeleteTitle: 'Delete this endpoint?',
     endpointDeleteDesc:
-        'The stored key is destroyed with it. Runs pinned to this endpoint will block.',
+        'The stored key is destroyed with it. Any extraction pinned to this endpoint will stop working.',
     endpointDeleteConfirm: 'Delete endpoint',
     endpointStatusUnverified: 'Unverified',
     endpointStatusOk: 'Verified',

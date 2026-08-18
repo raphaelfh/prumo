@@ -22,11 +22,17 @@ import type {components} from '@/types/api/schema';
 type LlmEngineReadWire = components['schemas']['LlmEngineRead'];
 
 /**
- * The read the app consumes: the wire shape plus `hasAlternates`, which
- * records whether the wire payload carried the `alternates` field at all
- * (false only against an old backend during the promotion window).
+ * The read the app consumes: the wire shape plus the two deploy-window
+ * flags, which record whether the wire payload carried `alternates` /
+ * `endpoint_id` at all (false only against an old backend during the
+ * promotion window). Both normalized values are indistinguishable from a
+ * genuine empty/absent one, so the flags — not the values — are what tell
+ * `toUpdateBody` which keys the backend will accept.
  */
-export type LlmEngineRead = LlmEngineReadWire & {hasAlternates: boolean};
+export type LlmEngineRead = LlmEngineReadWire & {
+  hasAlternates: boolean;
+  hasEndpointId: boolean;
+};
 export type LlmEngineCatalogEntry =
   components['schemas']['LlmEngineCatalogEntryRead'];
 export type LlmEngineAlternate = components['schemas']['LlmEngineAlternate'];
@@ -46,6 +52,7 @@ function normalizeEngineRead(data: LlmEngineReadWire): LlmEngineRead {
     // rather than juggling undefined-vs-null.
     endpoint_id: data.endpoint_id ?? null,
     endpoint_label: data.endpoint_label ?? null,
+    hasEndpointId: 'endpoint_id' in data,
   };
 }
 
