@@ -70,7 +70,7 @@ def _make_service(db: AsyncSession) -> ses.SectionExtractionService:
         user_id=str(SEED.primary_profile),
         storage=storage,
         trace_id="test-gate",
-        openai_api_key=None,
+        llm_credentials=None,
     )
 
 

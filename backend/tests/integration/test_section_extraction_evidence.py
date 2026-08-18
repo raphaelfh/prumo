@@ -74,7 +74,7 @@ def _make_service(
         user_id=str(SEED.primary_profile),
         storage=storage,
         trace_id=trace_id,
-        openai_api_key=None,
+        llm_credentials=None,
     )
 
 

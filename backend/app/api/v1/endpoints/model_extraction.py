@@ -27,7 +27,7 @@ from app.schemas.extraction import (
     ModelExtractionResult,
     ModelHierarchyChildResponse,
 )
-from app.services.api_key_service import APIKeyService
+from app.services.engine_credentials import resolve_engine_credentials
 from app.services.model_extraction_service import ModelExtractionService
 from app.services.model_hierarchy_service import ModelHierarchyService
 from app.services.run_engine_freeze import resolve_engine_for_run
@@ -170,19 +170,20 @@ async def extract_models(
         # Create storage adapter via factory
         storage = create_storage_adapter(supabase)
 
-        # Buscar API key do user (BYOK) with fallback for global
-        api_key_service = APIKeyService(db=db, user_id=user.sub)
-        # Scope is dropped: ModelExtractionService writes no provenance.
-        # The lookup follows the RESOLVED engine's provider, never settings.
-        _resolved_key = await api_key_service.get_key_for_provider(engine.provider)
-        user_llm_key = _resolved_key.key if _resolved_key is not None else None
+        # Credentials for the RESOLVED engine, never a settings re-read: BYOK
+        # then global for a catalogue engine, the project endpoint's own key +
+        # host for an endpoint one. This route EXECUTES the extraction in the
+        # request (it does not enqueue), so it is the site that needs them.
+        credentials = await resolve_engine_credentials(
+            db, user_id=user.sub, project_id=payload.project_id, engine=engine
+        )
 
         service = ModelExtractionService(
             db=db,
             user_id=user.sub,
             storage=storage,
             trace_id=trace_id,
-            openai_api_key=user_llm_key,
+            llm_credentials=credentials,
         )
 
         result = await service.extract(

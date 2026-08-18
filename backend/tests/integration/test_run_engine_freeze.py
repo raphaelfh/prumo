@@ -37,9 +37,11 @@ from app.llm.extractor import LlmUsage
 from app.models.extraction import ExtractionRun
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
+from app.services import engine_credentials as ec
 from app.services import section_extraction_service as ses
 from app.services import verified_mode as vm
 from app.services.api_key_service import KeyScope, ResolvedKey
+from app.services.engine_credentials import EngineCredentials
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
 
@@ -62,8 +64,9 @@ def _service(
         user_id=str(SEED.primary_profile),
         storage=MagicMock(),
         trace_id=trace_id,
-        openai_api_key=_SECRET_KEY,
-        key_scope=key_scope,
+        llm_credentials=EngineCredentials(
+            api_key=_SECRET_KEY, key_scope=key_scope, base_url=None, endpoint_id=None
+        ),
     )
 
 
@@ -489,17 +492,17 @@ async def test_provenance_key_scope_is_null_when_the_caller_did_not_resolve_one(
 
 def _stub_keyed_build_model(
     monkeypatch: pytest.MonkeyPatch,
-) -> list[tuple[str, str, str | None]]:
-    """Re-patch ``build_model`` to also record the api_key it was handed.
+) -> list[tuple[str, str, str | None, str | None]]:
+    """Re-patch ``build_model`` to also record the credentials it was handed.
 
     Call AFTER ``_stub_llm_seams`` (which wires the other seams); the
-    (provider, model, api_key) triple is the ground truth for which engine
-    ran on whose key.
+    (provider, model, api_key, base_url) tuple is the ground truth for which
+    engine actually ran, on whose key, against which host.
     """
-    calls: list[tuple[str, str, str | None]] = []
+    calls: list[tuple[str, str, str | None, str | None]] = []
 
     def _fake_build_model(provider: str, model_name: str, **kw: Any) -> MagicMock:
-        calls.append((provider, model_name, kw.get("api_key")))
+        calls.append((provider, model_name, kw.get("api_key"), kw.get("base_url")))
         return MagicMock()
 
     monkeypatch.setattr(ses, "build_model", _fake_build_model)
@@ -510,8 +513,10 @@ def _stub_key_service(
     monkeypatch: pytest.MonkeyPatch,
     resolved: ResolvedKey | None,
 ) -> list[str]:
-    """Patch the service-module ``APIKeyService`` seam; return the providers
-    the service asked a key for (empty = it never re-keyed)."""
+    """Patch the RESOLVER's ``APIKeyService`` seam; return the providers a
+    cloud key was asked for (empty = it never re-keyed, or never left the
+    endpoint branch). The seam lives in ``engine_credentials`` since B9 —
+    that module is the one place any call site resolves credentials."""
     asked: list[str] = []
 
     class _RecordingKeys:
@@ -522,20 +527,37 @@ def _stub_key_service(
             asked.append(provider)
             return resolved
 
-    monkeypatch.setattr(ses, "APIKeyService", _RecordingKeys)
+    monkeypatch.setattr(ec, "APIKeyService", _RecordingKeys)
     return asked
 
 
-def _keyed_service(db: AsyncSession, trace_id: str, key_provider: str) -> Any:
-    """A service built the way the worker builds one AFTER resolving a key
-    for ``key_provider`` (the freshly-resolved project provider)."""
+def _keyed_service(
+    db: AsyncSession,
+    trace_id: str,
+    key_provider: str,
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    endpoint_id: str | None = None,
+) -> Any:
+    """A service built the way the worker builds one AFTER resolving
+    credentials for ``key_provider`` (the freshly-resolved project engine).
+
+    ``base_url``/``endpoint_id`` describe an ENDPOINT engine — the identity
+    the credentials were resolved FOR, which the rekey compares against the
+    adopted pin.
+    """
     return ses.SectionExtractionService(
         db=db,
         user_id=str(SEED.primary_profile),
         storage=MagicMock(),
         trace_id=trace_id,
-        openai_api_key=f"key-for-{key_provider}",
-        key_scope=KeyScope.USER_BYOK,
+        llm_credentials=EngineCredentials(
+            api_key=api_key or f"key-for-{key_provider}",
+            key_scope=KeyScope.USER_BYOK,
+            base_url=base_url,
+            endpoint_id=endpoint_id,
+        ),
         key_provider=key_provider,
     )
 
@@ -668,6 +690,141 @@ async def test_rekey_with_no_key_for_the_adopted_provider_degrades_to_none(
     assert snapshot.get("key_scope") is None, (
         "a scope was invented for a key that was never resolved"
     )
+
+
+# ---------------------------------------------------------------------------
+# B9 — the rekey identity is (provider, endpoint_id), and it applies the
+# whole credential atomically. Two custom endpoints share the provider
+# string "openai_compatible", so provider-equality alone would run endpoint
+# B's pin on endpoint A's key + host.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_adoption_across_two_endpoints_carries_the_pinned_endpoints_key_and_url(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A kickoff keyed for endpoint A that ADOPTS a pin on endpoint B must
+    run on B's key AND B's base_url. Both engines say ``openai_compatible``,
+    so a provider-only trigger would silently ship A's credentials to B's
+    host — the worst possible failure: a key posted to a third party."""
+    _stub_llm_seams(monkeypatch)
+    keyed_calls = _stub_keyed_build_model(monkeypatch)
+    asked = _stub_key_service(monkeypatch, ResolvedKey("cloud-key", KeyScope.GLOBAL_SERVICE))
+
+    endpoint_a = await engine_setup.make_endpoint(
+        db_session,
+        label="b9-endpoint-a",
+        base_url="https://8.8.8.8/v1",
+        api_key="sk-endpoint-a",
+        allowed_models=["endpoint-model-x"],
+    )
+    endpoint_b = await engine_setup.make_endpoint(
+        db_session,
+        label="b9-endpoint-b",
+        base_url="https://8.8.4.4/v1",
+        api_key="sk-endpoint-b",
+        allowed_models=["endpoint-model-x"],
+    )
+
+    run = await engine_setup.run_in_extract(db_session)
+    await engine_setup.pin_run(
+        db_session,
+        run,
+        "openai_compatible",
+        "endpoint-model-x",
+        endpoint_id=str(endpoint_b),
+    )
+
+    service = _keyed_service(
+        db_session,
+        "b9-endpoint-swap",
+        key_provider="openai_compatible",
+        api_key="sk-endpoint-a",
+        base_url="https://8.8.8.8/v1",
+        endpoint_id=str(endpoint_a),
+    )
+    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
+        return_value="ARTICLE BODY"
+    )
+    await service.run_from_request(
+        SectionExtractionRequest(
+            projectId=SEED.primary_project,
+            articleId=SEED.primary_article,
+            templateId=SEED.primary_template,
+            entityTypeId=SEED.primary_entity_type,
+            # NO runId: the standalone path adopts the coordinate's live run.
+        ),
+        engine=LlmTarget(
+            provider="openai_compatible",
+            model="endpoint-model-x",
+            endpoint_id=str(endpoint_a),
+        ),
+    )
+    await db_session.refresh(run)
+
+    assert keyed_calls, "build_model was never called — the stub is not wired"
+    assert all(c[2] == "sk-endpoint-b" for c in keyed_calls), (
+        f"endpoint A's key was shipped to endpoint B: {[c[:2] for c in keyed_calls]}"
+    )
+    assert all(c[3] == "https://8.8.4.4/v1" for c in keyed_calls), (
+        f"the call did not go to the PINNED endpoint's host: {keyed_calls}"
+    )
+    assert asked == [], f"an endpoint engine reached the cloud key path: {asked}"
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot.get("key_scope") == KeyScope.SHARED_ENDPOINT.value, (
+        "provenance must name the endpoint scope of the key that actually ran"
+    )
+
+
+@pytest.mark.asyncio
+async def test_catalog_to_endpoint_adoption_populates_the_base_url(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cloud-keyed kickoff adopting an ENDPOINT pin must acquire the whole
+    credential: key, scope AND base_url. Updating only the key leaves
+    ``build_model`` without a host — ``openai_compatible requires a
+    base_url`` — failing the run instead of running it."""
+    _stub_llm_seams(monkeypatch)
+    keyed_calls = _stub_keyed_build_model(monkeypatch)
+    asked = _stub_key_service(monkeypatch, ResolvedKey("cloud-key", KeyScope.GLOBAL_SERVICE))
+
+    endpoint = await engine_setup.make_endpoint(
+        db_session,
+        label="b9-catalog-to-endpoint",
+        base_url="https://8.8.4.4/v1",
+        api_key="sk-endpoint-only",
+        allowed_models=["endpoint-model-x"],
+    )
+    run = await engine_setup.run_in_extract(db_session)
+    await engine_setup.pin_run(
+        db_session, run, "openai_compatible", "endpoint-model-x", endpoint_id=str(endpoint)
+    )
+
+    service = _keyed_service(db_session, "b9-catalog-to-endpoint", key_provider="openai")
+    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
+        return_value="ARTICLE BODY"
+    )
+    await service.run_from_request(
+        SectionExtractionRequest(
+            projectId=SEED.primary_project,
+            articleId=SEED.primary_article,
+            templateId=SEED.primary_template,
+            entityTypeId=SEED.primary_entity_type,
+        ),
+        engine=LlmTarget(provider="openai", model="gpt-4o-mini"),
+    )
+
+    assert keyed_calls, "build_model was never called — the stub is not wired"
+    assert all(c[3] == "https://8.8.4.4/v1" for c in keyed_calls), (
+        f"the adopted endpoint's base_url never reached build_model: {keyed_calls}"
+    )
+    assert all(c[2] == "sk-endpoint-only" for c in keyed_calls), (
+        f"the stale cloud key survived the endpoint adoption: {keyed_calls}"
+    )
+    assert asked == [], f"the endpoint adoption asked for a cloud key: {asked}"
 
 
 # ---------------------------------------------------------------------------

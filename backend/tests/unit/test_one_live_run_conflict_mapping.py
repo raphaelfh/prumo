@@ -29,6 +29,7 @@ from app.api.v1.endpoints._integrity import (
     ONE_LIVE_RUN_CONSTRAINT,
     is_one_live_run_conflict,
 )
+from app.services.engine_credentials import EngineCredentials
 
 
 class _AsyncpgLikeError(Exception):
@@ -213,10 +214,14 @@ async def _call_extract_models(payload, service, caller):
             AsyncMock(return_value=LlmTarget(provider="openai", model="m-x")),
         ),
         patch(f"{_MODEL_EP}.create_storage_adapter", return_value=MagicMock()),
-        patch(f"{_MODEL_EP}.APIKeyService") as api_key_service,
+        # B9: one resolver for key + endpoint host, patched where the route
+        # imports it (the endpoint no longer builds an APIKeyService itself).
+        patch(
+            f"{_MODEL_EP}.resolve_engine_credentials",
+            AsyncMock(return_value=EngineCredentials(None, None, None, None)),
+        ),
         patch(f"{_MODEL_EP}.ModelExtractionService", return_value=service),
     ):
-        api_key_service.return_value.get_key_for_provider = AsyncMock(return_value=None)
         db = AsyncMock()
         await raw(
             request=request,

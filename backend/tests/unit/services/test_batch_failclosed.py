@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.schemas.llm_target import LlmTarget
+from app.services.engine_credentials import EngineCredentials
 from app.services.section_extraction_service import (
     BatchAllSectionsFailed,
     SectionExtractionService,
@@ -21,11 +22,15 @@ async def test_extract_for_run_raises_when_all_sections_fail():
     svc.trace_id = "t"
     # __new__ skips __init__ — supply the env-default candidate it would set.
     svc._engine = LlmTarget(provider="openai", model="m")
-    # ...and the key-provider marker (None = unknown caller, never re-keyed).
+    # ...and the credentials + identity marker (``_key_provider=None`` is the
+    # unknown caller: the injected credentials are never re-resolved).
+    svc._credentials = EngineCredentials(None, None, None, None)
     svc._key_provider = None
+    svc.user_id = "u"
 
     run = SimpleNamespace(
         id="r",
+        project_id="p",
         template_id="tpl",
         article_id="a",
         kind="extraction",

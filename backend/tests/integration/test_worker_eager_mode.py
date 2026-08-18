@@ -316,7 +316,9 @@ def test_extract_section_task_signature_and_kwargs_alignment() -> None:
             return_value=fake_extraction_service,
         ),
         patch(
-            "app.services.api_key_service.APIKeyService",
+            # B9: the key seam moved into the credentials resolver — the one
+            # place every call site turns an engine into credentials.
+            "app.services.engine_credentials.APIKeyService",
             return_value=fake_api_key_service,
         ),
         patch(

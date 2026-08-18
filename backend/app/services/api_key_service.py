@@ -82,6 +82,9 @@ class KeyScope(StrEnum):
     """The caller's own stored key."""
     GLOBAL_SERVICE = "global_service"
     """prumo's shared key, used when the caller has none."""
+    SHARED_ENDPOINT = "shared_endpoint"
+    """The project's custom-endpoint key (C2): shared by every member of the
+    project, resolved from the endpoint row — never from this service."""
 
 
 class ResolvedKey(NamedTuple):

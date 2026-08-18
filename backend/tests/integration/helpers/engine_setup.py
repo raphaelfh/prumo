@@ -123,17 +123,28 @@ async def run_in_extract(db: AsyncSession) -> ExtractionRun:
 
 
 async def pin_run(
-    db: AsyncSession, run: ExtractionRun, provider: str, model: str, mode: str = "fast"
+    db: AsyncSession,
+    run: ExtractionRun,
+    provider: str,
+    model: str,
+    mode: str = "fast",
+    endpoint_id: str | None = None,
 ) -> None:
     """Pre-pin the run the way a prior attempt's freeze write would have.
 
     ``mode`` fills both frozen mode fields (the freeze is a request-echo;
     execution truth lives on the section snapshot, never here).
+    ``endpoint_id`` pins an ENDPOINT engine (B8) — a plain string, the way
+    the JSONB snapshot stores it.
     """
     await ExtractionRunRepository(db).freeze_engine(
         run.id,
         LlmTarget(
-            provider=provider, model=model, mode_requested=mode, mode_executed=mode
+            provider=provider,
+            model=model,
+            mode_requested=mode,
+            mode_executed=mode,
+            endpoint_id=endpoint_id,
         ).model_dump(),
     )
 
@@ -163,6 +174,8 @@ async def make_endpoint(
     *,
     project_id: UUID | None = None,
     label: str = "engine-suite-endpoint",
+    base_url: str = "https://8.8.8.8/v1",
+    api_key: str = "sk-engine-suite",
     allowed_models: list[str] | None = None,
     validation_status: str = "ok",
     output_mode: str | None = "tool",
@@ -172,7 +185,8 @@ async def make_endpoint(
     Created through the real service (Fernet, SSRF-vetted literal public
     IP), then armed directly on the row — the B4 suite's
     ``_arm_probe_state`` approach: the probe itself is B5's contract, not
-    this surface's.
+    this surface's. ``base_url``/``api_key`` are parameterised so a test
+    can tell TWO endpoints apart at the wire (B9 adoption).
     """
     service = LlmEndpointService(db)
     read = await service.create(
@@ -180,8 +194,8 @@ async def make_endpoint(
         created_by=SEED.primary_profile,
         payload=LlmEndpointCreateRequest(
             label=label,
-            base_url="https://8.8.8.8/v1",
-            api_key=SecretStr("sk-engine-suite"),
+            base_url=base_url,
+            api_key=SecretStr(api_key),
             allowed_models=allowed_models if allowed_models is not None else ["endpoint-model-x"],
         ),
     )
