@@ -347,3 +347,49 @@ async def test_ladder_has_an_overall_deadline(monkeypatch: pytest.MonkeyPatch) -
     assert result.validation_status == "failed"
     assert result.error == "timeout"
     assert result.output_mode is None
+
+
+# ---------------------------------------------------------------------------
+# Reasoning models (empirical: local Ollama, C2 O3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rung_body_leaves_room_for_a_reasoning_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The token ceiling must not truncate a model that thinks before it acts.
+
+    Measured against a real endpoint (Ollama serving ``qwen3.6:35b-mlx``):
+    the tool call arrives at completion token 284, every token before it
+    spent on internal reasoning. At the original ceiling of 32 the response
+    came back ``finish_reason="length"`` with no ``tool_calls``, so a
+    perfectly capable endpoint was reported ``failed`` and stayed
+    unselectable. The ceiling is a truncation guard, not a cost control —
+    the ladder deadline and the guard's byte cap are what bound the probe.
+    """
+    guard = _guard(monkeypatch, [_models(["m1"]), _tool_ok()])
+
+    await probe_endpoint(vetted=_VETTED, api_key=None, allowed_models=["m1"])
+
+    rung_body = guard.calls[1]["json_body"]
+    assert rung_body["max_tokens"] >= 512
+
+
+@pytest.mark.asyncio
+async def test_truncated_rung_is_reported_as_truncation_not_silence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ladder that only ever ran out of room says so.
+
+    ``no structured output mode succeeded`` sends a manager hunting for an
+    endpoint fault that does not exist; the actionable fact is that every
+    rung hit the ceiling.
+    """
+    truncated = (200, {"choices": [{"finish_reason": "length", "message": {"content": ""}}]})
+    _guard(monkeypatch, [_models(["m1"]), truncated, truncated, truncated])
+
+    result = await probe_endpoint(vetted=_VETTED, api_key=None, allowed_models=["m1"])
+
+    assert result.validation_status == "failed"
+    assert result.error == "truncated_before_output"
