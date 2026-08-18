@@ -40,6 +40,8 @@ export const llmEngine = {
     endpointsDesc:
         'OpenAI-compatible endpoints this project runs on its own shared key.',
     endpointsEmpty: 'No custom endpoints yet.',
+    endpointsLoading: 'Loading custom endpoints…',
+    endpointsLoadError: "Couldn't load the custom endpoints. Try reopening this dialog.",
     endpointAddLabel: 'Add endpoint',
     endpointLabelLabel: 'Label',
     endpointBaseUrlLabel: 'Base URL',
@@ -76,4 +78,7 @@ export const llmEngine = {
     endpointDeleteSuccess: 'Endpoint removed.',
     endpointVerifyError: 'Failed to verify the endpoint',
     endpointGroupNote: 'Project endpoint — runs on its shared key',
+    endpointPromptedGroupNote: 'Prompted JSON only — cannot back Verified mode',
+    endpointPromptedBlocked:
+        'Switch this project to Fast to extract with this model.',
 } as const;

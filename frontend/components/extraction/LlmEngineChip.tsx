@@ -156,9 +156,13 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
       ? `${engine.model} · ${engine.endpoint_label}`
       : (currentEntry?.label ?? engine.model);
 
-  // Only a VERIFIED endpoint can back a run, so only those are offered.
+  // Only a VERIFIED endpoint with at least one allowed model can back an
+  // extraction: a heading with zero rows under it is dead UI that implies
+  // models the endpoint does not offer.
   const runnableEndpoints = (endpointsQuery.data ?? []).filter(
-    (endpoint) => endpoint.validation_status === 'ok',
+    (endpoint) =>
+      endpoint.validation_status === 'ok' &&
+      endpoint.allowed_models.length > 0,
   );
 
   const mutationCallbacks = {
@@ -557,54 +561,87 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                 a CATALOGUE pair (the wire entry carries provider+model
                 only), so an endpoint model has nowhere to be stored. */}
             {!managingAlternates &&
-              runnableEndpoints.map((endpoint) => (
-                <CommandGroup
-                  key={endpoint.id}
-                  heading={
-                    <span className="flex flex-col gap-0.5">
-                      <span className="flex items-baseline gap-2">
-                        {endpoint.label}
-                        <span className="truncate font-normal text-muted-foreground/80">
-                          {endpointHost(endpoint.base_url)}
-                        </span>
-                      </span>
-                      <span className="font-normal text-muted-foreground/80">
-                        {t('llmEngine', 'endpointGroupNote')}
-                      </span>
-                    </span>
-                  }
-                >
-                  {endpoint.allowed_models.map((model) => {
-                    const isCurrent =
-                      engine.endpoint_id === endpoint.id &&
-                      engine.model === model;
-                    return (
-                      <CommandItem
-                        key={`${endpoint.id}:${model}`}
-                        value={`${endpoint.label} ${model}`}
-                        onSelect={() =>
-                          handleSelectEndpointModel(endpoint.id, model)
-                        }
-                        className="items-start gap-2 px-2 py-2"
-                        data-testid={`llm-engine-endpoint-option-${endpoint.id}-${model}`}
-                      >
-                        <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                          <span className="truncate font-mono text-[13px]">
-                            {model}
+              runnableEndpoints.map((endpoint) => {
+                // Decision 10: the backend REJECTS mode="verified" on a
+                // prompted-only endpoint. The management dialog carries
+                // the same warning, but a manager picking an engine need
+                // never open it — a colleague may have created and
+                // verified this endpoint. On a Verified project the rows
+                // are blocked WITH the way out (switching the project to
+                // Fast is one click above), never a dead click into a
+                // generic save-error toast.
+                const promptedOnly =
+                  endpoint.capabilities.output_mode === 'prompted';
+                const blocked = promptedOnly && engine.mode === 'verified';
+                return (
+                  <CommandGroup
+                    key={endpoint.id}
+                    heading={
+                      <span className="flex flex-col gap-0.5">
+                        <span className="flex items-baseline gap-2">
+                          {endpoint.label}
+                          <span className="truncate font-normal text-muted-foreground/80">
+                            {endpointHost(endpoint.base_url)}
                           </span>
-                          {isCurrent && (
-                            <Check
-                              className="h-3.5 w-3.5 shrink-0 text-primary"
-                              strokeWidth={1.5}
-                              aria-label={t('llmEngine', 'currentModelAria')}
-                            />
-                          )}
                         </span>
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              ))}
+                        <span className="font-normal text-muted-foreground/80">
+                          {t('llmEngine', 'endpointGroupNote')}
+                        </span>
+                        {promptedOnly && (
+                          <span className="flex items-start gap-1.5 font-normal text-warning">
+                            <AlertTriangle
+                              className="mt-0.5 h-3 w-3 shrink-0"
+                              strokeWidth={1.5}
+                              aria-hidden="true"
+                            />
+                            <span className="min-w-0">
+                              {t('llmEngine', 'endpointPromptedGroupNote')}
+                            </span>
+                          </span>
+                        )}
+                      </span>
+                    }
+                  >
+                    {endpoint.allowed_models.map((model) => {
+                      const isCurrent =
+                        engine.endpoint_id === endpoint.id &&
+                        engine.model === model;
+                      return (
+                        <CommandItem
+                          key={`${endpoint.id}:${model}`}
+                          value={`${endpoint.label} ${model}`}
+                          disabled={blocked}
+                          onSelect={() =>
+                            handleSelectEndpointModel(endpoint.id, model)
+                          }
+                          className="items-start gap-2 px-2 py-2"
+                          data-testid={`llm-engine-endpoint-option-${endpoint.id}-${model}`}
+                        >
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="flex items-center gap-1.5">
+                              <span className="truncate font-mono text-[13px]">
+                                {model}
+                              </span>
+                              {isCurrent && (
+                                <Check
+                                  className="h-3.5 w-3.5 shrink-0 text-primary"
+                                  strokeWidth={1.5}
+                                  aria-label={t('llmEngine', 'currentModelAria')}
+                                />
+                              )}
+                            </span>
+                            {blocked && (
+                              <span className="text-[11px] text-muted-foreground">
+                                {t('llmEngine', 'endpointPromptedBlocked')}
+                              </span>
+                            )}
+                          </span>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                );
+              })}
           </CommandList>
         </Command>
         <div className="border-t border-border/40 p-1.5">

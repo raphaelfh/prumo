@@ -16,6 +16,9 @@
  *   non-URL base URL), so a body that cannot succeed is never sent;
  * - the api_key tri-state: an untouched edit field sends `null` (KEEP
  *   the stored key), the explicit clear control sends `""`.
+ * - a typed-but-uncommitted model id still reaches the wire (the tag
+ *   input is not a trap door);
+ * - a probe verdict never outlives the write that invalidated it.
  */
 import {render, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -160,6 +163,35 @@ describe('list', () => {
     expect(screen.getByText(copy.endpointsEmpty)).toBeInTheDocument();
   });
 
+  // A failed read and an empty project are DIFFERENT facts: collapsing
+  // them into "No custom endpoints yet." tells a manager their endpoints
+  // are gone, and flashes that same lie on every open.
+  it('renders the loading state, never the empty copy, while the read is pending', () => {
+    useLlmEndpointsMock.mockReturnValue({
+      data: undefined,
+      isError: false,
+      isPending: true,
+    } as unknown as ReturnType<typeof useLlmEndpoints>);
+    render(<LlmEndpointsDialog projectId="p1" open onOpenChange={vi.fn()} />);
+
+    expect(
+      screen.getByRole('status', {name: copy.endpointsLoading}),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(copy.endpointsEmpty)).not.toBeInTheDocument();
+  });
+
+  it('renders a distinct error line on a failed read', () => {
+    useLlmEndpointsMock.mockReturnValue({
+      data: undefined,
+      isError: true,
+      isPending: false,
+    } as unknown as ReturnType<typeof useLlmEndpoints>);
+    render(<LlmEndpointsDialog projectId="p1" open onOpenChange={vi.fn()} />);
+
+    expect(screen.getByText(copy.endpointsLoadError)).toBeInTheDocument();
+    expect(screen.queryByText(copy.endpointsEmpty)).not.toBeInTheDocument();
+  });
+
   it('renders an ok endpoint with the success badge and a failed one destructive', () => {
     renderDialog([
       makeEndpointRead({id: 'e-ok', label: 'OK', validation_status: 'ok'}),
@@ -211,6 +243,54 @@ describe('create', () => {
       // the backend rejects it on create.
       api_key: null,
     });
+  });
+
+  // The tag input is the only way models reach the wire, so anything
+  // sitting in it at submit time is data the manager typed — dropping it
+  // ships an endpoint with zero models: a heading with no rows in the
+  // picker and nothing for the probe to probe.
+  it('carries a typed-but-uncommitted model id into the POST', async () => {
+    renderDialog([]);
+
+    await fillCreateForm({model: ''});
+    await userEvent.type(
+      screen.getByLabelText(copy.endpointModelsLabel),
+      'qwen3-30b',
+    );
+    await userEvent.click(screen.getByRole('button', {name: copy.endpointSaveLabel}));
+
+    expect(createMutate.mock.calls[0][0].allowed_models).toEqual(['qwen3-30b']);
+  });
+
+  it('commits the draft on blur, without Enter', async () => {
+    renderDialog([]);
+
+    await fillCreateForm({model: ''});
+    await userEvent.type(
+      screen.getByLabelText(copy.endpointModelsLabel),
+      'qwen3-30b',
+    );
+    await userEvent.tab();
+
+    expect(
+      screen.getByRole('button', {
+        name: copy.endpointModelRemoveAria.replace('{{model}}', 'qwen3-30b'),
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(copy.endpointModelsLabel)).toHaveValue('');
+  });
+
+  it('does not duplicate a draft that is already a chip', async () => {
+    renderDialog([]);
+
+    await fillCreateForm();
+    await userEvent.type(
+      screen.getByLabelText(copy.endpointModelsLabel),
+      'qwen3-30b',
+    );
+    await userEvent.click(screen.getByRole('button', {name: copy.endpointSaveLabel}));
+
+    expect(createMutate.mock.calls[0][0].allowed_models).toEqual(['qwen3-30b']);
   });
 
   it('surfaces a refused save inline, sanitized', async () => {
@@ -265,6 +345,20 @@ describe('Zod layer (a body that cannot succeed is never sent)', () => {
     expect(
       await screen.findByText(copy.endpointValidationBaseUrl),
     ).toBeInTheDocument();
+    expect(createMutate).not.toHaveBeenCalled();
+  });
+
+  it('blocks submit on an http:// base URL (the field already says HTTPS only)', async () => {
+    renderDialog([]);
+
+    await fillCreateForm({baseUrl: 'http://llm.lab.example.org/v1'});
+    await userEvent.click(screen.getByRole('button', {name: copy.endpointSaveLabel}));
+
+    // Two occurrences once the field rejects it: the standing description
+    // plus the inline error message, which reuses the same sentence.
+    await vi.waitFor(() =>
+      expect(screen.getAllByText(copy.endpointBaseUrlHint)).toHaveLength(2),
+    );
     expect(createMutate).not.toHaveBeenCalled();
   });
 });
@@ -350,6 +444,20 @@ describe('edit (api_key tri-state)', () => {
 
     expect(updateMutate.mock.calls[0][0].body.allowed_models).toEqual([]);
   });
+
+  // The removed chip takes the focused element with it; without a landing
+  // spot focus falls to <body> and the keyboard user restarts the form.
+  it('moves focus to the model input after removing a chip', async () => {
+    await openEditForm();
+
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: copy.endpointModelRemoveAria.replace('{{model}}', 'qwen3-30b'),
+      }),
+    );
+
+    expect(screen.getByLabelText(copy.endpointModelsLabel)).toHaveFocus();
+  });
 });
 
 describe('verify', () => {
@@ -425,6 +533,130 @@ describe('verify', () => {
       within(row).getByText(copy.endpointStatusFailed),
     ).toBeInTheDocument();
     expect(within(row).getByText('connection refused')).toBeInTheDocument();
+  });
+
+  // The backend resets validation_status → unverified and clears
+  // capabilities whenever base_url or allowed_models changes. A probe
+  // verdict that survives that write asserts "Verified" over a row the
+  // picker has already dropped.
+  it('drops the probe verdict when the edited row is saved', async () => {
+    verifyMutate.mockImplementation(
+      (
+        _id: string,
+        opts?: {onSuccess?: (r: Record<string, unknown>) => void},
+      ) =>
+        opts?.onSuccess?.({
+          validation_status: 'ok',
+          output_mode: 'tool',
+          models_seen: ['qwen3-30b'],
+          error: null,
+        }),
+    );
+    updateMutate.mockImplementation(
+      (_vars: unknown, opts?: {onSuccess?: () => void}) => {
+        // The PUT changed base_url, so the refetched row comes back reset.
+        mockList([
+          makeEndpointRead({
+            base_url: 'https://new.lab.example.org/v1',
+            validation_status: 'unverified',
+            capabilities: {output_mode: null, models_seen: []},
+          }),
+        ]);
+        opts?.onSuccess?.();
+      },
+    );
+    renderDialog();
+    const row = () => screen.getByTestId(`llm-endpoint-row-${ENDPOINT_ID}`);
+
+    await userEvent.click(
+      within(row()).getByRole('button', {name: copy.endpointVerifyAria}),
+    );
+    expect(within(row()).getByText(copy.endpointStatusOk)).toBeInTheDocument();
+
+    await userEvent.click(
+      within(row()).getByRole('button', {name: copy.endpointEditAria}),
+    );
+    const baseUrl = screen.getByLabelText(copy.endpointBaseUrlLabel);
+    await userEvent.clear(baseUrl);
+    await userEvent.type(baseUrl, 'https://new.lab.example.org/v1');
+    await userEvent.click(screen.getByRole('button', {name: copy.endpointSaveLabel}));
+
+    expect(updateMutate).toHaveBeenCalledTimes(1);
+    expect(
+      within(row()).getByText(copy.endpointStatusUnverified),
+    ).toBeInTheDocument();
+    expect(
+      within(row()).queryByText(copy.endpointModeTool),
+    ).not.toBeInTheDocument();
+  });
+
+  // Dismissing leaves the component MOUNTED (open=false), so local state
+  // outlives the surface that produced it unless it is cleared.
+  it('clears the probe verdict and the delete error when the dialog is dismissed', async () => {
+    verifyMutate.mockImplementation(
+      (
+        _id: string,
+        opts?: {onSuccess?: (r: Record<string, unknown>) => void},
+      ) =>
+        opts?.onSuccess?.({
+          validation_status: 'ok',
+          output_mode: 'tool',
+          models_seen: [],
+          error: null,
+        }),
+    );
+    deleteMutate.mockImplementation(
+      (_id: string, opts?: {onError?: (e: Error) => void}) =>
+        opts?.onError?.(new Error('The project engine runs on this endpoint.')),
+    );
+    const onOpenChange = vi.fn();
+    mockList();
+    render(
+      <LlmEndpointsDialog projectId="p1" open onOpenChange={onOpenChange} />,
+    );
+    const row = () => screen.getByTestId(`llm-endpoint-row-${ENDPOINT_ID}`);
+
+    await userEvent.click(
+      within(row()).getByRole('button', {name: copy.endpointVerifyAria}),
+    );
+    await userEvent.click(
+      within(row()).getByRole('button', {name: copy.endpointDeleteAria}),
+    );
+    await userEvent.click(
+      screen.getByRole('button', {name: copy.endpointDeleteConfirm}),
+    );
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', {name: 'Close'}));
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(
+      within(row()).getByText(copy.endpointStatusUnverified),
+    ).toBeInTheDocument();
+  });
+
+  it('disables only the row whose probe is in flight', () => {
+    useVerifyMock.mockReturnValue({
+      mutate: verifyMutate,
+      isPending: true,
+      variables: 'e-busy',
+    } as unknown as ReturnType<typeof useVerifyLlmEndpoint>);
+    renderDialog([
+      makeEndpointRead({id: 'e-busy', label: 'Busy'}),
+      makeEndpointRead({id: 'e-idle', label: 'Idle'}),
+    ]);
+
+    expect(
+      within(screen.getByTestId('llm-endpoint-row-e-busy')).getByRole('button', {
+        name: copy.endpointVerifyAria,
+      }),
+    ).toBeDisabled();
+    expect(
+      within(screen.getByTestId('llm-endpoint-row-e-idle')).getByRole('button', {
+        name: copy.endpointVerifyAria,
+      }),
+    ).toBeEnabled();
   });
 
   it('renders the stored prompted capability without re-probing', () => {

@@ -5,8 +5,11 @@
  * dialog renders and the engine picker derives its endpoint groups from
  * (locked decision 12 — the engine read carries only the scalar
  * `endpoint_label`, never a matrix). An ErrorResult becomes the query's
- * error state, which both surfaces map to "no endpoints" (the deploy-race
- * window where a new frontend hits an old backend without the routes).
+ * error state — which the PICKER maps to "no groups" (the deploy-race
+ * window where a new frontend hits an old backend without the routes: the
+ * chip is optional chrome, never a blocker), while the management dialog
+ * names it, because there a failed read and an empty project are
+ * different facts and the manager asked for exactly this list.
  *
  * EVERY mutation invalidates BOTH key families. The engine read derives
  * `endpoint_label` — and whether the stored engine is still runnable —

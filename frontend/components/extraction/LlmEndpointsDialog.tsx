@@ -17,9 +17,13 @@
  *
  * Probe results land in local state as well as invalidating the list: the
  * badge and output-mode chip must answer the click that produced them,
- * not the refetch that follows it.
+ * not the refetch that follows it. That override is DROPPED on every
+ * write to the row and on dismiss — the backend resets
+ * validation_status/capabilities whenever base_url or allowed_models
+ * changes, so a surviving verdict would assert "Verified" over a row the
+ * engine picker has already stopped offering.
  */
-import {useState} from 'react';
+import {useRef, useState} from 'react';
 import {useForm} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {z} from 'zod';
@@ -56,6 +60,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import {Input} from '@/components/ui/input';
+import {Skeleton} from '@/components/ui/skeleton';
 import {
   Tooltip,
   TooltipContent,
@@ -98,23 +103,31 @@ const STATUS_CLASS: Record<ValidationStatus, string> = {
   failed: 'border-destructive/40 bg-destructive/10 text-destructive',
 };
 
-const buildEndpointSchema = () =>
-  z.object({
-    label: z
-      .string()
-      .trim()
-      .min(1, t('llmEngine', 'endpointValidationLabelRequired'))
-      .max(80, t('llmEngine', 'endpointValidationLabelMax')),
-    base_url: z
-      .string()
-      .trim()
-      .url(t('llmEngine', 'endpointValidationBaseUrl')),
-    api_key: z.string(),
-    clear_key: z.boolean(),
-    allowed_models: z.array(z.string()),
-  });
+// Module scope, like MODE_COPY/STATUS_COPY above: the schema is a
+// constant, and rebuilding it per render handed the resolver a new object
+// on every keystroke.
+const ENDPOINT_SCHEMA = z.object({
+  label: z
+    .string()
+    .trim()
+    .min(1, t('llmEngine', 'endpointValidationLabelRequired'))
+    .max(80, t('llmEngine', 'endpointValidationLabelMax')),
+  base_url: z
+    .string()
+    .trim()
+    .url(t('llmEngine', 'endpointValidationBaseUrl'))
+    // The backend refuses plaintext outright; failing here spares the
+    // round-trip and says it where the hint already promised HTTPS.
+    .refine(
+      (value) => value.startsWith('https://'),
+      t('llmEngine', 'endpointBaseUrlHint'),
+    ),
+  api_key: z.string(),
+  clear_key: z.boolean(),
+  allowed_models: z.array(z.string()),
+});
 
-type EndpointFormInput = z.infer<ReturnType<typeof buildEndpointSchema>>;
+type EndpointFormInput = z.infer<typeof ENDPOINT_SCHEMA>;
 
 const EMPTY_FORM: EndpointFormInput = {
   label: '',
@@ -150,6 +163,7 @@ export function LlmEndpointsDialog({
   const [probes, setProbes] = useState<Record<string, LlmEndpointProbeResult>>(
     {},
   );
+  const modelInputRef = useRef<HTMLInputElement>(null);
 
   const endpointsQuery = useLlmEndpoints(projectId);
   const createEndpoint = useCreateLlmEndpoint(projectId);
@@ -161,9 +175,28 @@ export function LlmEndpointsDialog({
   const saving = createEndpoint.isPending || updateEndpoint.isPending;
 
   const form = useForm<EndpointFormInput>({
-    resolver: zodResolver(buildEndpointSchema()),
+    resolver: zodResolver(ENDPOINT_SCHEMA),
     defaultValues: EMPTY_FORM,
   });
+
+  /** A probe verdict is only true until the next write to that row. */
+  const dropProbe = (endpointId: string) =>
+    setProbes((current) => {
+      if (!(endpointId in current)) return current;
+      const next = {...current};
+      delete next[endpointId];
+      return next;
+    });
+
+  const handleOpenChange = (next: boolean) => {
+    // The component stays MOUNTED at open=false, so a probe verdict or a
+    // refused-delete banner would otherwise greet the next opener.
+    if (!next) {
+      setProbes({});
+      setDeleteError(null);
+    }
+    onOpenChange(next);
+  };
 
   const openCreateForm = () => {
     setSaveError(null);
@@ -194,11 +227,20 @@ export function LlmEndpointsDialog({
   const handleSubmit = (values: EndpointFormInput) => {
     setSaveError(null);
     const typedKey = values.api_key.trim();
+    // Whatever sits in the tag input at submit time is a model id the
+    // manager typed. The onBlur commit catches the pointer path; this
+    // catches every other way a submit fires, so the field is never a
+    // trap door that ships an endpoint with zero models.
+    const draft = modelDraft.trim();
     const shared = {
       label: values.label,
       base_url: values.base_url,
-      allowed_models: values.allowed_models,
+      allowed_models:
+        draft !== '' && !values.allowed_models.includes(draft)
+          ? [...values.allowed_models, draft]
+          : values.allowed_models,
     };
+    setModelDraft('');
     const callbacks = {
       onError: (error: Error) => setSaveError(error.message),
     };
@@ -211,6 +253,9 @@ export function LlmEndpointsDialog({
         {
           ...callbacks,
           onSuccess: () => {
+            // A base_url / allowed_models change resets the row's
+            // validation server-side: the stale verdict must go with it.
+            dropProbe(formState.endpoint.id);
             toast.success(t('llmEngine', 'endpointUpdateSuccess'));
             closeForm();
           },
@@ -245,7 +290,10 @@ export function LlmEndpointsDialog({
   const handleDelete = (endpointId: string) => {
     setDeleteError(null);
     deleteEndpoint.mutate(endpointId, {
-      onSuccess: () => toast.success(t('llmEngine', 'endpointDeleteSuccess')),
+      onSuccess: () => {
+        dropProbe(endpointId);
+        toast.success(t('llmEngine', 'endpointDeleteSuccess'));
+      },
       onError: (error: Error) => setDeleteError(error.message),
     });
   };
@@ -264,7 +312,7 @@ export function LlmEndpointsDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-xl">
         <TooltipProvider>
           <DialogHeader>
@@ -283,7 +331,22 @@ export function LlmEndpointsDialog({
             </p>
           )}
 
-          {endpoints.length === 0 ? (
+          {/* A failed read and an empty project are different facts: one
+              of them means the manager's endpoints are still there. */}
+          {endpointsQuery.isPending ? (
+            <div
+              role="status"
+              aria-label={t('llmEngine', 'endpointsLoading')}
+              className="space-y-2 py-2"
+            >
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+            </div>
+          ) : endpointsQuery.isError ? (
+            <p className="py-4 text-center text-[13px] text-destructive">
+              {t('llmEngine', 'endpointsLoadError')}
+            </p>
+          ) : endpoints.length === 0 ? (
             <p className="py-4 text-center text-[13px] text-muted-foreground">
               {t('llmEngine', 'endpointsEmpty')}
             </p>
@@ -359,7 +422,13 @@ export function LlmEndpointsDialog({
                             size="icon"
                             className="h-7 w-7 text-muted-foreground hover:text-foreground"
                             aria-label={t('llmEngine', 'endpointVerifyAria')}
-                            disabled={verifyEndpoint.isPending}
+                            // Scoped to the row in flight: one slow probe
+                            // (up to 60s) must not lock every other row's
+                            // Verify button with it.
+                            disabled={
+                              verifyEndpoint.isPending &&
+                              verifyEndpoint.variables === endpoint.id
+                            }
                             onClick={() => handleVerify(endpoint.id)}
                           >
                             <ShieldCheck className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -564,32 +633,51 @@ export function LlmEndpointsDialog({
                               className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px]"
                             >
                               <span className="font-mono">{model}</span>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-4 w-4 text-muted-foreground hover:text-foreground"
-                                aria-label={t(
-                                  'llmEngine',
-                                  'endpointModelRemoveAria',
-                                ).replace('{{model}}', model)}
-                                disabled={saving}
-                                onClick={() =>
-                                  field.onChange(
-                                    field.value.filter((m) => m !== model),
-                                  )
-                                }
-                              >
-                                <X className="h-3 w-3" strokeWidth={1.5} />
-                              </Button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-4 w-4 text-muted-foreground hover:text-foreground"
+                                    aria-label={t(
+                                      'llmEngine',
+                                      'endpointModelRemoveAria',
+                                    ).replace('{{model}}', model)}
+                                    disabled={saving}
+                                    onClick={() => {
+                                      field.onChange(
+                                        field.value.filter((m) => m !== model),
+                                      );
+                                      // The removed chip takes focus with
+                                      // it; land it on the draft input
+                                      // rather than on <body>.
+                                      modelInputRef.current?.focus();
+                                    }}
+                                  >
+                                    <X className="h-3 w-3" strokeWidth={1.5} />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {t(
+                                    'llmEngine',
+                                    'endpointModelRemoveAria',
+                                  ).replace('{{model}}', model)}
+                                </TooltipContent>
+                              </Tooltip>
                             </li>
                           ))}
                         </ul>
                       )}
                       <FormControl>
                         <Input
+                          ref={modelInputRef}
                           value={modelDraft}
                           onChange={(event) => setModelDraft(event.target.value)}
+                          // Leaving the field commits what is in it: a
+                          // manager who types a model id and reaches for
+                          // Save with the mouse never loses it.
+                          onBlur={() => addModel(field)}
                           onKeyDown={(event) => {
                             // Enter commits a chip instead of submitting the
                             // form — a half-typed model id must never ride

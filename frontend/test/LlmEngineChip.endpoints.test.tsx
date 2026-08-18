@@ -90,6 +90,15 @@ const OK_ENDPOINT = makeEndpointRead({
   allowed_models: ['qwen3-30b', 'llama-3.3-70b'],
 });
 
+/** Verified, but the probe only got prompted JSON out of it (decision 10). */
+const PROMPTED_ENDPOINT = makeEndpointRead({
+  id: 'e9',
+  label: 'Prompted box',
+  validation_status: 'ok',
+  allowed_models: ['mistral-7b'],
+  capabilities: {output_mode: 'prompted', models_seen: ['mistral-7b']},
+});
+
 /** The engine as it reads once an endpoint model is the project default. */
 const ENDPOINT_ENGINE: Partial<LlmEngineRead> = {
   provider: 'openai_compatible',
@@ -281,6 +290,17 @@ describe('endpoint groups (C2 C3)', () => {
     expect('endpoint_id' in body).toBe(false);
   });
 
+  // A verified endpoint with nothing allowed is a heading with zero rows:
+  // dead UI that suggests models exist behind it.
+  it('renders NO group for an ok endpoint whose model list is empty', async () => {
+    mockEndpoints([
+      makeEndpointRead({id: 'e5', validation_status: 'ok', allowed_models: []}),
+    ]);
+    await renderOpenPopover();
+
+    expect(screen.queryByText(copy.endpointGroupNote)).not.toBeInTheDocument();
+  });
+
   it('hides endpoint rows while managing alternates (catalogue pairs only)', async () => {
     mockEndpoints([OK_ENDPOINT]);
     await renderOpenPopover();
@@ -292,5 +312,65 @@ describe('endpoint groups (C2 C3)', () => {
     expect(
       screen.queryByTestId('llm-engine-endpoint-option-e1-qwen3-30b'),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Decision 10: the backend REJECTS mode="verified" on a prompted-only
+ * endpoint, "and the UI warns first". The dialog's warning is not enough —
+ * a manager picking an engine need never open it (a colleague may have
+ * created and verified the endpoint).
+ */
+describe('prompted-only endpoints (decision 10)', () => {
+  it('warns in the group heading that the endpoint cannot back Verified mode', async () => {
+    mockEndpoints([PROMPTED_ENDPOINT]);
+    await renderOpenPopover();
+
+    expect(
+      screen.getByText(copy.endpointPromptedGroupNote),
+    ).toBeInTheDocument();
+  });
+
+  it('does not warn for an endpoint that probed tool calling', async () => {
+    mockEndpoints([
+      makeEndpointRead({
+        id: 'e1',
+        validation_status: 'ok',
+        capabilities: {output_mode: 'tool', models_seen: []},
+      }),
+    ]);
+    await renderOpenPopover();
+
+    expect(
+      screen.queryByText(copy.endpointPromptedGroupNote),
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers the rows normally on a Fast-mode project', async () => {
+    mockEndpoints([PROMPTED_ENDPOINT]);
+    await renderOpenPopover();
+
+    await userEvent.click(
+      screen.getByTestId('llm-engine-endpoint-option-e9-mistral-7b'),
+    );
+
+    expect(mutateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks the rows on a Verified-mode project, with the way out', async () => {
+    mockEndpoints([PROMPTED_ENDPOINT]);
+    await renderOpenPopover({mode: 'verified'});
+
+    const option = screen.getByTestId('llm-engine-endpoint-option-e9-mistral-7b');
+    expect(option).toHaveAttribute('aria-disabled', 'true');
+    expect(
+      within(option).getByText(copy.endpointPromptedBlocked),
+    ).toBeInTheDocument();
+
+    await userEvent.click(option);
+
+    // The dead click is the bug: a 422 arrives as a generic save-error
+    // toast with no hint of which knob to turn.
+    expect(mutateMock).not.toHaveBeenCalled();
   });
 });
