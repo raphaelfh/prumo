@@ -100,6 +100,41 @@ describe('fetchLlmEngine', () => {
     expect(result.data.alternates).toEqual([]);
     expect(result.data.hasAlternates).toBe(false);
   });
+
+  it('normalizes the endpoint keys to null when the wire omits them (old backend)', async () => {
+    const {
+      endpoint_id: _id,
+      endpoint_label: _label,
+      ...legacyPayload
+    } = ENGINE_READ;
+    apiClientMock.mockResolvedValue(legacyPayload);
+
+    const result = await fetchLlmEngine('p1');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Explicit null, never undefined: the chip branches on
+    // `endpoint_id !== null` and the label renders from a scalar.
+    expect(result.data.endpoint_id).toBeNull();
+    expect(result.data.endpoint_label).toBeNull();
+  });
+
+  it('passes an endpoint-backed engine through with its label', async () => {
+    apiClientMock.mockResolvedValue({
+      ...ENGINE_READ,
+      provider: 'openai_compatible',
+      model: 'qwen3-30b',
+      endpoint_id: 'e1',
+      endpoint_label: 'Lab vLLM',
+    });
+
+    const result = await fetchLlmEngine('p1');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.endpoint_id).toBe('e1');
+    expect(result.data.endpoint_label).toBe('Lab vLLM');
+  });
 });
 
 describe('setLlmEngine', () => {

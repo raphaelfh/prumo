@@ -40,6 +40,12 @@ function normalizeEngineRead(data: LlmEngineReadWire): LlmEngineRead {
     ...data,
     alternates: data.alternates ?? [],
     hasAlternates: 'alternates' in data,
+    // C2 C1: endpoint-backed engines. Both keys are optional on the wire
+    // (an old backend omits them entirely), so the read is normalized to
+    // an explicit null — components branch on `endpoint_id !== null`
+    // rather than juggling undefined-vs-null.
+    endpoint_id: data.endpoint_id ?? null,
+    endpoint_label: data.endpoint_label ?? null,
   };
 }
 

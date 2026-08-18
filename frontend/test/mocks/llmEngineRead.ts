@@ -43,6 +43,8 @@ export function makeEngineReadWire(
     catalog: [],
     availability: {openai: true, anthropic: false},
     alternates: [],
+    endpoint_id: null,
+    endpoint_label: null,
     ...overrides,
   };
 }
