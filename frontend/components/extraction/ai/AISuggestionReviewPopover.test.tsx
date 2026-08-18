@@ -420,3 +420,55 @@ describe('AISuggestionReviewPopover — read-only run', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('AISuggestionReviewPopover — per-version engine (contract)', () => {
+  // CHARACTERIZATION, not coverage of the backend slice: this component already
+  // read `version.provenance` per row, so the test passes with the backend
+  // change reverted. It pins the contract the backend now depends on — a
+  // refactor that hoists the model to the run-group header must fail here.
+  //
+  // Two versions of ONE coordinate, produced on the SAME run by different
+  // engines. Until per-proposal provenance the run held a single, last-write-
+  // wins snapshot, so both rows necessarily rendered the same model.
+  const historyWithDistinctEngines = [
+    v({
+      id: 'p2',
+      value: 412,
+      provenance: {ranByName: 'Carla', model: 'claude-5-opus'},
+      timestamp: new Date('2026-04-28T11:00:00Z'),
+    }),
+    v({
+      id: 'p1',
+      value: 'Retrospective cohort',
+      provenance: {ranByName: 'Carla', model: 'gpt-5.6-luna'},
+    }),
+  ];
+
+  it('renders each version with the engine that produced it', async () => {
+    const user = userEvent.setup();
+    render(
+      <RunEditabilityProvider stage="consensus" showPeerIdentity>
+        <AISuggestionReviewPopover
+          instanceId="i"
+          fieldId="f"
+          getHistory={async () => historyWithDistinctEngines}
+          selectedProposalId="p1"
+          trigger={<button>open</button>}
+        />
+      </RunEditabilityProvider>,
+    );
+    await user.click(screen.getByText('open'));
+
+    // The pinned version shows its own engine without any interaction.
+    expect(await screen.findByText(/gpt-5\.6-luna/)).toBeInTheDocument();
+
+    // The other version, once expanded, shows a DIFFERENT engine — the whole
+    // point: the group no longer speaks for every row in it.
+    // Only the non-selected row renders a Details toggle.
+    await user.click(screen.getByRole('button', {name: /reviewDetails|details/i}));
+    expect(await screen.findByText(/claude-5-opus/)).toBeInTheDocument();
+
+    // Identity stays run-scoped and keeps rendering from the run half.
+    expect(screen.getAllByText(/Run by Carla/).length).toBeGreaterThan(0);
+  });
+});

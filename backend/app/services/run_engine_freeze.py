@@ -87,6 +87,46 @@ async def resolve_engine_for_run(
     return engine
 
 
+def build_proposal_engine(
+    snapshot: dict[str, Any] | None, engine: LlmTarget
+) -> dict[str, Any] | None:
+    """Engine identity for ONE proposal row — how THIS value was produced.
+
+    Derived from the section snapshot rather than rebuilt, so the per-row record
+    and the run record can never disagree about how the call executed. ``None``
+    when no snapshot exists (no LLM ran), which reads as "unattributed".
+
+    Deliberately NOT the snapshot itself. That record is per-section and
+    LAST-WRITE-WINS, and its first key is ``ran_by_user_id``. Two consequences
+    make it the wrong thing to store on a proposal: it is relabelled whenever the
+    section is re-extracted, so an older version would inherit a newer run's
+    execution record; and the blind-review scrub only walks dicts read from
+    ``extraction_runs.results``, so a proposal row carrying identity would never
+    be visited by it and would hand a peer's user id to a blind reviewer.
+
+    Identity is therefore excluded at the WRITE — the guarantee is "never
+    stored", not "scrubbed on read" — along with ``prompt_composition`` (which
+    would duplicate the full rendered prompt on every row) and ``tokens`` (a
+    per-section LLM-call fact that would be a lie per field). Those keep flowing
+    from the run snapshot, which readers merge underneath this.
+
+    ``endpoint_id`` is recorded here and nowhere else: ``build_run_provenance``
+    does not capture it, so custom-endpoint runs (C2) otherwise carry no engine
+    identity beyond a bare model string.
+    """
+    if snapshot is None:
+        return None
+    return {
+        "provider": engine.provider,
+        "model": engine.model,
+        "endpoint_id": engine.endpoint_id,
+        "key_scope": snapshot.get("key_scope"),
+        "mode_requested": snapshot.get("mode_requested"),
+        "mode_executed": snapshot.get("mode_executed"),
+        "passes": snapshot.get("passes", 1),
+    }
+
+
 def build_run_provenance(
     *,
     ran_by_user_id: str,

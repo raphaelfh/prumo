@@ -468,3 +468,175 @@ async def test_list_by_run_returns_chronological_filtered_by_run_id(
     assert b1.id not in ids, "list_by_run leaked a proposal from another run"
     assert ids.index(a1.id) < ids.index(a2.id), "chronological order broken"
     await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_provenance_is_persisted_on_insert(db_session: AsyncSession) -> None:
+    """The engine that produced a value is stored on the proposal row itself."""
+    fx = await _setup_run_with_instance_field(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, _ = fx
+    service = ExtractionProposalService(db_session)
+    engine = {
+        "provider": "openai",
+        "model": "gpt-5.6-luna",
+        "endpoint_id": None,
+        "key_scope": "global_service",
+        "mode_requested": "verified",
+        "mode_executed": "fast",
+        "passes": 1,
+    }
+    record = await service.record_proposal(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"text": "from LLM"},
+        provenance=engine,
+    )
+    assert record.provenance == engine
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_provenance_never_carries_runner_identity(db_session: AsyncSession) -> None:
+    """Identity stays run-level and is never copied onto a proposal row.
+
+    The section snapshot's first key is ``ran_by_user_id`` and the blind-review
+    scrub only walks ``extraction_runs.results``; a proposal row is never visited
+    by it. Storing identity here would hand a peer's user id to a blind reviewer
+    on every AI proposal. The guarantee must be "never stored", not "scrubbed".
+    """
+    fx = await _setup_run_with_instance_field(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, _ = fx
+    from app.schemas.llm_target import LlmTarget
+    from app.services.run_engine_freeze import build_proposal_engine
+
+    # A realistic section snapshot: identity first, exactly as build_run_provenance
+    # emits it. The helper must drop that key, not carry it through.
+    snapshot = {
+        "ran_by_user_id": "ffffffff-9999-0000-0000-000000000001",
+        "provider": "openai",
+        "model": "gpt-5.6-luna",
+        "key_scope": "global_service",
+        "mode_requested": "verified",
+        "mode_executed": "fast",
+        "passes": 1,
+        "prompt_composition": {"system_prompt": "a very long prompt"},
+    }
+    engine = build_proposal_engine(snapshot, LlmTarget(provider="openai", model="gpt-5.6-luna"))
+    assert engine is not None
+    assert "ran_by_user_id" not in engine
+    assert "prompt_composition" not in engine
+    assert build_proposal_engine(None, LlmTarget(provider="openai", model="m")) is None
+    assert engine["provider"] == "openai"
+    assert engine["model"] == "gpt-5.6-luna"
+
+    service = ExtractionProposalService(db_session)
+    record = await service.record_proposal(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"text": "v"},
+        provenance=engine,
+    )
+    assert "ran_by_user_id" not in (record.provenance or {})
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_identical_replay_keeps_the_original_provenance(
+    db_session: AsyncSession,
+) -> None:
+    """An idempotent hit returns the existing row and does NOT rewrite its engine.
+
+    Documented limitation: a corroborating re-run under a different engine is not
+    recorded. The stored engine did produce that value, so the record stays true —
+    recording corroboration would mean a new row with a link, never a mutated one.
+    """
+    fx = await _setup_run_with_instance_field(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, _ = fx
+    service = ExtractionProposalService(db_session)
+    first = await service.record_proposal(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"text": "same"},
+        provenance={"provider": "openai", "model": "engine-A"},
+    )
+    second = await service.record_proposal(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"text": "same"},
+        provenance={"provider": "anthropic", "model": "engine-B"},
+    )
+    assert second.id == first.id, "identical value must not append a row"
+    assert second.provenance == {"provider": "openai", "model": "engine-A"}
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_changed_value_records_the_new_engine(db_session: AsyncSession) -> None:
+    """A genuinely new value appends a row carrying ITS OWN engine.
+
+    This is the attribution the run/section snapshot cannot express: it is
+    last-write-wins, so it would relabel the older version.
+    """
+    fx = await _setup_run_with_instance_field(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, _ = fx
+    service = ExtractionProposalService(db_session)
+    first = await service.record_proposal(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"text": "v1"},
+        provenance={"provider": "openai", "model": "engine-A"},
+    )
+    second = await service.record_proposal(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"text": "v2"},
+        provenance={"provider": "anthropic", "model": "engine-B"},
+    )
+    assert second.id != first.id
+    assert first.provenance == {"provider": "openai", "model": "engine-A"}
+    assert second.provenance == {"provider": "anthropic", "model": "engine-B"}
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_proposal_without_engine_context_stays_null(
+    db_session: AsyncSession,
+) -> None:
+    """Callers with no engine context (the HTTP endpoint, reopen seeding) write NULL.
+
+    Legacy rows read as "unattributed" and fall back to the section snapshot.
+    """
+    fx = await _setup_run_with_instance_field(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, _ = fx
+    service = ExtractionProposalService(db_session)
+    record = await service.record_proposal(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"text": "no engine"},
+    )
+    assert record.provenance is None
+    await db_session.rollback()
