@@ -5157,6 +5157,57 @@
         "title": "ListProvidersData",
         "type": "object"
       },
+      "LlmEngineAlternate": {
+        "additionalProperties": false,
+        "description": "One fallback engine pair \u2014 the stored and request entry shape.\n\n``extra=\"forbid\"`` + bounded field lengths: a REQUEST entry smuggling\nkeys (temperature/seed \u2014 same posture as ``LlmEngineUpdateRequest``) or\nan oversized value is a hard 422; a hand-written STORED entry with the\nsame defects is dropped by the tolerant per-entry validator on\n``LlmEngineStored.alternates`` \u2014 the entry degrades, never the payload.",
+        "properties": {
+          "model": {
+            "maxLength": 200,
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "maxLength": 200,
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model"
+        ],
+        "title": "LlmEngineAlternate",
+        "type": "object"
+      },
+      "LlmEngineAlternateRead": {
+        "description": "One alternate as the popover renders it: the pair plus its canonical\ncatalogue id and a per-entry ``retired`` flag (the catalogue no longer\nlists that pair).",
+        "properties": {
+          "canonical": {
+            "title": "Canonical",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "retired": {
+            "title": "Retired",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "canonical",
+          "retired"
+        ],
+        "title": "LlmEngineAlternateRead",
+        "type": "object"
+      },
       "LlmEngineCatalogEntryRead": {
         "description": "One selectable engine as the picker renders it.",
         "properties": {
@@ -5212,8 +5263,16 @@
         "type": "object"
       },
       "LlmEngineRead": {
-        "description": "The resolved engine view the \u2699 popover renders.\n\n``source`` says whether the pair is the project's stored choice or the\nserver's env default; ``retired`` flags a stored pair the catalogue no\nlonger lists (new runs are refused until a manager re-chooses).\n``availability`` maps provider \u2192 whether the CALLER can run it (their\nown stored key, or a global service key) \u2014 booleans only, never key\nmaterial or metadata.",
+        "description": "The resolved engine view the \u2699 popover renders.\n\n``source`` says whether the pair is the project's stored choice or the\nserver's env default; ``retired`` flags a stored pair the catalogue no\nlonger lists (new runs are refused until a manager re-chooses).\n``availability`` maps provider \u2192 whether the CALLER can run it (their\nown stored key, or a global service key) \u2014 booleans only, never key\nmaterial or metadata. ``alternates`` is the stored fallback list with\na per-entry ``retired`` flag.",
         "properties": {
+          "alternates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/LlmEngineAlternateRead"
+            },
+            "title": "Alternates",
+            "type": "array"
+          },
           "availability": {
             "additionalProperties": {
               "type": "boolean"
@@ -5305,8 +5364,22 @@
       },
       "LlmEngineUpdateRequest": {
         "additionalProperties": false,
-        "description": "PUT body for the project engine.\n\n``mode: Literal[\"fast\", \"verified\"]`` is the closed write gate (\u00a75 \u2014\nVerified shipped with the verify pass; anything else is a free 422);\n``extra=\"forbid\"`` blocks smuggled keys (no temperature/seed, by design).",
+        "description": "PUT body for the project engine.\n\n``mode: Literal[\"fast\", \"verified\"]`` is the closed write gate (\u00a75 \u2014\nVerified shipped with the verify pass; anything else is a free 422);\n``extra=\"forbid\"`` blocks smuggled keys (no temperature/seed, by design).\n``alternates`` is tri-state: ``None`` (field absent) keeps the stored\nlist, ``[]`` clears it, a list replaces it.",
         "properties": {
+          "alternates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/LlmEngineAlternate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alternates"
+          },
           "mode": {
             "default": "fast",
             "enum": [
@@ -10722,7 +10795,7 @@
         ]
       },
       "put": {
-        "description": "Persist the project's engine choice (catalogue-validated, attributed).",
+        "description": "Persist the project's engine choice (catalogue-validated, attributed).\n\n``alternates`` rides the same write: ``None`` (field absent) keeps the\nstored list, ``[]`` clears it, a list replaces it \u2014 every entry\ncatalogue-validated by the service (unknown pair \u2192 400).",
         "operationId": "set_llm_engine_api_v1_projects__project_id__llm_engine_put",
         "parameters": [
           {

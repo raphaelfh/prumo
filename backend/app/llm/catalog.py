@@ -96,18 +96,27 @@ CATALOG: tuple[CatalogEntry, ...] = (
 )
 
 
+_BY_PAIR: dict[tuple[str, str], CatalogEntry] = {(e.provider, e.model): e for e in CATALOG}
+
+
 def find_entry(provider: str, model: str) -> CatalogEntry | None:
     """The catalogue entry for an exact (provider, model) pair, or ``None``.
 
     ``None`` is the *retired* signal: stored engines are validated against
     the catalogue on write, so a miss on read means the roster moved on.
     """
-    for entry in CATALOG:
-        if entry.provider == provider and entry.model == model:
-            return entry
-    return None
+    return _BY_PAIR.get((provider, model))
+
+
+def canonical_pair(provider: str, model: str) -> str:
+    """The ``provider:model`` string provenance carries (§5).
+
+    Takes the bare pair so stored (possibly retired) engines — which have no
+    catalogue entry — get the same string as catalogue entries do.
+    """
+    return f"{provider}:{model}"
 
 
 def canonical(entry: CatalogEntry) -> str:
-    """The ``provider:model`` string provenance carries (§5)."""
-    return f"{entry.provider}:{entry.model}"
+    """:func:`canonical_pair` for a catalogue entry."""
+    return canonical_pair(entry.provider, entry.model)

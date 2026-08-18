@@ -27,7 +27,7 @@ from app.core.security import TokenPayload, get_current_user
 from app.main import app
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.repositories import ExtractionRunRepository
-from app.schemas.llm_engine import LlmEngineStored
+from app.schemas.llm_engine import LlmEngineAlternate, LlmEngineStored
 from app.schemas.llm_target import LlmTarget
 from app.services.llm_engine_service import LlmEngineService
 from app.services.run_lifecycle_service import RunLifecycleService
@@ -135,7 +135,11 @@ async def pin_run(
 
 
 async def set_project_engine(
-    db: AsyncSession, provider: str, model: str, mode: str = "fast"
+    db: AsyncSession,
+    provider: str,
+    model: str,
+    mode: str = "fast",
+    alternates: list[LlmEngineAlternate] | None = None,
 ) -> LlmEngineStored:
     """The seeded project's engine choice, written by the primary manager."""
     return await LlmEngineService(db).set_for_project(
@@ -144,4 +148,5 @@ async def set_project_engine(
         model=model,
         mode=mode,  # type: ignore[arg-type]
         updated_by=SEED.primary_profile,
+        alternates=alternates,
     )

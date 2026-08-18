@@ -27,11 +27,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.error_handler import AppError
 from app.core.logging import get_logger
-from app.llm.catalog import CATALOG, canonical, find_entry
+from app.llm.catalog import CATALOG, canonical, canonical_pair, find_entry
 from app.models.project import Project
 from app.models.user import Profile
 from app.repositories.project_repository import ProjectRepository
-from app.schemas.llm_engine import LlmEngineCatalogEntryRead, LlmEngineRead, LlmEngineStored
+from app.schemas.llm_engine import (
+    LlmEngineAlternate,
+    LlmEngineAlternateRead,
+    LlmEngineCatalogEntryRead,
+    LlmEngineRead,
+    LlmEngineStored,
+)
 from app.schemas.llm_target import LlmTarget
 from app.services.api_key_service import APIKeyService
 from app.services.parser_settings_service import ProjectNotFoundError
@@ -192,11 +198,22 @@ class LlmEngineService:
         model: str,
         mode: Literal["fast", "verified"],
         updated_by: UUID,
+        alternates: list[LlmEngineAlternate] | None = None,
     ) -> LlmEngineStored:
         """Persist a catalogue-validated engine choice with attribution.
 
         ``updated_by`` comes from the auth dependency and ``previous_model``
         from the stored value — never client-supplied.
+
+        ``alternates`` is tri-state: ``None`` keeps the previously stored
+        list (minus the new primary — a kept list must never contain it),
+        ``[]`` clears it, a list replaces it. NEW entries must be in the
+        server catalogue (alternates are catalogue-only in C2); entries
+        already stored are kept even when the catalogue retired them — the
+        A4 frontend echoes the FULL stored list on every mutation, so a
+        stored-then-retired pair must not brick every PUT (the read flags
+        it amber; a removal echo simply omits it). Duplicates collapse to
+        the first occurrence and the primary pair is silently filtered out.
         """
         if find_entry(provider, model) is None:
             raise ValueError(f"Unknown engine {provider}:{model} — not in the server catalogue")
@@ -206,7 +223,10 @@ class LlmEngineService:
         # ``ParserSettingsService``, so two unlocked writers interleaving
         # (read A, read B, write A, write B) would silently drop one
         # sub-key. ``populate_existing`` refreshes any stale identity-map
-        # copy — the lock is useless if a pre-lock read is served.
+        # copy — the lock is useless if a pre-lock read is served. The
+        # alternates curation sits AFTER the lock on purpose: telling a NEW
+        # entry from an already-stored one needs the same locked read that
+        # feeds previous_model.
         project = (
             await self.db.execute(
                 select(Project)
@@ -218,6 +238,34 @@ class LlmEngineService:
         if project is None:
             raise ProjectNotFoundError(f"Project {project_id} not found")
         previous = _stored_engine(project.settings)
+        previous_alternates = list(previous.alternates) if previous is not None else []
+        previous_pairs = {(a.provider, a.model) for a in previous_alternates}
+        if alternates is None:
+            # None = keep: the previously stored list from the same
+            # row-locked read that feeds previous_model.
+            candidates = previous_alternates
+        else:
+            # A replacement list: only entries the project does not already
+            # store have to be in the catalogue today (see the docstring).
+            for alternate in alternates:
+                if (alternate.provider, alternate.model) not in previous_pairs and (
+                    find_entry(alternate.provider, alternate.model) is None
+                ):
+                    raise ValueError(
+                        f"Unknown alternate engine {alternate.provider}:{alternate.model} "
+                        "— not in the server catalogue"
+                    )
+            candidates = alternates
+        # One curation pass for both paths: first occurrence wins, and the
+        # NEW primary never stays listed (promoting an alternate drops it).
+        curated: list[LlmEngineAlternate] = []
+        seen: set[tuple[str, str]] = set()
+        for alternate in candidates:
+            pair = (alternate.provider, alternate.model)
+            if pair == (provider, model) or pair in seen:
+                continue
+            seen.add(pair)
+            curated.append(alternate)
         stored = LlmEngineStored(
             provider=provider,
             model=model,
@@ -225,6 +273,7 @@ class LlmEngineService:
             updated_by=updated_by,
             updated_at=datetime.now(UTC),
             previous_model=previous.model if previous is not None else None,
+            alternates=curated,
         )
         # projects.settings is plain JSONB (NOT MutableDict): build a new dict
         # and REASSIGN, or the change is not tracked and never persists. Only
@@ -242,6 +291,10 @@ class LlmEngineService:
         server-curated roster + the CALLER's per-provider availability —
         booleans only (``has_key_for_provider`` is an existence probe: no
         decrypt, no ``update_last_used`` write). Never another user's keys.
+        Plus the manager-curated ``alternates`` with a per-entry ``retired``
+        flag (empty when the engine is unset — the env default carries no
+        alternates). Alternates are runtime-inert in C2: only this read
+        surfaces them; :func:`resolve_project_engine` ignores them.
         """
         resolved = await self.get_for_project(project_id)
         stored = resolved.stored
@@ -279,4 +332,13 @@ class LlmEngineService:
                 for entry in CATALOG
             ],
             availability=availability,
+            alternates=[
+                LlmEngineAlternateRead(
+                    provider=a.provider,
+                    model=a.model,
+                    canonical=canonical_pair(a.provider, a.model),
+                    retired=find_entry(a.provider, a.model) is None,
+                )
+                for a in (stored.alternates if stored is not None else [])
+            ],
         )

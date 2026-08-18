@@ -16,7 +16,11 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.llm_engine import LlmEngineStored, LlmEngineUpdateRequest
+from app.schemas.llm_engine import (
+    LlmEngineRead,
+    LlmEngineStored,
+    LlmEngineUpdateRequest,
+)
 
 # ---------------------------------------------------------------------------
 # LlmEngineStored — the persisted spine
@@ -102,3 +106,108 @@ def test_request_forbids_unknown_fields() -> None:
 def test_request_mode_defaults_to_fast() -> None:
     body = LlmEngineUpdateRequest(provider="openai", model="gpt-4o-mini")
     assert body.mode == "fast"
+
+
+# ---------------------------------------------------------------------------
+# Alternates (C2 A1) — stored spine, PUT body, read model
+# ---------------------------------------------------------------------------
+
+
+def test_stored_alternates_default_empty_for_old_payloads() -> None:
+    """Payloads persisted before alternates existed keep validating (every
+    non-identity field defaults) and read back an empty list."""
+    stored = LlmEngineStored.model_validate({"provider": "openai", "model": "gpt-5.6-luna"})
+    assert stored.alternates == []
+
+
+def test_stored_alternates_garbage_entry_degrades_entry_not_payload() -> None:
+    """A garbage entry (non-dict, or a dict missing the pair) degrades that
+    ENTRY, never the payload — the primary pair keeps the manager's choice."""
+    stored = LlmEngineStored.model_validate(
+        {
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "alternates": [
+                {"provider": "anthropic", "model": "claude-sonnet-5"},
+                "garbage",
+                42,
+            ],
+        }
+    )
+    assert [(a.provider, a.model) for a in stored.alternates] == [("anthropic", "claude-sonnet-5")]
+
+
+def test_update_request_alternates_default_none_keeps() -> None:
+    # None (field absent) = keep the stored list; [] would clear it.
+    req = LlmEngineUpdateRequest.model_validate(
+        {"provider": "openai", "model": "gpt-5.6-luna", "mode": "fast"}
+    )
+    assert req.alternates is None
+
+
+def test_update_request_still_forbids_extras() -> None:
+    with pytest.raises(ValidationError):
+        LlmEngineUpdateRequest.model_validate(
+            {"provider": "openai", "model": "x", "mode": "fast", "temperature": 1}
+        )
+
+
+def test_stored_alternate_with_extra_key_is_dropped_entry_not_payload() -> None:
+    """``extra="forbid"`` on the entry shape: a hand-written STORED entry
+    smuggling keys (temperature/seed) is dropped by the tolerant per-entry
+    validator — with the ``llm_engine_alternate_entry_dropped`` warning —
+    while the payload and the well-formed siblings survive."""
+    stored = LlmEngineStored.model_validate(
+        {
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "alternates": [
+                {"provider": "openai", "model": "gpt-5.6-luna", "temperature": 2},
+                {"provider": "anthropic", "model": "claude-sonnet-5"},
+            ],
+        }
+    )
+    assert [(a.provider, a.model) for a in stored.alternates] == [("anthropic", "claude-sonnet-5")]
+
+
+def test_stored_alternate_oversized_field_is_dropped() -> None:
+    """A field beyond the 200-char bound degrades that ENTRY, never the payload."""
+    stored = LlmEngineStored.model_validate(
+        {
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "alternates": [{"provider": "openai", "model": "x" * 201}],
+        }
+    )
+    assert stored.alternates == []
+
+
+def test_request_alternate_with_extra_key_is_refused() -> None:
+    """Request-side, the same smuggled key is a hard 422 — no tolerance on
+    the write gate."""
+    with pytest.raises(ValidationError) as exc:
+        LlmEngineUpdateRequest.model_validate(
+            {
+                "provider": "openai",
+                "model": "gpt-5.6-luna",
+                "mode": "fast",
+                "alternates": [{"provider": "openai", "model": "gpt-4o-mini", "temperature": 2}],
+            }
+        )
+    assert any(e["type"] == "extra_forbidden" for e in exc.value.errors())
+
+
+def test_read_alternates_default_empty() -> None:
+    """``LlmEngineRead`` validates without the field — alternates default []."""
+    read = LlmEngineRead.model_validate(
+        {
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "mode": "fast",
+            "source": "default",
+            "retired": False,
+            "catalog": [],
+            "availability": {},
+        }
+    )
+    assert read.alternates == []
