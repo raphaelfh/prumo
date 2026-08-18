@@ -1033,3 +1033,123 @@ async def test_verified_qa_run_skips_the_verifier(
     assert any(e["event"] == "verify_skipped_qa_kind" for e in entries), (
         "the QA skip must be logged under its own event, distinct from a flake"
     )
+
+
+async def _provenance_by_value(db: AsyncSession, run_id: UUID) -> dict[Any, dict[str, Any] | None]:
+    """Each proposal's OWN engine record, keyed by the value that proposal holds.
+
+    Deliberately NOT ordered by ``created_at``: it defaults to ``now()``, which is
+    the TRANSACTION start time, so same-transaction inserts tie and the order
+    collapses to a random-UUID tiebreak. The value is the stable identity here.
+    """
+    rows = (
+        await db.execute(
+            text(
+                "SELECT proposed_value, provenance FROM public.extraction_proposal_records "
+                "WHERE run_id = :rid"
+            ),
+            {"rid": str(run_id)},
+        )
+    ).all()
+    return {(pv or {}).get("value"): prov for pv, prov in rows}
+
+
+async def _proposal_provenances(db: AsyncSession, run_id: UUID) -> list[dict[str, Any] | None]:
+    """Every proposal's OWN engine record on a run (unordered)."""
+    rows = (
+        await db.execute(
+            text("SELECT provenance FROM public.extraction_proposal_records WHERE run_id = :rid"),
+            {"rid": str(run_id)},
+        )
+    ).scalars()
+    return list(rows)
+
+
+@pytest.mark.asyncio
+async def test_each_proposal_keeps_its_own_execution_record(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Slice 0a: re-extracting a section must not relabel the older version.
+
+    The section snapshot is LAST-WRITE-WINS, so before 0a the run held exactly
+    one execution record per (run, entity_type) and every version of that
+    coordinate rendered with it. A verify pass that DEGRADES on attempt 1 and
+    SUCCEEDS on attempt 2 therefore rewrote attempt 1's history: its proposal
+    was retroactively shown as verified/2.
+
+    Per-proposal provenance makes each version carry its own truth. The section
+    snapshot legitimately keeps only the latest — that is its job.
+    """
+    _stub_llm_seams(monkeypatch)
+    # Attempt 1: the verifier swallows an exception and returns None, so the
+    # run degrades to fast/1 even though verified was requested. Stub BEFORE the
+    # run exists, matching test_verified_pin_verify_failure_degrades_to_fast.
+    _stub_verify_pass(monkeypatch, outcome=None)
+    run = await _run_pinned_verified(db_session)
+    await _extract_once(db_session, run, "degraded-pass")
+
+    # Attempt 2: a genuinely different value (so it appends rather than hitting
+    # the idempotent early return) and a verify pass that succeeds.
+    monkeypatch.setattr(
+        ses,
+        "dump_extraction",
+        lambda _out: {
+            "sample_size": {
+                "value": 412,
+                "confidence": 0.9,
+                "reasoning": "table 2",
+                "evidence": [],
+                "status": "found",
+            }
+        },
+    )
+    _stub_verify_pass(monkeypatch, outcome="confirm-all")
+    await _extract_once(db_session, run, "verified-pass")
+
+    by_value = await _provenance_by_value(db_session, run.id)
+    assert len(by_value) == 2, f"expected two appended versions, got: {by_value}"
+    # Identify each version by the value it holds, never by insertion order.
+    first, second = by_value[None], by_value[412]
+    assert first is not None and second is not None
+
+    # THE POINT: attempt 1 still reports the degrade it actually ran.
+    assert first["mode_executed"] == "fast", first
+    assert first["passes"] == 1, first
+    assert second["mode_executed"] == "verified", second
+    assert second["passes"] == 2, second
+
+    # Both requested verified, and both name the run's pinned engine.
+    assert first["mode_requested"] == "verified"
+    assert second["mode_requested"] == "verified"
+    assert first["provider"] == second["provider"] == settings.LLM_PROVIDER
+
+    # The section snapshot is last-write-wins by design and holds only the latest.
+    await db_session.refresh(run)
+    snapshot = _section_provenance(run, SEED.primary_entity_type)
+    assert snapshot["mode_executed"] == "verified"
+
+    # Identity is never copied onto a proposal row — it stays run-level, where
+    # the blind-review scrub can reach it.
+    assert "ran_by_user_id" not in first
+    assert "ran_by_user_id" not in second
+    assert snapshot["ran_by_user_id"] == str(SEED.primary_profile)
+
+
+@pytest.mark.asyncio
+async def test_ai_proposals_always_record_an_engine(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bound the legacy fallback: a proposal written when an LLM ran is never NULL.
+
+    Without this, the read-side fallback to the section snapshot would silently
+    absorb any future regression in the write-path threading, and a missing
+    engine would read as "legacy" forever instead of as a bug.
+    """
+    _stub_llm_seams(monkeypatch)
+    run = await _run_pinned_verified(db_session)
+    await _extract_once(db_session, run, "engine-always-recorded")
+
+    provenances = await _proposal_provenances(db_session, run.id)
+    assert provenances, "the extraction must have written at least one proposal"
+    assert all(p is not None for p in provenances), provenances
+    assert all(p and p.get("model") for p in provenances), provenances

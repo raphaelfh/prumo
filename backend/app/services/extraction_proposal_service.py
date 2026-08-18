@@ -45,6 +45,7 @@ class ExtractionProposalService:
         source_user_id: UUID | None = None,
         confidence_score: float | None = None,
         rationale: str | None = None,
+        provenance: dict[str, Any] | None = None,
     ) -> ExtractionProposalRecord:
         run = await load_run_for_update(self.db, run_id)
         if run is None:
@@ -131,6 +132,11 @@ class ExtractionProposalService:
                     "verification": incoming_verdict,
                 }
                 await self.db.flush()
+            # ``provenance`` is deliberately NOT refreshed here. A corroborating
+            # re-run under a different engine produced the same value, so the
+            # stored engine stays true — and recording corroboration by mutating
+            # this row would break the append-only audit rule (it would be a new
+            # row with a link, never an edited one).
             return latest
 
         record = ExtractionProposalRecord(
@@ -142,6 +148,7 @@ class ExtractionProposalService:
             proposed_value=proposed_value,
             confidence_score=confidence_score,
             rationale=rationale,
+            provenance=provenance,
         )
         return await self._repo.add(record)
 

@@ -58,7 +58,7 @@ from app.services.extraction_snapshot import (
     general_instructions_for_version,
 )
 from app.services.llm_engine_service import resolve_project_engine
-from app.services.run_engine_freeze import freeze_run_engine
+from app.services.run_engine_freeze import build_proposal_engine, freeze_run_engine
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.value_semantics import AbsentReason
 from app.services.verified_mode import (
@@ -1616,6 +1616,7 @@ class SectionExtractionService(LoggerMixin):
                 proposed_value=proposed_value,
                 confidence_score=confidence_score,
                 rationale=reasoning,
+                provenance=build_proposal_engine(self._run_provenance, self._engine),
             )
 
             for rank, item in enumerate(evidence_items):

@@ -1084,6 +1084,72 @@ async def test_migration_0051_round_trip(
     await migration_session.rollback()
 
 
+_PROPOSAL_PROVENANCE_COL = text(
+    "SELECT 1 FROM information_schema.columns "
+    "WHERE table_schema = 'public' AND table_name = 'extraction_proposal_records' "
+    "AND column_name = 'provenance'"
+)
+
+# `authenticated` must never be able to UPDATE the provenance column: it is the
+# audit record of HOW a value was produced, and the baseline grants that role a
+# table-wide UPDATE it can drive straight through PostgREST. NOTE the shape —
+# a bare `REVOKE UPDATE (provenance) ... FROM authenticated` is a silent NO-OP
+# against a table-level grant (verified empirically); 0056 revokes the table-wide
+# UPDATE and re-grants the remaining columns explicitly.
+_AUTHENTICATED_CAN_UPDATE_PROVENANCE = text(
+    "SELECT has_column_privilege("
+    "'authenticated', 'public.extraction_proposal_records', 'provenance', 'UPDATE')"
+)
+_AUTHENTICATED_CAN_UPDATE_VALUE = text(
+    "SELECT has_column_privilege("
+    "'authenticated', 'public.extraction_proposal_records', 'proposed_value', 'UPDATE')"
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0056_round_trip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0056_proposal_provenance`` adds ``extraction_proposal_records.provenance``.
+    Downgrading to the explicit parent ``0055_project_llm_endpoints`` drops it and
+    restores the table-wide UPDATE grant; upgrading to head restores both."""
+    assert (await migration_session.execute(_PROPOSAL_PROVENANCE_COL)).scalar() == 1, (
+        "provenance must exist at HEAD"
+    )
+
+    _run_alembic("downgrade", "0055_project_llm_endpoints", database_url=migration_db_url)
+    try:
+        await migration_session.commit()
+        assert (await migration_session.execute(_PROPOSAL_PROVENANCE_COL)).scalar() is None, (
+            "downgrade must drop provenance"
+        )
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    await migration_session.commit()
+    assert (await migration_session.execute(_PROPOSAL_PROVENANCE_COL)).scalar() == 1, (
+        "upgrade head must restore provenance"
+    )
+
+
+@pytest.mark.asyncio
+async def test_0056_makes_provenance_server_only(migration_session: AsyncSession) -> None:
+    """The provenance column is server-written and client-read-only.
+
+    Guards the exact failure this hardening was written against: a column-level
+    REVOKE layered on a table-level GRANT does nothing, so the protection can
+    look present in the migration and be absent in the database.
+    """
+    assert (
+        await migration_session.execute(_AUTHENTICATED_CAN_UPDATE_PROVENANCE)
+    ).scalar() is False, (
+        "authenticated must NOT be able to UPDATE extraction_proposal_records.provenance"
+    )
+    assert (await migration_session.execute(_AUTHENTICATED_CAN_UPDATE_VALUE)).scalar() is True, (
+        "the rest of the table's UPDATE grant must be preserved (only provenance is withheld)"
+    )
+
+
 @pytest.mark.asyncio
 async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     """Pin the head revision id. If a future migration is added without
@@ -1092,8 +1158,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0055_project_llm_endpoints" in out, (
-        f"Expected head revision '0055_project_llm_endpoints', got:\n{out}"
+    assert "0056_proposal_provenance" in out, (
+        f"Expected head revision '0056_proposal_provenance', got:\n{out}"
     )
 
 
