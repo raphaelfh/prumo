@@ -87,20 +87,15 @@ def upgrade() -> None:
         schema="public",
     )
     columns = ", ".join(_CLIENT_UPDATABLE_COLUMNS)
+    op.execute("REVOKE UPDATE ON TABLE public.extraction_proposal_records FROM authenticated")
     op.execute(
-        "REVOKE UPDATE ON TABLE public.extraction_proposal_records FROM authenticated"
-    )
-    op.execute(
-        f"GRANT UPDATE ({columns}) ON TABLE public.extraction_proposal_records "
-        "TO authenticated"
+        f"GRANT UPDATE ({columns}) ON TABLE public.extraction_proposal_records TO authenticated"
     )
 
 
 def downgrade() -> None:
     # Restore the table-wide grant first: once the column is gone the per-column
     # grants naming it would be invalid, and the baseline state is table-wide.
-    op.execute(
-        "REVOKE UPDATE ON TABLE public.extraction_proposal_records FROM authenticated"
-    )
+    op.execute("REVOKE UPDATE ON TABLE public.extraction_proposal_records FROM authenticated")
     op.execute("GRANT UPDATE ON TABLE public.extraction_proposal_records TO authenticated")
     op.drop_column("extraction_proposal_records", "provenance", schema="public")
