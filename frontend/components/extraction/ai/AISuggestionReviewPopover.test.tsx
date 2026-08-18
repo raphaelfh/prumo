@@ -421,11 +421,15 @@ describe('AISuggestionReviewPopover — read-only run', () => {
   });
 });
 
-describe('AISuggestionReviewPopover — per-version engine (slice 0a)', () => {
+describe('AISuggestionReviewPopover — per-version engine (contract)', () => {
+  // CHARACTERIZATION, not coverage of the backend slice: this component already
+  // read `version.provenance` per row, so the test passes with the backend
+  // change reverted. It pins the contract the backend now depends on — a
+  // refactor that hoists the model to the run-group header must fail here.
+  //
   // Two versions of ONE coordinate, produced on the SAME run by different
-  // engines. Before per-proposal provenance the run held a single, last-write-
-  // wins snapshot, so both rows necessarily rendered the same model and the
-  // older version was relabelled with the newer engine.
+  // engines. Until per-proposal provenance the run held a single, last-write-
+  // wins snapshot, so both rows necessarily rendered the same model.
   const historyWithDistinctEngines = [
     v({
       id: 'p2',
@@ -460,8 +464,8 @@ describe('AISuggestionReviewPopover — per-version engine (slice 0a)', () => {
 
     // The other version, once expanded, shows a DIFFERENT engine — the whole
     // point: the group no longer speaks for every row in it.
-    const toggles = screen.getAllByRole('button', {name: /reviewDetails|details/i});
-    await user.click(toggles[0]);
+    // Only the non-selected row renders a Details toggle.
+    await user.click(screen.getByRole('button', {name: /reviewDetails|details/i}));
     expect(await screen.findByText(/claude-5-opus/)).toBeInTheDocument();
 
     // Identity stays run-scoped and keeps rendering from the run half.

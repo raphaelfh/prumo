@@ -88,6 +88,12 @@ def _resolve_status(decision: str | None) -> str:
     return "accepted"
 
 
+#: The identity pair the D8-d blind scrub removes. Shared with
+#: :func:`resolve_proposal_provenance` so the read-side strip and the scrub
+#: cannot name different keys.
+_RAN_BY_KEYS = ("ran_by_user_id", "ran_by_name")
+
+
 async def _load_run_provenance(
     db: AsyncSession,
     run_ids: set[UUID],
@@ -169,8 +175,8 @@ async def _load_run_provenance(
         if run_id in revealed:
             continue
         for leaf in _provenance_leaves(prov):
-            leaf.pop("ran_by_user_id", None)
-            leaf.pop("ran_by_name", None)
+            for _identity_key in _RAN_BY_KEYS:
+                leaf.pop(_identity_key, None)
 
     if resolve_names and revealed:
         await _inject_ran_by_names(db, {rid: prov_by_run[rid] for rid in revealed})
@@ -180,9 +186,6 @@ async def _load_run_provenance(
 # Flat-snapshot marker keys — their presence on a run's provenance means it
 # carries a legacy (or mixed-era) flat snapshot alongside any `sections` map.
 _FLAT_SNAPSHOT_KEYS = ("model", "provider", "prompt_version", "prompt_text")
-# The identity pair the D8-d scrub owns; named once so the proposal-side guard in
-# resolve_proposal_provenance can never drift from what the scrub removes.
-_RAN_BY_KEYS = ("ran_by_user_id", "ran_by_name")
 
 
 def _provenance_leaves(prov: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -251,7 +254,11 @@ def resolve_proposal_provenance(
     identity-mapped ORM row (unlike the run snapshot, which is a detached column
     result), so editing it in place would let a later flush destroy the audit record.
     """
-    if not proposal_engine:
+    # Guard the type, not just emptiness: this column is reachable by a project
+    # reviewer through PostgREST, and a JSONB scalar there would raise on
+    # ``.items()`` and 500 BOTH suggestion surfaces for every member of the
+    # project. Mirrors ``_provenance_leaves`` and ``exports.run_engine._model_of``.
+    if not isinstance(proposal_engine, dict) or not proposal_engine:
         return section_snapshot
     engine = {k: v for k, v in proposal_engine.items() if k not in _RAN_BY_KEYS}
     return {**(section_snapshot or {}), **engine}

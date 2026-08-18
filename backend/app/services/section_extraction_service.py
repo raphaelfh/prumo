@@ -1383,6 +1383,13 @@ class SectionExtractionService(LoggerMixin):
     ) -> tuple[dict[str, VerifyVerdict] | None, LlmUsage]:
         """Verify pass (mode + kind gates in the glue; QA runs skip it) + the
         ONE post-verify snapshot build; returned usage sums verify tokens."""
+        # "No snapshot for THIS section" must be a state, not a leftover: the
+        # attribute is instance state reused across the sections of a batch, so
+        # without this reset a section whose LLM call short-circuits would carry
+        # its predecessor's engine onto any proposal it wrote. No such path
+        # exists today (an empty extraction returns before _create_suggestions),
+        # which is exactly why the invariant deserves to be explicit.
+        self._run_provenance = None
         verdicts, usage, snapshot = await verify_and_snapshot(
             engine=self._engine,
             api_key=self._credentials.api_key,

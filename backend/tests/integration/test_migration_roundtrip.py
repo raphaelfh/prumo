@@ -1104,6 +1104,13 @@ _AUTHENTICATED_CAN_UPDATE_VALUE = text(
     "SELECT has_column_privilege("
     "'authenticated', 'public.extraction_proposal_records', 'proposed_value', 'UPDATE')"
 )
+# INSERT matters as much as UPDATE: DELETE stays granted and ``id`` is
+# client-suppliable, so a revoke that closed only UPDATE would still let
+# delete-then-insert reproduce a row with a forged engine record.
+_AUTHENTICATED_CAN_INSERT_PROVENANCE = text(
+    "SELECT has_column_privilege("
+    "'authenticated', 'public.extraction_proposal_records', 'provenance', 'INSERT')"
+)
 
 
 @pytest.mark.asyncio
@@ -1123,6 +1130,9 @@ async def test_migration_0056_round_trip(
         assert (await migration_session.execute(_PROPOSAL_PROVENANCE_COL)).scalar() is None, (
             "downgrade must drop provenance"
         )
+        assert (
+            await migration_session.execute(_AUTHENTICATED_CAN_UPDATE_VALUE)
+        ).scalar() is True, "downgrade must restore the table-wide grant it narrowed"
     finally:
         _run_alembic("upgrade", "head", database_url=migration_db_url)
 
@@ -1148,6 +1158,9 @@ async def test_0056_makes_provenance_server_only(migration_session: AsyncSession
     assert (await migration_session.execute(_AUTHENTICATED_CAN_UPDATE_VALUE)).scalar() is True, (
         "the rest of the table's UPDATE grant must be preserved (only provenance is withheld)"
     )
+    assert (
+        await migration_session.execute(_AUTHENTICATED_CAN_INSERT_PROVENANCE)
+    ).scalar() is False, "authenticated must NOT be able to INSERT a forged provenance either"
 
 
 @pytest.mark.asyncio

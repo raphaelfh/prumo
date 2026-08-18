@@ -1153,3 +1153,50 @@ async def test_ai_proposals_always_record_an_engine(
     assert provenances, "the extraction must have written at least one proposal"
     assert all(p is not None for p in provenances), provenances
     assert all(p and p.get("model") for p in provenances), provenances
+
+
+@pytest.mark.asyncio
+async def test_replay_that_heals_a_verdict_keeps_the_row_self_consistent(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A row must never contradict its own verification annotation.
+
+    The idempotent branch already concedes mutation: when a replay carries a
+    verdict the stored bag lacks, it refreshes that annotation in place. If the
+    execution half of the engine record stayed frozen, the row would end up
+    reporting fast/1 while carrying a verdict only a 2-pass verified run can
+    produce — and that is LESS truthful than the pre-slice fallback, which read
+    the section snapshot and matched the chip.
+
+    Engine IDENTITY stays frozen (the model that produced the value did produce
+    it); only the execution facts move with the verdict they describe.
+    """
+    _stub_llm_seams(monkeypatch)
+    # Attempt 1: verify flakes -> no annotation, execution recorded as fast/1.
+    _stub_verify_pass(monkeypatch, outcome=None)
+    run = await _run_pinned_verified(db_session)
+    await _extract_once(db_session, run, "heal-attempt-1")
+
+    values = await _proposal_values(db_session, run.id)
+    assert values and "verification" not in values[0], values
+
+    # Attempt 2: SAME value (fixed temperature makes this the normal outcome),
+    # but verify succeeds -> the idempotent branch heals the annotation.
+    _stub_verify_pass(monkeypatch, outcome="confirm-all")
+    await _extract_once(db_session, run, "heal-attempt-2")
+
+    values = await _proposal_values(db_session, run.id)
+    assert len(values) == 1, f"an identical value must not append a row: {values}"
+    assert values[0]["verification"]["verdict"] == "confirmed", values
+
+    provenances = await _proposal_provenances(db_session, run.id)
+    assert len(provenances) == 1
+    prov = provenances[0]
+    assert prov is not None
+    assert prov["mode_executed"] == "verified", (
+        f"the row carries a confirmed verdict, so its execution record must agree: {prov}"
+    )
+    assert prov["passes"] == 2, prov
+    # Identity is untouched by the heal.
+    assert prov["provider"] == settings.LLM_PROVIDER
+    assert prov["model"] == settings.LLM_DEFAULT_MODEL

@@ -27,6 +27,11 @@ class InvalidProposalError(Exception):
     """Raised when a proposal violates business rules (stage / source / coords)."""
 
 
+#: The execution facts a verdict heal must carry with it; engine identity
+#: (provider/model/endpoint_id/key_scope/mode_requested) is never rewritten.
+_EXECUTION_KEYS = ("mode_executed", "passes")
+
+
 class ExtractionProposalService:
     """Append-only proposal writes with rule validation."""
 
@@ -131,12 +136,23 @@ class ExtractionProposalService:
                     **latest.proposed_value,
                     "verification": incoming_verdict,
                 }
+                # The verdict and the execution record describe the SAME pass, so
+                # they move together. Leaving the execution half frozen would let
+                # a row heal to "confirmed" while still reporting fast/1 — a row
+                # contradicting its own annotation, and less truthful than the
+                # pre-0056 fallback, which read the section snapshot and agreed
+                # with the chip.
+                if provenance:
+                    latest.provenance = {
+                        **(latest.provenance or {}),
+                        **{k: provenance[k] for k in _EXECUTION_KEYS if k in provenance},
+                    }
                 await self.db.flush()
-            # ``provenance`` is deliberately NOT refreshed here. A corroborating
-            # re-run under a different engine produced the same value, so the
-            # stored engine stays true — and recording corroboration by mutating
-            # this row would break the append-only audit rule (it would be a new
-            # row with a link, never an edited one).
+            # Engine IDENTITY is deliberately NOT refreshed. The model recorded
+            # here did produce this value, so the record stays true; a
+            # corroborating re-run under a DIFFERENT engine is a separate fact,
+            # and recording it belongs in a new row with a link, never in a
+            # mutated one (append-only audit trail, constitution §IX).
             return latest
 
         record = ExtractionProposalRecord(

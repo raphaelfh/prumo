@@ -2207,13 +2207,17 @@ async def test_blind_read_does_not_mutate_the_stored_record(
     await _seed_run_provenance(db_session, run_id, _SECTION_SNAPSHOT)
     await _set_proposal_provenance(db_session, run_id, identity_bearing)
 
-    await get_suggestion_history(
+    history = await get_suggestion_history(
         db_session,
         instance_id,
         field_id,
         article_id=SEED.primary_article,
         caller_id=reviewer_a,
     )
+    # Load-bearing for the defensive strip in resolve_proposal_provenance: the
+    # D8-d scrub walks run snapshots only, so identity smuggled onto a proposal
+    # row would otherwise ship straight to a blind caller.
+    assert "ran_by_user_id" not in (history[0].provenance or {}), history[0].provenance
     await db_session.flush()
 
     stored = (

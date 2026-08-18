@@ -38,16 +38,26 @@ No backfill. 97 of 98 production runs predate the C1b engine pin, so there is
 nothing to derive a per-proposal engine from; legacy rows stay NULL and readers
 fall back to the section snapshot.
 
-GRANT NARROWING. The baseline gives ``authenticated`` a table-wide UPDATE that
-reaches this table through PostgREST, so without this the audit record of how a
-value was produced would be client-forgeable. Note the SHAPE: a column-level
-``REVOKE UPDATE (provenance)`` layered on a table-level grant is a silent NO-OP
-(verified empirically) — the table-wide UPDATE must be revoked and the remaining
-columns re-granted explicitly. Nothing in the product writes this table from the
-client (the frontend only SELECTs it; E2E seeds run as ``service_role``), so the
-revoked grant is vestigial. CONSEQUENCE FOR FUTURE MIGRATIONS: because the grant
-is now per-column, a later column-add must also ``GRANT UPDATE (<new_col>)`` if
-that column is meant to be client-updatable.
+GRANT NARROWING. The baseline gives ``authenticated`` table-wide INSERT and
+UPDATE reachable through PostgREST, so without this the audit record of how a
+value was produced would be client-forgeable. Revoking UPDATE alone would not
+close it: DELETE is granted too and ``id`` is client-suppliable, so
+delete-then-insert reproduces any row. Both write verbs are narrowed, following
+0054's shape.
+
+Note the SHAPE: a column-level ``REVOKE INSERT/UPDATE (provenance)`` layered on a
+table-level grant is a silent NO-OP (verified empirically) — the table-wide verb
+must be revoked and the remaining columns re-granted explicitly.
+
+Nothing in the product writes this table from the client (the frontend only
+SELECTs it; E2E seeds run as ``service_role``), so the narrowed grants are
+vestigial. Residual, named rather than implied: DELETE stays granted, so a
+project member can still remove an AI proposal row through PostgREST — a
+pre-existing hole this slice neither widens nor closes.
+
+CONSEQUENCE FOR FUTURE MIGRATIONS: because these grants are now per-column, a
+later column-add must also ``GRANT INSERT (<new_col>), UPDATE (<new_col>)`` if
+that column is meant to be client-writable.
 
 Revision ID: 0056_proposal_provenance
 Revises: 0055_project_llm_endpoints
@@ -65,7 +75,7 @@ depends_on = None
 
 # Every column of extraction_proposal_records EXCEPT ``provenance``. Spelled out
 # because Postgres cannot express "all columns but one" in a GRANT.
-_CLIENT_UPDATABLE_COLUMNS = (
+_CLIENT_WRITABLE_COLUMNS = (
     "id",
     "run_id",
     "instance_id",
@@ -86,16 +96,21 @@ def upgrade() -> None:
         sa.Column("provenance", pg.JSONB(), nullable=True),
         schema="public",
     )
-    columns = ", ".join(_CLIENT_UPDATABLE_COLUMNS)
-    op.execute("REVOKE UPDATE ON TABLE public.extraction_proposal_records FROM authenticated")
+    columns = ", ".join(_CLIENT_WRITABLE_COLUMNS)
     op.execute(
-        f"GRANT UPDATE ({columns}) ON TABLE public.extraction_proposal_records TO authenticated"
+        "REVOKE INSERT, UPDATE ON TABLE public.extraction_proposal_records FROM authenticated"
+    )
+    op.execute(
+        f"GRANT INSERT ({columns}), UPDATE ({columns}) "
+        "ON TABLE public.extraction_proposal_records TO authenticated"
     )
 
 
 def downgrade() -> None:
     # Restore the table-wide grant first: once the column is gone the per-column
     # grants naming it would be invalid, and the baseline state is table-wide.
-    op.execute("REVOKE UPDATE ON TABLE public.extraction_proposal_records FROM authenticated")
-    op.execute("GRANT UPDATE ON TABLE public.extraction_proposal_records TO authenticated")
+    op.execute(
+        "REVOKE INSERT, UPDATE ON TABLE public.extraction_proposal_records FROM authenticated"
+    )
+    op.execute("GRANT INSERT, UPDATE ON TABLE public.extraction_proposal_records TO authenticated")
     op.drop_column("extraction_proposal_records", "provenance", schema="public")
