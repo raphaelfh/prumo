@@ -498,12 +498,17 @@ class ExtractionErrorCode(str, Enum):
     - ``MISSING_API_KEY``  — no usable LLM key, BYOK or global (``MissingLLMKeyError``).
     - ``ENGINE_RETIRED``   — the project's stored engine left the catalogue
       mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).
+    - ``LLM_ENDPOINT_UNAVAILABLE`` — the engine's custom endpoint cannot
+      serve: row deleted, unverified, model dropped
+      (``resolve_project_engine``), or its key no longer decrypts
+      (``EndpointUnavailableError``; enqueue-time validation is a 409).
     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
     """
 
     PDF_NOT_FOUND = "PDF_NOT_FOUND"
     MISSING_API_KEY = "MISSING_API_KEY"
     ENGINE_RETIRED = "ENGINE_RETIRED"
+    LLM_ENDPOINT_UNAVAILABLE = "LLM_ENDPOINT_UNAVAILABLE"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
 
 

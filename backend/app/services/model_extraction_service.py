@@ -37,6 +37,7 @@ from app.repositories import (
     GlobalTemplateRepository,
 )
 from app.schemas.llm_target import LlmTarget
+from app.services.engine_credentials import EngineCredentials
 from app.services.extraction_prompt_input import build_prompt_input
 from app.services.extraction_snapshot import (
     entity_types_for_version,
@@ -74,7 +75,7 @@ class ModelExtractionService(LoggerMixin):
         user_id: str,
         storage: StorageAdapter,
         trace_id: str,
-        openai_api_key: str | None = None,
+        llm_credentials: EngineCredentials | None = None,
     ):
         """
         Initialize the service.
@@ -84,13 +85,17 @@ class ModelExtractionService(LoggerMixin):
             user_id: Authenticated user ID.
             storage: Storage adapter.
             trace_id: Trace ID.
-            openai_api_key: Custom API key (BYOK). If None, uses global key.
+            llm_credentials: Key + scope + base_url + endpoint identity for
+                the engine passed to ``extract``, resolved by the caller
+                (``resolve_engine_credentials``). They travel together: an
+                endpoint engine has no host without its ``base_url``.
+                ``None`` means no credentials (global-key fallback).
         """
         self.db = db
         self.user_id = user_id
         self.storage = storage
         self.trace_id = trace_id
-        self._llm_api_key = openai_api_key
+        self._credentials = llm_credentials or EngineCredentials(None, None, None, None)
         # Engine for every LLM call: the env-default candidate until the
         # caller passes its resolved one into ``extract`` (C1b). Constructed
         # at call time — never an import-time default-parameter value.
@@ -389,7 +394,12 @@ class ModelExtractionService(LoggerMixin):
                 article_text=pdf_text,
                 general_instructions=general_instructions,
             ),
-            model=build_model(self._engine.provider, model, api_key=self._llm_api_key),
+            model=build_model(
+                self._engine.provider,
+                model,
+                api_key=self._credentials.api_key,
+                base_url=self._credentials.base_url,
+            ),
             prompt_name=model_identification.NAME,
             prompt_version=model_identification.VERSION,
         )

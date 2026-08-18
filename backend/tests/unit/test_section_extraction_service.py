@@ -1179,7 +1179,7 @@ class TestCreateSuggestions:
         service._run_provenance = build_run_provenance(
             ran_by_user_id=service.user_id,
             engine=service._engine,
-            key_scope=service._key_scope,
+            key_scope=service._credentials.key_scope,
             prompt_name="extract",
             prompt_version="1",
             usage=LlmUsage(prompt_tokens=10, completion_tokens=5),
@@ -1221,7 +1221,7 @@ class TestCreateSuggestions:
         service._run_provenance = build_run_provenance(
             ran_by_user_id=service.user_id,
             engine=service._engine,
-            key_scope=service._key_scope,
+            key_scope=service._credentials.key_scope,
             prompt_name="extract",
             prompt_version="1",
         )
@@ -1237,7 +1237,7 @@ class TestCreateSuggestions:
         service._run_provenance = build_run_provenance(
             ran_by_user_id=service.user_id,
             engine=service._engine,
-            key_scope=service._key_scope,
+            key_scope=service._credentials.key_scope,
             prompt_name="extract",
             prompt_version="1",
         )

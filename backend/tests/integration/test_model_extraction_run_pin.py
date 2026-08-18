@@ -55,20 +55,22 @@ def _fake_service(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 
 def _stub_key_service(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Record which provider the endpoint keys for (returns no key)."""
+    """Record which provider the endpoint resolves credentials for (returns
+    none). The seam is the B9 resolver's ``APIKeyService`` — the endpoint no
+    longer builds one itself, it asks ``resolve_engine_credentials``."""
     asked: list[str] = []
 
     class _RecordingKeys:
-        def __init__(self, db: Any, user_id: Any) -> None:
+        def __init__(self, _db: Any, _user_id: Any) -> None:
             pass
 
         async def get_key_for_provider(self, provider: str) -> None:
             asked.append(provider)
             return None
 
-    from app.api.v1.endpoints import model_extraction as me
+    from app.services import engine_credentials as ec
 
-    monkeypatch.setattr(me, "APIKeyService", _RecordingKeys)
+    monkeypatch.setattr(ec, "APIKeyService", _RecordingKeys)
     return asked
 
 

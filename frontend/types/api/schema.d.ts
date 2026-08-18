@@ -567,6 +567,81 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/llm-endpoints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Llm Endpoints
+         * @description Every endpoint of the project — the manager management surface.
+         */
+        get: operations["list_llm_endpoints_api_v1_projects__project_id__llm_endpoints_get"];
+        put?: never;
+        /**
+         * Create Llm Endpoint
+         * @description Register an endpoint (URL vetted, key encrypted service-side).
+         */
+        post: operations["create_llm_endpoint_api_v1_projects__project_id__llm_endpoints_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/llm-endpoints/{endpoint_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Llm Endpoint
+         * @description Full-replace update; ``api_key`` tri-state is applied service-side.
+         */
+        put: operations["update_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__put"];
+        post?: never;
+        /**
+         * Delete Llm Endpoint
+         * @description Delete the endpoint — 200 + typed result (decision 15, never 204).
+         *
+         *     ``EndpointUnavailableError`` (the project engine still points here)
+         *     propagates to the AppError handler's 409 envelope.
+         */
+        delete: operations["delete_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/llm-endpoints/{endpoint_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Llm Endpoint
+         * @description Run the capabilities probe and persist its outcome (commit after the
+         *     service call — the llm-engine PUT pattern).
+         *
+         *     ``EndpointUnavailableError`` (stored key no longer decrypts) propagates
+         *     to the AppError handler's 409 envelope.
+         */
+        post: operations["verify_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/llm-engine": {
         parameters: {
             query?: never;
@@ -581,11 +656,15 @@ export interface paths {
         get: operations["get_llm_engine_api_v1_projects__project_id__llm_engine_get"];
         /**
          * Set Llm Engine
-         * @description Persist the project's engine choice (catalogue-validated, attributed).
+         * @description Persist the project's engine choice (validated, attributed).
          *
          *     ``alternates`` rides the same write: ``None`` (field absent) keeps the
          *     stored list, ``[]`` clears it, a list replaces it — every entry
          *     catalogue-validated by the service (unknown pair → 400).
+         *
+         *     ``endpoint_id`` (B8) selects an endpoint-backed engine; the service
+         *     validates it against the project's endpoints instead of the catalogue
+         *     (shape/ownership/verification failures → 400 like any other refusal).
          */
         put: operations["set_llm_engine_api_v1_projects__project_id__llm_engine_put"];
         post?: never;
@@ -2001,6 +2080,57 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[LlmEndpointDeleteResult] */
+        ApiResponse_LlmEndpointDeleteResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["LlmEndpointDeleteResult"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[LlmEndpointProbeResult] */
+        ApiResponse_LlmEndpointProbeResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["LlmEndpointProbeResult"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[LlmEndpointRead] */
+        ApiResponse_LlmEndpointRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["LlmEndpointRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[LlmEngineRead] */
         ApiResponse_LlmEngineRead_: {
             /** @description Dados da resposta */
@@ -2561,6 +2691,26 @@ export interface components {
              * @description Dados da resposta
              */
             data?: components["schemas"]["ArticleRunRef"][] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[list[LlmEndpointRead]] */
+        ApiResponse_list_LlmEndpointRead__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: components["schemas"]["LlmEndpointRead"][] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3309,10 +3459,14 @@ export interface components {
          *     - ``MISSING_API_KEY``  — no usable LLM key, BYOK or global (``MissingLLMKeyError``).
          *     - ``ENGINE_RETIRED``   — the project's stored engine left the catalogue
          *       mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).
+         *     - ``LLM_ENDPOINT_UNAVAILABLE`` — the engine's custom endpoint cannot
+         *       serve: row deleted, unverified, model dropped
+         *       (``resolve_project_engine``), or its key no longer decrypts
+         *       (``EndpointUnavailableError``; enqueue-time validation is a 409).
          *     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
          * @enum {string}
          */
-        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "EXTRACTION_FAILED";
+        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "EXTRACTION_FAILED";
         /**
          * ExtractionExportCancelResponse
          * @description Cancel endpoint payload.
@@ -3655,6 +3809,134 @@ export interface components {
             providers: components["schemas"]["ProviderInfo"][];
         };
         /**
+         * LlmEndpointCapabilities
+         * @description What the probe learned about an endpoint.
+         *
+         *     ``output_mode`` is the highest probe-ladder rung the endpoint passed
+         *     (tool → native → prompted); ``None`` means never probed.
+         *     ``models_seen`` is the sanitized ``/models`` listing captured at
+         *     probe time (capped at the probe seam, not here).
+         */
+        LlmEndpointCapabilities: {
+            /**
+             * Models Seen
+             * @default []
+             */
+            models_seen: string[];
+            /** Output Mode */
+            output_mode?: ("tool" | "native" | "prompted") | null;
+        };
+        /**
+         * LlmEndpointCreateRequest
+         * @description POST body for a new endpoint.
+         *
+         *     ``api_key`` is either omitted/``None`` (a keyless endpoint, e.g.
+         *     local Ollama) or a non-empty secret — an empty string is a mistake,
+         *     not keyless, and is rejected.
+         */
+        LlmEndpointCreateRequest: {
+            /**
+             * Allowed Models
+             * @default []
+             */
+            allowed_models: string[];
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url: string;
+            /** Label */
+            label: string;
+        };
+        /**
+         * LlmEndpointDeleteResult
+         * @description DELETE returns 200 + this envelope payload (house pattern —
+         *     ``DeleteAPIKeyResult``; a 204 would violate the envelope gate).
+         */
+        LlmEndpointDeleteResult: {
+            /** Deleted */
+            deleted: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * LlmEndpointProbeResult
+         * @description Outcome of a verify probe, as returned to the manager.
+         *
+         *     ``error`` is sanitized — a reason class only (timeout, refused,
+         *     TLS, HTTP status), never raw upstream bodies or connection detail.
+         */
+        LlmEndpointProbeResult: {
+            /** Error */
+            error: string | null;
+            /** Models Seen */
+            models_seen: string[];
+            /** Output Mode */
+            output_mode: ("tool" | "native" | "prompted") | null;
+            /**
+             * Validation Status
+             * @enum {string}
+             */
+            validation_status: "ok" | "failed";
+        };
+        /**
+         * LlmEndpointRead
+         * @description One endpoint as the manager-only surface renders it.
+         *
+         *     NEVER carries key material — ``has_api_key`` is the only trace that
+         *     a key exists. ``base_url`` is visible because this read serves the
+         *     manager management surface only.
+         */
+        LlmEndpointRead: {
+            /** Allowed Models */
+            allowed_models: string[];
+            /** Base Url */
+            base_url: string;
+            capabilities: components["schemas"]["LlmEndpointCapabilities"];
+            /** Created By Name */
+            created_by_name: string | null;
+            /** Has Api Key */
+            has_api_key: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Last Validated At */
+            last_validated_at: string | null;
+            /**
+             * Validation Status
+             * @enum {string}
+             */
+            validation_status: "unverified" | "ok" | "failed";
+        };
+        /**
+         * LlmEndpointUpdateRequest
+         * @description PUT is full-replace for ``label``/``base_url``/``allowed_models``.
+         *
+         *     ``api_key`` is tri-state: ``None`` = keep the stored key; ``""`` =
+         *     clear it (endpoint becomes keyless); a non-empty string = set a new
+         *     key. The tri-state semantics are applied by the service — this shape
+         *     only distinguishes the three states without ever echoing the secret.
+         */
+        LlmEndpointUpdateRequest: {
+            /**
+             * Allowed Models
+             * @default []
+             */
+            allowed_models: string[];
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url: string;
+            /** Label */
+            label: string;
+        };
+        /**
          * LlmEngineAlternate
          * @description One fallback engine pair — the stored and request entry shape.
          *
@@ -3722,6 +4004,13 @@ export interface components {
          *     own stored key, or a global service key) — booleans only, never key
          *     material or metadata. ``alternates`` is the stored fallback list with
          *     a per-entry ``retired`` flag.
+         *
+         *     ``endpoint_id`` / ``endpoint_label`` are the ONLY endpoint data on this
+         *     read (decision 12 — no embedded endpoints matrix; the picker's endpoint
+         *     groups come from the manager-only endpoints listing instead): the
+         *     stored pointer plus the row's label for the chip. ``endpoint_label`` is
+         *     ``None`` for catalogue engines AND for a dangling pointer (row gone —
+         *     ``retired`` is True then).
          */
         LlmEngineRead: {
             /**
@@ -3735,6 +4024,10 @@ export interface components {
             };
             /** Catalog */
             catalog: components["schemas"]["LlmEngineCatalogEntryRead"][];
+            /** Endpoint Id */
+            endpoint_id?: string | null;
+            /** Endpoint Label */
+            endpoint_label?: string | null;
             /**
              * Mode
              * @enum {string}
@@ -3767,10 +4060,17 @@ export interface components {
          *     ``extra="forbid"`` blocks smuggled keys (no temperature/seed, by design).
          *     ``alternates`` is tri-state: ``None`` (field absent) keeps the stored
          *     list, ``[]`` clears it, a list replaces it.
+         *
+         *     ``endpoint_id`` selects a project custom endpoint as the engine (C2
+         *     B8): it requires ``provider == "openai_compatible"`` and the service
+         *     validates the endpoint (project-scoped, model allowed, verified)
+         *     instead of the catalogue. Omitted/None = a catalogue engine.
          */
         LlmEngineUpdateRequest: {
             /** Alternates */
             alternates?: components["schemas"]["LlmEngineAlternate"][] | null;
+            /** Endpoint Id */
+            endpoint_id?: string | null;
             /**
              * Mode
              * @default fast
@@ -6494,6 +6794,172 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_HitlConfigRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_llm_endpoints_api_v1_projects__project_id__llm_endpoints_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_LlmEndpointRead__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_llm_endpoint_api_v1_projects__project_id__llm_endpoints_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmEndpointCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmEndpointRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                endpoint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmEndpointUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmEndpointRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                endpoint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmEndpointDeleteResult_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                endpoint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmEndpointProbeResult_"];
                 };
             };
             /** @description Validation Error */

@@ -51,11 +51,15 @@ async def set_llm_engine(
     db: DbSession,
     manager_id: UUID = Depends(require_project_manager),
 ) -> ApiResponse[LlmEngineRead]:
-    """Persist the project's engine choice (catalogue-validated, attributed).
+    """Persist the project's engine choice (validated, attributed).
 
     ``alternates`` rides the same write: ``None`` (field absent) keeps the
     stored list, ``[]`` clears it, a list replaces it — every entry
     catalogue-validated by the service (unknown pair → 400).
+
+    ``endpoint_id`` (B8) selects an endpoint-backed engine; the service
+    validates it against the project's endpoints instead of the catalogue
+    (shape/ownership/verification failures → 400 like any other refusal).
     """
     trace_id = getattr(request.state, "trace_id", None)
     service = LlmEngineService(db)
@@ -67,6 +71,7 @@ async def set_llm_engine(
             mode=body.mode,
             updated_by=manager_id,
             alternates=body.alternates,
+            endpoint_id=body.endpoint_id,
         )
     except ProjectNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e

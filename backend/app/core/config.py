@@ -142,6 +142,11 @@ class Settings(BaseSettings):
     # =================== SECURITY ===================
     # Chave for criptografia de data sensiveis (ex: Zotero API key)
     ENCRYPTION_KEY: str = "review_hub_default_key_change_me_in_production"
+    # SSRF escape hatch for custom LLM endpoints (app/core/net_guard.py):
+    # allows private/loopback ranges and plain http. Honored ONLY when
+    # supabase_env == "local" — the flag is inert in production by code,
+    # not convention (net_guard._private_ranges_allowed).
+    ALLOW_PRIVATE_LLM_ENDPOINTS: bool = False
 
     # =================== FEEDBACK / LINEAR ===================
     LINEAR_API_KEY: str | None = None

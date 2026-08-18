@@ -446,3 +446,284 @@ async def test_resolve_normalizes_a_non_string_mode_and_keeps_the_pair(
         "a garbage MODE must not throw the stored PAIR away"
     )
     assert (target.mode_requested, target.mode_executed) == ("fast", "fast")
+
+
+# ---------------------------------------------------------------------------
+# Endpoint-backed engines — write gate, retired semantics, resolve (C2 B8)
+# ---------------------------------------------------------------------------
+
+
+async def _delete_endpoint_row(db: AsyncSession, endpoint_id) -> None:
+    """Raw delete — bypasses the service's engine-pointer delete guard to
+    produce the DANGLING state (row gone while the engine still points)."""
+    await db.execute(
+        text("DELETE FROM public.project_llm_endpoints WHERE id = :eid"),
+        {"eid": str(endpoint_id)},
+    )
+
+
+@pytest.mark.asyncio
+async def test_set_endpoint_engine_requires_openai_compatible(db_session: AsyncSession) -> None:
+    """An ``endpoint_id`` on any catalogue provider is a shape error."""
+    endpoint_id = await engine_setup.make_endpoint(db_session)
+    with pytest.raises(ValueError, match="openai_compatible"):
+        await engine_setup.set_project_engine(
+            db_session, "openai", "endpoint-model-x", endpoint_id=endpoint_id
+        )
+
+
+@pytest.mark.asyncio
+async def test_set_openai_compatible_without_endpoint_id_refused(
+    db_session: AsyncSession,
+) -> None:
+    """The reverse shape error: ``openai_compatible`` names no catalogue
+    entry, so it is only meaningful WITH an endpoint pointer."""
+    with pytest.raises(ValueError, match="endpoint"):
+        await engine_setup.set_project_engine(db_session, "openai_compatible", "endpoint-model-x")
+
+
+@pytest.mark.asyncio
+async def test_set_endpoint_engine_cross_project_id_reads_as_unknown(
+    db_session: AsyncSession,
+) -> None:
+    """BOLA: a REAL endpoint id owned by another project must be
+    indistinguishable from a missing one — same 'unknown endpoint' error."""
+    foreign = await engine_setup.make_endpoint(db_session, project_id=SEED.secondary_project)
+    never_existed = uuid4()
+    with pytest.raises(ValueError, match="[Uu]nknown endpoint") as cross:
+        await engine_setup.set_project_engine(
+            db_session, "openai_compatible", "endpoint-model-x", endpoint_id=foreign
+        )
+    with pytest.raises(ValueError, match="[Uu]nknown endpoint") as missing:
+        await engine_setup.set_project_engine(
+            db_session, "openai_compatible", "endpoint-model-x", endpoint_id=never_existed
+        )
+    # Indistinguishable up to the id itself: identical message either way.
+    assert str(cross.value).replace(str(foreign), "<id>") == str(missing.value).replace(
+        str(never_existed), "<id>"
+    )
+
+
+@pytest.mark.asyncio
+async def test_set_endpoint_engine_model_must_be_allowed(db_session: AsyncSession) -> None:
+    endpoint_id = await engine_setup.make_endpoint(db_session, allowed_models=["endpoint-model-x"])
+    with pytest.raises(ValueError, match="allowed"):
+        await engine_setup.set_project_engine(
+            db_session, "openai_compatible", "some-other-model", endpoint_id=endpoint_id
+        )
+
+
+@pytest.mark.asyncio
+async def test_set_endpoint_engine_requires_a_verified_endpoint(
+    db_session: AsyncSession,
+) -> None:
+    endpoint_id = await engine_setup.make_endpoint(db_session, validation_status="unverified")
+    with pytest.raises(ValueError, match="not verified"):
+        await engine_setup.set_project_engine(
+            db_session, "openai_compatible", "endpoint-model-x", endpoint_id=endpoint_id
+        )
+
+
+@pytest.mark.asyncio
+async def test_set_endpoint_engine_verified_mode_rejects_prompted_only(
+    db_session: AsyncSession,
+) -> None:
+    """Decision 10: Verified needs structured output — a prompted-only
+    endpoint cannot honour the verify pass."""
+    endpoint_id = await engine_setup.make_endpoint(db_session, output_mode="prompted")
+    with pytest.raises(ValueError, match="[Vv]erified"):
+        await engine_setup.set_project_engine(
+            db_session,
+            "openai_compatible",
+            "endpoint-model-x",
+            mode="verified",
+            endpoint_id=endpoint_id,
+        )
+    # Fast mode on the same endpoint is fine.
+    stored = await engine_setup.set_project_engine(
+        db_session, "openai_compatible", "endpoint-model-x", endpoint_id=endpoint_id
+    )
+    assert stored.endpoint_id == endpoint_id
+
+
+@pytest.mark.asyncio
+async def test_set_endpoint_engine_skips_the_catalogue_and_stores_the_pointer(
+    db_session: AsyncSession,
+) -> None:
+    """The happy path: an endpoint model the CATALOG never listed is
+    accepted (catalogue validation skipped for endpoint engines) and the
+    pointer lands in the stored JSONB as a string."""
+    endpoint_id = await engine_setup.make_endpoint(db_session)
+    assert find_entry("openai_compatible", "endpoint-model-x") is None, (
+        "precondition: the pair must NOT be in the catalogue for this test to prove the skip"
+    )
+    stored = await engine_setup.set_project_engine(
+        db_session, "openai_compatible", "endpoint-model-x", endpoint_id=endpoint_id
+    )
+    assert stored.endpoint_id == endpoint_id
+    raw = await _raw_settings(db_session, SEED.primary_project)
+    assert raw["llm_engine"]["endpoint_id"] == str(endpoint_id)
+
+
+@pytest.mark.asyncio
+async def test_get_for_project_healthy_endpoint_engine_is_not_retired(
+    db_session: AsyncSession,
+) -> None:
+    """Retired semantics for endpoint engines never consult ``find_entry`` —
+    an off-catalogue pair on a healthy endpoint reads as NOT retired."""
+    endpoint_id = await engine_setup.make_endpoint(db_session)
+    await engine_setup.set_project_engine(
+        db_session, "openai_compatible", "endpoint-model-x", endpoint_id=endpoint_id
+    )
+    resolved = await LlmEngineService(db_session).get_for_project(SEED.primary_project)
+    assert resolved.source == "project"
+    assert resolved.retired is False
+    assert resolved.endpoint_id == endpoint_id
+    assert resolved.endpoint_label == "engine-suite-endpoint"
+
+
+@pytest.mark.asyncio
+async def test_get_for_project_dangling_endpoint_is_retired(db_session: AsyncSession) -> None:
+    endpoint_id = await engine_setup.make_endpoint(db_session)
+    await engine_setup.set_project_engine(
+        db_session, "openai_compatible", "endpoint-model-x", endpoint_id=endpoint_id
+    )
+    await _delete_endpoint_row(db_session, endpoint_id)
+    resolved = await LlmEngineService(db_session).get_for_project(SEED.primary_project)
+    assert resolved.retired is True
+    assert resolved.endpoint_label is None
+
+
+@pytest.mark.asyncio
+async def test_get_for_project_model_dropped_from_endpoint_is_retired(
+    db_session: AsyncSession,
+) -> None:
+    """The endpoint survives but no longer allows the stored model — same
+    retired outcome (a manager must re-choose)."""
+    endpoint_id = await engine_setup.make_endpoint(db_session)
+    await engine_setup.set_project_engine(
+        db_session, "openai_compatible", "endpoint-model-x", endpoint_id=endpoint_id
+    )
+    await db_session.execute(
+        text(
+            "UPDATE public.project_llm_endpoints "
+            "SET allowed_models = '[\"another-model\"]'::jsonb WHERE id = :eid"
+        ),
+        {"eid": str(endpoint_id)},
+    )
+    resolved = await LlmEngineService(db_session).get_for_project(SEED.primary_project)
+    assert resolved.retired is True
+    # The row still exists, so the label still renders for the re-choose UI.
+    assert resolved.endpoint_label == "engine-suite-endpoint"
+
+
+@pytest.mark.asyncio
+async def test_get_engine_read_carries_the_endpoint_scalars(db_session: AsyncSession) -> None:
+    """Decision 12: the read gains ONLY ``endpoint_id`` + ``endpoint_label``
+    (the chip), never an embedded endpoints matrix."""
+    endpoint_id = await engine_setup.make_endpoint(db_session, label="Lab Ollama")
+    await engine_setup.set_project_engine(
+        db_session, "openai_compatible", "endpoint-model-x", endpoint_id=endpoint_id
+    )
+    read = await LlmEngineService(db_session).get_engine_read(
+        SEED.primary_project, SEED.primary_profile
+    )
+    assert read.endpoint_id == endpoint_id
+    assert read.endpoint_label == "Lab Ollama"
+    assert read.retired is False
+
+
+@pytest.mark.asyncio
+async def test_endpoint_label_is_manager_only(db_session: AsyncSession) -> None:
+    """Decision 12 keeps the endpoint SURFACE manager-only, but this GET is
+    member-visible — and a label names internal infrastructure ("Lab Ollama",
+    "prod-inference-2"). A non-manager member sees the engine, not the
+    infrastructure behind it."""
+    endpoint_id = await engine_setup.make_endpoint(db_session, label="Lab Ollama")
+    await engine_setup.set_project_engine(
+        db_session, "openai_compatible", "endpoint-model-x", endpoint_id=endpoint_id
+    )
+    service = LlmEngineService(db_session)
+
+    manager_read = await service.get_engine_read(SEED.primary_project, SEED.primary_profile)
+    assert manager_read.endpoint_label == "Lab Ollama"
+
+    member_read = await service.get_engine_read(SEED.primary_project, SEED.reviewer_profile)
+    assert member_read.endpoint_label is None
+    # The pointer itself (an opaque uuid) still rides along — the popover
+    # needs it to render the endpoint-backed state at all.
+    assert member_read.endpoint_id == endpoint_id
+
+
+@pytest.mark.asyncio
+async def test_resolve_endpoint_engine_returns_the_endpoint_target(
+    db_session: AsyncSession,
+) -> None:
+    """Healthy endpoint engine resolves to an ``openai_compatible`` target
+    carrying the pointer as a JSON-safe string (the freeze pins it)."""
+    endpoint_id = await engine_setup.make_endpoint(db_session)
+    await engine_setup.set_project_engine(
+        db_session, "openai_compatible", "endpoint-model-x", endpoint_id=endpoint_id
+    )
+    target = await resolve_project_engine(db_session, SEED.primary_project)
+    assert (target.provider, target.model) == ("openai_compatible", "endpoint-model-x")
+    assert target.endpoint_id == str(endpoint_id)
+    assert (target.mode_requested, target.mode_executed) == ("fast", "fast")
+
+
+@pytest.mark.asyncio
+async def test_resolve_dangling_endpoint_raises_the_typed_409(db_session: AsyncSession) -> None:
+    """Rule 6: a stored pointer whose row was deleted concurrently resolves
+    to the typed 409 (re-choose message) — never a 500."""
+    from app.services.llm_endpoint_service import EndpointUnavailableError
+
+    endpoint_id = await engine_setup.make_endpoint(db_session)
+    await engine_setup.set_project_engine(
+        db_session, "openai_compatible", "endpoint-model-x", endpoint_id=endpoint_id
+    )
+    await _delete_endpoint_row(db_session, endpoint_id)
+    with pytest.raises(EndpointUnavailableError) as exc_info:
+        await resolve_project_engine(db_session, SEED.primary_project)
+    assert exc_info.value.code == "LLM_ENDPOINT_UNAVAILABLE"
+    assert exc_info.value.status_code == 409
+    assert "manager" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_resolve_unverified_endpoint_raises_the_typed_409(
+    db_session: AsyncSession,
+) -> None:
+    """A probe-state reset after the engine was chosen (e.g. base_url
+    edited) refuses new kickoffs with the same typed error."""
+    from app.services.llm_endpoint_service import EndpointUnavailableError
+
+    endpoint_id = await engine_setup.make_endpoint(db_session)
+    await engine_setup.set_project_engine(
+        db_session, "openai_compatible", "endpoint-model-x", endpoint_id=endpoint_id
+    )
+    await db_session.execute(
+        text(
+            "UPDATE public.project_llm_endpoints "
+            "SET validation_status = 'unverified' WHERE id = :eid"
+        ),
+        {"eid": str(endpoint_id)},
+    )
+    with pytest.raises(EndpointUnavailableError):
+        await resolve_project_engine(db_session, SEED.primary_project)
+
+
+@pytest.mark.asyncio
+async def test_alternates_stay_catalogue_only_even_for_endpoint_models(
+    db_session: AsyncSession,
+) -> None:
+    """Rule 8 (pin): an alternate pair not in the CATALOG is rejected even
+    when it matches a verified endpoint's model — alternates are
+    catalogue-only in C2 (the existing A2-1 gate enforces this)."""
+    await engine_setup.make_endpoint(db_session, allowed_models=["endpoint-model-x"])
+    with pytest.raises(ValueError, match="alternate engine"):
+        await engine_setup.set_project_engine(
+            db_session,
+            "openai",
+            "gpt-5.6-terra",
+            alternates=[LlmEngineAlternate(provider="openai_compatible", model="endpoint-model-x")],
+        )

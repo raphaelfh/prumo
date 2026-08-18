@@ -10,12 +10,16 @@ module's docstring for the event-loop rationale.
 from __future__ import annotations
 
 import random
+from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
 from celery import Task
 
+from app.core.logging import get_logger
 from app.llm.errors import is_transient_llm_error
+from app.services.api_key_service import KeyScope
+from app.services.engine_credentials import EngineCredentials
 from app.services.extraction_errors import ExtractionTaskError, classify_extraction_error
 
 # Module-level on purpose: these are the patchable seams the task tests pin
@@ -25,8 +29,42 @@ from app.services.run_engine_freeze import read_pinned_engine
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
 
+logger = get_logger(__name__)
+
 _RETRY_BASE_SECONDS = 60
 _RETRY_MAX_SECONDS = 600
+
+
+def _with_byok_override(
+    credentials: EngineCredentials,
+    openai_api_key: str | None,
+    *,
+    provider: str,
+) -> EngineCredentials:
+    """Apply a message-borne key to CATALOGUE credentials only.
+
+    A key handed in through the task message is the CALLER's own, and it
+    overrides just the KEY half — the resolved base_url and endpoint
+    identity still travel, or an endpoint engine would reach ``build_model``
+    without a host.
+
+    For an ENDPOINT-backed engine there is nothing to override: the host is
+    the manager's choice and the endpoint's shared key is the only
+    credential that belongs on it. Applying the caller's key there would
+    post a personal secret to a third-party host AND record the run as
+    ``user_byok`` when it ran on shared infrastructure. Ignored, loudly —
+    the log names the endpoint and provider, never the key.
+    """
+    if not openai_api_key:
+        return credentials
+    if credentials.endpoint_id is not None:
+        logger.warning(
+            "byok_override_ignored_for_endpoint_engine",
+            endpoint_id=credentials.endpoint_id,
+            provider=provider,
+        )
+        return credentials
+    return replace(credentials, api_key=openai_api_key, key_scope=KeyScope.USER_BYOK)
 
 
 def _retry_countdown(retries: int) -> float:
@@ -74,7 +112,7 @@ def extract_section_task(
     async def run() -> dict[str, Any]:
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
-        from app.services.api_key_service import APIKeyService, KeyScope
+        from app.services.engine_credentials import resolve_engine_credentials
         from app.services.section_extraction_service import SectionExtractionService
         from app.worker._session import worker_session
 
@@ -96,23 +134,23 @@ def extract_section_task(
                 # not know degrades the read to the env-default engine.
                 engine = await resolve_project_engine(session, UUID(project_id))
 
-                # Resolve user API key if not provided
-                api_key = openai_api_key
-                # An api_key handed in through the message is the caller's own.
-                key_scope: KeyScope | None = KeyScope.USER_BYOK if api_key else None
-                if not api_key:
-                    api_key_service = APIKeyService(db=session, user_id=user_id)
-                    resolved = await api_key_service.get_key_for_provider(engine.provider)
-                    if resolved is not None:
-                        api_key, key_scope = resolved.key, resolved.scope
+                # One resolver for key + scope + endpoint host (B9); the
+                # message-borne key applies to catalogue engines only (see
+                # ``_with_byok_override``).
+                credentials = _with_byok_override(
+                    await resolve_engine_credentials(
+                        session, user_id=user_id, project_id=UUID(project_id), engine=engine
+                    ),
+                    openai_api_key,
+                    provider=engine.provider,
+                )
 
                 service = SectionExtractionService(
                     db=session,
                     user_id=user_id,
                     storage=storage,
                     trace_id=self.request.id,
-                    openai_api_key=api_key,
-                    key_scope=key_scope,
+                    llm_credentials=credentials,
                     key_provider=engine.provider,
                 )
 
@@ -176,7 +214,7 @@ def extract_models_task(
     async def run() -> dict[str, Any]:
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
-        from app.services.api_key_service import APIKeyService
+        from app.services.engine_credentials import resolve_engine_credentials
         from app.services.model_extraction_service import ModelExtractionService
         from app.worker._session import worker_session
 
@@ -196,21 +234,25 @@ def extract_models_task(
                 # to the env-default engine.
                 engine = await resolve_project_engine(session, UUID(project_id))
 
-                # Resolve user API key if not provided
-                api_key = openai_api_key
-                if not api_key:
-                    api_key_service = APIKeyService(db=session, user_id=user_id)
-                    # Scope is dropped here on purpose: this service writes no
-                    # provenance, so there is nothing to record it against.
-                    resolved = await api_key_service.get_key_for_provider(engine.provider)
-                    api_key = resolved.key if resolved is not None else None
+                # One resolver for key + endpoint host (B9). The scope rides
+                # along unused: this service writes no provenance, but the
+                # credential is applied whole — splitting it is how an
+                # endpoint key reaches a cloud host. The message-borne key
+                # applies to catalogue engines only (``_with_byok_override``).
+                credentials = _with_byok_override(
+                    await resolve_engine_credentials(
+                        session, user_id=user_id, project_id=UUID(project_id), engine=engine
+                    ),
+                    openai_api_key,
+                    provider=engine.provider,
+                )
 
                 service = ModelExtractionService(
                     db=session,
                     user_id=user_id,
                     storage=storage,
                     trace_id=self.request.id,
-                    openai_api_key=api_key,
+                    llm_credentials=credentials,
                 )
 
                 result = await service.extract(
@@ -297,7 +339,7 @@ def run_section_extraction_task(
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.schemas.extraction import SectionExtractionRequest
-        from app.services.api_key_service import APIKeyService
+        from app.services.engine_credentials import resolve_engine_credentials
         from app.services.section_extraction_service import (
             BatchAllSectionsFailed,
             BatchExtractionResult,
@@ -326,22 +368,26 @@ def run_section_extraction_task(
                 if engine is None:
                     engine = await resolve_project_engine(session, request.project_id)
 
-                api_key_service = APIKeyService(db=session, user_id=user_id)
-                resolved = await api_key_service.get_key_for_provider(engine.provider)
+                credentials = await resolve_engine_credentials(
+                    session,
+                    user_id=user_id,
+                    project_id=request.project_id,
+                    engine=engine,
+                )
 
                 service = SectionExtractionService(
                     db=session,
                     user_id=user_id,
                     storage=storage,
                     trace_id=trace_id or self.request.id or "worker-missing-trace",
-                    openai_api_key=resolved.key if resolved is not None else None,
-                    key_scope=resolved.scope if resolved is not None else None,
-                    # F1: the provider this key was resolved FOR. The
+                    llm_credentials=credentials,
+                    # F1: the provider these credentials were resolved FOR
+                    # (with their endpoint_id, the full identity). The
                     # standalone branch (run_id=None) can still ADOPT the
-                    # coordinate's live run's pin inside the service — a
-                    # provider flip between pin and kickoff would pair this
-                    # key with an engine it does not fit, so the service
-                    # re-keys itself when the adopted provider differs.
+                    # coordinate's live run's pin inside the service — an
+                    # engine flip between pin and kickoff would pair these
+                    # credentials with an engine they do not fit, so the
+                    # service re-resolves when the adopted engine differs.
                     key_provider=engine.provider,
                 )
 
