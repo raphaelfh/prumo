@@ -2030,3 +2030,257 @@ async def test_run_results_scrub_ranby_on_run_detail(db_session: AsyncSession) -
         )
     ).scalar()
     assert stored == str(reviewer_b)
+
+
+async def _set_proposal_provenance(db: AsyncSession, run_id: UUID, engine: dict) -> None:
+    """Stamp every AI proposal of a run with its own engine record (0056)."""
+    import json
+
+    await db.execute(
+        text(
+            "UPDATE public.extraction_proposal_records SET provenance = cast(:e as jsonb) "
+            "WHERE run_id = :rid AND source = 'ai'"
+        ),
+        {"e": json.dumps(engine), "rid": str(run_id)},
+    )
+    await db.flush()
+
+
+_PROPOSAL_ENGINE = {
+    "provider": "anthropic",
+    "model": "claude-5-opus",
+    "endpoint_id": None,
+    "key_scope": "user_byok",
+    "mode_requested": "verified",
+    "mode_executed": "fast",
+    "passes": 1,
+}
+
+_SECTION_SNAPSHOT = {
+    "model": "gpt-5.6-luna",
+    "provider": "openai",
+    "strategy": "section_extraction",
+    "ran_by_user_id": str(SEED.primary_profile),
+    "mode_executed": "verified",
+    "passes": 2,
+    "tokens": {"total": 1240},
+}
+
+
+@pytest.mark.asyncio
+async def test_both_read_surfaces_report_the_proposals_own_engine(
+    db_session: AsyncSession,
+) -> None:
+    """The row's own engine wins over the section snapshot — on BOTH surfaces.
+
+    The section snapshot is last-write-wins, so on its own it would relabel an
+    older version with the newest run's engine. The two readers must not diverge:
+    the inline card and the review popover render the same proposal id.
+    """
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, _a, _b = built
+
+    await _seed_run_provenance(db_session, run_id, _SECTION_SNAPSHOT)
+    await _set_proposal_provenance(db_session, run_id, _PROPOSAL_ENGINE)
+    await _reveal_managers(db_session)
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+        run_id=run_id,
+    )
+    card = result.suggestions[0].provenance
+    assert card is not None
+    assert card["model"] == "claude-5-opus", card
+    assert card["mode_executed"] == "fast", card
+    assert card["passes"] == 1, card
+
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+    )
+    popover = history[0].provenance
+    assert popover is not None
+    assert popover["model"] == "claude-5-opus", popover
+    assert popover["mode_executed"] == "fast", popover
+
+    # The run half still flows underneath: tokens and the resolved runner name
+    # live on the section snapshot and must survive the merge.
+    assert card["tokens"] == {"total": 1240}
+    assert popover["tokens"] == {"total": 1240}
+    assert popover.get("ran_by_name"), "the popover's Run-by header reads this"
+
+
+@pytest.mark.asyncio
+async def test_legacy_proposal_without_engine_falls_back_to_the_section(
+    db_session: AsyncSession,
+) -> None:
+    """97 of 98 production runs predate the engine pin — they must still render."""
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, _a, _b = built
+
+    await _seed_run_provenance(db_session, run_id, _SECTION_SNAPSHOT)
+    await _reveal_managers(db_session)
+
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=SEED.primary_profile,
+    )
+    prov = history[0].provenance
+    assert prov is not None
+    assert prov["model"] == "gpt-5.6-luna", prov
+
+
+@pytest.mark.asyncio
+async def test_blind_caller_never_sees_identity_through_the_merge(
+    db_session: AsyncSession,
+) -> None:
+    """The merge must not smuggle identity past the blind-review scrub.
+
+    The proposal's own record never stores identity, but the section snapshot
+    half does — and that half is exactly what the scrub owns. A blind reviewer
+    must still get neither key on either surface.
+    """
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, reviewer_a, _b = built
+
+    await _seed_run_provenance(db_session, run_id, _SECTION_SNAPSHOT)
+    await _set_proposal_provenance(db_session, run_id, _PROPOSAL_ENGINE)
+
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=reviewer_a,
+    )
+    prov = history[0].provenance
+    assert prov is not None
+    assert "ran_by_user_id" not in prov, prov
+    assert "ran_by_name" not in prov, prov
+    # The engine itself is not identity and stays visible.
+    assert prov["model"] == "claude-5-opus"
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=SEED.primary_article,
+        caller_id=reviewer_a,
+        run_id=run_id,
+    )
+    card = result.suggestions[0].provenance
+    assert card is not None
+    assert "ran_by_user_id" not in card, card
+
+
+@pytest.mark.asyncio
+async def test_blind_read_does_not_mutate_the_stored_record(
+    db_session: AsyncSession,
+) -> None:
+    """The read-side scrub must never reach persisted state.
+
+    ``p.provenance`` comes off an identity-mapped ORM row, unlike the run
+    snapshot, which is a detached column result. Scrubbing it in place would let
+    a later flush destroy the audit record §IX exists to protect. Re-SELECT from
+    Postgres rather than re-reading the ORM attribute.
+    """
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, reviewer_a, _b = built
+
+    identity_bearing = {**_PROPOSAL_ENGINE, "ran_by_user_id": str(SEED.primary_profile)}
+    await _seed_run_provenance(db_session, run_id, _SECTION_SNAPSHOT)
+    await _set_proposal_provenance(db_session, run_id, identity_bearing)
+
+    await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=reviewer_a,
+    )
+    await db_session.flush()
+
+    stored = (
+        await db_session.execute(
+            text(
+                "SELECT provenance ->> 'ran_by_user_id' "
+                "FROM public.extraction_proposal_records "
+                "WHERE run_id = :rid AND source = 'ai' LIMIT 1"
+            ),
+            {"rid": str(run_id)},
+        )
+    ).scalar()
+    assert stored == str(SEED.primary_profile), "a read-side scrub must not edit the persisted row"
+
+
+@pytest.mark.asyncio
+async def test_qa_run_keeps_the_same_identity_contract(db_session: AsyncSession) -> None:
+    """Reveal forks on (project, run KIND), so the merge must be proven on QA too.
+
+    An extraction-kind assertion does not cover the quality-assessment surface,
+    which reaches the same reader through the same proposal rows.
+    """
+    # Flip the TEMPLATE before the run exists: create_run derives run.kind from
+    # it, and the composite FK fk_extraction_runs_template_kind_coherence forbids
+    # flipping either side once the pair is referenced.
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET kind = 'quality_assessment' WHERE id = :tid"
+        ),
+        {"tid": str(SEED.primary_template)},
+    )
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, field_id, reviewer_a, _b = built
+
+    kind = (
+        await db_session.execute(
+            text("SELECT kind FROM public.extraction_runs WHERE id = :id"), {"id": str(run_id)}
+        )
+    ).scalar()
+    assert kind == "quality_assessment", "the run must derive the QA kind"
+    await _seed_run_provenance(db_session, run_id, _SECTION_SNAPSHOT)
+    await _set_proposal_provenance(db_session, run_id, _PROPOSAL_ENGINE)
+
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=SEED.primary_article,
+        caller_id=reviewer_a,
+    )
+    prov = history[0].provenance
+    assert prov is not None
+    assert prov["model"] == "claude-5-opus", prov
+    assert "ran_by_user_id" not in prov, prov
+
+
+def test_run_detail_proposals_do_not_expose_provenance() -> None:
+    """``/runs/{id}`` keeps every AI proposal visible to a BLIND caller by design.
+
+    So the run-detail contract must not carry the engine record: it has no scrub
+    of its own (``scrub_results_ranby`` only walks ``results``), and this schema
+    sets ``from_attributes=True``, so a declared field would be filled straight
+    off the ORM row. Adding it there needs its own reveal gate, in its own slice.
+    """
+    from app.schemas.extraction_run import ProposalRecordResponse
+
+    assert "provenance" not in ProposalRecordResponse.model_fields

@@ -420,3 +420,51 @@ describe('AISuggestionReviewPopover — read-only run', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('AISuggestionReviewPopover — per-version engine (slice 0a)', () => {
+  // Two versions of ONE coordinate, produced on the SAME run by different
+  // engines. Before per-proposal provenance the run held a single, last-write-
+  // wins snapshot, so both rows necessarily rendered the same model and the
+  // older version was relabelled with the newer engine.
+  const historyWithDistinctEngines = [
+    v({
+      id: 'p2',
+      value: 412,
+      provenance: {ranByName: 'Carla', model: 'claude-5-opus'},
+      timestamp: new Date('2026-04-28T11:00:00Z'),
+    }),
+    v({
+      id: 'p1',
+      value: 'Retrospective cohort',
+      provenance: {ranByName: 'Carla', model: 'gpt-5.6-luna'},
+    }),
+  ];
+
+  it('renders each version with the engine that produced it', async () => {
+    const user = userEvent.setup();
+    render(
+      <RunEditabilityProvider stage="consensus" showPeerIdentity>
+        <AISuggestionReviewPopover
+          instanceId="i"
+          fieldId="f"
+          getHistory={async () => historyWithDistinctEngines}
+          selectedProposalId="p1"
+          trigger={<button>open</button>}
+        />
+      </RunEditabilityProvider>,
+    );
+    await user.click(screen.getByText('open'));
+
+    // The pinned version shows its own engine without any interaction.
+    expect(await screen.findByText(/gpt-5\.6-luna/)).toBeInTheDocument();
+
+    // The other version, once expanded, shows a DIFFERENT engine — the whole
+    // point: the group no longer speaks for every row in it.
+    const toggles = screen.getAllByRole('button', {name: /reviewDetails|details/i});
+    await user.click(toggles[0]);
+    expect(await screen.findByText(/claude-5-opus/)).toBeInTheDocument();
+
+    // Identity stays run-scoped and keeps rendering from the run half.
+    expect(screen.getAllByText(/Run by Carla/).length).toBeGreaterThan(0);
+  });
+});

@@ -180,6 +180,9 @@ async def _load_run_provenance(
 # Flat-snapshot marker keys — their presence on a run's provenance means it
 # carries a legacy (or mixed-era) flat snapshot alongside any `sections` map.
 _FLAT_SNAPSHOT_KEYS = ("model", "provider", "prompt_version", "prompt_text")
+# The identity pair the D8-d scrub owns; named once so the proposal-side guard in
+# resolve_proposal_provenance can never drift from what the scrub removes.
+_RAN_BY_KEYS = ("ran_by_user_id", "ran_by_name")
 
 
 def _provenance_leaves(prov: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -222,6 +225,36 @@ def _resolve_section_provenance(
     if any(k in provenance for k in _FLAT_SNAPSHOT_KEYS):
         return {k: v for k, v in provenance.items() if k != "sections"}
     return None
+
+
+def resolve_proposal_provenance(
+    section_snapshot: dict[str, Any] | None, proposal_engine: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """How ONE proposal was generated: its own engine over its section's snapshot.
+
+    The two records answer different questions and both are needed. The proposal's
+    engine (0056) is immutable per row and says how THIS value was produced; the
+    section snapshot is last-write-wins and carries what is genuinely run-scoped —
+    identity, tokens, prompt composition. Merging keeps the popover's "Run by"
+    header and token counts working while the engine follows the version.
+
+    A MERGE, not a substitution: substituting would drop ``ran_by_name`` (injected
+    only into run-level snapshots) and ``tokens`` from every provenance-bearing row.
+
+    Identity is stripped from the proposal half defensively. It is never written
+    there — ``build_proposal_engine`` excludes it precisely so the guarantee is
+    "never stored" rather than "scrubbed on read" — but this is the boundary where
+    a future writer's mistake would become a blind-review leak, because the scrub
+    upstream only walks run snapshots and never visits a proposal row.
+
+    Builds a NEW dict and mutates neither input: ``proposal_engine`` comes off an
+    identity-mapped ORM row (unlike the run snapshot, which is a detached column
+    result), so editing it in place would let a later flush destroy the audit record.
+    """
+    if not proposal_engine:
+        return section_snapshot
+    engine = {k: v for k, v in proposal_engine.items() if k not in _RAN_BY_KEYS}
+    return {**(section_snapshot or {}), **engine}
 
 
 async def _inject_ran_by_names(
@@ -431,8 +464,11 @@ async def load_suggestions(
                 created_at=p.created_at,
                 evidence=evidence_list,
                 status=status,
-                provenance=_resolve_section_provenance(
-                    prov_by_run.get(p.run_id), et_by_instance.get(p.instance_id)
+                provenance=resolve_proposal_provenance(
+                    _resolve_section_provenance(
+                        prov_by_run.get(p.run_id), et_by_instance.get(p.instance_id)
+                    ),
+                    p.provenance,
                 ),
             )
         )
@@ -546,7 +582,10 @@ async def get_suggestion_history(
                 rationale=p.rationale,
                 created_at=p.created_at,
                 evidence=evidence_list,
-                provenance=_resolve_section_provenance(prov_by_run.get(p.run_id), entity_type_id),
+                provenance=resolve_proposal_provenance(
+                    _resolve_section_provenance(prov_by_run.get(p.run_id), entity_type_id),
+                    p.provenance,
+                ),
             )
         )
 
