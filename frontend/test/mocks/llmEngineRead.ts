@@ -25,7 +25,10 @@
 import type {LlmEngineRead} from '@/services/llmEngineService';
 
 /** The read exactly as the wire carries it — no client-only fields. */
-export type LlmEngineReadWire = Omit<LlmEngineRead, 'hasAlternates'>;
+export type LlmEngineReadWire = Omit<
+  LlmEngineRead,
+  'hasAlternates' | 'hasEndpointId'
+>;
 
 /** A current backend's read payload; override any field. */
 export function makeEngineReadWire(
@@ -43,13 +46,20 @@ export function makeEngineReadWire(
     catalog: [],
     availability: {openai: true, anthropic: false},
     alternates: [],
+    endpoint_id: null,
+    endpoint_label: null,
     ...overrides,
   };
 }
 
-/** The same read as the service normalizes it (wire + `hasAlternates`). */
+/** The same read as the service normalizes it (wire + the client flags). */
 export function makeEngineRead(
   overrides: Partial<LlmEngineRead> = {},
 ): LlmEngineRead {
-  return {...makeEngineReadWire(), hasAlternates: true, ...overrides};
+  return {
+    ...makeEngineReadWire(),
+    hasAlternates: true,
+    hasEndpointId: true,
+    ...overrides,
+  };
 }
