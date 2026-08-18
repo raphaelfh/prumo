@@ -161,22 +161,24 @@ async def extract_models(
     # ``provenance.engine`` names the first (and a retired project pair
     # cannot 409 a legitimately pinned continuation). An unpinned run
     # freezes the resolved pair so the record exists before any LLM call.
-    # Kept outside the broad try below, so EngineRetiredError reaches its
-    # registered AppError handler — a typed 409 — instead of being swallowed
-    # into the generic 500.
+    # Kept outside the broad try below — together with the credentials
+    # resolution — so the typed AppErrors these two raise (EngineRetiredError,
+    # EndpointUnavailableError) reach their registered handler as a 409
+    # instead of being swallowed into the generic 500. Neither is a
+    # ValueError, so no arm below would catch them either.
     engine = await resolve_engine_for_run(db, run_id=payload.run_id, project_id=payload.project_id)
+
+    # Credentials for the RESOLVED engine, never a settings re-read: BYOK
+    # then global for a catalogue engine, the project endpoint's own key +
+    # host for an endpoint one. This route EXECUTES the extraction in the
+    # request (it does not enqueue), so it is the site that needs them.
+    credentials = await resolve_engine_credentials(
+        db, user_id=user.sub, project_id=payload.project_id, engine=engine
+    )
 
     try:
         # Create storage adapter via factory
         storage = create_storage_adapter(supabase)
-
-        # Credentials for the RESOLVED engine, never a settings re-read: BYOK
-        # then global for a catalogue engine, the project endpoint's own key +
-        # host for an endpoint one. This route EXECUTES the extraction in the
-        # request (it does not enqueue), so it is the site that needs them.
-        credentials = await resolve_engine_credentials(
-            db, user_id=user.sub, project_id=payload.project_id, engine=engine
-        )
 
         service = ModelExtractionService(
             db=db,

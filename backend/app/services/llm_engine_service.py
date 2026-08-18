@@ -28,7 +28,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -456,7 +456,11 @@ class LlmEngineService:
         alternates). Alternates are runtime-inert in C2: only this read
         surfaces them; :func:`resolve_project_engine` ignores them.
         Endpoint engines add the two scalars ``endpoint_id`` /
-        ``endpoint_label`` (decision 12 — never an embedded matrix).
+        ``endpoint_label`` (decision 12 — never an embedded matrix). The
+        LABEL is manager-only: this route is member-visible, and a label
+        names internal infrastructure while the endpoint surface itself
+        stays manager-gated. The id (an opaque uuid) still rides along —
+        the popover needs it to render the endpoint-backed state.
         """
         resolved = await self.get_for_project(project_id)
         stored = resolved.stored
@@ -470,6 +474,10 @@ class LlmEngineService:
         availability: dict[str, bool] = {}
         for provider in sorted({entry.provider for entry in CATALOG}):
             availability[provider] = await keys.has_key_for_provider(provider)
+
+        endpoint_label = resolved.endpoint_label
+        if endpoint_label is not None and not await self._viewer_is_manager(project_id, viewer_id):
+            endpoint_label = None
 
         return LlmEngineRead(
             provider=resolved.provider,
@@ -504,5 +512,18 @@ class LlmEngineService:
                 for a in (stored.alternates if stored is not None else [])
             ],
             endpoint_id=resolved.endpoint_id,
-            endpoint_label=resolved.endpoint_label,
+            endpoint_label=endpoint_label,
+        )
+
+    async def _viewer_is_manager(self, project_id: UUID, viewer_id: UUID) -> bool:
+        """Whether the viewer manages this project — the same
+        ``public.is_project_manager`` helper the RLS policies and the API
+        role gates use, so one definition of "manager" serves all three."""
+        return bool(
+            (
+                await self.db.execute(
+                    text("SELECT public.is_project_manager(:pid, :uid) AS ok"),
+                    {"pid": str(project_id), "uid": str(viewer_id)},
+                )
+            ).scalar_one()
         )

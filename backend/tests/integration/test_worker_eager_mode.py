@@ -359,3 +359,174 @@ def test_extract_section_task_signature_and_kwargs_alignment() -> None:
     fake_extraction_service.extract_section.assert_awaited_once()
     assert fake_extraction_service.extract_section.await_args.kwargs["engine"] == resolved_engine
     session.commit.assert_awaited()
+
+
+# ----------------------------------------------------------------------
+# 4b. extraction_tasks — the BYOK override vs an ENDPOINT-backed engine
+# ----------------------------------------------------------------------
+
+
+def _endpoint_credentials() -> Any:
+    from app.services.engine_credentials import EngineCredentials
+
+    return EngineCredentials(
+        api_key="endpoint-shared-key",
+        key_scope=KeyScope.SHARED_ENDPOINT,
+        base_url="https://llm.lab.example.com/v1",
+        endpoint_id="9f1d1f4e-0000-4000-8000-00000000ffff",
+    )
+
+
+def _catalog_credentials() -> Any:
+    from app.services.engine_credentials import EngineCredentials
+
+    return EngineCredentials(
+        api_key="global-service-key",
+        key_scope=KeyScope.GLOBAL_SERVICE,
+        base_url=None,
+        endpoint_id=None,
+    )
+
+
+def _run_section_task_with(credentials: Any, engine: Any, byok: str | None) -> Any:
+    """Run ``extract_section_task`` and return the captured service kwargs."""
+    from app.services.section_extraction_service import SectionExtractionResult
+    from app.worker.tasks.extraction_tasks import extract_section_task
+
+    session = _FakeAsyncSession()
+    fake_service = MagicMock()
+    fake_service.extract_section = AsyncMock(
+        return_value=SectionExtractionResult(
+            extraction_run_id=str(uuid4()),
+            entity_type_id=str(uuid4()),
+            suggestions_created=1,
+            tokens_prompt=1,
+            tokens_completion=1,
+            tokens_total=2,
+            duration_ms=1.0,
+        )
+    )
+
+    with (
+        patch(
+            "app.services.section_extraction_service.SectionExtractionService",
+            return_value=fake_service,
+        ) as service_cls,
+        patch(
+            "app.services.engine_credentials.resolve_engine_credentials",
+            AsyncMock(return_value=credentials),
+        ),
+        patch(
+            "app.worker.tasks.extraction_tasks.resolve_project_engine",
+            AsyncMock(return_value=engine),
+        ),
+        patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
+        patch("app.worker._session.worker_session", new=_session_factory_returning(session)),
+        patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+    ):
+        extract_section_task.apply(
+            kwargs={
+                "project_id": str(uuid4()),
+                "article_id": str(uuid4()),
+                "template_id": str(uuid4()),
+                "entity_type_id": str(uuid4()),
+                "user_id": str(uuid4()),
+                "parent_instance_id": None,
+                "openai_api_key": byok,
+            }
+        ).get(timeout=5)
+    return service_cls.call_args.kwargs["llm_credentials"]
+
+
+def _run_models_task_with(credentials: Any, engine: Any, byok: str | None) -> Any:
+    """Run ``extract_models_task`` and return the captured service kwargs."""
+    from app.worker.tasks.extraction_tasks import extract_models_task
+
+    session = _FakeAsyncSession()
+    fake_service = MagicMock()
+    extraction_result = MagicMock()
+    extraction_result.extraction_run_id = str(uuid4())
+    extraction_result.total_models = 0
+    extraction_result.child_instances_created = 0
+    extraction_result.duration_ms = 1.0
+    extraction_result.models_created = []
+    fake_service.extract = AsyncMock(return_value=extraction_result)
+
+    with (
+        patch(
+            "app.services.model_extraction_service.ModelExtractionService",
+            return_value=fake_service,
+        ) as service_cls,
+        patch(
+            "app.services.engine_credentials.resolve_engine_credentials",
+            AsyncMock(return_value=credentials),
+        ),
+        patch(
+            "app.worker.tasks.extraction_tasks.resolve_project_engine",
+            AsyncMock(return_value=engine),
+        ),
+        patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
+        patch("app.worker._session.worker_session", new=_session_factory_returning(session)),
+        patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+    ):
+        extract_models_task.apply(
+            kwargs={
+                "project_id": str(uuid4()),
+                "article_id": str(uuid4()),
+                "template_id": str(uuid4()),
+                "user_id": str(uuid4()),
+                "openai_api_key": byok,
+            }
+        ).get(timeout=5)
+    return service_cls.call_args.kwargs["llm_credentials"]
+
+
+def _endpoint_engine() -> Any:
+    from app.schemas.llm_target import LlmTarget
+
+    return LlmTarget(
+        provider="openai_compatible",
+        model="llama3",
+        endpoint_id="9f1d1f4e-0000-4000-8000-00000000ffff",
+    )
+
+
+def _catalog_engine() -> Any:
+    from app.schemas.llm_target import LlmTarget
+
+    return LlmTarget(provider="openai", model="gpt-4o-mini")
+
+
+def test_section_task_byok_never_overrides_an_endpoint_credential() -> None:
+    """A message-borne key is the CALLER's own. Applying it to an
+    endpoint-backed engine would post a personal key to a manager-chosen
+    host and label the run ``user_byok`` — the endpoint's shared key is the
+    only correct credential there, so the override is ignored."""
+    used = _run_section_task_with(_endpoint_credentials(), _endpoint_engine(), "sk-caller-own-key")
+
+    assert used.api_key == "endpoint-shared-key"
+    assert used.key_scope == KeyScope.SHARED_ENDPOINT
+    assert used.base_url == "https://llm.lab.example.com/v1"
+
+
+def test_section_task_byok_still_overrides_a_catalog_credential() -> None:
+    used = _run_section_task_with(_catalog_credentials(), _catalog_engine(), "sk-caller-own-key")
+
+    assert used.api_key == "sk-caller-own-key"
+    assert used.key_scope == KeyScope.USER_BYOK
+    assert used.base_url is None
+
+
+def test_models_task_byok_never_overrides_an_endpoint_credential() -> None:
+    used = _run_models_task_with(_endpoint_credentials(), _endpoint_engine(), "sk-caller-own-key")
+
+    assert used.api_key == "endpoint-shared-key"
+    assert used.key_scope == KeyScope.SHARED_ENDPOINT
+    assert used.base_url == "https://llm.lab.example.com/v1"
+
+
+def test_models_task_byok_still_overrides_a_catalog_credential() -> None:
+    used = _run_models_task_with(_catalog_credentials(), _catalog_engine(), "sk-caller-own-key")
+
+    assert used.api_key == "sk-caller-own-key"
+    assert used.key_scope == KeyScope.USER_BYOK

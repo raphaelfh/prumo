@@ -16,11 +16,17 @@ to the caller's :class:`~app.core.net_guard.VettedUrl`.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Literal
 
 from app.core.net_guard import EndpointUrlError, VettedUrl, guarded_json_request
 from app.schemas.llm_endpoint import LlmEndpointProbeResult
+
+#: Ceiling for the WHOLE ladder (up to four bounded requests). The verify
+#: route waits on this synchronously, so it is also the bound on how long
+#: that request can hold its database connection.
+_PROBE_DEADLINE_S = 60.0
 
 _MODELS_SEEN_CAP = 50
 _MODEL_ID_MAX_CHARS = 200
@@ -155,6 +161,27 @@ _RUNG_CHECKS = {
 
 
 async def probe_endpoint(
+    *,
+    vetted: VettedUrl,
+    api_key: str | None,
+    allowed_models: list[str],
+) -> LlmEndpointProbeResult:
+    """The ladder under ONE overall deadline (``_PROBE_DEADLINE_S``).
+
+    Each request is individually bounded by the guard, but the ladder is
+    up to four of them back to back — and the caller (the verify route)
+    waits on this with a database connection in hand. Blowing the ceiling
+    is a typed ``failed`` result like any other endpoint misbehaviour;
+    this function still never raises on endpoint behavior.
+    """
+    try:
+        async with asyncio.timeout(_PROBE_DEADLINE_S):
+            return await _run_ladder(vetted=vetted, api_key=api_key, allowed_models=allowed_models)
+    except TimeoutError:
+        return _failed("timeout")
+
+
+async def _run_ladder(
     *,
     vetted: VettedUrl,
     api_key: str | None,

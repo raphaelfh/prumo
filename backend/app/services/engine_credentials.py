@@ -137,16 +137,20 @@ async def rekey_for_adopted_engine(
     identity is the PAIR ``(provider, endpoint_id)``: two custom endpoints
     both say ``openai_compatible``, so provider equality alone would ship
     endpoint A's key to endpoint B's host. ``keyed_for=None`` means the
-    caller never declared an identity (direct/legacy callers) — the
-    injected credentials are used as-is, never re-resolved.
+    caller never declared an identity (direct/legacy callers) — its
+    injected credentials are used as-is, UNLESS they carry an endpoint
+    identity: an endpoint credential is a key bound to one host, and a
+    caller that cannot say which engine it was keyed for cannot vouch that
+    it is the one that settled, so those are re-resolved instead.
 
     The result replaces the credentials WHOLE: key, scope and base_url move
     together, since an adoption that took only the key would leave
     ``build_model`` without a host.
     """
-    if keyed_for is None or (
-        keyed_for == engine.provider and current.endpoint_id == engine.endpoint_id
-    ):
+    if keyed_for is None:
+        if current.endpoint_id is None:
+            return None
+    elif keyed_for == engine.provider and current.endpoint_id == engine.endpoint_id:
         return None
     return await resolve_engine_credentials(
         db, user_id=user_id, project_id=project_id, engine=engine

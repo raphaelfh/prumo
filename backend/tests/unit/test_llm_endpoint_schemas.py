@@ -69,6 +69,50 @@ def test_create_label_bounds() -> None:
         )
 
 
+def test_create_rejects_an_oversized_base_url() -> None:
+    """Bounded input: the column is unbounded ``Text``, so the shape is what
+    keeps a megabyte URL out of the row (and out of every later log line)."""
+    with pytest.raises(ValidationError):
+        LlmEndpointCreateRequest.model_validate(
+            {"label": "Lab Ollama", "base_url": "https://a.example/" + "x" * 2048}
+        )
+
+
+def test_create_rejects_oversized_allowed_models() -> None:
+    """Both dimensions are bounded: too many entries, and a huge entry."""
+    with pytest.raises(ValidationError):
+        LlmEndpointCreateRequest.model_validate(
+            {
+                "label": "Lab Ollama",
+                "base_url": "https://llm.lab.example/v1",
+                "allowed_models": [f"m{i}" for i in range(201)],
+            }
+        )
+    with pytest.raises(ValidationError):
+        LlmEndpointCreateRequest.model_validate(
+            {
+                "label": "Lab Ollama",
+                "base_url": "https://llm.lab.example/v1",
+                "allowed_models": ["m" * 201],
+            }
+        )
+
+
+def test_update_rejects_oversized_base_url_and_models() -> None:
+    with pytest.raises(ValidationError):
+        LlmEndpointUpdateRequest.model_validate(
+            {"label": "Lab Ollama", "base_url": "https://a.example/" + "x" * 2048}
+        )
+    with pytest.raises(ValidationError):
+        LlmEndpointUpdateRequest.model_validate(
+            {
+                "label": "Lab Ollama",
+                "base_url": "https://llm.lab.example/v1",
+                "allowed_models": ["m" * 201],
+            }
+        )
+
+
 def test_create_dump_and_repr_never_leak_the_key() -> None:
     """SecretStr masks: neither ``model_dump`` stringification nor ``repr``
     ever contains the plaintext key."""
@@ -135,6 +179,12 @@ def test_capabilities_defaults() -> None:
     assert caps.models_seen == []
 
 
-def test_capabilities_rejects_unknown_output_mode() -> None:
-    with pytest.raises(ValidationError):
-        LlmEndpointCapabilities.model_validate({"output_mode": "telepathy"})
+def test_capabilities_normalizes_an_unknown_output_mode() -> None:
+    """A stored value this build does not know degrades to ``None`` instead
+    of throwing: these capabilities are re-read from JSONB on every LIST, so
+    a ValidationError there would 500 the whole manager surface (the
+    ``LlmEngineStored.mode`` posture)."""
+    assert LlmEndpointCapabilities.model_validate({"output_mode": "telepathy"}).output_mode is None
+    assert LlmEndpointCapabilities.model_validate({"output_mode": 7}).output_mode is None
+    # The known vocabulary still round-trips untouched.
+    assert LlmEndpointCapabilities.model_validate({"output_mode": "tool"}).output_mode == "tool"

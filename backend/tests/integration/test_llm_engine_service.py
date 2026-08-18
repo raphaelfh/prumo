@@ -634,6 +634,28 @@ async def test_get_engine_read_carries_the_endpoint_scalars(db_session: AsyncSes
 
 
 @pytest.mark.asyncio
+async def test_endpoint_label_is_manager_only(db_session: AsyncSession) -> None:
+    """Decision 12 keeps the endpoint SURFACE manager-only, but this GET is
+    member-visible — and a label names internal infrastructure ("Lab Ollama",
+    "prod-inference-2"). A non-manager member sees the engine, not the
+    infrastructure behind it."""
+    endpoint_id = await engine_setup.make_endpoint(db_session, label="Lab Ollama")
+    await engine_setup.set_project_engine(
+        db_session, "openai_compatible", "endpoint-model-x", endpoint_id=endpoint_id
+    )
+    service = LlmEngineService(db_session)
+
+    manager_read = await service.get_engine_read(SEED.primary_project, SEED.primary_profile)
+    assert manager_read.endpoint_label == "Lab Ollama"
+
+    member_read = await service.get_engine_read(SEED.primary_project, SEED.reviewer_profile)
+    assert member_read.endpoint_label is None
+    # The pointer itself (an opaque uuid) still rides along — the popover
+    # needs it to render the endpoint-backed state at all.
+    assert member_read.endpoint_id == endpoint_id
+
+
+@pytest.mark.asyncio
 async def test_resolve_endpoint_engine_returns_the_endpoint_target(
     db_session: AsyncSession,
 ) -> None:

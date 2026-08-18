@@ -10,6 +10,7 @@ when absent.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -321,3 +322,28 @@ async def test_bearer_header_sent_only_when_key_given(
     guard = _guard(monkeypatch, [_models(["m1"]), _tool_ok()])
     await probe_endpoint(vetted=_VETTED, api_key=None, allowed_models=["m1"])
     assert all("Authorization" not in c["headers"] for c in guard.calls)
+
+
+# ---------------------------------------------------------------------------
+# Overall deadline
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ladder_has_an_overall_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Four bounded requests can still add up: the WHOLE ladder carries its
+    own ceiling, and blowing it is a typed failed result — never a raise
+    escaping into the verify route."""
+
+    async def _slow(*_args: Any, **_kwargs: Any) -> tuple[int, Any]:
+        await asyncio.sleep(30)
+        raise AssertionError("should have timed out")  # pragma: no cover
+
+    monkeypatch.setattr(probe_module, "guarded_json_request", _slow)
+    monkeypatch.setattr(probe_module, "_PROBE_DEADLINE_S", 0.01)
+
+    result = await probe_endpoint(vetted=_VETTED, api_key=None, allowed_models=["m1"])
+
+    assert result.validation_status == "failed"
+    assert result.error == "timeout"
+    assert result.output_mode is None

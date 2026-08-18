@@ -316,6 +316,39 @@ async def test_rekey_returns_none_when_the_identity_still_fits(
 
 
 @pytest.mark.asyncio
+async def test_rekey_re_resolves_endpoint_credentials_for_an_undeclared_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``keyed_for=None`` means "no identity declared" — that licenses
+    reusing CATALOGUE credentials, never an ENDPOINT's.
+
+    An endpoint credential is a key bound to one host; a caller that cannot
+    say which engine it was keyed for cannot vouch that it is this one, so
+    the pair is re-resolved instead of shipped to whatever host settles.
+    """
+    _stub_endpoint_service(monkeypatch, row=_endpoint_row("https://b.example.com/v1"), key="key-b")
+    endpoint_a, endpoint_b = str(uuid4()), str(uuid4())
+
+    rekeyed = await rekey_for_adopted_engine(
+        MagicMock(),
+        user_id=_USER,
+        project_id=_PROJECT,
+        engine=LlmTarget(provider="openai_compatible", model="m", endpoint_id=endpoint_b),
+        current=EngineCredentials(
+            "key-a", KeyScope.SHARED_ENDPOINT, "https://a.example.com/v1", endpoint_a
+        ),
+        keyed_for=None,
+    )
+
+    assert rekeyed == EngineCredentials(
+        api_key="key-b",
+        key_scope=KeyScope.SHARED_ENDPOINT,
+        base_url="https://b.example.com/v1",
+        endpoint_id=endpoint_b,
+    )
+
+
+@pytest.mark.asyncio
 async def test_rekey_fires_for_two_endpoints_sharing_one_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

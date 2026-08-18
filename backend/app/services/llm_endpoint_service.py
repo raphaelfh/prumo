@@ -25,9 +25,11 @@ from uuid import UUID, uuid4
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
+from app.core.logging import get_logger
 from app.core.net_guard import validate_endpoint_url
 from app.core.security import derive_encryption_key
 from app.models.project import Project
@@ -70,6 +72,26 @@ class EndpointUnavailableError(AppError):
 class EndpointNotFoundError(Exception):
     """No endpoint at (project_id, endpoint_id). HTTP translation (404) in
     the router — the :class:`ProjectNotFoundError` pattern."""
+
+
+logger = get_logger(__name__)
+
+#: The (project_id, label) unique constraint (see the model's table args).
+_LABEL_CONSTRAINT = "uq_llm_endpoint_label"
+
+
+def _is_duplicate_label(exc: IntegrityError) -> bool:
+    """True when ``exc`` is the (project_id, label) unique violation.
+
+    asyncpg exposes the violated constraint on ``constraint_name`` (via
+    ``exc.orig`` or its ``__cause__``); the message text carries it too —
+    the ``is_one_live_run_conflict`` pattern.
+    """
+    orig = getattr(exc, "orig", None)
+    for candidate in (orig, getattr(orig, "__cause__", None)):
+        if getattr(candidate, "constraint_name", None) == _LABEL_CONSTRAINT:
+            return True
+    return _LABEL_CONSTRAINT in str(orig or exc)
 
 
 def _fernet_for(endpoint_id: UUID) -> Fernet:
@@ -155,19 +177,12 @@ class LlmEndpointService:
     ) -> LlmEndpointRead:
         """Vet the URL, encrypt the key under the new row's id, insert."""
         # SSRF gate FIRST — EndpointUrlError propagates sanitized.
-        vetted = validate_endpoint_url(payload.base_url)
+        vetted = await validate_endpoint_url(payload.base_url)
         # Pre-check the (project_id, label) unique gate so a duplicate is a
-        # clean ValueError (400), not an IntegrityError 500; a concurrent
-        # racer still lands on the DB unique constraint.
-        duplicate = (
-            await self.db.execute(
-                select(ProjectLlmEndpoint.id).where(
-                    ProjectLlmEndpoint.project_id == project_id,
-                    ProjectLlmEndpoint.label == payload.label,
-                )
-            )
-        ).scalar_one_or_none()
-        if duplicate is not None:
+        # clean ValueError (400), not an IntegrityError 500. The check is
+        # advisory (a racer can still slip past it) — the flush below turns
+        # the lost race into the SAME error.
+        if await self._label_taken(project_id, payload.label):
             raise ValueError(
                 f"An endpoint labeled {payload.label!r} already exists in this project"
             )
@@ -192,9 +207,29 @@ class LlmEndpointService:
             created_by=created_by,
         )
         self.db.add(row)
-        await self.db.flush()
+        try:
+            await self.db.flush()
+        except IntegrityError as exc:
+            if not _is_duplicate_label(exc):
+                raise
+            # The racer that lost. Same message as the pre-check: the caller
+            # sees one behaviour, not two shaped by timing.
+            raise ValueError(
+                f"An endpoint labeled {payload.label!r} already exists in this project"
+            ) from None
         names = await _profile_names(self.db, {created_by})
         return _to_read(row, names.get(created_by))
+
+    async def _label_taken(self, project_id: UUID, label: str) -> bool:
+        """Whether the project already has an endpoint with this label."""
+        return (
+            await self.db.execute(
+                select(ProjectLlmEndpoint.id).where(
+                    ProjectLlmEndpoint.project_id == project_id,
+                    ProjectLlmEndpoint.label == label,
+                )
+            )
+        ).scalar_one_or_none() is not None
 
     async def update(
         self,
@@ -212,7 +247,7 @@ class LlmEndpointService:
         A label or key change keeps the probe outcome.
         """
         row = await self.get(project_id, endpoint_id)
-        vetted = validate_endpoint_url(payload.base_url)  # re-vetted on every write
+        vetted = await validate_endpoint_url(payload.base_url)  # re-vetted on every write
         invalidated = vetted.url != row.base_url or list(payload.allowed_models) != list(
             row.allowed_models
         )
@@ -282,18 +317,48 @@ class LlmEndpointService:
     ) -> LlmEndpointProbeResult:
         """Probe the endpoint and persist the outcome. The ROUTE only calls
         this — fetch (BOLA-scoped), decrypt, re-vet the stored URL, run the
-        B5 ladder, persist capabilities/status/timestamp."""
+        B5 ladder, persist capabilities/status/timestamp.
+
+        Three phases, in this order and with NO database work in the middle
+        one: every read happens before the network call and every write
+        after it. The session's transaction is still open across the probe
+        (the request owns it and a rollback here would discard the caller's
+        work), but it holds NO lock — deliberately no ``FOR UPDATE``, unlike
+        :meth:`delete` — and the wait is bounded: ``_DNS_TIMEOUT_S`` for the
+        re-vet plus the probe's own overall ceiling
+        (``llm_endpoint_probe._PROBE_DEADLINE_S``, 60s).
+        """
         row = await self.get(project_id, endpoint_id)
         api_key = await self.decrypt_key(row)
         # A stored URL is re-vetted before every probe: fails closed if the
         # row was hand-edited or the resolution changed. Sanitized
         # EndpointUrlError propagates.
-        vetted = validate_endpoint_url(row.base_url)
-        result = await probe_endpoint(
-            vetted=vetted,
-            api_key=api_key,
-            allowed_models=list(row.allowed_models),
-        )
+        vetted = await validate_endpoint_url(row.base_url)
+        try:
+            result = await probe_endpoint(
+                vetted=vetted,
+                api_key=api_key,
+                allowed_models=list(row.allowed_models),
+            )
+        except Exception:
+            # The probe promises never to raise on endpoint behavior, so
+            # this is OUR bug — but the row must not keep advertising a
+            # stale ``ok``. Record the failure and RETURN it (re-raising
+            # would abort the route before its commit, losing exactly the
+            # record this exists to write); the detail goes to the log,
+            # never to the manager.
+            logger.error(
+                "llm_endpoint_verify_unexpected_error",
+                endpoint_id=str(endpoint_id),
+                project_id=str(project_id),
+                exc_info=True,
+            )
+            result = LlmEndpointProbeResult(
+                validation_status="failed",
+                output_mode=None,
+                models_seen=[],
+                error="internal_error",
+            )
         row.capabilities = LlmEndpointCapabilities(
             output_mode=result.output_mode,
             models_seen=result.models_seen,

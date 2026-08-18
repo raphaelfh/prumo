@@ -173,6 +173,41 @@ async def test_duplicate_label_scoped_to_the_project(db_session: AsyncSession) -
     assert other.label == "shared-label"
 
 
+@pytest.mark.asyncio
+async def test_duplicate_label_race_is_the_same_valueerror(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pre-check is advisory — two concurrent creates both pass it and
+    one loses at the unique constraint. The loser must get the SAME 400
+    ValueError, never a raw IntegrityError 500.
+
+    The race is simulated by neutering the pre-check (what the losing
+    transaction effectively saw), so the REAL constraint is what fires.
+    """
+    service = LlmEndpointService(db_session)
+    await service.create(
+        project_id=SEED.primary_project,
+        created_by=SEED.primary_profile,
+        payload=_create_payload(label="raced-label"),
+    )
+
+    async def _blind(*_args: object, **_kwargs: object) -> bool:
+        return False
+
+    monkeypatch.setattr(LlmEndpointService, "_label_taken", _blind)
+
+    with pytest.raises(ValueError, match="raced-label"):
+        await service.create(
+            project_id=SEED.primary_project,
+            created_by=SEED.primary_profile,
+            payload=_create_payload(label="raced-label"),
+        )
+    # The failed flush poisoned the transaction; unwind it so the fixture's
+    # SAVEPOINT teardown is clean.
+    await db_session.rollback()
+
+
 # ---------------------------------------------------------------------------
 # update — api_key tri-state + probe-state invalidation
 # ---------------------------------------------------------------------------
@@ -476,6 +511,71 @@ async def test_verify_persists_a_failed_probe(
     assert row.validation_status == "failed"
     assert row.capabilities == {"output_mode": None, "models_seen": []}
     assert row.last_validated_at is not None
+
+
+@pytest.mark.asyncio
+async def test_verify_records_failed_when_the_probe_raises_unexpectedly(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An UNEXPECTED probe error still lands as a recorded ``failed`` row.
+
+    Persisting only on the normal return leaves the endpoint sitting at its
+    previous status forever — a manager who clicks Verify and sees an error
+    would come back to a row claiming ``ok``. The outcome is returned (not
+    re-raised) precisely so the route commits it.
+    """
+    service = LlmEndpointService(db_session)
+    read = await service.create(
+        project_id=SEED.primary_project,
+        created_by=SEED.primary_profile,
+        payload=_create_payload(),
+    )
+    row = await service.get(SEED.primary_project, read.id)
+    row.validation_status = "ok"
+    row.capabilities = {"output_mode": "tool", "models_seen": ["stale"]}
+    await db_session.flush()
+
+    async def _boom(**_kwargs):  # type: ignore[no-untyped-def]
+        raise RuntimeError("probe blew up with sk-leaky-detail in the message")
+
+    monkeypatch.setattr("app.services.llm_endpoint_service.probe_endpoint", _boom)
+
+    result = await service.verify(project_id=SEED.primary_project, endpoint_id=read.id)
+    assert result.validation_status == "failed"
+    # Sanitized: the internal error text never reaches the manager.
+    assert result.error == "internal_error"
+    assert "sk-leaky-detail" not in str(result.model_dump())
+
+    row = await service.get(SEED.primary_project, read.id)
+    assert row.validation_status == "failed"
+    assert row.capabilities == {"output_mode": None, "models_seen": []}
+    assert row.last_validated_at is not None
+
+
+@pytest.mark.asyncio
+async def test_list_tolerates_a_corrupt_capabilities_payload(
+    db_session: AsyncSession,
+) -> None:
+    """A capabilities value this build cannot parse must not 500 the LIST
+    route — the whole manager surface would go dark over one bad row."""
+    service = LlmEndpointService(db_session)
+    read = await service.create(
+        project_id=SEED.primary_project,
+        created_by=SEED.primary_profile,
+        payload=_create_payload(label="corrupt-caps"),
+    )
+    await db_session.execute(
+        text(
+            "UPDATE public.project_llm_endpoints "
+            'SET capabilities = \'{"output_mode": "weird"}\'::jsonb WHERE id = :eid'
+        ),
+        {"eid": str(read.id)},
+    )
+
+    rows = await service.list_for_project(SEED.primary_project)
+    corrupt = next(r for r in rows if r.id == read.id)
+    assert corrupt.capabilities.output_mode is None
 
 
 @pytest.mark.asyncio

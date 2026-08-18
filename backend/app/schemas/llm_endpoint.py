@@ -10,10 +10,25 @@ per-row derived key); these schemas only ferry the secret inward.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
+#: Bounds for the two free-text request fields. The columns are unbounded
+#: ``Text``/JSONB, so the shape is the only thing keeping a megabyte of
+#: user input out of the row — and out of every log line that names it.
+_BASE_URL_MAX = 2048
+_MODEL_ID_MAX = 200
+_ALLOWED_MODELS_MAX = 200
+
+_OUTPUT_MODES = ("tool", "native", "prompted")
+
+ModelId = Annotated[str, Field(max_length=_MODEL_ID_MAX)]
 
 
 class LlmEndpointCapabilities(BaseModel):
@@ -28,6 +43,22 @@ class LlmEndpointCapabilities(BaseModel):
     output_mode: Literal["tool", "native", "prompted"] | None = None
     models_seen: list[str] = []
 
+    @field_validator("output_mode", mode="before")
+    @classmethod
+    def _normalize_output_mode(cls, v: Any) -> Any:
+        """An unknown stored mode degrades to ``None`` — loudly, never fatally.
+
+        This model is re-validated from JSONB on every read (the LIST route,
+        the engine-choice gate), so a value written by another build — or by
+        hand — must not 500 the whole manager surface. Same posture as
+        ``LlmEngineStored.mode``; ``None`` simply means "capability unknown",
+        which every consumer already handles.
+        """
+        if v is None or v in _OUTPUT_MODES:
+            return v
+        logger.warning("llm_endpoint_unknown_output_mode_normalized", stored_output_mode=str(v))
+        return None
+
 
 class LlmEndpointCreateRequest(BaseModel):
     """POST body for a new endpoint.
@@ -40,9 +71,9 @@ class LlmEndpointCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str = Field(min_length=1, max_length=80)
-    base_url: str
+    base_url: str = Field(max_length=_BASE_URL_MAX)
     api_key: SecretStr | None = None  # None = keyless endpoint
-    allowed_models: list[str] = []
+    allowed_models: list[ModelId] = Field(default=[], max_length=_ALLOWED_MODELS_MAX)
 
     @field_validator("api_key")
     @classmethod
@@ -65,9 +96,9 @@ class LlmEndpointUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str = Field(min_length=1, max_length=80)
-    base_url: str
+    base_url: str = Field(max_length=_BASE_URL_MAX)
     api_key: SecretStr | None = None
-    allowed_models: list[str] = []
+    allowed_models: list[ModelId] = Field(default=[], max_length=_ALLOWED_MODELS_MAX)
 
 
 class LlmEndpointRead(BaseModel):

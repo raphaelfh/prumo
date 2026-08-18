@@ -190,7 +190,7 @@ def _model_extraction_payload(project_id, article_id, template_id):
     )
 
 
-async def _call_extract_models(payload, service, caller):
+async def _call_extract_models(payload, service, caller, credentials_error=None):
     from app.api.v1.endpoints.model_extraction import extract_models
 
     # extract_models is @limiter.limit(...)-decorated (slowapi); its wrapper
@@ -218,7 +218,10 @@ async def _call_extract_models(payload, service, caller):
         # imports it (the endpoint no longer builds an APIKeyService itself).
         patch(
             f"{_MODEL_EP}.resolve_engine_credentials",
-            AsyncMock(return_value=EngineCredentials(None, None, None, None)),
+            AsyncMock(
+                return_value=EngineCredentials(None, None, None, None),
+                side_effect=credentials_error,
+            ),
         ),
         patch(f"{_MODEL_EP}.ModelExtractionService", return_value=service),
     ):
@@ -270,6 +273,31 @@ async def test_extract_models_maps_other_integrity_error_to_422() -> None:
         )
 
     assert exc_info.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_extract_models_lets_the_typed_endpoint_error_through() -> None:
+    """``EndpointUnavailableError`` is an ``AppError``, not a ``ValueError``:
+    inside the route's broad ``except Exception`` it would become a generic
+    500 ("Model extraction failed: ...") instead of the registered typed 409
+    that tells the manager to re-verify or re-choose the endpoint.
+
+    Same hazard ``resolve_engine_for_run`` was hoisted above the try for —
+    the credentials resolver raises it too, so it belongs on the same side.
+    """
+    from app.services.llm_endpoint_service import EndpointUnavailableError
+
+    project_id, article_id, template_id, caller = uuid4(), uuid4(), uuid4(), uuid4()
+    service = MagicMock()
+    service.extract = AsyncMock(side_effect=AssertionError("must not reach the service"))
+
+    with pytest.raises(EndpointUnavailableError):
+        await _call_extract_models(
+            _model_extraction_payload(project_id, article_id, template_id),
+            service,
+            caller,
+            credentials_error=EndpointUnavailableError("endpoint is gone"),
+        )
 
 
 @pytest.mark.asyncio
