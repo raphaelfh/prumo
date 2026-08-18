@@ -30,7 +30,13 @@ _PROBE_DEADLINE_S = 60.0
 
 _MODELS_SEEN_CAP = 50
 _MODEL_ID_MAX_CHARS = 200
-_MAX_TOKENS = 32
+#: Truncation guard, NOT a cost control — the ladder deadline and the guard's
+#: byte cap bound the probe. It has to clear a reasoning model's thinking
+#: budget: measured against Ollama serving ``qwen3.6:35b-mlx``, the tool call
+#: lands at completion token 284, so a ceiling of 32 (or even 256) returned
+#: ``finish_reason="length"`` with no tool call and reported a working
+#: endpoint as ``failed``.
+_MAX_TOKENS = 1024
 
 _PROBE_TOOL = {
     "type": "function",
@@ -137,6 +143,13 @@ def _prompted_rung_succeeded(body: Any) -> bool:
     return _parses_as_json(content) is not None
 
 
+def _was_truncated(body: Any) -> bool:
+    """The endpoint stopped at the token ceiling rather than finishing."""
+    choices = body.get("choices") if isinstance(body, dict) else None
+    first = choices[0] if isinstance(choices, list) and choices else None
+    return isinstance(first, dict) and first.get("finish_reason") == "length"
+
+
 def _rung_body(rung: str, model: str) -> dict[str, Any]:
     body: dict[str, Any] = {
         "model": model,
@@ -214,6 +227,11 @@ async def _run_ladder(
         return _failed("no model to probe", models_seen)
 
     rungs: list[Literal["tool", "native", "prompted"]] = ["tool", "native", "prompted"]
+    # A rung that only ran out of room is a different diagnosis from a rung
+    # the endpoint could not serve: "no mode succeeded" would send a manager
+    # hunting a fault that is not there.
+    truncated_rungs = 0
+    attempted_rungs = 0
     for rung in rungs:
         try:
             status, body = await guarded_json_request(
@@ -229,6 +247,7 @@ async def _run_ladder(
             return _failed("unauthorized", models_seen)
         if not 200 <= status < 300:
             continue
+        attempted_rungs += 1
         if _RUNG_CHECKS[rung](body):
             return LlmEndpointProbeResult(
                 validation_status="ok",
@@ -236,4 +255,8 @@ async def _run_ladder(
                 models_seen=models_seen,
                 error=None,
             )
+        if _was_truncated(body):
+            truncated_rungs += 1
+    if attempted_rungs > 0 and truncated_rungs == attempted_rungs:
+        return _failed("truncated_before_output", models_seen)
     return _failed("no structured output mode succeeded", models_seen)
