@@ -108,6 +108,7 @@ async def verify_section(
     *,
     engine: LlmTarget,
     api_key: str | None,
+    base_url: str | None = None,
     kind: str,
     pdf_text: str,
     extracted_data: dict[str, Any],
@@ -133,7 +134,10 @@ async def verify_section(
     section short-circuits as ``("verified", 1)`` — nothing needed
     verifying, not a degrade, and ``passes`` counts LLM passes that RAN.
     Any failure degrades to ``(None, zero usage, "fast", 1)`` — recorded in
-    the section snapshot, never aborting the run (design 3).
+    the section snapshot, never aborting the run (design 3). ``base_url``
+    rides along with the key: an endpoint engine (C2) has no host without
+    it, and ``build_model`` would raise inside the degrade path — every
+    Verified section on a custom endpoint would silently execute fast.
     """
     if engine.mode_requested != "verified":
         return None, LlmUsage(), engine.mode_requested, 1
@@ -166,7 +170,7 @@ async def verify_section(
         logger.info("verify_skipped_empty", **context)
         return {}, LlmUsage(), "verified", 1
     try:
-        model = build_model(engine.provider, engine.model, api_key=api_key)
+        model = build_model(engine.provider, engine.model, api_key=api_key, base_url=base_url)
     except Exception as exc:
         logger.warning("verify_pass_failed", error=str(exc), **context)
         return None, LlmUsage(), "fast", 1
@@ -188,6 +192,7 @@ async def verify_and_snapshot(
     *,
     engine: LlmTarget,
     api_key: str | None,
+    base_url: str | None = None,
     kind: str,
     key_scope: KeyScope | None,
     ran_by_user_id: str,
@@ -213,6 +218,7 @@ async def verify_and_snapshot(
     verdicts, verify_usage, mode_executed, passes = await verify_section(
         engine=engine,
         api_key=api_key,
+        base_url=base_url,
         kind=kind,
         pdf_text=pdf_text,
         extracted_data=extracted_data,

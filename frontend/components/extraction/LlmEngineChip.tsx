@@ -13,13 +13,29 @@
  * On a failed read the chip renders NOTHING and the rest of the tab is
  * unaffected — the deploy-race window where a new frontend hits an old
  * backend without the route.
+ *
+ * C2 A4: the popover also manages the ALTERNATE engine list (fallback
+ * pairs reviewers may run when they can't run the default, labeled as
+ * deviations). "Add alternate" flips the SAME Command list into a
+ * multi-select that toggles membership; every mutation goes through
+ * `toUpdateBody`, which omits `alternates` when the read didn't carry
+ * the field (old backend during the promotion window).
  */
 import {useState} from 'react';
 import {Link, useNavigate} from 'react-router';
-import {AlertTriangle, Check, KeyRound, Lock, Settings} from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  KeyRound,
+  Lock,
+  Server,
+  Settings,
+  X,
+} from 'lucide-react';
 import {toast} from 'sonner';
 
 import {Button} from '@/components/ui/button';
+import {LlmEndpointsDialog} from '@/components/extraction/LlmEndpointsDialog';
 import {
   Command,
   CommandEmpty,
@@ -37,9 +53,19 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
+import {useLlmEndpoints} from '@/hooks/extraction/useLlmEndpoints';
 import {t} from '@/lib/copy';
+import {endpointHost} from '@/lib/llmEndpointHost';
+import {
+  toUpdateBody,
+  type LlmEngineAlternatePair,
+} from '@/lib/llmEngineUpdateBody';
 import {cn} from '@/lib/utils';
-import type {LlmEngineCatalogEntry, LlmEngineRead} from '@/services/llmEngineService';
+import type {
+  LlmEngineAlternateRead,
+  LlmEngineCatalogEntry,
+  LlmEngineRead,
+} from '@/services/llmEngineService';
 
 /** The existing key-settings surface (UserSettings → Integrations → API keys). */
 const KEY_SETTINGS_ROUTE = '/settings?tab=integrations';
@@ -94,9 +120,16 @@ function groupByProvider(catalog: LlmEngineCatalogEntry[]): ProviderGroup[] {
 
 export function LlmEngineChip({projectId}: {projectId: string}) {
   const [open, setOpen] = useState(false);
+  const [managingAlternates, setManagingAlternates] = useState(false);
+  const [endpointsOpen, setEndpointsOpen] = useState(false);
   const navigate = useNavigate();
   const query = useLlmEngine(projectId);
   const setEngine = useSetLlmEngine(projectId);
+  // Decision 12: the picker's endpoint groups derive from the endpoints
+  // hook, never from a matrix on the engine read (which carries only the
+  // scalar `endpoint_label`, for the chip). A failed read (old backend
+  // without the routes) simply yields no groups.
+  const endpointsQuery = useLlmEndpoints(projectId);
 
   // Pending AND error both render nothing — the chrome ROW included, so
   // the Configuration tab never shows an empty flex strip: the chip is
@@ -105,10 +138,32 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
   const engine = query.data;
   if (!engine) return null;
 
+  // Identity is the canonical `provider:model` string the wire carries on
+  // BOTH sides (alternates and catalogue) — one comparison instead of a
+  // hand-rolled two-field predicate at every membership site.
+  const alternateKeys = new Set(engine.alternates.map((a) => a.canonical));
+  const catalogByCanonical = new Map(
+    engine.catalog.map((entry) => [entry.canonical, entry]),
+  );
+
   const currentEntry = engine.catalog.find(
     (e) => e.provider === engine.provider && e.model === engine.model,
   );
-  const chipLabel = currentEntry?.label ?? engine.model;
+  // An endpoint engine has no catalogue entry to borrow a label from: it
+  // reads as "<model> · <endpoint>", from the read's scalar label.
+  const chipLabel =
+    engine.endpoint_id && engine.endpoint_label
+      ? `${engine.model} · ${engine.endpoint_label}`
+      : (currentEntry?.label ?? engine.model);
+
+  // Only a VERIFIED endpoint with at least one allowed model can back an
+  // extraction: a heading with zero rows under it is dead UI that implies
+  // models the endpoint does not offer.
+  const runnableEndpoints = (endpointsQuery.data ?? []).filter(
+    (endpoint) =>
+      endpoint.validation_status === 'ok' &&
+      endpoint.allowed_models.length > 0,
+  );
 
   const mutationCallbacks = {
     onSuccess: () => toast.success(t('llmEngine', 'saveSuccess')),
@@ -119,12 +174,42 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
       toast.error(`${t('llmEngine', 'saveError')}: ${error.message}`),
   };
 
+  // Alternates edits get their own copy — "Extraction model updated." on a
+  // membership toggle would report a change that never happened.
+  const alternatesMutationCallbacks = {
+    onSuccess: () => toast.success(t('llmEngine', 'alternatesSaveSuccess')),
+    onError: (error: Error) =>
+      toast.error(`${t('llmEngine', 'alternatesSaveError')}: ${error.message}`),
+  };
+
   const handleSelect = (entry: LlmEngineCatalogEntry) => {
     setOpen(false);
-    // The CURRENT mode rides along explicitly — omitting it would let the
-    // server-side default silently downgrade a verified project (panel B2).
+    // toUpdateBody rides the CURRENT mode along explicitly (omitting it
+    // would let the server-side default silently downgrade a verified
+    // project, panel B2) and the stored alternates when the read carried
+    // them (C2 A4 mutation invariant).
     setEngine.mutate(
-      {provider: entry.provider, model: entry.model, mode: engine.mode},
+      toUpdateBody(engine, {
+        provider: entry.provider,
+        model: entry.model,
+        // Clearing is EXPLICIT and only when there is something to clear:
+        // a catalogue pair carrying a live endpoint pointer would keep
+        // routing runs at the endpoint. A project that never had one
+        // keeps sending the pre-endpoints body.
+        ...(engine.endpoint_id ? {endpoint_id: null} : {}),
+      }),
+      mutationCallbacks,
+    );
+  };
+
+  const handleSelectEndpointModel = (endpointId: string, model: string) => {
+    setOpen(false);
+    setEngine.mutate(
+      toUpdateBody(engine, {
+        provider: 'openai_compatible',
+        model,
+        endpoint_id: endpointId,
+      }),
       mutationCallbacks,
     );
   };
@@ -133,16 +218,49 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
     // Radix fires '' when the active item is re-clicked (deselect) — a mode
     // can't be unset, so only the two literals ever mutate.
     if (next !== 'fast' && next !== 'verified') return;
+    setEngine.mutate(toUpdateBody(engine, {mode: next}), mutationCallbacks);
+  };
+
+  // The single alternates write: toUpdateBody strips the entries to bare
+  // pairs, so callers pass whatever they hold (reads or catalogue entries).
+  const saveAlternates = (next: readonly LlmEngineAlternatePair[]) => {
+    // While a mutation is in flight the toggles render disabled AND no-op:
+    // a back-to-back toggle would compute `next` from the pre-PUT list and
+    // silently revert the change still in flight (lost-update race).
+    if (setEngine.isPending) return;
     setEngine.mutate(
-      {provider: engine.provider, model: engine.model, mode: next},
-      mutationCallbacks,
+      toUpdateBody(engine, {alternates: next}),
+      alternatesMutationCallbacks,
     );
+  };
+
+  const toggleAlternate = (entry: LlmEngineCatalogEntry) => {
+    saveAlternates(
+      alternateKeys.has(entry.canonical)
+        ? engine.alternates.filter((a) => a.canonical !== entry.canonical)
+        : [...engine.alternates, entry],
+    );
+  };
+
+  const removeAlternate = (alt: LlmEngineAlternateRead) => {
+    saveAlternates(
+      engine.alternates.filter((a) => a.canonical !== alt.canonical),
+    );
+  };
+
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    // Reopening always starts in pick-a-default mode.
+    if (!next) setManagingAlternates(false);
   };
 
   return (
     <div className="flex items-center justify-end">
-      <Popover open={open} onOpenChange={setOpen}>
-        <TooltipProvider>
+      {/* ONE provider for the whole chip: the trigger tooltip and every
+          alternate row's remove tooltip share it (PopoverContent portals,
+          which preserves React context). */}
+      <TooltipProvider>
+      <Popover open={open} onOpenChange={handleOpenChange}>
         <Tooltip>
           <TooltipTrigger asChild>
             <PopoverTrigger asChild>
@@ -169,7 +287,6 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
           </TooltipTrigger>
           <TooltipContent>{t('llmEngine', 'chipTooltip')}</TooltipContent>
         </Tooltip>
-      </TooltipProvider>
       <PopoverContent align="end" className="w-[22rem] p-0">
         <div className="space-y-2 border-b border-border/40 p-2.5">
           <ToggleGroup
@@ -215,6 +332,94 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
             </p>
           )}
         </div>
+        <div className="space-y-1.5 border-b border-border/40 p-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium">
+              {t('llmEngine', 'alternatesTitle')}
+            </span>
+            {/* Deploy window: an old backend 422s ANY alternates write, so
+                the management affordances hide until the read carries the
+                field — the (empty) list itself still renders. */}
+            {engine.hasAlternates && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                onClick={() => setManagingAlternates(!managingAlternates)}
+                data-testid="llm-engine-alternates-manage"
+              >
+                {t(
+                  'llmEngine',
+                  managingAlternates ? 'alternatesDoneLabel' : 'alternatesAddLabel',
+                )}
+              </Button>
+            )}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {t('llmEngine', 'alternatesHelper')}
+          </p>
+          {engine.alternates.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground">
+              {t('llmEngine', 'alternatesEmpty')}
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {engine.alternates.map((alt) => {
+                const entry = catalogByCanonical.get(alt.canonical);
+                return (
+                  <li
+                    key={alt.canonical}
+                    data-testid={`llm-engine-alternate-${alt.canonical}`}
+                    className={cn(
+                      'flex items-start gap-2 rounded-md px-1.5 py-1 text-xs',
+                      // Same amber treatment as the retiredNote above: the
+                      // pair left the catalogue, runs on it will block.
+                      alt.retired &&
+                        'border border-warning/50 bg-warning/10 text-warning',
+                    )}
+                  >
+                    {alt.retired && (
+                      <AlertTriangle
+                        className="mt-0.5 h-3 w-3 shrink-0"
+                        strokeWidth={1.5}
+                        aria-hidden="true"
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">
+                        {entry?.label ?? alt.canonical}
+                      </span>
+                      {entry?.byok_only === true && (
+                        <span className="block text-[11px] text-muted-foreground">
+                          {t('llmEngine', 'alternatesByokWarn')}
+                        </span>
+                      )}
+                    </div>
+                    {engine.hasAlternates && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
+                            aria-label={t('llmEngine', 'alternatesRemoveAria')}
+                            disabled={setEngine.isPending}
+                            onClick={() => removeAlternate(alt)}
+                          >
+                            <X className="h-3 w-3" strokeWidth={1.5} />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {t('llmEngine', 'alternatesRemoveAria')}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
         <Command>
           <CommandInput placeholder={t('llmEngine', 'searchPlaceholder')} />
           <CommandList>
@@ -240,18 +445,34 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                   const isCurrent =
                     entry.provider === engine.provider &&
                     entry.model === engine.model;
+                  const isMember = alternateKeys.has(entry.canonical);
                   return (
                     <CommandItem
                       key={entry.canonical}
                       value={`${entry.label} ${entry.canonical}`}
-                      disabled={!runnable}
-                      onSelect={() => handleSelect(entry)}
+                      // Managing mode: any pair may be a fallback (a locked
+                      // provider still unblocks reviewers with their own
+                      // key) — only the current default is off the table,
+                      // plus every row while a mutation is in flight (a
+                      // back-to-back toggle computes from a stale list).
+                      disabled={
+                        managingAlternates
+                          ? isCurrent || setEngine.isPending
+                          : !runnable
+                      }
+                      // Multiselect a11y: membership state on the option.
+                      aria-checked={managingAlternates ? isMember : undefined}
+                      onSelect={() =>
+                        managingAlternates
+                          ? toggleAlternate(entry)
+                          : handleSelect(entry)
+                      }
                       className="items-start gap-2 px-2 py-2"
                       data-testid={`llm-engine-option-${entry.canonical}`}
                     >
                       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span className="flex items-center gap-1.5">
-                          {!runnable && (
+                          {!runnable && !managingAlternates && (
                             <Lock
                               className="h-3 w-3 shrink-0 text-muted-foreground"
                               strokeWidth={1.5}
@@ -268,6 +489,13 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                               aria-label={t('llmEngine', 'currentModelAria')}
                             />
                           )}
+                          {managingAlternates && !isCurrent && isMember && (
+                            <Check
+                              className="h-3.5 w-3.5 shrink-0 text-primary"
+                              strokeWidth={1.5}
+                              aria-hidden="true"
+                            />
+                          )}
                         </span>
                         <span className="truncate text-xs text-muted-foreground">
                           {entry.best_for}
@@ -275,7 +503,12 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                         <span className="truncate font-mono text-[11px] text-muted-foreground/80">
                           {entry.canonical}
                         </span>
-                        {!runnable && (
+                        {managingAlternates && isCurrent && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {t('llmEngine', 'alternatesPrimaryNote')}
+                          </span>
+                        )}
+                        {!runnable && !managingAlternates && (
                           <Link
                             to={KEY_SETTINGS_ROUTE}
                             onClick={() => setOpen(false)}
@@ -324,10 +557,118 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                 )}
               </CommandGroup>
             ))}
+            {/* Endpoint groups stay out of managing mode: an alternate is
+                a CATALOGUE pair (the wire entry carries provider+model
+                only), so an endpoint model has nowhere to be stored. */}
+            {!managingAlternates &&
+              runnableEndpoints.map((endpoint) => {
+                // Decision 10: the backend REJECTS mode="verified" on a
+                // prompted-only endpoint. The management dialog carries
+                // the same warning, but a manager picking an engine need
+                // never open it — a colleague may have created and
+                // verified this endpoint. On a Verified project the rows
+                // are blocked WITH the way out (switching the project to
+                // Fast is one click above), never a dead click into a
+                // generic save-error toast.
+                const promptedOnly =
+                  endpoint.capabilities.output_mode === 'prompted';
+                const blocked = promptedOnly && engine.mode === 'verified';
+                return (
+                  <CommandGroup
+                    key={endpoint.id}
+                    heading={
+                      <span className="flex flex-col gap-0.5">
+                        <span className="flex items-baseline gap-2">
+                          {endpoint.label}
+                          <span className="truncate font-normal text-muted-foreground/80">
+                            {endpointHost(endpoint.base_url)}
+                          </span>
+                        </span>
+                        <span className="font-normal text-muted-foreground/80">
+                          {t('llmEngine', 'endpointGroupNote')}
+                        </span>
+                        {promptedOnly && (
+                          <span className="flex items-start gap-1.5 font-normal text-warning">
+                            <AlertTriangle
+                              className="mt-0.5 h-3 w-3 shrink-0"
+                              strokeWidth={1.5}
+                              aria-hidden="true"
+                            />
+                            <span className="min-w-0">
+                              {t('llmEngine', 'endpointPromptedGroupNote')}
+                            </span>
+                          </span>
+                        )}
+                      </span>
+                    }
+                  >
+                    {endpoint.allowed_models.map((model) => {
+                      const isCurrent =
+                        engine.endpoint_id === endpoint.id &&
+                        engine.model === model;
+                      return (
+                        <CommandItem
+                          key={`${endpoint.id}:${model}`}
+                          value={`${endpoint.label} ${model}`}
+                          disabled={blocked}
+                          onSelect={() =>
+                            handleSelectEndpointModel(endpoint.id, model)
+                          }
+                          className="items-start gap-2 px-2 py-2"
+                          data-testid={`llm-engine-endpoint-option-${endpoint.id}-${model}`}
+                        >
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="flex items-center gap-1.5">
+                              <span className="truncate font-mono text-[13px]">
+                                {model}
+                              </span>
+                              {isCurrent && (
+                                <Check
+                                  className="h-3.5 w-3.5 shrink-0 text-primary"
+                                  strokeWidth={1.5}
+                                  aria-label={t('llmEngine', 'currentModelAria')}
+                                />
+                              )}
+                            </span>
+                            {blocked && (
+                              <span className="text-[11px] text-muted-foreground">
+                                {t('llmEngine', 'endpointPromptedBlocked')}
+                              </span>
+                            )}
+                          </span>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                );
+              })}
           </CommandList>
         </Command>
+        <div className="border-t border-border/40 p-1.5">
+          {/* The popover closes first: a modal dialog opened from inside a
+              popover would otherwise fight it for the focus trap. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-full justify-start px-2 text-[11px] font-normal text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setOpen(false);
+              setEndpointsOpen(true);
+            }}
+            data-testid="llm-engine-manage-endpoints"
+          >
+            <Server className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            {t('llmEngine', 'manageEndpoints')}
+          </Button>
+        </div>
       </PopoverContent>
       </Popover>
+      </TooltipProvider>
+      <LlmEndpointsDialog
+        projectId={projectId}
+        open={endpointsOpen}
+        onOpenChange={setEndpointsOpen}
+      />
     </div>
   );
 }

@@ -21,21 +21,12 @@ import {projectKeys} from '@/lib/query-keys';
 import {fetchLlmEngine, setLlmEngine} from '@/services/llmEngineService';
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
 
+import {makeEngineRead} from '../mocks/llmEngineRead';
+
 const fetchMock = vi.mocked(fetchLlmEngine);
 const setMock = vi.mocked(setLlmEngine);
 
-const ENGINE_READ = {
-  provider: 'openai',
-  model: 'gpt-4o-mini',
-  mode: 'fast' as const,
-  source: 'default' as const,
-  retired: false,
-  updated_by_name: null,
-  updated_at: null,
-  previous_model: null,
-  catalog: [],
-  availability: {openai: true, anthropic: false},
-};
+const ENGINE_READ = makeEngineRead();
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -107,16 +98,63 @@ describe('useSetLlmEngine', () => {
       provider: 'anthropic',
       model: 'claude-haiku-4-5',
       mode: 'fast',
+      alternates: [{provider: 'openai', model: 'gpt-4o-mini'}],
     });
 
+    // The body passes through VERBATIM — the hook never adds or strips
+    // the alternates key (that responsibility lives in toUpdateBody).
     expect(setMock).toHaveBeenCalledWith('p1', {
       provider: 'anthropic',
       model: 'claude-haiku-4-5',
       mode: 'fast',
+      alternates: [{provider: 'openai', model: 'gpt-4o-mini'}],
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: projectKeys.llmEngine('p1'),
     });
+  });
+
+  it('writes the returned read into the cache before invalidating (lost-update race)', async () => {
+    // The mutation's response IS the fresh normalized read: it must land
+    // on the READ hook's key synchronously in onSuccess, so a back-to-back
+    // mutation never computes from the pre-PUT list while the refetch is
+    // still in flight.
+    const R2 = {
+      ...ENGINE_READ,
+      model: 'gpt-4o',
+      mode: 'verified' as const,
+      alternates: [
+        {
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          canonical: 'openai:gpt-4o-mini',
+          retired: false,
+        },
+      ],
+    };
+    setMock.mockResolvedValue({ok: true, data: R2});
+    const {wrapper, queryClient} = createWrapper();
+    const setDataSpy = vi.spyOn(queryClient, 'setQueryData');
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const {result} = renderHook(() => useSetLlmEngine('p1'), {wrapper});
+    await result.current.mutateAsync({
+      provider: 'openai',
+      model: 'gpt-4o',
+      mode: 'verified',
+    });
+
+    // No refetch ran (fetchLlmEngine never resolves here): the cache holds
+    // R2 purely from the setQueryData write.
+    expect(queryClient.getQueryData(projectKeys.llmEngine('p1'))).toEqual(R2);
+    // And the write happened BEFORE the (kept) invalidation.
+    expect(setDataSpy).toHaveBeenCalledWith(projectKeys.llmEngine('p1'), R2);
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: projectKeys.llmEngine('p1'),
+    });
+    expect(setDataSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      invalidateSpy.mock.invocationCallOrder[0],
+    );
   });
 
   it('rejects (mutation error state) when the service refuses', async () => {

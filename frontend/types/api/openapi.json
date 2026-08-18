@@ -1262,6 +1262,150 @@
         "title": "ApiResponse[ListProvidersData]",
         "type": "object"
       },
+      "ApiResponse_LlmEndpointDeleteResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LlmEndpointDeleteResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[LlmEndpointDeleteResult]",
+        "type": "object"
+      },
+      "ApiResponse_LlmEndpointProbeResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LlmEndpointProbeResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[LlmEndpointProbeResult]",
+        "type": "object"
+      },
+      "ApiResponse_LlmEndpointRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LlmEndpointRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[LlmEndpointRead]",
+        "type": "object"
+      },
       "ApiResponse_LlmEngineRead_": {
         "properties": {
           "data": {
@@ -2886,6 +3030,58 @@
         "title": "ApiResponse[list[ArticleRunRef]]",
         "type": "object"
       },
+      "ApiResponse_list_LlmEndpointRead__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/LlmEndpointRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[list[LlmEndpointRead]]",
+        "type": "object"
+      },
       "ApiResponse_list_UUID__": {
         "properties": {
           "data": {
@@ -4365,11 +4561,12 @@
         "type": "string"
       },
       "ExtractionErrorCode": {
-        "description": "Stable, machine-readable code for a terminal extraction failure.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
+        "description": "Stable, machine-readable code for a terminal extraction failure.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_project_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
         "enum": [
           "PDF_NOT_FOUND",
           "MISSING_API_KEY",
           "ENGINE_RETIRED",
+          "LLM_ENDPOINT_UNAVAILABLE",
           "EXTRACTION_FAILED"
         ],
         "title": "ExtractionErrorCode",
@@ -5157,6 +5354,332 @@
         "title": "ListProvidersData",
         "type": "object"
       },
+      "LlmEndpointCapabilities": {
+        "description": "What the probe learned about an endpoint.\n\n``output_mode`` is the highest probe-ladder rung the endpoint passed\n(tool \u2192 native \u2192 prompted); ``None`` means never probed.\n``models_seen`` is the sanitized ``/models`` listing captured at\nprobe time (capped at the probe seam, not here).",
+        "properties": {
+          "models_seen": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Models Seen",
+            "type": "array"
+          },
+          "output_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tool",
+                  "native",
+                  "prompted"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Mode"
+          }
+        },
+        "title": "LlmEndpointCapabilities",
+        "type": "object"
+      },
+      "LlmEndpointCreateRequest": {
+        "additionalProperties": false,
+        "description": "POST body for a new endpoint.\n\n``api_key`` is either omitted/``None`` (a keyless endpoint, e.g.\nlocal Ollama) or a non-empty secret \u2014 an empty string is a mistake,\nnot keyless, and is rejected.",
+        "properties": {
+          "allowed_models": {
+            "default": [],
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Allowed Models",
+            "type": "array"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "format": "password",
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "maxLength": 2048,
+            "title": "Base Url",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "base_url"
+        ],
+        "title": "LlmEndpointCreateRequest",
+        "type": "object"
+      },
+      "LlmEndpointDeleteResult": {
+        "description": "DELETE returns 200 + this envelope payload (house pattern \u2014\n``DeleteAPIKeyResult``; a 204 would violate the envelope gate).",
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deleted",
+          "id"
+        ],
+        "title": "LlmEndpointDeleteResult",
+        "type": "object"
+      },
+      "LlmEndpointProbeResult": {
+        "description": "Outcome of a verify probe, as returned to the manager.\n\n``error`` is sanitized \u2014 a reason class only (timeout, refused,\nTLS, HTTP status), never raw upstream bodies or connection detail.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "models_seen": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models Seen",
+            "type": "array"
+          },
+          "output_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tool",
+                  "native",
+                  "prompted"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Mode"
+          },
+          "validation_status": {
+            "enum": [
+              "ok",
+              "failed"
+            ],
+            "title": "Validation Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "validation_status",
+          "output_mode",
+          "models_seen",
+          "error"
+        ],
+        "title": "LlmEndpointProbeResult",
+        "type": "object"
+      },
+      "LlmEndpointRead": {
+        "description": "One endpoint as the manager-only surface renders it.\n\nNEVER carries key material \u2014 ``has_api_key`` is the only trace that\na key exists. ``base_url`` is visible because this read serves the\nmanager management surface only.",
+        "properties": {
+          "allowed_models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Models",
+            "type": "array"
+          },
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/LlmEndpointCapabilities"
+          },
+          "created_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Name"
+          },
+          "has_api_key": {
+            "title": "Has Api Key",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_validated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Validated At"
+          },
+          "validation_status": {
+            "enum": [
+              "unverified",
+              "ok",
+              "failed"
+            ],
+            "title": "Validation Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "base_url",
+          "has_api_key",
+          "allowed_models",
+          "capabilities",
+          "validation_status",
+          "last_validated_at",
+          "created_by_name"
+        ],
+        "title": "LlmEndpointRead",
+        "type": "object"
+      },
+      "LlmEndpointUpdateRequest": {
+        "additionalProperties": false,
+        "description": "PUT is full-replace for ``label``/``base_url``/``allowed_models``.\n\n``api_key`` is tri-state: ``None`` = keep the stored key; ``\"\"`` =\nclear it (endpoint becomes keyless); a non-empty string = set a new\nkey. The tri-state semantics are applied by the service \u2014 this shape\nonly distinguishes the three states without ever echoing the secret.",
+        "properties": {
+          "allowed_models": {
+            "default": [],
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Allowed Models",
+            "type": "array"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "format": "password",
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "maxLength": 2048,
+            "title": "Base Url",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "base_url"
+        ],
+        "title": "LlmEndpointUpdateRequest",
+        "type": "object"
+      },
+      "LlmEngineAlternate": {
+        "additionalProperties": false,
+        "description": "One fallback engine pair \u2014 the stored and request entry shape.\n\n``extra=\"forbid\"`` + bounded field lengths: a REQUEST entry smuggling\nkeys (temperature/seed \u2014 same posture as ``LlmEngineUpdateRequest``) or\nan oversized value is a hard 422; a hand-written STORED entry with the\nsame defects is dropped by the tolerant per-entry validator on\n``LlmEngineStored.alternates`` \u2014 the entry degrades, never the payload.",
+        "properties": {
+          "model": {
+            "maxLength": 200,
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "maxLength": 200,
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model"
+        ],
+        "title": "LlmEngineAlternate",
+        "type": "object"
+      },
+      "LlmEngineAlternateRead": {
+        "description": "One alternate as the popover renders it: the pair plus its canonical\ncatalogue id and a per-entry ``retired`` flag (the catalogue no longer\nlists that pair).",
+        "properties": {
+          "canonical": {
+            "title": "Canonical",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "retired": {
+            "title": "Retired",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "canonical",
+          "retired"
+        ],
+        "title": "LlmEngineAlternateRead",
+        "type": "object"
+      },
       "LlmEngineCatalogEntryRead": {
         "description": "One selectable engine as the picker renders it.",
         "properties": {
@@ -5212,8 +5735,16 @@
         "type": "object"
       },
       "LlmEngineRead": {
-        "description": "The resolved engine view the \u2699 popover renders.\n\n``source`` says whether the pair is the project's stored choice or the\nserver's env default; ``retired`` flags a stored pair the catalogue no\nlonger lists (new runs are refused until a manager re-chooses).\n``availability`` maps provider \u2192 whether the CALLER can run it (their\nown stored key, or a global service key) \u2014 booleans only, never key\nmaterial or metadata.",
+        "description": "The resolved engine view the \u2699 popover renders.\n\n``source`` says whether the pair is the project's stored choice or the\nserver's env default; ``retired`` flags a stored pair the catalogue no\nlonger lists (new runs are refused until a manager re-chooses).\n``availability`` maps provider \u2192 whether the CALLER can run it (their\nown stored key, or a global service key) \u2014 booleans only, never key\nmaterial or metadata. ``alternates`` is the stored fallback list with\na per-entry ``retired`` flag.\n\n``endpoint_id`` / ``endpoint_label`` are the ONLY endpoint data on this\nread (decision 12 \u2014 no embedded endpoints matrix; the picker's endpoint\ngroups come from the manager-only endpoints listing instead): the\nstored pointer plus the row's label for the chip. ``endpoint_label`` is\n``None`` for catalogue engines AND for a dangling pointer (row gone \u2014\n``retired`` is True then).",
         "properties": {
+          "alternates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/LlmEngineAlternateRead"
+            },
+            "title": "Alternates",
+            "type": "array"
+          },
           "availability": {
             "additionalProperties": {
               "type": "boolean"
@@ -5227,6 +5758,29 @@
             },
             "title": "Catalog",
             "type": "array"
+          },
+          "endpoint_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Id"
+          },
+          "endpoint_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Label"
           },
           "mode": {
             "enum": [
@@ -5305,8 +5859,34 @@
       },
       "LlmEngineUpdateRequest": {
         "additionalProperties": false,
-        "description": "PUT body for the project engine.\n\n``mode: Literal[\"fast\", \"verified\"]`` is the closed write gate (\u00a75 \u2014\nVerified shipped with the verify pass; anything else is a free 422);\n``extra=\"forbid\"`` blocks smuggled keys (no temperature/seed, by design).",
+        "description": "PUT body for the project engine.\n\n``mode: Literal[\"fast\", \"verified\"]`` is the closed write gate (\u00a75 \u2014\nVerified shipped with the verify pass; anything else is a free 422);\n``extra=\"forbid\"`` blocks smuggled keys (no temperature/seed, by design).\n``alternates`` is tri-state: ``None`` (field absent) keeps the stored\nlist, ``[]`` clears it, a list replaces it.\n\n``endpoint_id`` selects a project custom endpoint as the engine (C2\nB8): it requires ``provider == \"openai_compatible\"`` and the service\nvalidates the endpoint (project-scoped, model allowed, verified)\ninstead of the catalogue. Omitted/None = a catalogue engine.",
         "properties": {
+          "alternates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/LlmEngineAlternate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alternates"
+          },
+          "endpoint_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Id"
+          },
           "mode": {
             "default": "fast",
             "enum": [
@@ -10673,6 +11253,297 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/llm-endpoints": {
+      "get": {
+        "description": "Every endpoint of the project \u2014 the manager management surface.",
+        "operationId": "list_llm_endpoints_api_v1_projects__project_id__llm_endpoints_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_LlmEndpointRead__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "List Llm Endpoints",
+        "tags": [
+          "projects"
+        ]
+      },
+      "post": {
+        "description": "Register an endpoint (URL vetted, key encrypted service-side).",
+        "operationId": "create_llm_endpoint_api_v1_projects__project_id__llm_endpoints_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmEndpointCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmEndpointRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create Llm Endpoint",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/llm-endpoints/{endpoint_id}": {
+      "delete": {
+        "description": "Delete the endpoint \u2014 200 + typed result (decision 15, never 204).\n\n``EndpointUnavailableError`` (the project engine still points here)\npropagates to the AppError handler's 409 envelope.",
+        "operationId": "delete_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmEndpointDeleteResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Delete Llm Endpoint",
+        "tags": [
+          "projects"
+        ]
+      },
+      "put": {
+        "description": "Full-replace update; ``api_key`` tri-state is applied service-side.",
+        "operationId": "update_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmEndpointUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmEndpointRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Update Llm Endpoint",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/llm-endpoints/{endpoint_id}/verify": {
+      "post": {
+        "description": "Run the capabilities probe and persist its outcome (commit after the\nservice call \u2014 the llm-engine PUT pattern).\n\n``EndpointUnavailableError`` (stored key no longer decrypts) propagates\nto the AppError handler's 409 envelope.",
+        "operationId": "verify_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmEndpointProbeResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Verify Llm Endpoint",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/llm-engine": {
       "get": {
         "description": "Resolved engine + catalogue + the caller's per-provider availability.",
@@ -10722,7 +11593,7 @@
         ]
       },
       "put": {
-        "description": "Persist the project's engine choice (catalogue-validated, attributed).",
+        "description": "Persist the project's engine choice (validated, attributed).\n\n``alternates`` rides the same write: ``None`` (field absent) keeps the\nstored list, ``[]`` clears it, a list replaces it \u2014 every entry\ncatalogue-validated by the service (unknown pair \u2192 400).\n\n``endpoint_id`` (B8) selects an endpoint-backed engine; the service\nvalidates it against the project's endpoints instead of the catalogue\n(shape/ownership/verification failures \u2192 400 like any other refusal).",
         "operationId": "set_llm_engine_api_v1_projects__project_id__llm_engine_put",
         "parameters": [
           {

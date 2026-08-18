@@ -35,9 +35,16 @@ class LlmTarget(BaseModel):
     ran. They stay bare ``str`` on purpose: ``read_pinned_engine``
     model_validates legacy pinned snapshots, and a Literal would turn a
     corrupt old snapshot into a hard read failure on a pinned run.
+
+    ``endpoint_id`` (C2 B8) pins the project custom endpoint an
+    ``openai_compatible`` engine runs through — a plain ``str`` (not UUID)
+    so the pinned JSONB snapshot stays a bag of JSON scalars end to end.
+    It defaults to ``None`` so every pre-B8 pinned snapshot (no key at
+    all) keeps validating.
     """
 
     provider: str
     model: str
     mode_requested: str = "fast"
     mode_executed: str = "fast"
+    endpoint_id: str | None = None

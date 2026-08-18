@@ -41,7 +41,13 @@ export function useSetLlmEngine(projectId: string) {
       if (!result.ok) throw result.error;
       return result.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // The mutation's response IS the fresh normalized read: write it on
+      // the read hook's key synchronously, so a back-to-back mutation never
+      // computes its next alternates list from the pre-PUT cache while the
+      // refetch is still in flight (lost-update race). The invalidation
+      // stays — it reconciles with the server for everything else.
+      queryClient.setQueryData(projectKeys.llmEngine(projectId), data);
       void queryClient.invalidateQueries({
         queryKey: projectKeys.llmEngine(projectId),
       });
