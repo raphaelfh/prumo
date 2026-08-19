@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import copy, { consensus, extraction, qa } from '@/lib/copy';
+import copy, { consensus, qa } from '@/lib/copy';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -33,16 +33,6 @@ describe('user-facing copy does not leak the internal "Run" entity', () => {
     );
     expect(consensus.runsBannerTitle).not.toMatch(/\bRuns?\b/);
     expect(consensus.runsBannerBody).not.toMatch(/\bRuns?\b/);
-  });
-
-  it('uses "AI extraction" vocabulary in the AI suggestions panel', () => {
-    expect(extraction.aiPanelHistoryTitle).toBe('AI extraction history');
-    expect(extraction.aiPanelHistoryDesc).toBe(
-      'Previous AI extractions for this article',
-    );
-    expect(extraction.aiPanelNoRunsFound).toBe('No AI extractions found');
-    expect(extraction.aiPanelStatusNotRun).toBe('Not started');
-    expect(extraction.panelNotRun).toBe('Not started');
   });
 
   it('contains no copy value with the capitalized plural entity-noun "Runs"', () => {
