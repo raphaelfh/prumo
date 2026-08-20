@@ -210,7 +210,7 @@ async def _call_extract_models(payload, service, caller, credentials_error=None)
         # EngineRetired raise here would 409 and make the one-live-run 409
         # test pass FOR THE WRONG REASON.
         patch(
-            f"{_MODEL_EP}.resolve_engine_for_run",
+            f"{_MODEL_EP}.resolve_project_engine",
             AsyncMock(return_value=LlmTarget(provider="openai", model="m-x")),
         ),
         patch(f"{_MODEL_EP}.create_storage_adapter", return_value=MagicMock()),
@@ -282,7 +282,7 @@ async def test_extract_models_lets_the_typed_endpoint_error_through() -> None:
     500 ("Model extraction failed: ...") instead of the registered typed 409
     that tells the manager to re-verify or re-choose the endpoint.
 
-    Same hazard ``resolve_engine_for_run`` was hoisted above the try for —
+    Same hazard ``resolve_project_engine`` was hoisted above the try for —
     the credentials resolver raises it too, so it belongs on the same side.
     """
     from app.services.llm_endpoint_service import EndpointUnavailableError

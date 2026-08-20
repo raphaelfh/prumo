@@ -127,31 +127,33 @@ async def test_kickoff_on_dangling_endpoint_engine_is_typed_409(
 
 
 @pytest.mark.asyncio
-async def test_section_continuation_with_run_id_skips_the_retired_gate(
+async def test_section_continuation_with_run_id_is_gated_too(
     client_as_manager: AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """F2: retired entries block NEW runs only — a ``run_id`` continuation
-    is not a new run. The enqueue-time 409 must not brick a valid pinned
-    run: the worker honors the pin, and an unpinned run resolving retired
-    mid-flight already classifies to the friendly ENGINE_RETIRED code."""
+    """A retired engine blocks a ``run_id`` continuation as well as a new run.
+
+    The gate used to skip continuations, because a pinned run was entitled
+    to its pin and this 409 could never be cleared. Neither half survives
+    re-pinning: attempt 0 of every kickoff resolves the PROJECT engine, so a
+    continuation on a retired pair has nothing valid to run, and picking a
+    live model clears the 409. Failing fast here beats queuing a job that
+    dies in the worker with the same diagnosis.
+    """
     run = await engine_setup.run_in_extract(db_session)
     await engine_setup.pin_run(db_session, run, "openai", "gpt-4o-mini")
     await _retire_project_engine(db_session)
 
-    # Queue seams stubbed: the policy under test is the enqueue gate, not
-    # Redis/Celery transport.
+    # Only the task seam is stubbed: the gate raises before the queue check,
+    # so the task must never be enqueued at all.
     from app.api.v1.endpoints import section_extraction as se
 
-    monkeypatch.setattr(se, "_is_queue_available", lambda: True)
-    fake_task = MagicMock()
-    fake_task.id = "job-f2-continuation"
-    monkeypatch.setattr(
-        se, "run_section_extraction_task", MagicMock(delay=MagicMock(return_value=fake_task))
-    )
+    fake_delay = MagicMock()
+    monkeypatch.setattr(se, "run_section_extraction_task", MagicMock(delay=fake_delay))
 
     payload = {**_section_payload(), "runId": str(run.id)}
     r = await client_as_manager.post("/api/v1/extraction/sections", json=payload)
-    assert r.status_code == 202, r.text
-    assert r.json()["ok"] is True
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "LLM_ENGINE_RETIRED"
+    fake_delay.assert_not_called()

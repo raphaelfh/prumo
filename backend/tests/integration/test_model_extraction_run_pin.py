@@ -1,14 +1,20 @@
-"""F4 — model extraction must honor the run's pinned engine (C1b).
+"""F4 — the engine the run EXECUTES and the engine it RECORDS must agree.
 
 ``ModelExtractionService.extract`` runs whatever engine its caller resolved,
 so a run pinned to engine A could execute engine B while
-``provenance.engine`` names A. The endpoint must read the run's pin FIRST
-(before the project resolve — which could even 409 a retired pair the run
-is legitimately pinned to) and, for an unpinned run, freeze the resolved
-pair so the record exists before any LLM call.
+``provenance.engine`` names A. This route closes that by resolving the
+PROJECT engine — never the run's pin — and handing the service ``repin``:
+it executes in-request and has no retry path into it, so every entry is a
+human click, and a human click is entitled to the manager's current choice.
 
-The service itself is faked (this is an endpoint-ordering contract, not an
-LLM test); the run row, the pin write and the freeze are real Postgres.
+The write itself belongs to the service, the only layer that knows which run
+was resolved (``run_id=None`` reuses the coordinate's live run). So these
+tests assert the endpoint's half — what it resolves, what it keys for, and
+that it asks for a re-pin. The write is pinned by ``freeze_engine``'s own
+tests in ``test_run_engine_freeze.py``, end-to-end included.
+
+The service is faked here (this is an endpoint-ordering contract, not an LLM
+test); the run row and the project engine are real Postgres.
 """
 
 from __future__ import annotations
@@ -19,7 +25,6 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionRun
 from app.services.model_extraction_service import ModelExtractionResult
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
@@ -85,20 +90,21 @@ def _payload(run_id: str | None = None) -> dict[str, Any]:
     return body
 
 
-def _pinned_engine_of(run: ExtractionRun) -> dict[str, Any]:
-    provenance = (run.results or {}).get("provenance") or {}
-    return provenance.get("engine") or {}
-
-
 @pytest.mark.asyncio
-async def test_pinned_run_model_extraction_uses_the_pinned_pair(
+async def test_pinned_run_model_extraction_repins_to_the_project_engine(
     client_as_manager: AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A manager flips the project engine after the run was pinned — model
-    extraction on that run must execute (and key for) the PINNED pair, not
-    the flipped project engine ``provenance.engine`` does not name."""
+    extraction on that run must execute (and key for) the manager's CURRENT
+    pair, and rewrite the run's pin to match.
+
+    Before the re-pin this endpoint served the stale pin forever: one live
+    run per coordinate keeps a run alive for weeks, so the first model ever
+    used on it outlived every later selection, and the popover chip claimed
+    in the present tense to name the model extraction uses.
+    """
     captured = _fake_service(monkeypatch)
     asked = _stub_key_service(monkeypatch)
 
@@ -110,20 +116,31 @@ async def test_pinned_run_model_extraction_uses_the_pinned_pair(
     assert r.status_code == 200, r.text
 
     engine = captured["extract"]["engine"]
-    assert (engine.provider, engine.model) == ("openai", "gpt-4o-mini"), (
-        f"the pinned pair did not win: {engine.provider}:{engine.model}"
+    assert (engine.provider, engine.model) == ("anthropic", "claude-sonnet-5"), (
+        f"the stale pin beat the manager's choice: {engine.provider}:{engine.model}"
     )
-    assert asked == ["openai"], f"the key was resolved for the wrong provider: {asked}"
+    # The key must follow the engine that will actually run — resolving it
+    # for the old provider is a spurious MissingLLMKeyError plus a key_scope
+    # recorded against a provider that never ran.
+    assert asked == ["anthropic"], f"the key was resolved for the wrong provider: {asked}"
+    # Resolving the new pair is only half the job: without this the service
+    # would adopt the stale pin and run ``gpt-4o-mini`` anyway.
+    assert captured["extract"]["repin"] is True, "the service was not asked to re-pin"
 
 
 @pytest.mark.asyncio
-async def test_unpinned_run_model_extraction_freezes_the_resolved_pair(
+async def test_unpinned_run_model_extraction_hands_over_the_resolved_pair(
     client_as_manager: AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An unpinned run resolves the project engine AND freezes it onto the
-    run, so the engine record exists before any LLM call runs on it."""
+    """An unpinned run resolves the project engine and hands it to the service
+    with ``repin``, so the record is written before any LLM call runs on it.
+
+    The endpoint deliberately does NOT write it here: it would take the run's
+    row lock before the service has validated stage and template, and this
+    route holds its transaction open across the whole extraction.
+    """
     captured = _fake_service(monkeypatch)
     _stub_key_service(monkeypatch)
 
@@ -135,9 +152,9 @@ async def test_unpinned_run_model_extraction_freezes_the_resolved_pair(
 
     engine = captured["extract"]["engine"]
     assert (engine.provider, engine.model) == ("openai", "gpt-5.6-terra")
+    assert captured["extract"]["repin"] is True
 
     await db_session.refresh(run)
-    pinned = _pinned_engine_of(run)
-    assert (pinned.get("provider"), pinned.get("model")) == ("openai", "gpt-5.6-terra"), (
-        f"the resolved pair was not frozen onto the run: results={run.results}"
+    assert engine_setup.pinned_engine_of(run) == {}, (
+        f"the endpoint wrote the pin the service owns: results={run.results}"
     )

@@ -19,7 +19,7 @@ export const llmEngine = {
     attribution: 'Model changed by {{name}} · {{date}} · was {{model}}',
     attributionNoPrevious: 'Model changed by {{name}} · {{date}}',
     retiredNote:
-        'This model is no longer in the catalogue. New extraction runs are blocked — choose a new model.',
+        'This model is no longer in the catalogue. AI extraction is blocked — choose a new model.',
     alternatesTitle: 'Alternate engines',
     alternatesHelper:
         "Reviewers who can't run the default may run these instead — labeled as deviations.",
