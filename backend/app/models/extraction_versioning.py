@@ -10,7 +10,16 @@ from enum import Enum as PyEnum
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -68,6 +77,17 @@ class ExtractionTemplateVersion(BaseModel):
         nullable=False,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    """Why this version was published, in the publisher's words (B-9b2b).
+
+    Version METADATA, deliberately not part of ``schema_``: the snapshot is
+    the frozen structure runs are pinned to, and a prose edit must never
+    make two structurally identical versions compare unequal (``republish``
+    short-circuits on ``current.schema_ == snapshot``).
+
+    Nullable because it is optional at publish time, and because every row
+    that existed before this column did has no answer. History renders it
+    (B-9e); nothing else reads it."""
 
     __table_args__ = (
         UniqueConstraint(

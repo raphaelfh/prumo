@@ -146,3 +146,70 @@ def test_cardinality_one_model_section_fans_out_over_multiple_models():
         "Gaca, 2011 — Model 1",
         "Gaca, 2011 — Model 2",
     ]
+
+
+def _container(entry_label: str | None) -> SectionDescriptor:
+    """The MODEL_CONTAINER descriptor as _load_sections emits it (field-less,
+    skipped by the tidy builder, but the carrier of the entry noun — B-8)."""
+    return SectionDescriptor(
+        entity_type_id=uuid4(),
+        label="Prediction models",
+        role=ExtractionEntityRole.MODEL_CONTAINER,
+        parent_entity_type_id=None,
+        fields=(),
+        cardinality=ExtractionCardinality.MANY,
+        entry_label=entry_label,
+    )
+
+
+def _two_model_article(field_id):
+    run_id = uuid4()
+    m1, m2 = uuid4(), uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        header_label="Gaca, 2011",
+        run_id=run_id,
+        run_stage=None,
+        version_id=None,
+        model_instances=(m1, m2),
+        section_instances={},
+    )
+    value_map = {
+        (run_id, m1, field_id): "Logistic regression",
+        (run_id, m2, field_id): "Cox model",
+    }
+    return article, value_map
+
+
+def test_model_section_stem_uses_container_entry_label():
+    """B-8: the record stem is the pinned container's entry noun, title-cased."""
+    field_id = uuid4()
+    section = _model_section(field_id)
+    article, value_map = _two_model_article(field_id)
+
+    tables = _build_tidy_tables(
+        (_container("algorithm"), section), (article,), value_map, ExportMode.CONSENSUS
+    )
+
+    assert len(tables) == 1  # container itself is still skipped
+    assert [r.record_label for r in tables[0].rows] == [
+        "Gaca, 2011 — Algorithm 1",
+        "Gaca, 2011 — Algorithm 2",
+    ]
+
+
+def test_model_section_stem_falls_back_to_model_without_entry_label():
+    """Pre-0051 snapshots carry no entry_label key (None) — legacy "Model N"
+    output must stay byte-identical."""
+    field_id = uuid4()
+    section = _model_section(field_id)
+    article, value_map = _two_model_article(field_id)
+
+    tables = _build_tidy_tables(
+        (_container(None), section), (article,), value_map, ExportMode.CONSENSUS
+    )
+
+    assert [r.record_label for r in tables[0].rows] == [
+        "Gaca, 2011 — Model 1",
+        "Gaca, 2011 — Model 2",
+    ]

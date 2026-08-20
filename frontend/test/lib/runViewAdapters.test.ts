@@ -45,6 +45,7 @@ function makeRunViewResponse(
       role: 'study_section' as const,
       sort_order: 0,
       is_required: true,
+      entry_label: null,
       fields: [
         {
           id: 'f-1',
@@ -198,6 +199,7 @@ describe('entityTypesFromRunView', () => {
         role: 'model_container',
         sort_order: 1,
         is_required: false,
+        entry_label: null,
         fields: [],
       },
     ];
@@ -207,6 +209,19 @@ describe('entityTypesFromRunView', () => {
     expect(ets[1].cardinality).toBe('many');
     expect(ets[1].role).toBe('model_container');
     expect(ets[1].fields).toEqual([]);
+  });
+
+  it('carries entry_label through — the explicit map must not silently drop it (B-8)', () => {
+    const view = makeRunViewResponse();
+    view.entity_types[0] = {...view.entity_types[0], entry_label: 'algorithm'};
+    const [et] = entityTypesFromRunView(view);
+    expect(et.entry_label).toBe('algorithm');
+  });
+
+  it('maps a null entry_label through as null (pre-B-8 snapshots)', () => {
+    const view = makeRunViewResponse();
+    const [et] = entityTypesFromRunView(view);
+    expect(et.entry_label).toBeNull();
   });
 });
 

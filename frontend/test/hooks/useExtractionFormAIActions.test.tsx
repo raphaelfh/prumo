@@ -46,6 +46,13 @@ const baseProps = () => ({
   onExtractionComplete: vi.fn(),
 });
 
+// Run-pinned section list (B-5b): the form derives it from the run view and
+// threads it into every batch dispatch so the loop matches the snapshot.
+const RUN_VIEW_SECTIONS = [
+  {id: 'et-a', name: 'section_a', label: 'Section A', sort_order: 1},
+  {id: 'et-b', name: 'section_b', label: 'Section B', sort_order: 2},
+];
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -129,6 +136,38 @@ describe('useExtractionFormAIActions', () => {
     ) => Promise<void>;
     await act(() => cb('run-1', 0, []));
     expect(extractAllSectionsForAllModels).not.toHaveBeenCalled();
+  });
+
+  it('threads the run-view sections into per-model batch extraction (B-5b)', async () => {
+    const props = {...baseProps(), sections: RUN_VIEW_SECTIONS};
+    const {result} = renderHook(() => useExtractionFormAIActions(props));
+    await act(() => result.current.handleExtractAllSections());
+    expect(extractAllSections).toHaveBeenCalledWith(
+      expect.objectContaining({sections: RUN_VIEW_SECTIONS}),
+    );
+  });
+
+  it('threads the run-view sections into cross-model batch extraction (B-5b)', async () => {
+    const props = {...baseProps(), sections: RUN_VIEW_SECTIONS};
+    const {result} = renderHook(() => useExtractionFormAIActions(props));
+    await act(() => result.current.handleExtractAllSectionsForAllModels());
+    expect(extractAllSectionsForAllModels).toHaveBeenCalledWith(
+      expect.objectContaining({sections: RUN_VIEW_SECTIONS}),
+    );
+  });
+
+  it('threads the run-view sections into the created-models section chain (B-5b)', async () => {
+    const props = {...baseProps(), sections: RUN_VIEW_SECTIONS};
+    renderHook(() => useExtractionFormAIActions(props));
+    const cb = (globalThis as Record<string, unknown>).__modelExtractionOnSuccess as (
+      r: string,
+      n: number,
+      createdModels: Array<{instanceId: string; modelName: string}>,
+    ) => Promise<void>;
+    await act(() => cb('run-1', 1, [{instanceId: 'inst-new-1', modelName: 'CatBoost'}]));
+    expect(extractAllSectionsForAllModels).toHaveBeenCalledWith(
+      expect.objectContaining({sections: RUN_VIEW_SECTIONS}),
+    );
   });
 
   it('batch-section onSuccess refreshes instances and fires completion callback', async () => {

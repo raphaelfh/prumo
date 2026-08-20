@@ -16,11 +16,20 @@ from app.repositories.extraction_proposal_repository import (
 )
 from app.services._extraction_run_lock import load_run_for_update
 from app.services.coordinate_coherence import assert_coords_coherent
-from app.services.value_semantics import disposition_to_marker, is_disposition_candidate
+from app.services.value_semantics import (
+    disposition_to_marker,
+    is_disposition_candidate,
+    strip_verification,
+)
 
 
 class InvalidProposalError(Exception):
     """Raised when a proposal violates business rules (stage / source / coords)."""
+
+
+#: The execution facts a verdict heal must carry with it; engine identity
+#: (provider/model/endpoint_id/key_scope/mode_requested) is never rewritten.
+_EXECUTION_KEYS = ("mode_executed", "passes")
 
 
 class ExtractionProposalService:
@@ -41,6 +50,7 @@ class ExtractionProposalService:
         source_user_id: UUID | None = None,
         confidence_score: float | None = None,
         rationale: str | None = None,
+        provenance: dict[str, Any] | None = None,
     ) -> ExtractionProposalRecord:
         run = await load_run_for_update(self.db, run_id)
         if run is None:
@@ -103,11 +113,46 @@ class ExtractionProposalService:
         # Idempotent re-record: a client replaying an unchanged value (form
         # remount, debounce double-fire, retry) must not append a duplicate
         # row. The audit trail captures value *changes*, not redundant
-        # replays. A genuinely changed value still appends.
+        # replays. A genuinely changed value still appends. The compare
+        # ignores the Verified-mode ``verification`` ANNOTATION sibling
+        # (value + absent_reason only): a re-extract whose verify pass
+        # flaked — or newly succeeded — is still the same value.
         latest = await self._repo.get_latest_for_coord(
             run_id, instance_id, field_id, source_value, source_user_id
         )
-        if latest is not None and latest.proposed_value == proposed_value:
+        if latest is not None and strip_verification(latest.proposed_value) == strip_verification(
+            proposed_value
+        ):
+            # Same value, but the verify verdict moved (flip, or a heal after
+            # a flaked pass): refresh the server-owned ANNOTATION in place —
+            # no new audit row, the value did not change. An incoming bag
+            # WITHOUT the sibling (fast re-run / flaked verify) never clears
+            # a stored verdict.
+            incoming_verdict = proposed_value.get("verification")
+            if incoming_verdict is not None and incoming_verdict != latest.proposed_value.get(
+                "verification"
+            ):
+                latest.proposed_value = {
+                    **latest.proposed_value,
+                    "verification": incoming_verdict,
+                }
+                # The verdict and the execution record describe the SAME pass, so
+                # they move together. Leaving the execution half frozen would let
+                # a row heal to "confirmed" while still reporting fast/1 — a row
+                # contradicting its own annotation, and less truthful than the
+                # pre-0056 fallback, which read the section snapshot and agreed
+                # with the chip.
+                if provenance:
+                    latest.provenance = {
+                        **(latest.provenance or {}),
+                        **{k: provenance[k] for k in _EXECUTION_KEYS if k in provenance},
+                    }
+                await self.db.flush()
+            # Engine IDENTITY is deliberately NOT refreshed. The model recorded
+            # here did produce this value, so the record stays true; a
+            # corroborating re-run under a DIFFERENT engine is a separate fact,
+            # and recording it belongs in a new row with a link, never in a
+            # mutated one (append-only audit trail, constitution §IX).
             return latest
 
         record = ExtractionProposalRecord(
@@ -119,6 +164,7 @@ class ExtractionProposalService:
             proposed_value=proposed_value,
             confidence_score=confidence_score,
             rationale=rationale,
+            provenance=provenance,
         )
         return await self._repo.add(record)
 

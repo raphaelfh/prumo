@@ -663,6 +663,23 @@ async def reopen_run(
             error=str(e),
         )
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except IntegrityError as e:
+        if is_one_live_run_conflict(e):
+            # One-live-run invariant (uq_one_live_extraction_run_per_coord,
+            # 0045). reopen_run's idempotency guard only recognises children
+            # of THIS parent, but `resolve_or_create_extract_run` (the
+            # "Run AI" path) can create an UNPARENTED live run over a
+            # finalized coordinate — its lookup filters NON_TERMINAL_STAGES,
+            # so the finalized parent is invisible to it. The fork then
+            # collides. Report the conflict the way the sibling create_run
+            # does, instead of letting it escape as a 500.
+            logger.warning(
+                "hitl_reopen_conflict_live_run",
+                trace_id=trace_id,
+                run_id=str(run_id),
+            )
+            raise HTTPException(status_code=409, detail=ONE_LIVE_RUN_CONFLICT_DETAIL) from e
+        raise
     await db.commit()
     # 201 when a fresh revision was forked; 200 when an existing live child was
     # resumed idempotently (mirrors POST /hitl/sessions). (#153)

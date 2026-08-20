@@ -17,7 +17,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import {t} from "@/lib/copy";
-import { getModelChildSections } from "./helpers/getModelChildSections";
+import { getModelChildSections, type ModelChildSection } from "./helpers/getModelChildSections";
 import { processSectionsInChunks } from "./helpers/processSectionsInChunks";
 import type { ExtractionProgress } from "./useBatchSectionExtractionChunked";
 
@@ -31,18 +31,28 @@ export interface AllModelsSectionsProgress {
   sectionProgress: ExtractionProgress | null;
 }
 
+export interface AllModelsSectionsParams {
+  projectId: string;
+  articleId: string;
+  templateId: string;
+  models: Array<{ instanceId: string; modelName: string }>;
+  /** Active session run to extract into — reused so decisions aren't orphaned. */
+  runId?: string;
+  /**
+   * Run-pinned section list (B-5b) — sections are entity-type-level, so one
+   * list serves every model. When provided (non-empty) it replaces the live
+   * per-model entity-type read so the dispatch loop matches the snapshot the
+   * backend extracts from. Absent or EMPTY → chained fallback to the live
+   * read (the worklist Full-AI path dispatches with no run view loaded).
+   */
+  sections?: ModelChildSection[];
+}
+
 /**
  * Tipo de retorno do hook
  */
 export interface UseBatchAllModelsSectionsExtractionReturn {
-  extractAllSectionsForAllModels: (params: {
-    projectId: string;
-    articleId: string;
-    templateId: string;
-    models: Array<{ instanceId: string; modelName: string }>;
-    /** Active session run to extract into — reused so decisions aren't orphaned. */
-    runId?: string;
-  }) => Promise<void>;
+  extractAllSectionsForAllModels: (params: AllModelsSectionsParams) => Promise<void>;
   loading: boolean;
   error: string | null;
   progress: AllModelsSectionsProgress | null;
@@ -85,13 +95,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
    * Extracts all sections from all existing models
    * @param params - Extraction params (projectId, articleId, templateId, models)
    */
-  const extractAllSectionsForAllModels = async (params: {
-      projectId: string;
-      articleId: string;
-      templateId: string;
-      models: Array<{ instanceId: string; modelName: string }>;
-      runId?: string;
-    }) => {
+  const extractAllSectionsForAllModels = async (params: AllModelsSectionsParams) => {
         console.warn('[useBatchAllModelsSectionsExtraction] Starting extraction of sections for all models', {
         totalModels: params.models.length,
       });
@@ -100,7 +104,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
       setProgress(null);
 
       const doExtract = async () => {
-        const { projectId, articleId, templateId, models, runId } = params;
+        const { projectId, articleId, templateId, models, runId, sections: pinnedSections } = params;
 
         if (models.length === 0) {
             toast.warning(t('extraction', 'noModelsFoundTitle'), {
@@ -139,11 +143,16 @@ export function useBatchAllModelsSectionsExtraction(options?: {
           // we catch per-model via .catch() on the inner await chain.
           const modelResult = await (async () => {
               // Extract sections from this model using chunking
-              // 1. Fetch model sections list
-            const sections = await getModelChildSections(
-              model.instanceId,
-              templateId,
-            );
+              // 1. Resolve the section list: prefer the run-pinned list
+              // (entity-type-level, shared by every model); a missing OR
+              // empty list chains into the live read (never swap on empty).
+            const sections =
+              pinnedSections && pinnedSections.length > 0
+                ? pinnedSections
+                : await getModelChildSections(
+                    model.instanceId,
+                    templateId,
+                  );
 
             if (sections.length === 0) {
                 console.warn(`[useBatchAllModelsSectionsExtraction] No sections found for model ${model.modelName}`);

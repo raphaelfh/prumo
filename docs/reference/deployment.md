@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-07-05
+last_reviewed: 2026-08-10
 owner: '@raphaelfh'
 ---
 
@@ -88,7 +88,7 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 | `DATABASE_URL` | Supabase pooler (used for app traffic) |
 | `DIRECT_DATABASE_URL` | Supabase direct (used by Alembic at boot) |
 | `OPENAI_API_KEY` | OpenAI dashboard |
-| `LLM_DEFAULT_MODEL` | `gpt-4o-mini` — set with `LLM_PROVIDER`; the former `OPENAI_DEFAULT_MODEL` was defined but never read at runtime |
+| `LLM_DEFAULT_MODEL` | `gpt-4o-mini` — set with `LLM_PROVIDER`; since C1b this pair is the FALLBACK for projects with no stored `llm_engine` setting (the ⚙ popover writes `projects.settings.llm_engine`, which wins). MUST still be the same value across web + worker: unset projects resolve it independently in each service (`/api/v1/extraction/models` in **web**, `/api/v1/extraction/sections` in the **worker**) — a per-service mismatch silently runs two different engines for those projects. The former `OPENAI_DEFAULT_MODEL` was defined but never read at runtime |
 | `DEBUG` | `false` |
 | `RATE_LIMIT_PER_MINUTE` | `60` |
 | `PROJECT_NAME` | `Prumo API` |
@@ -256,16 +256,36 @@ deliberately experimenting; do not edit `ci.yml` for one-off tweaks.
 
 ### Manual deploy fallback
 
-When CI is red for a known reason — e.g. a long-running migration PR
-where coverage temporarily dips while the spec is in flight — manual
-deploys remain available:
+Two distinct scenarios, with different (and unequal) escape hatches:
+
+**Deploy wedged but CI green** (QUEUED for no reason, SKIPPED-SHA
+wait-for-CI wedge): re-trigger the git-linked deploy with an empty
+commit merged into `main` **via PR** — `main` is protected, so a direct
+push is not possible. Verified 2026-08-18 (#635):
+
+```bash
+git switch -c chore/redeploy-nudge origin/main
+git commit --allow-empty -m "chore(deploy): re-trigger the Railway deploy for <sha>"
+gh pr create --base main --title "chore(deploy): re-trigger the Railway deploy" --body "..."
+```
+
+**Shipping past a red CI** (e.g. coverage temporarily dips while a
+spec is in flight): the documented CLI path is
 
 ```bash
 # run from the repo ROOT — the older `backend --path-as-root` form is
-# broken and bash-guard-blocked (see the deploy-release skill)
+# retired and bash-guard-blocked
 railway up --service web --detach -m "<msg>"
 railway up --service worker --detach -m "<msg>"
 ```
 
-Use this sparingly. Manual deploys bypass the gates; if you are
+but it is **unverified today**: on 2026-08-18 it failed with
+"Deployment does not have an associated build" (there is no root
+Dockerfile; `dockerfilePath` is relative to `rootDirectory=/backend`),
+and `railway up backend` fails with "prefix not found". Until a working
+invocation is re-verified against the live project, assume there is no
+CLI path past a red CI — fix CI or use the dashboard's Redeploy (which
+only redeploys the last built image, i.e. old code).
+
+Use these sparingly. Manual deploys bypass the gates; if you are
 shipping past a red CI, document why in the deploy message.

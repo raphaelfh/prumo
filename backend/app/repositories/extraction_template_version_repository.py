@@ -21,6 +21,24 @@ class ExtractionTemplateVersionRepository(BaseRepository[ExtractionTemplateVersi
     def __init__(self, db: AsyncSession):
         super().__init__(db, ExtractionTemplateVersion)
 
+    async def list_for_template(
+        self,
+        project_template_id: UUID,
+    ) -> list[ExtractionTemplateVersion]:
+        """Every published version, newest first (B-9e History).
+
+        Ordered by ``version`` rather than ``published_at``: the pair
+        ``(project_template_id, version)`` is uniquely indexed, so it is a
+        total order, while two publishes inside one transaction can share a
+        ``now()`` timestamp and tie.
+        """
+        rows = await self.db.execute(
+            select(ExtractionTemplateVersion)
+            .where(ExtractionTemplateVersion.project_template_id == project_template_id)
+            .order_by(ExtractionTemplateVersion.version.desc())
+        )
+        return list(rows.scalars().all())
+
     async def get_active(
         self,
         project_template_id: UUID,

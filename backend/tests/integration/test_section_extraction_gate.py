@@ -70,7 +70,7 @@ def _make_service(db: AsyncSession) -> ses.SectionExtractionService:
         user_id=str(SEED.primary_profile),
         storage=storage,
         trace_id="test-gate",
-        openai_api_key=None,
+        llm_credentials=None,
     )
 
 
@@ -140,7 +140,6 @@ async def test_evidence_gets_attribution_label_and_not_found_recorded(
         parent_instance_id=None,
         extracted_data=extracted_data,
         run=run,
-        model="gpt-4o-mini",
     )
     await db_session_real.flush()
 
@@ -196,7 +195,6 @@ async def test_evidence_gets_attribution_label_and_not_found_recorded(
         parent_instance_id=None,
         extracted_data=not_found_data,
         run=run2,
-        model="gpt-4o-mini",
     )
     await db_session_real.flush()
 
@@ -280,13 +278,20 @@ async def test_session_run_extraction_persists_provenance(
     monkeypatch.setattr(service, "_assemble_prompt_text", _fake_assemble)
 
     async def _fake_extract(**_kwargs: Any) -> tuple[dict[str, Any], LlmUsage]:
-        # Mirror the real _extract_with_llm, which builds the per-section run
-        # provenance snapshot (tokens baked in, keyed later by entity_type_id).
-        service._run_provenance = service._build_run_provenance(
-            model="gpt-4o-mini",
+        # Mirror the real _extract_with_llm: stash the snapshot INPUTS; the
+        # glue builds the section snapshot ONCE, post-verify, at the call
+        # site (verified_mode.build_section_snapshot).
+        from app.services.verified_mode import SectionSnapshotInputs
+
+        service._snapshot_inputs = SectionSnapshotInputs(
             prompt_name="section_extraction",
             prompt_version="1",
-            usage=LlmUsage(prompt_tokens=100, completion_tokens=20),
+            section_name="population",
+            section_label="Population",
+            system_prompt="SYS",
+            section_instruction="INSTR",
+            fields=[],
+            llm_calls=1,
         )
         data = {
             "sample_size": {
@@ -318,9 +323,15 @@ async def test_session_run_extraction_persists_provenance(
     )
     # Provenance is now stored per section under provenance.sections[entity_type_id].
     section = refreshed.results["provenance"]["sections"][str(SEED.primary_entity_type)]
-    assert section["model"] == "gpt-4o-mini"
+    assert section["model"] == settings.LLM_DEFAULT_MODEL
     assert section["provider"] == settings.LLM_PROVIDER
     assert section["tokens"]["total"] == 120
+    # Execution truth (§5 design 3) lives on the SECTION snapshot: this fast
+    # run records mode_requested/mode_executed/passes here, never on the
+    # frozen engine dict (a request-echo).
+    assert section["mode_requested"] == "fast"
+    assert section["mode_executed"] == "fast"
+    assert section["passes"] == 1
     # The session run must stay editable (NOT completed by this call).
     assert refreshed.stage == ExtractionRunStage.EXTRACT.value
 
@@ -391,7 +402,6 @@ async def test_gate_exception_degrades_not_aborts(
         parent_instance_id=None,
         extracted_data=extracted_data,
         run=run,
-        model="gpt-4o-mini",
     )
     await db_session_real.flush()
 

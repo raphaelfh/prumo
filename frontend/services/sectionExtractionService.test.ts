@@ -216,7 +216,6 @@ describe('SectionExtractionService.extractSection', () => {
       entityTypeId: 'et-x',
       parentInstanceId: 'inst-p',
       runId: 'run-existing',
-      options: {model: 'gpt-4o'},
     });
 
     await vi.advanceTimersByTimeAsync(0);
@@ -233,10 +232,13 @@ describe('SectionExtractionService.extractSection', () => {
           entityTypeId: 'et-x',
           parentInstanceId: 'inst-p',
           runId: 'run-existing',
-          model: 'gpt-4o',
         }),
       }),
     );
+
+    // C1a: the engine is server-owned — the body never carries a model.
+    const body = apiClientMock.mock.calls[0]![1]!.body as Record<string, unknown>;
+    expect('model' in body).toBe(false);
   });
 });
 

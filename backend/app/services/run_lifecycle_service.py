@@ -9,6 +9,7 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import get_logger
 from app.models.article import Article
 from app.models.extraction import (
     ExtractionInstance,
@@ -35,7 +36,9 @@ from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_config_service import HitlConfigService
-from app.services.value_semantics import is_value_filled
+from app.services.value_semantics import is_value_filled, strip_verification
+
+logger = get_logger(__name__)
 
 
 class InvalidStageTransitionError(Exception):
@@ -543,12 +546,11 @@ class RunLifecycleService:
         """Each reviewer's current non-empty resolved value envelope per coord:
         ``(instance_id, field_id, envelope)``.
 
-        ``reject`` decisions are skipped; an ``accept_proposal`` whose decision row
-        carries no value resolves through the referenced proposal's
-        ``proposed_value``; empty values (``None`` / ``""`` after one envelope peel)
-        are dropped. Shared by the finalize completeness gate (``_filled_coords``)
-        and the approve-all resolver (``_agreed_unpublished_values``) so the
-        resolution semantics live in one place.
+        ``reject`` is skipped; an ``accept_proposal`` with no decision-row value
+        resolves through the referenced proposal; empty values (``None``/``""``
+        after one peel) are dropped; the Verified-mode ``verification`` sibling
+        is stripped (annotated accept == clean edit; approve-all publishes
+        clean). Shared by ``_filled_coords`` and ``_agreed_unpublished_values``.
         """
         proposal_values: dict[UUID, Any] = dict(
             (
@@ -590,7 +592,7 @@ class RunLifecycleService:
             if resolved is None and proposal_record_id is not None:
                 resolved = proposal_values.get(proposal_record_id)
             if is_value_filled(resolved):
-                resolved_values.append((instance_id, field_id, resolved))
+                resolved_values.append((instance_id, field_id, strip_verification(resolved)))
         return resolved_values
 
     async def reopen_to_extract(
@@ -783,7 +785,8 @@ class RunLifecycleService:
                     instance_id=pub.instance_id,
                     field_id=pub.field_id,
                     source=ExtractionProposalSource.SYSTEM.value,
-                    proposed_value=pub.value,
+                    # Stale-data heal: a verdict never outlives its run.
+                    proposed_value=strip_verification(pub.value),
                     rationale=(f"Carried over from previous published version (run {old_run.id})."),
                 )
             )
@@ -801,12 +804,33 @@ class RunLifecycleService:
         project_template_id: UUID,
         user_id: UUID,
     ) -> ExtractionTemplateVersion:
-        """Mirror alembic 0010's backfill query for a single template.
+        """The v=1 snapshot (mirrors alembic 0010's backfill for one template).
 
-        Captures the current entity_types + fields tree as the v=1 snapshot.
-        Marked active so subsequent runs reuse it via the ``is_active`` index.
+        Live tree, active so later runs reuse it via ``is_active``. The ONE
+        version writer outside ``republish``: no baseline, so no B-9b2b acks.
         """
         snapshot = await build_template_version_snapshot(self.db, project_template_id)
+
+        # B-4: this lazy publish snapshots LIVE rows — including any
+        # pending config draft. It deliberately does NOT clear
+        # ``config_draft_since``: the caller holds the template row FOR
+        # SHARE, and an UPDATE here is an in-place exclusive upgrade —
+        # two concurrent first-runs (the #54/#69 race below) would
+        # deadlock. The marker stays (a no-op Publish clears it); log so
+        # the publish of pending intent is never silent (§IX).
+        pending_draft = (
+            await self.db.execute(
+                select(ProjectExtractionTemplate.config_draft_since).where(
+                    ProjectExtractionTemplate.id == project_template_id
+                )
+            )
+        ).scalar_one_or_none()
+        if pending_draft is not None:
+            logger.warning(
+                "lazy_initial_version_published_pending_draft",
+                project_template_id=str(project_template_id),
+                config_draft_since=str(pending_draft),
+            )
 
         # Upsert v=1 idempotently. Three races to handle:
         #

@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.models.user_api_key import UserAPIKey
-from app.services.api_key_service import APIKeyService
+from app.services.api_key_service import APIKeyService, KeyScope
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -236,7 +236,7 @@ class TestGetKeyForProvider:
 
         result = await svc.get_key_for_provider("openai")
 
-        assert result == plaintext
+        assert result == (plaintext, KeyScope.USER_BYOK)
         repo.update_last_used.assert_awaited_once_with(key.id)
 
     @pytest.mark.asyncio
@@ -248,7 +248,7 @@ class TestGetKeyForProvider:
         with patch.object(svc, "_get_global_key", return_value="global-key"):
             result = await svc.get_key_for_provider("openai")
 
-        assert result == "global-key"
+        assert result == ("global-key", KeyScope.GLOBAL_SERVICE)
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_fallback(self) -> None:
@@ -268,7 +268,7 @@ class TestGetKeyForProvider:
         with patch.object(svc, "_get_global_key", return_value="fallback-key"):
             result = await svc.get_key_for_provider("openai")
 
-        assert result == "fallback-key"
+        assert result == ("fallback-key", KeyScope.GLOBAL_SERVICE)
 
 
 # ---------------------------------------------------------------------------
@@ -648,3 +648,49 @@ class TestValidateGrok:
             )
             result = await svc._validate_grok("bad-key")
         assert result["status"] == "invalid"
+
+
+class TestHasKeyForProvider:
+    """C1b: the member GET's availability probe — existence only.
+
+    Never decrypts and never writes ``update_last_used``: a read that
+    mutated last-used (or touched key material) on every popover open
+    would be both a write amplification and a §5.2 violation.
+    """
+
+    @pytest.mark.asyncio
+    async def test_true_when_user_has_a_default_key_without_decrypt_or_write(self) -> None:
+        repo = make_repo()
+        repo.get_default = AsyncMock(return_value=make_key(provider="anthropic"))
+        svc = make_service(repo=repo)
+
+        with patch.object(APIKeyService, "_decrypt", side_effect=AssertionError("decrypted!")):
+            assert await svc.has_key_for_provider("anthropic") is True
+
+        repo.update_last_used.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_the_global_key(self) -> None:
+        repo = make_repo()  # get_default → None
+        svc = make_service(repo=repo)
+        with patch("app.services.api_key_service.settings") as mock_settings:
+            mock_settings.OPENAI_API_KEY = "sk-global"
+            assert await svc.has_key_for_provider("openai") is True
+
+    @pytest.mark.asyncio
+    async def test_false_when_neither_source_has_one(self) -> None:
+        repo = make_repo()
+        svc = make_service(repo=repo)
+        with patch("app.services.api_key_service.settings") as mock_settings:
+            mock_settings.OPENAI_API_KEY = None
+            mock_settings.LLAMA_CLOUD_API_KEY = None
+            assert await svc.has_key_for_provider("openai") is False
+            assert await svc.has_key_for_provider("anthropic") is False
+
+    @pytest.mark.asyncio
+    async def test_invalid_user_id_still_probes_the_global_key(self) -> None:
+        """Non-UUID user ids (tests) skip the repo probe, not the global one."""
+        svc = make_service(user_id="not-a-uuid", repo=make_repo())
+        with patch("app.services.api_key_service.settings") as mock_settings:
+            mock_settings.OPENAI_API_KEY = "sk-global"
+            assert await svc.has_key_for_provider("openai") is True

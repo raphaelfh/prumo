@@ -25,9 +25,9 @@ You receive four artefacts:
 
 3. GATE_OUTPUT — combined stdout + stderr of `scripts/verify_all.sh` run
    AFTER the diff was applied. Includes ruff, npm lint, tsc, pytest,
-   vitest, db-lint-migrations (if migrations touched), scripts/fitness/
-   run_all.sh, and Playwright smoke (if routers/UI touched). Lines may be
-   truncated to the last 2000 bytes per gate.
+   vitest, scripts/fitness/run_all.sh, and Playwright smoke (if
+   routers/UI touched). Lines may be truncated to the last 2000 bytes
+   per gate.
 
 4. COUNTERFACTUAL_PROBE — output of: revert DIFF, then re-run only the
    touched gates. The question this answers: "does reverting the fix

@@ -171,6 +171,9 @@ export interface RunViewEntityType {
   role: string;
   sort_order: number;
   is_required: boolean;
+  /** Repeating-group entry noun (B-8) — null on non-containers and on
+   * pre-B-8 snapshots; the backend serializes the key unconditionally. */
+  entry_label: string | null;
   fields: RunViewFieldResponse[];
 }
 

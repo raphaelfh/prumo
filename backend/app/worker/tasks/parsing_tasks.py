@@ -68,7 +68,9 @@ async def _run_parse(
         # path is reachable (auto or explicit llamaparse).
         llama_key: str | None = None
         if pref in ("auto", "llamaparse"):
-            llama_key = await APIKeyService(session, user_id).get_key_for_provider("llama_cloud")
+            # Parsing records no LLM provenance, so only the key is needed.
+            _resolved = await APIKeyService(session, user_id).get_key_for_provider("llama_cloud")
+            llama_key = _resolved.key if _resolved is not None else None
 
         if pref == "docling":
             backend = "docling"

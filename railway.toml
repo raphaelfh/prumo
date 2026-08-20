@@ -7,9 +7,12 @@
 # keys live where.
 #
 # Both services now auto-deploy from `raphaelfh/prumo` branch `main`
-# via the Railway GitHub App. Manual deploys (fallback) use:
-#   railway up backend --path-as-root --service web --detach
-#   railway up backend --path-as-root --service worker --detach
+# via the Railway GitHub App. For manual re-triggers see
+# docs/reference/deployment.md § "Manual deploy fallback" — the single
+# source of truth. The old `railway up backend --path-as-root` form is
+# retired and blocked by the bash-guard hook; plain `railway up` from
+# the root is unverified today (failed 2026-08-18 with "Deployment does
+# not have an associated build").
 #
 # NOTE: this file lives at the repo root for documentation. Because
 # both services have `source.rootDirectory = "/backend"`, the effective
@@ -57,7 +60,9 @@ dockerfilePath = "Dockerfile"   # relative to source.rootDirectory (/backend)
 #                            (alembic upgrade head && gunicorn -k UvicornWorker
 #                             -w 1 -t 120 -b 0.0.0.0:${PORT:-8000} app.main:app)
 #     Public domain:         https://web-production-48b398.up.railway.app
-#     Variables override:    CORS_ORIGINS=https://prumo-alpha.vercel.app
+#     Variables override:    CORS_ORIGINS=https://prumoai.vercel.app
+#                            (live value as of 2026-08-09; the retired
+#                             prumo-alpha origin was dropped from it)
 #                            REDIS_URL=${{Redis.REDIS_URL}}
 #
 #   worker  (id: 7acd0799-9685-4445-971a-707bc1b9c41f)

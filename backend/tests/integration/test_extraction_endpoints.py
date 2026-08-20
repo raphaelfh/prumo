@@ -201,11 +201,31 @@ class TestModelExtractionEndpoints:
         assert response.status_code in (400, 422)
 
     @pytest.mark.asyncio
+    async def test_model_extraction_rejects_client_supplied_model(
+        self,
+        client: AsyncClient,
+    ) -> None:
+        """C1a: the engine is server-owned, so a client-sent ``model`` is a
+        loud 422 (``extra="forbid"``) — never a silently-dropped choice."""
+        response = await client.post(
+            "/api/v1/extraction/models",
+            json={
+                "projectId": str(uuid4()),
+                "articleId": str(uuid4()),
+                "templateId": str(uuid4()),
+                "model": "gpt-4o",
+            },
+        )
+
+        assert response.status_code == 422, response.text
+
+    @pytest.mark.asyncio
     async def test_model_extraction_valid_request(
         self,
         client: AsyncClient,
     ) -> None:
         """Test model extraction with valid request."""
+        from app.core.config import settings
         from app.services.model_extraction_service import ModelExtractionResult
 
         with (
@@ -248,6 +268,15 @@ class TestModelExtractionEndpoints:
             assert data.get("trace_id") == trace_id
             assert response.headers.get("X-Trace-Id") == trace_id
             assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
+            # C1a/C1b: the endpoint resolves the engine from server config
+            # (here the env default — the mocked db has no project row). Pins
+            # the half of the invariant no other test covers — a refactor
+            # restoring ``model=payload.model or ...`` here must fail.
+            from app.schemas.llm_target import LlmTarget
+
+            assert mock_service.extract.await_args.kwargs["engine"] == LlmTarget(
+                provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL
+            )
             guard.assert_awaited_once()
 
 

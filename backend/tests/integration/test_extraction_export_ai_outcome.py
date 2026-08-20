@@ -18,6 +18,14 @@ Phase S2:
   reports ``"not selected"``, never ``"pending"``.
 * **A5** — evidence renders numeric-sorted, deduped pages (so ``"2"`` <
   ``"10"``) and a deduped, page-ordered ``evidence_text``.
+* **A7** — the ``Model used`` column names the engine that actually ran,
+  read from the server-written ``results["provenance"]`` snapshot. It is
+  emphatically NOT read from ``run.parameters["model"]``: ``POST
+  /api/v1/runs`` accepts an arbitrary ``parameters`` JSONB bag behind
+  ``ensure_project_reviewer`` and stores it verbatim, so trusting that key
+  would let an ordinary reviewer hand-write the engine name that ships in a
+  published export. ``parameters`` survives only as the legacy fallback for
+  runs recorded before provenance existed.
 
 The sibling file ``test_extraction_export_ai_outcome_ordering.py`` (the
 A6 ``id``-tiebreak determinism guard) ships separately on PR #291; this
@@ -53,6 +61,7 @@ from app.models.extraction_workflow import (
     ExtractionReviewerState,
 )
 from app.services.extraction_export_service import (
+    AIProposalRow,
     ArticleDescriptor,
     ExportMode,
     ExtractionExportService,
@@ -599,21 +608,284 @@ async def test_ai_evidence_ordered_and_deduped(
     assert row.evidence_text == "two | nine | ten"
 
 
-async def test_model_used_resolved_from_run_parameters(
+# ----------------------------------------------------------------------
+# A7 — the "Model used" column (FR-037 col 11).
+#
+# Every assertion below exists to keep ONE untrusted value out of a
+# published export. ``run.parameters`` is client-supplied: the
+# ``CreateRunRequest`` schema declares it as a free-form ``dict[str, Any]``
+# with no allow-list, ``POST /api/v1/runs`` is authorized by
+# ``ensure_project_reviewer``, and the bag is persisted verbatim. Reading
+# ``parameters["model"]`` therefore reported whatever an ordinary reviewer
+# chose to type. ``results["provenance"]`` cannot be reached from any
+# request body — the server writes it from the extractor's own constants
+# under a row lock — so it is the only honest source.
+# ----------------------------------------------------------------------
+
+
+def _provenance_results(*sections: tuple[UUID, str]) -> dict[str, object]:
+    """A run ``results`` payload shaped exactly like the server writes it.
+
+    Mirrors ``SectionExtractionService._build_run_provenance`` merged through
+    ``ExtractionRunRepository.merge_provenance_section``: one snapshot per
+    entity type under ``provenance.sections``, keyed by the stringified id.
+    Only ``model`` is populated — the sibling keys are irrelevant here.
+    """
+    return {"provenance": {"sections": {str(etid): {"model": m} for etid, m in sections}}}
+
+
+async def _ai_metadata_rows(
+    db: AsyncSession,
+    *,
+    run: ExtractionRun,
+    profile_id: UUID,
+    article_id: UUID,
+    entity_type_id: UUID,
+    instance_id: UUID,
+    field_id: UUID,
+) -> tuple[AIProposalRow, ...]:
+    """AI-metadata rows for one single-section, single-proposal run."""
+    return await _service(db, profile_id=profile_id)._load_ai_proposal_rows(
+        articles=(
+            _article(
+                article_id=article_id,
+                run_id=run.id,
+                run_stage=run.stage,
+                entity_type_id=entity_type_id,
+                instance_id=instance_id,
+            ),
+        ),
+        sections=(_section(entity_type_id=entity_type_id, field_id=field_id),),
+        value_map={},
+        mode=ExportMode.CONSENSUS,
+        target_reviewer_id=None,
+    )
+
+
+async def test_model_used_reports_provenance_not_the_forgeable_parameters_bag(
     db_session: AsyncSession,
 ) -> None:
-    """A7 — model_used is resolved from run.parameters["model"].
+    """A7 — a reviewer-planted ``parameters["model"]`` must never be reported.
 
-    Two runs with different ``parameters["model"]`` values are each
-    represented by one AI proposal. The AIProposalRow for each proposal
-    must carry the model from its OWN run, proving per-run isolation.
+    The run below carries the two values in open disagreement: a forged
+    ``parameters["model"]`` of the kind any project reviewer can POST, and a
+    provenance snapshot naming the engine that genuinely ran. The export must
+    report the provenance engine, and the forged string must not survive
+    anywhere in the column — not as the value, not joined alongside the real
+    one. If this assertion ever flips, a reviewer can attribute their export
+    to a model that never touched the article.
     """
     coord = await _coord(db_session)
     if coord is None:
         pytest.skip("dev DB not seeded with an extraction instance")
     project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
 
-    # Run A — has parameters["model"] = "gpt-4o-mini".
+    run = await _make_run(
+        db_session,
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+        profile_id=profile_id,
+    )
+    run.parameters = {"model": "gpt-4o-FORGED"}
+    run.results = _provenance_results((entity_type_id, "gpt-5-mini-real"))
+    await db_session.flush()
+
+    db_session.add(
+        _ai_proposal(
+            proposal_id=uuid4(),
+            run_id=run.id,
+            instance_id=instance_id,
+            field_id=field_id,
+            value="value",
+        )
+    )
+    await db_session.flush()
+
+    rows = await _ai_metadata_rows(
+        db_session,
+        run=run,
+        profile_id=profile_id,
+        article_id=article_id,
+        entity_type_id=entity_type_id,
+        instance_id=instance_id,
+        field_id=field_id,
+    )
+    assert len(rows) == 1
+    assert rows[0].model_used == "gpt-5-mini-real"
+    assert "FORGED" not in rows[0].model_used
+
+
+async def test_model_used_filled_from_provenance_for_a_hitl_opened_run(
+    db_session: AsyncSession,
+) -> None:
+    """A7a — the normal path stops reporting a blank engine.
+
+    ``HITLSessionService.open_or_resume`` creates the run with
+    ``{"opened_via": "hitl_session", "kind": ...}`` and no ``model`` key at
+    all — which is why the column shipped silently empty for essentially
+    every real run while the review UI, reading provenance, displayed the
+    engine. The precondition is asserted rather than assumed, so this test
+    fails loudly if that parameter shape ever changes.
+    """
+    coord = await _coord(db_session)
+    if coord is None:
+        pytest.skip("dev DB not seeded with an extraction instance")
+    project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
+
+    run = await _make_run(
+        db_session,
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+        profile_id=profile_id,
+    )
+    assert "model" not in run.parameters, "precondition: the HITL bag carries no engine"
+    run.results = _provenance_results((entity_type_id, "gpt-5-mini-real"))
+    await db_session.flush()
+
+    db_session.add(
+        _ai_proposal(
+            proposal_id=uuid4(),
+            run_id=run.id,
+            instance_id=instance_id,
+            field_id=field_id,
+            value="value",
+        )
+    )
+    await db_session.flush()
+
+    rows = await _ai_metadata_rows(
+        db_session,
+        run=run,
+        profile_id=profile_id,
+        article_id=article_id,
+        entity_type_id=entity_type_id,
+        instance_id=instance_id,
+        field_id=field_id,
+    )
+    assert len(rows) == 1
+    assert rows[0].model_used == "gpt-5-mini-real"
+
+
+async def test_model_used_joins_every_candidate_when_the_section_is_unattributable(
+    db_session: AsyncSession,
+) -> None:
+    """A7b — an unattributable proposal reports ALL candidates, never one.
+
+    The run recorded two sections that ran different engines, and the
+    proposal's own section has no snapshot, so nothing on the row can say
+    which of the two produced it. Naming either one would be a guess printed
+    as a fact, so the column names both, joined and sorted for a stable,
+    diff-able cell. The reader sees the ambiguity instead of a plausible lie.
+    """
+    coord = await _coord(db_session)
+    if coord is None:
+        pytest.skip("dev DB not seeded with an extraction instance")
+    project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
+
+    run = await _make_run(
+        db_session,
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+        profile_id=profile_id,
+    )
+    # Snapshots for two OTHER sections; the proposal's own section has none.
+    # Inserted worst-case first so a passing sort cannot be the insertion order.
+    run.results = _provenance_results((uuid4(), "z-engine"), (uuid4(), "a-engine"))
+    await db_session.flush()
+
+    db_session.add(
+        _ai_proposal(
+            proposal_id=uuid4(),
+            run_id=run.id,
+            instance_id=instance_id,
+            field_id=field_id,
+            value="value",
+        )
+    )
+    await db_session.flush()
+
+    rows = await _ai_metadata_rows(
+        db_session,
+        run=run,
+        profile_id=profile_id,
+        article_id=article_id,
+        entity_type_id=entity_type_id,
+        instance_id=instance_id,
+        field_id=field_id,
+    )
+    assert len(rows) == 1
+    assert rows[0].model_used == "a-engine | z-engine"
+
+
+async def test_model_used_reads_the_flat_snapshot_of_a_pre_sections_run(
+    db_session: AsyncSession,
+) -> None:
+    """A7c — legacy runs stored provenance flat, with no ``sections`` map.
+
+    Those runs predate per-section extraction but still hold a truthful,
+    server-written engine at ``provenance["model"]``. It outranks
+    ``parameters`` for the same reason the per-section snapshot does.
+    """
+    coord = await _coord(db_session)
+    if coord is None:
+        pytest.skip("dev DB not seeded with an extraction instance")
+    project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
+
+    run = await _make_run(
+        db_session,
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+        profile_id=profile_id,
+    )
+    run.parameters = {"model": "gpt-4o-FORGED"}
+    run.results = {"provenance": {"model": "legacy-flat-engine", "provider": "openai"}}
+    await db_session.flush()
+
+    db_session.add(
+        _ai_proposal(
+            proposal_id=uuid4(),
+            run_id=run.id,
+            instance_id=instance_id,
+            field_id=field_id,
+            value="value",
+        )
+    )
+    await db_session.flush()
+
+    rows = await _ai_metadata_rows(
+        db_session,
+        run=run,
+        profile_id=profile_id,
+        article_id=article_id,
+        entity_type_id=entity_type_id,
+        instance_id=instance_id,
+        field_id=field_id,
+    )
+    assert len(rows) == 1
+    assert rows[0].model_used == "legacy-flat-engine"
+
+
+async def test_model_used_falls_back_to_parameters_only_without_any_provenance(
+    db_session: AsyncSession,
+) -> None:
+    """A7d — ``parameters["model"]`` still answers for pre-provenance runs.
+
+    For a run with no provenance at all the client-supplied bag is the only
+    record that exists, so reporting it beats reporting nothing; the forgery
+    risk is bounded to runs the server never annotated. Two such runs, each
+    with one proposal, also pin per-run isolation: neither row may borrow the
+    other run's engine.
+    """
+    coord = await _coord(db_session)
+    if coord is None:
+        pytest.skip("dev DB not seeded with an extraction instance")
+    project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
+
+    # Run A — legacy parameters, and explicitly no provenance.
     run_a = await _make_run(
         db_session,
         project_id=project_id,
@@ -622,12 +894,12 @@ async def test_model_used_resolved_from_run_parameters(
         profile_id=profile_id,
     )
     run_a.parameters = {"model": "gpt-4o-mini"}
+    run_a.results = {}
     await db_session.flush()
 
-    proposal_a = uuid4()
     db_session.add(
         _ai_proposal(
-            proposal_id=proposal_a,
+            proposal_id=uuid4(),
             run_id=run_a.id,
             instance_id=instance_id,
             field_id=field_id,
@@ -663,10 +935,9 @@ async def test_model_used_resolved_from_run_parameters(
     db_session.add(run_b)
     await db_session.flush()
 
-    proposal_b = uuid4()
     db_session.add(
         _ai_proposal(
-            proposal_id=proposal_b,
+            proposal_id=uuid4(),
             run_id=run_b.id,
             instance_id=instance_id,
             field_id=field_id,
@@ -675,40 +946,26 @@ async def test_model_used_resolved_from_run_parameters(
     )
     await db_session.flush()
 
-    # Query run_a's proposals — must carry run_a's model.
-    rows_a = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
-        articles=(
-            _article(
-                article_id=article_id,
-                run_id=run_a.id,
-                run_stage=run_a.stage,
-                entity_type_id=entity_type_id,
-                instance_id=instance_id,
-            ),
-        ),
-        sections=(_section(entity_type_id=entity_type_id, field_id=field_id),),
-        value_map={},
-        mode=ExportMode.CONSENSUS,
-        target_reviewer_id=None,
+    rows_a = await _ai_metadata_rows(
+        db_session,
+        run=run_a,
+        profile_id=profile_id,
+        article_id=article_id,
+        entity_type_id=entity_type_id,
+        instance_id=instance_id,
+        field_id=field_id,
     )
     assert len(rows_a) == 1
     assert rows_a[0].model_used == "gpt-4o-mini"
 
-    # Query run_b's proposals — must carry run_b's model.
-    rows_b = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
-        articles=(
-            _article(
-                article_id=article_id,
-                run_id=run_b.id,
-                run_stage=run_b.stage,
-                entity_type_id=entity_type_id,
-                instance_id=instance_id,
-            ),
-        ),
-        sections=(_section(entity_type_id=entity_type_id, field_id=field_id),),
-        value_map={},
-        mode=ExportMode.CONSENSUS,
-        target_reviewer_id=None,
+    rows_b = await _ai_metadata_rows(
+        db_session,
+        run=run_b,
+        profile_id=profile_id,
+        article_id=article_id,
+        entity_type_id=entity_type_id,
+        instance_id=instance_id,
+        field_id=field_id,
     )
     assert len(rows_b) == 1
     assert rows_b[0].model_used == "gpt-4o"
@@ -716,10 +973,15 @@ async def test_model_used_resolved_from_run_parameters(
     await db_session.rollback()
 
 
-async def test_model_used_empty_when_parameters_absent(
+async def test_model_used_empty_when_neither_provenance_nor_parameters(
     db_session: AsyncSession,
 ) -> None:
-    """A7b — run.parameters without "model" key yields model_used=""."""
+    """A7e — nothing recorded anywhere yields ``""``, never a default engine.
+
+    An empty cell is the truthful rendering of "no record of which engine
+    ran". Substituting ``settings.LLM_DEFAULT_MODEL`` here would invent
+    provenance for a run that has none.
+    """
     coord = await _coord(db_session)
     if coord is None:
         pytest.skip("dev DB not seeded with an extraction instance")
@@ -732,14 +994,13 @@ async def test_model_used_empty_when_parameters_absent(
         template_id=template_id,
         profile_id=profile_id,
     )
-    # Leave run.parameters empty (no "model" key).
     run.parameters = {}
+    run.results = {}
     await db_session.flush()
 
-    proposal_id = uuid4()
     db_session.add(
         _ai_proposal(
-            proposal_id=proposal_id,
+            proposal_id=uuid4(),
             run_id=run.id,
             instance_id=instance_id,
             field_id=field_id,
@@ -748,22 +1009,59 @@ async def test_model_used_empty_when_parameters_absent(
     )
     await db_session.flush()
 
-    rows = await _service(db_session, profile_id=profile_id)._load_ai_proposal_rows(
-        articles=(
-            _article(
-                article_id=article_id,
-                run_id=run.id,
-                run_stage=run.stage,
-                entity_type_id=entity_type_id,
-                instance_id=instance_id,
-            ),
-        ),
-        sections=(_section(entity_type_id=entity_type_id, field_id=field_id),),
-        value_map={},
-        mode=ExportMode.CONSENSUS,
-        target_reviewer_id=None,
+    rows = await _ai_metadata_rows(
+        db_session,
+        run=run,
+        profile_id=profile_id,
+        article_id=article_id,
+        entity_type_id=entity_type_id,
+        instance_id=instance_id,
+        field_id=field_id,
     )
     assert len(rows) == 1
     assert rows[0].model_used == ""
 
-    await db_session.rollback()
+
+async def test_annotated_proposal_exports_the_value_not_the_verification_sibling(
+    db_session: AsyncSession,
+) -> None:
+    """Verified-mode smoke: a proposal carrying the server-written
+    ``verification`` ANNOTATION sibling exports its ``.value`` exactly like an
+    unannotated row — the sibling never leaks into a cell (the
+    exports-only-read-``.value`` claim, verified rather than assumed)."""
+    coord = await _coord(db_session)
+    if coord is None:
+        pytest.skip("dev DB not seeded with an extraction instance")
+    project_id, article_id, template_id, profile_id, entity_type_id, instance_id, field_id = coord
+
+    run = await _make_run(
+        db_session,
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+        profile_id=profile_id,
+    )
+    db_session.add(
+        ExtractionProposalRecord(
+            id=uuid4(),
+            run_id=run.id,
+            instance_id=instance_id,
+            field_id=field_id,
+            source=ExtractionProposalSource.AI.value,
+            proposed_value={"value": "annotated", "verification": {"verdict": "confirmed"}},
+            created_at=_SHARED_TS,
+        )
+    )
+    await db_session.flush()
+
+    rows = await _ai_metadata_rows(
+        db_session,
+        run=run,
+        profile_id=profile_id,
+        article_id=article_id,
+        entity_type_id=entity_type_id,
+        instance_id=instance_id,
+        field_id=field_id,
+    )
+    assert len(rows) == 1
+    assert rows[0].ai_proposed_value == "annotated"

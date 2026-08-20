@@ -21,6 +21,7 @@ import type {
   LoadSuggestionsResult,
   PromptComposition,
   RunProvenance,
+  VerificationVerdict,
 } from '@/types/ai-extraction';
 import { getSuggestionKey } from '@/types/ai-extraction';
 import { unwrapValueEnvelope, valueAbsentReason } from '@/lib/extraction/valueSemantics';
@@ -44,6 +45,31 @@ function mapEvidenceList(
     attributionLabel: (e.attributionLabel as EvidenceCitation['attributionLabel']) ?? null,
     rank: e.rank ?? 0,
   }));
+}
+
+const VERIFY_VERDICTS: ReadonlySet<string> = new Set([
+  'confirmed',
+  'unsupported',
+  'uncertain',
+]);
+
+/**
+ * Unwrap the Verified-mode `proposed_value.verification` sibling (§5),
+ * NARROWING to the closed verdict vocabulary — an out-of-vocabulary or
+ * malformed sibling yields `undefined` (never a blind cast), so a forged
+ * or drifted verdict can't render as a verification chip.
+ */
+function mapVerification(
+  raw: { [key: string]: unknown } | null | undefined,
+): AISuggestion['verification'] {
+  const sibling = raw?.['verification'];
+  if (sibling && typeof sibling === 'object' && !Array.isArray(sibling)) {
+    const verdict = (sibling as { verdict?: unknown }).verdict;
+    if (typeof verdict === 'string' && VERIFY_VERDICTS.has(verdict)) {
+      return { verdict: verdict as VerificationVerdict };
+    }
+  }
+  return undefined;
 }
 
 function unwrapValue(raw: { [key: string]: unknown } | null | undefined): unknown {
@@ -137,6 +163,7 @@ function mapItemToSuggestion(item: AISuggestionItem): AISuggestion {
     timestamp: new Date(item.created_at),
     evidence: mapEvidenceList(item.evidence),
     provenance: mapProvenance(item.provenance as { [key: string]: unknown } | null),
+    verification: mapVerification(item.proposed_value as { [key: string]: unknown }),
   };
 }
 
@@ -154,6 +181,9 @@ function mapHistoryItemToSuggestion(
     timestamp: new Date(item.created_at),
     evidence: mapEvidenceList(item.evidence),
     provenance: mapProvenance(item.provenance as { [key: string]: unknown } | null),
+    // Same unwrap as the live path — history entries show verdicts too;
+    // silently dropping them here would be an unstated third state.
+    verification: mapVerification(item.proposed_value as { [key: string]: unknown }),
   };
 }
 

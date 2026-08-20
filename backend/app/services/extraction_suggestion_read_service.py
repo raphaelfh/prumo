@@ -88,6 +88,12 @@ def _resolve_status(decision: str | None) -> str:
     return "accepted"
 
 
+#: The identity pair the D8-d blind scrub removes. Shared with
+#: :func:`resolve_proposal_provenance` so the read-side strip and the scrub
+#: cannot name different keys.
+_RAN_BY_KEYS = ("ran_by_user_id", "ran_by_name")
+
+
 async def _load_run_provenance(
     db: AsyncSession,
     run_ids: set[UUID],
@@ -169,8 +175,8 @@ async def _load_run_provenance(
         if run_id in revealed:
             continue
         for leaf in _provenance_leaves(prov):
-            leaf.pop("ran_by_user_id", None)
-            leaf.pop("ran_by_name", None)
+            for _identity_key in _RAN_BY_KEYS:
+                leaf.pop(_identity_key, None)
 
     if resolve_names and revealed:
         await _inject_ran_by_names(db, {rid: prov_by_run[rid] for rid in revealed})
@@ -222,6 +228,40 @@ def _resolve_section_provenance(
     if any(k in provenance for k in _FLAT_SNAPSHOT_KEYS):
         return {k: v for k, v in provenance.items() if k != "sections"}
     return None
+
+
+def resolve_proposal_provenance(
+    section_snapshot: dict[str, Any] | None, proposal_engine: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """How ONE proposal was generated: its own engine over its section's snapshot.
+
+    The two records answer different questions and both are needed. The proposal's
+    engine (0056) is immutable per row and says how THIS value was produced; the
+    section snapshot is last-write-wins and carries what is genuinely run-scoped —
+    identity, tokens, prompt composition. Merging keeps the popover's "Run by"
+    header and token counts working while the engine follows the version.
+
+    A MERGE, not a substitution: substituting would drop ``ran_by_name`` (injected
+    only into run-level snapshots) and ``tokens`` from every provenance-bearing row.
+
+    Identity is stripped from the proposal half defensively. It is never written
+    there — ``build_proposal_engine`` excludes it precisely so the guarantee is
+    "never stored" rather than "scrubbed on read" — but this is the boundary where
+    a future writer's mistake would become a blind-review leak, because the scrub
+    upstream only walks run snapshots and never visits a proposal row.
+
+    Builds a NEW dict and mutates neither input: ``proposal_engine`` comes off an
+    identity-mapped ORM row (unlike the run snapshot, which is a detached column
+    result), so editing it in place would let a later flush destroy the audit record.
+    """
+    # Guard the type, not just emptiness: this column is reachable by a project
+    # reviewer through PostgREST, and a JSONB scalar there would raise on
+    # ``.items()`` and 500 BOTH suggestion surfaces for every member of the
+    # project. Mirrors ``_provenance_leaves`` and ``exports.run_engine._model_of``.
+    if not isinstance(proposal_engine, dict) or not proposal_engine:
+        return section_snapshot
+    engine = {k: v for k, v in proposal_engine.items() if k not in _RAN_BY_KEYS}
+    return {**(section_snapshot or {}), **engine}
 
 
 async def _inject_ran_by_names(
@@ -431,8 +471,11 @@ async def load_suggestions(
                 created_at=p.created_at,
                 evidence=evidence_list,
                 status=status,
-                provenance=_resolve_section_provenance(
-                    prov_by_run.get(p.run_id), et_by_instance.get(p.instance_id)
+                provenance=resolve_proposal_provenance(
+                    _resolve_section_provenance(
+                        prov_by_run.get(p.run_id), et_by_instance.get(p.instance_id)
+                    ),
+                    p.provenance,
                 ),
             )
         )
@@ -546,7 +589,10 @@ async def get_suggestion_history(
                 rationale=p.rationale,
                 created_at=p.created_at,
                 evidence=evidence_list,
-                provenance=_resolve_section_provenance(prov_by_run.get(p.run_id), entity_type_id),
+                provenance=resolve_proposal_provenance(
+                    _resolve_section_provenance(prov_by_run.get(p.run_id), entity_type_id),
+                    p.provenance,
+                ),
             )
         )
 

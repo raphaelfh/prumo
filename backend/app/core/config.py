@@ -35,17 +35,19 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     # =================== CORS ===================
-    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,https://prumoai.vercel.app,https://prumo.vercel.app"
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,https://prumoai.vercel.app"
 
     @property
     def cors_origins_list(self) -> list[str]:
         """Return the CORS allow-list with a safe development fallback."""
         configured = [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
         # Always-allowed origins so a stale CORS_ORIGINS env can never lock
-        # out local dev or the canonical production frontend. The prod
-        # origin (prumoai.vercel.app) is pinned here because env drift
-        # between the Vercel domain and this list caused the 2026-05-31
-        # extraction outage (preflights rejected as "Disallowed CORS origin").
+        # out local dev or the canonical production frontend. Only
+        # prumoai.vercel.app is pinned: env drift between the Vercel domain
+        # and this list caused the 2026-05-31 extraction outage (preflights
+        # rejected as "Disallowed CORS origin"). Keep this list to origins
+        # the project actually controls -- these bypass CORS_ORIGINS
+        # entirely, so a host listed here cannot be revoked from the env.
         defaults = [
             "http://localhost:5173",
             "http://127.0.0.1:5173",
@@ -53,7 +55,6 @@ class Settings(BaseSettings):
             "http://localhost:8080",
             "http://127.0.0.1:8080",
             "https://prumoai.vercel.app",
-            "https://prumo.vercel.app",
         ]
         merged: list[str] = []
         for origin in [*configured, *defaults]:
@@ -97,14 +98,21 @@ class Settings(BaseSettings):
     # OPENAI_DEFAULT_MODEL was defined but never read at runtime; it is
     # collapsed here. Claude is selectable by setting LLM_PROVIDER="anthropic"
     # plus an "anthropic" BYOK key (no global Anthropic key is configured).
+    # The default must stay in app.llm.catalog.CATALOG — a default that falls
+    # off the roster reads as "retired" and blocks every run that never chose
+    # an engine. No Railway env override exists for it: prod follows this code
+    # default at deploy time.
     LLM_PROVIDER: str = "openai"
-    LLM_DEFAULT_MODEL: str = "gpt-4o-mini"
+    LLM_DEFAULT_MODEL: str = "gpt-5.6-luna"
     LLM_TIMEOUT_SECONDS: float = 120.0
     # Token budget for the per-run block-markdown assembly window (A1). A paper
     # under this budget is sent in full; above it the assembler drops whole
     # low-priority sections (IMRaD ranking) and logs AssemblyInfo.truncated.
-    # Leaves headroom on a 128k-context model for system prompt + schema + output
-    # + reask. No hard per-run cost ceiling (logged, not enforced — spec §8.5).
+    # Sized against the SMALLEST context window in app.llm.catalog.CATALOG
+    # (currently gpt-4o-mini at 128k), NOT the default model — a budget that
+    # fits only the flagship windows overflows legacy-pinned projects. Leaves
+    # headroom for system prompt + schema + output + reask. No hard per-run
+    # cost ceiling (logged, not enforced — spec §8.5).
     LLM_ASSEMBLY_BUDGET_TOKENS: int = 96_000
 
     # =================== PARSING ===================
@@ -134,6 +142,11 @@ class Settings(BaseSettings):
     # =================== SECURITY ===================
     # Chave for criptografia de data sensiveis (ex: Zotero API key)
     ENCRYPTION_KEY: str = "review_hub_default_key_change_me_in_production"
+    # SSRF escape hatch for custom LLM endpoints (app/core/net_guard.py):
+    # allows private/loopback ranges and plain http. Honored ONLY when
+    # supabase_env == "local" — the flag is inert in production by code,
+    # not convention (net_guard._private_ranges_allowed).
+    ALLOW_PRIVATE_LLM_ENDPOINTS: bool = False
 
     # =================== FEEDBACK / LINEAR ===================
     LINEAR_API_KEY: str | None = None
