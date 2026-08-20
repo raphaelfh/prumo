@@ -26,6 +26,8 @@ async def test_extract_for_run_raises_when_all_sections_fail():
     # unknown caller: the injected credentials are never re-resolved).
     svc._credentials = EngineCredentials(None, None, None, None)
     svc._key_provider = None
+    # A retry-shaped construction: defer to whatever the run is pinned to.
+    svc._repin = False
     svc.user_id = "u"
 
     run = SimpleNamespace(

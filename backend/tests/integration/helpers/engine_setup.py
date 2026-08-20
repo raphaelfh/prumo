@@ -15,6 +15,7 @@ Supabase from the suite.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from typing import Any
 from unittest.mock import MagicMock
 from uuid import UUID
 
@@ -147,6 +148,17 @@ async def pin_run(
             endpoint_id=endpoint_id,
         ).model_dump(),
     )
+
+
+def pinned_engine_of(run: ExtractionRun) -> dict[str, Any]:
+    """The run's frozen engine, or ``{}`` when nothing was recorded.
+
+    The read half of :func:`pin_run`. Shared because the freeze suite and the
+    model-extraction suite assert against the same JSONB path — private
+    copies drift until they stop proving the same contract.
+    """
+    provenance = (run.results or {}).get("provenance") or {}
+    return provenance.get("engine") or {}
 
 
 async def set_project_engine(

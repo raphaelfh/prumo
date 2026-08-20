@@ -29,7 +29,11 @@ if TYPE_CHECKING:
 
 
 async def freeze_run_engine(
-    runs: ExtractionRunRepository, run_id: UUID, candidate: LlmTarget
+    runs: ExtractionRunRepository,
+    run_id: UUID,
+    candidate: LlmTarget,
+    *,
+    repin: bool = False,
 ) -> LlmTarget:
     """Pin the run's engine on first write; the run's pinned engine wins.
 
@@ -39,8 +43,13 @@ async def freeze_run_engine(
     when the run names no engine yet, and the effective engine is returned
     either way. A pre-C1b pinned snapshot (pair only, no mode fields)
     validates via ``LlmTarget``'s defaults and is never rewritten.
+
+    ``repin=True`` installs ``candidate`` over any existing pin — the
+    caller is a human kickoff, which is entitled to the manager's current
+    choice. It then returns ``candidate`` unchanged, so a caller that
+    resolved credentials for it never has to re-key.
     """
-    pinned = await runs.freeze_engine(run_id, candidate.model_dump())
+    pinned = await runs.freeze_engine(run_id, candidate.model_dump(), repin=repin)
     return LlmTarget.model_validate(pinned) if pinned else candidate
 
 
@@ -63,28 +72,27 @@ async def read_pinned_engine(db: AsyncSession, run_id: UUID) -> LlmTarget | None
 
 
 async def resolve_engine_for_run(
-    db: AsyncSession, *, run_id: UUID | None, project_id: UUID
+    db: AsyncSession, *, run_id: UUID | None, project_id: UUID, repin: bool
 ) -> LlmTarget:
-    """The engine a kickoff must run on, pin included (endpoint-callable).
+    """The engine an attempt must run on — a READ; the write is the service's.
 
-    A run's PINNED engine wins and is read FIRST — before the project
-    resolve, which could 409 a retired pair the run is legitimately pinned
-    to — so a pinned run can never execute a second engine while
-    ``provenance.engine`` names the first. An unpinned (or absent — the
-    service 404s it later) run resolves the project engine and freezes it
-    onto the run so the record exists before any LLM call; ``run_id=None``
-    is a plain project resolve. Lives in the service layer because the
-    freeze needs ``ExtractionRunRepository``, which the api layer must not
-    import (``check_layered_arch``).
+    A RETRY defers to the run's pin, read BEFORE the project resolve: that
+    is what keeps attempt 2 on attempt 1's engine, and it also avoids a 409
+    on a retired pair the run is legitimately pinned to. A human kickoff
+    (``repin``) skips the pin and takes the manager's current choice — see
+    ``ExtractionRunRepository.freeze_engine`` for why the pin is owed to the
+    retry rather than to the run for its whole life.
+
+    Deliberately does not freeze. Only the services know WHICH run an attempt
+    resolved (the standalone paths reuse the coordinate's live run), and
+    pinning from here would take the row lock before the run is even
+    validated — held, on the in-request route, across the whole LLM call.
     """
-    if run_id is not None:
+    if run_id is not None and not repin:
         pinned = await read_pinned_engine(db, run_id)
         if pinned is not None:
             return pinned
-    engine = await resolve_project_engine(db, project_id)
-    if run_id is not None:
-        engine = await freeze_run_engine(ExtractionRunRepository(db), run_id, engine)
-    return engine
+    return await resolve_project_engine(db, project_id)
 
 
 def build_proposal_engine(

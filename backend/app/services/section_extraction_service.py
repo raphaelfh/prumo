@@ -141,6 +141,8 @@ class SectionExtractionService(LoggerMixin):
         trace_id: str,
         llm_credentials: EngineCredentials | None = None,
         key_provider: str | None = None,
+        *,
+        repin: bool = False,
     ):
         """Initialize service instance.
 
@@ -153,6 +155,9 @@ class SectionExtractionService(LoggerMixin):
             key_provider: The provider they were resolved FOR — with
                 ``endpoint_id``, the identity ``rekey_for_adopted_engine``
                 checks an adopted pin against; ``None`` never re-resolves.
+            repin: this attempt is a HUMAN kickoff, so it overwrites the
+                run's pin with the caller's engine instead of deferring to
+                it. Worker sets it on attempt 0 only; a retry stays pinned.
         """
         self.db = db
         self.user_id = user_id
@@ -160,6 +165,7 @@ class SectionExtractionService(LoggerMixin):
         self.trace_id = trace_id
         self._credentials = llm_credentials or EngineCredentials(None, None, None, None)
         self._key_provider = key_provider
+        self._repin = repin
 
         # Repositories
         self._article_files = ArticleFileRepository(db)
@@ -197,8 +203,12 @@ class SectionExtractionService(LoggerMixin):
         flip). ``rekey_for_adopted_engine`` owns the identity check and hands
         back a WHOLE credential; storing the provider keeps a later adoption
         on the same service from double-keying.
+
+        Under ``repin`` the freeze installs ``candidate``, so adoption is a
+        no-op — which closes the standalone (``run_id=None``) hole, where the
+        reused run's stale pin overrode the engine the caller keyed for.
         """
-        self._engine = await freeze_run_engine(self._runs, run_id, candidate)
+        self._engine = await freeze_run_engine(self._runs, run_id, candidate, repin=self._repin)
         rekeyed = await rekey_for_adopted_engine(
             self.db,
             user_id=self.user_id,
