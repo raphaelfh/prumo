@@ -140,12 +140,20 @@ class ZoteroImportService(LoggerMixin):
         await self.db.commit()
         await self.db.refresh(run)
 
+        # When the fetch is truncated (Zotero pages at 100 items regardless of
+        # ``max_items``), the returned page is NOT the full collection — so it
+        # must not drive the destructive removal reconciliation below, which
+        # marks any previously-imported article absent from the fetched page as
+        # ``removed_at_source``. On a truncated fetch that would falsely tombstone
+        # every article that fell off the page window.
+        fetch_truncated = False
         if predefined_items is None:
             items_result = await self._zotero.fetch_items(
                 collection_key=collection_key,
                 limit=max_items,
             )
             items = items_result.get("items", [])
+            fetch_truncated = bool(items_result.get("has_more"))
         else:
             items = predefined_items
 
@@ -234,7 +242,10 @@ class ZoteroImportService(LoggerMixin):
             await self.db.commit()
             await self.db.refresh(run)
 
-        if predefined_items is None:
+        # Only reconcile removals from a complete fetch. A truncated page would
+        # mark real, still-present articles as removed_at_source (see the
+        # fetch_truncated note above).
+        if predefined_items is None and not fetch_truncated:
             removed_at_source = await self._mark_removed_items(
                 project_id=project_id,
                 collection_key=collection_key,
