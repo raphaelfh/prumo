@@ -23,6 +23,7 @@ import {computeRowProgress} from '@/lib/extraction/progress';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
 import {ExtractionExportDialog} from './ExtractionExportDialog';
+import {LlmEngineChip} from './LlmEngineChip';
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 import {useAuth} from '@/contexts/AuthContext';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
@@ -358,7 +359,54 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         return renderDashboard();
       
       case 'configuration':
+        return (
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
+            {/* Project-regime chrome (§5, C1b): the engine chip lives ABOVE
+                the versioned template card — choosing an engine never arms
+                the Draft chip and never enters the Publish diff. The chip
+                OWNS its flex row, so a failed read renders no empty strip. */}
+            <LlmEngineChip projectId={projectId} />
+            {activeTemplate ? (
+              // Dashboard regime: the page never scrolls — the grid card
+              // absorbs the leftover height and scrolls internally. The
+              // overflow-y-auto is the short-viewport escape hatch (zoom,
+              // landscape phone, expanded instruction editor): when the
+              // editor's FIXED rows outgrow the area, this column scrolls
+              // instead of clipping controls unreachable — the chip and
+              // tab chrome above stay fixed either way.
+              <div className="min-h-0 flex-1 overflow-y-auto">{renderConfigurationBody()}</div>
+            ) : (
+              // No template yet: a plain content card; scroll the area.
+              <div className="min-h-0 flex-1 overflow-y-auto pb-4">{renderConfigurationBody()}</div>
+            )}
+          </div>
+        );
+
+      default:
         return activeTemplate ? (
+          <ArticleExtractionTable
+            projectId={projectId}
+            templateId={activeTemplate.id}
+          />
+        ) : isManager ? (
+            <ConfigureTemplateFirst onConfigureClick={() => setActiveTab('configuration')}/>
+        ) : (
+            <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
+                <CardContent className="pt-6 pb-6">
+                    <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
+                        <AlertCircle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" strokeWidth={1.5}/>
+                        <p>{t('extraction', 'configContactManagerToConfigure')}</p>
+                    </div>
+                </CardContent>
+            </Card>
+        );
+    }
+  };
+
+  // The versioned-card side of the Configuration tab (everything BELOW the
+  // project-regime chrome row that hosts the engine chip).
+  const renderConfigurationBody = () => {
+    return activeTemplate ? (
           <TemplateConfigEditor
             projectId={projectId}
             templateId={activeTemplate.id}
@@ -475,26 +523,6 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             </CardContent>
           </Card>
         );
-      
-      default:
-        return activeTemplate ? (
-          <ArticleExtractionTable 
-            projectId={projectId} 
-            templateId={activeTemplate.id}
-          />
-        ) : isManager ? (
-            <ConfigureTemplateFirst onConfigureClick={() => setActiveTab('configuration')}/>
-        ) : (
-            <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
-                <CardContent className="pt-6 pb-6">
-                    <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
-                        <AlertCircle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" strokeWidth={1.5}/>
-                        <p>{t('extraction', 'configContactManagerToConfigure')}</p>
-                    </div>
-                </CardContent>
-            </Card>
-        );
-    }
   };
 
     return (
@@ -527,7 +555,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                             ))}
                         </div>
           </div>
-                ) : activeTab === 'extraction' ? (
+                ) : activeTab === 'extraction' || activeTab === 'configuration' ? (
                     <div className="flex min-h-0 flex-1 flex-col">{renderTabContent()}</div>
                 ) : (
                     <div className="min-h-0 flex-1 overflow-y-auto pb-4">{renderTabContent()}</div>

@@ -16,6 +16,8 @@ from app.api.v1.endpoints import (
     feedback,
     hitl_configs,
     hitl_sessions,
+    llm_endpoints,
+    llm_engine,
     manager_review_visibility,
     model_extraction,
     parser_settings,
@@ -97,6 +99,18 @@ api_router.include_router(
 
 api_router.include_router(
     parser_settings.router,
+    prefix="/projects",
+    tags=["projects"],
+)
+
+api_router.include_router(
+    llm_engine.router,
+    prefix="/projects",
+    tags=["projects"],
+)
+
+api_router.include_router(
+    llm_endpoints.router,
     prefix="/projects",
     tags=["projects"],
 )

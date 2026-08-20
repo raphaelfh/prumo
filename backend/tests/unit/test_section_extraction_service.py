@@ -19,6 +19,7 @@ from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage
 from app.schemas.llm_target import LlmTarget
 from app.services.extraction_prompt_input import PromptInputInfo
+from app.services.run_engine_freeze import build_run_provenance
 from app.services.section_extraction_service import SectionExtractionService
 
 
@@ -1175,7 +1176,10 @@ class TestCreateSuggestions:
         self._wire_one_field(service)
         entity_type_id = uuid4()
         service._engine = LlmTarget(provider="openai", model="gpt-x")
-        service._run_provenance = service._build_run_provenance(
+        service._run_provenance = build_run_provenance(
+            ran_by_user_id=service.user_id,
+            engine=service._engine,
+            key_scope=service._credentials.key_scope,
             prompt_name="extract",
             prompt_version="1",
             usage=LlmUsage(prompt_tokens=10, completion_tokens=5),
@@ -1214,8 +1218,12 @@ class TestCreateSuggestions:
         et_a, et_b = uuid4(), uuid4()
 
         service._engine = LlmTarget(provider="openai", model="m-a")
-        service._run_provenance = service._build_run_provenance(
-            prompt_name="extract", prompt_version="1"
+        service._run_provenance = build_run_provenance(
+            ran_by_user_id=service.user_id,
+            engine=service._engine,
+            key_scope=service._credentials.key_scope,
+            prompt_name="extract",
+            prompt_version="1",
         )
         await service._create_suggestions(
             project_id=run.project_id,
@@ -1226,8 +1234,12 @@ class TestCreateSuggestions:
             run=run,
         )
         service._engine = LlmTarget(provider="openai", model="m-b")
-        service._run_provenance = service._build_run_provenance(
-            prompt_name="extract", prompt_version="1"
+        service._run_provenance = build_run_provenance(
+            ran_by_user_id=service.user_id,
+            engine=service._engine,
+            key_scope=service._credentials.key_scope,
+            prompt_name="extract",
+            prompt_version="1",
         )
         await service._create_suggestions(
             project_id=run.project_id,
@@ -1376,14 +1388,74 @@ class TestCreateSuggestions:
         assert prop["confidence_score"] == 0.3
         assert prop["rationale"] == "two conflicting statements"
 
-    def test_build_run_provenance_shape(self, service):
+    @pytest.mark.asyncio
+    async def test_verdict_annotates_found_proposal(self, service):
+        # Verified mode: the verdict is a TYPED-dump ANNOTATION sibling on
+        # proposed_value — the absent_reason precedent — never a mutation of
+        # the value or the confidence (§IX).
+        self._wire_one_field(service)
+        run = self._make_run()
+        await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={
+                "f1": {
+                    "value": "x",
+                    "confidence": 0.9,
+                    "reasoning": None,
+                    "evidence": [],
+                    "status": "found",
+                }
+            },
+            run=run,
+            verdicts={"f1": "unsupported"},
+        )
+        kwargs = service._proposals.record_proposal.await_args.kwargs
+        assert kwargs["proposed_value"] == {
+            "value": "x",
+            "verification": {"verdict": "unsupported"},
+        }
+        assert kwargs["confidence_score"] == 0.9  # never rewritten
+
+    @pytest.mark.asyncio
+    async def test_unmatched_verdict_key_logs_a_warning(self, service, monkeypatch):
+        # Panel A4: a verdict keyed outside the field vocabulary would
+        # silently annotate nothing — the drift must be loud.
+        self._wire_one_field(service)
+        mock_logger = MagicMock()
+        monkeypatch.setattr(SectionExtractionService, "logger", mock_logger)
+        run = self._make_run()
+        await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={
+                "f1": {
+                    "value": "x",
+                    "confidence": 0.9,
+                    "reasoning": None,
+                    "evidence": [],
+                    "status": "found",
+                }
+            },
+            run=run,
+            verdicts={"f1": "confirmed", "ghost": "confirmed"},
+        )
+        events = [c.args[0] for c in mock_logger.warning.call_args_list]
+        assert "verify_verdict_unmatched" in events
+
+    def test_build_run_provenance_shape(self):
         # Per-section snapshot of how the suggestions were generated; params come
         # from the single-source extractor constants so they can't drift from
         # what was actually sent. No prompt_text — the system prompt lives in the
         # prompt_composition (a duplicate flat copy serves no reader).
-        service.user_id = "user-123"
-        service._engine = LlmTarget(provider="openai", model="gpt-4o-mini")
-        prov = service._build_run_provenance(
+        prov = build_run_provenance(
+            ran_by_user_id="user-123",
+            engine=LlmTarget(provider="openai", model="gpt-4o-mini"),
+            key_scope=None,
             prompt_name="section_extraction",
             prompt_version="v3",
         )
@@ -1405,7 +1477,10 @@ class TestCreateSuggestions:
             PromptCompositionArticleRef,
         )
 
-        snap = service._build_run_provenance(
+        snap = build_run_provenance(
+            ran_by_user_id=service.user_id,
+            engine=service._engine,
+            key_scope=None,
             prompt_name="section_extraction",
             prompt_version="v1",
             usage=LlmUsage(prompt_tokens=10, completion_tokens=5),
@@ -1425,7 +1500,13 @@ class TestCreateSuggestions:
     def test_build_run_provenance_omits_optional_keys_when_absent(self, service):
         # No usage / no composition → those keys are simply absent (the no-LLM
         # and legacy-caller shapes), never null placeholders.
-        snap = service._build_run_provenance(prompt_name="section_extraction", prompt_version="v1")
+        snap = build_run_provenance(
+            ran_by_user_id=service.user_id,
+            engine=service._engine,
+            key_scope=None,
+            prompt_name="section_extraction",
+            prompt_version="v1",
+        )
         assert "tokens" not in snap
         assert "prompt_composition" not in snap
 
@@ -2346,7 +2427,11 @@ class TestExtractWithLlmWiring:
             patch("app.services.section_extraction_service.extract_structured", mock_x),
             patch("app.services.section_extraction_service.build_model", MagicMock()),
         ):
-            await service._extract_with_llm(pdf_text="ARTICLE BODY", entity_type=entity_type)
+            data, usage = await service._extract_with_llm(
+                pdf_text="ARTICLE BODY", entity_type=entity_type
+            )
+        # The glue builds the snapshot post-verify (fast mode → pure no-op).
+        await service._maybe_verify(uuid4(), uuid4(), "extraction", "ARTICLE BODY", data, usage)
 
         comp = service._run_provenance["prompt_composition"]
         # The article is replaced by a marker in the persisted instruction, and
@@ -2384,12 +2469,14 @@ class TestExtractWithLlmWiring:
             patch("app.services.section_extraction_service.extract_structured", mock_x),
             patch("app.services.section_extraction_service.build_model", MagicMock()),
         ):
-            await service._extract_with_llm(
+            data, usage = await service._extract_with_llm(
                 pdf_text="text",
                 entity_type=entity_type,
                 kind="quality_assessment",
                 framework="PROBAST",
             )
+        # The glue builds the snapshot post-verify (fast mode → pure no-op).
+        await service._maybe_verify(uuid4(), uuid4(), "quality_assessment", "text", data, usage)
         comp = service._run_provenance["prompt_composition"]
         # QA composition uses the QA template (framework rendered) + the marker.
         assert "PROBAST" in comp["section_instruction"]

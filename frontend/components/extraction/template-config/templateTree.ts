@@ -83,6 +83,7 @@ export interface TemplateFieldInput {
   allows_not_applicable?: boolean;
   allows_not_evaluated?: boolean;
   llm_description?: string | null;
+  validation_schema?: Record<string, unknown> | null;
   sort_order?: number;
 }
 
@@ -114,6 +115,11 @@ export interface GridField {
   otherPlaceholder: string | null;
   allowsNotApplicable: boolean;
   allowsNotEvaluated: boolean;
+  /** Carried so an Undo restore can resend it verbatim. OPTIONAL — not
+   * required — so existing GridField test fixtures keep compiling (the
+   * panel test file sits at its file-size ratchet ceiling); the builder
+   * always sets it. */
+  validationSchema?: Record<string, unknown> | null;
   /** Set only while a search filter is active. */
   matchHint?: TemplateMatchHint;
 }
@@ -210,6 +216,7 @@ function toGridField(input: TemplateFieldInput): GridField {
     otherPlaceholder: input.other_placeholder ?? null,
     allowsNotApplicable: Boolean(input.allows_not_applicable),
     allowsNotEvaluated: Boolean(input.allows_not_evaluated),
+    validationSchema: input.validation_schema ?? {},
   };
 }
 

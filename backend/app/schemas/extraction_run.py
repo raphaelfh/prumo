@@ -4,9 +4,25 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ----- Request schemas -----
+
+
+def _reject_client_verification(field_name: str, v: dict[str, Any] | None) -> dict[str, Any] | None:
+    # The Verified-mode verdict is server-written provenance (the
+    # ``source_user_id`` precedent): a client-sent copy is a loud 422,
+    # never a silently-stored forgery. Guarded on ALL three write bags
+    # (proposal / decision / consensus) so the key cannot be smuggled into
+    # the agreement mechanism from any side. Known residual: a reviewer can
+    # still UPDATE a stored row's value bag directly via PostgREST under the
+    # baseline RLS policies — tracked as a follow-up; this gate covers the
+    # API surface.
+    if v is not None and "verification" in v:
+        raise ValueError(
+            f"{field_name}.verification is server-written provenance and cannot be client-supplied"
+        )
+    return v
 
 
 class CreateRunRequest(BaseModel):
@@ -29,6 +45,12 @@ class CreateProposalRequest(BaseModel):
     confidence_score: float | None = None
     rationale: str | None = None
 
+    @field_validator("proposed_value")
+    @classmethod
+    def _reject_server_owned_verification(cls, v: dict[str, Any]) -> dict[str, Any]:
+        _reject_client_verification("proposed_value", v)
+        return v
+
 
 class CreateDecisionRequest(BaseModel):
     instance_id: UUID
@@ -38,6 +60,11 @@ class CreateDecisionRequest(BaseModel):
     value: dict[str, Any] | None = None
     rationale: str | None = None
 
+    @field_validator("value")
+    @classmethod
+    def _reject_server_owned_verification(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        return _reject_client_verification("value", v)
+
 
 class CreateConsensusRequest(BaseModel):
     instance_id: UUID
@@ -46,6 +73,11 @@ class CreateConsensusRequest(BaseModel):
     selected_decision_id: UUID | None = None
     value: dict[str, Any] | None = None
     rationale: str | None = None
+
+    @field_validator("value")
+    @classmethod
+    def _reject_server_owned_verification(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        return _reject_client_verification("value", v)
 
 
 class AdvanceStageRequest(BaseModel):

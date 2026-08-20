@@ -58,11 +58,16 @@ If a workflow on the main push reports SKIPPED (e.g. path-filtered
 docs-ci), Railway's Wait-for-CI can wedge — and it does **not**
 self-heal when you re-run the job. Recovery, in order:
 
-1. Push any newer commit to `main` (empty commit is fine:
-   `git commit --allow-empty -m "chore: nudge railway wait-for-ci"`).
-2. Or deploy directly: `railway up` **from the repo root**. The
-   `backend --path-as-root` form documented in older notes is broken
-   (also blocked by the bash-guard hook).
+1. Merge a newer commit into `main` **via PR** — `main` is protected,
+   so the empty commit cannot be pushed directly (verified 2026-08-18,
+   #635): `git commit --allow-empty -m "chore: nudge railway
+   wait-for-ci"`, then a PR to `main`.
+2. `railway up` from the repo root is documented but **unverified
+   today**: on 2026-08-18 it failed with "Deployment does not have an
+   associated build" (`dockerfilePath` is relative to
+   `rootDirectory=/backend`). The `backend --path-as-root` form is
+   retired and bash-guard-blocked. Details:
+   `docs/reference/deployment.md` § Manual deploy fallback.
 
 Detection: the post-deploy-smoke workflow catches the symptom
 (stale prod while CI is green).

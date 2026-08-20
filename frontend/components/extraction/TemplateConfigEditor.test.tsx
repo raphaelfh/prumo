@@ -49,6 +49,7 @@ vi.mock('@/services/templateService', () => ({
 vi.mock('@/services/extractionFieldService', () => ({
   validateFieldImpact: vi.fn(),
   deleteField: vi.fn(),
+  insertField: vi.fn(),
 }));
 vi.mock('@/hooks/extraction/useTemplateRepublish', () => ({
   useTemplateConfigCaches: vi.fn(),
@@ -82,13 +83,15 @@ vi.mock('./dialogs', () => ({
   ImportTemplateDialog: () => null,
 }));
 
+import {toast} from 'sonner';
+
 import {TooltipProvider} from '@/components/ui/tooltip';
 import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
 import {useInsertTemplateField} from '@/hooks/extraction/useInsertTemplateField';
 import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
 import {templateEntityTypesKeys} from '@/lib/query-keys/extraction';
-import {deleteField, validateFieldImpact} from '@/services/extractionFieldService';
+import {deleteField, insertField, validateFieldImpact} from '@/services/extractionFieldService';
 import type {FieldValidationResult} from '@/types/extraction';
 
 import {TemplateConfigEditor} from './TemplateConfigEditor';
@@ -114,7 +117,16 @@ const FIELDS = [
     field_type: 'text',
     is_required: false,
     allowed_values: null,
-    llm_description: null,
+    // Non-defaults for everything a restore must carry back: the undo
+    // re-creates the row from the grid projection, and a payload that
+    // drops any of these is a silently lossy restore.
+    llm_description: 'Quote the study design verbatim',
+    allow_other: true,
+    other_label: 'Other design',
+    other_placeholder: 'Describe the design',
+    allows_not_applicable: true,
+    allows_not_evaluated: true,
+    validation_schema: {maxLength: 80},
     sort_order: 1,
   },
 ];
@@ -224,6 +236,46 @@ describe('TemplateConfigEditor — delete-field hosting (B-9d)', () => {
 
     await waitFor(() => expect(deleteField).toHaveBeenCalled());
     expect(vi.mocked(validateFieldImpact)).not.toHaveBeenCalled();
+  });
+
+  it('Undo re-creates the field WITH its AI instruction, dispositions and validation schema', async () => {
+    // The restore rebuilds the row from the grid projection. Everything
+    // the manager authored — the ✨ AI instruction, the "Other" option,
+    // the ADR-0016 disposition flags, the validation schema — is present
+    // at capture time and accepted by the create endpoint; a payload that
+    // drops any of it is a restore that looks successful and is lossy.
+    vi.mocked(insertField).mockResolvedValue({ok: true, data: {}} as never);
+    renderEditor();
+    await screen.findByRole('button', {name: 'Study design'});
+
+    await openRowMenuDelete();
+    await waitFor(() => expect(toast).toHaveBeenCalled());
+
+    const [, options] = vi.mocked(toast).mock.calls.at(-1)! as unknown as [
+      string,
+      {action?: {onClick: (event: unknown) => void}},
+    ];
+    await act(async () => options.action!.onClick({}));
+
+    await waitFor(() => expect(insertField).toHaveBeenCalledTimes(1));
+    expect(insertField).toHaveBeenCalledWith(
+      'p1',
+      't1',
+      expect.objectContaining({
+        entity_type_id: 'sec',
+        name: 'q1',
+        label: 'Study design',
+        field_type: 'text',
+        is_required: false,
+        llm_description: 'Quote the study design verbatim',
+        allow_other: true,
+        other_label: 'Other design',
+        other_placeholder: 'Describe the design',
+        allows_not_applicable: true,
+        allows_not_evaluated: true,
+        validation_schema: {maxLength: 80},
+      }),
+    );
   });
 });
 

@@ -22,16 +22,11 @@ from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.llm.claim_value import value_str_for_claim
 from app.llm.entailment import GateSpec, run_entailment_gate
-from app.llm.extractor import (
-    LLM_TEMPERATURE,
-    OUTPUT_RETRIES_DEFAULT,
-    LlmUsage,
-    extract_structured,
-)
-from app.llm.prompts import quality_assessment, section_extraction
+from app.llm.extractor import LlmUsage, extract_structured
 from app.llm.provider import build_model
 from app.llm.schema import build_output_models, dump_extraction
 from app.llm.validators import evidence_is_plausible
+from app.llm.verify import VerificationAnnotation, VerifyVerdict
 from app.models.extraction import (
     ExtractionEvidence,
     ExtractionInstance,
@@ -54,8 +49,7 @@ from app.repositories import (
 )
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
-from app.schemas.prompt_composition import PromptComposition, PromptCompositionArticleRef
-from app.services.api_key_service import KeyScope
+from app.services.engine_credentials import EngineCredentials, rekey_for_adopted_engine
 from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
@@ -63,8 +57,15 @@ from app.services.extraction_snapshot import (
     entity_types_for_version,
     general_instructions_for_version,
 )
+from app.services.llm_engine_service import resolve_project_engine
+from app.services.run_engine_freeze import build_proposal_engine, freeze_run_engine
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.value_semantics import AbsentReason
+from app.services.verified_mode import (
+    SectionSnapshotInputs,
+    render_section_prompts,
+    verify_and_snapshot,
+)
 
 # Maximum number of evidence rows written per extracted field.
 EVIDENCE_CAP = 3
@@ -138,22 +139,33 @@ class SectionExtractionService(LoggerMixin):
         user_id: str,
         storage: StorageAdapter,
         trace_id: str,
-        openai_api_key: str | None = None,
-        key_scope: KeyScope | None = None,
+        llm_credentials: EngineCredentials | None = None,
+        key_provider: str | None = None,
+        *,
+        repin: bool = False,
     ):
         """Initialize service instance.
 
         Args:
-            openai_api_key: Custom API key (BYOK). If None, uses global key.
-            key_scope: WHOSE key that is, for provenance (§5.2) — resolved by
-                the caller, since only it knows which lookup branch won.
+            llm_credentials: Key + scope + base_url + endpoint identity,
+                resolved by the caller (``resolve_engine_credentials``) since
+                only it knows which branch won. They travel together:
+                applying them apart pairs one engine's key with another's
+                host. ``None`` means no credentials (global fallback).
+            key_provider: The provider they were resolved FOR — with
+                ``endpoint_id``, the identity ``rekey_for_adopted_engine``
+                checks an adopted pin against; ``None`` never re-resolves.
+            repin: this attempt is a HUMAN kickoff, so it overwrites the
+                run's pin with the caller's engine instead of deferring to
+                it. Worker sets it on attempt 0 only; a retry stays pinned.
         """
         self.db = db
         self.user_id = user_id
         self.storage = storage
         self.trace_id = trace_id
-        self._llm_api_key = openai_api_key
-        self._key_scope = key_scope
+        self._credentials = llm_credentials or EngineCredentials(None, None, None, None)
+        self._key_provider = key_provider
+        self._repin = repin
 
         # Repositories
         self._article_files = ArticleFileRepository(db)
@@ -172,55 +184,61 @@ class SectionExtractionService(LoggerMixin):
         # Assembly info from the last prompt build (truncation, token estimate,
         # source file) — feeds the per-section prompt_composition provenance.
         self._prompt_input_info: PromptInputInfo | None = None
-        # Run provenance snapshot, set by _extract_with_llm and merged into the
-        # run's results at completion (how the suggestions were generated).
+        # Stashed by _extract_with_llm; _maybe_verify builds _run_provenance.
+        self._snapshot_inputs: SectionSnapshotInputs | None = None
         self._run_provenance: dict[str, Any] | None = None
-        # Engine for every LLM call here; ``_freeze_engine`` rebinds it to the run's.
+        # Engine for every LLM call here: the env-default candidate until a
+        # caller passes a resolved one; ``freeze_run_engine`` rebinds it to
+        # the run's pinned target before any LLM call.
         self._engine = LlmTarget(provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL)
 
-    async def _freeze_engine(self, run_id: UUID, candidate: str) -> str:
-        """Pin the run's engine on first write and adopt it; returns its model.
-        A Celery retry re-enters with the same payload and a fresh ``settings``
-        read, so only a run-scoped pin keeps attempt 2 on attempt 1's engine."""
-        target = LlmTarget(provider=settings.LLM_PROVIDER, model=candidate)
-        pinned = await self._runs.freeze_engine(run_id, target.model_dump())
-        self._engine = LlmTarget.model_validate(pinned) if pinned else target
+    async def _adopt_frozen_engine(
+        self, run_id: UUID, candidate: LlmTarget, project_id: UUID
+    ) -> str:
+        """Freeze-or-read the run's engine, adopt it, return its model.
+
+        Adoption can settle on a DIFFERENT engine than the caller resolved
+        credentials for (the run's pin wins — the standalone path REUSES the
+        coordinate's live run, whose pin can predate a manager's engine
+        flip). ``rekey_for_adopted_engine`` owns the identity check and hands
+        back a WHOLE credential; storing the provider keeps a later adoption
+        on the same service from double-keying.
+
+        Under ``repin`` the freeze installs ``candidate``, so adoption is a
+        no-op — which closes the standalone (``run_id=None``) hole, where the
+        reused run's stale pin overrode the engine the caller keyed for.
+        """
+        self._engine = await freeze_run_engine(self._runs, run_id, candidate, repin=self._repin)
+        rekeyed = await rekey_for_adopted_engine(
+            self.db,
+            user_id=self.user_id,
+            project_id=project_id,
+            engine=self._engine,
+            current=self._credentials,
+            keyed_for=self._key_provider,
+        )
+        if rekeyed is not None:
+            self._credentials = rekeyed
+            self._key_provider = self._engine.provider
+            self.logger.info(
+                "section_extraction_rekeyed_for_pinned_engine",
+                trace_id=self.trace_id,
+                provider=self._engine.provider,
+                endpoint_id=self._engine.endpoint_id,
+                key_scope=rekeyed.key_scope.value if rekeyed.key_scope is not None else None,
+            )
         return self._engine.model
 
-    def _build_run_provenance(
-        self,
-        *,
-        prompt_name: str,
-        prompt_version: str,
-        usage: LlmUsage | None = None,
-        prompt_composition: PromptComposition | None = None,
-    ) -> dict[str, Any]:
-        """Per-section snapshot of how a section's suggestions were generated.
-        Engine, key scope and params come from the run-frozen target and the
-        single-source extractor constants, so a later ``settings`` change cannot
-        rewrite what this run reports. The key itself is never recorded (§5.2)."""
-        snapshot: dict[str, Any] = {
-            "ran_by_user_id": self.user_id,
-            "provider": self._engine.provider,
-            "model": self._engine.model,
-            "key_scope": self._key_scope.value if self._key_scope is not None else None,
-            "strategy": prompt_name,
-            "prompt_version": prompt_version,
-            "params": {
-                "temperature": LLM_TEMPERATURE,
-                "output_retries": OUTPUT_RETRIES_DEFAULT,
-                "timeout_seconds": settings.LLM_TIMEOUT_SECONDS,
-            },
-        }
-        if usage is not None:
-            snapshot["tokens"] = {
-                "prompt": usage.prompt_tokens,
-                "completion": usage.completion_tokens,
-                "total": usage.total_tokens,
-            }
-        if prompt_composition is not None:
-            snapshot["prompt_composition"] = prompt_composition.model_dump()
-        return snapshot
+    def _wire_model(self) -> Any:
+        """The model client for the frozen engine on the resolved
+        credentials — ONE site, because key and host must travel together
+        (passing only the key posts an endpoint key to the cloud)."""
+        return build_model(
+            self._engine.provider,
+            self._engine.model,
+            api_key=self._credentials.api_key,
+            base_url=self._credentials.base_url,
+        )
 
     async def _assemble_prompt_text(self, article_id: UUID, model: str) -> str:
         """Budgeted block-markdown prompt input; stashes assembly info on self."""
@@ -246,7 +264,7 @@ class SectionExtractionService(LoggerMixin):
         template_id: UUID,
         entity_type_id: UUID,
         parent_instance_id: UUID | None = None,
-        model: str = settings.LLM_DEFAULT_MODEL,
+        engine: LlmTarget | None = None,
         run_id: UUID | None = None,
     ) -> SectionExtractionResult:
         """
@@ -258,7 +276,9 @@ class SectionExtractionService(LoggerMixin):
             template_id: Template ID.
             entity_type_id: Entity type ID to extract.
             parent_instance_id: Parent instance ID (optional).
-            model: Candidate engine; used only if the run has none pinned yet.
+            engine: Candidate engine (the caller's resolved project engine);
+                used only if the run has none pinned yet. ``None`` falls back
+                to the service's env-default candidate.
             run_id: Existing run to append proposals to. When provided
                 (the extraction surface path), the proposals are added
                 to that run instead of creating a fresh one — so the
@@ -271,6 +291,8 @@ class SectionExtractionService(LoggerMixin):
         """
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
+        if engine is None:
+            engine = self._engine
 
         # When the caller passes a ``run_id`` (extraction surface via the
         # HITL session service), append proposals to that run and skip the
@@ -299,7 +321,7 @@ class SectionExtractionService(LoggerMixin):
                 project_template_id=template_id,
                 user_id=UUID(self.user_id),
                 parameters={
-                    "model": model,
+                    "model": engine.model,
                     "entity_type_id": str(entity_type_id),
                     "parent_instance_id": (str(parent_instance_id) if parent_instance_id else None),
                 },
@@ -307,7 +329,7 @@ class SectionExtractionService(LoggerMixin):
             if manage_lifecycle:
                 await self._runs.start_run(run.id)
 
-        model = await self._freeze_engine(run.id, model)
+        model = await self._adopt_frozen_engine(run.id, engine, project_id)
         self.logger.info(
             "section_extraction_start",
             trace_id=self.trace_id,
@@ -350,6 +372,10 @@ class SectionExtractionService(LoggerMixin):
                 fields_override=fields_override,
                 general_instructions=general_instructions,
             )
+            # 6. Verify pass (mode + kind checks inside the glue) + snapshot.
+            verdicts, llm_usage = await self._maybe_verify(
+                run.id, entity_type_id, run.kind, pdf_text, extracted_data, llm_usage
+            )
             phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
             # 7. Create suggestions in database
@@ -361,6 +387,7 @@ class SectionExtractionService(LoggerMixin):
                 parent_instance_id=parent_instance_id,
                 extracted_data=extracted_data,
                 run=run,
+                verdicts=verdicts,
             )
             phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -449,7 +476,7 @@ class SectionExtractionService(LoggerMixin):
         run_id: UUID,
         skip_fields_with_human_proposals: bool = False,
         auto_advance_to_review: bool = True,
-        model: str = settings.LLM_DEFAULT_MODEL,
+        engine: LlmTarget | None = None,
     ) -> BatchExtractionResult:
         """
         Run AI extraction over an *existing* Run, iterating top-level
@@ -487,6 +514,8 @@ class SectionExtractionService(LoggerMixin):
         prompt.
         """
         start_time = perf_counter()
+        if engine is None:
+            engine = self._engine
 
         run = await self.db.get(ExtractionRun, run_id)
         if run is None:
@@ -499,7 +528,7 @@ class SectionExtractionService(LoggerMixin):
         kind = run.kind
 
         await self._runs.start_run(run.id)
-        model = await self._freeze_engine(run.id, model)
+        model = await self._adopt_frozen_engine(run.id, engine, run.project_id)
 
         section_results: list[dict[str, Any]] = []
         total_suggestions = 0
@@ -682,6 +711,9 @@ class SectionExtractionService(LoggerMixin):
             fields_override=fields_override,
             general_instructions=general_instructions,
         )
+        verdicts, llm_usage = await self._maybe_verify(
+            run.id, entity_type.id, kind, pdf_text, extracted_data, llm_usage
+        )
         suggestions_created = await self._create_suggestions(
             project_id=run.project_id,
             article_id=run.article_id,
@@ -689,6 +721,7 @@ class SectionExtractionService(LoggerMixin):
             parent_instance_id=None,
             extracted_data=extracted_data,
             run=run,
+            verdicts=verdicts,
         )
         return {
             "suggestions_created": suggestions_created,
@@ -843,7 +876,7 @@ class SectionExtractionService(LoggerMixin):
         parent_instance_id: UUID,
         section_ids: list[UUID] | None = None,
         pdf_text: str | None = None,
-        model: str = settings.LLM_DEFAULT_MODEL,
+        engine: LlmTarget | None = None,
         run_id: UUID | None = None,
     ) -> BatchExtractionResult:
         """
@@ -861,7 +894,9 @@ class SectionExtractionService(LoggerMixin):
             parent_instance_id: Parent instance ID.
             section_ids: Specific IDs to extract (optional).
             pdf_text: Preprocessed PDF text (optional).
-            model: Candidate engine; used only if the run has none pinned yet.
+            engine: Candidate engine (the caller's resolved project engine);
+                used only if the run has none pinned yet. ``None`` falls back
+                to the service's env-default candidate.
             run_id: Existing run to append to. When set (the extraction surface),
                 the run is REUSED and its lifecycle left to the HITL session, so
                 a reviewer's decisions are never orphaned onto a forked run.
@@ -872,6 +907,8 @@ class SectionExtractionService(LoggerMixin):
         """
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
+        if engine is None:
+            engine = self._engine
 
         # Resolve the run. When a ``run_id`` is passed, REUSE the session-owned
         # run (append child-section proposals) and leave its lifecycle to the
@@ -899,7 +936,7 @@ class SectionExtractionService(LoggerMixin):
                 project_template_id=template_id,
                 user_id=UUID(self.user_id),
                 parameters={
-                    "model": model,
+                    "model": engine.model,
                     "batch_extraction": True,
                     "parent_instance_id": str(parent_instance_id),
                     "section_ids": [str(sid) for sid in section_ids] if section_ids else None,
@@ -908,7 +945,7 @@ class SectionExtractionService(LoggerMixin):
             if manage_lifecycle:
                 await self._runs.start_run(run.id)
 
-        model = await self._freeze_engine(run.id, model)
+        model = await self._adopt_frozen_engine(run.id, engine, project_id)
         self.logger.info(
             "batch_extraction_start",
             trace_id=self.trace_id,
@@ -1118,6 +1155,9 @@ class SectionExtractionService(LoggerMixin):
             fields_override=pinned_fields,
             general_instructions=general_instructions,
         )
+        verdicts, llm_usage = await self._maybe_verify(
+            run.id, entity_type.id, run.kind, pdf_text, extracted_data, llm_usage
+        )
         section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
         # Create suggestions
@@ -1129,6 +1169,7 @@ class SectionExtractionService(LoggerMixin):
             parent_instance_id=parent_instance_id,
             extracted_data=extracted_data,
             run=run,
+            verdicts=verdicts,
         )
         section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
@@ -1266,54 +1307,34 @@ class SectionExtractionService(LoggerMixin):
         fields_override: list[Any] | None = None,
         general_instructions: str | None = None,
     ) -> tuple[dict[str, Any], LlmUsage]:
-        """
-        Run extraction using the typed LLM call layer.
+        """Run extraction using the typed LLM call layer.
 
-        Args:
-            pdf_text: PDF text.
-            entity_type: Entity type to extract (fields drive the output model).
-            memory_context: Summarized memory context (optional).
-            kind: 'extraction' or 'quality_assessment' — selects the prompt
-                pair. The response shape is identical either way, so
-                downstream proposal writes are unchanged.
-            framework: When kind=='quality_assessment', the assessment
-                framework (PROBAST / QUADAS-2) the prompts ground in.
-            fields_override: Exact field list for the LLM (e.g. human-settled
-                fields removed); avoids mutating ``entity_type.fields``.
-            general_instructions: Template-level instruction from the
-                run-pinned snapshot (never the live column); prepended to
-                the user prompt when present.
-
-        Returns:
-            Tuple of extracted data ({field_name: {value, confidence,
-            reasoning, evidence}}) and token usage. Templates larger than
-            the strict-mode property budget are split into multiple calls
-            and merged transparently.
+        ``kind`` selects the prompt pair ('extraction' /
+        'quality_assessment', ``framework`` naming the instrument);
+        ``fields_override`` is the exact field list to send (never mutate
+        ``entity_type.fields``); ``general_instructions`` comes from the
+        run-pinned snapshot, never the live column. Returns ({field_name:
+        {value, confidence, reasoning, evidence}}, usage) — oversized
+        templates are split into multiple calls and merged transparently.
+        Side effect: stashes the section-snapshot INPUTS on
+        ``self._snapshot_inputs`` for ``_maybe_verify``'s post-verify build.
         """
         entity_name = entity_type.name if hasattr(entity_type, "name") else "data"
         entity_description = entity_type.description if hasattr(entity_type, "description") else ""
 
-        if kind == "quality_assessment":
-            prompt_module: Any = quality_assessment
-            system_prompt = quality_assessment.system_prompt(framework)
-            user_prompt = quality_assessment.render(
-                entity_name=entity_name,
-                entity_description=entity_description,
-                article_text=pdf_text,
+        # One glue call renders both the real-article and marker prompts.
+        prompt_name, prompt_version, system_prompt, user_prompt, section_instruction = (
+            render_section_prompts(
+                kind=kind,
                 framework=framework,
-                memory_context=memory_context,
-                general_instructions=general_instructions,
-            )
-        else:
-            prompt_module = section_extraction
-            system_prompt = section_extraction.SYSTEM_PROMPT
-            user_prompt = section_extraction.render(
                 entity_name=entity_name,
                 entity_description=entity_description,
                 article_text=pdf_text,
+                article_marker=ARTICLE_MARKDOWN_MARKER,
                 memory_context=memory_context,
                 general_instructions=general_instructions,
             )
+        )
 
         output_models = build_output_models(entity_type, fields=fields_override)
         if not output_models:
@@ -1322,10 +1343,10 @@ class SectionExtractionService(LoggerMixin):
                 trace_id=self.trace_id,
                 entity_type_name=entity_name,
             )
+            self._snapshot_inputs = None  # no LLM ran — nothing to snapshot
             return {}, LlmUsage()
 
-        engine = self._engine
-        llm_model = build_model(engine.provider, engine.model, api_key=self._llm_api_key)
+        llm_model = self._wire_model()
 
         extracted_data: dict[str, Any] = {}
         usage = LlmUsage()
@@ -1335,61 +1356,70 @@ class SectionExtractionService(LoggerMixin):
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 model=llm_model,
-                prompt_name=prompt_module.NAME,
-                prompt_version=prompt_module.VERSION,
+                prompt_name=prompt_name,
+                prompt_version=prompt_version,
                 validators=[evidence_is_plausible],
             )
             extracted_data.update(dump_extraction(output))
             usage = usage + call_usage
 
-        # Re-render the user template with the article replaced by a marker, so
-        # the persisted composition is byte-faithful to what was sent (minus the
-        # duplicated article text). Same prompt pair the calls above used.
-        if kind == "quality_assessment":
-            section_instruction = quality_assessment.render(
-                entity_name=entity_name,
-                entity_description=entity_description,
-                article_text=ARTICLE_MARKDOWN_MARKER,
-                framework=framework,
-                memory_context=memory_context,
-                general_instructions=general_instructions,
-            )
-        else:
-            section_instruction = section_extraction.render(
-                entity_name=entity_name,
-                entity_description=entity_description,
-                article_text=ARTICLE_MARKDOWN_MARKER,
-                memory_context=memory_context,
-                general_instructions=general_instructions,
-            )
-        info = self._prompt_input_info
-        # The fields actually sent to the LLM: the human-settled override when the
-        # QA re-run filtered some out (#481), else the entity type's full set.
-        effective_fields = (
-            fields_override
-            if fields_override is not None
-            else (getattr(entity_type, "fields", None) or [])
-        )
-        composition = PromptComposition(
+        # Snapshot INPUTS only — _maybe_verify builds the snapshot ONCE post-verify.
+        self._snapshot_inputs = SectionSnapshotInputs(
+            prompt_name=prompt_name,
+            prompt_version=prompt_version,
             section_name=entity_name,
+            section_label=str(getattr(entity_type, "label", None) or entity_name),
             system_prompt=system_prompt,
             section_instruction=section_instruction,
-            article_ref=PromptCompositionArticleRef(
-                file_id=str(info.anchor_file_id) if info and info.anchor_file_id else None,
-                file_name=info.file_name if info else None,
-                truncated=info.truncated if info else False,
-                est_tokens=info.est_tokens if info else None,
+            # The fields actually SENT to the LLM: the human-settled
+            # override (#481) when a QA re-run filtered, else the full set.
+            fields=(
+                fields_override
+                if fields_override is not None
+                else (getattr(entity_type, "fields", None) or [])
             ),
-            fields_requested=[str(f.name) for f in effective_fields],
             llm_calls=len(output_models),
         )
-        self._run_provenance = self._build_run_provenance(
-            prompt_name=prompt_module.NAME,
-            prompt_version=prompt_module.VERSION,
-            usage=usage,
-            prompt_composition=composition,
-        )
         return extracted_data, usage
+
+    async def _maybe_verify(
+        self,
+        run_id: UUID,
+        entity_type_id: UUID,
+        kind: str,
+        pdf_text: str,
+        extracted_data: dict[str, Any],
+        usage: LlmUsage,
+    ) -> tuple[dict[str, VerifyVerdict] | None, LlmUsage]:
+        """Verify pass (mode + kind gates in the glue; QA runs skip it) + the
+        ONE post-verify snapshot build; returned usage sums verify tokens."""
+        # "No snapshot for THIS section" must be a state, not a leftover: the
+        # attribute is instance state reused across the sections of a batch, so
+        # without this reset a section whose LLM call short-circuits would carry
+        # its predecessor's engine onto any proposal it wrote. No such path
+        # exists today (an empty extraction returns before _create_suggestions),
+        # which is exactly why the invariant deserves to be explicit.
+        self._run_provenance = None
+        verdicts, usage, snapshot = await verify_and_snapshot(
+            engine=self._engine,
+            api_key=self._credentials.api_key,
+            base_url=self._credentials.base_url,
+            kind=kind,
+            key_scope=self._credentials.key_scope,
+            ran_by_user_id=self.user_id,
+            pdf_text=pdf_text,
+            extracted_data=extracted_data,
+            extract_usage=usage,
+            inputs=self._snapshot_inputs,
+            prompt_input_info=self._prompt_input_info,
+            run_id=run_id,
+            entity_type_id=entity_type_id,
+            trace_id=self.trace_id,
+            logger=self.logger,
+        )
+        if snapshot is not None:
+            self._run_provenance = snapshot
+        return verdicts, usage
 
     async def _create_suggestions(
         self,
@@ -1399,26 +1429,17 @@ class SectionExtractionService(LoggerMixin):
         parent_instance_id: UUID | None,
         extracted_data: dict[str, Any],
         run: ExtractionRun,
+        verdicts: dict[str, VerifyVerdict] | None = None,
     ) -> int:
-        """
-        Create extraction suggestions in database via repository.
+        """Create extraction suggestions in database via repository.
 
-        Automatically create an instance when missing.
-        Link suggestions to extraction_run_id for traceability. As the single
-        choke-point for AI proposals, this also persists the per-section
-        ``provenance`` snapshot (built in ``_extract_with_llm``, tokens +
-        prompt composition included) keyed by ``entity_type_id`` (see below).
-
-        Args:
-            project_id: Project ID.
-            article_id: Article ID.
-            entity_type_id: entity type — also the provenance section key.
-            parent_instance_id: Parent instance ID.
-            extracted_data: Extracted data.
-            run: ExtractionRun used to link suggestions.
-
-        Returns:
-            Number of created suggestions.
+        Auto-creates the instance when missing; links proposals to the run.
+        As the single choke-point for AI proposals it also persists the
+        per-section ``provenance`` snapshot (built post-verify by
+        ``_maybe_verify``) keyed by ``entity_type_id``. ``verdicts`` are the
+        Verified-mode per-field verdicts — ANNOTATION only, written as the
+        ``verification`` sibling on found fields. Returns the number of
+        created suggestions.
         """
         count = 0
 
@@ -1452,6 +1473,11 @@ class SectionExtractionService(LoggerMixin):
                 field.label if hasattr(field, "label") and field.label else field.name
             )
             field_by_name[field.name] = field
+
+        # Verified-mode drift guard (panel A4): a verdict keyed outside the
+        # field vocabulary would silently annotate nothing — be loud instead.
+        for _vk in set(verdicts or ()) - set(field_map):
+            self.logger.warning("verify_verdict_unmatched", trace_id=self.trace_id, field=_vk)
 
         # Fetch existing instance
         instances = await self._instances.get_by_article(article_id, entity_type_id)
@@ -1591,6 +1617,13 @@ class SectionExtractionService(LoggerMixin):
                 # affirmative "the source is silent" answer (ADR-0016), so the
                 # coordinate counts as filled once a reviewer accepts it.
                 proposed_value["absent_reason"] = AbsentReason.NO_INFORMATION.value
+            elif verdicts and field_name in verdicts:
+                # Verified mode: the verdict is ANNOTATION, never mutation
+                # (§IX) — the ``absent_reason`` sibling-key precedent. Found
+                # fields only; the glue never verifies a no-info proposal.
+                proposed_value["verification"] = VerificationAnnotation(
+                    verdict=verdicts[field_name]  # type: ignore[arg-type]
+                ).model_dump()
 
             proposal = await self._proposals.record_proposal(
                 run_id=run.id,
@@ -1600,6 +1633,7 @@ class SectionExtractionService(LoggerMixin):
                 proposed_value=proposed_value,
                 confidence_score=confidence_score,
                 rationale=reasoning,
+                provenance=build_proposal_engine(self._run_provenance, self._engine),
             )
 
             for rank, item in enumerate(evidence_items):
@@ -1656,8 +1690,7 @@ class SectionExtractionService(LoggerMixin):
 
         # Run the entailment gate; premise-building + fan-out live in the helper.
         if _gate_specs:
-            engine = self._engine
-            _judge_model = build_model(engine.provider, engine.model, api_key=self._llm_api_key)
+            _judge_model = self._wire_model()
             labels = await run_entailment_gate(_gate_specs, _judge_model, self.logger)
             for row, label in zip(_gate_rows, labels, strict=True):
                 if label is not None:
@@ -1677,8 +1710,8 @@ class SectionExtractionService(LoggerMixin):
         # section's suggestions were generated, keyed by entity_type_id, wherever
         # proposals are recorded — so no extraction path can silently omit it and
         # concurrent sections on one run don't clobber each other. The snapshot
-        # (tokens + prompt composition) was built section-scoped in
-        # _extract_with_llm. Skipped when no LLM ran (``_run_provenance`` None).
+        # (tokens + prompt composition + mode/passes) was built section-scoped,
+        # post-verify, in _maybe_verify. Skipped when no LLM ran (None).
         if count and self._run_provenance is not None:
             await self._runs.merge_provenance_section(run.id, entity_type_id, self._run_provenance)
 
@@ -1687,6 +1720,7 @@ class SectionExtractionService(LoggerMixin):
     async def run_from_request(
         self,
         payload: SectionExtractionRequest,
+        engine: LlmTarget | None = None,
     ) -> SectionExtractionResult | BatchExtractionResult:
         """Dispatch a SectionExtractionRequest to the correct extraction method.
 
@@ -1694,6 +1728,11 @@ class SectionExtractionService(LoggerMixin):
         the same logic can be reused from a Celery task without touching the
         HTTP layer.  The caller is responsible for committing (or rolling back)
         the session — this method does not commit.
+
+        ``engine`` is the effective candidate: the worker passes the one it
+        already resolved (pinned-run pair, or the project engine) so the key
+        it looked up matches; when ``None`` the project engine is resolved
+        here (C1b — raises ``EngineRetiredError`` for a retired stored pair).
 
         Branch priority (first match wins):
         1. ``entity_type_id`` present → single-section path via
@@ -1709,7 +1748,10 @@ class SectionExtractionService(LoggerMixin):
            ``extract_for_run`` iterates every top-level entity_type of that
            run's template (QA / full-run surface).
         """
-        model = settings.LLM_DEFAULT_MODEL  # C1a: server-owned, never client-chosen
+        # C1a: server-owned, never client-chosen. C1b: the candidate is the
+        # project's resolved engine, not a ``settings`` re-read.
+        if engine is None:
+            engine = await resolve_project_engine(self.db, payload.project_id)
 
         if payload.entity_type_id is not None:
             return await self.extract_section(
@@ -1718,7 +1760,7 @@ class SectionExtractionService(LoggerMixin):
                 template_id=payload.template_id,
                 entity_type_id=payload.entity_type_id,
                 parent_instance_id=payload.parent_instance_id,
-                model=model,
+                engine=engine,
                 run_id=payload.run_id,
             )
 
@@ -1730,7 +1772,7 @@ class SectionExtractionService(LoggerMixin):
                 parent_instance_id=payload.parent_instance_id,
                 section_ids=payload.section_ids,
                 pdf_text=payload.pdf_text,
-                model=model,
+                engine=engine,
                 run_id=payload.run_id,
             )
 
@@ -1739,7 +1781,7 @@ class SectionExtractionService(LoggerMixin):
                 run_id=payload.run_id,
                 skip_fields_with_human_proposals=payload.skip_fields_with_human_proposals,
                 auto_advance_to_review=payload.auto_advance_to_review,
-                model=model,
+                engine=engine,
             )
 
         # The request validator requires one of entity_type_id / parent_instance_id

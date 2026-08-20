@@ -77,7 +77,9 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
    * RESTRICT, so a field that could be deleted provably had nothing
    * pointing at it. What must survive is the SHAPE the manager authored,
    * so the payload is rebuilt from the grid projection rather than from a
-   * bare name/type pair.
+   * bare name/type pair — including the ✨ AI instruction, the "Other"
+   * option, the ADR-0016 disposition flags and the validation schema,
+   * which the first ship silently dropped.
    */
   const restoreFieldNow = async (
     field: GridField,
@@ -93,7 +95,13 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
       // payload wants the closed union the server validates anyway.
       field_type: field.fieldType as ExtractionFieldInsert['field_type'],
       is_required: field.isRequired,
-      validation_schema: {},
+      llm_description: field.aiInstruction,
+      allow_other: field.allowOther,
+      other_label: field.otherLabel,
+      other_placeholder: field.otherPlaceholder,
+      allows_not_applicable: field.allowsNotApplicable,
+      allows_not_evaluated: field.allowsNotEvaluated,
+      validation_schema: field.validationSchema ?? {},
       allowed_values: field.allowedValues,
       unit: field.unit,
       allowed_units: field.allowedUnits,
@@ -234,9 +242,14 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   }
 
   return (
-    <div className="space-y-6">
+    // h-full keeps the height chain DEFINITE (the grid card's max-h-full
+    // depends on it). When the fixed rows outgrow the area, they overflow
+    // this box and the parent's overflow-y-auto scrolls to them — growth
+    // via min-h-full would instead make every height below indefinite and
+    // un-cap the grid card.
+    <div className="flex h-full min-h-0 flex-col gap-6">
       {/* Thin command bar (replaces the tall header Card). */}
-      <div className="flex h-12 items-center justify-between gap-3 rounded-md border border-border/40 bg-card px-4">
+      <div className="flex h-12 shrink-0 items-center justify-between gap-3 rounded-md border border-border/40 bg-card px-4">
         <div className="flex min-w-0 items-center gap-2">
           <Settings className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
           <span className="truncate text-sm font-medium">{t('extraction', 'configHeaderTitle')}</span>
@@ -277,7 +290,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         <div
           role="alert"
           data-testid="template-config-refresh-failed"
-          className="flex items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-xs text-warning"
+          className="flex shrink-0 items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-xs text-warning"
         >
           <AlertTriangle className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden />
           <span className="min-w-0 flex-1">
@@ -297,6 +310,11 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
       <TemplateInstructionRow projectId={projectId} templateId={templateId} />
 
       {entityTypes.length > 0 && (
+      // The grid absorbs the leftover column height (dashboard regime:
+      // the panel scrolls inside, never the page). min-h-48 keeps the
+      // field list useful when the fixed rows squeeze it (the column's
+      // overflow escape hatch scrolls instead).
+      <div className="min-h-48 flex-1">
       <TemplateConfigGridPanel
         projectId={projectId}
         templateId={templateId}
@@ -317,6 +335,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         onAddSection={() => setAddSectionMode({kind: 'root'})}
         onAddGroup={() => setAddSectionMode({kind: 'group'})}
       />
+      </div>
       )}
 
       {entityTypes.length === 0 && (

@@ -301,6 +301,76 @@ describe('AISuggestionService.getHistory', () => {
 });
 
 // ---------------------------------------------------------------------------
+// verification verdict unwrap (Verified mode §5)
+// ---------------------------------------------------------------------------
+
+describe('verification verdict unwrap', () => {
+  it('unwraps the proposed_value.verification sibling, narrowed to the verdict', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({ proposed_value: { value: 'X', verification: { verdict: 'confirmed' } } }),
+      ],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].verification).toEqual({ verdict: 'confirmed' });
+    // The sibling never leaks into the rendered value.
+    expect(result.suggestions['inst-1_f-1'].value).toBe('X');
+  });
+
+  it('drops an out-of-vocabulary verdict instead of casting blindly', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({ proposed_value: { value: 'X', verification: { verdict: 'banana' } } }),
+      ],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].verification).toBeUndefined();
+    expect(result.suggestions['inst-1_f-1'].value).toBe('X');
+  });
+
+  it('drops a non-object verification sibling', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({ proposed_value: { value: 'X', verification: 'confirmed' } }),
+      ],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].verification).toBeUndefined();
+  });
+
+  it('leaves verification undefined when the key is absent (Fast runs stay unambiguous)', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [makeItem()],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].verification).toBeUndefined();
+  });
+
+  it('unwraps the sibling on getHistory items too (history shows verdicts)', async () => {
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      {
+        id: 'p-1',
+        run_id: 'run-A',
+        instance_id: 'inst-1',
+        field_id: 'f-1',
+        proposed_value: { value: 'V', verification: { verdict: 'unsupported' } },
+        confidence_score: 0.8,
+        rationale: null,
+        created_at: '2026-04-28T10:00:00Z',
+        evidence: [],
+      },
+    ]);
+    const result = await AISuggestionService.getHistory('art-1', 'inst-1', 'f-1');
+    expect(result[0].verification).toEqual({ verdict: 'unsupported' });
+    expect(result[0].value).toBe('V');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // provenance flattening (snake_case server → camelCase RunProvenance)
 // ---------------------------------------------------------------------------
 
@@ -360,6 +430,30 @@ describe('provenance mapping', () => {
     });
     const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
     expect(result.suggestions['inst-1_f-1'].provenance).toBeUndefined();
+  });
+
+  it('passes the section-snapshot mode/passes keys through to the flattened shape (§IX record)', async () => {
+    // These ride the rest-spread today — a future mapper cleanup must not
+    // silently drop the Verified-mode execution record (panel A2).
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [
+        makeItem({
+          provenance: {
+            model: 'x',
+            mode_requested: 'verified',
+            mode_executed: 'fast',
+            passes: 1,
+          },
+        }),
+      ],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].provenance).toMatchObject({
+      mode_requested: 'verified',
+      mode_executed: 'fast',
+      passes: 1,
+    });
   });
 
   it('preserves unknown top-level keys for forward-compat (rendered generically by the disclosure)', async () => {

@@ -38,6 +38,15 @@ const GROUP = {
       allowed_values: null,
       unit: null,
       allowed_units: null,
+      // Non-defaults for every property the first B-9d ship dropped: a
+      // capture that loses any of these is a lossy undo.
+      llm_description: 'Quote the model name verbatim from the abstract',
+      allow_other: true,
+      other_label: 'Other model',
+      other_placeholder: 'Name the model',
+      allows_not_applicable: true,
+      allows_not_evaluated: true,
+      validation_schema: {minLength: 2},
       sort_order: 0,
     },
   ],
@@ -130,6 +139,32 @@ describe('captureSection', () => {
     // An empty snapshot would "restore" nothing and report success.
     expect(captureSection(TREE, 'ghost')).toBeNull();
   });
+
+  it('captures the AI instruction, other-option, disposition flags and validation schema', () => {
+    // All seven are present on the raw row at capture time and accepted by
+    // the create endpoint — dropping any of them makes the restore lossy
+    // while still reporting success.
+    const snapshot = captureSection(TREE, 'grp');
+    expect(snapshot!.sections[0]!.fields[0]).toMatchObject({
+      aiInstruction: 'Quote the model name verbatim from the abstract',
+      allowOther: true,
+      otherLabel: 'Other model',
+      otherPlaceholder: 'Name the model',
+      allowsNotApplicable: true,
+      allowsNotEvaluated: true,
+      validationSchema: {minLength: 2},
+    });
+    // A row that never set them captures the server defaults, not undefined.
+    expect(snapshot!.sections[1]!.fields[0]).toMatchObject({
+      aiInstruction: null,
+      allowOther: false,
+      otherLabel: null,
+      otherPlaceholder: null,
+      allowsNotApplicable: false,
+      allowsNotEvaluated: false,
+      validationSchema: {},
+    });
+  });
 });
 
 describe('replaySection', () => {
@@ -179,6 +214,37 @@ describe('replaySection', () => {
       .mocked(d.insertField)
       .mock.calls.map((call) => `${call[0].name}->${call[0].entity_type_id}`);
     expect(targets).toEqual(['model_name->new-models', 'auc->new-performance']);
+  });
+
+  it('hands insertField the FULL captured payload — nothing silently dropped', async () => {
+    const snapshot = captureSection(TREE, 'grp')!;
+    const d = deps();
+    vi.mocked(d.createSection).mockImplementation(async (params) => ({
+      ok: true,
+      data: {id: `new-${params.name}`},
+    }));
+
+    await replaySection(snapshot, d);
+
+    expect(d.insertField).toHaveBeenCalledWith({
+      entity_type_id: 'new-models',
+      name: 'model_name',
+      label: 'Model name',
+      description: null,
+      field_type: 'text',
+      is_required: true,
+      allowed_values: null,
+      unit: null,
+      allowed_units: null,
+      llm_description: 'Quote the model name verbatim from the abstract',
+      allow_other: true,
+      other_label: 'Other model',
+      other_placeholder: 'Name the model',
+      allows_not_applicable: true,
+      allows_not_evaluated: true,
+      validation_schema: {minLength: 2},
+      sort_order: 0,
+    });
   });
 
   it('stops and reports failure when a section cannot be recreated', async () => {

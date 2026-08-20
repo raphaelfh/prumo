@@ -108,6 +108,14 @@ def service(mock_db, mock_storage):
         mock_instance_repo.return_value = mock_instance_repo_instance
 
         mock_run_repo_instance = MagicMock()
+        # The service pins the resolved run's engine before extracting, so the
+        # record describes the run it actually used (the run_id=None branch
+        # reuses a live run the endpoint could not pin). Echo the candidate:
+        # that is what a re-pinning freeze returns, and it keeps the engine
+        # these tests resolve from being replaced by a MagicMock.
+        mock_run_repo_instance.freeze_engine = AsyncMock(
+            side_effect=lambda _run_id, candidate, **_kw: candidate
+        )
         mock_run_repo.return_value = mock_run_repo_instance
 
         # The new service uses RunLifecycleService for run resolution; we

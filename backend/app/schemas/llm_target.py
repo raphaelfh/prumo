@@ -23,7 +23,28 @@ class LlmTarget(BaseModel):
     Frozen on the run's first LLM call and reused by every later one — a Celery
     retry re-enters with the same payload but a fresh ``settings`` read, so
     without the pin attempt 2 could run a different engine than attempt 1.
+
+    ``mode_requested`` / ``mode_executed`` (C1b, §5) ride on the same spine so
+    the freeze dump/validate contract stays single-sourced; they default to
+    ``"fast"`` so pre-C1b pinned snapshots (which carry only the pair) still
+    validate. Both frozen fields are a REQUEST-ECHO — frozen before
+    execution, per-run; sections can diverge individually — never an
+    execution claim. Execution truth lives ONLY in
+    ``results.provenance.sections[et_id].mode_executed`` / ``passes``;
+    renderers must never surface these engine-level fields as what actually
+    ran. They stay bare ``str`` on purpose: ``read_pinned_engine``
+    model_validates legacy pinned snapshots, and a Literal would turn a
+    corrupt old snapshot into a hard read failure on a pinned run.
+
+    ``endpoint_id`` (C2 B8) pins the project custom endpoint an
+    ``openai_compatible`` engine runs through — a plain ``str`` (not UUID)
+    so the pinned JSONB snapshot stays a bag of JSON scalars end to end.
+    It defaults to ``None`` so every pre-B8 pinned snapshot (no key at
+    all) keeps validating.
     """
 
     provider: str
     model: str
+    mode_requested: str = "fast"
+    mode_executed: str = "fast"
+    endpoint_id: str | None = None

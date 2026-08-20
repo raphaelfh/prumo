@@ -36,11 +36,14 @@ from app.repositories import (
     ExtractionTemplateRepository,
     GlobalTemplateRepository,
 )
+from app.schemas.llm_target import LlmTarget
+from app.services.engine_credentials import EngineCredentials
 from app.services.extraction_prompt_input import build_prompt_input
 from app.services.extraction_snapshot import (
     entity_types_for_version,
     general_instructions_for_version,
 )
+from app.services.run_engine_freeze import freeze_run_engine
 from app.services.run_lifecycle_service import RunLifecycleService
 
 
@@ -73,7 +76,7 @@ class ModelExtractionService(LoggerMixin):
         user_id: str,
         storage: StorageAdapter,
         trace_id: str,
-        openai_api_key: str | None = None,
+        llm_credentials: EngineCredentials | None = None,
     ):
         """
         Initialize the service.
@@ -83,13 +86,21 @@ class ModelExtractionService(LoggerMixin):
             user_id: Authenticated user ID.
             storage: Storage adapter.
             trace_id: Trace ID.
-            openai_api_key: Custom API key (BYOK). If None, uses global key.
+            llm_credentials: Key + scope + base_url + endpoint identity for
+                the engine passed to ``extract``, resolved by the caller
+                (``resolve_engine_credentials``). They travel together: an
+                endpoint engine has no host without its ``base_url``.
+                ``None`` means no credentials (global-key fallback).
         """
         self.db = db
         self.user_id = user_id
         self.storage = storage
         self.trace_id = trace_id
-        self._llm_api_key = openai_api_key
+        self._credentials = llm_credentials or EngineCredentials(None, None, None, None)
+        # Engine for every LLM call: the env-default candidate until the
+        # caller passes its resolved one into ``extract`` (C1b). Constructed
+        # at call time — never an import-time default-parameter value.
+        self._engine = LlmTarget(provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL)
 
         # Repositories
         self._article_files = ArticleFileRepository(db)
@@ -107,8 +118,10 @@ class ModelExtractionService(LoggerMixin):
         project_id: UUID,
         article_id: UUID,
         template_id: UUID,
-        model: str = settings.LLM_DEFAULT_MODEL,
+        engine: LlmTarget | None = None,
         run_id: UUID | None = None,
+        *,
+        repin: bool = False,
     ) -> ModelExtractionResult:
         """
         Extract prediction models from an article.
@@ -117,7 +130,13 @@ class ModelExtractionService(LoggerMixin):
             project_id: Project ID.
             article_id: Article ID.
             template_id: Template ID.
-            model: OpenAI model to use.
+            engine: The caller's resolved engine (C1b — endpoint/worker
+                resolve the project engine and the matching key together).
+                ``None`` falls back to the env-default candidate.
+            repin: this call is a HUMAN kickoff, so it overwrites the
+                resolved run's pin with ``engine`` (see ``freeze_engine``).
+                The endpoint always passes True — it executes in-request and
+                has no retry path into it.
             run_id: Existing run to append the model instances/proposals to.
                 When provided (the extraction surface, via the HITL session),
                 the run is REUSED instead of creating a fresh one — so the
@@ -130,6 +149,9 @@ class ModelExtractionService(LoggerMixin):
         """
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
+        if engine is not None:
+            self._engine = engine
+        model = self._engine.model
 
         # 1. Resolve the run. When ``run_id`` is passed (extraction surface),
         # REUSE that session-owned run and leave its lifecycle to the HITL
@@ -172,6 +194,15 @@ class ModelExtractionService(LoggerMixin):
             )
             if manage_lifecycle:
                 await self._runs.start_run(run.id)
+
+        # Pin the run this call actually resolved — the ``run_id=None``
+        # branch above reuses the coordinate's LIVE run, which the caller
+        # could not name, and whose stale pin otherwise left the service
+        # running one engine while ``provenance.engine`` named another.
+        # Under ``repin`` the freeze returns ``engine`` unchanged, so the
+        # re-read below is an identity and the credentials still fit.
+        self._engine = await freeze_run_engine(self._runs, run.id, self._engine, repin=repin)
+        model = self._engine.model
 
         self.logger.info(
             "model_extraction_start",
@@ -379,7 +410,12 @@ class ModelExtractionService(LoggerMixin):
                 article_text=pdf_text,
                 general_instructions=general_instructions,
             ),
-            model=build_model(settings.LLM_PROVIDER, model, api_key=self._llm_api_key),
+            model=build_model(
+                self._engine.provider,
+                model,
+                api_key=self._credentials.api_key,
+                base_url=self._credentials.base_url,
+            ),
             prompt_name=model_identification.NAME,
             prompt_version=model_identification.VERSION,
         )

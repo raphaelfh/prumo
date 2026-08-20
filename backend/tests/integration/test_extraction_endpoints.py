@@ -268,10 +268,15 @@ class TestModelExtractionEndpoints:
             assert data.get("trace_id") == trace_id
             assert response.headers.get("X-Trace-Id") == trace_id
             assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
-            # C1a: the endpoint resolves the engine from server config. Pins the
-            # half of the invariant no other test covers — a refactor restoring
-            # ``model=payload.model or ...`` here must fail.
-            assert mock_service.extract.await_args.kwargs["model"] == settings.LLM_DEFAULT_MODEL
+            # C1a/C1b: the endpoint resolves the engine from server config
+            # (here the env default — the mocked db has no project row). Pins
+            # the half of the invariant no other test covers — a refactor
+            # restoring ``model=payload.model or ...`` here must fail.
+            from app.schemas.llm_target import LlmTarget
+
+            assert mock_service.extract.await_args.kwargs["engine"] == LlmTarget(
+                provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL
+            )
             guard.assert_awaited_once()
 
 
