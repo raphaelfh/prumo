@@ -8,6 +8,12 @@
  * compute a divergent instance-based number). Caching by the
  * article-independent template id means one fetch serves every row instead of
  * one-per-article.
+ *
+ * The select also carries the entity-type metadata the Configuration grid
+ * renders (label/role/cardinality/parent/sort_order) so that screen reads the
+ * whole template structure in ONE request instead of fanning out per section —
+ * and inherits the invalidation `useTemplateRepublish` already performs on this
+ * key after every config mutation.
  */
 
 import { useQuery } from '@tanstack/react-query';
@@ -18,6 +24,20 @@ import type { ExtractionField } from '@/types/extraction';
 
 export interface TemplateEntityTypeWithFields {
   id: string;
+  name: string;
+  label: string | null;
+  description: string | null;
+  role: string | null;
+  cardinality: string | null;
+  parent_entity_type_id: string | null;
+  /** Repeating-group entry noun (B-8) — null on non-containers;
+   * consumers interpolate with a 'model' fallback. */
+  entry_label: string | null;
+  sort_order: number;
+  /** Entity-level required flag (B-3b): supplied by the ACTIVE-snapshot
+   * read; the live PostgREST select doesn't carry it (optional so its
+   * consumers keep compiling — progress.ts treats absent as optional). */
+  is_required?: boolean;
   fields: ExtractionField[];
 }
 
@@ -31,12 +51,25 @@ export function useTemplateEntityTypes(templateId: string | null | undefined) {
     queryFn: async (): Promise<TemplateEntityTypeWithFields[]> => {
       const { data, error } = await supabase
         .from('extraction_entity_types')
-        .select('id, fields:extraction_fields(*)')
+        .select(
+          'id, name, label, description, role, cardinality, is_required, parent_entity_type_id, entry_label, sort_order, fields:extraction_fields(*)',
+        )
         .eq('project_template_id', templateId as string)
         .order('sort_order', { ascending: true });
       if (error) throw error;
       return (data ?? []).map((et) => ({
         id: et.id as string,
+        name: et.name as string,
+        label: (et.label ?? null) as string | null,
+        description: (et.description ?? null) as string | null,
+        role: (et.role ?? null) as string | null,
+        cardinality: (et.cardinality ?? null) as string | null,
+        // Carried so an undo can restore the section EXACTLY (B-9d part 2);
+        // the column is NOT NULL server-side, the projection just dropped it.
+        is_required: Boolean(et.is_required),
+        parent_entity_type_id: (et.parent_entity_type_id ?? null) as string | null,
+        entry_label: (et.entry_label ?? null) as string | null,
+        sort_order: (et.sort_order ?? 0) as number,
         fields: (et.fields ?? []) as unknown as ExtractionField[],
       }));
     },
@@ -44,7 +77,16 @@ export function useTemplateEntityTypes(templateId: string | null | undefined) {
 
   return {
     entityTypes: query.data ?? [],
+    // isLoading is first-load-only (isFetching covers background refetches),
+    // which is exactly the "skeleton once, then keep the rows" rule the
+    // editor needs to preserve selection/search across a refresh.
     isLoading: query.isLoading,
+    // isPending is "no data yet" and, unlike isLoading, survives a query
+    // TanStack has PAUSED (networkMode 'online' + a refused connection ends
+    // in status pending / fetchStatus paused, where isLoading is false).
+    // Callers that must never render an empty tree as a real result — the
+    // config editor's three-branch render — gate on this one.
+    isPending: query.isPending,
     isError: query.isError,
     error: query.error,
   };

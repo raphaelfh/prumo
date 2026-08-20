@@ -42,6 +42,8 @@ fluidcompute
 footgun
 frontmatter
 gatti
+graphify
+graphifyy
 gunicorn
 healthcheck
 hitl
@@ -235,3 +237,5 @@ toplevel
 ASGI
 undoable
 valueerror
+Fernet
+Ollama

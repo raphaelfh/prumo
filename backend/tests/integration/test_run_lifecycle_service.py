@@ -761,6 +761,155 @@ async def test_approve_and_finalize_rejects_unresolved_divergence(
 
 
 @pytest.mark.asyncio
+async def test_annotated_accept_agrees_with_clean_edit_and_publishes_clean(
+    db_session: AsyncSession,
+) -> None:
+    """F1: the Verified-mode ``verification`` ANNOTATION is stripped at the
+    resolution seam. One reviewer ACCEPTS an annotated AI proposal, another
+    EDITS the same value clean — that is agreement (the sibling must not
+    demote the coord to unresolved divergence and brick finalize), and the
+    published value carries NO ``verification`` key."""
+    from app.models.extraction_workflow import ExtractionProposalSource
+    from app.services.extraction_proposal_service import ExtractionProposalService
+    from app.services.extraction_review_service import ExtractionReviewService
+
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+    reviewer_id = SEED.reviewer_profile
+
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :p "
+            "AND article_id = :a AND template_id = :t"
+        ),
+        {"p": str(project_id), "a": str(article_id), "t": str(template_id)},
+    )
+    svc = RunLifecycleService(db_session)
+    run = await svc.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="extract", user_id=profile_id)
+
+    proposal = await ExtractionProposalService(db_session).record_proposal(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"value": "42", "verification": {"verdict": "confirmed"}},
+    )
+    review = ExtractionReviewService(db_session)
+    await review.record_decision(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=profile_id,
+        decision="accept_proposal",
+        proposal_record_id=proposal.id,
+    )
+    await review.record_decision(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=reviewer_id,
+        decision="edit",
+        value={"value": "42"},
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="consensus", user_id=profile_id)
+
+    finalized, published_count = await svc.approve_and_finalize(run_id=run.id, user_id=profile_id)
+    assert finalized.stage == ExtractionRunStage.FINALIZED.value
+    assert published_count == 1
+
+    published_value = (
+        await db_session.execute(
+            text("SELECT value FROM public.extraction_published_states WHERE run_id = :r"),
+            {"r": str(run.id)},
+        )
+    ).scalar_one()
+    assert published_value == {"value": "42"}, (
+        f"PublishedState must carry the CLEAN envelope, got {published_value}"
+    )
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_reopen_carry_over_strips_stale_verification(
+    db_session: AsyncSession,
+) -> None:
+    """F1 stale-data heal: a pre-strip ``PublishedState`` still carrying the
+    Verified-mode annotation must seed a CLEAN ``source='system'`` proposal
+    on reopen — a verdict never outlives its run into the next revision."""
+    from app.services.extraction_review_service import ExtractionReviewService
+
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :p "
+            "AND article_id = :a AND template_id = :t"
+        ),
+        {"p": str(project_id), "a": str(article_id), "t": str(template_id)},
+    )
+    svc = RunLifecycleService(db_session)
+    run = await svc.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="extract", user_id=profile_id)
+    await ExtractionReviewService(db_session).record_decision(
+        run_id=run.id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        reviewer_id=profile_id,
+        decision="edit",
+        value={"value": "42"},
+    )
+    await svc.advance_stage(run_id=run.id, target_stage="consensus", user_id=profile_id)
+    await svc.approve_and_finalize(run_id=run.id, user_id=profile_id)
+
+    # Simulate pre-strip data: the annotation sits on the published value.
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_published_states "
+            'SET value = value || \'{"verification": {"verdict": "confirmed"}}\'::jsonb '
+            "WHERE run_id = :r"
+        ),
+        {"r": str(run.id)},
+    )
+
+    new_run, created = await svc.reopen_run(run_id=run.id, user_id=profile_id)
+    assert created
+
+    seeded = (
+        (
+            await db_session.execute(
+                text(
+                    "SELECT proposed_value FROM public.extraction_proposal_records "
+                    "WHERE run_id = :r AND source = 'system'"
+                ),
+                {"r": str(new_run.id)},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert seeded == [{"value": "42"}], (
+        f"the carry-over SYSTEM proposal must be clean, got {seeded}"
+    )
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
 async def test_approve_and_finalize_treats_unit_difference_as_divergence(
     db_session: AsyncSession,
 ) -> None:

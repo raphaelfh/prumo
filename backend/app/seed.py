@@ -54,6 +54,7 @@ import asyncio
 from typing import NamedTuple
 from uuid import UUID
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import AsyncSessionLocal
@@ -82,6 +83,8 @@ class _EntitySpec(NamedTuple):
     cardinality: str
     role: ExtractionEntityRole
     sort_order: int
+    # Group entry noun; only meaningful for MODEL_CONTAINER specs (B-8).
+    entry_label: str | None = None
 
 
 def _entity_type_from_spec(
@@ -100,6 +103,7 @@ def _entity_type_from_spec(
         name=spec.name,
         label=spec.label,
         description=spec.description,
+        entry_label=spec.entry_label,
         parent_entity_type_id=spec.parent_id,
         cardinality=spec.cardinality,
         role=spec.role.value,
@@ -339,6 +343,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "many",
             _container,
             6,
+            entry_label="model",
         ),
         # Per-model children
         _EntitySpec(
@@ -2145,6 +2150,7 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             cardinality="many",
             role=_container,
             sort_order=7,
+            entry_label="model",
         ),
         _EntitySpec(
             id=_MM_ET_MODEL_DEV,
@@ -3109,6 +3115,92 @@ async def seed_charms_mm(session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Template-level general AI instructions (spec Phase A §4)
+# ---------------------------------------------------------------------------
+
+# Delivered by ``backfill_llm_template_instructions`` — fill-if-null, so
+# re-running the seed never clobbers text a manager customized.
+# ``[customize: ...]`` slots are deliberate: the UI surfaces them until the
+# manager resolves them (they are sent verbatim to the AI until then).
+_LLM_TEMPLATE_INSTRUCTIONS: dict[UUID, str] = {
+    _CHARMS_TEMPLATE_ID: (
+        "This review extracts data from studies that develop or validate "
+        "clinical prediction models, following the CHARMS checklist. "
+        "Report values exactly as the article states them — do not convert "
+        "units, pool cohorts, or infer unreported values. When a study "
+        "reports several models or cohorts, extract each one separately "
+        "rather than averaging. Prefer precise numbers from tables over "
+        "rounded prose values, and quote the passage that supports each "
+        "value. [customize: name the target condition, population, and "
+        "outcome this review focuses on]"
+    ),
+    _MM_TEMPLATE_ID: (
+        "This review extracts data from studies of multimodal "
+        "machine-learning prediction models, following an extended CHARMS "
+        "checklist. Keep each data modality (imaging, text, structured "
+        "data, signals) distinct as the authors describe them, and record "
+        "the fusion approach without collapsing modalities. Report "
+        "performance exactly as stated, per model and per validation "
+        "split, and quote the passage that supports each value. "
+        "[customize: name the target condition, population, and outcome "
+        "this review focuses on]"
+    ),
+    _PROBAST_TEMPLATE_ID: (
+        "This appraisal judges the risk of bias of prediction-model "
+        "studies using PROBAST. Judge strictly from what the article "
+        "reports: absence of information is a reason for concern, never "
+        "reassurance. Answer each signaling question conservatively and "
+        "quote the passage that grounds the judgment. [customize: "
+        "describe the review's intended setting and population so "
+        "applicability judgments have a reference point]"
+    ),
+    _QUADAS2_TEMPLATE_ID: (
+        "This appraisal judges the risk of bias and applicability of "
+        "diagnostic accuracy studies using QUADAS-2. Judge each domain "
+        "strictly from the reported conduct of the study — do not assume "
+        "unreported safeguards were in place. Quote the passage that "
+        "grounds each judgment. [customize: state the review question — "
+        "index test, target condition, and intended-use setting — that "
+        "applicability is judged against]"
+    ),
+}
+
+
+async def backfill_llm_template_instructions(session: AsyncSession) -> None:
+    """Fill-if-null: seed the framework default on globals that have none.
+
+    Separate from the per-template seeders (which early-return when the
+    template exists), so existing databases receive new defaults while a
+    manager's customized text is never overwritten. Idempotent.
+    """
+    # Function-local for the same circularity reason as ``main``'s import.
+    from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID
+
+    instructions = {
+        **_LLM_TEMPLATE_INSTRUCTIONS,
+        _PROBAST_AI_TEMPLATE_ID: (
+            "This appraisal judges the risk of bias of AI and "
+            "machine-learning prediction-model studies using PROBAST+AI. "
+            "Judge strictly from what the article reports, with particular "
+            "attention to data leakage, train/test split hygiene, and "
+            "evaluation practices specific to machine learning. Absence of "
+            "information is a reason for concern, never reassurance. Quote "
+            "the passage that grounds each judgment. [customize: describe "
+            "the review's intended setting, population, and model scope]"
+        ),
+    }
+    for template_id, instruction_text in instructions.items():
+        await session.execute(
+            update(ExtractionTemplateGlobal)
+            .where(
+                ExtractionTemplateGlobal.id == template_id,
+                ExtractionTemplateGlobal.llm_template_instruction.is_(None),
+            )
+            .values(llm_template_instruction=instruction_text)
+        )
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -3126,6 +3218,7 @@ async def main() -> None:
             await seed_probast(session)
             await seed_quadas2(session)
             await seed_probast_ai(session)
+            await backfill_llm_template_instructions(session)
             await session.commit()
             print("Seeding completed successfully.")
         except Exception as e:

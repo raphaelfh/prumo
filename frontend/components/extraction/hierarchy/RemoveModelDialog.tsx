@@ -37,6 +37,8 @@ interface RemoveModelDialogProps {
   extractedFieldsCount?: number;
   onConfirm: () => Promise<void>;
   onCancel: () => void;
+  /** Entry noun for `{{noun}}` copy interpolation (B-8 D6). */
+  entryLabel?: string;
 }
 
 // =================== COMPONENT ===================
@@ -47,10 +49,14 @@ export function RemoveModelDialog({
   hasExtractedData,
   extractedFieldsCount = 0,
   onConfirm,
-  onCancel
+  onCancel,
+  entryLabel = 'model'
 }: RemoveModelDialogProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // {{noun}} resolves inline at each call site (D7); the bullet naming
+  // the entry composes data (capitalized noun + quoted name).
+  const nounCap = entryLabel.charAt(0).toUpperCase() + entryLabel.slice(1);
 
     // Confirmation handler
   const handleConfirm = async () => {
@@ -71,7 +77,10 @@ export function RemoveModelDialog({
         modelName,
         hasExtractedData,
       });
-      setError(errAny?.message || t('extraction', 'removeModelError'));
+      setError(
+        errAny?.message ||
+          t('extraction', 'removeModelError').replace('{{noun}}', entryLabel),
+      );
     } else {
       extractionLogger.info('removeModelDialog', 'Model removed successfully', {modelName});
         // Dialog will be closed by parent component
@@ -87,10 +96,12 @@ export function RemoveModelDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-destructive">
             <Trash2 className="h-5 w-5" />
-              {t('extraction', 'removeModelTitle')}
+              {t('extraction', 'removeModelTitle').replace('{{noun}}', entryLabel)}
           </DialogTitle>
           <DialogDescription>
-              {t('extraction', 'removeModelDesc').replace('{{name}}', modelName)}
+              {t('extraction', 'removeModelDesc')
+                  .replace('{{noun}}', entryLabel)
+                  .replace('{{name}}', modelName)}
           </DialogDescription>
         </DialogHeader>
 
@@ -102,11 +113,16 @@ export function RemoveModelDialog({
               <AlertDescription>
                 <div className="space-y-2">
                   <p className="font-semibold">
-                      {t('extraction', 'removeModelWarningTitle')}
+                      {t('extraction', 'removeModelWarningTitle').replace('{{noun}}', entryLabel)}
                   </p>
                   <p>
-                      <strong>{extractedFieldsCount}</strong> {extractedFieldsCount === 1 ? t('extraction', 'removeModelFieldFilled') : t('extraction', 'removeModelFieldsFilled')} in
-                      this model.
+                      <strong>{extractedFieldsCount}</strong>{' '}
+                      {t(
+                          'extraction',
+                          extractedFieldsCount === 1
+                              ? 'removeModelFieldFilled'
+                              : 'removeModelFieldsFilled',
+                      ).replace('{{noun}}', entryLabel)}
                   </p>
                   <p className="text-sm">
                       {t('extraction', 'removeModelDataPermanent')}
@@ -118,7 +134,7 @@ export function RemoveModelDialog({
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                  {t('extraction', 'removeModelNoData')}
+                  {t('extraction', 'removeModelNoData').replace('{{noun}}', entryLabel)}
               </AlertDescription>
             </Alert>
           )}
@@ -131,11 +147,11 @@ export function RemoveModelDialog({
             <ul className="space-y-1 text-sm text-muted-foreground">
               <li className="flex items-start gap-2">
                 <span className="text-destructive">•</span>
-                  <span>Model "{modelName}"</span>
+                  <span>{nounCap} "{modelName}"</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-destructive">•</span>
-                  <span>{t('extraction', 'removeModelSubsections')}</span>
+                  <span>{t('extraction', 'removeModelSubsections').replace('{{noun}}', entryLabel)}</span>
               </li>
               {hasExtractedData && (
                 <li className="flex items-start gap-2">
@@ -179,7 +195,9 @@ export function RemoveModelDialog({
             ) : (
               <>
                 <Trash2 className="mr-2 h-4 w-4" />
-                  {hasExtractedData ? t('extraction', 'removeModelAnyway') : t('extraction', 'removeModel')}
+                  {hasExtractedData
+                      ? t('extraction', 'removeModelAnyway')
+                      : t('extraction', 'removeModel').replace('{{noun}}', entryLabel)}
               </>
             )}
           </Button>

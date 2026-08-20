@@ -81,6 +81,7 @@ export function entityTypesFromRunView(
     role: et.role as ExtractionEntityRole,
     sort_order: et.sort_order,
     is_required: et.is_required,
+    entry_label: et.entry_label,
     created_at,
     fields: et.fields.map(f => fieldFromRunView(et.id, created_at, f)),
   }));

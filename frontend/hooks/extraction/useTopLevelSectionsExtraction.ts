@@ -38,9 +38,6 @@ export interface UseTopLevelSectionsExtractionReturn {
     templateId: string;
     /** Active session run to extract into — reused so decisions aren't orphaned. */
     runId?: string;
-    options?: {
-      model?: 'gpt-4o-mini' | 'gpt-4o' | 'gpt-5';
-    };
   }) => Promise<{
     totalSections: number;
     successfulSections: number;
@@ -76,9 +73,6 @@ export function useTopLevelSectionsExtraction(options?: {
       articleId: string;
       templateId: string;
       runId?: string;
-      options?: {
-        model?: 'gpt-4o-mini' | 'gpt-4o' | 'gpt-5';
-      };
     }) => {
         console.warn('[useTopLevelSectionsExtraction] Starting top-level sections extraction', params);
       setLoading(true);
@@ -93,7 +87,7 @@ export function useTopLevelSectionsExtraction(options?: {
       };
 
       const doExtract = async (): Promise<ExtractionResult> => {
-        const { projectId, articleId, templateId, runId, options: extractionOptions } = params;
+        const { projectId, articleId, templateId, runId } = params;
 
           // 1. Fetch top-level sections list
           console.warn('[useTopLevelSectionsExtraction] Fetching top-level sections...');
@@ -130,7 +124,6 @@ export function useTopLevelSectionsExtraction(options?: {
             entityTypeId: section.id,
             runId,
               // NO parentInstanceId - top-level sections are linked directly to the article
-            options: extractionOptions,
           };
 
             // Update progress before processing (with section name)

@@ -123,6 +123,28 @@ def test_absent_reason_marker_never_dict_stringifies() -> None:
     assert not isinstance(out, dict)
 
 
+def test_verification_sibling_is_ignored() -> None:
+    # Verified mode (§5): the server-written ``verification`` ANNOTATION
+    # sibling is never part of the value — an annotated envelope resolves
+    # exactly like a bare one.
+    assert resolve_value({"value": 142, "verification": {"verdict": "confirmed"}}) == 142
+    assert (
+        resolve_value(
+            {"value": None, "absent_reason": "no_information", "verification": {"verdict": "x"}}
+        )
+        == "No information"
+    )
+
+
+def test_verification_sibling_never_dict_stringifies() -> None:
+    # The exact leak: {value, verification} matches no key-set branch and
+    # would fall to the catch-all "; ".join dict rendering →
+    # "value: RCT; verification: {...}" in a published cell.
+    out = resolve_value({"value": "RCT", "verification": {"verdict": "uncertain"}})
+    assert out == "RCT"
+    assert "verification" not in str(out)
+
+
 def test_absent_reason_marker_wins_over_value_keyset() -> None:
     # Defensive: even if a marker somehow carried a non-null value, the
     # disposition label takes precedence over the {"value"} unwrap (the branch

@@ -7,7 +7,7 @@ description: SCAN phase of the prumo architectural quality loop — dispatches 5
 
 Performs the SCAN phase of the architectural quality loop on a scoped slice. Two lanes run in parallel:
 
-1. **Computational lane** — deterministic fitness scripts (`scripts/fitness/run_all.sh`), linters (`ruff`, `eslint`, `tsc`), `make db-lint-migrations` if migrations touched. Findings here have `confidence=1.0`.
+1. **Computational lane** — deterministic fitness scripts (`scripts/fitness/run_all.sh`), linters (`ruff`, `eslint`, `tsc`). Findings here have `confidence=1.0`.
 2. **Inferential lane** — 5 Explore subagents in parallel, each specialised in one finding category. Findings here have shape-based confidence (≥ 0.7 floor).
 
 Both lanes write to the same `findings.jsonl` with a shared schema; the orchestrator (the architectural-quality-loop meta-skill) reads it without caring which lane produced each row.

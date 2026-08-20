@@ -4,9 +4,17 @@ Verifies that the 3-branch dispatch routes to the correct underlying
 method with the correct kwargs for a given SectionExtractionRequest, and
 that the result is returned unchanged.  No DB or LLM calls — each branch
 method is AsyncMock-patched on the service instance.
+
+Every branch forwards the engine resolved by ``resolve_project_engine``
+(C1b: the project's stored choice, or the env default when unset). The
+resolver is patched at the ``ses`` module seam — it is imported at module
+level precisely so this test can pin that the RESOLVED target (not a
+re-read of ``settings``) is what reaches every branch. The request still
+carries no ``model``/engine at all (C1a server-owned contract; see
+``test_model_default_is_server_owned.py``).
 """
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -14,11 +22,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.storage import StorageAdapter
 from app.schemas.extraction import SectionExtractionRequest
+from app.schemas.llm_target import LlmTarget
 from app.services.section_extraction_service import (
     BatchExtractionResult,
     SectionExtractionResult,
     SectionExtractionService,
 )
+
+#: What the patched resolver hands back — deliberately NOT the env default,
+#: so an assertion passing proves the resolved value (not settings) flowed.
+_RESOLVED = LlmTarget(provider="openai", model="resolved-model-x")
+
+
+@pytest.fixture(autouse=True)
+def resolve_seam():
+    """Patch the module-level resolver seam for every test in this file."""
+    with patch(
+        "app.services.section_extraction_service.resolve_project_engine",
+        AsyncMock(return_value=_RESOLVED),
+    ) as mock:
+        yield mock
 
 
 @pytest.fixture()
@@ -118,7 +141,7 @@ class TestRunFromRequestSingleSection:
             template_id=template_id,
             entity_type_id=entity_type_id,
             parent_instance_id=None,
-            model=payload.model,
+            engine=_RESOLVED,
             run_id=None,
         )
 
@@ -151,7 +174,7 @@ class TestRunFromRequestSingleSection:
             template_id=template_id,
             entity_type_id=entity_type_id,
             parent_instance_id=parent_instance_id,
-            model=payload.model,
+            engine=_RESOLVED,
             run_id=existing_run_id,
         )
 
@@ -193,7 +216,7 @@ class TestRunFromRequestForRun:
             run_id=run_id,
             skip_fields_with_human_proposals=True,
             auto_advance_to_review=False,
-            model=payload.model,
+            engine=_RESOLVED,
         )
 
 
@@ -237,7 +260,7 @@ class TestRunFromRequestAllSections:
             parent_instance_id=parent_instance_id,
             section_ids=None,
             pdf_text=None,
-            model=payload.model,
+            engine=_RESOLVED,
             run_id=None,
         )
 
@@ -280,6 +303,6 @@ class TestRunFromRequestAllSections:
             parent_instance_id=parent_instance_id,
             section_ids=None,
             pdf_text=None,
-            model=payload.model,
+            engine=_RESOLVED,
             run_id=session_run_id,
         )

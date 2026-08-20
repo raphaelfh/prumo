@@ -75,7 +75,6 @@ test.describe("Extraction flow (UI + API)", () => {
         projectId: env.projectId,
         articleId: env.articleId,
         templateId,
-        model: process.env.E2E_MODEL_NAME || "gpt-4o-mini",
       },
       timeout: 180000,
     });
@@ -92,7 +91,6 @@ test.describe("Extraction flow (UI + API)", () => {
         templateId,
         entityTypeId,
         extractAllSections: false,
-        model: process.env.E2E_MODEL_NAME || "gpt-4o-mini",
       },
     });
     expect(sectionResponse.status()).toBe(202);

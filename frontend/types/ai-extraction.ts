@@ -18,11 +18,6 @@ export type ExtractionRunStage =
   | 'finalized'
   | 'cancelled';
 
-/**
- * Supported models for AI extraction
- */
-export type SupportedAIModel = 'gpt-4o-mini' | 'gpt-4o' | 'gpt-5';
-
 // =================== AI SUGGESTIONS (presentation shape) ===================
 
 /**
@@ -93,6 +88,14 @@ export interface RunProvenance {
 }
 
 /**
+ * Verified-mode second-pass judgement of a proposed value against the
+ * article text (§5). Mirrors the closed backend vocabulary
+ * (`VerifyVerdict` in `backend/app/llm/verify.py`); the mapper drops
+ * anything outside it rather than casting blindly.
+ */
+export type VerificationVerdict = 'confirmed' | 'unsupported' | 'uncertain';
+
+/**
  * Presentation shape an extraction-UI consumer renders. There's no longer
  * a backing `ai_suggestions` table — the equivalent rows live in
  * `extraction_proposal_records` (filtered by `source='ai'`) and are
@@ -111,6 +114,10 @@ export interface AISuggestion {
   /** How this suggestion's run was generated. Undefined for legacy runs that
    *  predate provenance capture. */
   provenance?: RunProvenance;
+  /** Verified-mode verdict for this value (`proposed_value.verification`
+   *  sibling). Absent on Fast runs, degraded verify passes, and no-info
+   *  proposals — "no chip" must stay unambiguous as "not verified". */
+  verification?: {verdict: VerificationVerdict};
 }
 
 /**
@@ -138,9 +145,6 @@ export interface SectionExtractionRequest {
    * Omit for callers without an active session.
    */
   runId?: string;
-  options?: {
-    model?: SupportedAIModel;
-  };
 }
 
 /**
@@ -187,9 +191,6 @@ export interface ModelExtractionRequest {
    * standalone (e.g. bulk table) extraction where no session run exists.
    */
   runId?: string;
-  options?: {
-    model?: SupportedAIModel;
-  };
 }
 
 /**
@@ -213,9 +214,6 @@ export interface BatchSectionExtractionRequest {
   extractAllSections: true; // Flag for batch extraction
   sectionIds?: string[]; // Filter specific sections (for chunking)
   pdfText?: string; // Pre-processed PDF text (avoids reprocessing)
-  options?: {
-    model?: SupportedAIModel;
-  };
 }
 
 /**

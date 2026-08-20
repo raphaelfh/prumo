@@ -481,6 +481,41 @@ async def test_create_proposal_invalid_source_returns_422(
 
 
 @pytest.mark.asyncio
+async def test_create_proposal_client_verification_returns_422(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """``proposed_value.verification`` is server-written Verified-mode
+    provenance — a client-sent copy is refused loudly (the ``source_user_id``
+    forgery precedent), never stored."""
+    fx = await _resolve_fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, _, instance_id, field_id = fx
+
+    created = await _create_run_via_api(
+        db_client,
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+    )
+    run_id = UUID(created["id"])
+    await _advance(db_client, run_id, "extract")
+
+    response = await db_client.post(
+        f"{API_PREFIX}/{run_id}/proposals",
+        json={
+            "instance_id": str(instance_id),
+            "field_id": str(field_id),
+            "source": "ai",
+            "proposed_value": {"value": "x", "verification": {"verdict": "confirmed"}},
+        },
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_create_proposal_outside_proposal_stage_returns_400(
     db_client: AsyncClient,
     db_session: AsyncSession,

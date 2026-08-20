@@ -1,6 +1,10 @@
 """Prompt for extracting one template section from an article."""
 
-from app.llm.prompts import content_version, render_memory_section
+from app.llm.prompts import (
+    content_version,
+    render_general_instructions_section,
+    render_memory_section,
+)
 
 NAME = "section_extraction"
 
@@ -14,7 +18,7 @@ SYSTEM_PROMPT = (
     " the value."
 )
 
-_USER_TEMPLATE = """Extract the following information from the scientific article:
+_USER_TEMPLATE = """{general_instructions_section}Extract the following information from the scientific article:
 
 Section: {entity_name}
 Description: {entity_description}
@@ -29,7 +33,10 @@ For EACH field in the response schema, return an object with:
 - "evidence": an object with "text" (short quoted passage from the article supporting the value) and "page_number" (integer, if known), or null
 """
 
-VERSION = content_version(SYSTEM_PROMPT, _USER_TEMPLATE)
+# The canary argument hashes the shared block renderer's literal prefix:
+# editing render_general_instructions_section changes production prompts,
+# so it must bump VERSION too (§IX traceability).
+VERSION = content_version(SYSTEM_PROMPT, _USER_TEMPLATE, render_general_instructions_section("x"))
 
 
 def render(
@@ -38,10 +45,12 @@ def render(
     entity_description: str,
     article_text: str,
     memory_context: list[dict[str, str]] | None = None,
+    general_instructions: str | None = None,
 ) -> str:
     return _USER_TEMPLATE.format(
         entity_name=entity_name,
         entity_description=entity_description,
         memory_section=render_memory_section(memory_context),
         article_text=article_text,
+        general_instructions_section=render_general_instructions_section(general_instructions),
     )

@@ -91,7 +91,7 @@ Security controls are mandatory, not optional additions.
 
 - Authentication: JWT validation via Supabase Auth (RS256/JWKS in production, HS256 in local development).
 - `user_id` MUST always be extracted from `user.sub` (JWT payload). It MUST NEVER be accepted from request bodies, query parameters, or path parameters.
-- Sensitive data (API keys, tokens) MUST be encrypted at rest using per-user derived keys (`PBKDF2-HMAC-SHA256` with `ENCRYPTION_KEY` env var).
+- Sensitive data (API keys, tokens) MUST be encrypted at rest using per-user or per-row derived keys (`PBKDF2-HMAC-SHA256` with `ENCRYPTION_KEY` env var).
 - Every endpoint MUST apply rate limiting via `@limiter.limit("N/minute")`.
 - CORS origins MUST be explicitly listed; wildcard origins (`*`) are forbidden in production.
 - Exposed response headers are limited to `X-Trace-Id` and `X-Response-Time`.
@@ -239,8 +239,14 @@ This constitution is the authoritative reference for all architectural and proce
 - Added complexity beyond what a principle prescribes MUST be justified in the PR description.
 - Use `CLAUDE.md` as the runtime development guidance companion to this constitution.
 
-**Version**: 2.2.0 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-07-02
+**Version**: 2.2.1 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-08-17
 
+> 2.2.1: §IV encryption bullet widened from "per-user derived keys" to
+> "per-user or per-row derived keys" — project-shared endpoint secrets
+> (`project_llm_endpoints`) derive per row (`endpoint:{id}`, domain-separated
+> from the per-user namespace) because they are shared by a project, not
+> owned by a user. Same primitive, same env var; a wording clarification.
+>
 > 2.2.0: §IX abstention bullet split into the two concepts it conflated
 > (ADR-0016) — a coded-`absent_reason` disposition answer is a first-class
 > **resolved** proposal (`{"value": null, "absent_reason": <code>}`), distinct

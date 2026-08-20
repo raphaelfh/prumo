@@ -98,6 +98,13 @@ naming them here is what makes them load reliably).
 - `npm run test:run` / `npm run lint` — frontend (from repo root)
 - `make quality-scan` — full deterministic gate (`scripts/verify_all.sh`:
   lint + typecheck + tests + architectural fitness)
+- `uv tool install graphifyy && graphify install && graphify update .` —
+  opt-in, per developer: builds the local knowledge graph the `## graphify`
+  section below refers to (~15s, no LLM, gitignored). Until you run it there
+  is no `graphify-out/`, and the graph-aware hooks stay silent. Add
+  `graphify hook install` to rebuild it on every commit — it is deliberately
+  not committed, because the hook warns on every commit for anyone who has
+  not installed graphify.
 
 ## Read before touching
 
@@ -152,3 +159,13 @@ branch. Fix throughput without weakening the gate:
   rarely conflict.
 - A GitHub merge queue is the real fix but needs an org (public repo →
   a free org); revisit if concurrency outgrows the merge-train.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

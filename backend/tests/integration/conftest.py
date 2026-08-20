@@ -46,6 +46,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+from app.utils.rate_limiter import limiter
 
 # =================== AUTO MARKER ===================
 # Every test collected under tests/integration/ gets the ``integration``
@@ -53,6 +54,23 @@ from app.core.config import settings
 # ``pytestmark = pytest.mark.integration`` at the top of all 40+ files.
 # Pairs with ``--strict-markers`` in pyproject so typo'd markers fail
 # instead of being silently ignored.
+
+
+@pytest.fixture(autouse=True)
+def _isolated_rate_limits() -> None:
+    """Each test starts with a clean rate-limit window.
+
+    The app-level limits are real in this suite (nothing disables the
+    limiter), which is right for any single test — but the counters are
+    process-global, so requests ACCUMULATE across tests. The section
+    kickoff's 10/minute budget was quietly shared by every test touching
+    that endpoint, and whichever unlucky test crossed the threshold under
+    the suite's randomized ordering failed with a 429 it never caused
+    (seen: test_section_extraction_run_id_403_for_non_member asserting
+    403, receiving "Rate limit exceeded: 10 per 1 minute"). Per-test
+    reset keeps limits enforceable WITHIN a test and kills the
+    cross-test coupling."""
+    limiter.reset()
 
 
 def pytest_collection_modifyitems(
@@ -448,3 +466,133 @@ async def seeded_integration_db() -> AsyncGenerator[IntegrationSeedIds, None]:
         await _seed_minimum_graph(session)
     await engine.dispose()
     yield SEED
+
+
+# =================== SHARED B-4 / CLONE TEST HELPERS ===================
+# The clone-based fixtures and the config draft marker are the pivot of
+# the template-config suites; one home stops per-file copies drifting.
+
+CHARMS_GLOBAL_ID = UUID("000c0000-0000-0000-0000-000000000001")
+
+
+async def clean_project_clones(db: AsyncSession, project_id: UUID) -> None:
+    """Wipe a project's extraction templates (CASCADE clears structure,
+    version snapshots and instances) so a test starts from a clean slate."""
+    await db.execute(
+        text("DELETE FROM public.project_extraction_templates WHERE project_id = :pid"),
+        {"pid": str(project_id)},
+    )
+
+
+async def clone_charms(db: AsyncSession, project_id: UUID, user_id: UUID):
+    """Clone the seeded CHARMS global template into ``project_id``."""
+    from app.models.extraction import TemplateKind
+    from app.services.template_clone_service import TemplateCloneService
+
+    return await TemplateCloneService(db).clone(
+        project_id=project_id,
+        global_template_id=CHARMS_GLOBAL_ID,
+        user_id=user_id,
+        kind=TemplateKind.EXTRACTION,
+    )
+
+
+async def first_entity_type_id(db: AsyncSession, project_template_id: UUID) -> UUID:
+    from sqlalchemy import select
+
+    from app.models.extraction import ExtractionEntityType
+
+    return (
+        await db.execute(
+            select(ExtractionEntityType.id)
+            .where(ExtractionEntityType.project_template_id == project_template_id)
+            .order_by(ExtractionEntityType.sort_order)
+            .limit(1)
+        )
+    ).scalar_one()
+
+
+async def get_config_draft_marker(db: AsyncSession, template_id: UUID):
+    """Read ``config_draft_since`` (the B-4 draft marker)."""
+    return (
+        await db.execute(
+            text(
+                "SELECT config_draft_since FROM public.project_extraction_templates WHERE id = :tid"
+            ),
+            {"tid": str(template_id)},
+        )
+    ).scalar_one()
+
+
+async def set_config_draft_marker(db: AsyncSession, template_id: UUID, value) -> None:
+    """Force the B-4 draft marker (``None`` simulates a lost republish /
+    clean state; a timestamp simulates a pending draft)."""
+    await db.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET config_draft_since = :val WHERE id = :tid"
+        ),
+        {"tid": str(template_id), "val": value},
+    )
+    await db.flush()
+
+
+async def open_session(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    article_id: UUID,
+    template_id: UUID,
+    user_id: UUID,
+):
+    """Open (or resume) an extraction HITL session for one article.
+
+    The only supported way to materialize ``extraction_instances``: the
+    session seeds a singleton for every top-level ``cardinality='one'``
+    entity type and backfills ``cardinality='one'`` children of every
+    existing parent instance. Those instances are the RESTRICT reference
+    (``extraction_instances_entity_type_id_fkey``) that makes a section
+    un-deletable, so any suite about template deletes needs this rather
+    than a hand-rolled INSERT."""
+    from app.models.extraction import TemplateKind
+    from app.services.hitl_session_service import HITLSessionService
+
+    return await HITLSessionService(db).open_or_resume(
+        kind=TemplateKind.EXTRACTION,
+        project_id=project_id,
+        article_id=article_id,
+        user_id=user_id,
+        project_template_id=template_id,
+    )
+
+
+async def make_proposal(
+    db: AsyncSession,
+    *,
+    run_id: UUID,
+    instance_id: UUID,
+    field_id: UUID,
+    user_id: UUID,
+    value: object = "recorded",
+) -> UUID:
+    """Record one HUMAN proposal for ``(run, instance, field)``.
+
+    ``extraction_proposal_records.field_id`` is ON DELETE RESTRICT, so this
+    is both "the field holds recorded work" (it joins the
+    ``fields_with_values`` set) and "the field can no longer be deleted"."""
+    from app.models.extraction_workflow import (
+        ExtractionProposalRecord,
+        ExtractionProposalSource,
+    )
+
+    record = ExtractionProposalRecord(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.HUMAN.value,
+        source_user_id=user_id,
+        proposed_value={"value": value},
+    )
+    db.add(record)
+    await db.flush()
+    return record.id

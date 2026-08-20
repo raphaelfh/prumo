@@ -101,6 +101,14 @@ class ExtractionProposalRecord(BaseModel):
     proposed_value: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     confidence_score: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Engine identity ONLY — how THIS value was produced (0056). Immutable per
+    # row, unlike the run's per-section snapshot, which is last-write-wins.
+    # NEVER holds ``ran_by_user_id``: identity stays run-level, where the
+    # blind-review scrub can reach it. NEVER serialize this straight from the
+    # ORM row — ``AISuggestionItem``/``AISuggestionHistoryItem`` set
+    # ``from_attributes=True`` and declare a field of the same name, so a future
+    # ``model_validate(orm_row)`` would bypass the read-side reveal gate.
+    provenance: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         Index(

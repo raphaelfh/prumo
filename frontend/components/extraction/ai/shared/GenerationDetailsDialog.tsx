@@ -56,6 +56,11 @@ const SCALAR_KEYS = new Set<string>(SCALAR_FIELDS.map((f) => f.key as string));
 // through to a generic row. `promptText` renders ONLY in the legacy code block.
 const SUPPRESSED_KEYS = new Set<string>([
   'ranByUserId',
+  // Per-proposal engine record (0056) carries the project endpoint's id on
+  // custom-endpoint runs. An internal identifier, not a reviewer-facing fact —
+  // without this it falls through as a generic row showing a bare UUID.
+  'endpointId',
+  'endpoint_id',
   'promptComposition',
   'promptText',
   'tokensPrompt',

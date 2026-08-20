@@ -6,7 +6,8 @@
  *
  * FOCUS: Section extraction pipeline - granular extraction per section (entity type).
  *
- * USAGE: Called by extraction hooks to process articles with AI.
+ * USAGE: Called by extraction hooks to process articles with AI. The engine is
+ * server-owned (C1a) — no request built here carries a model.
  *
  * @example
  * ```typescript
@@ -15,7 +16,6 @@
  *   articleId: '...',
  *   templateId: '...',
  *   entityTypeId: '...',
- *   options: { model: 'gpt-4o' }
  * });
  *
  * console.warn(`Created ${result.data?.suggestionsCreated} suggestions`);
@@ -120,7 +120,7 @@ export class SectionExtractionService {
 
     console.warn('[SectionExtractionService] Starting extraction via FastAPI', {
       traceId,
-      request: { ...request, options: request.options || {} },
+      request,
     });
 
     // POST — get job_id
@@ -133,7 +133,7 @@ export class SectionExtractionService {
         entityTypeId: request.entityTypeId,
         parentInstanceId: request.parentInstanceId,
         runId: request.runId,
-        model: request.options?.model ?? 'gpt-4o-mini',
+        // C1a: no `model` key — the engine is server-owned.
       },
     }).catch((err: unknown) => {
       if (err instanceof ApiError) {
@@ -187,7 +187,7 @@ export class SectionExtractionService {
 
       console.warn('[SectionExtractionService] Starting model extraction via FastAPI', {
       traceId,
-      request: { ...request, options: request.options || {} },
+      request,
     });
 
     try {
@@ -202,7 +202,7 @@ export class SectionExtractionService {
         // Reuse the session run when provided so model extraction never forks a
         // parallel run that would orphan the reviewer's decisions.
         runId: request.runId,
-        model: request.options?.model,
+        // C1a: no `model` key — the engine is server-owned.
       });
 
         console.warn('[SectionExtractionService] Model extraction via FastAPI completed', {
@@ -248,7 +248,7 @@ export class SectionExtractionService {
 
     console.warn('[SectionExtractionService] Starting full sections extraction via FastAPI', {
       traceId,
-      request: { ...request, options: request.options || {} },
+      request,
     });
 
     // POST — get job_id
@@ -265,7 +265,7 @@ export class SectionExtractionService {
         extractAllSections: true,
         sectionIds: request.sectionIds,
         pdfText: request.pdfText,
-        model: request.options?.model ?? 'gpt-4o-mini',
+        // C1a: no `model` key — the engine is server-owned.
       },
     }).catch((err: unknown) => {
       if (err instanceof ApiError) {
@@ -326,7 +326,6 @@ export interface AsyncSectionExtractionParams {
   parentInstanceId?: string;
   skipFieldsWithHumanProposals?: boolean;
   autoAdvanceToReview?: boolean;
-  model?: string;
 }
 
 /**
@@ -357,7 +356,7 @@ export function extractSectionAsync(
             skipFieldsWithHumanProposals:
               params.skipFieldsWithHumanProposals ?? true,
             autoAdvanceToReview: params.autoAdvanceToReview ?? false,
-            model: params.model ?? 'gpt-4o-mini',
+            // C1a: no `model` key — the engine is server-owned.
           },
         },
       );

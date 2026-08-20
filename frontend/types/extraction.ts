@@ -99,6 +99,13 @@ export interface ExtractionEntityType {
   role: ExtractionEntityRole;
   sort_order: number;
   is_required: boolean;
+  /**
+   * Repeating-group entry noun (B-8): set only on ``model_container``
+   * rows; consumers interpolate it with a ``'model'`` fallback.
+   * Required (not optional) so hand-written mirrors and adapters cannot
+   * silently drop it.
+   */
+  entry_label: string | null;
   created_at: string;
 }
 
@@ -382,11 +389,12 @@ export const ExtractionFieldSchema = z.object({
         {message: 'Allowed values cannot have duplicates'}
     ),
 
-  // Suporte a "Outro (especificar)"
+  // "Other (specify)" support
   allow_other: z.boolean().default(false).optional(),
+  // No default: a .default() wrapped in .optional() never fires (dead
+  // code, removed at B-7) — the runtime fallback is the English copy key.
   other_label: z.string()
       .max(100, '"Other" label must be at most 100 characters')
-    .default('Outro (especificar)')
     .optional()
     .nullable(),
   other_placeholder: z.string()

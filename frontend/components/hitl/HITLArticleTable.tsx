@@ -52,7 +52,7 @@ import { fetchProjectArticles, type ArticleListItem } from "@/services/articlesS
 import { t } from "@/lib/copy";
 import { TABLE_CELL_CLASS } from "@/lib/table-constants";
 import type { HITLKind } from "@/hooks/hitl/useHITLProjectTemplates";
-import { useTemplateEntityTypes } from "@/hooks/extraction/useTemplateEntityTypes";
+import { useActiveTemplateStructure } from "@/hooks/extraction/useActiveTemplateStructure";
 import { useArticleExtractionValues } from "@/hooks/extraction/useArticleExtractionValues";
 import { computeRowProgress } from "@/lib/extraction/progress";
 
@@ -137,8 +137,14 @@ export function HITLArticleTable({
 
   // Required-field structure (cached by template id) for the canonical
   // progress metric shared with the form header.
-  const { entityTypes, isLoading: entityTypesLoading } =
-    useTemplateEntityTypes(templateId);
+  // ACTIVE snapshot (B-3a): worklist progress must not move on unpublished
+  // draft edits. Errors gate the render below — an empty tree would compute
+  // as fully complete.
+  const {
+    entityTypes,
+    isLoading: entityTypesLoading,
+    isError: entityTypesError,
+  } = useActiveTemplateStructure(projectId, templateId);
   // Per-article values (instances + the user's persisted values), shared with
   // the extraction table and the dashboard — replaces this table's own fetch.
   const { valuesByArticle, isLoading: valuesLoading } =
@@ -343,7 +349,7 @@ export function HITLArticleTable({
     }
   };
 
-  if (loading || entityTypesLoading || valuesLoading) {
+  if (loading || entityTypesLoading || entityTypesError || valuesLoading) {
     return (
       <div className="space-y-3" data-testid={`hitl-${kind}-table-loading`}>
         <Skeleton className="h-8 w-full max-w-md" />

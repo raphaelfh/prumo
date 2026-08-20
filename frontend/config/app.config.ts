@@ -21,10 +21,6 @@ export const APP_CONFIG = {
       timeout: 30000, // 30 seconds
     retryAttempts: 3,
       retryDelay: 1000, // 1 second
-    models: {
-      default: 'gpt-5-mini',
-      fallback: 'gpt-4o-mini',
-    },
     rateLimits: {
       requestsPerMinute: 60,
       requestsPerHour: 1000,

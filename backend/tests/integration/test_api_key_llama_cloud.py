@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user_api_key import SUPPORTED_PROVIDERS
-from app.services.api_key_service import APIKeyService
+from app.services.api_key_service import APIKeyService, KeyScope
 from tests.integration.conftest import SEED
 
 
@@ -25,4 +25,4 @@ async def test_save_and_resolve_llama_cloud_key(db_session_real: AsyncSession) -
     await svc.save_key(provider="llama_cloud", api_key="lc-secret", is_default=True, validate=False)
     await db_session_real.flush()
     resolved = await svc.get_key_for_provider("llama_cloud", use_fallback=False)
-    assert resolved == "lc-secret"
+    assert resolved == ("lc-secret", KeyScope.USER_BYOK)

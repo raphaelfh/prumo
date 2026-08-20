@@ -799,6 +799,7 @@ export type Database = {
           cardinality: Database["public"]["Enums"]["extraction_cardinality"]
           created_at: string
           description: string | null
+          entry_label: string | null
           id: string
           is_required: boolean
           label: string
@@ -814,6 +815,7 @@ export type Database = {
           cardinality?: Database["public"]["Enums"]["extraction_cardinality"]
           created_at?: string
           description?: string | null
+          entry_label?: string | null
           id?: string
           is_required?: boolean
           label: string
@@ -829,6 +831,7 @@ export type Database = {
           cardinality?: Database["public"]["Enums"]["extraction_cardinality"]
           created_at?: string
           description?: string | null
+          entry_label?: string | null
           id?: string
           is_required?: boolean
           label?: string

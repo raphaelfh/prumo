@@ -1,6 +1,7 @@
 import type { FullConfig } from "@playwright/test";
 
 import { loadE2EEnv } from "./env";
+import * as F from "./fixture-ids";
 import { clearRegistry, listResources } from "./registry";
 
 type DeleteResult = { deleted: number; failed: number };
@@ -164,6 +165,12 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
     grouped.extraction_entity_types
   );
 
+  // B-4: the config-table inserts above (and their deletes here) stamp
+  // the shared templates' config_draft_since via the mark-draft trigger.
+  // Reset it so a future re-clone of the E2E project never trips the
+  // pending-draft 409 (see the note in ensure-fixtures.ts).
+  await resetDraftMarkers(env.supabaseUrl, env.supabaseServiceRoleKey);
+
   let storageDeleted = 0;
   for (const obj of storageObjects) {
     const ok = await deleteStorageObject(
@@ -195,4 +202,24 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
   );
 
   clearRegistry();
+}
+
+async function resetDraftMarkers(url: string, key: string): Promise<void> {
+  const response = await fetch(
+    `${url}/rest/v1/project_extraction_templates` +
+      `?project_id=in.(${F.PROJECT_ID},${F.IMPORT_PROJECT_ID})`,
+    {
+      method: "PATCH",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({ config_draft_since: null }),
+    }
+  );
+  if (!response.ok) {
+    console.warn("[e2e] draft-marker reset failed:", await response.text());
+  }
 }

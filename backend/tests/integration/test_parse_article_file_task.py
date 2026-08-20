@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.parsing.base import ParsedBlock
 from app.models.article import ArticleFile, ArticleTextBlock
+from app.services.api_key_service import KeyScope, ResolvedKey
 from tests.integration.conftest import SEED
 
 # ---------------------------------------------------------------------------
@@ -236,7 +237,9 @@ async def _run_with_captured_selection(
     from app.worker.tasks.parsing_tasks import _run_parse
 
     parser_factory = MagicMock(return_value=_FakeParser())
-    key_lookup = AsyncMock(return_value=llama_key)
+    key_lookup = AsyncMock(
+        return_value=ResolvedKey(llama_key, KeyScope.USER_BYOK) if llama_key else None
+    )
     with (
         patch("app.core.factories.create_document_parser", parser_factory),
         patch("app.core.factories.create_storage_adapter") as storage_factory,

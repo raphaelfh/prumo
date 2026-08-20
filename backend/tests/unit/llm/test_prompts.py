@@ -59,12 +59,64 @@ def test_quality_assessment_render_mentions_framework():
     assert "the assessment tool" in quality_assessment.system_prompt(None)
 
 
+def test_general_instructions_block_leads_the_prompt():
+    from app.llm.prompts import render_general_instructions_section
+
+    assert render_general_instructions_section(None) == ""
+    assert render_general_instructions_section("") == ""
+
+    extraction = section_extraction.render(
+        entity_name="Population",
+        entity_description="Who was studied",
+        article_text="text",
+        general_instructions="Report values exactly as stated.",
+    )
+    assert extraction.startswith(
+        "General instructions for this review:\nReport values exactly as stated.\n\n"
+    )
+    assert "Section: Population" in extraction
+
+    qa = quality_assessment.render(
+        entity_name="Domain 1",
+        entity_description="Participant selection",
+        article_text="text",
+        framework="PROBAST",
+        general_instructions="Judge conservatively.",
+    )
+    assert qa.startswith("General instructions for this review:\nJudge conservatively.\n\n")
+
+
+def test_general_instructions_absent_when_none():
+    extraction = section_extraction.render(
+        entity_name="Population",
+        entity_description="d",
+        article_text="t",
+    )
+    qa = quality_assessment.render(
+        entity_name="Domain 1", entity_description="d", article_text="t", framework=None
+    )
+    assert "General instructions" not in extraction
+    assert "General instructions" not in qa
+
+
 def test_model_identification_render_and_output_model():
     prompt = model_identification.render(
         container_label="prediction models", article_text="§" * 20_000
     )
     assert "prediction models" in prompt
     assert prompt.count("§") == 20_000  # no truncation
+    assert "General instructions" not in prompt
+
+
+def test_model_identification_general_instructions_block_leads():
+    """Phase-A gap (B-2): the template-level ✨ instruction must reach the
+    model-identification prompt like the other two prompt pairs."""
+    prompt = model_identification.render(
+        container_label="prediction models",
+        article_text="text",
+        general_instructions="Focus on cardiac models.",
+    )
+    assert prompt.startswith("General instructions for this review:\nFocus on cardiac models.\n\n")
     output = model_identification.ModelIdentificationOutput.model_validate(
         {"models": [{"name": "Cox model"}]}
     )
