@@ -42,4 +42,20 @@ describe("useReparseArticleFile", () => {
     expect(keys.some((k) => k?.includes("files"))).toBe(true);
     expect(keys.some((k) => k?.includes("text-blocks"))).toBe(true);
   });
+
+  it("invalidates the stored content-markdown so 'view text sent' is not stale", async () => {
+    // Re-parsing regenerates the block-projection markdown (ADR-0013). That
+    // read has no pending-parse poll, so if reparse fails to invalidate it the
+    // generation-details dialog serves pre-reparse text. Regression guard.
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValue({});
+    const { wrapper, spy } = wrap();
+    const { result } = renderHook(() => useReparseArticleFile("art-1"), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync("file-9");
+    });
+
+    const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
+    expect(keys.some((k) => k?.includes("content-markdown"))).toBe(true);
+  });
 });
