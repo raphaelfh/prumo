@@ -2,7 +2,11 @@
 (PROBAST / QUADAS-2). Same response shape as section extraction so the
 downstream proposal writes are identical."""
 
-from app.llm.prompts import content_version, render_memory_section
+from app.llm.prompts import (
+    content_version,
+    render_general_instructions_section,
+    render_memory_section,
+)
 
 NAME = "quality_assessment"
 
@@ -21,7 +25,7 @@ _SYSTEM_TEMPLATE = (
     " the value."
 )
 
-_USER_TEMPLATE = """Assess the following domain of {framework_label} for the study below.
+_USER_TEMPLATE = """{general_instructions_section}Assess the following domain of {framework_label} for the study below.
 
 Domain: {entity_name}
 Description: {entity_description}
@@ -36,7 +40,11 @@ For EACH field in the response schema, return an object with:
 - "evidence": an object with "text" (short quoted passage supporting the judgment) and "page_number" (integer, if known), or null
 """
 
-VERSION = content_version(_SYSTEM_TEMPLATE, _USER_TEMPLATE)
+# Canary: hashes the shared block renderer's literal prefix (see
+# section_extraction.py) so helper edits bump VERSION.
+VERSION = content_version(
+    _SYSTEM_TEMPLATE, _USER_TEMPLATE, render_general_instructions_section("x")
+)
 
 _DEFAULT_FRAMEWORK_LABEL = "the assessment tool"
 
@@ -52,6 +60,7 @@ def render(
     article_text: str,
     framework: str | None,
     memory_context: list[dict[str, str]] | None = None,
+    general_instructions: str | None = None,
 ) -> str:
     return _USER_TEMPLATE.format(
         framework_label=framework or _DEFAULT_FRAMEWORK_LABEL,
@@ -59,4 +68,5 @@ def render(
         entity_description=entity_description,
         memory_section=render_memory_section(memory_context),
         article_text=article_text,
+        general_instructions_section=render_general_instructions_section(general_instructions),
     )

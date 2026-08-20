@@ -34,7 +34,15 @@ vi.mock('@/contexts/AuthContext', () => ({
 }));
 
 vi.mock('@/integrations/api', () => ({
-  apiClient: vi.fn(async () => ({ project_template_id: 'tpl-probast-project' })),
+  apiClient: vi.fn(async (path: string) => {
+    // B-3a: the worklist reads the ACTIVE snapshot from the typed endpoint;
+    // an error here gates the table behind a placeholder, so the mock must
+    // answer with a minimal tree.
+    if (path.includes('/active-version')) {
+      return { version_id: 'v1', version: 1, entity_types: [] };
+    }
+    return { project_template_id: 'tpl-probast-project' };
+  }),
 }));
 
 vi.mock('@/integrations/supabase/client', () => {

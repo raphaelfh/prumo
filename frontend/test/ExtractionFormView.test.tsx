@@ -84,7 +84,12 @@ vi.mock('@/components/extraction/SectionNavRail', () => ({
   ),
 }));
 
+// Spy (not stub): the real hook still runs against the mocked batch hooks
+// above; the spy only records the props the view threads into it (B-5b).
+vi.mock('@/hooks/extraction/useExtractionFormAIActions', { spy: true });
+
 import { ExtractionFormView } from '@/components/extraction/ExtractionFormView';
+import { useExtractionFormAIActions } from '@/hooks/extraction/useExtractionFormAIActions';
 
 const MODEL_PARENT = {
   id: 'pred-et',
@@ -377,6 +382,22 @@ describe('ExtractionFormView → model child sections', () => {
       />,
     );
     expect(screen.getByTestId('model-selector')).toBeInTheDocument();
+  });
+
+  it('threads the run-pinned child sections into the AI actions hook (B-5b)', () => {
+    render(
+      <ExtractionFormView
+        {...baseProps({
+          modelParentEntityType: MODEL_PARENT,
+          modelChildSections: [CHILD_SECTION],
+          activeModelId: 'model-1',
+          models: [{ instanceId: 'model-1', modelName: 'L' }],
+        })}
+      />,
+    );
+    expect(vi.mocked(useExtractionFormAIActions)).toHaveBeenCalledWith(
+      expect.objectContaining({ sections: [CHILD_SECTION] }),
+    );
   });
 });
 

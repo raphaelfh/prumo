@@ -26,6 +26,7 @@ from app.repositories.extraction_reviewer_decision_repository import (
 )
 from app.services._extraction_run_lock import load_run_for_update
 from app.services.coordinate_coherence import assert_coords_coherent
+from app.services.value_semantics import strip_verification
 
 
 class InvalidConsensusError(Exception):
@@ -116,6 +117,10 @@ class ExtractionConsensusService:
                         f"decision {selected_decision_id} not found in run {run_id}"
                     )
                 published_value = proposal.proposed_value
+            # The Verified-mode ``verification`` ANNOTATION belongs to the
+            # proposal row only — a PublishedState is always clean (§5), so a
+            # verdict can never masquerade as part of the canonical value.
+            published_value = strip_verification(published_value)
             # Final guard: never publish an empty value silently.
             if not published_value:
                 raise InvalidConsensusError(

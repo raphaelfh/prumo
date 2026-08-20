@@ -6,7 +6,6 @@
  */
 
 import {useEffect, useState} from 'react';
-import {useQueryClient} from '@tanstack/react-query';
 import {useSearchParams} from 'react-router';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
@@ -19,17 +18,17 @@ import {
 } from '@/hooks/hitl/useHITLProjectTemplates';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {useArticleExtractionValues} from '@/hooks/extraction/useArticleExtractionValues';
-import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
+import {useActiveTemplateStructure} from '@/hooks/extraction/useActiveTemplateStructure';
 import {computeRowProgress} from '@/lib/extraction/progress';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
 import {ExtractionExportDialog} from './ExtractionExportDialog';
+import {LlmEngineChip} from './LlmEngineChip';
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 import {useAuth} from '@/contexts/AuthContext';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
 import {loadProjectArticles} from '@/services/articlesService';
-import {runsKeys} from '@/hooks/runs/types';
-import {templateEntityTypesKeys} from '@/lib/query-keys/extraction';
+import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 
@@ -39,7 +38,7 @@ interface ExtractionInterfaceProps {
 
 export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
+  const {invalidateAfterImport} = useTemplateConfigCaches(projectId, undefined);
   const [searchParams, setSearchParams] = useSearchParams();
 
     // Read tab from URL or use default
@@ -62,7 +61,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     activeTemplate?.id,
     user?.id,
   );
-  const { entityTypes } = useTemplateEntityTypes(activeTemplate?.id);
+  // ACTIVE snapshot (B-3a). Loading/error must render a placeholder, never
+  // stats computed from an empty tree (reads as inflated completeness).
+  const {
+    entityTypes,
+    isLoading: structureLoading,
+    isError: structureError,
+  } = useActiveTemplateStructure(projectId, activeTemplate?.id);
 
   const extractionStats = (() => {
     const totalArticles = articles.length;
@@ -211,7 +216,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
 
     // Render Dashboard tab
-  const renderDashboard = () => (
+  const renderDashboard = () => {
+    // Same gate as the worklist tables: while the active-version structure
+    // is loading — or errored — show a placeholder, never numbers from [].
+    if (activeTemplate && (structureLoading || structureError)) {
+      return <Skeleton data-testid="dashboard-skeleton" className="h-48 w-full rounded-md border" />;
+    }
+    return (
       <div className="space-y-4">
           {/* Dense stat strip — one bordered row of figures (replaces the
               three oversized single-number cards). */}
@@ -295,8 +306,9 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           </CardContent>
         </Card>
       )}
-    </div>
-  );
+      </div>
+    );
+  };
 
     // Render tab content (only when not loading templates)
   const renderTabContent = () => {
@@ -347,7 +359,54 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         return renderDashboard();
       
       case 'configuration':
+        return (
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
+            {/* Project-regime chrome (§5, C1b): the engine chip lives ABOVE
+                the versioned template card — choosing an engine never arms
+                the Draft chip and never enters the Publish diff. The chip
+                OWNS its flex row, so a failed read renders no empty strip. */}
+            <LlmEngineChip projectId={projectId} />
+            {activeTemplate ? (
+              // Dashboard regime: the page never scrolls — the grid card
+              // absorbs the leftover height and scrolls internally. The
+              // overflow-y-auto is the short-viewport escape hatch (zoom,
+              // landscape phone, expanded instruction editor): when the
+              // editor's FIXED rows outgrow the area, this column scrolls
+              // instead of clipping controls unreachable — the chip and
+              // tab chrome above stay fixed either way.
+              <div className="min-h-0 flex-1 overflow-y-auto">{renderConfigurationBody()}</div>
+            ) : (
+              // No template yet: a plain content card; scroll the area.
+              <div className="min-h-0 flex-1 overflow-y-auto pb-4">{renderConfigurationBody()}</div>
+            )}
+          </div>
+        );
+
+      default:
         return activeTemplate ? (
+          <ArticleExtractionTable
+            projectId={projectId}
+            templateId={activeTemplate.id}
+          />
+        ) : isManager ? (
+            <ConfigureTemplateFirst onConfigureClick={() => setActiveTab('configuration')}/>
+        ) : (
+            <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
+                <CardContent className="pt-6 pb-6">
+                    <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
+                        <AlertCircle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" strokeWidth={1.5}/>
+                        <p>{t('extraction', 'configContactManagerToConfigure')}</p>
+                    </div>
+                </CardContent>
+            </Card>
+        );
+    }
+  };
+
+  // The versioned-card side of the Configuration tab (everything BELOW the
+  // project-regime chrome row that hosts the engine chip).
+  const renderConfigurationBody = () => {
+    return activeTemplate ? (
           <TemplateConfigEditor
             projectId={projectId}
             templateId={activeTemplate.id}
@@ -464,26 +523,6 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             </CardContent>
           </Card>
         );
-      
-      default:
-        return activeTemplate ? (
-          <ArticleExtractionTable 
-            projectId={projectId} 
-            templateId={activeTemplate.id}
-          />
-        ) : isManager ? (
-            <ConfigureTemplateFirst onConfigureClick={() => setActiveTab('configuration')}/>
-        ) : (
-            <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
-                <CardContent className="pt-6 pb-6">
-                    <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
-                        <AlertCircle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" strokeWidth={1.5}/>
-                        <p>{t('extraction', 'configContactManagerToConfigure')}</p>
-                    </div>
-                </CardContent>
-            </Card>
-        );
-    }
   };
 
     return (
@@ -516,7 +555,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                             ))}
                         </div>
           </div>
-                ) : activeTab === 'extraction' ? (
+                ) : activeTab === 'extraction' || activeTab === 'configuration' ? (
                     <div className="flex min-h-0 flex-1 flex-col">{renderTabContent()}</div>
                 ) : (
                     <div className="min-h-0 flex-1 overflow-y-auto pb-4">{renderTabContent()}</div>
@@ -549,11 +588,9 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         initialTemplateId={importInitialTemplateId}
         onTemplateImported={async (templateId?: string) => {
             setImportInitialTemplateId(null);
-            // Import may have healed/rewritten the clone's structure — the
-            // live-structure and run-view caches must not keep serving the
-            // pre-import shape.
-            void queryClient.invalidateQueries({queryKey: templateEntityTypesKeys.all});
-            void queryClient.invalidateQueries({queryKey: runsKeys.all});
+            // Import publishes server-side, possibly for a DIFFERENT
+            // template — id-free .all invalidation (shared contract).
+            void invalidateAfterImport();
             // Refresh templates without reloading the page
           const updatedTemplates = await refreshTemplates() || [];
             // Stay on configuration tab

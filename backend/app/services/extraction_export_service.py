@@ -54,6 +54,7 @@ from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     load_export_sections,
 )
+from app.services.exports.run_engine import resolve_model_used
 from app.services.exports.value_envelope import resolve_value
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
@@ -119,6 +120,9 @@ class SectionDescriptor:
     description: str | None = None
     # Machine name from the snapshot; see FieldDescriptor.name.
     name: str = ""
+    # Group entry noun from the pinned snapshot (B-8) — set on
+    # model_container rows; None elsewhere and on pre-0051 snapshots.
+    entry_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -218,7 +222,7 @@ class AIProposalRow:
     evidence_text: str  # joined with ' | ' when multiple
     evidence_pages: str  # joined with ', ' when multiple
     proposed_at: datetime
-    model_used: str  # resolved from run.parameters["model"]; "" when absent
+    model_used: str  # server-written provenance engine; see resolve_model_used
     reviewer_outcome: str  # accepted | rejected | edited (best-effort) | pending | superseded
     final_value_used: Any  # None when not published
 
@@ -847,6 +851,7 @@ class ExtractionExportService(LoggerMixin):
                 sort_order=s.sort_order,
                 description=s.description,
                 name=s.name,
+                entry_label=s.entry_label,
             )
             for s in snapshot_sections
         )
@@ -1025,7 +1030,18 @@ class ExtractionExportService(LoggerMixin):
         self,
         template_id: UUID,
     ) -> dict[UUID, ExtractionEntityRole]:
-        """Return ``entity_type_id -> role`` for the template."""
+        """``entity_type_id -> role`` from the ACTIVE snapshot (B-3a).
+
+        Derived from the same anchor the column layout uses — a live read
+        here would let an unpublished draft edit repartition the export's
+        study/model fan-out under B-4. Chains to the live rows when no
+        active version exists (unreachable for templates with runs —
+        trigger 0004 — but chain, never swap).
+        """
+        version = await self._template_versions_repo().get_active(template_id)
+        if version is not None:
+            sections = await load_export_sections(self.db, version_id=version.id)
+            return {s.entity_type_id: ExtractionEntityRole(s.role) for s in sections}
         rows = (
             await self.db.execute(
                 select(ExtractionEntityType.id, ExtractionEntityType.role).where(
@@ -1617,7 +1633,6 @@ class ExtractionExportService(LoggerMixin):
           3. reviewer_states + decisions for the same (run, instance, field)
              coordinates (to compute the ``Reviewer outcome`` column).
         """
-        from app.models.extraction import ExtractionEntityType
         from app.models.extraction_workflow import (
             ExtractionProposalRecord,
             ExtractionReviewerDecision,
@@ -1777,35 +1792,42 @@ class ExtractionExportService(LoggerMixin):
                 for idx, iid in enumerate(ids, start=1):
                     instance_index_by_id[iid] = idx
 
-        # Section labels — lookup needs entity_type_id for an instance.
-        # If an entity_type doesn't appear in our snapshot sections, we
-        # fall back to a "(unknown section)" label rather than erroring.
-        ent_label_rows = (
-            await self.db.execute(
-                select(ExtractionEntityType.id, ExtractionEntityType.label).where(
-                    ExtractionEntityType.id.in_({etid for etid, _aid in instance_meta.values()})
-                    if instance_meta
-                    else (False,)  # type: ignore[arg-type]  # SA short-circuits on no-op
-                )
-            )
-        ).all()
-        section_label_by_entity: dict[UUID, str] = dict(ent_label_rows)
+        # 6. The in-scope runs, carrying both halves of the "Model used"
+        # resolution (``results`` provenance first, ``parameters`` only as the
+        # legacy fallback — see ``resolve_model_used``) plus the ``version_id``
+        # that feeds the label-fallback chain below.
+        run_stmt = select(ExtractionRun).where(ExtractionRun.id.in_(run_ids))
+        run_by_id = {r.id: r for r in (await self.db.execute(run_stmt)).scalars().all()}
 
-        # 6. Model per run — resolved from run.parameters["model"] (set at
-        # dispatch time). Falls back to "" for older runs without the key.
-        run_param_rows = (
-            await self.db.execute(
-                select(ExtractionRun.id, ExtractionRun.parameters).where(
-                    ExtractionRun.id.in_(run_ids)
-                )
-            )
-        ).all()
-        model_by_run: dict[UUID, str] = {
-            rid: (params or {}).get("model", "") for rid, params in run_param_rows
-        }
+        # Label-fallback CHAIN (B-3a): anchor sections -> the RUN's pinned
+        # snapshot -> live tables -> "(unknown ...)". An instance belongs to
+        # its run's pinned version, not the anchor, so a section or field
+        # removed after the run finalized must resolve from that version
+        # before the live table (which may have lost the row entirely).
+        section_label_by_entity: dict[UUID, str] = {}
+        run_field_labels: dict[UUID, str] = {}
+        for vid in {r.version_id for r in run_by_id.values()}:
+            for section in await load_export_sections(self.db, version_id=vid):
+                section_label_by_entity.setdefault(section.entity_type_id, section.label)
+                for snap_field in section.fields:
+                    run_field_labels.setdefault(snap_field.field_id, snap_field.label)
+        for fid, label in run_field_labels.items():
+            field_label_by_id.setdefault(fid, label)
 
-        # Field-label fallback when a field is not in the template snapshot
-        # (rare; happens when the run was finalized on an older version).
+        missing_entity_ids = {
+            etid for etid, _aid in instance_meta.values()
+        } - section_label_by_entity.keys()
+        if missing_entity_ids:
+            ent_label_rows = (
+                await self.db.execute(
+                    select(ExtractionEntityType.id, ExtractionEntityType.label).where(
+                        ExtractionEntityType.id.in_(missing_entity_ids)
+                    )
+                )
+            ).all()
+            for etid, label in ent_label_rows:
+                section_label_by_entity.setdefault(etid, label)
+
         missing_field_ids = {
             fid for _pid, _rid, _iid, fid, *_ in proposal_rows if fid not in field_label_by_id
         }
@@ -1824,7 +1846,8 @@ class ExtractionExportService(LoggerMixin):
         out: list[AIProposalRow] = []
         for pid, rid, iid, fid, proposed_value, confidence, rationale, ts in proposal_rows:
             article = articles_by_run.get(rid)
-            if article is None:
+            run = run_by_id.get(rid)
+            if article is None or run is None:
                 continue  # defensive; the run is in scope by construction
             instance_etid = instance_meta.get(iid, (None, None))[0]
             section_label = (
@@ -1860,7 +1883,9 @@ class ExtractionExportService(LoggerMixin):
                     )
                 ),
                 proposed_at=ts,
-                model_used=model_by_run.get(rid, ""),
+                model_used=resolve_model_used(
+                    run.parameters, run.results, entity_type_id=instance_etid
+                ),
                 reviewer_outcome=outcome,
                 final_value_used=final_value,
             )
@@ -2038,6 +2063,12 @@ def _build_tidy_tables(
     non-model ``MANY`` fans out per ``section_instances``; non-model ``ONE`` is
     one row per article. ``MODEL_CONTAINER`` and field-less sections are skipped.
     """
+    # B-8: model records are labelled with the container's entry noun, read
+    # from the PINNED snapshot descriptors (never live rows). No container,
+    # or a pre-0051 snapshot without the key, falls back to the legacy
+    # "Model" stem byte-identically.
+    container = next((s for s in sections if s.role is ExtractionEntityRole.MODEL_CONTAINER), None)
+    model_stem = ((container.entry_label if container else None) or "model").title()
     tables: list[TidyTable] = []
     for section in sections:
         if section.role is ExtractionEntityRole.MODEL_CONTAINER:
@@ -2052,7 +2083,7 @@ def _build_tidy_tables(
                 continue
             if section.role is ExtractionEntityRole.MODEL_SECTION:
                 instances = article.model_instances
-                stem = "Model"
+                stem = model_stem
             elif section.cardinality is ExtractionCardinality.MANY:
                 instances = article.section_instances.get(section.entity_type_id, ())
                 stem = section.label

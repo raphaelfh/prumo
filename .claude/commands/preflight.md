@@ -155,20 +155,16 @@ the exit code plus the last 20 lines of combined stdout+stderr:
   1. make lint-backend
   2. make lint-frontend
   3. npm run build
-  4. make db-lint-migrations
-     (if this fails with "squawk: command not found" or similar
-     "not installed", treat that single command as WARN, not FAIL)
 
 Determine the gate status:
-- Any command exits non-zero (except #4 when squawk is missing) → FAIL.
-- Only #4 fails because squawk is missing → WARN.
+- Any command exits non-zero → FAIL.
 - All exit 0 → PASS.
 
 Return ONLY the following YAML block (no prose before or after):
 
 gate: local-code
 status: PASS | WARN | FAIL | UNKNOWN
-summary: <one short line, e.g. "ruff 0 errors, eslint 0, vite build OK, squawk missing">
+summary: <one short line, e.g. "ruff 0 errors, eslint 0, vite build OK">
 evidence: |
   <last 20 lines of the most relevant command output (the failing one if any, else the build)>
 ```

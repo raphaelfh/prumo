@@ -32,7 +32,7 @@ if matches_cmd 'git +push +([^;&|]*[[:space:]])?fabianofilho'; then
 fi
 
 if matches_cmd 'railway +up[^;&|]*--path-as-root'; then
-  deny "railway up --path-as-root is broken (railway.toml gotcha). Run plain 'railway up' from the repo root."
+  deny "railway up --path-as-root is retired. Verified re-trigger: empty-commit PR to main (plain 'railway up' from the root also failed 2026-08-18) — see docs/reference/deployment.md § Manual deploy fallback."
 fi
 
 if matches_cmd 'make +(reset-db|db-fresh)' || matches_cmd 'supabase +db +reset'; then

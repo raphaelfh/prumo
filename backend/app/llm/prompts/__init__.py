@@ -14,6 +14,13 @@ def content_version(*parts: str) -> str:
     return digest[:12]
 
 
+def render_general_instructions_section(general_instructions: str | None) -> str:
+    """Template-level general instruction (from the run-pinned snapshot)."""
+    if not general_instructions:
+        return ""
+    return f"General instructions for this review:\n{general_instructions}\n\n"
+
+
 def render_memory_section(memory_context: list[dict[str, str]] | None) -> str:
     """Summarized history of previously extracted sections (batch mode)."""
     if not memory_context:

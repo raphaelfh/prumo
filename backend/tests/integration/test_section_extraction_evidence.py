@@ -74,7 +74,7 @@ def _make_service(
         user_id=str(SEED.primary_profile),
         storage=storage,
         trace_id=trace_id,
-        openai_api_key=None,
+        llm_credentials=None,
     )
 
 
@@ -155,7 +155,6 @@ async def test_two_ranked_rows(
         parent_instance_id=None,
         extracted_data=extracted_data,
         run=run,
-        model="gpt-4o-mini",
     )
     await db_session_real.flush()
 
@@ -218,7 +217,6 @@ async def test_legacy_single_dict(
         parent_instance_id=None,
         extracted_data=extracted_data,
         run=run,
-        model="gpt-4o-mini",
     )
     await db_session_real.flush()
 
@@ -279,7 +277,6 @@ async def test_abstention_records_no_info_proposal(
         parent_instance_id=None,
         extracted_data=extracted_data,
         run=run,
-        model="gpt-4o-mini",
     )
     await db_session_real.flush()
 
@@ -365,7 +362,6 @@ async def test_caps_at_three(
         parent_instance_id=None,
         extracted_data=extracted_data,
         run=run,
-        model="gpt-4o-mini",
     )
     await db_session_real.flush()
 
@@ -434,7 +430,6 @@ async def test_unanchored_evidence_is_ungroundable(
         parent_instance_id=None,
         extracted_data=extracted_data,
         run=run,
-        model="gpt-4o-mini",
     )
     await db_session_real.flush()
 

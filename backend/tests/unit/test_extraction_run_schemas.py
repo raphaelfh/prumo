@@ -106,6 +106,17 @@ class TestCreateProposalRequest:
         with pytest.raises(ValidationError):
             CreateProposalRequest(**self._kwargs(source_user_id=uuid4()))
 
+    def test_client_verification_sibling_rejected(self) -> None:
+        """``proposed_value.verification`` is the server-written Verified-mode
+        verdict (provenance): a client-sent copy is a loud 422 — the
+        ``source_user_id`` forgery precedent — never a silently-stored one."""
+        with pytest.raises(ValidationError):
+            CreateProposalRequest(
+                **self._kwargs(
+                    proposed_value={"value": 1, "verification": {"verdict": "confirmed"}}
+                )
+            )
+
     def test_missing_proposed_value_rejected(self) -> None:
         kwargs = self._kwargs()
         del kwargs["proposed_value"]
@@ -151,6 +162,22 @@ class TestCreateDecisionRequest:
         assert req.proposal_record_id == pid
         assert req.value == {"v": 2}
 
+    def test_client_verification_sibling_rejected(self) -> None:
+        """F3: the decision ``value`` bag is the OTHER side of the agreement
+        mechanism — a smuggled ``verification`` key is refused exactly like
+        on the proposal bag, never stored."""
+        with pytest.raises(ValidationError):
+            CreateDecisionRequest(
+                **self._kwargs(
+                    decision="edit",
+                    value={"value": 1, "verification": {"verdict": "confirmed"}},
+                )
+            )
+
+    def test_clean_value_still_accepted(self) -> None:
+        req = CreateDecisionRequest(**self._kwargs(decision="edit", value={"value": 1}))
+        assert req.value == {"value": 1}
+
 
 # --------------------------------------------------------------------------- #
 # CreateConsensusRequest  (mode pattern ^(select_existing|manual_override)$)
@@ -189,6 +216,22 @@ class TestCreateConsensusRequest:
         )
         assert req.selected_decision_id == did
         assert req.value == {"v": 3}
+
+    def test_client_verification_sibling_rejected(self) -> None:
+        """F3: a manual-override consensus value carrying ``verification``
+        would plant the server-owned verdict straight into PublishedState —
+        refused loudly, the proposal-bag precedent."""
+        with pytest.raises(ValidationError):
+            CreateConsensusRequest(
+                **self._kwargs(
+                    mode="manual_override",
+                    value={"value": 1, "verification": {"verdict": "confirmed"}},
+                )
+            )
+
+    def test_clean_value_still_accepted(self) -> None:
+        req = CreateConsensusRequest(**self._kwargs(mode="manual_override", value={"value": 1}))
+        assert req.value == {"value": 1}
 
 
 # --------------------------------------------------------------------------- #
@@ -543,6 +586,26 @@ class TestRunViewEntityType:
         assert len(et.fields) == 1
         assert isinstance(et.fields[0], RunViewField)
         assert et.fields[0].name == "age"
+
+    def test_entry_label_absent_in_old_snapshot_is_none(self) -> None:
+        """Pre-B-8 snapshot dicts lack the ``entry_label`` key entirely —
+        parsing must default it to None (consumers fall back to 'model')."""
+        old_snapshot_entity = {
+            "id": str(uuid4()),
+            "name": "prediction_models",
+            "label": "Prediction Models",
+            "cardinality": "many",
+            "role": "model_container",
+            "sort_order": 0,
+            "is_required": True,
+            "fields": [],
+        }
+        et = RunViewEntityType.model_validate(old_snapshot_entity)
+        assert et.entry_label is None
+
+    def test_entry_label_round_trips_when_present(self) -> None:
+        et = RunViewEntityType.model_validate(self._ns(entry_label="algorithm"))
+        assert et.entry_label == "algorithm"
 
 
 # --------------------------------------------------------------------------- #

@@ -21,13 +21,16 @@ import pytest
 
 from app.llm.provider import MissingLLMKeyError
 from app.schemas.extraction import ExtractionErrorCode
+from app.schemas.llm_target import LlmTarget
 from app.services.extraction_errors import ExtractionTaskError
+from app.services.llm_engine_service import EngineRetiredError
 from app.services.section_extraction_service import (
     BatchAllSectionsFailed,
     BatchExtractionResult,
     SectionExtractionResult,
 )
 from app.worker.celery_app import celery_app
+from app.worker.tasks import extraction_tasks
 from app.worker.tasks.extraction_tasks import run_section_extraction_task
 
 # ---------------------------------------------------------------------------
@@ -40,6 +43,20 @@ def eager_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     """Run every Celery task synchronously in the pytest process."""
     monkeypatch.setattr(celery_app.conf, "task_always_eager", True)
     monkeypatch.setattr(celery_app.conf, "task_eager_propagates", True)
+
+
+@pytest.fixture(autouse=True)
+def engine_seams(monkeypatch: pytest.MonkeyPatch) -> LlmTarget:
+    """Patch the task-module engine seams — ``_FakeSession`` has no ``execute``
+    or ``get``, so the real resolver cannot run here."""
+    target = LlmTarget(provider="openai", model="task-resolved-model")
+    monkeypatch.setattr(
+        extraction_tasks,
+        "resolve_project_engine",
+        AsyncMock(return_value=target),
+    )
+    monkeypatch.setattr(extraction_tasks, "resolve_engine_for_run", AsyncMock(return_value=target))
+    return target
 
 
 class _FakeSession:
@@ -101,9 +118,15 @@ def _batch_result(run_id: str) -> BatchExtractionResult:
     )
 
 
-def _apply(payload_dict: dict, user_id: str, trace_id: str | None = None) -> dict:
+#: The engine a fresh project resolve yields, distinct from any run pin.
+_PROJECT_ENGINE = LlmTarget(provider="openai", model="project-current-model")
+
+
+def _apply(payload_dict: dict, user_id: str, trace_id: str | None = None, retries: int = 0) -> dict:
+    """One attempt. ``retries`` is Celery's attempt counter (0 = kickoff)."""
     return run_section_extraction_task.apply(
-        kwargs={"payload_json": payload_dict, "user_id": user_id, "trace_id": trace_id}
+        kwargs={"payload_json": payload_dict, "user_id": user_id, "trace_id": trace_id},
+        retries=retries,
     ).get(timeout=5)
 
 
@@ -137,7 +160,7 @@ class TestRunSectionExtractionTaskSingle:
                 "app.services.section_extraction_service.SectionExtractionService",
                 return_value=fake_service,
             ),
-            patch("app.services.api_key_service.APIKeyService", return_value=fake_api_key),
+            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch(
@@ -179,7 +202,7 @@ class TestRunSectionExtractionTaskSingle:
                 "app.services.section_extraction_service.SectionExtractionService",
                 return_value=fake_service,
             ),
-            patch("app.services.api_key_service.APIKeyService", return_value=fake_api_key),
+            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
@@ -217,7 +240,7 @@ class TestRunSectionExtractionTaskBatch:
                 "app.services.section_extraction_service.SectionExtractionService",
                 return_value=fake_service,
             ),
-            patch("app.services.api_key_service.APIKeyService", return_value=fake_api_key),
+            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
@@ -271,7 +294,7 @@ class TestRunSectionExtractionTaskRollback:
                 "app.services.section_extraction_service.SectionExtractionService",
                 return_value=fake_service,
             ),
-            patch("app.services.api_key_service.APIKeyService", return_value=fake_api_key),
+            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
@@ -312,7 +335,7 @@ class TestRunSectionExtractionTaskAllFailed:
                 "app.services.section_extraction_service.SectionExtractionService",
                 return_value=fake_service,
             ),
-            patch("app.services.api_key_service.APIKeyService", return_value=fake_api_key),
+            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
@@ -351,7 +374,7 @@ class TestRunSectionExtractionTaskErrorCode:
                 "app.services.section_extraction_service.SectionExtractionService",
                 return_value=fake_service,
             ),
-            patch("app.services.api_key_service.APIKeyService", return_value=fake_api_key),
+            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
@@ -371,3 +394,164 @@ class TestRunSectionExtractionTaskErrorCode:
         )
         assert err.error_code == ExtractionErrorCode.MISSING_API_KEY.value
         assert str(err) == "No OpenAI API key available: pass a BYOK key."
+
+
+class TestRunSectionExtractionTaskEngineRetired:
+    def test_retired_mid_flight_carries_engine_retired_code(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The roster can drop the stored pair AFTER enqueue-time validation
+        passed. The terminal classify path must ship the friendly code, not
+        EXTRACTION_FAILED — the frontend copy depends on it."""
+        user_id = str(uuid4())
+        payload_dict = {
+            "projectId": str(uuid4()),
+            "articleId": str(uuid4()),
+            "templateId": str(uuid4()),
+            "entityTypeId": str(uuid4()),
+        }
+
+        # Raised through the task's resolver seam — in production
+        # ``resolve_engine_for_run`` delegates to ``resolve_project_engine``,
+        # which is where the roster check actually lives.
+        monkeypatch.setattr(
+            extraction_tasks,
+            "resolve_engine_for_run",
+            AsyncMock(
+                side_effect=EngineRetiredError(
+                    "The project's stored engine openai:gone is no longer available."
+                )
+            ),
+        )
+
+        session = _FakeSession()
+        fake_api_key = MagicMock()
+        fake_api_key.get_key_for_provider = AsyncMock(return_value=None)
+
+        with (
+            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
+            patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
+            patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+            patch("app.worker._session.worker_session", new=_session_factory(session)),
+            pytest.raises(ExtractionTaskError) as exc_info,
+        ):
+            _apply(payload_dict, user_id)
+
+        assert exc_info.value.error_code == ExtractionErrorCode.ENGINE_RETIRED.value
+        assert "no longer available" in str(exc_info.value)
+        session.rollback.assert_awaited_once()
+        session.commit.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Human kickoff vs Celery retry — which engine the attempt runs
+# ---------------------------------------------------------------------------
+
+
+class TestHumanKickoffVersusRetry:
+    """The engine pin is owed to a RETRY, not to the run for its whole life.
+
+    ``run_section_extraction_task`` has exactly one enqueue site — the HTTP
+    endpoint — and a retry re-enters through ``self.retry`` with the same
+    payload, never through that endpoint. So ``self.request.retries`` IS the
+    human/retry boundary, and it is the only thing standing between "the
+    manager's model choice reaches the extraction" (#609's fix must not eat
+    it) and "attempt 2 runs a different engine than attempt 1" (#609 itself).
+
+    Both halves are asserted at the seam the worker actually uses: which
+    engine reaches ``run_from_request``, and the ``repin`` the service is
+    built with.
+    """
+
+    #: What the run is already pinned to when the attempt starts.
+    _PINNED = LlmTarget(provider="anthropic", model="stale-pinned-model")
+
+    def _apply_attempt(
+        self, monkeypatch: pytest.MonkeyPatch, retries: int
+    ) -> tuple[dict[str, Any], MagicMock, AsyncMock]:
+        """Run one attempt; return (ctor kwargs, service mock, resolver mock).
+
+        The resolver stands in for the real one: it honours ``repin`` the way
+        ``resolve_engine_for_run`` does, so the assertions read as "which
+        engine did this attempt run", not "which flag was passed".
+        """
+        run_id = str(uuid4())
+        payload_dict = {
+            "projectId": str(uuid4()),
+            "articleId": str(uuid4()),
+            "templateId": str(uuid4()),
+            "entityTypeId": str(uuid4()),
+            "runId": run_id,
+        }
+
+        async def _resolve(_db: Any, **kw: Any) -> LlmTarget:
+            return _PROJECT_ENGINE if kw["repin"] else self._PINNED
+
+        resolver = AsyncMock(side_effect=_resolve)
+        monkeypatch.setattr(extraction_tasks, "resolve_engine_for_run", resolver)
+
+        ctor: dict[str, Any] = {}
+        fake_service = MagicMock()
+        fake_service.run_from_request = AsyncMock(
+            return_value=_single_result(run_id, payload_dict["entityTypeId"])
+        )
+
+        def _capture(**kwargs: Any) -> MagicMock:
+            ctor.update(kwargs)
+            return fake_service
+
+        fake_api_key = MagicMock()
+        fake_api_key.get_key_for_provider = AsyncMock(return_value=None)
+        session = _FakeSession()
+
+        with (
+            patch(
+                "app.services.section_extraction_service.SectionExtractionService",
+                side_effect=_capture,
+            ),
+            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
+            patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
+            patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+            patch("app.worker._session.worker_session", new=_session_factory(session)),
+        ):
+            _apply(payload_dict, str(uuid4()), "trace-repin", retries=retries)
+
+        return ctor, fake_service, resolver
+
+    def test_first_attempt_is_a_kickoff_that_ignores_the_stale_pin(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Attempt 0 came from a human click: run the manager's CURRENT engine.
+
+        ``repin`` must reach BOTH collaborators — the resolver (so the key is
+        looked up for the engine that will run) and the service (so the run's
+        pin is rewritten to match). Telling only one of them is how the
+        executed engine and the recorded engine drift apart.
+        """
+        ctor, service, resolver = self._apply_attempt(monkeypatch, retries=0)
+
+        assert resolver.await_args.kwargs["repin"] is True, (
+            "attempt 0 was not resolved as a human kickoff"
+        )
+        assert ctor["repin"] is True, "the service was not told to re-pin"
+        assert service.run_from_request.await_args.kwargs["engine"] == _PROJECT_ENGINE, (
+            "the kickoff ran the stale pin instead of the project engine"
+        )
+
+    def test_retry_stays_on_the_engine_attempt_one_ran(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Attempt >= 1 is a Celery retry: reuse the pin, never re-resolve.
+
+        The payload carries no model, so without this every attempt would be
+        free to pick up a mid-flight engine change (#609).
+        """
+        ctor, service, resolver = self._apply_attempt(monkeypatch, retries=1)
+
+        assert resolver.await_args.kwargs["repin"] is False, (
+            "a retry was resolved as a human kickoff"
+        )
+        assert ctor["repin"] is False, "a retry told the service to re-pin"
+        assert service.run_from_request.await_args.kwargs["engine"] == self._PINNED, (
+            "the retry abandoned the engine attempt 1 ran"
+        )

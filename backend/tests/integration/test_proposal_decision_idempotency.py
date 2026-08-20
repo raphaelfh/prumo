@@ -102,6 +102,117 @@ async def test_identical_proposal_rerecord_is_a_noop(db_session: AsyncSession) -
 
 
 @pytest.mark.asyncio
+async def test_verification_sibling_is_ignored_by_the_replay_dedupe(
+    db_session: AsyncSession,
+) -> None:
+    """The Verified-mode ``verification`` ANNOTATION never makes two equal
+    values look different: a re-extract whose verify pass flaked (annotation
+    absent the second time) must not append a duplicate audit row for an
+    unchanged value. The compare is value + absent_reason only."""
+    fx = await _coord(db_session)
+    if fx is None:
+        pytest.skip("Seed graph incomplete")
+    project_id, article_id, template_id, user_id, instance_id, field_id = fx
+
+    lc = RunLifecycleService(db_session)
+    run = await lc.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=user_id,
+    )
+    await lc.advance_stage(run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=user_id)
+
+    svc = ExtractionProposalService(db_session)
+    args = {
+        "run_id": run.id,
+        "instance_id": instance_id,
+        "field_id": field_id,
+        "source": ExtractionProposalSource.AI,
+        "proposed_value": {"value": "v", "verification": {"verdict": "confirmed"}},
+    }
+    first = await svc.record_proposal(**args)
+    # Re-extract, verify flaked: same value, no annotation. Must dedupe.
+    second = await svc.record_proposal(**{**args, "proposed_value": {"value": "v"}})
+    assert second.id == first.id, "a flaked verify must not create a duplicate row"
+
+    # A genuinely changed value still appends, annotation or not.
+    changed = await svc.record_proposal(
+        **{**args, "proposed_value": {"value": "v2", "verification": {"verdict": "unsupported"}}}
+    )
+    assert changed.id != first.id
+
+
+@pytest.mark.asyncio
+async def test_verdict_change_updates_the_annotation_in_place(
+    db_session: AsyncSession,
+) -> None:
+    """F2: a dedupe hit whose INCOMING verdict differs from the stored one
+    refreshes the ``verification`` sibling on the EXISTING row — server-owned
+    metadata on an unchanged value, no new audit row. Covers the heal
+    (stored-absent -> incoming-present, a re-extract after a flaked verify)
+    and the flip (confirmed -> unsupported). An incoming bag WITHOUT the
+    sibling never clears a stored verdict."""
+    fx = await _coord(db_session)
+    if fx is None:
+        pytest.skip("Seed graph incomplete")
+    project_id, article_id, template_id, user_id, instance_id, field_id = fx
+
+    lc = RunLifecycleService(db_session)
+    run = await lc.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=user_id,
+    )
+    await lc.advance_stage(run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=user_id)
+
+    svc = ExtractionProposalService(db_session)
+    args = {
+        "run_id": run.id,
+        "instance_id": instance_id,
+        "field_id": field_id,
+        "source": ExtractionProposalSource.AI,
+        "proposed_value": {"value": "v"},
+    }
+    first = await svc.record_proposal(**args)  # verify flaked: no annotation
+
+    # Heal: the re-extract's verify succeeded — annotate the EXISTING row.
+    healed = await svc.record_proposal(
+        **{**args, "proposed_value": {"value": "v", "verification": {"verdict": "confirmed"}}}
+    )
+    assert healed.id == first.id, "a heal must not append a duplicate row"
+    assert healed.proposed_value.get("verification") == {"verdict": "confirmed"}
+
+    # Flip: the verdict moved on the same value — the stored chip updates.
+    flipped = await svc.record_proposal(
+        **{**args, "proposed_value": {"value": "v", "verification": {"verdict": "unsupported"}}}
+    )
+    assert flipped.id == first.id
+    assert flipped.proposed_value.get("verification") == {"verdict": "unsupported"}
+
+    # A verdict-less replay (fast re-run / flaked verify) never clears.
+    replay = await svc.record_proposal(**args)
+    assert replay.id == first.id
+    assert replay.proposed_value.get("verification") == {"verdict": "unsupported"}
+
+    # The flip PERSISTED (flushed to the row, not just the identity map),
+    # and the audit trail holds exactly one row for the coordinate.
+    stored, count = (
+        await db_session.execute(
+            text(
+                "SELECT proposed_value, count(*) OVER () "
+                "FROM public.extraction_proposal_records "
+                "WHERE run_id=:r AND instance_id=:i AND field_id=:f"
+            ),
+            {"r": str(run.id), "i": str(instance_id), "f": str(field_id)},
+        )
+    ).first()
+    assert count == 1, "verdict updates must never append audit rows"
+    assert stored == {"value": "v", "verification": {"verdict": "unsupported"}}
+
+
+@pytest.mark.asyncio
 async def test_identical_decision_rerecord_is_a_noop(db_session: AsyncSession) -> None:
     fx = await _coord(db_session)
     if fx is None:

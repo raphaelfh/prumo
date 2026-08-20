@@ -24,12 +24,15 @@ from app.core.security import TokenPayload, get_current_user
 from app.main import app
 from app.models.extraction import ExtractionEntityType, TemplateKind
 from app.models.extraction_versioning import ExtractionTemplateVersion
+from app.schemas.template_structure import SectionUpdateRequest
 from app.services.template_clone_service import TemplateCloneService
+from app.services.template_section_service import update_section
 from app.services.template_version_service import (
+    PublishBlockedByMultiEntryError,
     TemplateNotFoundError,
     TemplateVersionService,
 )
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, get_config_draft_marker
 
 CHARMS_GLOBAL_ID = UUID("000c0000-0000-0000-0000-000000000001")
 
@@ -83,6 +86,154 @@ def _snapshot_field_names(version: ExtractionTemplateVersion) -> set[str]:
         for et in (version.schema_ or {}).get("entity_types", [])
         for f in et.get("fields", [])
     }
+
+
+async def _section_by_name(db: AsyncSession, template_id: UUID, name: str) -> ExtractionEntityType:
+    """A CHARMS section by its stable seed name, scoped to the clone."""
+    return (
+        await db.execute(
+            select(ExtractionEntityType).where(
+                ExtractionEntityType.project_template_id == template_id,
+                ExtractionEntityType.name == name,
+            )
+        )
+    ).scalar_one()
+
+
+async def _insert_instance_raw(
+    db: AsyncSession,
+    *,
+    template_id: UUID,
+    entity_type_id: UUID,
+    parent_instance_id: UUID | None = None,
+    label: str = "Entry",
+    sort_order: int = 0,
+) -> UUID:
+    """A raw article-less extraction instance in the secondary project
+    (the cardinality trigger only guards article-scoped rows) — the
+    shape a raced reviewer write leaves behind between a many->one
+    PATCH and Publish."""
+    instance_id = uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO public.extraction_instances "
+            "(id, project_id, template_id, entity_type_id, article_id, "
+            " parent_instance_id, label, sort_order, created_by) "
+            "VALUES (:id, :pid, :tid, :etid, NULL, :parent, :label, :so, :created_by)"
+        ),
+        {
+            "id": str(instance_id),
+            "pid": str(SEED.secondary_project),
+            "tid": str(template_id),
+            "etid": str(entity_type_id),
+            "parent": str(parent_instance_id) if parent_instance_id else None,
+            "label": label,
+            "so": sort_order,
+            "created_by": str(SEED.primary_profile),
+        },
+    )
+    return instance_id
+
+
+async def _flip_final_predictors_with_raced_extra(
+    db: AsyncSession, project_template_id: UUID
+) -> tuple[str, UUID]:
+    """Build the TOCTOU state (B-8 review finding 1): final_predictors
+    flips many->one AFTER its PATCH-time check passed (one entry per
+    parent), then a second entry lands under the same parent — the write
+    a reviewer pinned to the old 'many' snapshot can still make. Returns
+    the flipped section's label and the raced extra instance's id."""
+    container = await _section_by_name(db, project_template_id, "prediction_models")
+    section = await _section_by_name(db, project_template_id, "final_predictors")
+    parent = await _insert_instance_raw(
+        db,
+        template_id=project_template_id,
+        entity_type_id=container.id,
+        label="Model A",
+    )
+    await _insert_instance_raw(
+        db,
+        template_id=project_template_id,
+        entity_type_id=section.id,
+        parent_instance_id=parent,
+    )
+    await update_section(
+        db,
+        project_id=SEED.secondary_project,
+        template_id=project_template_id,
+        section_id=section.id,
+        payload=SectionUpdateRequest(cardinality="one"),
+    )
+    extra = await _insert_instance_raw(
+        db,
+        template_id=project_template_id,
+        entity_type_id=section.id,
+        parent_instance_id=parent,
+        sort_order=1,
+    )
+    await db.flush()
+    return section.label, extra
+
+
+async def _two_one_sections_with_raced_extras(
+    db: AsyncSession,
+    project_template_id: UUID,
+    *,
+    performance_sort_order: int,
+    development_sort_order: int,
+) -> list[str]:
+    """Two cardinality-one model_sections that each already hold 2+ entries
+    under the same parent, carrying a CALLER-CHOSEN ``sort_order`` (B-9b0 D2).
+
+    The sort orders vary per parametrization; the physical write order does
+    not — ``model_development`` is always written first. So both cases hand
+    an un-ordered scan the same row order while expecting opposite lists,
+    and a refusal that lost its ``ORDER BY`` answers both identically and
+    can satisfy at most one of them.
+
+    That indirection replaces an assertion that the un-ordered scan came
+    back in one specific order. It did not, reliably: a query without
+    ``ORDER BY`` promises nothing about row order — not the order the
+    UPDATEs were issued in, whatever the heap usually does — and reading
+    that non-promise as a precondition failed roughly one full-suite run in
+    four while passing every time in isolation.
+
+    Returns the labels in ascending ``sort_order`` — the order the refusal
+    must name them in."""
+    container = await _section_by_name(db, project_template_id, "prediction_models")
+    performance = await _section_by_name(db, project_template_id, "model_performance")
+    development = await _section_by_name(db, project_template_id, "model_development")
+
+    # Fixed write order; only the values differ between parametrizations.
+    for sort_order, section in (
+        (development_sort_order, development),
+        (performance_sort_order, performance),
+    ):
+        await db.execute(
+            text("UPDATE public.extraction_entity_types SET sort_order = :so WHERE id = :id"),
+            {"so": sort_order, "id": str(section.id)},
+        )
+
+    parent = await _insert_instance_raw(
+        db,
+        template_id=project_template_id,
+        entity_type_id=container.id,
+        label="Model A",
+    )
+    for section in (performance, development):
+        for order in (0, 1):
+            await _insert_instance_raw(
+                db,
+                template_id=project_template_id,
+                entity_type_id=section.id,
+                parent_instance_id=parent,
+                sort_order=order,
+            )
+    ranked = sorted(
+        ((performance_sort_order, performance), (development_sort_order, development)),
+        key=lambda pair: pair[0],
+    )
+    return [section.label for _, section in ranked]
 
 
 @pytest.mark.asyncio
@@ -176,6 +327,63 @@ async def test_republish_is_noop_when_snapshot_current(db_session: AsyncSession)
     assert len(count) == 1
 
     await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_republish_versions_instruction_set_and_clear(
+    db_session: AsyncSession,
+) -> None:
+    """Set → v+1 with the key; same again → no-op (the conditional key
+    doesn't break no-op detection); clear → v+1 without the key."""
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await _clean_project_clones(db_session, project_id)
+    clone = await _clone_charms(db_session, project_id, user_id)
+    service = TemplateVersionService(db_session)
+
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET llm_template_instruction = 'General guidance.' WHERE id = :tid"
+        ),
+        {"tid": str(clone.project_template_id)},
+    )
+    set_result = await service.republish(
+        project_id=project_id,
+        project_template_id=clone.project_template_id,
+        user_id=user_id,
+    )
+    assert set_result.changed is True
+    assert set_result.version == 2
+    set_version = await db_session.get(ExtractionTemplateVersion, set_result.version_id)
+    assert set_version is not None
+    assert set_version.schema_["llm_template_instruction"] == "General guidance."
+
+    noop = await service.republish(
+        project_id=project_id,
+        project_template_id=clone.project_template_id,
+        user_id=user_id,
+    )
+    assert noop.changed is False
+    assert noop.version == 2
+
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET llm_template_instruction = NULL WHERE id = :tid"
+        ),
+        {"tid": str(clone.project_template_id)},
+    )
+    cleared = await service.republish(
+        project_id=project_id,
+        project_template_id=clone.project_template_id,
+        user_id=user_id,
+    )
+    assert cleared.changed is True
+    assert cleared.version == 3
+    cleared_version = await db_session.get(ExtractionTemplateVersion, cleared.version_id)
+    assert cleared_version is not None
+    assert "llm_template_instruction" not in cleared_version.schema_
 
 
 @pytest.mark.asyncio
@@ -419,6 +627,162 @@ async def test_reclone_preserves_republished_user_edits(
     await db_session.rollback()
 
 
+@pytest.mark.asyncio
+async def test_republish_blocked_by_multi_entry_under_one_section(
+    db_session: AsyncSession,
+) -> None:
+    """Publish-time re-validation of the many->one rule (TOCTOU window):
+    the PATCH-time check saw one entry per parent, then a reviewer on a
+    run still pinned to the old 'many' snapshot added a second entry.
+    Republish must refuse with the typed error (naming the section),
+    mint no version, re-pin no run and keep the draft marker —
+    re-pinning would strand the run: the 'one' run view renders only
+    ``instances[0]`` while the completion gate counts every instance.
+    Removing the extra entry unblocks the very same publish."""
+    from app.services.run_lifecycle_service import RunLifecycleService
+
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await _clean_project_clones(db_session, project_id)
+    clone = await _clone_charms(db_session, project_id, user_id)
+
+    aid = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.articles (id, project_id, title, row_version) "
+            "VALUES (:id, :pid, 'toctou article', 1)"
+        ),
+        {"id": str(aid), "pid": str(project_id)},
+    )
+    await db_session.flush()
+    run = await RunLifecycleService(db_session).create_run(
+        project_id=project_id,
+        article_id=aid,
+        project_template_id=clone.project_template_id,
+        user_id=user_id,
+    )
+    await db_session.execute(
+        text("UPDATE public.extraction_runs SET stage = 'extract' WHERE id = :id"),
+        {"id": str(run.id)},
+    )
+    await db_session.flush()
+
+    section_label, extra = await _flip_final_predictors_with_raced_extra(
+        db_session, clone.project_template_id
+    )
+
+    service = TemplateVersionService(db_session)
+    with pytest.raises(PublishBlockedByMultiEntryError) as exc:
+        await service.republish(
+            project_id=project_id,
+            project_template_id=clone.project_template_id,
+            user_id=user_id,
+        )
+    assert section_label in str(exc.value), "error must name the section"
+    assert exc.value.details == {"section_labels": [section_label]}, (
+        "one offender is still a LIST of labels (B-9b0 D2)"
+    )
+
+    versions = (
+        (
+            await db_session.execute(
+                select(ExtractionTemplateVersion).where(
+                    ExtractionTemplateVersion.project_template_id == clone.project_template_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [v.version for v in versions] == [1], "a blocked publish must not mint versions"
+    assert versions[0].is_active is True
+    run_version = (
+        await db_session.execute(
+            text("SELECT version_id FROM public.extraction_runs WHERE id = :id"),
+            {"id": str(run.id)},
+        )
+    ).scalar_one()
+    assert str(run_version) == str(clone.version_id), "a blocked publish must not re-pin runs"
+    assert await get_config_draft_marker(db_session, clone.project_template_id) is not None, (
+        "a blocked publish must keep the pending draft marker"
+    )
+
+    await db_session.execute(
+        text("DELETE FROM public.extraction_instances WHERE id = :id"),
+        {"id": str(extra)},
+    )
+    result = await service.republish(
+        project_id=project_id,
+        project_template_id=clone.project_template_id,
+        user_id=user_id,
+    )
+    assert result.changed is True
+    assert result.version == 2
+    repinned_version = (
+        await db_session.execute(
+            text("SELECT version_id FROM public.extraction_runs WHERE id = :id"),
+            {"id": str(run.id)},
+        )
+    ).scalar_one()
+    assert str(repinned_version) == str(result.version_id), (
+        "removing the extra entry must unblock publish and re-pin the run"
+    )
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("performance_sort_order", "development_sort_order"),
+    [(900, 901), (901, 900)],
+    ids=["performance-first", "development-first"],
+)
+async def test_republish_names_every_offending_section_in_sort_order(
+    db_session: AsyncSession,
+    performance_sort_order: int,
+    development_sort_order: int,
+) -> None:
+    """B-9b0 D2: two offending sections ⇒ BOTH are named, in ``sort_order``.
+
+    The pre-B-9b0 select had no ``ORDER BY`` and raised on the first hit, so
+    a manager with two flipped sections was told about whichever one the
+    heap happened to yield — and had to publish, read, fix, publish again to
+    discover the second.
+
+    Run twice with the two sections' ``sort_order`` swapped and their write
+    order held fixed. An un-ordered refusal returns the same list for both
+    parametrizations, so it can satisfy at most one; a correctly ordered one
+    satisfies both. Neither case asserts what the un-ordered order actually
+    is, because Postgres does not promise one."""
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await _clean_project_clones(db_session, project_id)
+    clone = await _clone_charms(db_session, project_id, user_id)
+
+    expected = await _two_one_sections_with_raced_extras(
+        db_session,
+        clone.project_template_id,
+        performance_sort_order=performance_sort_order,
+        development_sort_order=development_sort_order,
+    )
+
+    with pytest.raises(PublishBlockedByMultiEntryError) as exc:
+        await TemplateVersionService(db_session).republish(
+            project_id=project_id,
+            project_template_id=clone.project_template_id,
+            user_id=user_id,
+        )
+
+    message = str(exc.value)
+    assert all(label in message for label in expected), f"the prose must name both: {message!r}"
+    assert exc.value.details == {"section_labels": expected}
+    assert message.index(expected[0]) < message.index(expected[1]), (
+        "the prose must follow sort_order too"
+    )
+
+    await db_session.rollback()
+
+
 @pytest_asyncio.fixture
 async def auth_as_profile(
     db_session: AsyncSession,
@@ -451,8 +815,13 @@ async def test_republish_endpoint_publishes_edit(
     et_id = await _first_entity_type_id(db_session, clone.project_template_id)
     await _add_field_like_postgrest(db_session, et_id, "endpoint_field")
 
+    sheet = await db_client.get(
+        f"/api/v1/projects/{project_id}/templates/{clone.project_template_id}/config-diff"
+    )
+    assert sheet.status_code == 200, sheet.text
     res = await db_client.post(
-        f"/api/v1/projects/{project_id}/templates/{clone.project_template_id}/republish-version"
+        f"/api/v1/projects/{project_id}/templates/{clone.project_template_id}/republish-version",
+        json={"expected_fingerprint": sheet.json()["data"]["fingerprint"]},
     )
     assert res.status_code == 200, res.text
     data = res.json()["data"]
@@ -475,8 +844,45 @@ async def test_republish_endpoint_404_for_foreign_template(
 
     res = await db_client.post(
         f"/api/v1/projects/{SEED.primary_project}/templates/"
-        f"{clone.project_template_id}/republish-version"
+        f"{clone.project_template_id}/republish-version",
+        json={},
     )
     assert res.status_code == 404, res.text
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_republish_endpoint_409_when_publish_blocked(
+    db_session: AsyncSession,
+    db_client: AsyncClient,
+    auth_as_profile: UUID,
+) -> None:
+    """B-9b0 D1, at the level that matters: the Publish button branches on
+    ``error.code`` and composes its own sentence from
+    ``error.details.section_labels`` — neither of which a service-level
+    ``pytest.raises`` can see. ``details`` must be JSON primitives: the
+    handler writes them through a bare ``JSONResponse``, so anything else
+    would 500 *inside* ``app_error_handler``."""
+    project_id = SEED.secondary_project
+    await _clean_project_clones(db_session, project_id)
+    clone = await _clone_charms(db_session, project_id, auth_as_profile)
+    section_label, _extra = await _flip_final_predictors_with_raced_extra(
+        db_session, clone.project_template_id
+    )
+
+    # The many->one re-check runs BEFORE the publish contract, so this
+    # refusal needs no fingerprint — an empty body reaches it.
+    res = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/{clone.project_template_id}/republish-version",
+        json={},
+    )
+    assert res.status_code == 409, res.text
+    error = res.json()["error"]
+    assert error["code"] == "PUBLISH_BLOCKED_BY_MULTI_ENTRY"
+    labels = error["details"]["section_labels"]
+    assert labels == [section_label]
+    assert all(isinstance(label, str) for label in labels)
+    assert section_label in error["message"]
 
     await db_session.rollback()

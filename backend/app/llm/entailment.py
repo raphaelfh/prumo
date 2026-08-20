@@ -1,6 +1,6 @@
 """Entailment judge: does the cited passage SUPPORT the extracted value?
 
-A separate gpt-4o-mini call, run OUTSIDE the extraction retry loop. Reuses the
+A separate small-model call, run OUTSIDE the extraction retry loop. Reuses the
 structured-output path with a one-field verdict model for reliable parsing."""
 
 from __future__ import annotations

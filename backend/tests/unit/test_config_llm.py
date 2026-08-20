@@ -3,7 +3,7 @@ from app.core.config import settings
 
 def test_llm_defaults_preserve_current_behavior():
     assert settings.LLM_PROVIDER == "openai"
-    assert settings.LLM_DEFAULT_MODEL == "gpt-4o-mini"
+    assert settings.LLM_DEFAULT_MODEL == "gpt-5.6-luna"
     assert settings.LLM_TIMEOUT_SECONDS == 120.0
 
 

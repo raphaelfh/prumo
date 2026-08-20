@@ -6,7 +6,8 @@ Follows the same encryption pattern used by ZoteroService.
 """
 
 import base64
-from typing import Any
+from enum import StrEnum
+from typing import Any, NamedTuple
 from uuid import UUID
 
 import httpx
@@ -71,6 +72,31 @@ def list_providers_info() -> list[dict[str, str]]:
             )
         result.append({"id": pid, **_PROVIDER_METADATA[pid]})
     return result
+
+
+class KeyScope(StrEnum):
+    """Whose key paid for a call — the part of key resolution that is safe to
+    record. §5.2 requires provenance to name the scope and NEVER the key."""
+
+    USER_BYOK = "user_byok"
+    """The caller's own stored key."""
+    GLOBAL_SERVICE = "global_service"
+    """prumo's shared key, used when the caller has none."""
+    SHARED_ENDPOINT = "shared_endpoint"
+    """The project's custom-endpoint key (C2): shared by every member of the
+    project, resolved from the endpoint row — never from this service."""
+
+
+class ResolvedKey(NamedTuple):
+    """A decrypted key plus whose it is.
+
+    A plain ``str`` return made the two sources indistinguishable, so a run
+    could not record which one it ran on. Keep the two apart at every call
+    site: ``key`` goes to the provider, ``scope`` goes to provenance.
+    """
+
+    key: str
+    scope: KeyScope
 
 
 class APIKeyService(LoggerMixin):
@@ -230,20 +256,29 @@ class APIKeyService(LoggerMixin):
         self,
         provider: str,
         use_fallback: bool = True,
-    ) -> str | None:
+    ) -> ResolvedKey | None:
         """
-        Get decrypted API key for a provider.
+        Get the decrypted API key for a provider, and WHOSE key it is.
 
         Priority:
         1. User default key for provider
         2. Fallback to global key (if use_fallback=True)
+
+        The scope rides along because the two branches below are otherwise
+        indistinguishable to the caller: both used to return a bare ``str``,
+        so a run could not record whether it was billed to the reviewer's own
+        key or to prumo's shared one. Provenance needs that (§5.2) and there
+        is no side channel for it — ``update_last_used`` is a write nobody
+        reads back, and it races with any other run for the same user.
 
         Args:
             provider: Provider.
             use_fallback: Whether to use global key as fallback.
 
         Returns:
-            Decrypted API key or None.
+            The key and its scope, or None when neither source has one.
+            The KEY ITSELF must never be logged or written to provenance —
+            only ``scope``.
         """
         # If user_id is invalid (tests), go straight to fallback.
         if self._user_id is not None:
@@ -254,13 +289,30 @@ class APIKeyService(LoggerMixin):
                 # Update last_used_at
                 await self._repo.update_last_used(default_key.id)
                 # Decrypt and return
-                return self._decrypt(default_key.encrypted_api_key)
+                return ResolvedKey(self._decrypt(default_key.encrypted_api_key), KeyScope.USER_BYOK)
 
         # Fallback to global key
         if use_fallback:
-            return self._get_global_key(provider)
+            global_key = self._get_global_key(provider)
+            if global_key is not None:
+                return ResolvedKey(global_key, KeyScope.GLOBAL_SERVICE)
 
         return None
+
+    async def has_key_for_provider(self, provider: str) -> bool:
+        """Whether the caller could run ``provider`` — existence probe ONLY.
+
+        The member-visible engine popover (C1b) asks this for every
+        catalogue provider on each open. Unlike ``get_key_for_provider``
+        it never decrypts and never writes ``update_last_used``: a read
+        endpoint must not mutate usage bookkeeping, and key material has
+        no business being touched to answer a boolean.
+        """
+        if self._user_id is not None:
+            default_key = await self._repo.get_default(self._user_id, provider)
+            if default_key is not None and default_key.encrypted_api_key:
+                return True
+        return self._get_global_key(provider) is not None
 
     async def get_decrypted_key(
         self,

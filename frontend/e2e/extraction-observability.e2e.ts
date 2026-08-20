@@ -151,7 +151,6 @@ test.describe("Extraction E2E Observability", () => {
       projectId: process.env.E2E_PROJECT_ID!,
       articleId: process.env.E2E_ARTICLE_ID!,
       templateId: process.env.E2E_TEMPLATE_ID!,
-      model: process.env.E2E_MODEL_NAME || "gpt-4o-mini",
     };
 
     const modelStart = Date.now();
@@ -180,7 +179,6 @@ test.describe("Extraction E2E Observability", () => {
       templateId: process.env.E2E_TEMPLATE_ID!,
       entityTypeId: process.env.E2E_ENTITY_TYPE_ID!,
       extractAllSections: false,
-      model: process.env.E2E_MODEL_NAME || "gpt-4o-mini",
     };
 
     // Section extraction is async: POST dispatches a Celery job (202 + job_id);

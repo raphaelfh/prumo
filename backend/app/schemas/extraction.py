@@ -11,8 +11,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.core.config import settings
-
 # =================== INTERNAL ASSEMBLY SCHEMAS ===================
 
 
@@ -36,13 +34,34 @@ class AssemblyInfo(BaseModel):
 
 
 class ExtractionOptions(BaseModel):
-    """Opcoes de extraction."""
+    """Extraction options — entirely inert.
 
-    model: str = Field(default=settings.LLM_DEFAULT_MODEL, description="Model to use")
-    temperature: float = Field(default=0.1, ge=0, le=2)
-    max_tokens: int | None = Field(default=None, ge=100, le=16000)
+    C1a removed ``model``: the engine is server-owned, so a client can no
+    longer choose it. The two fields left are inert too — nothing in
+    ``backend/app`` dereferences ``payload.options``, and what actually
+    reaches the LLM are the constants in ``app/llm/extractor.py``. They are
+    flagged ``deprecated`` in the OpenAPI contract while staying accepted on
+    the wire, so clients can be migrated off them before they are removed.
+    """
 
-    model_config = ConfigDict(populate_by_name=True)
+    temperature: float = Field(
+        default=0.1,
+        ge=0,
+        le=2,
+        json_schema_extra={"deprecated": True},
+    )
+    max_tokens: int | None = Field(
+        default=None,
+        ge=100,
+        le=16000,
+        json_schema_extra={"deprecated": True},
+    )
+
+    # extra="forbid" landed 2026-08-16, one release after the ``model`` field
+    # was dropped: queued Celery payloads from the pre-C1a era (whose options
+    # could carry ``model``) drained days ago, so an unknown key here is now
+    # always a live client's mistake and deserves a loud 422.
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
 class EvidencePassage(BaseModel):
@@ -93,10 +112,6 @@ class SectionExtractionRequest(BaseModel):
 
     # Opcoes de extraction
     options: ExtractionOptions | None = None
-    model: str | None = Field(
-        default=settings.LLM_DEFAULT_MODEL,
-        description="Model to use",
-    )
 
     # Reuse an existing run instead of creating a new one. Used by the
     # Quality-Assessment surface, which opens a Run via the HITL session
@@ -122,7 +137,15 @@ class SectionExtractionRequest(BaseModel):
         alias="skipFieldsWithHumanProposals",
     )
 
-    model_config = ConfigDict(populate_by_name=True)
+    # extra="forbid" was deliberately deferred one release behind the
+    # ``model`` field's removal: this payload round-trips through Celery
+    # (``model_dump(mode="json")`` -> ``SectionExtractionRequest(**payload_json)``
+    # in the worker), and a job queued by a pre-C1a web process still carried
+    # the dropped key — under ``forbid`` that rebuild dies terminally, no
+    # retry. The pre-C1a era reached prod 2026-08-11 and the queue drains in
+    # minutes, so as of 2026-08-16 an unknown key is always a live client's
+    # mistake: a loud 422, matching ``CreateProposalRequest``'s precedent.
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     @model_validator(mode="after")
     def validate_extraction_mode(self) -> "SectionExtractionRequest":
@@ -247,13 +270,15 @@ class ModelExtractionRequest(BaseModel):
     run_id: UUID | None = Field(default=None, alias="runId")
 
     # Opcoes de extraction
-    model: str | None = Field(
-        default=settings.LLM_DEFAULT_MODEL,
-        description="Model to use",
-    )
     options: ExtractionOptions | None = None
 
-    model_config = ConfigDict(populate_by_name=True)
+    # C1a: the engine is server-owned. ``extra="forbid"`` turns a client that
+    # still sends ``model`` into a loud 422 instead of silently dropping its
+    # choice — same reasoning as ``CreateProposalRequest`` in
+    # ``schemas/extraction_run.py``. Safe here (and NOT on
+    # ``SectionExtractionRequest``) because this payload is validated once, in
+    # the request cycle: there is no Celery hop that could replay an older body.
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
 class IdentifiedModel(BaseModel):
@@ -471,11 +496,19 @@ class ExtractionErrorCode(str, Enum):
 
     - ``PDF_NOT_FOUND``    — the article has no stored PDF (``FileNotFoundError``).
     - ``MISSING_API_KEY``  — no usable LLM key, BYOK or global (``MissingLLMKeyError``).
+    - ``ENGINE_RETIRED``   — the project's stored engine left the catalogue
+      mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).
+    - ``LLM_ENDPOINT_UNAVAILABLE`` — the engine's custom endpoint cannot
+      serve: row deleted, unverified, model dropped
+      (``resolve_project_engine``), or its key no longer decrypts
+      (``EndpointUnavailableError``; enqueue-time validation is a 409).
     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
     """
 
     PDF_NOT_FOUND = "PDF_NOT_FOUND"
     MISSING_API_KEY = "MISSING_API_KEY"
+    ENGINE_RETIRED = "ENGINE_RETIRED"
+    LLM_ENDPOINT_UNAVAILABLE = "LLM_ENDPOINT_UNAVAILABLE"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
 
 

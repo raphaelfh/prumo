@@ -22,7 +22,7 @@ vi.mock("@/hooks/useCurrentUser", () => ({
   useCurrentUser: () => ({ userId: "reviewer-1" }),
 }));
 
-// useFieldManagement/useModelManagement read the signed-in user from
+// useModelManagement reads the signed-in user from
 // AuthContext; the harness has no real AuthProvider.
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({

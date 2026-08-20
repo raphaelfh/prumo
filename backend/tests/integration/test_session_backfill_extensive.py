@@ -705,6 +705,87 @@ async def test_backfill_creates_runs_continue_to_advance(
     assert stage == "extract"
 
 
+async def test_late_singleton_backfilled_on_session_reopen_and_republish(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,
+) -> None:
+    """B-8 (D11) coverage assertion — no production change rides on this: a
+    cardinality-one child section created AFTER the session opened gets its
+    per-model instances on BOTH existing paths — (a) the next session open
+    (``ensure_instances`` -> ``_backfill_child_singletons``) and (b) publish
+    materialization (``TemplateVersionService.republish`` ->
+    ``_materialize_singleton_instances``), with no session open in between."""
+    from app.services.template_version_service import TemplateVersionService
+
+    article = await _pick_article(db_session)
+    if article is None:
+        pytest.skip("Need an article + project")
+    article_id, project_id = article
+    ptid = await _seed_charms_clone(db_session, db_client, project_id)
+    pred_et = await _prediction_models_et_id(db_session, ptid)
+    model_id = await _insert_model_instance(
+        db_session,
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=ptid,
+        prediction_models_et_id=pred_et,
+        label="PreOpenModel",
+    )
+    await db_session.commit()
+
+    async def _child_count(et_id: UUID) -> int:
+        raw = (
+            await db_session.execute(
+                text(
+                    "SELECT COUNT(*) FROM public.extraction_instances "
+                    "WHERE article_id = :aid AND entity_type_id = :et "
+                    "AND parent_instance_id = :pid"
+                ),
+                {"aid": str(article_id), "et": str(et_id), "pid": str(model_id)},
+            )
+        ).scalar()
+        return int(raw or 0)
+
+    payload = {
+        "kind": "extraction",
+        "project_id": str(project_id),
+        "article_id": str(article_id),
+        "project_template_id": str(ptid),
+    }
+    # The session opens BEFORE either late section exists.
+    res = await db_client.post(_SESSION_URL, json=payload)
+    assert res.status_code in (200, 201), res.text
+
+    # (a) Section added after open -> materialised by the NEXT session open.
+    reopen_et = await _add_child_entity_type(
+        db_session, project_template_id=ptid, parent_et_id=pred_et, name="late_after_open"
+    )
+    await db_session.commit()
+    assert await _child_count(reopen_et) == 0, "sanity: nothing materialises before reopen"
+    res = await db_client.post(_SESSION_URL, json=payload)
+    assert res.status_code in (200, 201), res.text
+    assert await _child_count(reopen_et) == 1
+
+    # (b) Another late section -> materialised by republish alone (the run
+    # from the opens above is in an editable stage, so it is re-pinned).
+    publish_et = await _add_child_entity_type(
+        db_session,
+        project_template_id=ptid,
+        parent_et_id=pred_et,
+        name="late_after_publish",
+        sort_order=100,
+    )
+    await db_session.commit()
+    await TemplateVersionService(db_session).republish(
+        project_id=project_id,
+        project_template_id=ptid,
+        user_id=auth_as_profile,
+    )
+    await db_session.commit()
+    assert await _child_count(publish_et) == 1
+
+
 async def test_backfill_preserves_user_created_label(
     db_client: AsyncClient,
     db_session: AsyncSession,

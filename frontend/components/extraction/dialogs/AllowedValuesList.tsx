@@ -43,6 +43,8 @@ interface AllowedValuesListProps {
   onChange: (values: string[]) => void;
   disabled?: boolean;
   showReorder?: boolean; // Se deve mostrar drag-and-drop
+  /** Focus the add-option input on mount (inspector deep-link, B-5). */
+  autoFocusInput?: boolean;
 }
 
 interface SortableItemProps {
@@ -109,6 +111,7 @@ export function AllowedValuesList({
   onChange,
   disabled = false,
   showReorder = false,
+  autoFocusInput = false,
 }: AllowedValuesListProps) {
   const [inputValue, setInputValue] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -177,6 +180,7 @@ export function AllowedValuesList({
         <div className="flex-1">
           <Input
             value={inputValue}
+            autoFocus={autoFocusInput}
             onChange={(e) => {
               setInputValue(e.target.value);
               setError(null);

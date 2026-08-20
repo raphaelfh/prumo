@@ -13,7 +13,6 @@ app/api/v1/endpoints/model_extraction.py:arg-type
 app/api/v1/endpoints/model_extraction.py:call-arg
 app/api/v1/endpoints/parser_settings.py:arg-type
 app/api/v1/endpoints/project_templates.py:attr-defined
-app/api/v1/endpoints/section_extraction.py:arg-type
 app/api/v1/endpoints/section_extraction.py:call-arg
 app/api/v1/endpoints/user_api_keys.py:call-arg
 app/api/v1/endpoints/zotero_import.py:arg-type
@@ -21,7 +20,6 @@ app/api/v1/endpoints/zotero_import.py:assignment
 app/api/v1/endpoints/zotero_import.py:return-value
 app/core/factories.py:no-untyped-def
 app/core/logging.py:no-any-return
-app/core/security.py:no-any-return
 app/domain/events/base.py:attr-defined
 app/domain/events/base.py:misc
 app/domain/events/handlers.py:arg-type
@@ -54,16 +52,12 @@ app/services/exports/extraction/summary.py:no-untyped-def
 app/services/exports/value_envelope.py:no-any-return
 app/services/extraction_export_service.py:arg-type
 app/services/extraction_export_service.py:assignment
-app/services/extraction_run_read_service.py:type-arg
-app/services/extraction_snapshot.py:no-any-return
-app/services/extraction_suggestion_read_service.py:assignment
 app/services/hitl_session_service.py:attr-defined
 app/services/linear/feedback_mapping.py:no-any-return
 app/services/linear/linear_client.py:no-any-return
 app/services/model_extraction_service.py:assignment
 app/services/model_hierarchy_service.py:attr-defined
 app/services/model_hierarchy_service.py:no-any-return
-app/services/pdf_processor.py:var-annotated
 app/services/project_template_active_service.py:attr-defined
 app/services/run_lifecycle_service.py:arg-type
 app/services/run_lifecycle_service.py:attr-defined
@@ -80,7 +74,6 @@ app/worker/tasks/export_tasks.py:arg-type
 app/worker/tasks/extraction_tasks.py:arg-type
 app/worker/tasks/extraction_tasks.py:attr-defined
 app/worker/tasks/extraction_tasks.py:operator
-app/worker/tasks/extraction_tasks.py:return
 app/worker/tasks/feedback_tasks.py:no-any-return
 app/worker/tasks/feedback_tasks.py:return
 app/worker/tasks/feedback_tasks.py:type-arg

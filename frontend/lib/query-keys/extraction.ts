@@ -44,3 +44,36 @@ export const templateEntityTypesKeys = {
   byTemplate: (templateId: string) =>
     ['template-entity-types', templateId] as const,
 };
+
+/** Template general AI instruction (Configuration row zero). */
+/** ACTIVE-version template structure (worklist/dashboard reads, B-3a). */
+export const templateActiveStructureKeys = {
+  all: ['template-active-structure'] as const,
+  byTemplate: (projectId: string, templateId: string) =>
+    ['template-active-structure', projectId, templateId] as const,
+};
+
+export const templateInstructionKeys = {
+  byTemplate: (projectId: string, templateId: string) =>
+    ['template-instruction', projectId, templateId] as const,
+};
+
+/** Draft/publish status for the Configuration tab's chip (B-4). */
+export const templateConfigStatusKeys = {
+  all: ['template-config-status'] as const,
+  byTemplate: (projectId: string, templateId: string) =>
+    ['template-config-status', projectId, templateId] as const,
+};
+
+/** The published-version timeline behind the History sheet (B-9e). */
+export const templateVersionHistoryKeys = {
+  all: ['template-version-history'] as const,
+  byTemplate: (projectId: string, templateId: string) =>
+    ['template-version-history', projectId, templateId] as const,
+};
+
+/** What the open draft would publish, bucketed by tier (B-9b2a). */
+export const templateDiffKeys = {
+  byTemplate: (projectId: string, templateId: string) =>
+    ['template-config-diff', projectId, templateId] as const,
+};

@@ -17,17 +17,15 @@ from uuid import UUID
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.logging import get_logger
 from app.models.extraction import (
-    ExtractionEntityType,
     ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
     ProjectExtractionTemplate,
 )
-from app.models.extraction_versioning import ExtractionTemplateVersion, TemplateKind
+from app.models.extraction_versioning import TemplateKind
 from app.models.extraction_workflow import (
     ExtractionConsensusDecision,
     ExtractionProposalRecord,
@@ -68,6 +66,7 @@ from app.services.derived_judgment_payload import (
     values_for_derivation,
 )
 from app.services.extraction_reviewer_ready_service import ExtractionReviewerReadyService
+from app.services.extraction_snapshot import entity_types_for_version
 
 logger = get_logger(__name__)
 
@@ -220,50 +219,18 @@ async def get_run_with_workflow_history(
     )
 
 
-def _snapshot_is_narrow(entity_types: list[dict]) -> bool:
-    """A pre-0026 snapshot is detected by its first entity_type lacking 'role'.
-    Empty trees are treated as narrow so the live fallback repopulates them —
-    a legitimately empty template just round-trips to an empty live read, which
-    is the correct (if marginally wasteful) recovery, not a structural read to
-    'optimize away'."""
-    return not entity_types or "role" not in entity_types[0]
-
-
 async def _entity_types_for_run(
     db: AsyncSession, run: RunSummaryResponse
 ) -> list[RunViewEntityType]:
-    """Frozen entity_types tree from the run's version snapshot, with a live
-    read fallback for pre-0026 narrow snapshots (belt-and-suspenders: migration
-    0026 backfills these, but the fallback turns a 'silent broken study/model
-    partition' into a correct live render if any narrow snapshot slips through).
-    Both paths produce the same shape via ``model_validate``."""
-    version = await db.get(ExtractionTemplateVersion, run.version_id)
-    snapshot_types: list[dict] = (version.schema_ or {}).get("entity_types", []) if version else []
-    if not _snapshot_is_narrow(snapshot_types):
-        return [RunViewEntityType.model_validate(et) for et in snapshot_types]
+    """Frozen entity_types tree from the run's version snapshot.
 
-    # Live fallback — one statement, fields eager-loaded (selectinload), then
-    # model_validate straight off the ORM (RunViewEntityType/RunViewField carry
-    # from_attributes=True). The relationship is not guaranteed field-ordered,
-    # so sort the validated fields by sort_order to match the snapshot path.
-    et_rows = (
-        (
-            await db.execute(
-                select(ExtractionEntityType)
-                .where(ExtractionEntityType.project_template_id == run.template_id)
-                .options(selectinload(ExtractionEntityType.fields))
-                .order_by(ExtractionEntityType.sort_order)
-            )
-        )
-        .scalars()
-        .all()
+    Thin wrapper over the shared provider in ``extraction_snapshot`` (B-2):
+    the run view and both AI prompt services read the SAME pinned tree with
+    the same narrow/empty/heterogeneous -> live fallback chain.
+    """
+    return await entity_types_for_version(
+        db, version_id=run.version_id, template_id=run.template_id
     )
-    result: list[RunViewEntityType] = []
-    for et in et_rows:
-        view_et = RunViewEntityType.model_validate(et)
-        view_et.fields.sort(key=lambda f: f.sort_order)
-        result.append(view_et)
-    return result
 
 
 async def _instances_for_run(db: AsyncSession, run: RunSummaryResponse) -> list[RunViewInstance]:

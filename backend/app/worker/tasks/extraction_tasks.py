@@ -10,19 +10,61 @@ module's docstring for the event-loop rationale.
 from __future__ import annotations
 
 import random
+from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
 from celery import Task
 
-from app.core.config import settings
+from app.core.logging import get_logger
 from app.llm.errors import is_transient_llm_error
+from app.services.api_key_service import KeyScope
+from app.services.engine_credentials import EngineCredentials
 from app.services.extraction_errors import ExtractionTaskError, classify_extraction_error
+
+# Module-level on purpose: these are the patchable seams the task tests pin
+# (``extraction_tasks.resolve_project_engine`` / ``.resolve_engine_for_run``).
+from app.services.llm_engine_service import resolve_project_engine
+from app.services.run_engine_freeze import resolve_engine_for_run
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
 
+logger = get_logger(__name__)
+
 _RETRY_BASE_SECONDS = 60
 _RETRY_MAX_SECONDS = 600
+
+
+def _with_byok_override(
+    credentials: EngineCredentials,
+    openai_api_key: str | None,
+    *,
+    provider: str,
+) -> EngineCredentials:
+    """Apply a message-borne key to CATALOGUE credentials only.
+
+    A key handed in through the task message is the CALLER's own, and it
+    overrides just the KEY half — the resolved base_url and endpoint
+    identity still travel, or an endpoint engine would reach ``build_model``
+    without a host.
+
+    For an ENDPOINT-backed engine there is nothing to override: the host is
+    the manager's choice and the endpoint's shared key is the only
+    credential that belongs on it. Applying the caller's key there would
+    post a personal secret to a third-party host AND record the run as
+    ``user_byok`` when it ran on shared infrastructure. Ignored, loudly —
+    the log names the endpoint and provider, never the key.
+    """
+    if not openai_api_key:
+        return credentials
+    if credentials.endpoint_id is not None:
+        logger.warning(
+            "byok_override_ignored_for_endpoint_engine",
+            endpoint_id=credentials.endpoint_id,
+            provider=provider,
+        )
+        return credentials
+    return replace(credentials, api_key=openai_api_key, key_scope=KeyScope.USER_BYOK)
 
 
 def _retry_countdown(retries: int) -> float:
@@ -70,7 +112,7 @@ def extract_section_task(
     async def run() -> dict[str, Any]:
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
-        from app.services.api_key_service import APIKeyService
+        from app.services.engine_credentials import resolve_engine_credentials
         from app.services.section_extraction_service import SectionExtractionService
         from app.worker._session import worker_session
 
@@ -79,18 +121,37 @@ def extract_section_task(
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
 
-                # Resolve user API key if not provided
-                api_key = openai_api_key
-                if not api_key:
-                    api_key_service = APIKeyService(db=session, user_id=user_id)
-                    api_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                # DEAD ENTRY POINT: no production enqueue sites remain (the
+                # live path is run_section_extraction_task). Before re-arming,
+                # take the engine from ``resolve_engine_for_run(..., repin=
+                # self.request.retries == 0)`` as that task does: a bare
+                # project resolve makes every attempt a re-pin, so a retry
+                # can run an engine attempt 1 did not. This task carries no
+                # run_id and passes no ``repin``, so it currently DEFERS to a
+                # reused run's pin and relies on the service's re-key
+                # (key_provider) when that pin names another provider.
+                # If re-armed on an OLD build, a stored mode this build does
+                # not know degrades the read to the env-default engine.
+                engine = await resolve_project_engine(session, UUID(project_id))
+
+                # One resolver for key + scope + endpoint host (B9); the
+                # message-borne key applies to catalogue engines only (see
+                # ``_with_byok_override``).
+                credentials = _with_byok_override(
+                    await resolve_engine_credentials(
+                        session, user_id=user_id, project_id=UUID(project_id), engine=engine
+                    ),
+                    openai_api_key,
+                    provider=engine.provider,
+                )
 
                 service = SectionExtractionService(
                     db=session,
                     user_id=user_id,
                     storage=storage,
                     trace_id=self.request.id,
-                    openai_api_key=api_key,
+                    llm_credentials=credentials,
+                    key_provider=engine.provider,
                 )
 
                 result = await service.extract_section(
@@ -99,6 +160,7 @@ def extract_section_task(
                     template_id=UUID(template_id),
                     entity_type_id=UUID(entity_type_id),
                     parent_instance_id=UUID(parent_instance_id) if parent_instance_id else None,
+                    engine=engine,
                 )
 
                 await session.commit()
@@ -152,7 +214,7 @@ def extract_models_task(
     async def run() -> dict[str, Any]:
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
-        from app.services.api_key_service import APIKeyService
+        from app.services.engine_credentials import resolve_engine_credentials
         from app.services.model_extraction_service import ModelExtractionService
         from app.worker._session import worker_session
 
@@ -161,24 +223,42 @@ def extract_models_task(
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
 
-                # Resolve user API key if not provided
-                api_key = openai_api_key
-                if not api_key:
-                    api_key_service = APIKeyService(db=session, user_id=user_id)
-                    api_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                # DEAD ENTRY POINT: no production enqueue sites remain (only
+                # the equally-unenqueued batch_extract_task fans out here).
+                # Before re-arming, pass ``repin=self.request.retries == 0``
+                # to ``extract`` below: it defaults to False, so today every
+                # attempt DEFERS to a reused run's pin and a manager's model
+                # change would never reach this path — the bug fixed on the
+                # live route. If re-armed on an OLD build, a stored mode it
+                # does not know degrades the read to the env-default engine.
+                engine = await resolve_project_engine(session, UUID(project_id))
+
+                # One resolver for key + endpoint host (B9). The scope rides
+                # along unused: this service writes no provenance, but the
+                # credential is applied whole — splitting it is how an
+                # endpoint key reaches a cloud host. The message-borne key
+                # applies to catalogue engines only (``_with_byok_override``).
+                credentials = _with_byok_override(
+                    await resolve_engine_credentials(
+                        session, user_id=user_id, project_id=UUID(project_id), engine=engine
+                    ),
+                    openai_api_key,
+                    provider=engine.provider,
+                )
 
                 service = ModelExtractionService(
                     db=session,
                     user_id=user_id,
                     storage=storage,
                     trace_id=self.request.id,
-                    openai_api_key=api_key,
+                    llm_credentials=credentials,
                 )
 
                 result = await service.extract(
                     project_id=UUID(project_id),
                     article_id=UUID(article_id),
                     template_id=UUID(template_id),
+                    engine=engine,
                 )
 
                 await session.commit()
@@ -258,7 +338,7 @@ def run_section_extraction_task(
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.schemas.extraction import SectionExtractionRequest
-        from app.services.api_key_service import APIKeyService
+        from app.services.engine_credentials import resolve_engine_credentials
         from app.services.section_extraction_service import (
             BatchAllSectionsFailed,
             BatchExtractionResult,
@@ -271,19 +351,55 @@ def run_section_extraction_task(
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
 
-                api_key_service = APIKeyService(db=session, user_id=user_id)
-                api_key = await api_key_service.get_key_for_provider(settings.LLM_PROVIDER)
+                request = SectionExtractionRequest(**payload_json)
+
+                # Attempt 0 is the HUMAN kickoff (one enqueue site — the
+                # endpoint); every later attempt is a Celery retry, which
+                # re-enters HERE with the same payload. Hence the flag is
+                # derived at this line and never rides IN the payload:
+                # ``self.retry`` replays kwargs, so a payload flag would
+                # re-pin on exactly the attempts that must not.
+                repin = self.request.retries == 0
+
+                # C1b ordering (panel, security): settle the engine FIRST,
+                # then resolve the key for it. A retry that keyed for the
+                # manager's NEW provider while running the pinned one gets a
+                # spurious MissingLLMKeyError and a key_scope recorded
+                # against a provider that never ran.
+                engine = await resolve_engine_for_run(
+                    session,
+                    run_id=request.run_id,
+                    project_id=request.project_id,
+                    repin=repin,
+                )
+
+                credentials = await resolve_engine_credentials(
+                    session,
+                    user_id=user_id,
+                    project_id=request.project_id,
+                    engine=engine,
+                )
 
                 service = SectionExtractionService(
                     db=session,
                     user_id=user_id,
                     storage=storage,
                     trace_id=trace_id or self.request.id or "worker-missing-trace",
-                    openai_api_key=api_key,
+                    llm_credentials=credentials,
+                    # F1: the provider these credentials were resolved FOR
+                    # (with their endpoint_id, the full identity). The
+                    # standalone branch (run_id=None) can still ADOPT the
+                    # coordinate's live run's pin inside the service — an
+                    # engine flip between pin and kickoff would pair these
+                    # credentials with an engine they do not fit, so the
+                    # service re-resolves when the adopted engine differs.
+                    # Under repin the service installs THIS engine instead of
+                    # adopting, so the re-key is a no-op on the kickoff path.
+                    key_provider=engine.provider,
+                    repin=repin,
                 )
 
-                request = SectionExtractionRequest(**payload_json)
-                res = await service.run_from_request(request)
+                res = await service.run_from_request(request, engine=engine)
 
                 await session.commit()
 

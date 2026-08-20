@@ -16,11 +16,14 @@ from app.api.v1.endpoints import (
     feedback,
     hitl_configs,
     hitl_sessions,
+    llm_endpoints,
+    llm_engine,
     manager_review_visibility,
     model_extraction,
     parser_settings,
     project_templates,
     section_extraction,
+    template_structure,
     user_api_keys,
     zotero_import,
 )
@@ -77,6 +80,12 @@ api_router.include_router(
 )
 
 api_router.include_router(
+    template_structure.router,
+    prefix="/projects",
+    tags=["project-templates"],
+)
+
+api_router.include_router(
     hitl_configs.router,
     prefix="/projects",
     tags=["hitl-configs"],
@@ -90,6 +99,18 @@ api_router.include_router(
 
 api_router.include_router(
     parser_settings.router,
+    prefix="/projects",
+    tags=["projects"],
+)
+
+api_router.include_router(
+    llm_engine.router,
+    prefix="/projects",
+    tags=["projects"],
+)
+
+api_router.include_router(
+    llm_endpoints.router,
     prefix="/projects",
     tags=["projects"],
 )
