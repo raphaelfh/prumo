@@ -23,9 +23,9 @@ from app.services.engine_credentials import EngineCredentials
 from app.services.extraction_errors import ExtractionTaskError, classify_extraction_error
 
 # Module-level on purpose: these are the patchable seams the task tests pin
-# (``extraction_tasks.resolve_project_engine`` / ``.read_pinned_engine``).
+# (``extraction_tasks.resolve_project_engine`` / ``.resolve_engine_for_run``).
 from app.services.llm_engine_service import resolve_project_engine
-from app.services.run_engine_freeze import read_pinned_engine
+from app.services.run_engine_freeze import resolve_engine_for_run
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
 
@@ -122,14 +122,14 @@ def extract_section_task(
                 storage = create_storage_adapter(supabase)
 
                 # DEAD ENTRY POINT: no production enqueue sites remain (the
-                # live path is run_section_extraction_task). Real invariant
-                # before re-arming: pin first when a run exists — read the
-                # run's pinned engine BEFORE keying, the way
-                # run_section_extraction_task does; resolving only the
-                # project engine lets a manager flip re-route a pinned run.
-                # This task carries no run_id, so it resolves the project
-                # engine and relies on the service's re-key (key_provider)
-                # when a reused run's pin settles on another provider.
+                # live path is run_section_extraction_task). Before re-arming,
+                # take the engine from ``resolve_engine_for_run(..., repin=
+                # self.request.retries == 0)`` as that task does: a bare
+                # project resolve makes every attempt a re-pin, so a retry
+                # can run an engine attempt 1 did not. This task carries no
+                # run_id and passes no ``repin``, so it currently DEFERS to a
+                # reused run's pin and relies on the service's re-key
+                # (key_provider) when that pin names another provider.
                 # If re-armed on an OLD build, a stored mode this build does
                 # not know degrades the read to the env-default engine.
                 engine = await resolve_project_engine(session, UUID(project_id))
@@ -225,13 +225,12 @@ def extract_models_task(
 
                 # DEAD ENTRY POINT: no production enqueue sites remain (only
                 # the equally-unenqueued batch_extract_task fans out here).
-                # Real invariant before re-arming: pin first when a run
-                # exists — the endpoint path reads the run's pinned engine
-                # before keying (resolve_engine_for_run); this task carries
-                # no run_id, so it resolves the project engine only. Align
-                # with the endpoint before re-use. If re-armed on an OLD
-                # build, a stored mode it does not know degrades the read
-                # to the env-default engine.
+                # Before re-arming, pass ``repin=self.request.retries == 0``
+                # to ``extract`` below: it defaults to False, so today every
+                # attempt DEFERS to a reused run's pin and a manager's model
+                # change would never reach this path — the bug fixed on the
+                # live route. If re-armed on an OLD build, a stored mode it
+                # does not know degrades the read to the env-default engine.
                 engine = await resolve_project_engine(session, UUID(project_id))
 
                 # One resolver for key + endpoint host (B9). The scope rides
@@ -354,19 +353,25 @@ def run_section_extraction_task(
 
                 request = SectionExtractionRequest(**payload_json)
 
-                # C1b ordering (panel, security): freeze — or read the
-                # already-pinned engine — FIRST, and only then resolve the
-                # key for the PINNED provider. A retry after a manager's
-                # provider flip must not look up a key for a provider the
-                # frozen engine does not use (spurious MissingLLMKeyError +
-                # key_scope recorded against the wrong provider).
-                engine = (
-                    await read_pinned_engine(session, request.run_id)
-                    if request.run_id is not None
-                    else None
+                # Attempt 0 is the HUMAN kickoff (one enqueue site — the
+                # endpoint); every later attempt is a Celery retry, which
+                # re-enters HERE with the same payload. Hence the flag is
+                # derived at this line and never rides IN the payload:
+                # ``self.retry`` replays kwargs, so a payload flag would
+                # re-pin on exactly the attempts that must not.
+                repin = self.request.retries == 0
+
+                # C1b ordering (panel, security): settle the engine FIRST,
+                # then resolve the key for it. A retry that keyed for the
+                # manager's NEW provider while running the pinned one gets a
+                # spurious MissingLLMKeyError and a key_scope recorded
+                # against a provider that never ran.
+                engine = await resolve_engine_for_run(
+                    session,
+                    run_id=request.run_id,
+                    project_id=request.project_id,
+                    repin=repin,
                 )
-                if engine is None:
-                    engine = await resolve_project_engine(session, request.project_id)
 
                 credentials = await resolve_engine_credentials(
                     session,
@@ -388,7 +393,10 @@ def run_section_extraction_task(
                     # engine flip between pin and kickoff would pair these
                     # credentials with an engine they do not fit, so the
                     # service re-resolves when the adopted engine differs.
+                    # Under repin the service installs THIS engine instead of
+                    # adopting, so the re-key is a no-op on the kickoff path.
                     key_provider=engine.provider,
+                    repin=repin,
                 )
 
                 res = await service.run_from_request(request, engine=engine)

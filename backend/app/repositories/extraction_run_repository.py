@@ -208,6 +208,8 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         self,
         run_id: UUID,
         candidate: dict[str, Any],
+        *,
+        repin: bool = False,
     ) -> dict[str, Any] | None:
         """Pin the run's LLM engine under ``results["provenance"]["engine"]``.
 
@@ -217,6 +219,17 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         re-invokes with the same payload, which carries no model, so every
         attempt re-reads ``settings`` and attempt 2 would otherwise be free to
         run a different engine than attempt 1.
+
+        ``repin=True`` overwrites instead: the caller is a HUMAN kickoff, not a
+        retry, so the manager's current engine choice wins. Reproducibility is
+        owed to the retry — which re-enters the task directly and never passes
+        the endpoint that sets this flag — not to the run for its whole life.
+        Without the escape the pin is permanent (one writer, no reset site) and
+        the one-live-run invariant keeps a run alive for weeks, so the first
+        model ever used on it silently outlives every later selection.
+        Per-proposal provenance (0056) is what makes the overwrite safe: each
+        version already carries the engine that produced it, so re-pinning
+        cannot relabel the values the previous engine wrote.
 
         Row-locked read-modify-write, mirroring ``merge_provenance_section``:
         concurrent section tasks on one run serialize here instead of racing to
@@ -230,7 +243,9 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
 
         Args:
             run_id: the run to pin.
-            candidate: ``LlmTarget.model_dump()``, used only if none is pinned.
+            candidate: ``LlmTarget.model_dump()``, used only if none is pinned
+                (always, when ``repin``).
+            repin: overwrite an existing pin — a human kickoff, not a retry.
 
         Returns:
             The run's effective engine payload, or None if the run does not exist.
@@ -245,7 +260,7 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         results = {**(run.results or {})}
         provenance = {**(results.get("provenance") or {})}
         pinned = provenance.get("engine")
-        if isinstance(pinned, dict) and pinned:
+        if not repin and isinstance(pinned, dict) and pinned:
             return pinned
         provenance["engine"] = candidate
         results["provenance"] = provenance

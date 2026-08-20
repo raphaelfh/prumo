@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.llm.extractor import LlmUsage
 from app.models.extraction import ExtractionRun
+from app.repositories import ExtractionRunRepository
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
 from app.services import engine_credentials as ec
@@ -42,6 +43,7 @@ from app.services import section_extraction_service as ses
 from app.services import verified_mode as vm
 from app.services.api_key_service import KeyScope, ResolvedKey
 from app.services.engine_credentials import EngineCredentials
+from app.services.run_engine_freeze import resolve_engine_for_run
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
 
@@ -57,8 +59,15 @@ def _service(
     db: AsyncSession,
     trace_id: str,
     key_scope: KeyScope | None = None,
+    repin: bool = True,
 ) -> ses.SectionExtractionService:
-    """A service built the way the worker builds one — fresh per attempt."""
+    """A service built the way the worker builds one — fresh per attempt.
+
+    ``repin`` mirrors what the worker derives from ``self.request.retries``:
+    True on attempt 0 (the human kickoff the endpoint enqueued), False on
+    every retry. It defaults to True because that is the common path — the
+    tests that model a retry say so explicitly.
+    """
     return ses.SectionExtractionService(
         db=db,
         user_id=str(SEED.primary_profile),
@@ -67,6 +76,7 @@ def _service(
         llm_credentials=EngineCredentials(
             api_key=_SECRET_KEY, key_scope=key_scope, base_url=None, endpoint_id=None
         ),
+        repin=repin,
     )
 
 
@@ -147,13 +157,17 @@ async def _proposal_values(db: AsyncSession, run_id: UUID) -> list[dict[str, Any
     return list(rows.scalars().all())
 
 
-async def _run_pinned_verified(db: AsyncSession) -> ExtractionRun:
-    """A fresh EXTRACT-stage run pre-pinned to the env-default engine in Verified."""
-    run = await engine_setup.run_in_extract(db)
-    await engine_setup.pin_run(
-        db, run, settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL, mode="verified"
+async def _run_with_verified_project_engine(db: AsyncSession) -> ExtractionRun:
+    """A fresh EXTRACT-stage run that executes Verified on the env-default pair.
+
+    Set on the PROJECT engine, not written onto the run: a kickoff re-pins
+    from the manager's choice, so a hand-written run pin would be overwritten
+    by the first attempt and these tests would pass while running Fast.
+    """
+    await engine_setup.set_project_engine(
+        db, settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL, mode="verified"
     )
-    return run
+    return await engine_setup.run_in_extract(db)
 
 
 async def _extract_once(
@@ -161,13 +175,15 @@ async def _extract_once(
     run: ExtractionRun,
     trace_id: str,
     key_scope: KeyScope | None = None,
+    repin: bool = True,
 ) -> ses.SectionExtractionService:
     """One worker attempt against ``run``, entered exactly like the Celery task.
 
     ``run_from_request`` is the retried entry point: the payload carries no
     model, so this is where a settings change would leak into attempt 2.
+    Pass ``repin=False`` to model a RETRY (see :func:`_service`).
     """
-    service = _service(db, trace_id, key_scope)
+    service = _service(db, trace_id, key_scope, repin=repin)
     service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
         return_value="ARTICLE BODY"
     )
@@ -181,12 +197,6 @@ async def _extract_once(
         )
     )
     return service
-
-
-def _engine_of(run: ExtractionRun) -> dict[str, Any]:
-    """The run's frozen engine, or ``{}`` when nothing was recorded."""
-    provenance = (run.results or {}).get("provenance") or {}
-    return provenance.get("engine") or {}
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +269,7 @@ async def test_fresh_run_resolves_engine_from_settings_and_persists_it(
     await _extract_once(db_session, run, "freeze-fresh")
     await db_session.refresh(run)
 
-    assert _engine_of(run) == {
+    assert engine_setup.pinned_engine_of(run) == {
         "provider": settings.LLM_PROVIDER,
         "model": settings.LLM_DEFAULT_MODEL,
         "mode_requested": "fast",
@@ -292,14 +302,14 @@ async def test_retry_after_settings_change_keeps_the_first_engine(
     monkeypatch.setattr(settings, "LLM_DEFAULT_MODEL", _OTHER_MODEL)
     calls.clear()
 
-    await _extract_once(db_session, run, "freeze-attempt-2")
+    await _extract_once(db_session, run, "freeze-attempt-2", repin=False)
     await db_session.refresh(run)
 
     assert calls, "attempt 2 never reached build_model"
     assert calls == [(original_provider, original_model)] * len(calls), (
         f"attempt 2 ran a different engine than attempt 1: {calls}"
     )
-    assert _engine_of(run) == {
+    assert engine_setup.pinned_engine_of(run) == {
         "provider": original_provider,
         "model": original_model,
         "mode_requested": "fast",
@@ -309,11 +319,18 @@ async def test_retry_after_settings_change_keeps_the_first_engine(
 
 
 @pytest.mark.asyncio
-async def test_recorded_engine_is_never_overwritten(
+async def test_retry_never_overwrites_the_recorded_engine(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """First writer wins: a run that already names an engine keeps it."""
+    """First writer wins ON A RETRY: a run that names an engine keeps it.
+
+    The counterpart is
+    ``test_human_kickoff_after_project_flip_runs_the_new_engine`` — a human
+    click DOES overwrite. Both halves matter: drop this one and retries stop
+    being reproducible (#609); drop that one and the manager's model choice
+    never reaches a run that has already been extracted once.
+    """
     calls = _stub_llm_seams(monkeypatch)
     run = await engine_setup.run_in_extract(db_session)
 
@@ -329,19 +346,21 @@ async def test_recorded_engine_is_never_overwritten(
         },
     )
     await db_session.refresh(run)
-    assert _engine_of(run) == {"provider": _OTHER_PROVIDER, "model": _OTHER_MODEL}, (
-        "pre-seed did not land — the rest of this test would be vacuous"
-    )
+    assert engine_setup.pinned_engine_of(run) == {
+        "provider": _OTHER_PROVIDER,
+        "model": _OTHER_MODEL,
+    }, "pre-seed did not land — the rest of this test would be vacuous"
 
-    await _extract_once(db_session, run, "freeze-existing")
+    await _extract_once(db_session, run, "freeze-existing", repin=False)
     await db_session.refresh(run)
 
     # Deliberately mode-less: a pre-C1b pinned snapshot must be tolerated
     # (LlmTarget's mode fields default on validate) and never rewritten —
     # first writer wins means the stored dict stays byte-identical.
-    assert _engine_of(run) == {"provider": _OTHER_PROVIDER, "model": _OTHER_MODEL}, (
-        "the pre-recorded engine was overwritten"
-    )
+    assert engine_setup.pinned_engine_of(run) == {
+        "provider": _OTHER_PROVIDER,
+        "model": _OTHER_MODEL,
+    }, "the pre-recorded engine was overwritten"
     assert calls == [(_OTHER_PROVIDER, _OTHER_MODEL)] * len(calls), (
         f"the run's own engine was ignored in favour of settings: {calls}"
     )
@@ -362,7 +381,7 @@ async def test_fresh_run_freezes_the_project_engine(
     await _extract_once(db_session, run, "freeze-project-pair")
     await db_session.refresh(run)
 
-    assert _engine_of(run) == {
+    assert engine_setup.pinned_engine_of(run) == {
         "provider": "openai",
         "model": "gpt-5.6-terra",
         "mode_requested": "fast",
@@ -388,20 +407,62 @@ async def test_retry_after_set_for_project_flip_keeps_attempt_1_pair(
     await engine_setup.set_project_engine(db_session, "anthropic", "claude-haiku-4-5")
     calls.clear()
 
-    await _extract_once(db_session, run, "flip-attempt-2")
+    await _extract_once(db_session, run, "flip-attempt-2", repin=False)
     await db_session.refresh(run)
 
     assert calls, "attempt 2 never reached build_model"
     assert calls == [("openai", "gpt-5.6-terra")] * len(calls), (
         f"attempt 2 followed the flipped project engine: {calls}"
     )
-    assert _engine_of(run) == {
+    assert engine_setup.pinned_engine_of(run) == {
         "provider": "openai",
         "model": "gpt-5.6-terra",
         "mode_requested": "fast",
         "mode_executed": "fast",
         "endpoint_id": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_human_kickoff_after_project_flip_runs_the_new_engine(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """THE REPORTED BUG: a manager's new model must reach the extraction.
+
+    The first kickoff pins the run. The manager then picks a different model
+    in the engine popover, and clicks an AI control on that SAME run. That
+    second kickoff must run the NEW pair and re-pin the run to it.
+
+    The pin exists to keep a Celery RETRY reproducible (#609) — a retry
+    re-enters ``run_section_extraction_task`` with the same payload, which
+    carries no model. A human click is not a retry: it arrives through the
+    HTTP endpoint, which is exactly where the two are told apart. Without
+    this, the one-live-run invariant keeps a run alive for weeks and the
+    first model ever used on it wins forever, silently.
+    """
+    calls = _stub_llm_seams(monkeypatch)
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
+    run = await engine_setup.run_in_extract(db_session)
+    await _extract_once(db_session, run, "repin-kickoff-1")
+
+    await engine_setup.set_project_engine(db_session, "anthropic", "claude-haiku-4-5")
+    calls.clear()
+
+    await _extract_once(db_session, run, "repin-kickoff-2")
+    await db_session.refresh(run)
+
+    assert calls, "the second kickoff never reached build_model"
+    assert calls == [("anthropic", "claude-haiku-4-5")] * len(calls), (
+        f"the manager's new model never reached the extraction: {calls}"
+    )
+    assert engine_setup.pinned_engine_of(run) == {
+        "provider": "anthropic",
+        "model": "claude-haiku-4-5",
+        "mode_requested": "fast",
+        "mode_executed": "fast",
+        "endpoint_id": None,
+    }, f"the run was not re-pinned to the new engine: results={run.results}"
 
 
 @pytest.mark.asyncio
@@ -412,7 +473,9 @@ async def test_section_provenance_records_the_frozen_provider(
     """Provenance must report what ran, not a later re-read of ``settings``.
 
     §5.2: recording ``settings.LLM_PROVIDER`` lets an env-var change after the
-    run rewrite history — provenance that can lie is worse than none.
+    run rewrite history — provenance that can lie is worse than none. Attempt
+    2 is a RETRY, which is the case that must not follow the moved env var; a
+    human kickoff legitimately runs (and records) the new one.
     """
     _stub_llm_seams(monkeypatch)
     original_provider = settings.LLM_PROVIDER
@@ -424,7 +487,7 @@ async def test_section_provenance_records_the_frozen_provider(
     # The env var moves after the run — the snapshot must not follow it.
     monkeypatch.setattr(settings, "LLM_PROVIDER", _OTHER_PROVIDER)
     monkeypatch.setattr(settings, "LLM_DEFAULT_MODEL", _OTHER_MODEL)
-    await _extract_once(db_session, run, "freeze-provenance-2")
+    await _extract_once(db_session, run, "freeze-provenance-2", repin=False)
     await db_session.refresh(run)
 
     snapshot = _section_provenance(run, SEED.primary_entity_type)
@@ -847,7 +910,7 @@ async def test_verified_pin_runs_verify_and_annotates_proposals(
     section token totals."""
     _stub_llm_seams(monkeypatch)
     verify_log = _stub_verify_pass(monkeypatch)
-    run = await _run_pinned_verified(db_session)
+    run = await _run_with_verified_project_engine(db_session)
 
     await _extract_once(db_session, run, "verified-success")
     await db_session.refresh(run)
@@ -884,7 +947,7 @@ async def test_fresh_run_freezes_the_stored_verified_mode(
     await _extract_once(db_session, run, "freeze-stored-verified")
     await db_session.refresh(run)
 
-    assert _engine_of(run) == {
+    assert engine_setup.pinned_engine_of(run) == {
         "provider": "openai",
         "model": "gpt-5.6-terra",
         "mode_requested": "verified",
@@ -907,7 +970,7 @@ async def test_verified_pin_verify_failure_degrades_to_fast(
     while mode_requested still records the ask."""
     _stub_llm_seams(monkeypatch)
     verify_log = _stub_verify_pass(monkeypatch, outcome=None)
-    run = await _run_pinned_verified(db_session)
+    run = await _run_with_verified_project_engine(db_session)
 
     await _extract_once(db_session, run, "verified-degrade")
     await db_session.refresh(run)
@@ -971,7 +1034,7 @@ async def test_verified_no_info_proposal_carries_no_verification_key(
             }
         },
     )
-    run = await _run_pinned_verified(db_session)
+    run = await _run_with_verified_project_engine(db_session)
 
     await _extract_once(db_session, run, "verified-no-info")
     await db_session.refresh(run)
@@ -1015,7 +1078,7 @@ async def test_verified_qa_run_skips_the_verifier(
         ),
         {"tid": str(SEED.primary_template)},
     )
-    run = await _run_pinned_verified(db_session)
+    run = await _run_with_verified_project_engine(db_session)
     assert run.kind == "quality_assessment", "the run must derive the QA kind"
 
     with capture_logs() as entries:
@@ -1085,7 +1148,7 @@ async def test_each_proposal_keeps_its_own_execution_record(
     # run degrades to fast/1 even though verified was requested. Stub BEFORE the
     # run exists, matching test_verified_pin_verify_failure_degrades_to_fast.
     _stub_verify_pass(monkeypatch, outcome=None)
-    run = await _run_pinned_verified(db_session)
+    run = await _run_with_verified_project_engine(db_session)
     await _extract_once(db_session, run, "degraded-pass")
 
     # Attempt 2: a genuinely different value (so it appends rather than hitting
@@ -1146,7 +1209,7 @@ async def test_ai_proposals_always_record_an_engine(
     engine would read as "legacy" forever instead of as a bug.
     """
     _stub_llm_seams(monkeypatch)
-    run = await _run_pinned_verified(db_session)
+    run = await _run_with_verified_project_engine(db_session)
     await _extract_once(db_session, run, "engine-always-recorded")
 
     provenances = await _proposal_provenances(db_session, run.id)
@@ -1174,7 +1237,7 @@ async def test_replay_that_heals_a_verdict_keeps_the_row_self_consistent(
     _stub_llm_seams(monkeypatch)
     # Attempt 1: verify flakes -> no annotation, execution recorded as fast/1.
     _stub_verify_pass(monkeypatch, outcome=None)
-    run = await _run_pinned_verified(db_session)
+    run = await _run_with_verified_project_engine(db_session)
     await _extract_once(db_session, run, "heal-attempt-1")
 
     values = await _proposal_values(db_session, run.id)
@@ -1200,3 +1263,72 @@ async def test_replay_that_heals_a_verdict_keeps_the_row_self_consistent(
     # Identity is untouched by the heal.
     assert prov["provider"] == settings.LLM_PROVIDER
     assert prov["model"] == settings.LLM_DEFAULT_MODEL
+
+
+# ---------------------------------------------------------------------------
+# The human/retry decision and the write it drives, asserted at their own homes
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resolve_engine_for_run_reads_the_pin_only_for_a_retry(
+    db_session: AsyncSession,
+) -> None:
+    """The single site that decides whether a model change reaches extraction.
+
+    Its only caller is the Celery task, which mocks it out — so this is the
+    one place the branch itself is exercised. Both directions matter: drop
+    the retry branch and #609 returns, drop the kickoff branch and the
+    manager's model choice never reaches a run extracted once already.
+    """
+    await engine_setup.set_project_engine(db_session, "anthropic", "claude-haiku-4-5")
+    run = await engine_setup.run_in_extract(db_session)
+    await engine_setup.pin_run(db_session, run, "openai", "gpt-4o-mini")
+    coords = {"run_id": run.id, "project_id": SEED.primary_project}
+
+    retry = await resolve_engine_for_run(db_session, repin=False, **coords)
+    kickoff = await resolve_engine_for_run(db_session, repin=True, **coords)
+
+    assert (retry.provider, retry.model) == ("openai", "gpt-4o-mini"), (
+        f"a retry abandoned the run's pin: {retry}"
+    )
+    assert (kickoff.provider, kickoff.model) == ("anthropic", "claude-haiku-4-5"), (
+        f"a kickoff was served the stale pin: {kickoff}"
+    )
+
+    # A pure READ. The write belongs to the services, which alone know which
+    # run an attempt resolved; pinning here would also take the row lock
+    # before the run is validated, and hold it across the whole LLM call.
+    await db_session.refresh(run)
+    assert engine_setup.pinned_engine_of(run)["model"] == "gpt-4o-mini", (
+        f"resolving rewrote the pin: results={run.results}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_freeze_engine_repin_overwrites_where_the_default_defers(
+    db_session: AsyncSession,
+) -> None:
+    """``repin`` is the whole escape from first-writer-wins, asserted directly.
+
+    Everything above reaches this through a service; this pins the storage
+    semantics themselves, so a change here cannot be masked by a caller that
+    happens to resolve the same engine twice.
+    """
+    run = await engine_setup.run_in_extract(db_session)
+    runs = ExtractionRunRepository(db_session)
+    first = LlmTarget(provider="openai", model="gpt-4o-mini")
+    second = LlmTarget(provider="anthropic", model="claude-haiku-4-5")
+
+    await runs.freeze_engine(run.id, first.model_dump())
+    kept = await runs.freeze_engine(run.id, second.model_dump())
+    assert kept is not None and kept["model"] == "gpt-4o-mini", (
+        f"the default overwrote a pin a retry depends on: {kept}"
+    )
+
+    replaced = await runs.freeze_engine(run.id, second.model_dump(), repin=True)
+    assert replaced is not None and replaced["model"] == "claude-haiku-4-5"
+    await db_session.refresh(run)
+    assert engine_setup.pinned_engine_of(run) == second.model_dump(), (
+        f"the re-pin did not reach the row: results={run.results}"
+    )

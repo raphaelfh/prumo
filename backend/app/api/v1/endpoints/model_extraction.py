@@ -28,9 +28,9 @@ from app.schemas.extraction import (
     ModelHierarchyChildResponse,
 )
 from app.services.engine_credentials import resolve_engine_credentials
+from app.services.llm_engine_service import resolve_project_engine
 from app.services.model_extraction_service import ModelExtractionService
 from app.services.model_hierarchy_service import ModelHierarchyService
-from app.services.run_engine_freeze import resolve_engine_for_run
 from app.services.run_lifecycle_service import (
     CreateRunInputError,
     TemplateNotFoundError,
@@ -156,17 +156,18 @@ async def extract_models(
 
     await ensure_project_member(db, payload.project_id, current_user_sub)
 
-    # C1b/F4: the run's PINNED engine wins — read before any project resolve,
-    # so a pinned run can never execute a second engine while
-    # ``provenance.engine`` names the first (and a retired project pair
-    # cannot 409 a legitimately pinned continuation). An unpinned run
-    # freezes the resolved pair so the record exists before any LLM call.
+    # This route is only ever entered by a human click — it EXECUTES in the
+    # request, so no retry path reaches it — and a human click gets the
+    # manager's CURRENT choice, never the run's pin. The service re-pins the
+    # run it resolves (``repin`` below); pinning here instead would take the
+    # row lock before the run is validated and hold it across the whole LLM
+    # call. A retired pair 409s rather than quietly continuing on the old pin.
     # Kept outside the broad try below — together with the credentials
     # resolution — so the typed AppErrors these two raise (EngineRetiredError,
     # EndpointUnavailableError) reach their registered handler as a 409
     # instead of being swallowed into the generic 500. Neither is a
     # ValueError, so no arm below would catch them either.
-    engine = await resolve_engine_for_run(db, run_id=payload.run_id, project_id=payload.project_id)
+    engine = await resolve_project_engine(db, payload.project_id)
 
     # Credentials for the RESOLVED engine, never a settings re-read: BYOK
     # then global for a catalogue engine, the project endpoint's own key +
@@ -194,6 +195,9 @@ async def extract_models(
             template_id=payload.template_id,
             # C1a/C1b: server-owned engine — never a client-supplied string.
             engine=engine,
+            # Human kickoff: the run the service resolves (for run_id=None, a
+            # REUSED live run this layer cannot name) is re-pinned to it.
+            repin=True,
             run_id=payload.run_id,
         )
 

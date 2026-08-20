@@ -43,6 +43,7 @@ from app.services.extraction_snapshot import (
     entity_types_for_version,
     general_instructions_for_version,
 )
+from app.services.run_engine_freeze import freeze_run_engine
 from app.services.run_lifecycle_service import RunLifecycleService
 
 
@@ -119,6 +120,8 @@ class ModelExtractionService(LoggerMixin):
         template_id: UUID,
         engine: LlmTarget | None = None,
         run_id: UUID | None = None,
+        *,
+        repin: bool = False,
     ) -> ModelExtractionResult:
         """
         Extract prediction models from an article.
@@ -130,6 +133,10 @@ class ModelExtractionService(LoggerMixin):
             engine: The caller's resolved engine (C1b — endpoint/worker
                 resolve the project engine and the matching key together).
                 ``None`` falls back to the env-default candidate.
+            repin: this call is a HUMAN kickoff, so it overwrites the
+                resolved run's pin with ``engine`` (see ``freeze_engine``).
+                The endpoint always passes True — it executes in-request and
+                has no retry path into it.
             run_id: Existing run to append the model instances/proposals to.
                 When provided (the extraction surface, via the HITL session),
                 the run is REUSED instead of creating a fresh one — so the
@@ -187,6 +194,15 @@ class ModelExtractionService(LoggerMixin):
             )
             if manage_lifecycle:
                 await self._runs.start_run(run.id)
+
+        # Pin the run this call actually resolved — the ``run_id=None``
+        # branch above reuses the coordinate's LIVE run, which the caller
+        # could not name, and whose stale pin otherwise left the service
+        # running one engine while ``provenance.engine`` named another.
+        # Under ``repin`` the freeze returns ``engine`` unchanged, so the
+        # re-read below is an identity and the credentials still fit.
+        self._engine = await freeze_run_engine(self._runs, run.id, self._engine, repin=repin)
+        model = self._engine.model
 
         self.logger.info(
             "model_extraction_start",

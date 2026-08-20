@@ -7,9 +7,12 @@
 # keys live where.
 #
 # Both services now auto-deploy from `raphaelfh/prumo` branch `main`
-# via the Railway GitHub App. Manual deploys (fallback) use:
-#   railway up backend --path-as-root --service web --detach
-#   railway up backend --path-as-root --service worker --detach
+# via the Railway GitHub App. For manual re-triggers see
+# docs/reference/deployment.md § "Manual deploy fallback" — the single
+# source of truth. The old `railway up backend --path-as-root` form is
+# retired and blocked by the bash-guard hook; plain `railway up` from
+# the root is unverified today (failed 2026-08-18 with "Deployment does
+# not have an associated build").
 #
 # NOTE: this file lives at the repo root for documentation. Because
 # both services have `source.rootDirectory = "/backend"`, the effective
