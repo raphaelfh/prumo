@@ -5,16 +5,9 @@ import typography from '@tailwindcss/typography';
 
 export default {
   darkMode: ["class"],
-    content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./frontend/**/*.{ts,tsx}"],
+  content: ["./frontend/**/*.{ts,tsx}"],
   prefix: "",
   theme: {
-    container: {
-      center: true,
-      padding: "2rem",
-      screens: {
-        "2xl": "1400px",
-      },
-    },
     extend: {
       colors: {
         border: "hsl(var(--border))",
@@ -100,7 +93,6 @@ export default {
       fontSize: {
         "header-title": ["13px", { lineHeight: "1.2" }],
         "header-meta": ["12px", { lineHeight: "1.2" }],
-        "header-micro": ["11px", { lineHeight: "1.2" }],
       },
       borderRadius: {
         lg: "var(--radius)",

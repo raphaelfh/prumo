@@ -201,16 +201,6 @@
 }
 
 @layer components {
-    /* Linear inspired card */
-    .linear-card {
-        @apply rounded-md border border-border/50 bg-card/30 shadow-elev-card transition-all hover:border-border hover:shadow-[0_2px_8px_rgba(0,0,0,0.08)];
-    }
-
-    /* High density list item */
-    .linear-list-item {
-        @apply flex items-center gap-3 px-4 py-2.5 text-[13px] font-normal text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground cursor-pointer border-b border-border/30 last:border-0;
-    }
-
     /* Frosted header surface — consumed by HeaderShell. Border + translucent
        background + blur; shadow is opt-in via shadow-elev-header (shadow-on-lift). */
     .frosted-header {
@@ -230,11 +220,6 @@
             background-color: hsl(var(--background));
         }
     }
-
-    /* Subtle button style */
-    .linear-btn-secondary {
-        @apply inline-flex items-center justify-center rounded-md border border-border/60 bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-muted hover:border-border focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50;
-  }
 }
 
 @layer utilities {
@@ -251,28 +236,4 @@
     ::-webkit-scrollbar-thumb {
         @apply bg-muted-foreground/20 rounded-full transition-colors hover:bg-muted-foreground/40;
     }
-
-    .scrollbar-none {
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-    }
-
-    .scrollbar-none::-webkit-scrollbar {
-        display: none;
-    }
-
-    /* Line clamp utilities */
-  .line-clamp-1 {
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 1;
-  }
-  
-  .line-clamp-2 {
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
 }

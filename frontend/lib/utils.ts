@@ -11,7 +11,7 @@ import {extendTailwindMerge} from "tailwind-merge";
 const twMerge = extendTailwindMerge({
   extend: {
     classGroups: {
-      shadow: ["shadow-elev-card", "shadow-elev-popover"],
+      shadow: ["shadow-elev-card", "shadow-elev-popover", "shadow-elev-header"],
     },
   },
 });
