@@ -152,7 +152,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
             <button
               type="button"
               onClick={handleChevronClick}
-              className="flex items-center justify-center h-8 w-8 shrink-0 hover:bg-muted rounded-md transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="flex items-center justify-center h-8 w-8 shrink-0 hover:bg-muted rounded-md transition-colors cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               aria-label="Toggle accordion"
             >
               <ChevronDown className="h-4 w-4 transition-transform duration-200 group-data-[state=open]/accordion-item:rotate-180" />

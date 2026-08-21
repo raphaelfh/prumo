@@ -111,7 +111,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
               key={entityType.id}
               ref={(el) => registerSection(entityType.id, el)}
               tabIndex={-1}
-              className="scroll-mt-4 outline-none"
+              className="scroll-mt-4 outline-hidden"
             >
               <SectionAccordion
                 entityType={entityType}
@@ -140,7 +140,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
           <div
             ref={(el) => registerSection(props.modelParentEntityType!.id, el)}
             tabIndex={-1}
-            className="scroll-mt-4 outline-none"
+            className="scroll-mt-4 outline-hidden"
           >
             <ModelSection
               modelContainer={props.modelParentEntityType}

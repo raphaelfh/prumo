@@ -83,7 +83,7 @@ function ReviewTrigger({
           title={t('extraction', 'reviewOpenFromValue')}
           className={cn(
             'rounded-md text-left transition-colors cursor-pointer hover:bg-ai/5',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ai/40 focus-visible:ring-offset-1',
+            'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ai/40 focus-visible:ring-offset-1',
             className,
           )}
         >

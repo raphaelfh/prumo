@@ -73,7 +73,7 @@ function SortableAuthorRow({
             style={style}
             className={cn(
                 'flex items-start gap-1.5 rounded-md border border-border/50 bg-background px-1.5 py-1.5',
-                isDragging && 'z-50 shadow-sm'
+                isDragging && 'z-50 shadow-xs'
             )}
         >
             <button

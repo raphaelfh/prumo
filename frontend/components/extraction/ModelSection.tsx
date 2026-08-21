@@ -207,7 +207,7 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
               key={entityType.id}
               ref={(el) => registerSection?.(entityType.id, el)}
               tabIndex={-1}
-              className="scroll-mt-4 outline-none"
+              className="scroll-mt-4 outline-hidden"
             >
               <SectionAccordion
                 entityType={entityType}

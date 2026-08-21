@@ -62,7 +62,7 @@ export default function Dashboard() {
           size="sm"
           onClick={() => setAddDialogOpen(true)}
           disabled={creating}
-          className="h-8 gap-1.5 rounded-md px-2.5 text-[12px] font-medium shadow-sm transition-all sm:px-3 motion-reduce:transition-none"
+          className="h-8 gap-1.5 rounded-md px-2.5 text-[12px] font-medium shadow-xs transition-all sm:px-3 motion-reduce:transition-none"
         >
           <Plus className="h-3.5 w-3.5" aria-hidden="true"/>
           {t('pages', 'dashboardNewProject')}
@@ -128,7 +128,7 @@ export default function Dashboard() {
               </p>
               <Button
                 onClick={() => setAddDialogOpen(true)}
-                className="h-9 rounded-md px-6 text-xs font-medium shadow-sm transition-all motion-reduce:transition-none"
+                className="h-9 rounded-md px-6 text-xs font-medium shadow-xs transition-all motion-reduce:transition-none"
               >
                 <Plus className="mr-2 h-3.5 w-3.5"/>
                 {t('pages', 'dashboardCreateProject')}
@@ -144,7 +144,7 @@ export default function Dashboard() {
                 tabIndex={0}
                 aria-label={`${project.name}${project.is_active ? ' — active' : ''}`}
                 className={cn(
-                  "group flex cursor-pointer items-center gap-3 py-3 outline-none sm:gap-4",
+                  "group flex cursor-pointer items-center gap-3 py-3 outline-hidden sm:gap-4",
                   "transition-colors duration-75 motion-reduce:transition-none",
                   "hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                   SHELL_PADDING_X,
@@ -158,7 +158,7 @@ export default function Dashboard() {
                 }}
               >
                 <div
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted/20 transition-all duration-150 group-hover:border-border group-hover:shadow-sm motion-reduce:transition-none">
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted/20 transition-all duration-150 group-hover:border-border group-hover:shadow-xs motion-reduce:transition-none">
                   <BookOpen
                     className="h-4 w-4 text-muted-foreground/60 transition-colors group-hover:text-foreground motion-reduce:transition-none"
                     strokeWidth={1.75}

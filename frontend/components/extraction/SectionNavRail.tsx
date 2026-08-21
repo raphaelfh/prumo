@@ -47,7 +47,7 @@ export default function SectionNavRail({ items, activeId, onSelect, collapsed }:
                 title={collapsed ? `${item.label} — ${item.requiredFilled}/${item.requiredTotal}` : undefined}
                 className={cn(
                   'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] text-muted-foreground',
-                  'hover:bg-muted/40 duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                  'hover:bg-muted/40 duration-75 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                   item.level === 1 && !collapsed && 'pl-6',
                   isActive && 'bg-info/10 text-foreground',
                 )}

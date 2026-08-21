@@ -934,7 +934,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                 }
                             }}
                             aria-label={t('extraction', 'tableOpenRowAria').replace('{{title}}', article.title)}
-                            className="border-b border-border/40 hover:bg-muted/40 transition-colors duration-75 group h-10 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+                            className="border-b border-border/40 hover:bg-muted/40 transition-colors duration-75 group h-10 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
                       {/* stopPropagation: toggling the checkbox must not open the row */}
                       <TableCell className={`w-[40px] ${TABLE_CELL_CLASS}`} onClick={(e) => e.stopPropagation()}>
                     <Checkbox

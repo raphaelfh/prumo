@@ -31,7 +31,7 @@ export function TruncatedText({ text, className }: { text: string; className?: s
       tabIndex={truncated ? 0 : undefined}
       className={cn(
         'block truncate',
-        truncated && 'outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        truncated && 'outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
         className,
       )}
     >

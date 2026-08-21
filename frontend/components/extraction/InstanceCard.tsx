@@ -144,7 +144,7 @@ export function InstanceCard(props: InstanceCardProps) {
             ) : (
               <button
                 type="button"
-                className="text-sm font-semibold cursor-pointer hover:text-primary transition-colors duration-75 flex items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="text-sm font-semibold cursor-pointer hover:text-primary transition-colors duration-75 flex items-center gap-2 rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 onClick={() => setIsEditingLabel(true)}
                 title={savedLabel}
               >

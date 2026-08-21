@@ -1,124 +1,124 @@
-# Tailwind v4 migration notes (forward-looking)
+# Tailwind v4 — how this repo is wired
 
-prumo is on **Tailwind v3.4.17** as of 2026-05. We have not migrated to v4.
-This file documents what changes if/when we do, so you do not accidentally
-write v4 patterns inside v3 code.
+prumo migrated to **Tailwind v4.3.3** on 2026-08-21. There is no
+`tailwind.config.ts` any more: `frontend/index.css` is the single source of
+truth for theme, variants and plugins.
 
-## v3 (what we use today)
+Write v4 patterns. If a search result or an older shadcn snippet hands you
+`@tailwind base;`, a JS config, or `focus-visible:outline-none`, it is v3 —
+translate it before pasting.
+
+## The toolchain
+
+`postcss.config.js` loads `@tailwindcss/postcss` — **not** `@tailwindcss/vite`.
+That is deliberate: the single PostCSS config is auto-discovered by both
+`vite.config.ts` and `vitest.config.ts` (neither declares a `css` key), so one
+file covers both pipelines. The Vite plugin would have to be wired into both
+(or into `vite.shared-plugins.ts`, which exists precisely because those two
+drifting once caused a silent gap).
+
+`autoprefixer` is gone — v4 bundles vendor prefixing.
+
+## The shape of index.css
 
 ```css
-/* frontend/index.css */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss" source(none);
+@source "../frontend/**/*.{ts,tsx}";
+
+@plugin "tailwindcss-animate";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@utility z-header { z-index: var(--z-header); }
+
+@theme inline {
+  --color-primary: hsl(var(--primary));
+  --radius-sm: calc(var(--radius) - 4px);
+  --shadow-elev-card: var(--shadow-card);
+  --text-header-title: 13px;
+  --text-header-title--line-height: 1.2;
+}
 
 @layer base {
-  :root {
-    --background: 0 0% 100%;
-    --primary: 240 5.9% 10%;
-  }
+  :root { --primary: 240 5.9% 10%; --radius: 0.5rem; }
+  .dark { --primary: 0 0% 98%; }
 }
 ```
 
-```ts
-// tailwind.config.ts — required
-export default {
-  darkMode: ["class"],
-  content: ["./frontend/**/*.{ts,tsx}", "..."],
-  theme: {
-    extend: {
-      colors: {
-        primary: { DEFAULT: "hsl(var(--primary))" },
-      },
-    },
-  },
-  plugins: [tailwindcssAnimate],
-}
+Four things about that block are load-bearing:
+
+- **`source(none)` + explicit `@source`.** Without it v4 auto-detects sources
+  and would also scan `backend/`, `docs/` and `scripts/`, emitting utilities for
+  stray text matches. The explicit glob reproduces what v3's `content` scanned.
+- **`@theme inline`, not `@theme`.** `inline` inlines the value into each
+  utility, so `.bg-primary` emits `hsl(var(--primary))` and resolves the raw HSL
+  triple at use time. That is what keeps the `.dark` overrides working.
+- **The `:root` / `.dark` custom properties stay in `@layer base`.** They are
+  *not* restated inside `@theme`; the theme block only maps them onto Tailwind's
+  namespaces.
+- **`@custom-variant dark`, not `@variant`.** v4 renamed it. Omitting it
+  silently reverts every `dark:` utility to a `prefers-color-scheme` query.
+
+## Theme namespaces
+
+| v3 config key           | v4 namespace                              |
+| ----------------------- | ----------------------------------------- |
+| `theme.extend.colors`   | `--color-*`                               |
+| `theme.extend.boxShadow`| `--shadow-*`                              |
+| `theme.extend.fontSize` | `--text-*` (+ `--text-x--line-height`)    |
+| `theme.extend.borderRadius` | `--radius-*`                          |
+| `theme.extend.animation`| `--animate-*`                             |
+| `theme.extend.zIndex`   | no namespace — use `@utility`             |
+| `darkMode: ["class"]`   | `@custom-variant dark (&:is(.dark *))`    |
+| `content: [...]`        | `@source` (or auto-detection)             |
+| `plugins: [...]`        | `@plugin "name"`                          |
+
+## Renamed utilities
+
+| v3                  | v4              | Note                                            |
+| ------------------- | --------------- | ----------------------------------------------- |
+| `outline-none`      | `outline-hidden`| v4 also HAS `outline-none`, and it is different |
+| `shadow-sm`         | `shadow-xs`     | The whole shadow scale shifted one step         |
+| `shadow`            | `shadow-sm`     |                                                 |
+| `flex-shrink`       | `shrink`        |                                                 |
+| `!class`            | `class!`        | Important flag moved to a suffix                |
+
+`outline-hidden` keeps the transparent outline that Windows High Contrast Mode
+turns back into a visible ring (v4 gates it on `@media (forced-colors:
+active)`). v4's `outline-none` removes the outline entirely — do not use it for
+focus styling. See `a11y.md`.
+
+## Do NOT rename `rounded-sm`
+
+`@theme inline` sets `--radius-sm: calc(var(--radius) - 4px)` = 4px, carried
+over from v3. v4's stock `--radius-xs` is a fixed 2px, so renaming
+`rounded-sm` → `rounded-xs` **halves the radius at 21 call sites**.
+`npx @tailwindcss/upgrade` applies that rename automatically because it cannot
+see the override. If you ever run the codemod, revert that part and check the
+CSS baseline.
+
+## Verifying a styling change
+
+`scripts/css_baseline.mjs` compiles `index.css` and snapshots every
+`selector -> declarations` pair.
+
+```bash
+node scripts/css_baseline.mjs --check   # diff against scripts/css_baseline.txt
+node scripts/css_baseline.mjs           # re-record after an intended change
 ```
 
-## v4 (forward-looking; do not apply yet)
+It normalises the things v3 and v4 spell differently but mean identically
+(cascade-layer wrapper, combinator spacing, `min-width` vs range queries), so
+the diff shows semantic change. This is the only mechanism in the repo that
+catches a silently dropped utility — vitest asserts class strings in jsdom
+(no stylesheet), and the E2E suite makes zero visual assertions.
 
-CSS-first config; `tailwind.config.ts` is optional.
+## Still HSL, not OKLCH
 
-```css
-/* index.css — v4 */
-@import "tailwindcss";
+The 93 `:root`/`.dark` custom properties remain raw HSL triples. That is a
+deliberate choice, not an oversight: `hsl(var(--x))` works verbatim under v4,
+and converting would break the raw-triple consumers in `index.css` that
+compose `hsl(var(--background) / var(--header-surface-alpha))`.
 
-@theme {
-  --color-background: oklch(1 0 0);
-  --color-primary: oklch(0.18 0 0);
-  --color-primary-foreground: oklch(0.98 0 0);
-  --radius: 0.5rem;
-  --font-sans: "Inter", system-ui, sans-serif;
-}
-
-/* Dark mode via class variant — still works */
-@variant dark (.dark &);
-```
-
-Key shifts:
-
-| Concern               | v3                                              | v4                                            |
-| --------------------- | ----------------------------------------------- | --------------------------------------------- |
-| Theme definition      | `theme.extend.colors` in JS                     | `@theme { --color-…: oklch(…) }` in CSS       |
-| Config file           | Required (`tailwind.config.ts`)                 | Optional; CSS is source of truth              |
-| Color space           | HSL (we use `hsl(var(--x))`)                    | OKLCH (perceptually uniform, wider gamut)     |
-| Content scanning      | Explicit `content: [...]`                       | Automatic (uses content hooks / file presence)|
-| `@apply`              | Works                                           | Works, but discouraged in favor of components |
-| Plugins (JS)          | `plugins: [tailwindcssAnimate]`                 | Still supported; many move to CSS             |
-| Container queries     | Plugin (`@tailwindcss/container-queries`)       | Built-in: `@container`, `@sm:`, `@md:`        |
-| CSS layers            | Manual `@layer base/components/utilities`       | Auto-managed; explicit layer is opt-in        |
-
-## Why not migrate today
-
-1. **shadcn registry** still emits v3-style classes; mixing v3 and v4
-   patterns in the same `ui/` dir gets confusing.
-2. **Existing tokens are HSL** without `hsl()` wrappers — they work with
-   opacity modifiers (`bg-primary/10`). v4 prefers OKLCH and the syntax for
-   opacity is `bg-primary/10` still, but the underlying conversion changes.
-3. **Bundle of utility-first code** (50+ `ui/*` components, plus domain
-   compositions) means migration touches every file; needs a dedicated effort.
-4. **`tailwindcss-animate` plugin** is what backs our Radix transitions; the
-   v4-compatible drop-in exists but needs an audit.
-
-## If we migrate, the checklist
-
-1. Pin `tailwindcss@4` and `@tailwindcss/vite`; remove `postcss.config` if
-   present.
-2. Move `theme.extend.colors` from `tailwind.config.ts` into `@theme` in
-   `index.css`. Convert HSL triples to OKLCH (use https://oklch.com or a
-   script).
-3. Replace `@tailwind base; @tailwind components; @tailwind utilities;` with
-   `@import "tailwindcss";`.
-4. Re-test every `ui/*` component in light + dark.
-5. Audit opacity modifiers (`bg-primary/10`) — most work, but custom tokens
-   need to be plain OKLCH triples.
-6. Switch dark-mode plumbing from `darkMode: ["class"]` to `@variant dark
-   (.dark &);` in CSS.
-7. Drop `tailwindcss-animate` if v4 covers our animation needs; otherwise
-   keep it.
-8. Run Vitest UI tests + Playwright smoke.
-
-## OKLCH primer (for when we get there)
-
-OKLCH separates **L**ightness, **C**hroma, and **H**ue, all human-perceptually
-uniform. A 10-step color ramp generated by holding L on a curve produces a
-visually consistent scale — no more "the 600 looks weirdly dark" surprises.
-
-```css
-@theme {
-  --color-brand-50:  oklch(0.97 0.02 264);
-  --color-brand-500: oklch(0.65 0.22 264);
-  --color-brand-900: oklch(0.25 0.15 264);
-}
-```
-
-Hue 264 ≈ violet, 145 ≈ green, 25 ≈ red, 240 ≈ sky-blue.
-
-## What to do until then
-
-- Write v3 patterns. HSL tokens, JS config, `@tailwind base/components/utilities`.
-- If you see v4 syntax suggested in a search result, do not paste it — it
-  will not compile against v3.
-- When adding a new token, follow the existing HSL pattern in `index.css`,
-  even if OKLCH would be "more correct" — consistency over micro-optimization.
+When adding a token, follow the existing HSL pattern.

@@ -115,7 +115,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      className="hidden rounded text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 @[34rem]/headerbar:inline-flex"
+                      className="hidden rounded text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 @[34rem]/headerbar:inline-flex"
                       aria-label={t('navigation', sectionDescriptionKey[projectContext?.activeTab ?? ''])}
                     >
                       <Info className="h-3.5 w-3.5" strokeWidth={1.5} />

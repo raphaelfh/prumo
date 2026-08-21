@@ -126,7 +126,7 @@ export function GhostRow({
             data-cell-cols="*"
             tabIndex={rovingTabIndex(focus, rowId, '*')}
             onClick={onClick}
-            className="inline-flex items-center gap-1 rounded italic text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex items-center gap-1 rounded italic text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Plus className="size-3" aria-hidden />
             {label}
@@ -177,7 +177,7 @@ export function AddSectionMenuRow({
               data-cell-row={ADD_SECTION_ROW_ID}
               data-cell-cols="*"
               tabIndex={rovingTabIndex(focus, ADD_SECTION_ROW_ID, '*')}
-              className="inline-flex items-center gap-1 rounded italic text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex items-center gap-1 rounded italic text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Plus className="size-3" aria-hidden />
               {t('templateConfig', 'addSectionMenu')}

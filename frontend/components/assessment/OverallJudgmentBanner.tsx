@@ -130,7 +130,7 @@ export function OverallJudgmentBanner({ judgments }: OverallJudgmentBannerProps)
       {explainable && (
         <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleTrigger
-            className="mt-2 flex items-center gap-1 rounded-sm text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="mt-2 flex items-center gap-1 rounded-sm text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             data-testid="qa-overall-explain-toggle"
           >
             <ChevronDown

@@ -37,26 +37,97 @@ const result = await postcss(plugins).process(css, { from: INPUT });
 // Collapse the AST to `at-rule context | selector -> sorted declarations`.
 // Sorting makes the snapshot order-independent, so a diff shows semantic
 // change rather than the order Tailwind happened to emit utilities in.
-const rows = [];
-result.root.walkRules((rule) => {
-  const context = [];
-  for (let p = rule.parent; p && p.type !== 'root'; p = p.parent) {
-    context.unshift(p.name ? `@${p.name} ${p.params}`.trim() : '');
-  }
-  const decls = [];
-  rule.walkDecls((d) => decls.push(`${d.prop}:${d.value}${d.important ? '!important' : ''}`));
-  decls.sort();
-  const prefix = context.filter(Boolean).join(' >> ');
-  rows.push(`${prefix ? prefix + ' >> ' : ''}${rule.selector.replace(/\s+/g, ' ')} { ${decls.join('; ')} }`);
-});
+// Tailwind v4 wraps ALL of its output in native cascade layers; v3 emits no
+// native layers at all. That wrapper is uniform, expected, and carries no
+// comparative signal — normalising it away keeps a v3 -> v4 diff semantic
+// instead of 1400 lines of identical prefix churn. Normalising is a no-op on
+// v3 output. Nested at-rules (@media, @supports, @container) are KEPT: those
+// carry real signal.
+const TW_LAYERS = new Set(['theme', 'base', 'components', 'utilities']);
 
-// Bare at-rules that carry no nested rule (@keyframes steps, @property, ...)
-// still matter — a dropped @property changes rendering with no rule diff.
+// v4 emits genuinely NESTED css (`.outline-hidden { …; @media (forced-colors:
+// active) { … } }`); v3 emits everything flat. A recursive decl walk would
+// silently hoist those nested declarations into the parent rule and hide the
+// context they are actually gated on, so this walks the tree explicitly and
+// only ever takes DIRECT declaration children.
+const rows = [];
+
+// v3 emits `.foo>svg`, v4 emits `.foo > svg` for the identical selector.
+// Collapse whitespace around combinators so the diff shows semantic change
+// rather than formatting. Applied identically to both versions.
+const normSel = (sel) =>
+  sel
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([>+~])\s*/g, '$1')
+    .replace(/,\s*/g, ',')
+    .trim();
+
+// v3 emits `@media (min-width: 640px)`; v4 emits the modern range form in rem,
+// `@media (width >= 40rem)`. Same breakpoint (this app does not override the
+// root font size, so 1rem = 16px). Canonicalise both to `(width >= Npx)` so a
+// genuinely MOVED breakpoint still shows up while the syntax change does not.
+const REM_PX = 16;
+const normAtRule = (name, params) => {
+  let p = (params || '').trim();
+  p = p.replace(/\(\s*min-width:\s*([\d.]+)(px|rem)\s*\)/g, (_, n, u) =>
+    `(width >= ${u === 'rem' ? Number(n) * REM_PX : Number(n)}px)`);
+  p = p.replace(/\(\s*width\s*>=\s*([\d.]+)(px|rem)\s*\)/g, (_, n, u) =>
+    `(width >= ${u === 'rem' ? Number(n) * REM_PX : Number(n)}px)`);
+  return `@${name} ${p}`.trim();
+};
+
+// v4 emits nested RULES too (`.prose { :where(p):not(…) { … } }`), where v3
+// emitted the same thing flat as `.prose :where(p):not(…)`. Resolve nesting
+// the way CSS does — substitute `&`, otherwise treat it as a descendant — so
+// the two versions produce comparable selectors instead of 157 parentless
+// fragments that look like utilities appearing and disappearing.
+function compose(parent, childSel) {
+  const child = normSel(childSel);
+  if (!parent) return child;
+  return child
+    .split(',')
+    .map((part) => {
+      const p = part.trim();
+      return p.includes('&') ? p.replace(/&/g, parent) : `${parent} ${p}`;
+    })
+    .join(', ');
+}
+
+function visit(node, selector, context) {
+  const decls = node.nodes?.filter((n) => n.type === 'decl') ?? [];
+  if (decls.length && selector) {
+    const body = decls
+      .map((d) => `${d.prop}:${d.value}${d.important ? '!important' : ''}`)
+      .sort()
+      .join('; ');
+    const prefix = context.length ? context.join(' >> ') + ' >> ' : '';
+    rows.push(`${prefix}${selector} { ${body} }`);
+  }
+  for (const child of node.nodes ?? []) {
+    if (child.type === 'rule') {
+      visit(child, compose(selector, child.selector), context);
+    } else if (child.type === 'atrule') {
+      if (child.name === 'layer' && TW_LAYERS.has((child.params || '').trim())) {
+        visit(child, selector, context);
+      } else if (child.name === 'keyframes') {
+        visit(child, selector, [...context, `@keyframes ${child.params}`]);
+      } else {
+        visit(child, selector, [...context, normAtRule(child.name, child.params)]);
+      }
+    }
+  }
+}
+
+visit(result.root, null, []);
+
+// Bare at-rules that carry no nested rule (@property, @font-face) still
+// matter — a dropped @property changes rendering with no rule diff.
 result.root.walkAtRules((at) => {
   if (at.name === 'property' || at.name === 'font-face') {
-    const decls = [];
-    at.walkDecls((d) => decls.push(`${d.prop}:${d.value}`));
-    decls.sort();
+    const decls = (at.nodes ?? [])
+      .filter((n) => n.type === 'decl')
+      .map((d) => `${d.prop}:${d.value}`)
+      .sort();
     rows.push(`@${at.name} ${at.params} { ${decls.join('; ')} }`);
   }
 });
