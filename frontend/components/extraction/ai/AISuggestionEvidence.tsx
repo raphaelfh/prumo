@@ -115,7 +115,7 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: 
                   aria-label={badgeTooltip ?? badgeCopy}
                   className={cn(
                     'px-2 py-0.5 rounded text-xs font-medium shrink-0 cursor-help',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
                     isEntailed
                       ? 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300'
                       : 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
@@ -179,7 +179,7 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: 
           }}
           className={cn(
             'group block w-full rounded-md border-l-2 py-1 pl-3 sm:pl-5 text-left transition-colors',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+            'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
             borderClass,
             isActive ? 'bg-primary/5 ring-2 ring-primary/40' : 'hover:bg-foreground/5',
           )}

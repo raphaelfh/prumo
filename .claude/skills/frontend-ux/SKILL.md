@@ -48,8 +48,8 @@ Headers should be thin (h-12 / 48px) and serve as a navigation anchor, not just 
 Sidebars should feel integrated into the window, not like a separate drawer.
 
 - **Background:** `bg-sidebar` — the `--sidebar-*` tokens flip per theme. Do
-  **not** hardcode `bg-[#fafafa]`/`bg-[#0c0c0c]`; the real `ui/sidebar.tsx`
-  uses `bg-sidebar text-sidebar-foreground`.
+  **not** hardcode `bg-[#fafafa]`/`bg-[#0c0c0c]`. Note
+  `components/layout/ProjectSidebar.tsx` still does; it predates this rule.
 - **Active State:** A subtle `bg-muted` or `bg-primary/5`, never a heavy highlight.
 - **Icons:** Always `h-4 w-4` with `strokeWidth={1.5}`.
 

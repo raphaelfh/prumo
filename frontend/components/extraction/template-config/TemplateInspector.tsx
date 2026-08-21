@@ -322,7 +322,7 @@ function FieldInspectorForm({
             value={owningSection.id}
             onChange={(e) => onMoveField(field, e.target.value)}
             disabled={saving || moveDisabled}
-            className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           >
             {sections.map((s) => (
               <option key={s.id} value={s.id}>
@@ -343,7 +343,7 @@ function FieldInspectorForm({
         value={draft.fieldType}
         onChange={(e) => setDraft({...draft, fieldType: e.target.value})}
         disabled={saving}
-        className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       >
         {FIELD_TYPE_OPTIONS.map(({value, copyKey}) => (
           <option key={value} value={value}>

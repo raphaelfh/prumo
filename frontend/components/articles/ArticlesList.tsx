@@ -711,7 +711,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                             ? onOpenAddArticle()
                             : navigate(`/projects/${projectId}/articles/add`)
                     }
-                    className="h-10 px-6 text-[13px] font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors shadow-sm"
+                    className="h-10 px-6 text-[13px] font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors shadow-xs"
                 >
                     <Plus className="mr-2 h-4 w-4"/>
                     {t('articles', 'listAddFirstArticle')}

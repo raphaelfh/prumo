@@ -1,3 +1,27 @@
+/* Tailwind v4: the import must precede every other rule, so it is hoisted
+   above the hand-written rules that used to sit at the top of this file.
+   `source(none)` disables v4's automatic source detection and the explicit
+   @source below reproduces exactly what v3's `content` glob scanned — without
+   it, v4 would also scan backend/, docs/ and scripts/ and emit utilities for
+   stray text matches. */
+@import "tailwindcss" source(none);
+@source "../frontend/**/*.{ts,tsx}";
+
+/* v3 `plugins: [...]`. @tailwindcss/container-queries is deliberately absent:
+   v4 supports @container natively and emits identical rules for all 19 sites. */
+@plugin "tailwindcss-animate";
+@plugin "@tailwindcss/typography";
+
+/* v3 `darkMode: ["class"]`. Omitting this silently reverts every `dark:`
+   utility to a prefers-color-scheme media query. */
+@custom-variant dark (&:is(.dark *));
+
+/* v3 `theme.extend.zIndex.header`. v4 has no `--z-*` theme namespace, so the
+   single custom z-index becomes a one-off utility. */
+@utility z-header {
+  z-index: var(--z-header);
+}
+
 /* Brief highlight applied to a field whose value was just updated by an
  * AI extraction refresh. The hook (useJustUpdatedValue) keeps the class on
  * for ~1.5s; this animation fades from a soft amber tint back to transparent
@@ -20,9 +44,105 @@
   }
 }
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* ---------------------------------------------------------------------------
+   Theme — the v4 port of tailwind.config.ts `theme.extend`.
+
+   `@theme inline` inlines each value into the utilities it generates, so
+   `.bg-primary` emits `hsl(var(--primary))` and resolves the raw HSL triple at
+   use time. That is what keeps the `.dark` overrides below working: the 93
+   :root/.dark custom properties are NOT restated here, they stay exactly where
+   they are and this block only maps them onto Tailwind's namespaces.
+   --------------------------------------------------------------------------- */
+@theme inline {
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-hover: hsl(var(--primary-hover));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+
+  --color-info: hsl(var(--info));
+  --color-info-foreground: hsl(var(--info-foreground));
+
+  --color-ai: hsl(var(--ai));
+  --color-ai-foreground: hsl(var(--ai-foreground));
+
+  --color-reviewer-1: hsl(var(--reviewer-1));
+  --color-reviewer-2: hsl(var(--reviewer-2));
+  --color-reviewer-3: hsl(var(--reviewer-3));
+  --color-reviewer-4: hsl(var(--reviewer-4));
+  --color-reviewer-5: hsl(var(--reviewer-5));
+
+  --color-sidebar: hsl(var(--sidebar-background));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  /* NB: keys must NOT collide with the colour keys above, otherwise Tailwind
+     treats `shadow-<name>` as a shadow-COLOUR modifier instead of a box-shadow.
+     `card` and `popover` are colour keys, hence the `elev-` prefix. */
+  --shadow-elev-card: var(--shadow-card);
+  --shadow-elev-popover: var(--shadow-popover);
+  --shadow-elev-header: var(--shadow-header);
+
+  --text-header-title: 13px;
+  --text-header-title--line-height: 1.2;
+  --text-header-meta: 12px;
+  --text-header-meta--line-height: 1.2;
+
+  /* Kept verbatim from v3. Do NOT let the upgrade codemod rewrite
+     `rounded-sm` to `rounded-xs`: --radius-sm here is 4px, v4's stock
+     --radius-xs is a fixed 2px, and the rename would halve the radius at
+     21 call sites. */
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+}
+
+/* v3 `theme.extend.keyframes`. Sole consumer is ui/accordion.tsx:43. */
+@keyframes accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
+}
+
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
+}
 
 /* Definition of the design system inspired by Linear. */
 
@@ -201,16 +321,6 @@
 }
 
 @layer components {
-    /* Linear inspired card */
-    .linear-card {
-        @apply rounded-md border border-border/50 bg-card/30 shadow-elev-card transition-all hover:border-border hover:shadow-[0_2px_8px_rgba(0,0,0,0.08)];
-    }
-
-    /* High density list item */
-    .linear-list-item {
-        @apply flex items-center gap-3 px-4 py-2.5 text-[13px] font-normal text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground cursor-pointer border-b border-border/30 last:border-0;
-    }
-
     /* Frosted header surface — consumed by HeaderShell. Border + translucent
        background + blur; shadow is opt-in via shadow-elev-header (shadow-on-lift). */
     .frosted-header {
@@ -230,11 +340,6 @@
             background-color: hsl(var(--background));
         }
     }
-
-    /* Subtle button style */
-    .linear-btn-secondary {
-        @apply inline-flex items-center justify-center rounded-md border border-border/60 bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-muted hover:border-border focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50;
-  }
 }
 
 @layer utilities {
@@ -251,28 +356,4 @@
     ::-webkit-scrollbar-thumb {
         @apply bg-muted-foreground/20 rounded-full transition-colors hover:bg-muted-foreground/40;
     }
-
-    .scrollbar-none {
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-    }
-
-    .scrollbar-none::-webkit-scrollbar {
-        display: none;
-    }
-
-    /* Line clamp utilities */
-  .line-clamp-1 {
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 1;
-  }
-  
-  .line-clamp-2 {
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
 }

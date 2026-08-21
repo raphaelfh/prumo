@@ -68,7 +68,7 @@ export function TemplateInstructionRow({
       <button
         type="button"
         onClick={() => setDraft(expanded ? null : value)}
-        className="flex h-12 w-full items-center gap-2 rounded-md px-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="flex h-12 w-full items-center gap-2 rounded-md px-4 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         aria-expanded={expanded}
       >
         <Sparkles className="size-4 shrink-0 text-muted-foreground" />

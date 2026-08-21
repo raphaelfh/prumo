@@ -517,7 +517,7 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                             // visible focus ring of its own.
                             className={cn(
                               'pointer-events-auto w-fit text-[11px] font-medium text-primary underline-offset-2 hover:underline',
-                              'rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                              'rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                             )}
                           >
                             {t('llmEngine', 'lockedAddKeyCta')}

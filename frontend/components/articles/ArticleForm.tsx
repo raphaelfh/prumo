@@ -687,7 +687,7 @@ export function ArticleForm({
                                     onClick={() => scrollToSection(step.id)}
                                     className={cn(
                                         'flex shrink-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium transition-colors duration-75',
-                                        'hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1',
+                                        'hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1',
                                         'lg:w-full lg:shrink',
                                         isActive
                                             ? 'bg-muted text-foreground border-l-2 border-l-primary pl-1.5'

@@ -222,7 +222,7 @@ export function FieldRow({
             tabIndex={rovingTabIndex(focus, rowId, ['label'])}
             className={cn(
               'flex w-full max-w-full items-baseline gap-1.5 rounded text-left',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
               selected && 'outline outline-2 -outline-offset-2 outline-ring',
             )}
           >
@@ -283,7 +283,7 @@ export function FieldRow({
               data-cell-row={rowId}
               data-cell-cols="type"
               tabIndex={rovingTabIndex(focus, rowId, ['type'])}
-              className="block max-w-full rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="block max-w-full rounded text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             >
               <TypePill field={field} />
             </button>
@@ -322,7 +322,7 @@ export function FieldRow({
             data-cell-row={rowId}
             data-cell-cols="options"
             tabIndex={rovingTabIndex(focus, rowId, ['options'])}
-            className="block min-h-[18px] w-full truncate rounded text-left text-[10.5px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="block min-h-[18px] w-full truncate rounded text-left text-[10.5px] text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           >
             {(field.allowedValues ?? []).join(', ')}
           </button>
@@ -373,7 +373,7 @@ export function FieldRow({
               data-cell-row={rowId}
               data-cell-cols="sparkle"
               tabIndex={rovingTabIndex(focus, rowId, ['sparkle'])}
-              className="flex h-[18px] w-full items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-[18px] w-full items-center justify-center rounded focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             >
               {field.hasAiInstruction && (
                 <Sparkles className="size-3 text-primary" aria-hidden />
@@ -402,7 +402,7 @@ export function FieldRow({
                   data-cell-row={rowId}
                   data-cell-cols="actions"
                   tabIndex={rovingTabIndex(focus, rowId, ['actions'])}
-                  className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/row:opacity-100 data-[state=open]:opacity-100"
+                  className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring group-hover/row:opacity-100 data-[state=open]:opacity-100"
                 >
                   <MoreHorizontal className="size-3.5" aria-hidden />
                 </button>

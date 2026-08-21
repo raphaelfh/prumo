@@ -228,20 +228,24 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
               three oversized single-number cards). */}
           <Card className="border-border/40 shadow-elev-popover">
               <CardContent className="p-0">
-                  <div className="grid grid-cols-2 divide-x divide-y divide-border/40 sm:grid-cols-4 sm:divide-y-0">
-                      <div className="px-4 py-3">
+                  {/* Hairlines come from the container background showing through
+                      1px gaps, NOT from divide-*: on a grid that wraps to 2x2
+                      below sm, divide-* paints a spurious rule on the outer
+                      edge (right/bottom under v4, left/top under v3). */}
+                  <div className="grid grid-cols-2 gap-px bg-border/40 sm:grid-cols-4">
+                      <div className="bg-card px-4 py-3">
                           <div className="text-xl font-semibold tabular-nums">{extractionStats.totalArticles}</div>
                           <p className="mt-0.5 text-[12px] text-muted-foreground">{t('extraction', 'dashboardArticles')}</p>
                       </div>
-                      <div className="px-4 py-3">
+                      <div className="bg-card px-4 py-3">
                           <div className="text-xl font-semibold tabular-nums">{extractionStats.extractionsStarted}</div>
                           <p className="mt-0.5 text-[12px] text-muted-foreground">{t('extraction', 'dashboardStatInExtraction')}</p>
                       </div>
-                      <div className="px-4 py-3">
+                      <div className="bg-card px-4 py-3">
                           <div className="text-xl font-semibold tabular-nums">{extractionStats.extractionsCompleted}</div>
                           <p className="mt-0.5 text-[12px] text-muted-foreground">{t('extraction', 'dashboardStatCompleted')}</p>
                       </div>
-                      <div className="px-4 py-3">
+                      <div className="bg-card px-4 py-3">
                           <div className="text-xl font-semibold tabular-nums">{extractionStats.progressPercentage}%</div>
                           <p className="mt-0.5 text-[12px] text-muted-foreground">{t('extraction', 'dashboardStatAvgCompleteness')}</p>
                       </div>

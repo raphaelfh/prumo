@@ -64,7 +64,7 @@ export function ArticleSelectionActions({
   }
 
   return (
-    <div className="sticky top-0 z-10 mb-4 rounded-lg border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 shadow-sm">
+    <div className="sticky top-0 z-10 mb-4 rounded-lg border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 shadow-xs">
       <div className="flex items-center justify-between p-3">
         <div className="flex items-center gap-3">
           <Badge variant="secondary" className="gap-1.5 px-2.5 py-1">

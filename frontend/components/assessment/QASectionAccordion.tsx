@@ -217,7 +217,7 @@ export function QASectionAccordion({
           ) : null}
 
           {signaling.length > 0 ? (
-            <div className="space-y-1 divide-y">
+            <div className="divide-y">
               {signaling.map((field) => {
                 const stack = fieldStack(field.id);
                 const aiKey = getSuggestionKey(instanceId, field.id);
@@ -225,7 +225,7 @@ export function QASectionAccordion({
                 return (
                   <div
                     key={field.id}
-                    className="pt-1"
+                    className="py-1"
                     data-testid={`qa-field-row-${field.name}`}
                   >
                     <FieldInput
@@ -272,13 +272,13 @@ export function QASectionAccordion({
               <p className="mb-2 text-xs font-medium uppercase tracking-wide text-warning">
                 {qa.domainJudgmentCardTitle}
               </p>
-              <div className="space-y-1 divide-y">
+              <div className="divide-y">
                 {summary.map((field) => {
                   const stack = fieldStack(field.id);
                   const aiKey = getSuggestionKey(instanceId, field.id);
                   const aiSuggestion = aiSuggestions?.[aiKey];
                   return (
-                    <div key={field.id} className="pt-1">
+                    <div key={field.id} className="py-1">
                       <FieldInput
                         field={field}
                         instanceId={instanceId}

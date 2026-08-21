@@ -15,7 +15,7 @@
 import { createServer } from 'vite';
 
 const TARGETS = [
-  '/frontend/components/ui/sidebar.tsx', // .tsx component
+  '/frontend/components/ui/button.tsx', // .tsx component
   '/frontend/hooks/useKeyboardShortcuts.ts', // .ts hook, no JSX, no try/finally
 ];
 
