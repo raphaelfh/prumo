@@ -57,7 +57,7 @@ Open the new file and check:
 - [ ] **Imports use `@/lib/utils` for `cn`** — older registry snapshots used `../../lib/utils`.
 - [ ] **`cva` base classes match neighboring components** (e.g. ring tokens, radius scale).
 - [ ] **No raw color names** (`bg-slate-50`, `text-zinc-500`). Replace with semantic tokens.
-- [ ] **Focus styles present**: `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`.
+- [ ] **Focus styles present**: `focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`.
 - [ ] **Display name set**: `Foo.displayName = "Foo"` — React DevTools relies on this.
 - [ ] **`forwardRef` shape matches the rest of `ui/*`**. Even though React 19
       makes it optional, our 18.3 codebase still uses it for consistency.

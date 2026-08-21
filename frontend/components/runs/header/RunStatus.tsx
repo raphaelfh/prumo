@@ -137,7 +137,7 @@ export function RunStatus({ open, onOpenChange }: { open?: boolean; onOpenChange
                 aria-haspopup="dialog"
                 aria-expanded={actualOpen}
                 data-testid="run-status-reviewers"
-                className="relative hidden shrink-0 items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring @[64rem]/headerbar:flex"
+                className="relative hidden shrink-0 items-center rounded-full outline-hidden focus-visible:ring-2 focus-visible:ring-ring @[64rem]/headerbar:flex"
               >
                 <AvatarStack count={reviewers.count} shown={shown} size="bar" />
                 {showDivergent && (

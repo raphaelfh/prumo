@@ -39,9 +39,10 @@ Files you will touch most:
    string `+`; `tailwind-merge` must see them as separate args so later utilities
    override earlier ones (`cn("px-2", "px-4")` → `"px-4"`, not `"px-2 px-4"`).
    The local `cn()` is built on `extendTailwindMerge` and already knows the
-   project's custom shadow utilities (`shadow-elev-card`, `shadow-elev-popover`).
+   project's custom shadow utilities (`shadow-elev-card`, `shadow-elev-popover`,
+   `shadow-elev-header`).
    **Any new custom utility that has to dedupe against built-in size variants
-   must be added there too** — otherwise `cn("shadow-sm", "shadow-elev-popover")`
+   must be added there too** — otherwise `cn("shadow-xs", "shadow-elev-popover")`
    emits both classes and the cascade silently picks the wrong one.
 2. **Use semantic tokens, not raw colors.** `bg-background`, `text-foreground`,
    `text-muted-foreground`, `border-border`, `bg-primary text-primary-foreground`,
@@ -60,7 +61,7 @@ Files you will touch most:
    it re-syncs from storage + system preference. Test every new component in both
    modes; do not assume `dark:` variants.
 6. **Focus is never invisible.** Keep `focus-visible:ring-2
-   focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none`
+   focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-hidden`
    on any interactive element. Radix gives you keyboard nav for free; do not
    `tabIndex={-1}` your way out.
 7. **Prefer Radix primitives over div-with-onClick.** Dialog, Popover, Select,
@@ -194,7 +195,7 @@ If you add another shadow level, pick a name that is **not** also in
 `theme.colors` and **add it to the `extendTailwindMerge` shadow group**
 in `frontend/lib/utils.ts` so `cn()` correctly dedupes it against the
 built-in `shadow-{size}` utilities (otherwise the shadcn `<Card>` base
-`shadow-sm` will silently win the cascade).
+`shadow-xs` will silently win the cascade).
 
 Forward-looking note: **Tailwind v4** moves theme into `@theme { --color-…:
 oklch(…) }` in CSS and makes `tailwind.config.ts` optional. We are still on
@@ -343,7 +344,7 @@ second highlight scheme.
 | Variant prop is typed `any`                   | Missing `VariantProps<typeof xxxVariants>` on the props interface.                |
 | Toast not announced                           | You bypassed `useToast` and rendered a `<div>` yourself.                          |
 | Custom `shadow-*` utility resolves to `box-shadow: none` | Key collides with a `theme.colors` key — Tailwind treats it as a shadow-colour modifier. Rename the `boxShadow` key (e.g. prefix `elev-`). |
-| Custom `shadow-*` utility is overridden by shadcn `<Card>` `shadow-sm` | Missing entry in `extendTailwindMerge` shadow group in `frontend/lib/utils.ts`. |
+| Custom `shadow-*` utility is overridden by shadcn `<Card>` `shadow-xs` | Missing entry in `extendTailwindMerge` shadow group in `frontend/lib/utils.ts`. |
 
 ## When to reach for a reference
 

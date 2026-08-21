@@ -41,7 +41,7 @@ function RailItem({
       aria-current={selected ? 'true' : undefined}
       className={cn(
         'flex w-full items-center gap-1.5 rounded-[5px] px-1.5 py-[3px] text-left text-muted-foreground',
-        'hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
         nested && 'ml-3.5 text-[10.5px]',
         selected && 'bg-muted/60 text-foreground',
         dimmed && 'opacity-40',
@@ -103,7 +103,7 @@ export function TemplateOutlineRail({
       <button
         type="button"
         onClick={onAddSection}
-        className="mt-1.5 flex w-full items-center gap-1 rounded-[5px] px-1.5 py-[3px] italic text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="mt-1.5 flex w-full items-center gap-1 rounded-[5px] px-1.5 py-[3px] italic text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Plus className="size-3" aria-hidden />
         {t('extraction', 'gridNewSection')}

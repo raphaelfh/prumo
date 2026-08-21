@@ -59,9 +59,9 @@ export function SectionViewSwitcher() {
             data-testid={activeSection === 'quality' ? `hitl-quality_assessment-tab-${value}` : undefined}
             onClick={() => select(value)}
             className={cn(
-              'h-7 rounded px-3 text-header-meta font-medium transition-colors duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:h-11',
+              'h-7 rounded px-3 text-header-meta font-medium transition-colors duration-75 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:h-11',
               active === value
-                ? 'bg-background text-foreground shadow-sm'
+                ? 'bg-background text-foreground shadow-xs'
                 : 'text-muted-foreground hover:text-foreground',
             )}
           >

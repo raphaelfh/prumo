@@ -304,7 +304,7 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
         // Wider hit area (8px) for easier grabbing; visual bar centered inside.
         'absolute top-0 bottom-0 w-2 cursor-col-resize z-10 group/handle',
         side === 'right' ? '-right-1' : '-left-1',
-        'focus-visible:outline-none',
+        'focus-visible:outline-hidden',
       )}
     >
       <div

@@ -99,7 +99,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
                       'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-[13px] font-medium transition-colors duration-75',
-                      'hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1',
+                      'hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1',
                       isActive ? 'bg-muted text-foreground' : 'text-muted-foreground'
                   )}
                 >

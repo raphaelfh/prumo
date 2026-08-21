@@ -140,7 +140,7 @@ export function TemplateManager({
                 <button
                   key={template.id}
                   type="button"
-                  className={`w-full text-left p-4 border rounded-lg cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                  className={`w-full text-left p-4 border rounded-lg cursor-pointer transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                     activeTemplate?.id === template.id
                       ? 'border-primary bg-primary/5'
                       : 'border-border hover:border-primary/50'
