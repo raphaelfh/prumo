@@ -52,7 +52,8 @@ gets `text-primary-foreground` (or inherits from a parent that did).
 | `sidebar-*`                     | own palette            | own palette            | Sidebar only              |
 
 The `sidebar-*` namespace is separate so the sidebar can drift from the page
-chrome without polluting the global tokens. See `frontend/components/ui/sidebar.tsx`.
+chrome without polluting the global tokens. It is currently **unconsumed** —
+`components/layout/ProjectSidebar.tsx` hardcodes its own hexes instead.
 
 ## Adding a new token
 
