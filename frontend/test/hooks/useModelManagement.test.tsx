@@ -115,10 +115,12 @@ describe('useModelManagement → createModel guard rails', () => {
 
   it('delegates to createManualModelHierarchy with trimmed model_name + scoped ids', async () => {
     mockLoadModelsToEmpty();
+    // The wire shape is the generated CreateModelHierarchyResponse
+    // (camelCase aliases) — proven in-process against the real endpoint.
     (createManualModelHierarchy as any).mockResolvedValue({
-      model_id: 'parent-inst',
-      model_label: 'LogReg',
-      child_instances: [],
+      modelId: 'parent-inst',
+      modelLabel: 'LogReg',
+      childInstances: [],
     });
 
     const { result } = renderHook(() => useModelManagement(baseProps));
@@ -138,9 +140,9 @@ describe('useModelManagement → createModel guard rails', () => {
   it('forwards modelling_method to the backend (no client-side ReviewerDecision write)', async () => {
     mockLoadModelsToEmpty();
     (createManualModelHierarchy as any).mockResolvedValue({
-      model_id: 'inst-x',
-      model_label: 'M',
-      child_instances: [],
+      modelId: 'inst-x',
+      modelLabel: 'M',
+      childInstances: [],
     });
 
     const { result } = renderHook(() => useModelManagement(baseProps));
@@ -162,13 +164,13 @@ describe('useModelManagement → createModel guard rails', () => {
   it('adds the new model to local state on success and maps child_instances', async () => {
     mockLoadModelsToEmpty();
     (createManualModelHierarchy as any).mockResolvedValue({
-      model_id: 'parent-inst',
-      model_label: 'XGBoost',
-      child_instances: [
+      modelId: 'parent-inst',
+      modelLabel: 'XGBoost',
+      childInstances: [
         {
           id: 'child-1',
-          entity_type_id: 'et-section-1',
-          parent_instance_id: 'parent-inst',
+          entityTypeId: 'et-section-1',
+          parentInstanceId: 'parent-inst',
           label: 'Performance',
         },
       ],
@@ -496,9 +498,9 @@ describe('useModelManagement → optimistic mutation vs in-flight load', () => {
 
     // While the refresh is parked, the user creates Beta.
     (createManualModelHierarchy as any).mockResolvedValue({
-      model_id: 'm-B',
-      model_label: 'Beta',
-      child_instances: [],
+      modelId: 'm-B',
+      modelLabel: 'Beta',
+      childInstances: [],
     });
     await act(async () => {
       await result.current.createModel('Beta', '');

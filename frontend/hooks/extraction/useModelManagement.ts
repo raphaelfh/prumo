@@ -258,8 +258,8 @@ export function useModelManagement({
 
     // Create Model object
     const newModel: Model = {
-      instanceId: result.model_id,
-      modelName: result.model_label,
+      instanceId: result.modelId,
+      modelName: result.modelLabel,
       progress: { completed: 0, total: 0, percentage: 0 }
     };
 
@@ -269,15 +269,15 @@ export function useModelManagement({
     setModels(prev => [...prev, newModel]);
     setActiveModelId(newModel.instanceId);
 
-    toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.model_label));
-    console.warn(`✅ Hierarchy created: 1 parent + ${result.child_instances.length} children`);
+    toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.modelLabel));
+    console.warn(`✅ Hierarchy created: 1 parent + ${result.childInstances.length} children`);
 
     return {
       model: newModel,
-      childInstances: result.child_instances.map((child) => ({
+      childInstances: result.childInstances.map((child) => ({
         id: child.id,
-        entityTypeId: child.entity_type_id,
-        parentInstanceId: child.parent_instance_id,
+        entityTypeId: child.entityTypeId,
+        parentInstanceId: child.parentInstanceId,
         label: child.label,
       })),
     };
