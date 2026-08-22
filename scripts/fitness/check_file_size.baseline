@@ -10,6 +10,6 @@ frontend/components/extraction/ArticleExtractionTable.tsx:1134
 frontend/components/extraction/template-config/TemplateConfigGridPanel.test.tsx:1038
 frontend/lib/copy/extraction.ts:899
 frontend/pages/ExtractionFullScreen.tsx:1380
-frontend/pages/QualityAssessmentFullScreen.tsx:914
-frontend/test/QualityAssessmentFullScreen.test.tsx:1213
+frontend/pages/QualityAssessmentFullScreen.tsx:923
+frontend/test/QualityAssessmentFullScreen.test.tsx:1328
 frontend/test/hooks/useAutoSaveProposals.test.tsx:862
