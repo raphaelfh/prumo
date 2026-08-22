@@ -189,7 +189,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
                         onValueChange(instance.id, fieldId, value)
                       }
                       onRemove={() => props.onRemoveInstance?.(instance.id)}
-                      canRemove={true}
+                      canRemove={!!props.onRemoveInstance}
                       projectId={projectId}
                       aiSuggestions={props.aiSuggestions}
                       onAcceptAI={props.onAcceptAI}
