@@ -9,7 +9,11 @@ describe('HeaderShell', () => {
     expect(header).not.toBeNull();
     expect(header!.className).toContain('@container/headerbar');
     expect(header!.className).toContain('frosted-header');
-    expect(header!.className).toContain('z-header');
+    // `toContain` is a SUBSTRING match, so it passes for `z-[var(--z-header)]`
+    // just as readily as for `z-header` — it cannot tell the two spellings
+    // apart, which is exactly what this assertion exists to pin. Match the
+    // class token itself.
+    expect(header!.className.split(/\s+/)).toContain('z-header');
   });
 
   it('is sticky by default and relative when asked', () => {
