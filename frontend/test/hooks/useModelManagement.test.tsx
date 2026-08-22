@@ -552,3 +552,35 @@ describe('useModelManagement → optimistic mutation vs in-flight load', () => {
     expect(result.current.activeModelId).toBeNull();
   });
 });
+
+describe('useModelManagement → initial model preference', () => {
+  // The page persists the last active model per article (localStorage);
+  // the hook must prefer that id over the first-model fallback when no
+  // current selection survives a load — the restore effect at the page
+  // level always lost this race because loadModels batches
+  // setModels + setActiveModelId(first) in one commit.
+
+  it('restores initialModelId instead of falling back to the first model', async () => {
+    const { result } = renderHook(() =>
+      useModelManagement({
+        ...baseProps,
+        modelInstances: [modelRow('m1', 'Model A'), modelRow('m2', 'Model B')],
+        initialModelId: 'm2',
+      }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.activeModelId).toBe('m2');
+  });
+
+  it('falls back to the first model when initialModelId is not in the list', async () => {
+    const { result } = renderHook(() =>
+      useModelManagement({
+        ...baseProps,
+        modelInstances: [modelRow('m1', 'Model A'), modelRow('m2', 'Model B')],
+        initialModelId: 'gone',
+      }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.activeModelId).toBe('m1');
+  });
+});

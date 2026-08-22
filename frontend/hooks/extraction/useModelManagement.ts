@@ -39,6 +39,15 @@ interface UseModelManagementProps {
    * usage / tests).
    */
   modelInstances?: ModelInstanceRow[];
+  /**
+   * Preferred model to activate when no current selection survives a
+   * load (page reload, or the active model was removed). The page
+   * passes the localStorage-persisted id captured at article mount —
+   * a snapshot, deliberately not live — and the hook applies it only
+   * when the id exists in the loaded list, else falls back to the
+   * first model. Keeps the hook storage-agnostic.
+   */
+  initialModelId?: string | null;
   enabled?: boolean;
 }
 
@@ -72,6 +81,7 @@ export function useModelManagement({
   templateId,
   modelParentEntityTypeId,
   modelInstances,
+  initialModelId = null,
   enabled = true
 }: UseModelManagementProps): UseModelManagementReturn {
   const { user } = useAuth();
@@ -199,10 +209,16 @@ export function useModelManagement({
         ? modelsWithProgress.some(model => model.instanceId === currentActiveId)
         : false;
 
-        // If active model no longer exists (or not set yet), pick first available
+        // If active model no longer exists (or not set yet), prefer the
+        // caller-supplied initial id (persisted preference) when it is in
+        // the list, else pick the first available.
       if (!hasActiveModel) {
-        const fallbackModelId = modelsWithProgress[0]?.instanceId ?? null;
-        setActiveModelId(fallbackModelId);
+        const preferredModelId =
+          initialModelId &&
+          modelsWithProgress.some(model => model.instanceId === initialModelId)
+            ? initialModelId
+            : (modelsWithProgress[0]?.instanceId ?? null);
+        setActiveModelId(preferredModelId);
       }
     }
 
