@@ -178,6 +178,10 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
             can add more in the Configuration tab). We render an accordion
             for it when it carries any fields so they bind to the active
             model instance — children are rendered immediately below.
+            No instance add/remove handlers: the ModelSelector above is
+            the single management surface for model entries (its dialogs
+            create the singleton children and gate removal on the whole
+            subtree's data — the generic buttons bypassed both).
           */}
           {modelContainer.fields.length > 0 && (
             <SectionAccordion
@@ -196,8 +200,6 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
               onRejectAI={rejectSuggestion}
               selectSuggestion={selectSuggestion}
               getSuggestionsHistory={getSuggestionsHistory}
-              onAddInstance={() => handleAddInstance(modelContainer.id)}
-              onRemoveInstance={handleRemoveInstance}
               onExtractionComplete={onExtractionComplete}
             />
           )}
