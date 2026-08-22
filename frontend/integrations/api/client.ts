@@ -364,13 +364,10 @@ export async function modelExtractionClient<T>(
   });
 }
 
-export interface ManualModelHierarchyRequest {
-  project_id: string;
-  article_id: string;
-  template_id: string;
-  model_name: string;
-  modelling_method?: string | null;
-}
+// Request shape from the generated contract too — the snake_case copy
+// only worked through Pydantic's populate_by_name leniency.
+export type ManualModelHierarchyRequest =
+  components['schemas']['CreateModelHierarchyRequest'];
 
 // Response shapes come from the generated contract (camelCase aliases) —
 // a hand-mirrored snake_case copy here shipped `model_label: undefined`

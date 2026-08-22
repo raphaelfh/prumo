@@ -129,11 +129,11 @@ describe('useModelManagement → createModel guard rails', () => {
     });
 
     expect(createManualModelHierarchy).toHaveBeenCalledWith({
-      project_id: 'p-1',
-      article_id: 'a-1',
-      template_id: 't-1',
-      model_name: 'LogReg',
-      modelling_method: null,
+      projectId: 'p-1',
+      articleId: 'a-1',
+      templateId: 't-1',
+      modelName: 'LogReg',
+      modellingMethod: null,
     });
   });
 
@@ -151,7 +151,7 @@ describe('useModelManagement → createModel guard rails', () => {
     });
 
     expect(createManualModelHierarchy).toHaveBeenCalledWith(
-      expect.objectContaining({ modelling_method: 'Neural Net' }),
+      expect.objectContaining({ modellingMethod: 'Neural Net' }),
     );
     // The hook must not bypass the backend by writing the method as a
     // ReviewerDecision from the client.

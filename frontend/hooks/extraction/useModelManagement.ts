@@ -15,7 +15,7 @@
  */
 
 import {useEffect, useRef, useState} from 'react';
-import {createManualModelHierarchy} from '@/integrations/api';
+import {createManualModelHierarchy, type ManualModelHierarchyChild} from '@/integrations/api';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
@@ -53,12 +53,7 @@ interface UseModelManagementProps {
 
 interface CreateModelResult {
   model: Model;
-  childInstances: Array<{
-    id: string;
-    entityTypeId: string;
-    parentInstanceId: string;
-    label: string;
-  }>;
+  childInstances: ManualModelHierarchyChild[];
 }
 
 interface UseModelManagementReturn {
@@ -243,11 +238,11 @@ export function useModelManagement({
     }
 
     const result = await createManualModelHierarchy({
-      project_id: projectId,
-      article_id: articleId,
-      template_id: templateId,
-      model_name: modelName.trim(),
-      modelling_method: modellingMethod || null,
+      projectId,
+      articleId,
+      templateId,
+      modelName: modelName.trim(),
+      modellingMethod: modellingMethod || null,
     }).catch((err: unknown) => {
       console.error('Error creating model:', err);
       toast.error(`${t('extraction', 'errors_createModel')}: ${err instanceof Error ? err.message : String(err)}`);
@@ -274,12 +269,7 @@ export function useModelManagement({
 
     return {
       model: newModel,
-      childInstances: result.childInstances.map((child) => ({
-        id: child.id,
-        entityTypeId: child.entityTypeId,
-        parentInstanceId: child.parentInstanceId,
-        label: child.label,
-      })),
+      childInstances: result.childInstances,
     };
   };
 

@@ -652,10 +652,14 @@ export default function ExtractionFullScreen() {
     enabled: !!template && !!modelParentEntityType
   });
 
-    // Persist active model in localStorage
+    // Persist active model in localStorage (guarded like the read above).
   useEffect(() => {
     if (activeModelId && articleId) {
-      localStorage.setItem(`active-model-${articleId}`, activeModelId);
+      try {
+        localStorage.setItem(`active-model-${articleId}`, activeModelId);
+      } catch {
+        // Restricted context — losing the preference is fine.
+      }
     }
   }, [activeModelId, articleId]);
 
