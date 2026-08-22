@@ -562,6 +562,7 @@ export const extraction = {
     templateCreatedAt: 'Created on',
     // SectionAccordion
     sectionNoInstances: 'No instances created for this section',
+    sectionMultipleBadge: 'Multiple ({{count}})',
     sectionAddInstance: 'Add',
     // AllowedUnitsList
     unitMoveUp: 'Move up',
