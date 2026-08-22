@@ -13,10 +13,11 @@
  * flash. When rendered outside a ViewerProvider (e.g. unit tests) the optional
  * store hook returns null and locating is simply inert.
  */
-import {memo, useEffect, useRef, useState, type ReactNode, type RefObject} from 'react';
+import {memo, useCallback, useEffect, useRef, useState, type ReactNode, type RefObject} from 'react';
 
 import {cn} from '@/lib/utils';
 import {useViewerStore, useViewerStoreApi, useViewerStoreApiOptional} from '../core/context';
+import type {ReaderLocateRequest} from '../core/state';
 import {subscribeReaderLocate} from '../core/subscribeReaderLocate';
 import {MarkdownContent} from '../markdown/MarkdownContent';
 import {findBlockByIndex, findBlockForQuote} from './readerLocate';
@@ -319,54 +320,86 @@ function Reader({blocks, emptyState, loading, loadingState, className}: ReaderPr
     blocksRef.current = blocks;
   }, [blocks]);
 
+  // A locate request routinely arrives BEFORE the reader can serve it: the
+  // document panel opens *in response to* the locate, so the text-blocks fetch
+  // is still in flight and the reader renders its loading/empty state (no
+  // `<article>`, no block DOM). The store retains the request (`readerLocate`),
+  // so this ref only records the last nonce actually attempted; the effect
+  // below serves the store's current request once blocks land — without it the
+  // first click is consumed and dropped, and only a SECOND click locates.
+  const servedNonceRef = useRef(0);
+
+  const runLocate = useCallback((req: ReaderLocateRequest) => {
+    const root = rootRef.current;
+    // Nothing to search yet — the <article> mounts only once non-empty blocks
+    // render, so a missing root also implies an empty blocksRef. The replay
+    // effect picks the request back up from the store when the blocks land.
+    if (!root) return;
+    // Recorded on every genuine attempt (match or miss), so a quote that
+    // simply isn't in the document stays a miss instead of re-firing on every
+    // poll refetch.
+    servedNonceRef.current = req.nonce;
+
+    const matchedId =
+      findBlockByIndex(blocksRef.current, req.page, req.blockIds ?? []) ??
+      findBlockForQuote(blocksRef.current, req.quote, req.page);
+    let target: Element | null = matchedId
+      ? root.querySelector(`[data-block-id="${cssEscape(matchedId)}"]`)
+      : null;
+    if (!target && req.page != null) {
+      target = root.querySelector(`[data-reader-page="${req.page}"]`);
+    }
+    if (target && typeof (target as HTMLElement).scrollIntoView === 'function') {
+      (target as HTMLElement).scrollIntoView({behavior: 'smooth', block: 'center'});
+    }
+
+    if (matchedId) {
+      setFlashId(matchedId);
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => {
+        setFlashId(null);
+        clearCitationHighlight();
+      }, FLASH_MS);
+    }
+
+    // P2: precise span highlight over the cited quote within the block —
+    // a progressive enhancement over the block-flash. Unsupported browser
+    // or quote-not-in-DOM → no-op (block-flash already happened).
+    clearCitationHighlight();
+    if (matchedId && target && req.quote) {
+      const range = locateQuoteRange(target, req.quote);
+      if (range) setCitationHighlight(range);
+    }
+  }, []);
+
   useEffect(() => {
     if (!storeApi) return;
-    const unsubscribe = subscribeReaderLocate(
-      storeApi,
-      (req) => {
-        const root = rootRef.current;
-        if (!root) return;
-
-        const matchedId =
-          findBlockByIndex(blocksRef.current, req.page, req.blockIds ?? []) ??
-          findBlockForQuote(blocksRef.current, req.quote, req.page);
-        let target: Element | null = matchedId
-          ? root.querySelector(`[data-block-id="${cssEscape(matchedId)}"]`)
-          : null;
-        if (!target && req.page != null) {
-          target = root.querySelector(`[data-reader-page="${req.page}"]`);
-        }
-        if (target && typeof (target as HTMLElement).scrollIntoView === 'function') {
-          (target as HTMLElement).scrollIntoView({behavior: 'smooth', block: 'center'});
-        }
-
-        if (matchedId) {
-          setFlashId(matchedId);
-          if (flashTimer.current) clearTimeout(flashTimer.current);
-          flashTimer.current = setTimeout(() => {
-            setFlashId(null);
-            clearCitationHighlight();
-          }, FLASH_MS);
-        }
-
-        // P2: precise span highlight over the cited quote within the block —
-        // a progressive enhancement over the block-flash. Unsupported browser
-        // or quote-not-in-DOM → no-op (block-flash already happened).
-        clearCitationHighlight();
-        if (matchedId && target && req.quote) {
-          const range = locateQuoteRange(target, req.quote);
-          if (range) setCitationHighlight(range);
-        }
-      },
-      {immediate: true},
-    );
+    const unsubscribe = subscribeReaderLocate(storeApi, runLocate);
 
     return () => {
       unsubscribe();
       if (flashTimer.current) clearTimeout(flashTimer.current);
       clearCitationHighlight();
     };
-  }, [storeApi]);
+  }, [storeApi, runLocate]);
+
+  // Serve the store's still-unserved request once the reader actually has
+  // blocks rendered — this owns both the mount-time path (the Reader mounts
+  // only after a locate flips the viewer to reader mode) and the late-blocks
+  // path. Reading the request from the store (never a stashed copy) makes
+  // document switches safe structurally: `clearReaderLocate()` leaves nothing
+  // to replay (cross-document leak, MF-8). Runs after the `blocksRef` sync
+  // effect above, so `runLocate` reads the blocks from this same commit.
+  useEffect(() => {
+    // While `loading` the component early-returns before <article> — wait for
+    // the flip (a real dep: blocks arriving identity-stable during the loading
+    // render would otherwise strand the request, since nothing else re-fires
+    // this effect when only `loading` changes).
+    if (loading || blocks.length === 0) return;
+    const req = storeApi?.getState().readerLocate;
+    if (!req || req.nonce === servedNonceRef.current) return;
+    runLocate(req);
+  }, [blocks, loading, runLocate, storeApi]);
 
   if (loading) {
     return <>{loadingState ?? DEFAULT_LOADING}</>;
