@@ -60,7 +60,10 @@ export function useActiveTemplateStructure(
     // isPending, not query.isLoading: "no data yet" must read as loading even
     // while TanStack pauses a query it considers offline (networkMode
     // 'online' + connection refused ends in status pending/fetchStatus
-    // paused, where isLoading is false).
+    // paused, where isLoading is false). Deliberately NOT gated by enablement:
+    // a disabled query (ids not resolved yet) must also read as loading,
+    // because every consumer is a progress surface where an empty tree
+    // computes as inflated completeness — a placeholder is the safe render.
     isLoading: query.isPending,
     // Consumers must treat an error like loading (placeholder) — an empty
     // tree computes as fully-complete progress, which is worse than a spinner.

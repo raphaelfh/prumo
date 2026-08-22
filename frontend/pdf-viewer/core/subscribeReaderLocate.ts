@@ -7,8 +7,9 @@
  * differently, in both the Reader and ExtractionFullScreen).
  *
  * `immediate: true` also fires for a request already pending at subscription
- * time — needed by the Reader, which mounts only after the popover flips the
- * viewer to reader mode (so the request is set before it can subscribe).
+ * time — for consumers whose mount races the request. (The Reader instead
+ * serves mount-time requests via its own readiness effect, which must wait
+ * for blocks to render anyway.)
  *
  * Returns the unsubscribe function.
  */
