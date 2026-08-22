@@ -347,6 +347,42 @@ class TestManualModelHierarchyEndpoints:
             svc.create_model_hierarchy.assert_awaited_once()
             guard.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_manual_model_hierarchy_requires_reviewer_gate(
+        self,
+        client: AsyncClient,
+    ) -> None:
+        """A member who is not a reviewer must never reach the service: the
+        endpoint records ReviewerDecisions (model_name / modelling_method),
+        so it carries the same reviewer gate as POST /runs/{id}/decisions —
+        a read-only viewer must not author audit-trail rows."""
+        from fastapi import HTTPException
+
+        with (
+            patch("app.api.v1.endpoints.model_extraction.ModelHierarchyService") as svc_cls,
+            patch(
+                "app.api.v1.endpoints.model_extraction.ensure_project_member",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.api.v1.endpoints.model_extraction.ensure_project_reviewer",
+                new_callable=AsyncMock,
+                side_effect=HTTPException(status_code=403, detail="Reviewer role required"),
+            ),
+        ):
+            response = await client.post(
+                "/api/v1/extraction/models/manual",
+                json={
+                    "projectId": str(uuid4()),
+                    "articleId": str(uuid4()),
+                    "templateId": str(uuid4()),
+                    "modelName": "Cox Model",
+                },
+            )
+
+            assert response.status_code == 403
+            svc_cls.return_value.create_model_hierarchy.assert_not_called()
+
 
 class TestManualModelHierarchyService:
     """Regression tests for cross-project model hierarchy invariants."""
