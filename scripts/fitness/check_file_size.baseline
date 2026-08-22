@@ -9,7 +9,7 @@ frontend/components/articles/ArticlesList.tsx:1360
 frontend/components/extraction/ArticleExtractionTable.tsx:1134
 frontend/components/extraction/template-config/TemplateConfigGridPanel.test.tsx:1038
 frontend/lib/copy/extraction.ts:899
-frontend/pages/ExtractionFullScreen.tsx:1371
-frontend/pages/QualityAssessmentFullScreen.tsx:893
-frontend/test/QualityAssessmentFullScreen.test.tsx:1111
+frontend/pages/ExtractionFullScreen.tsx:1380
+frontend/pages/QualityAssessmentFullScreen.tsx:914
+frontend/test/QualityAssessmentFullScreen.test.tsx:1213
 frontend/test/hooks/useAutoSaveProposals.test.tsx:862
