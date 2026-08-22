@@ -301,6 +301,19 @@ export default function ExtractionFullScreen() {
     await refetchRun();
   };
 
+  // Where a finished form lands: the next article in the worklist, or the
+  // project's extraction tab at end-of-queue. Shared by the reviewer's
+  // mark-ready and the arbitrator's terminal approve-finalize — both mean
+  // "done with this article".
+  const goToNextArticle = () => {
+    const nextId = nextArticleTarget(articles, articleId ?? '');
+    navigate(
+      nextId
+        ? `/projects/${projectId}/extraction/${nextId}`
+        : `/projects/${projectId}?tab=extraction`,
+    );
+  };
+
   // "Approve & finalize": one action that publishes every agreed coord then
   // advances consensus → finalized (backend-atomic). The backend gate rejections
   // (unresolved divergence / incomplete required fields) surface via
@@ -314,6 +327,7 @@ export default function ExtractionFullScreen() {
     if (!ok) return;
     await Promise.all([refetchRun(), refreshValues(), refreshFinalizedRun()]);
     toast.success(t('pages', 'extractionScreenFinalizeSuccess'));
+    goToNextArticle();
   };
 
   // Plain-identifier dep so the compiler can track this dep without
@@ -491,12 +505,7 @@ export default function ExtractionFullScreen() {
       .then(() => true)
       .catch(() => false);
     if (!ok) return;
-    const nextId = nextArticleTarget(articles, articleId ?? '');
-    navigate(
-      nextId
-        ? `/projects/${projectId}/extraction/${nextId}`
-        : `/projects/${projectId}?tab=extraction`,
-    );
+    goToNextArticle();
   };
 
     // "Start consensus" (manager/consensus) — flush autosave, then advance
