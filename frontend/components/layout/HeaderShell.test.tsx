@@ -9,10 +9,12 @@ describe('HeaderShell', () => {
     expect(header).not.toBeNull();
     expect(header!.className).toContain('@container/headerbar');
     expect(header!.className).toContain('frosted-header');
-    // `toContain` is a SUBSTRING match, so it passes for `z-[var(--z-header)]`
-    // just as readily as for `z-header` — it cannot tell the two spellings
-    // apart, which is exactly what this assertion exists to pin. Match the
-    // class token itself.
+    // `toContain` is a SUBSTRING match, so an arbitrary-value spelling that
+    // wraps the same custom property passes just as readily as the bare
+    // `z-header` utility — it cannot tell the two apart, which is exactly what
+    // this assertion exists to pin. Match the class token itself.
+    // (Spelling that alternative out here would make Tailwind's scanner emit
+    // it as a real, dead utility; see the note in frontend/lib/utils.ts.)
     expect(header!.className.split(/\s+/)).toContain('z-header');
   });
 
