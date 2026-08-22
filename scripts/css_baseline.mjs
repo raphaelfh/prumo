@@ -146,7 +146,14 @@ if (args.includes('--check')) {
     console.log(`CSS baseline unchanged (${rows.length} rules).`);
     process.exit(0);
   }
-  console.error(`CSS baseline CHANGED: ${prev.split('\n').length - 1} -> ${rows.length} rules.`);
+  // Compare like with like: a single row can span several lines, because some
+  // declaration values (font stacks) contain newlines. Counting the committed
+  // file's LINES against the new ROW count reads as a spurious delta.
+  const lineCount = (text) => text.split('\n').length - 1;
+  console.error(
+    `CSS baseline CHANGED: ${lineCount(prev)} -> ${lineCount(out)} lines ` +
+      `(${rows.length} rules).`,
+  );
   console.error('Review the diff, then re-record with: node scripts/css_baseline.mjs');
   process.exit(1);
 }
