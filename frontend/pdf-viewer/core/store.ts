@@ -60,6 +60,13 @@ export function createViewerStore(
       ...initial,
     });
 
+    // Locate nonces must stay unique for the store's lifetime. Deriving the
+    // next one from the (clearable) request would re-issue nonce 1 after a
+    // document switch, colliding with subscribers' last-seen nonce — the
+    // request after a clear would be silently dropped. A closure counter
+    // survives clearReaderLocate() and reset().
+    let locateNonce = 0;
+
     const actions: ViewerActions = {
       setSource(source: PDFSource | null) {
         set({source});
@@ -101,11 +108,10 @@ export function createViewerStore(
       },
 
       locateInReader(quote: string, page?: number | null, blockIds: number[] = []) {
-        const prevNonce = get().readerLocate?.nonce ?? 0;
         const switchingFromCanvas = get().mode !== 'reader';
         set({
           mode: 'reader',
-          readerLocate: {quote, page: page ?? null, blockIds, nonce: prevNonce + 1},
+          readerLocate: {quote, page: page ?? null, blockIds, nonce: ++locateNonce},
           ...(switchingFromCanvas ? {search: clearedResults(get().search)} : {}),
         });
       },

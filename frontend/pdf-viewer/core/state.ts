@@ -66,7 +66,7 @@ export interface ReaderLocateRequest {
   page: number | null;
   /** block_index values for deterministic reader highlight (preferred over quote). */
   blockIds: number[];
-  /** Monotonically increasing — bump to re-fire the same quote. */
+  /** Unique for the store's lifetime (survives clear/reset) — a bump re-fires the same quote. */
   nonce: number;
 }
 
