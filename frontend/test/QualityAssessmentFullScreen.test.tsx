@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -87,6 +87,14 @@ const ROB_FIELD = {
   sort_order: 99,
 };
 
+// The project's QA worklist, in the order fetchProjectArticles returns it
+// (created_at desc). "a1" is the article every test opens by default, so the
+// next-article jump target is "a2" and "a2" is the end-of-queue case.
+const WORKLIST_ARTICLES = [
+  { id: "a1", title: "First article" },
+  { id: "a2", title: "Second article" },
+];
+
 vi.mock("@/integrations/supabase/client", () => {
   function makeQuery(rows: unknown) {
     const result = { data: rows, error: null };
@@ -129,6 +137,9 @@ vi.mock("@/integrations/supabase/client", () => {
         }
         if (table === "extraction_fields") {
           return makeQuery([SIGNALING_QUESTION, ROB_FIELD]);
+        }
+        if (table === "articles") {
+          return makeQuery(WORKLIST_ARTICLES);
         }
         return makeQuery([]);
       },
@@ -230,6 +241,12 @@ vi.mock("@/integrations/api", () => ({
   }),
 }));
 
+// Renders the live URL so navigation assertions read it straight off the DOM.
+function LocationProbe() {
+  const loc = useLocation();
+  return <div data-testid="probe-location">{`${loc.pathname}${loc.search}`}</div>;
+}
+
 function renderPage(path = "/projects/p1/articles/a1/quality-assessment/tpl-1") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -237,6 +254,7 @@ function renderPage(path = "/projects/p1/articles/a1/quality-assessment/tpl-1") 
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
+        <LocationProbe />
         <Routes>
           <Route
             path="/projects/:projectId/articles/:articleId/quality-assessment/:templateId"
@@ -815,6 +833,39 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
     );
     expect(bareFinalize).toHaveLength(0);
   });
+
+  it("consensus: Approve & finalize opens the next article in the worklist", async () => {
+    // The article is done for good at this point, so the arbitrator should land
+    // on the next one instead of staring at the run they just finalized.
+    mockedPermissions.mockReturnValue({
+      ...SEEING_REVIEWER,
+      userRole: "manager" as const,
+      canResolveConflicts: true,
+    });
+    mockConsensusView([
+      {
+        id: "cons-1",
+        run_id: "run-1",
+        instance_id: "inst-1",
+        field_id: "f-1",
+        consensus_user_id: "qa-test-reviewer-id",
+        mode: "select_existing",
+        selected_decision_id: "dec-a",
+        value: { value: "Y" },
+        rationale: null,
+        created_at: new Date().toISOString(),
+      },
+    ]);
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /approve & finalize/i }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("probe-location")).toHaveTextContent(
+        "/projects/p1/articles/a2/quality-assessment/tpl-1",
+      ),
+    );
+  });
 });
 
 describe("QualityAssessmentFullScreen — finalized (published, read-only)", () => {
@@ -1107,5 +1158,56 @@ describe("QualityAssessmentFullScreen — header suggestion locate", () => {
     );
     // inst-1 belongs to et-1 (session.instancesByEntityType reverse lookup).
     expect(vi.mocked(scrollToSectionById)).toHaveBeenCalledWith("et-1");
+  });
+});
+
+/**
+ * Where a QA screen sends you when you are done with it (2026-08-22):
+ * finishing a form opens the NEXT article in the worklist, and both the back
+ * arrow and the end-of-queue fallback land on the project's quality tab —
+ * not the Articles tab the bare /projects/:id URL defaults to.
+ */
+describe("QualityAssessmentFullScreen — worklist navigation", () => {
+  beforeEach(() => {
+    mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("back arrow returns to the project's quality tab", async () => {
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: /^back$/i }));
+    await waitFor(() =>
+      expect(screen.getByTestId("probe-location")).toHaveTextContent(
+        "/projects/p1?tab=quality",
+      ),
+    );
+  });
+
+  it("Finish assessment opens the next article in the worklist", async () => {
+    renderPage();
+    const button = await screen.findByRole("button", { name: /finish assessment/i });
+    await waitFor(() => expect(button).not.toHaveAttribute("disabled"));
+    await userEvent.click(button);
+    await waitFor(() =>
+      expect(screen.getByTestId("probe-location")).toHaveTextContent(
+        "/projects/p1/articles/a2/quality-assessment/tpl-1",
+      ),
+    );
+  });
+
+  it("Finish assessment on the LAST article falls back to the quality tab", async () => {
+    // "a2" is last in WORKLIST_ARTICLES — there is no next article to open.
+    renderPage("/projects/p1/articles/a2/quality-assessment/tpl-1");
+    const button = await screen.findByRole("button", { name: /finish assessment/i });
+    await waitFor(() => expect(button).not.toHaveAttribute("disabled"));
+    await userEvent.click(button);
+    await waitFor(() =>
+      expect(screen.getByTestId("probe-location")).toHaveTextContent(
+        "/projects/p1?tab=quality",
+      ),
+    );
   });
 });

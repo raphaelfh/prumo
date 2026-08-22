@@ -21,6 +21,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import { nextArticleTarget } from "@/lib/extraction/worklistNav";
 import { toast } from "sonner";
 
 import { Loader2 } from "lucide-react";
@@ -41,6 +42,7 @@ import { Badge } from "@/components/ui/badge";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
 import { resolveQATemplateKind } from "@/services/projectSettingsService";
 import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
+import { useQAWorklist } from "@/hooks/qa/useQAWorklist";
 import { useAISuggestions } from "@/hooks/extraction/ai/useAISuggestions";
 import { useRunAIExtraction } from "@/hooks/extraction/ai/useRunAIExtraction";
 import { countActionableSuggestions } from "@/lib/ai-extraction/suggestionUtils";
@@ -174,6 +176,9 @@ export default function QualityAssessmentFullScreen() {
   const { data: runDetail, refetch: refetchRun } = useRun(session?.runId ?? "", {
     enabled: !!session?.runId,
   });
+
+  // The project's article list, so finishing a form can open the next one.
+  const worklist = useQAWorklist(projectId);
 
   const advanceMutation = useAdvanceRun(session?.runId ?? "");
   const consensusMutation = useCreateConsensus(session?.runId ?? "");
@@ -440,6 +445,20 @@ export default function QualityAssessmentFullScreen() {
   // optional-chaining (optional-chained deps like `session?.runId` defeat it).
   const sessionRunId = session?.runId;
 
+  // Where a finished form lands: the next article in the worklist, or the
+  // project's quality tab at end-of-queue. Shared by the reviewer's mark-ready
+  // and the arbitrator's terminal approve-finalize — both mean "done with this
+  // article". The :templateId segment is carried through verbatim (it may name
+  // either a project or a global template — see resolveQATemplateKind above).
+  const goToNextArticle = () => {
+    const nextId = nextArticleTarget(worklist, articleId ?? "");
+    navigate(
+      nextId
+        ? `/projects/${projectId}/articles/${nextId}/quality-assessment/${templateId}`
+        : `/projects/${projectId}?tab=quality`,
+    );
+  };
+
   // "Finish assessment" (reviewer) — flush pending autosave, then set the
   // advisory per-reviewer ready flag. The run stays in EXTRACT; the manager
   // opens consensus separately (extraction-HITL parity). Promise-chain
@@ -456,6 +475,7 @@ export default function QualityAssessmentFullScreen() {
     if (!ok) return;
     await refetchRun();
     toast.success(t("qa", "markReadySuccess"));
+    goToNextArticle();
   };
 
   // "Start consensus" (manager/consensus) — flush autosave, then advance
@@ -486,6 +506,7 @@ export default function QualityAssessmentFullScreen() {
     if (!ok) return;
     await refetchRun();
     toast.success(t("qa", "finalizationSuccess"));
+    goToNextArticle();
   };
 
   // Blocked-click affordance for the gated Approve & finalize button.
@@ -643,7 +664,7 @@ export default function QualityAssessmentFullScreen() {
           <RunHeader.MobileNav onOpen={toggleMobile} />
           <RunHeader.SidebarToggle pressed={!sidebarCollapsed} onToggle={toggleSidebar} />
           <RunHeader.Breadcrumb
-            onBack={() => navigate(`/projects/${projectId}`)}
+            onBack={() => navigate(`/projects/${projectId}?tab=quality`)}
             title={template?.name ?? ""}
           />
           {/* QA kind badge — compact identifier next to breadcrumb */}

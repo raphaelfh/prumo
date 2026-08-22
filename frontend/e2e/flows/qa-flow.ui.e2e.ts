@@ -169,17 +169,27 @@ test.describe("Quality Assessment HITL flow", () => {
 
     // Then Approve & finalize publishes the agreed value and finalizes
     // (single reviewer → no divergence → the gate is open).
+    const qaRunUrl =
+      `${env.frontendUrl}/projects/${env.projectId}/articles/${env.articleId}`
+      + `/quality-assessment/${qaTemplateId}`;
     const approveButton = page.getByRole("button", { name: /approve & finalize/i });
     await expect(approveButton).toBeEnabled({ timeout: 5000 });
     await approveButton.click();
 
-    // Once finalized, the RunHeader RunStatus chip reads the current stage.
-    // The chip carries data-testid="run-stage-current" and its text is "Finalized".
+    // The article is done, so the screen leaves it: the next article in the
+    // worklist, or the project's quality tab at end-of-queue (2026-08-22).
+    await expect(page).not.toHaveURL(qaRunUrl, { timeout: 30000 });
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${env.projectId}(/articles/[^/]+/quality-assessment/|\\?tab=quality)`),
+    );
+
+    // Re-open the finalized run: the RunHeader RunStatus chip
+    // (data-testid="run-stage-current") reads "Finalized", and survives a reload.
+    await page.goto(qaRunUrl);
     await expect(
       page.getByTestId("run-stage-current").filter({ hasText: /finalized/i }),
     ).toBeVisible({ timeout: 30000 });
 
-    // Reload — finalized state survives.
     await page.reload();
     await expect(
       page.getByTestId("run-stage-current").filter({ hasText: /finalized/i }),
