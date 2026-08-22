@@ -51,6 +51,8 @@ fix and the consolidation are the same piece of work.
    single article-jump surface — so behaviour cannot drift again.
 4. No overlap and no clipped primary action at any header width, proven by
    measurement rather than assertion.
+5. Leave the touched files clean: remove the dead code this change creates and
+   the dead code already sitting in them (§10).
 
 ## 3. Non-goals
 
@@ -299,4 +301,100 @@ Added:
 - `frontend/hooks/runs/useRunShortcuts.ts` and its test.
 - Tests alongside the changed header components.
 
+Additionally touched by the §10 cleanup pass, in its own commit:
+`frontend/pages/ExtractionFullScreen.tsx`,
+`frontend/components/runs/header/CommandPalette.tsx` (receives the relocated
+`TODO(plan-future)`), `frontend/test/extractionReveal.test.tsx`,
+`frontend/components/extraction/__tests__/ExtractionHeader.exports.test.tsx`.
+
 No backend, no migration, no seed.
+
+## 10. Dead-code cleanup
+
+A closing pass, run **after** §8 is green and committed **separately** so it can
+be reverted on its own without losing the feature. Scoped to the files §9
+already touches — this is the project's "clean in the code you touch" rule, not
+a repo-wide hunt.
+
+### 10.1 Dead *because of* this change
+
+These do not exist as dead code today; the change creates them, so leaving them
+would be new legacy:
+
+- `runs.worklistSearch` — placeholder of the removed popover's `CommandInput`.
+  The palette already ships `runs.commandPlaceholder` and a
+  `runs.commandGoToArticle` heading.
+- `runs.worklistPosition` (`{{n}} of {{m}}`) — its only consumer was the
+  popover's position line. The visible counter renders the numerals directly
+  (as it does today) and the accessible name comes from
+  `runs.worklistPositionLabel` on the `<nav>`.
+- The `Popover` / `Command` imports and the `open` state in `Worklist.tsx`.
+- The two hand-rolled `keydown` effects and their `kbdRef` / `togglePdfRef`
+  indirection, in `ExtractionHeader.tsx` and `QualityAssessmentFullScreen.tsx`,
+  replaced by `useRunShortcuts`.
+- The popover assertions in `Worklist.test.tsx`.
+- The `TODO(plan-future)` in `Worklist.tsx` about per-article status needing a
+  batch runs endpoint. The list it referred to now lives in the palette — the
+  TODO **moves** to `CommandPalette.tsx` verbatim. It is a real open item
+  (§3 keeps it out of scope); it must not be lost in the move.
+
+### 10.2 Already dead in the files being touched
+
+Verified by grep on 2026-08-22, counts stated so they can be re-checked:
+
+- **`ExtractionHeaderProps`: 11 of 49 declared props are never referenced in
+  the component body** — `onFinalize`, `finalizeLabel`, `isComplete`,
+  `hasUnsavedChanges`, `templateId`, `templateName`, `runId`, `aiSuggestions`,
+  `onExtractionComplete`, `onRefreshInstances`, `onExtractionStateChange`.
+  Ten of them are still *passed* from `ExtractionFullScreen.tsx`, so the wiring
+  is live and the consumption is not. Delete the declarations, the call-site
+  attributes, and the corresponding keys in the two test fixtures
+  (`frontend/test/extractionReveal.test.tsx`,
+  `frontend/components/extraction/__tests__/ExtractionHeader.exports.test.tsx`).
+
+  This includes the pair carrying `@deprecated … full removal is HITL Phase 3`
+  (`onFinalize`, `finalizeLabel`). Removing them from this header **is** that
+  removal for this surface; it does not touch the unrelated live `onFinalize`
+  on `ConsensusResolutionPanel`.
+
+- `runs.keyboardShortcuts` — defined in `frontend/lib/copy/runs.ts` and
+  referenced from nowhere in `frontend/`. Dead before this change; deleted
+  because the same file is being edited for §7.
+
+- Two comments that are now false, which is worse than dead code because they
+  actively mislead:
+  - `QualityAssessmentFullScreen.tsx`: `// "\" toggles the source (PDF) panel.
+    No J/K — QA has a single article.` Already stale since #657 gave QA a
+    worklist; this change makes it the opposite of true.
+  - `RunHeader.tsx`: the responsive-cascade block describing the pager's "own
+    protected `shrink-0` slot". §6.3 replaces that text.
+
+### 10.3 Why this accumulated, and the stop rule
+
+`noUnusedLocals` and `noUnusedParameters` are both on in `tsconfig.app.json`,
+which is why unused *locals* and *imports* cannot survive — and exactly why
+unused **interface members** did: the compiler does not check them. So §10.2
+needs a manual sweep, while everything downstream of it does not.
+
+That gives the cleanup a deterministic termination rule: after deleting the
+props and their call-site attributes, run `npm run typecheck`
+(`tsc -p tsconfig.app.json`) and delete whatever it reports as newly unused in
+`ExtractionFullScreen.tsx`, repeating until it is quiet. **Stop there.** Do not
+follow a symbol out into unrelated page logic by hand; if something looks dead
+but the compiler does not say so, flag it and leave it (project rule:
+*flag unrelated dead code, don't delete it*).
+
+### 10.4 Explicitly not deleted
+
+- Per-article status in the jump list (§3) — a real open item, tracked by the
+  relocated `TODO(plan-future)`.
+- Any dead code outside the §9 file list. If the sweep surfaces some, it is
+  reported, not removed.
+
+### 10.5 Gate
+
+The cleanup commit must be green on `npm run lint`, `npm run typecheck` and
+`npm run test:run` on its own, and the §8 harness measurement does **not** need
+re-running: nothing in §10 changes rendered geometry. If any deletion turns out
+to change behaviour, that is proof it was not dead — revert that deletion and
+keep the rest.
