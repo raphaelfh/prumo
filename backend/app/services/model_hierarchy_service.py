@@ -18,7 +18,7 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
 )
 from app.models.extraction_versioning import TemplateKind
-from app.repositories.extraction_repository import ExtractionTemplateRepository
+from app.repositories.extraction_repository import ExtractionEntityTypeRepository
 from app.services.extraction_review_service import ExtractionReviewService
 
 
@@ -152,7 +152,7 @@ class ModelHierarchyService:
         # Migration 0016 promoted the "prediction_models" magic name to the
         # ``extraction_entity_role`` enum; the partial unique index guarantees
         # at most one MODEL_CONTAINER per template.
-        return await ExtractionTemplateRepository(self.db).get_by_role(
+        return await ExtractionEntityTypeRepository(self.db).get_by_role(
             role=ExtractionEntityRole.MODEL_CONTAINER.value,
             template_id=template_id,
             is_project_template=True,
