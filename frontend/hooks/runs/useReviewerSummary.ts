@@ -8,10 +8,10 @@
  *     — mirrors `extraction_reviewer_states` semantics on the client.
  *   - divergentCoords: Set<"instance::field"> where ≥ 2 reviewers gave
  *     materially different values (or one rejected and another edited).
- *   - requiredReviewerCount: from `run.hitl_config_snapshot.reviewer_count`,
- *     defaulting to 1 if absent.
- *   - completionRatio: reviewers.length / requiredReviewerCount, clamped
- *     to [0, 1] for use in progress bars.
+ *
+ * The "N of M reviewers" denominator deliberately does NOT live here:
+ * `hitl_config_snapshot.reviewer_count` is an inert knob (no UI sets it since
+ * #388) — use `useExpectedReviewerCount` for the role-derived count instead.
  *
  * The hook does no fetching — it's a pure transform on the run aggregate
  * the page already loads. This keeps the rendering math reactive to the
@@ -39,8 +39,6 @@ export interface ReviewerSummary {
    */
   decisionsByCoord: Map<string, ReviewerDecisionResponse[]>;
   divergentCoords: Set<string>;
-  requiredReviewerCount: number;
-  completionRatio: number;
   /** Coords with at least one non-reject decision — useful for "filled" stats. */
   filledCoords: Set<string>;
   /** All distinct (instance, field) coords any reviewer has touched. */
@@ -52,8 +50,6 @@ const EMPTY_SUMMARY: ReviewerSummary = {
   currentDecisions: new Map(),
   decisionsByCoord: new Map(),
   divergentCoords: new Set(),
-  requiredReviewerCount: 1,
-  completionRatio: 0,
   filledCoords: new Set(),
   touchedCoords: new Set(),
 };
@@ -138,22 +134,11 @@ export function useReviewerSummary(
       if (!allAgree) divergentCoords.add(ck);
     }
 
-    const required = Math.max(
-      1,
-      Number(
-        (runDetail.run.hitl_config_snapshot as { reviewer_count?: unknown })
-          ?.reviewer_count ?? 1,
-      ),
-    );
-    const ratio = Math.min(1, reviewers.size / required);
-
   return {
     reviewers: [...reviewers],
     currentDecisions,
     decisionsByCoord,
     divergentCoords,
-    requiredReviewerCount: required,
-    completionRatio: ratio,
     filledCoords,
     touchedCoords,
   };

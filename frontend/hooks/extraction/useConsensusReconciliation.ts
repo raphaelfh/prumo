@@ -13,9 +13,8 @@ import type { ReviewerSummary } from '@/hooks/runs/useReviewerSummary';
 import type { ExtractionEntityTypeWithFields } from '@/types/extraction';
 import type { ExtractionInstance } from '@/types/extraction';
 import { classifyReconciliation } from '@/lib/runs/reconciliation';
-import { countExpectedReviewers } from '@/lib/runs/reviewerExpectation';
 import { computeFinalizeWarning } from '@/lib/runs/finalizeWarning';
-import { useProjectMembers } from '@/hooks/hitl/useProjectMembers';
+import { useExpectedReviewerCount } from '@/hooks/runs/useExpectedReviewerCount';
 import { t } from '@/lib/copy';
 
 export interface ConsensusReconciliation {
@@ -50,11 +49,10 @@ export function useConsensusReconciliation(params: {
     }
   }
 
-  // Role-derived expected reviewer count.
-  const members = useProjectMembers(projectId ?? '');
-  const expectedReviewerCount = Math.max(
+  // Role-derived expected reviewer count (shared with the QA header).
+  const expectedReviewerCount = useExpectedReviewerCount(
+    projectId,
     reviewerSummary.reviewers.length,
-    countExpectedReviewers(members.data ?? []),
   );
 
   // Classify reconciliation buckets for the soft-warn (singleFiller count).

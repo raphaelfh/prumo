@@ -58,6 +58,9 @@ import {
   useRun,
   useRunReviewers,
 } from "@/hooks/runs";
+// Direct import (not via the barrel): reaches the supabase client through
+// useProjectMembers, which the barrel deliberately keeps out.
+import { useExpectedReviewerCount } from "@/hooks/runs/useExpectedReviewerCount";
 import { ConsensusResolutionPanel } from "@/components/runs/ConsensusResolutionPanel";
 import { toConsensusValueEnvelope } from "@/lib/extraction/valueSemantics";
 import { RunHeader } from "@/components/runs/header";
@@ -186,6 +189,12 @@ export default function QualityAssessmentFullScreen() {
   const approveFinalize = useApproveFinalize(session?.runId ?? "");
   const reopenMutation = useReopenRun();
   const reviewerSummary = useReviewerSummary(runDetail);
+  // Role-derived "N of M reviewers" denominator — same source as the
+  // extraction header (never the run's inert hitl_config_snapshot).
+  const expectedReviewerCount = useExpectedReviewerCount(
+    projectId,
+    reviewerSummary.reviewers.length,
+  );
   const reviewerProfiles = useRunReviewers(session?.runId ?? null, {
     enabled: !!session?.runId,
   });
@@ -645,7 +654,7 @@ export default function QualityAssessmentFullScreen() {
           progress: { completed: 0, total: 0, pct: 0 },
           reviewers: {
             count: reviewerSummary.reviewers.length,
-            required: reviewerSummary.requiredReviewerCount,
+            required: expectedReviewerCount,
             divergent: reviewerSummary.divergentCoords.size,
           },
           transition: qaTransition,
