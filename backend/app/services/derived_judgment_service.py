@@ -1,11 +1,17 @@
-"""Computed overall judgments for quality-assessment templates.
+"""Computed judgments for quality-assessment templates.
 
-PROBAST+AI (Moons et al., BMJ 2025) step 4 defines four *overall* judgments as
-a deterministic function of the domain judgments — they are never entered by a
-reviewer, so an overall can never contradict its own domains.
-``extraction_fields`` has no computed-field concept, so the overalls are not
-stored at all: this module is THE implementation, and both the run-view payload
-and the xlsx export call it. Do not re-implement the rule anywhere else.
+PROBAST+AI (Moons et al., BMJ 2025) defines two computed layers, and this
+module is THE implementation of both — the run-view payload and the xlsx
+export call it. Do not re-implement the rules anywhere else.
+
+* Step 4 *overalls* (``worst_domain`` entries, no ``target``): a
+  deterministic roll-up of the stored domain judgments — never entered by a
+  reviewer, never stored, so an overall cannot contradict its own domains.
+* Domain-judgment *recommendations* (``signaling_worst`` entries, with a
+  ``target``): the derived DEFAULT the instrument's signaling questions flag
+  ("N/PN flags the potential for bias; you will need to use your judgement").
+  The assessor records the final value on the ``target`` field — the
+  recommendation itself is advice, never stored, never fed to the overalls.
 
 The derivation is configured as data on the template's ``schema`` JSONB
 (``derived_judgments``), so a future checklist with different roll-ups needs no
@@ -16,22 +22,27 @@ section or judgment field without updating the spec silently nulls every
 overall — callers should surface a dangling reference (see ``spec_coordinates``)
 rather than fail closed.
 
-Two aggregations, deliberately different:
+Aggregations, deliberately different:
 
 * ``worst_of`` — collapse across the evaluation-D4 performance types
   (apparent / internal / external). LENIENT: an unreported type is ignored,
   because "the study did not do external validation" is not a gap in the
   assessment. Null only when no type was judged at all.
-* ``worst_domain`` — aggregate across domains. STRICT: if any domain is
-  unjudged, the overall is None ("incomplete"), never Low. One does not
-  conclude low risk of bias from an assessment that is not finished.
+* ``worst_domain`` — aggregate across domains. STRICT below High: if any
+  domain is unjudged, the overall is None ("incomplete"), never Low — but a
+  single High propagates regardless (the official step-4 tables say "at
+  least one domain high → high" without requiring the rest to be rated).
+* ``signaling_worst`` — map each signaling answer (Y/PY → Low, PN/N → High,
+  unclear/NI → Unclear), then aggregate with High monotone and Low/Unclear
+  completeness-gated; collapse groups model the D4 performance types with
+  unreported-vs-in-progress semantics (see ``_signaling_group_state``).
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from app.services.value_semantics import (
     ABSENT_REASON_LABELS,
@@ -60,15 +71,37 @@ _LABEL_TO_ABSENT_REASON: dict[str, str] = {
 
 _COLLAPSE_KEY = "collapse"
 
-# ``worst_domain`` is currently the only rule. A spec declaring anything else is
-# a definition this code cannot honour, so it resolves to None rather than being
-# silently treated as worst-domain.
-_SUPPORTED_RULE = "worst_domain"
+# The two rules a spec may declare. Anything else is a definition this code
+# cannot honour, so it resolves to None rather than being silently treated as
+# one of these.
+_WORST_DOMAIN_RULE = "worst_domain"
+_SIGNALING_RULE = "signaling_worst"
+
+# A RECOMMENDATION entry computes the derived default for a stored judgment
+# field, which it names via ``target``; an entry without one is an OVERALL.
+# The single discriminator — the export and the payload both use it instead of
+# probing the raw key themselves.
+_RECOMMENDATION_KEY = "target"
+
+# What one signaling answer contributes to its domain's derived default.
+# ``excluded`` = a deliberate non-NI absent-reason marker (the instrument's
+# conditional NA rows); ``missing`` = unanswered or out-of-vocabulary — never
+# a silent Low.
+Contribution = Literal["Low", "High", "Unclear", "excluded", "missing"]
+
+_SIGNALING_MAP: dict[str, Contribution] = {
+    "y": "Low",
+    "py": "Low",
+    "pn": "High",
+    "n": "High",
+    # QUADAS-2's third answer (§11 adoption) — same casefolded lookup.
+    "unclear": "Unclear",
+}
 
 
 @dataclass(frozen=True)
 class DerivedInput:
-    """One domain's contribution to an overall, exactly as the rule saw it.
+    """One input's contribution to a derived judgment, exactly as the rule saw it.
 
     Carried so a client can explain the result instead of just showing it: a
     reviewer who blanks one domain judgment gets a dash on the overall, and
@@ -79,12 +112,22 @@ class DerivedInput:
     of them for a collapse group — so a caller holding the entity_types tree can
     name it. ``label`` is the spec's own name for a collapse group; empty when
     the spec does not carry one, which every spec seeded before the key existed
-    does not. ``value`` is the judgment the rule consumed — None means unjudged.
+    does not.
+
+    ``value`` is the DISPLAY value: for ``worst_domain`` rows the judgment the
+    rule consumed; for ``signaling_worst`` plain rows the RAW stored answer in
+    the reviewer's own vocabulary (``"PN"``, a marker label, or None when
+    unanswered); None on group rows (the group has no single stored answer).
+    ``contribution`` is uniformly the Low/High/Unclear the rule consumed from
+    this row — None when it contributed nothing (unjudged, excluded,
+    unreported, in-progress). Clients highlight and color by ``contribution``
+    only, so no answer-mapping knowledge ever leaves this module.
     """
 
     sections: tuple[str, ...]
     label: str
     value: str | None
+    contribution: str | None = None
 
 
 @dataclass(frozen=True)
@@ -171,6 +214,128 @@ def worst_domain(values: Iterable[Any]) -> str | None:
     return max(ranked, key=JUDGMENT_SEVERITY.__getitem__)
 
 
+def _signaling_contribution(raw: Any) -> Contribution:
+    """What one stored signaling answer contributes (spec 2026-08-22 §1).
+
+    Accepts both caller shapes (raw envelope and resolved display label) via
+    the same ``_absent_reason``/``unwrap_value_envelope`` pair as ``_judgment``
+    — the screen/workbook parity invariant.
+    """
+    reason = _absent_reason(raw)
+    if reason == AbsentReason.NO_INFORMATION.value:
+        return "Unclear"
+    if reason is not None:
+        return "excluded"
+    value = unwrap_value_envelope(raw)
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return "missing"
+    return _SIGNALING_MAP.get(str(value).strip().casefold(), "missing")
+
+
+def _raw_display(raw: Any) -> str | None:
+    """The stored answer as the reviewer sees it, for a breakdown row.
+
+    Traceability means naming the cause in the reviewer's own vocabulary
+    (``"PN"``, ``"No information"``) — never the mapped judgment.
+    """
+    reason = _absent_reason(raw)
+    if reason is not None:
+        return ABSENT_REASON_LABELS.get(reason, reason)
+    value = unwrap_value_envelope(raw)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+# A collapse group's resolved state: a judgment, or one of the two
+# non-judgment outcomes the aggregation treats differently — ``unreported``
+# (every member unanswered/excluded: the study never claimed this
+# performance type, so it drops out) vs ``in-progress`` (partially answered:
+# the assessment is unfinished, so the default is withheld).
+_GROUP_UNREPORTED = "unreported"
+_GROUP_IN_PROGRESS = "in-progress"
+
+
+def _signaling_group_state(raws: Iterable[Any]) -> str:
+    contributions = [_signaling_contribution(r) for r in raws]
+    if all(c in ("excluded", "missing") for c in contributions):
+        return _GROUP_UNREPORTED
+    if any(c == "High" for c in contributions):
+        return "High"
+    if any(c == "missing" for c in contributions):
+        return _GROUP_IN_PROGRESS
+    judged = [c for c in contributions if c in JUDGMENT_SEVERITY]
+    return max(judged, key=JUDGMENT_SEVERITY.__getitem__)
+
+
+def _aggregate_signaling(plain: list[str], groups: list[str]) -> str | None:
+    """Aggregate resolved inputs — High is monotone, Low/Unclear are not."""
+    reported = [g for g in groups if g != _GROUP_UNREPORTED]
+    if any(s == "High" for s in plain) or any(g == "High" for g in reported):
+        return "High"
+    if any(s == "missing" for s in plain) or any(g == _GROUP_IN_PROGRESS for g in reported):
+        return None
+    judged = [s for s in plain if s in JUDGMENT_SEVERITY] + [
+        g for g in reported if g in JUDGMENT_SEVERITY
+    ]
+    if not judged:
+        return None
+    return max(judged, key=JUDGMENT_SEVERITY.__getitem__)
+
+
+def _compute_signaling_entry(
+    items: list[Mapping[str, Any]],
+    values_by_coord: Mapping[tuple[str, str], Any],
+) -> tuple[str | None, tuple[DerivedInput, ...]]:
+    """value + breakdown rows for one ``signaling_worst`` recommendation."""
+    plain_states: list[str] = []
+    group_states: list[str] = []
+    rows: list[DerivedInput] = []
+    for item in items:
+        sections, label = _input_identity(item)
+        if _COLLAPSE_KEY in item:
+            nested = item.get("inputs")
+            subs = [s for s in nested if isinstance(s, dict)] if isinstance(nested, list) else []
+            raws = [
+                values_by_coord.get((str(s.get("section", "")), str(s.get("field", ""))))
+                for s in subs
+            ]
+            state = _signaling_group_state(raws)
+            group_states.append(state)
+            rows.append(
+                DerivedInput(
+                    sections=sections,
+                    label=label,
+                    value=None,
+                    contribution=state if state in JUDGMENT_SEVERITY else None,
+                )
+            )
+        else:
+            raw = values_by_coord.get((str(item.get("section", "")), str(item.get("field", ""))))
+            state = _signaling_contribution(raw)
+            plain_states.append(state)
+            rows.append(
+                DerivedInput(
+                    sections=sections,
+                    label=label,
+                    value=_raw_display(raw),
+                    contribution=state if state in JUDGMENT_SEVERITY else None,
+                )
+            )
+    return _aggregate_signaling(plain_states, group_states), tuple(rows)
+
+
+def is_recommendation(entry: Mapping[str, Any]) -> bool:
+    """True for entries that compute a derived DEFAULT for a stored judgment.
+
+    Recommendations name their assessor-owned field via ``target``; entries
+    without one are computed overalls. Export columns and payload id
+    resolution both discriminate through here — never probe the key directly.
+    """
+    return _RECOMMENDATION_KEY in entry
+
+
 def derived_spec(template_schema: Any) -> list[dict[str, Any]]:
     """The ``derived_judgments`` list on a template's ``schema`` JSONB, or []."""
     if not isinstance(template_schema, dict):
@@ -184,8 +349,12 @@ def derived_spec(template_schema: Any) -> list[dict[str, Any]]:
 def spec_coordinates(spec: Any) -> list[tuple[str, str]]:
     """Every ``(section, field)`` coordinate a spec references, collapses included.
 
-    Callers use this to warn about references that resolve to nothing — a
-    renamed section would otherwise null every overall in silence.
+    Walks ``inputs`` plus the assessor-owned pointers (``target`` /
+    ``rationale`` / ``summary``), so the dangling-reference warning covers the
+    coordinates the LLM exclusion and the UI pairing depend on too. Callers
+    use this to warn about references that resolve to nothing — a renamed
+    section would otherwise null an overall (or silently un-exclude an
+    assessor-owned field) with nothing on screen saying so.
     """
     found: list[tuple[str, str]] = []
 
@@ -201,8 +370,13 @@ def spec_coordinates(spec: Any) -> list[tuple[str, str]]:
                 found.append((str(item.get("section", "")), str(item.get("field", ""))))
 
     for derived in spec if isinstance(spec, list) else []:
-        if isinstance(derived, dict):
-            _walk(derived.get("inputs"))
+        if not isinstance(derived, dict):
+            continue
+        _walk(derived.get("inputs"))
+        for key in (_RECOMMENDATION_KEY, "rationale", "summary"):
+            pointer = derived.get(key)
+            if isinstance(pointer, dict):
+                found.append((str(pointer.get("section", "")), str(pointer.get("field", ""))))
     return found
 
 
@@ -254,27 +428,33 @@ def compute_derived_judgments(
         inputs = derived.get("inputs")
         if not isinstance(inputs, list):
             continue
-        rule = str(derived.get("rule", _SUPPORTED_RULE))
+        rule = str(derived.get("rule", _WORST_DOMAIN_RULE))
         items = [item for item in inputs if isinstance(item, dict)]
-        resolved = [_resolve_input(item, values_by_coord) for item in items]
-        # The per-domain breakdown reuses the SAME ``_judgment`` the rule applies,
-        # so what the client explains is what the rule consumed — it can never
-        # narrate a contribution the overall was not actually computed from.
-        contributions = tuple(
-            DerivedInput(
-                sections=sections,
-                label=label,
-                value=_judgment(raw, no_information_as_unclear=True),
+        if rule == _SIGNALING_RULE:
+            value, contributions = _compute_signaling_entry(items, values_by_coord)
+        else:
+            resolved = [_resolve_input(item, values_by_coord) for item in items]
+            # The per-domain breakdown reuses the SAME ``_judgment`` the rule
+            # applies, so what the client explains is what the rule consumed —
+            # it can never narrate a contribution the overall was not actually
+            # computed from.
+            contributions = tuple(
+                DerivedInput(
+                    sections=sections,
+                    label=label,
+                    value=(judged := _judgment(raw, no_information_as_unclear=True)),
+                    contribution=judged,
+                )
+                for (sections, label), raw in zip(
+                    (_input_identity(item) for item in items), resolved, strict=True
+                )
             )
-            for (sections, label), raw in zip(
-                (_input_identity(item) for item in items), resolved, strict=True
-            )
-        )
+            value = worst_domain(resolved) if rule == _WORST_DOMAIN_RULE else None
         results.append(
             DerivedJudgment(
                 id=str(derived.get("id", "")),
                 label=str(derived.get("label", "")),
-                value=worst_domain(resolved) if rule == _SUPPORTED_RULE else None,
+                value=value,
                 inputs=contributions,
             )
         )
