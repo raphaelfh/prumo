@@ -55,6 +55,12 @@ export const TRACE_ARTICLE_ID = "f00dc63a-6b47-42c3-8a93-af69eb28a1c4";
 /** Dedicated project for the template-import test — intentionally CHARMS-free. */
 export const IMPORT_PROJECT_ID = "e2e00001-0000-4000-8000-000000000001";
 
+/** Dedicated project for the portable import/export test — provisioned WITH
+ * CHARMS (the export button lives in the config editor, which mounts only
+ * with an active template) and separate from IMPORT_PROJECT_ID so the two
+ * template specs never flip each other's active template. */
+export const PORTABLE_PROJECT_ID = "e2e00001-0000-4000-8000-000000000002";
+
 /** Fixed global-catalogue ids (match backend/app/seed.py). */
 export const CHARMS_GLOBAL_TEMPLATE_ID = "000c0000-0000-0000-0000-000000000001";
 export const PROBAST_GLOBAL_TEMPLATE_ID = "00b00000-0000-0000-0000-000000000001";

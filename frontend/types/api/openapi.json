@@ -1646,6 +1646,54 @@
         "title": "ApiResponse[ParserSettingsRead]",
         "type": "object"
       },
+      "ApiResponse_PortableTemplate_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PortableTemplate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[PortableTemplate]",
+        "type": "object"
+      },
       "ApiResponse_ProposalRecordResponse_": {
         "properties": {
           "data": {
@@ -2364,6 +2412,54 @@
           "ok"
         ],
         "title": "ApiResponse[TemplateConfigStatusRead]",
+        "type": "object"
+      },
+      "ApiResponse_TemplateDeleteResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateDeleteResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[TemplateDeleteResponse]",
         "type": "object"
       },
       "ApiResponse_TemplateFieldDeleteResponse_": {
@@ -6261,6 +6357,317 @@
         "title": "ParserSettingsRead",
         "type": "object"
       },
+      "PortableField": {
+        "additionalProperties": false,
+        "description": "One ``extraction_fields`` row. ``type``/``required`` are the file keys\n(JSON Schema convention); the attributes keep the column names.",
+        "properties": {
+          "allow_other": {
+            "default": false,
+            "title": "Allow Other",
+            "type": "boolean"
+          },
+          "allowed_units": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 50,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Units"
+          },
+          "allowed_values": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Values"
+          },
+          "allows_not_applicable": {
+            "default": false,
+            "title": "Allows Not Applicable",
+            "type": "boolean"
+          },
+          "allows_not_evaluated": {
+            "default": false,
+            "title": "Allows Not Evaluated",
+            "type": "boolean"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "llm_description": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Description"
+          },
+          "name": {
+            "maxLength": 50,
+            "minLength": 2,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Name",
+            "type": "string"
+          },
+          "other_label": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Label"
+          },
+          "other_placeholder": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Placeholder"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "enum": [
+              "text",
+              "number",
+              "date",
+              "select",
+              "multiselect",
+              "boolean"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "type"
+        ],
+        "title": "PortableField",
+        "type": "object"
+      },
+      "PortableSection": {
+        "additionalProperties": false,
+        "description": "One ``extraction_entity_types`` row plus its fields and (for a group)\nits child sections. ``group`` \u21d2 ``model_container``; nested \u21d2\n``model_section``; otherwise ``study_section``. ``entry_label`` is only\nlegal on a group; the import defaults it to ``\"model\"`` there.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "entry_label": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Label"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/PortableField"
+            },
+            "maxItems": 200,
+            "title": "Fields",
+            "type": "array"
+          },
+          "group": {
+            "default": false,
+            "title": "Group",
+            "type": "boolean"
+          },
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 50,
+            "minLength": 2,
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+            "title": "Name",
+            "type": "string"
+          },
+          "repeats": {
+            "default": false,
+            "title": "Repeats",
+            "type": "boolean"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/PortableSection"
+            },
+            "maxItems": 100,
+            "title": "Sections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "PortableSection",
+        "type": "object"
+      },
+      "PortableTemplate": {
+        "additionalProperties": false,
+        "description": "The document. ``prumo_template`` and ``kind`` have NO default so they\nare always emitted even under ``exclude_defaults``.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "framework": {
+            "default": "CUSTOM",
+            "enum": [
+              "CHARMS",
+              "PICOS",
+              "CUSTOM"
+            ],
+            "title": "Framework",
+            "type": "string"
+          },
+          "kind": {
+            "const": "extraction",
+            "title": "Kind",
+            "type": "string"
+          },
+          "llm_template_instruction": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Template Instruction"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "prumo_template": {
+            "const": 1,
+            "title": "Prumo Template",
+            "type": "integer"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/PortableSection"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Sections",
+            "type": "array"
+          },
+          "version": {
+            "default": "1.0.0",
+            "maxLength": 50,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prumo_template",
+          "kind",
+          "name",
+          "sections"
+        ],
+        "title": "PortableTemplate",
+        "type": "object"
+      },
       "ProposalRecordResponse": {
         "properties": {
           "confidence_score": {
@@ -8398,6 +8805,107 @@
         "title": "TemplateConfigStatusRead",
         "type": "object"
       },
+      "TemplateDeleteRefusalCode": {
+        "description": "Why ``DELETE \u2026/templates/{id}`` returned 409 (spec \u00a75.7).",
+        "enum": [
+          "TEMPLATE_ACTIVE",
+          "TEMPLATE_IN_USE"
+        ],
+        "title": "TemplateDeleteRefusalCode",
+        "type": "string"
+      },
+      "TemplateDeleteRefusalDetails": {
+        "description": "How many runs / instances still reference the template (``TEMPLATE_IN_USE``).",
+        "properties": {
+          "instances": {
+            "default": 0,
+            "title": "Instances",
+            "type": "integer"
+          },
+          "runs": {
+            "default": 0,
+            "title": "Runs",
+            "type": "integer"
+          }
+        },
+        "title": "TemplateDeleteRefusalDetails",
+        "type": "object"
+      },
+      "TemplateDeleteRefusalError": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/TemplateDeleteRefusalCode"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateDeleteRefusalDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "TemplateDeleteRefusalError",
+        "type": "object"
+      },
+      "TemplateDeleteRefusalResponse": {
+        "description": "The 409 body, declared so the payload reaches ``schema.d.ts`` typed.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/TemplateDeleteRefusalError"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "TemplateDeleteRefusalResponse",
+        "type": "object"
+      },
+      "TemplateDeleteResponse": {
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_template_id",
+          "deleted"
+        ],
+        "title": "TemplateDeleteResponse",
+        "type": "object"
+      },
       "TemplateDiscardRefusalCode": {
         "description": "Why ``POST .../discard-draft`` returned 409 (B-9c2 D1).\n\nDeliberately NOT part of :class:`app.schemas.common.ApiErrorCode`: that\nenum is the cross-cutting vocabulary every client branches on, and these\nfive are one endpoint's private outcomes. Same call as\n``ExtractionErrorCode`` \u2014 slice-local codes stay slice-local, so the\nglobal contract does not grow a member per feature.\n\nThe split that matters to the caller: ``ORPHAN_ACK_REQUIRED`` is a\n*question* (re-post with ``acknowledge_orphans``), the other four are\nrefusals no retry of the same request can satisfy.",
         "enum": [
@@ -9292,6 +9800,111 @@
           "default_instruction"
         ],
         "title": "TemplateInstructionRead",
+        "type": "object"
+      },
+      "TemplatePortableIssue": {
+        "description": "One validation issue: ``sections[2].fields[5].name`` + Pydantic's message.",
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message"
+        ],
+        "title": "TemplatePortableIssue",
+        "type": "object"
+      },
+      "TemplatePortableRefusalCode": {
+        "description": "Why ``POST \u2026/templates/import`` / ``GET \u2026/export`` returned 422.\n\nSlice-local like :class:`TemplatePublishRefusalCode` \u2014 one feature's\nprivate outcome, deliberately NOT in ``ApiErrorCode``.",
+        "enum": [
+          "TEMPLATE_IMPORT_INVALID",
+          "TEMPLATE_IMPORT_WRONG_KIND",
+          "TEMPLATE_IMPORT_UNSUPPORTED_VERSION",
+          "TEMPLATE_EXPORT_INVALID"
+        ],
+        "title": "TemplatePortableRefusalCode",
+        "type": "string"
+      },
+      "TemplatePortableRefusalDetails": {
+        "description": "``error.details`` of a portable refusal: the issue list capped at 20\nentries (what the import pane renders) plus the uncapped total.",
+        "properties": {
+          "error_count": {
+            "default": 0,
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/TemplatePortableIssue"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "title": "TemplatePortableRefusalDetails",
+        "type": "object"
+      },
+      "TemplatePortableRefusalError": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/TemplatePortableRefusalCode"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplatePortableRefusalDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "TemplatePortableRefusalError",
+        "type": "object"
+      },
+      "TemplatePortableRefusalResponse": {
+        "description": "The 422 body, declared so the payload reaches ``schema.d.ts`` typed\n(same rationale as :class:`TemplatePublishRefusalResponse`).",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/TemplatePortableRefusalError"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "TemplatePortableRefusalResponse",
         "type": "object"
       },
       "TemplatePublishRefusalCode": {
@@ -11825,6 +12438,67 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/templates/import": {
+      "post": {
+        "description": "Import a ``prumo-template@1`` document as a NEW active project template.\n\nThe body is deliberately untyped at the HTTP layer: there is no\n``RequestValidationError`` handler, so a typed body would yield FastAPI's\nun-enveloped 422 \u2014 parsing in the service is what turns a bad file into\nthe typed ``TemplatePortableRefusalCode`` 422s (declared above so the\ncontract still reaches schema.d.ts; the document's own schema is the\nexport response's ``PortableTemplate`` component). Same response shape\nas the catalogue clone. A concurrent activation race is a 409 CONFLICT.",
+        "operationId": "import_project_template_api_v1_projects__project_id__templates_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CloneTemplateResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplatePortableRefusalResponse"
+                }
+              }
+            },
+            "description": "Refused: not a valid prumo-template@1 document (or template)"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Import Project Template",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/templates/{project_template_id}/hitl-config": {
       "delete": {
         "operationId": "delete_template_hitl_config_api_v1_projects__project_id__templates__project_template_id__hitl_config_delete",
@@ -12006,6 +12680,73 @@
       }
     },
     "/api/v1/projects/{project_id}/templates/{template_id}": {
+      "delete": {
+        "description": "Delete an INACTIVE, unreferenced project template (spec \u00a75.7).\n\n``TemplateActiveError`` / ``TemplateInUseError`` are ``AppError``s and\nreach ``app_error_handler`` typed (``TemplateDeleteRefusalCode``).",
+        "operationId": "delete_project_template_api_v1_projects__project_id__templates__template_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TemplateDeleteResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDeleteRefusalResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Delete Project Template",
+        "tags": [
+          "project-templates"
+        ]
+      },
       "patch": {
         "description": "Toggle ``is_active`` on a project template.\n\nDisabling an extraction template that is the project's only active\nextraction template returns 400 \u2014 see service for the invariant.",
         "operationId": "update_project_template_active_api_v1_projects__project_id__templates__template_id__patch",
@@ -12394,6 +13135,65 @@
           }
         ],
         "summary": "Take Over Draft Lock Endpoint",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/export": {
+      "get": {
+        "description": "Export the template's LIVE structure as a ``prumo-template@1`` document.\n\nExtraction templates only (a QA id 404s). Reads no draft state and takes\nno locks \u2014 the pending-draft confirmation is the frontend's (it already\nholds ``config-status``). The frontend writes ``data`` to disk, never the\nenvelope. ``TemplateExportInvalidError`` (legacy rows the format cannot\ncarry) is an ``AppError`` and reaches ``app_error_handler`` typed.",
+        "operationId": "export_project_template_api_v1_projects__project_id__templates__template_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PortableTemplate_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplatePortableRefusalResponse"
+                }
+              }
+            },
+            "description": "Refused: not a valid prumo-template@1 document (or template)"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Export Project Template",
         "tags": [
           "project-templates"
         ]

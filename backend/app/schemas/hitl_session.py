@@ -405,6 +405,81 @@ class TemplatePublishRefusalResponse(BaseModel):
     trace_id: str | None = None
 
 
+class TemplatePortableRefusalCode(StrEnum):
+    """Why ``POST …/templates/import`` / ``GET …/export`` returned 422.
+
+    Slice-local like :class:`TemplatePublishRefusalCode` — one feature's
+    private outcome, deliberately NOT in ``ApiErrorCode``."""
+
+    TEMPLATE_IMPORT_INVALID = "TEMPLATE_IMPORT_INVALID"
+    TEMPLATE_IMPORT_WRONG_KIND = "TEMPLATE_IMPORT_WRONG_KIND"
+    TEMPLATE_IMPORT_UNSUPPORTED_VERSION = "TEMPLATE_IMPORT_UNSUPPORTED_VERSION"
+    TEMPLATE_EXPORT_INVALID = "TEMPLATE_EXPORT_INVALID"
+
+
+class TemplatePortableIssue(BaseModel):
+    """One validation issue: ``sections[2].fields[5].name`` + Pydantic's message."""
+
+    path: str
+    message: str
+
+
+class TemplatePortableRefusalDetails(BaseModel):
+    """``error.details`` of a portable refusal: the issue list capped at 20
+    entries (what the import pane renders) plus the uncapped total."""
+
+    errors: list[TemplatePortableIssue] = Field(default_factory=list)
+    error_count: int = 0
+
+
+class TemplatePortableRefusalError(BaseModel):
+    code: TemplatePortableRefusalCode
+    message: str
+    details: TemplatePortableRefusalDetails | None = None
+
+
+class TemplatePortableRefusalResponse(BaseModel):
+    """The 422 body, declared so the payload reaches ``schema.d.ts`` typed
+    (same rationale as :class:`TemplatePublishRefusalResponse`)."""
+
+    ok: bool = False
+    error: TemplatePortableRefusalError
+    trace_id: str | None = None
+
+
+class TemplateDeleteRefusalCode(StrEnum):
+    """Why ``DELETE …/templates/{id}`` returned 409 (spec §5.7)."""
+
+    TEMPLATE_ACTIVE = "TEMPLATE_ACTIVE"
+    TEMPLATE_IN_USE = "TEMPLATE_IN_USE"
+
+
+class TemplateDeleteRefusalDetails(BaseModel):
+    """How many runs / instances still reference the template (``TEMPLATE_IN_USE``)."""
+
+    runs: int = 0
+    instances: int = 0
+
+
+class TemplateDeleteRefusalError(BaseModel):
+    code: TemplateDeleteRefusalCode
+    message: str
+    details: TemplateDeleteRefusalDetails | None = None
+
+
+class TemplateDeleteRefusalResponse(BaseModel):
+    """The 409 body, declared so the payload reaches ``schema.d.ts`` typed."""
+
+    ok: bool = False
+    error: TemplateDeleteRefusalError
+    trace_id: str | None = None
+
+
+class TemplateDeleteResponse(BaseModel):
+    project_template_id: UUID
+    deleted: bool
+
+
 class UpdateTemplateActiveRequest(BaseModel):
     is_active: bool
 

@@ -31,12 +31,14 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.extraction_versioning import TemplateKind
 from app.services.project_template_active_service import (
     LastActiveExtractionTemplateError,
     ProjectTemplateNotFoundError,
     set_template_active,
 )
-from tests.integration.conftest import SEED
+from app.services.template_clone_service import TemplateCloneService
+from tests.integration.conftest import SEED, clean_project_clones, clone_charms
 
 
 async def _insert_inactive_extraction_template(
@@ -197,3 +199,75 @@ async def test_deactivating_last_active_extraction_template_raises(
         )
     ).scalar()
     assert db_value is True
+
+
+# =================== Switch (spec §5.6) ===================
+
+
+PROBAST_GLOBAL_ID = "00b00000-0000-0000-0000-000000000001"
+QUADAS2_GLOBAL_ID = "00d00000-0000-0000-0000-000000000001"
+
+
+async def _active_state(db: AsyncSession, project_id) -> dict[str, bool]:
+    rows = await db.execute(
+        text(
+            "SELECT id, is_active FROM public.project_extraction_templates WHERE project_id = :pid"
+        ),
+        {"pid": str(project_id)},
+    )
+    return {str(r.id): r.is_active for r in rows}
+
+
+@pytest.mark.asyncio
+async def test_activating_extraction_template_deactivates_active_sibling(
+    db_session: AsyncSession,
+) -> None:
+    """Spec §5.6: today this trips `uq_one_active_extraction_template_per_project`
+    because the flag is flipped without deactivating the sibling."""
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    active = await clone_charms(db_session, project_id, SEED.primary_profile)
+    extra = await _insert_inactive_extraction_template(
+        db_session, project_id=project_id, created_by=SEED.primary_profile
+    )
+
+    result = await set_template_active(
+        db_session, project_id=project_id, template_id=extra, is_active=True
+    )
+    assert result.is_active is True
+    state = await _active_state(db_session, project_id)
+    assert state[str(extra)] is True
+    assert state[str(active.project_template_id)] is False
+
+
+@pytest.mark.asyncio
+async def test_activating_qa_template_deactivates_nothing(db_session: AsyncSession) -> None:
+    """QA tools coexist (PROBAST + QUADAS-2) and never touch the extraction template."""
+    import uuid
+
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    charms = await clone_charms(db_session, project_id, SEED.primary_profile)
+    cloner = TemplateCloneService(db_session)
+    probast = await cloner.clone(
+        project_id=project_id,
+        global_template_id=uuid.UUID(PROBAST_GLOBAL_ID),
+        user_id=SEED.primary_profile,
+        kind=TemplateKind.QUALITY_ASSESSMENT,
+    )
+    quadas = await cloner.clone(
+        project_id=project_id,
+        global_template_id=uuid.UUID(QUADAS2_GLOBAL_ID),
+        user_id=SEED.primary_profile,
+        kind=TemplateKind.QUALITY_ASSESSMENT,
+    )
+    await set_template_active(
+        db_session, project_id=project_id, template_id=probast.project_template_id, is_active=False
+    )
+    await set_template_active(
+        db_session, project_id=project_id, template_id=probast.project_template_id, is_active=True
+    )
+    state = await _active_state(db_session, project_id)
+    assert state[str(charms.project_template_id)] is True
+    assert state[str(quadas.project_template_id)] is True
+    assert state[str(probast.project_template_id)] is True

@@ -222,3 +222,14 @@ class TestEnumCreationFromString:
         """Verifica que string inválida levanta ValueError."""
         with pytest.raises(ValueError):
             python_enum("totally_invalid_value_12345")
+
+    def test_schema_framework_literal_mirrors_the_orm_enum(self):
+        """``app.schemas.extraction.Framework`` is the schema layer's hand copy
+        of ``ExtractionFramework`` (schemas must not import models). A new
+        framework added to one side but not the other would 422 every
+        export of a template using it."""
+        from typing import get_args
+
+        from app.schemas.extraction import Framework
+
+        assert set(get_args(Framework)) == {e.value for e in ExtractionFramework}
