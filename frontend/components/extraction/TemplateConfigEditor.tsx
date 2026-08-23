@@ -12,10 +12,11 @@ import {createSection, deleteSection, updateEntityTypeLabel} from '@/services/te
 import {Card, CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
-import {AlertTriangle, Download, Loader2, Plus, Settings} from 'lucide-react';
+import {AlertTriangle, Loader2, Plus, Settings, Upload} from 'lucide-react';
 import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructionRow';
 import {TemplateConfigGridPanel} from '@/components/extraction/template-config/TemplateConfigGridPanel';
 import {TemplateConfigPublishControls} from '@/components/extraction/template-config/TemplateConfigPublishControls';
+import {TemplateExportButton} from '@/components/extraction/template-config/TemplateExportButton';
 import type {GridField} from '@/components/extraction/template-config/templateTree';
 import type {ExtractionFieldInsert} from '@/types/extraction';
 import {toast} from 'sonner';
@@ -271,6 +272,7 @@ export function TemplateConfigEditor({
               .replace('{{n}}', String(entityTypes.length))
               .replace('{{main}}', String(rootEntityTypes.length))}
           </Badge>
+          <TemplateExportButton projectId={projectId} templateId={templateId} />
           <Button
             variant="ghost"
             size="sm"
@@ -278,7 +280,7 @@ export function TemplateConfigEditor({
             onClick={() => setShowImportDialog(true)}
             className="h-8 text-muted-foreground hover:text-foreground"
           >
-            <Download className="h-4 w-4 mr-2" />
+            <Upload className="h-4 w-4 mr-2" />
             {t('extraction', 'configImportTemplateButton')}
           </Button>
           <TemplateConfigPublishControls
@@ -361,7 +363,7 @@ export function TemplateConfigEditor({
                   data-testid="template-config-open-import"
                   onClick={() => setShowImportDialog(true)}
                 >
-                  <Download className="h-4 w-4 mr-2" />
+                  <Upload className="h-4 w-4 mr-2" />
                   {t('extraction', 'configImportTemplateButton')}
                 </Button>
                 <Button
