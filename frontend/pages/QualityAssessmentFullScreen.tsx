@@ -643,9 +643,13 @@ export default function QualityAssessmentFullScreen() {
 
   const versionLabel = template ? `v${template.version}` : "";
 
-  // ⌘K palette actions — the same vocabulary the extraction palette offers, so
-  // one muscle memory covers both run screens. Each entry mirrors a control
-  // that is actually reachable in the current stage/role, never a dead one.
+  // ⌘K palette actions — shares the core vocabulary with the extraction
+  // palette (panel toggle, reveal, status, and compare where available) so
+  // one muscle memory mostly covers both run screens. NOT full parity:
+  // extraction's palette also offers reopen actions; QA exposes reopen only
+  // from the kebab menu below (`Utility`), never from this palette. Each
+  // entry here mirrors a control that is actually reachable in the current
+  // stage/role, never a dead one.
   const paletteActions: { id: string; label: string; run: () => void }[] = [];
   if (canCompare && !inConsensusStage) {
     paletteActions.push({

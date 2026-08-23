@@ -4,8 +4,9 @@
  *
  * Article navigation is a route-PARAM change on the same route element, so the
  * `useAutoSaveProposals` unmount flush does not obviously fire. The sibling
- * `extraction-edit.ui.e2e.ts` deliberately waits out the 3s debounce; this one
- * deliberately does not.
+ * `extraction-edit.ui.e2e.ts` deliberately waits out the 600ms debounce
+ * (`useAutoSaveProposals`'s default `debounceMs`, unoverridden by either run
+ * screen); this one deliberately does not.
  *
  * The J/K shortcut (`useRunShortcuts`) ignores keypresses while an editable
  * element has focus (see `hooks/runs/useRunShortcuts.ts`'s `isEditing` guard,
@@ -77,7 +78,10 @@ test.describe("Extraction article pager", () => {
     const pager = page.getByRole("navigation", { name: /article \d+ of \d+/i });
     await pager.waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
     const pagerCount = await pager.count();
-    test.skip(pagerCount === 0, "Project has a single article — no pager to exercise");
+    test.skip(
+      pagerCount === 0,
+      "Project has a single article, or the page never reached its ready state (e.g. a misconfiguration) — no pager to exercise",
+    );
 
     // Prefer "next", but fall back to "previous": on the standard fixture
     // E2E_ARTICLE_ID is the oldest article of the group (see file header),
@@ -130,7 +134,10 @@ test.describe("Extraction article pager", () => {
     // sampling its count once right after the Back button appears.
     const pager = page.getByRole("navigation", { name: /article \d+ of \d+/i });
     await pager.waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
-    test.skip((await pager.count()) === 0, "Project has a single article — no pager to exercise");
+    test.skip(
+      (await pager.count()) === 0,
+      "Project has a single article, or the page never reached its ready state (e.g. a misconfiguration) — no pager to exercise",
+    );
     await expect(pager.getByRole("button")).toHaveCount(2);
     await expect(pager).toContainText(/\d+\s*\/\s*\d+/);
   });

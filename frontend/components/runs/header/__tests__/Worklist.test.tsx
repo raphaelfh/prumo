@@ -37,6 +37,17 @@ describe('RunHeader.Worklist', () => {
     expect(screen.getByRole('navigation', { name: 'worklistPositionLabel' })).toBeInTheDocument();
   });
 
+  it('exposes the position via a visually-hidden polite live region, so a J/K move is announced', () => {
+    renderWorklist({ currentId: 'a3' });
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('worklistPositionLabel');
+    expect(status).toHaveClass('sr-only');
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    // The visible counter stays aria-hidden so the position is not announced
+    // twice (once by the live region, once by the visible text).
+    expect(screen.getByText('3 / 3')).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('calls onNavigate with the previous article id', async () => {
     const onNavigate = vi.fn();
     renderWorklist({ onNavigate });
@@ -51,18 +62,37 @@ describe('RunHeader.Worklist', () => {
     expect(onNavigate).toHaveBeenCalledWith('a3');
   });
 
-  it('disables prev at the first article without removing it', () => {
-    renderWorklist({ currentId: 'a1' });
-    expect(screen.getByRole('button', { name: 'articlePrevious' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'articleNext' })).not.toBeDisabled();
+  it('marks prev aria-disabled at the first article without removing or unfocusing it', async () => {
+    const onNavigate = vi.fn();
+    renderWorklist({ currentId: 'a1', onNavigate });
+    const prev = screen.getByRole('button', { name: 'articlePrevious' });
+    // `aria-disabled`, not the native `disabled` attribute: the button stays
+    // in the tab order (a real `disabled` button cannot receive focus, which
+    // is exactly what strands keyboard focus on `<body>` when the arrow
+    // becomes disabled right under the click that landed on it).
+    expect(prev).toHaveAttribute('aria-disabled', 'true');
+    expect(prev).not.toBeDisabled();
+    prev.focus();
+    expect(prev).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'articleNext' })).not.toHaveAttribute('aria-disabled');
     expect(screen.getAllByRole('button')).toHaveLength(2);
+    // Guarded click: still wired to a handler, but it must not navigate.
+    await userEvent.click(prev);
+    expect(onNavigate).not.toHaveBeenCalled();
   });
 
-  it('disables next at the last article without removing it', () => {
-    renderWorklist({ currentId: 'a3' });
-    expect(screen.getByRole('button', { name: 'articleNext' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'articlePrevious' })).not.toBeDisabled();
+  it('marks next aria-disabled at the last article without removing or unfocusing it', async () => {
+    const onNavigate = vi.fn();
+    renderWorklist({ currentId: 'a3', onNavigate });
+    const next = screen.getByRole('button', { name: 'articleNext' });
+    expect(next).toHaveAttribute('aria-disabled', 'true');
+    expect(next).not.toBeDisabled();
+    next.focus();
+    expect(next).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'articlePrevious' })).not.toHaveAttribute('aria-disabled');
     expect(screen.getAllByRole('button')).toHaveLength(2);
+    await userEvent.click(next);
+    expect(onNavigate).not.toHaveBeenCalled();
   });
 
   it('renders nothing for a single-article worklist', () => {

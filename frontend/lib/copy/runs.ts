@@ -70,7 +70,6 @@ export const runs = {
   commandEmpty: 'No results',
   commandActions: 'Actions',
   commandGoToArticle: 'Go to article…',
-  commandPaletteOpen: 'Open command palette',
   viewRunStatus: 'View run status',
   // SidebarToggle (left, mirrors PanelToggle)
   sidebarToggle: 'Toggle navigation',

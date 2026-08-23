@@ -1300,10 +1300,11 @@ describe("QualityAssessmentFullScreen — header pager, J/K and ⌘K", () => {
         within(centre).getByRole("button", { name: /next article/i }),
       ).toBeInTheDocument(),
     );
-    // First of two articles: previous is disabled, next is live.
+    // First of two articles: previous is aria-disabled (not the native
+    // `disabled` attribute — it stays focusable), next is live.
     expect(
       within(centre).getByRole("button", { name: /previous article/i }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     expect(within(centre).getByLabelText("Article 1 of 2")).toBeInTheDocument();
   });
 
@@ -1331,7 +1332,7 @@ describe("QualityAssessmentFullScreen — header pager, J/K and ⌘K", () => {
     );
   });
 
-  it("K on the LAST article stays put (end-of-list guard, no wrap)", async () => {
+  it("J on the LAST article stays put (end-of-list guard, no wrap); K still walks back", async () => {
     renderPage("/projects/p1/articles/a2/quality-assessment/tpl-1");
     await screen.findByRole("button", { name: /next article/i });
     // "a2" is last, so J has nowhere to go; K walks back to "a1".

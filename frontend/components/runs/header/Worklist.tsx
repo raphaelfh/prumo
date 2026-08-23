@@ -5,8 +5,12 @@
  * article picker that used to hang off the counter now lives in the ⌘K command
  * palette (`RunHeader.CommandPalette`), which both run screens mount.
  *
- * The arrows are DISABLED at the ends rather than hidden: hiding one changes
- * the block's width and would displace the header's centre by half an arrow.
+ * The arrows are `aria-disabled` (not the native `disabled` attribute) at
+ * the ends rather than hidden: hiding one changes the block's width and
+ * would displace the header's centre by half an arrow; using `aria-disabled`
+ * instead of `disabled` keeps the end arrow focusable — clicking the arrow
+ * that lands on the first/last article no longer strands keyboard focus on
+ * `<body>`. The click handlers are guarded to no-op in that state.
  */
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -48,12 +52,19 @@ export function Worklist({ articles, currentId, onNavigate }: WorklistProps) {
     .replace('{{m}}', total);
 
   return (
-    <nav className="flex shrink-0 items-center gap-0.5" aria-label={positionLabel}>
+    // `relative` anchors the sr-only live region below to this nav (no
+    // offsets, so it does not move or resize the nav itself): without a
+    // positioned ancestor an absolutely-positioned sr-only node's static
+    // position can resolve outside this bounded header bar and stretch the
+    // page's scroll area (the documented phantom-scroll trap — see
+    // TemplateGridFieldRow.tsx for the same fix on a checkbox input).
+    <nav className="relative flex shrink-0 items-center gap-0.5" aria-label={positionLabel}>
       <Tooltip>
         <TooltipTrigger asChild>
           <HeaderIconButton
             aria-label={t('runs', 'articlePrevious')}
-            disabled={!hasPrev}
+            aria-disabled={!hasPrev || undefined}
+            className={!hasPrev ? 'pointer-events-none opacity-50' : undefined}
             onClick={() => hasPrev && onNavigate(articles[idx - 1].id)}
           >
             <ChevronLeft strokeWidth={1.5} aria-hidden="true" />
@@ -65,7 +76,8 @@ export function Worklist({ articles, currentId, onNavigate }: WorklistProps) {
         </TooltipContent>
       </Tooltip>
 
-      {/* Inert on purpose — the position is announced by the <nav> label. */}
+      {/* Inert on purpose — the position is announced by the <nav> label
+          and (on change) by the live region below, not read twice. */}
       <span
         className="whitespace-pre text-[11px] tabular-nums text-muted-foreground"
         aria-hidden="true"
@@ -73,11 +85,24 @@ export function Worklist({ articles, currentId, onNavigate }: WorklistProps) {
         {current} / {total}
       </span>
 
+      {/* Visually-hidden live region mirroring the counter: a route-param
+          article change moves no focus and the visible counter is
+          aria-hidden, so without this a screen-reader user never hears
+          that J/K (or the arrows) actually navigated. `role="status"` is
+          implicitly `aria-live="polite"`; kept explicit to match the
+          project's other live regions (e.g. TemplateConfigGridPanel's
+          moveAnnouncement). Always mounted so the announcement fires on
+          every position change, not just the first. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {positionLabel}
+      </span>
+
       <Tooltip>
         <TooltipTrigger asChild>
           <HeaderIconButton
             aria-label={t('runs', 'articleNext')}
-            disabled={!hasNext}
+            aria-disabled={!hasNext || undefined}
+            className={!hasNext ? 'pointer-events-none opacity-50' : undefined}
             onClick={() => hasNext && onNavigate(articles[idx + 1].id)}
           >
             <ChevronRight strokeWidth={1.5} aria-hidden="true" />
