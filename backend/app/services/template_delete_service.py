@@ -19,6 +19,7 @@ project with zero active templates. The delete is a Core statement, not
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from fastapi import status
@@ -56,17 +57,24 @@ class TemplateActiveError(AppError):
 
 
 class TemplateInUseError(AppError):
-    def __init__(self, *, runs: int, instances: int) -> None:
+    """``runs``/``instances`` are the pre-check's counts. ``None`` means the
+    refusal came from the RESTRICT FK after the pre-check passed (a run
+    landed in the window) — the aborted transaction cannot re-count, so the
+    message carries no numbers rather than known-false zeros."""
+
+    def __init__(self, *, runs: int | None = None, instances: int | None = None) -> None:
+        suffix = "."
+        details: dict[str, Any] | None = None
+        if runs is not None and instances is not None:
+            suffix = f" ({runs} extraction(s), {instances} extracted item(s))."
+            details = TemplateDeleteRefusalDetails(runs=runs, instances=instances).model_dump(
+                mode="json"
+            )
         super().__init__(
             code=TemplateDeleteRefusalCode.TEMPLATE_IN_USE,
-            message=(
-                "This template cannot be deleted: extractions already reference it "
-                f"({runs} extraction(s), {instances} extracted item(s))."
-            ),
+            message="This template cannot be deleted: extractions already reference it" + suffix,
             status_code=status.HTTP_409_CONFLICT,
-            details=TemplateDeleteRefusalDetails(runs=runs, instances=instances).model_dump(
-                mode="json"
-            ),
+            details=details,
         )
 
 
@@ -110,7 +118,7 @@ async def delete_template(
         ).scalar_one_or_none()
     except IntegrityError as exc:
         if violates_constraint(exc, *_IN_USE_CONSTRAINTS):
-            raise TemplateInUseError(runs=runs, instances=instances) from exc
+            raise TemplateInUseError() from exc
         raise
     if deleted_id is None:
         # A concurrent Switch activated it between our locked read and the

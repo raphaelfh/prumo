@@ -68,12 +68,16 @@ function fromCloneResponse(result: CloneTemplateResponse): ImportedTemplate {
   };
 }
 
-const PORTABLE_REFUSAL_CODES: ReadonlySet<string> = new Set([
-  'TEMPLATE_IMPORT_INVALID',
-  'TEMPLATE_IMPORT_WRONG_KIND',
-  'TEMPLATE_IMPORT_UNSUPPORTED_VERSION',
-  'TEMPLATE_EXPORT_INVALID',
-]);
+// `satisfies Record<…, true>` makes this exhaustive against the generated
+// union: a code added to schema.d.ts but not here fails the build instead of
+// silently falling through to a plain Error.
+const PORTABLE_REFUSAL_CODE_MAP = {
+  TEMPLATE_IMPORT_INVALID: true,
+  TEMPLATE_IMPORT_WRONG_KIND: true,
+  TEMPLATE_IMPORT_UNSUPPORTED_VERSION: true,
+  TEMPLATE_EXPORT_INVALID: true,
+} satisfies Record<TemplatePortableRefusalCode, true>;
+const PORTABLE_REFUSAL_CODES: ReadonlySet<string> = new Set(Object.keys(PORTABLE_REFUSAL_CODE_MAP));
 
 /**
  * A portable import/export the server deliberately refused (422).

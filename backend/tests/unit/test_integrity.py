@@ -140,6 +140,10 @@ async def test_delete_fk_violation_after_the_read_is_template_in_use(monkeypatch
     with pytest.raises(TemplateInUseError) as exc:
         await delete_template(db, project_id=project_id, template_id=stale.id)
     assert exc.value.code == "TEMPLATE_IN_USE"
+    # The aborted transaction cannot re-count; the pre-check's zeros are
+    # known-false here, so the message carries no counts and no details.
+    assert "0 extraction" not in exc.value.message
+    assert exc.value.details is None
 
 
 @pytest.mark.asyncio
