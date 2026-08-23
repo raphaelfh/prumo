@@ -191,33 +191,36 @@ copy through `frontend/lib/copy/`.
 
 ## Phase 7 — Verify in prod (only if promoted)
 
-Evidence, not assertion:
+Evidence, not assertion. Production is verified by the **post-deploy smoke
+workflow**, never by a Playwright suite pointed at prod: any suite that
+exercised the real data path would have to write there (the deleted
+`remote-smoke` project dispatched a real AI extraction — LLM spend plus a
+run left behind on every execution — and had never run in CI, silently
+self-skipping to a green "pass").
 
+- Wait for the Railway deploy to actually finish for the promoted SHA
+  (`railway deployment list --service web` / `--service worker` → both
+  `SUCCESS` on that commit), then:
 - `curl -fsS -o /dev/null -w "%{http_code}" https://web-production-48b398.up.railway.app/health` → expect 200.
-- Confirm `post-deploy-smoke` is green (health + frontend + CORS
-  preflight from the prod origin).
-- Run the Playwright E2E smoke for the shipped feature (`web-testing`),
-  but serve the frontend on a **local server** instead of loading the
-  Vercel deployment in a browser. Keep the prod-targeting `remote-smoke`
-  project (it exercises the prod backend with the designated test account
-  and is non-destructive); only override its frontend origin to local:
-  1. `npm run dev` — serve the frontend on `http://127.0.0.1:8080` (built
-     from the promoted `main` commit, with the `VITE_*` env aimed at the
-     prod backend + Supabase).
-  2. `E2E_FRONTEND_URL=http://127.0.0.1:8080
-     E2E_API_URL=https://web-production-48b398.up.railway.app
-     npm run test:e2e:remote` — the browser loads the **local** frontend
-     while the auth/extraction assertions run against the prod backend, so
-     the deployed backend, DB, and data path are still verified end-to-end.
-
-  Do **not** point `E2E_FRONTEND_URL` at `https://prumoai.vercel.app`:
-  driving a browser against `*.vercel.app` is blocked by the org browser
-  policy, and the deployed frontend bundle's reachability is already
-  covered by `post-deploy-smoke` (step 2). Do **not** substitute
-  `npm run test:e2e:local` — those projects self-provision and hard-reset
-  fixtures, so against the prod backend they would mutate prod data.
+- **Re-run `post-deploy-smoke` after the deploy reports SUCCESS** and confirm
+  it is green. The run triggered by the push races the deploy — its first
+  green certifies the OLD build. The workflow covers: reachability
+  (`/health`, frontend root, CORS preflight from the prod origin), the
+  **deployed-commit assertion** (`/health.commit` == the promoted SHA — the
+  only check that catches a Railway deploy stuck on an older commit), and an
+  **authenticated read-only probe** (password-grant + `GET /api/v1/projects`,
+  which exercises JWKS/JWT, membership/RLS and the envelope without writing).
+- If the probe step reports `::warning:: skipped`, its secrets are not
+  provisioned — say so explicitly in the verdict instead of counting the
+  workflow as full coverage.
+- For a shipped API change, prove the contract is live rather than assuming:
+  probe `https://web-production-48b398.up.railway.app/api/v1/openapi.json`
+  (200 in prod) for the new route/field, or use the 401-vs-404 route probe.
+  A backwards-compatible change may otherwise be invisible from outside.
 - Finish with a `/design-review` pass on the user-facing surface if one
-  changed.
+  changed. Driving a browser against `*.vercel.app` is blocked by the org
+  browser policy — run the review against a local server built from the
+  promoted commit and say so.
 
 ## Phase 8 — Verdict
 

@@ -18,6 +18,25 @@ async def test_health_check(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_health_reports_the_deployed_commit(client: AsyncClient) -> None:
+    """/health carries the commit the running build was deployed from.
+
+    The post-deploy smoke asserts this against the promoted SHA — it is the
+    only signal that catches the documented failure class where Railway
+    sticks on an older commit while CI is green (a reachability probe alone
+    cannot tell a stale build from a fresh one). Falls back to "unknown"
+    outside Railway, which the smoke degrades to a warning.
+    """
+    response = await client.get("/health")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "commit" in data
+    assert isinstance(data["commit"], str)
+    assert data["commit"]
+
+
+@pytest.mark.asyncio
 async def test_root_endpoint(client: AsyncClient) -> None:
     """Test root endpoint returns API info."""
     response = await client.get("/")

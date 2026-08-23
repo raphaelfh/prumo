@@ -44,7 +44,7 @@ Is the bug a race / timing / fixture leak?          -> read references/flakiness
 | Playwright single flow                            | `npx playwright test frontend/e2e/flows/extraction.e2e.ts --project=local-api`         |
 | Playwright with trace viewer after a failure      | `npx playwright show-trace test-results/.../trace.zip`                                 |
 
-The Playwright config (`playwright.config.ts`) defines four projects: `local-api`, `local-ui`, `local-hitl` (single-worker, stateful), `remote-smoke`. **HITL-stateful tests must stay pinned to `local-hitl`** — they share a project/article/template triple and parallelism causes runs to delete each other.
+The Playwright config (`playwright.config.ts`) defines three projects: `local-api`, `local-ui`, `local-hitl` (single-worker, stateful). There is no prod-facing project — production is verified by `.github/workflows/post-deploy-smoke.yml`, not Playwright. **HITL-stateful tests must stay pinned to `local-hitl`** — they share a project/article/template triple and parallelism causes runs to delete each other.
 
 ## 4. Backend — pytest (8+, async)
 
@@ -168,7 +168,6 @@ Tests live under `frontend/e2e/`, two categories:
 - `flows/*.e2e.ts` — API-driven flow tests (project `local-api`).
 - `flows/*.ui.e2e.ts` — UI-driven flow tests (project `local-ui`).
 - `flows/qa-*.e2e.ts`, `extraction-edit.ui.e2e.ts`, `hitl-*.api.e2e.ts` — stateful, single-worker (`local-hitl`).
-- `remote/*.e2e.ts` — smoke against deployed env.
 
 ### 6.1 Fixtures live in `_fixtures/`
 

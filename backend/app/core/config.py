@@ -62,6 +62,13 @@ class Settings(BaseSettings):
                 merged.append(origin)
         return merged
 
+    # =================== DEPLOY IDENTITY ===================
+    # Injected by Railway on every deploy. Surfaced by /health so the
+    # post-deploy smoke can prove WHICH build is live — reachability alone
+    # cannot distinguish a fresh deploy from one stuck on an older SHA.
+    # ``None`` outside Railway (local dev, tests, CI).
+    RAILWAY_GIT_COMMIT_SHA: str | None = None
+
     # =================== SUPABASE ===================
     SUPABASE_URL: str
     SUPABASE_SERVICE_ROLE_KEY: str
