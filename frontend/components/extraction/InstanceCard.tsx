@@ -22,6 +22,12 @@ import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {updateInstanceLabel} from '@/services/extractionInstanceService';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import type {ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
@@ -93,10 +99,20 @@ export function InstanceCard(props: InstanceCardProps) {
     setIsEditingLabel(false);
   };
 
+  const removeActionLabel = t('extraction', 'instanceRemoveAction').replace(
+    '{{label}}',
+    savedLabel,
+  );
+  const saveActionLabel = t('extraction', 'instanceLabelSaveAction');
+  const cancelActionLabel = t('extraction', 'instanceLabelCancelAction');
+
   return (
     <div className="bg-muted/30 rounded-lg border border-border/60 shadow-elev-card">
         {/* Instance header */}
       <div className="px-8 py-5 border-b border-border/40">
+        {/* One provider for the header's icon-button tooltips (shared
+            skip-delay when moving between save/cancel/remove). */}
+        <TooltipProvider>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1">
               {/* Number badge */}
@@ -118,24 +134,40 @@ export function InstanceCard(props: InstanceCardProps) {
                   autoFocus
                   disabled={saving}
                 />
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={handleSaveLabel}
-                  disabled={saving}
-                  className="h-7 w-7"
-                >
-                  <Save className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={handleCancelEdit}
-                  disabled={saving}
-                  className="h-7 w-7"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={handleSaveLabel}
+                      disabled={saving}
+                      aria-label={saveActionLabel}
+                      className="h-7 w-7"
+                    >
+                      <Save className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{saveActionLabel}</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={handleCancelEdit}
+                      disabled={saving}
+                      aria-label={cancelActionLabel}
+                      className="h-7 w-7"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{cancelActionLabel}</p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
             ) : readOnly ? (
               <span className="text-sm font-semibold" title={savedLabel}>
@@ -156,16 +188,25 @@ export function InstanceCard(props: InstanceCardProps) {
 
             {/* Remove button — hidden on read-only runs */}
           {!readOnly && canRemove && onRemove && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onRemove}
-              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onRemove}
+                  aria-label={removeActionLabel}
+                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{removeActionLabel}</p>
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
+        </TooltipProvider>
       </div>
 
         {/* Instance fields */}

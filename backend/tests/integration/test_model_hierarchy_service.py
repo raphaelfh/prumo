@@ -13,6 +13,7 @@ materialisation — execute for real.
 
 from __future__ import annotations
 
+from functools import partial
 from uuid import UUID, uuid4
 
 import pytest
@@ -23,10 +24,18 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionEntityRole,
     ExtractionEntityType,
+    ExtractionField,
     ExtractionInstance,
 )
+from app.models.extraction_workflow import ExtractionReviewerDecision
+from app.repositories.extraction_repository import ExtractionEntityTypeRepository
 from app.services.model_hierarchy_service import ModelHierarchyService
-from tests.integration.conftest import SEED, clean_project_clones, clone_charms
+from tests.integration.conftest import (
+    SEED,
+    clean_project_clones,
+    clone_charms,
+    open_session,
+)
 
 
 async def _fresh_article(db: AsyncSession, project_id: UUID) -> UUID:
@@ -42,12 +51,53 @@ async def _fresh_article(db: AsyncSession, project_id: UUID) -> UUID:
     return article_id
 
 
+async def _clone_with_open_session(db: AsyncSession):
+    """CHARMS clone + fresh article + open extract-stage session.
+
+    The secondary project is the clean clone playground (the primary
+    project's template is pinned by the SEED instance's RESTRICT FK).
+    """
+    await clean_project_clones(db, SEED.secondary_project)
+    clone = await clone_charms(db, SEED.secondary_project, SEED.primary_profile)
+    article_id = await _fresh_article(db, SEED.secondary_project)
+    session = await open_session(
+        db,
+        project_id=SEED.secondary_project,
+        article_id=article_id,
+        template_id=clone.project_template_id,
+        user_id=SEED.primary_profile,
+    )
+    return clone, article_id, session
+
+
+async def _container_field_ids_by_name(
+    db: AsyncSession, project_template_id: UUID
+) -> dict[str, UUID]:
+    # The exact production lookup this suite guards (the miswired-repository
+    # regression): resolve the container by role via the repository.
+    container = await ExtractionEntityTypeRepository(db).get_by_role(
+        role=ExtractionEntityRole.MODEL_CONTAINER.value,
+        template_id=project_template_id,
+        is_project_template=True,
+    )
+    assert container is not None
+    rows = (
+        (
+            await db.execute(
+                select(ExtractionField).where(ExtractionField.entity_type_id == container.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {f.name: f.id for f in rows}
+
+
 @pytest.mark.asyncio
 async def test_create_model_hierarchy_creates_parent_and_singleton_children(
     db_session: AsyncSession,
 ) -> None:
-    # The secondary project is the clean clone playground (the primary
-    # project's template is pinned by the SEED instance's RESTRICT FK).
+    # No open session here on purpose: creation must work run-less.
     await clean_project_clones(db_session, SEED.secondary_project)
     clone = await clone_charms(db_session, SEED.secondary_project, SEED.primary_profile)
     article_id = await _fresh_article(db_session, SEED.secondary_project)
@@ -104,3 +154,76 @@ async def test_create_model_hierarchy_creates_parent_and_singleton_children(
     )
     assert {row.entity_type_id for row in persisted} == singleton_child_type_ids
     assert all(row.article_id == article_id for row in persisted)
+
+    # No HITL run is open in this test, so nothing was recorded.
+    assert result.proposal_run_id is None
+
+
+@pytest.mark.asyncio
+async def test_create_model_hierarchy_records_name_and_method_decisions(
+    db_session: AsyncSession,
+) -> None:
+    clone, article_id, session = await _clone_with_open_session(db_session)
+
+    result = await ModelHierarchyService(db_session).create_model_hierarchy(
+        project_id=SEED.secondary_project,
+        article_id=article_id,
+        template_id=clone.project_template_id,
+        user_id=SEED.primary_profile,
+        model_name="Cox Model",
+        modelling_method="logistic regression",
+    )
+
+    assert result.proposal_run_id == session.run_id
+
+    fields = await _container_field_ids_by_name(db_session, clone.project_template_id)
+    decisions = {
+        row.field_id: row.value
+        for row in (
+            await db_session.execute(
+                select(ExtractionReviewerDecision).where(
+                    ExtractionReviewerDecision.run_id == session.run_id,
+                    ExtractionReviewerDecision.instance_id == result.model_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    }
+    assert decisions[fields["model_name"]] == {"value": "Cox Model"}
+    assert decisions[fields["modelling_method"]] == {"value": "logistic regression"}
+
+
+@pytest.mark.asyncio
+async def test_recorded_model_name_matches_the_deduplicated_label(
+    db_session: AsyncSession,
+) -> None:
+    """The decision value must match every visible surface: when the label
+    gets uniquified ("Cox Model (2)"), that is what lands in the trail."""
+    clone, article_id, session = await _clone_with_open_session(db_session)
+
+    create = partial(
+        ModelHierarchyService(db_session).create_model_hierarchy,
+        project_id=SEED.secondary_project,
+        article_id=article_id,
+        template_id=clone.project_template_id,
+        user_id=SEED.primary_profile,
+        model_name="Cox Model",
+        modelling_method=None,
+    )
+    await create()
+    second = await create()
+
+    assert second.model_label == "Cox Model (2)"
+
+    fields = await _container_field_ids_by_name(db_session, clone.project_template_id)
+    recorded = (
+        await db_session.execute(
+            select(ExtractionReviewerDecision.value).where(
+                ExtractionReviewerDecision.run_id == session.run_id,
+                ExtractionReviewerDecision.instance_id == second.model_id,
+                ExtractionReviewerDecision.field_id == fields["model_name"],
+            )
+        )
+    ).scalar_one()
+    assert recorded == {"value": "Cox Model (2)"}

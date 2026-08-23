@@ -15,7 +15,7 @@
  */
 
 import {useEffect, useRef, useState} from 'react';
-import {createManualModelHierarchy} from '@/integrations/api';
+import {createManualModelHierarchy, type ManualModelHierarchyChild} from '@/integrations/api';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
@@ -39,17 +39,21 @@ interface UseModelManagementProps {
    * usage / tests).
    */
   modelInstances?: ModelInstanceRow[];
+  /**
+   * Preferred model to activate when no current selection survives a
+   * load (page reload, or the active model was removed). The page
+   * passes the localStorage-persisted id captured at article mount —
+   * a snapshot, deliberately not live — and the hook applies it only
+   * when the id exists in the loaded list, else falls back to the
+   * first model. Keeps the hook storage-agnostic.
+   */
+  initialModelId?: string | null;
   enabled?: boolean;
 }
 
 interface CreateModelResult {
   model: Model;
-  childInstances: Array<{
-    id: string;
-    entityTypeId: string;
-    parentInstanceId: string;
-    label: string;
-  }>;
+  childInstances: ManualModelHierarchyChild[];
 }
 
 interface UseModelManagementReturn {
@@ -72,6 +76,7 @@ export function useModelManagement({
   templateId,
   modelParentEntityTypeId,
   modelInstances,
+  initialModelId = null,
   enabled = true
 }: UseModelManagementProps): UseModelManagementReturn {
   const { user } = useAuth();
@@ -199,10 +204,16 @@ export function useModelManagement({
         ? modelsWithProgress.some(model => model.instanceId === currentActiveId)
         : false;
 
-        // If active model no longer exists (or not set yet), pick first available
+        // If active model no longer exists (or not set yet), prefer the
+        // caller-supplied initial id (persisted preference) when it is in
+        // the list, else pick the first available.
       if (!hasActiveModel) {
-        const fallbackModelId = modelsWithProgress[0]?.instanceId ?? null;
-        setActiveModelId(fallbackModelId);
+        const preferredModelId =
+          initialModelId &&
+          modelsWithProgress.some(model => model.instanceId === initialModelId)
+            ? initialModelId
+            : (modelsWithProgress[0]?.instanceId ?? null);
+        setActiveModelId(preferredModelId);
       }
     }
 
@@ -227,11 +238,11 @@ export function useModelManagement({
     }
 
     const result = await createManualModelHierarchy({
-      project_id: projectId,
-      article_id: articleId,
-      template_id: templateId,
-      model_name: modelName.trim(),
-      modelling_method: modellingMethod || null,
+      projectId,
+      articleId,
+      templateId,
+      modelName: modelName.trim(),
+      modellingMethod: modellingMethod || null,
     }).catch((err: unknown) => {
       console.error('Error creating model:', err);
       toast.error(`${t('extraction', 'errors_createModel')}: ${err instanceof Error ? err.message : String(err)}`);
@@ -242,8 +253,8 @@ export function useModelManagement({
 
     // Create Model object
     const newModel: Model = {
-      instanceId: result.model_id,
-      modelName: result.model_label,
+      instanceId: result.modelId,
+      modelName: result.modelLabel,
       progress: { completed: 0, total: 0, percentage: 0 }
     };
 
@@ -253,17 +264,12 @@ export function useModelManagement({
     setModels(prev => [...prev, newModel]);
     setActiveModelId(newModel.instanceId);
 
-    toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.model_label));
-    console.warn(`✅ Hierarchy created: 1 parent + ${result.child_instances.length} children`);
+    toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.modelLabel));
+    console.warn(`✅ Hierarchy created: 1 parent + ${result.childInstances.length} children`);
 
     return {
       model: newModel,
-      childInstances: result.child_instances.map((child) => ({
-        id: child.id,
-        entityTypeId: child.entity_type_id,
-        parentInstanceId: child.parent_instance_id,
-        label: child.label,
-      })),
+      childInstances: result.childInstances,
     };
   };
 
