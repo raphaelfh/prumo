@@ -15,7 +15,7 @@
  * the coordinate list, so it can never point at a row that is not on screen.
  */
 
-export const PENDING_REQUIRED_ATTR = 'data-pending-required';
+const PENDING_REQUIRED_ATTR = 'data-pending-required';
 export const PENDING_REQUIRED_SELECTOR = `[${PENDING_REQUIRED_ATTR}]`;
 
 /**

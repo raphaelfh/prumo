@@ -80,15 +80,7 @@ export const MEMBER_ROLES: Record<
  */
 export type Project = Database['public']['Tables']['projects']['Row'];
 
-/**
- * Type for Project insert
- */
-export type ProjectInsert = Database['public']['Tables']['projects']['Insert'];
 
-/**
- * Type for Project update
- */
-export type ProjectUpdate = Partial<Omit<Project, 'id' | 'created_at'>>;
 
 /**
  * Lean type for project lists.
@@ -120,7 +112,7 @@ export interface ProjectData extends Project {
   settings: ProjectSettings;
 }
 
-export interface ProjectSettings {
+interface ProjectSettings {
   /** Per-kind: may a manager see other reviewers' values? Default (absent) = blind. */
   managers_see_reviewers?: { extraction?: boolean; quality_assessment?: boolean };
   [key: string]: Json | undefined;
@@ -139,10 +131,3 @@ export interface StudyDesign {
   [key: string]: Json | undefined;
 }
 
-export interface ProjectConfigData {
-  description: string | null;
-  review_title: string | null;
-  condition_studied: string | null;
-  eligibility_criteria: EligibilityCriteria;
-  study_design: StudyDesign;
-}

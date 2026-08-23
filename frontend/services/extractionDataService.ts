@@ -14,8 +14,6 @@ import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {Article} from '@/types/article';
 import type {Project} from '@/types/project';
 import type {
-  ExtractionEntityTypeWithFields,
-  ExtractionField,
   ProjectExtractionTemplate,
 } from '@/types/extraction';
 
@@ -97,34 +95,3 @@ export function loadExtractionPhase1(
 // Phase-2: entity types with fields (depends on resolved template id)
 // ---------------------------------------------------------------------------
 
-/**
- * Load entity types with their nested fields for a project template.
- * Ordered by sort_order ascending.
- */
-export function loadEntityTypesWithFields(
-  templateId: string,
-): Promise<ErrorResult<ExtractionEntityTypeWithFields[]>> {
-  return toResult(async () => {
-    const {data, error} = await supabase
-      .from('extraction_entity_types')
-      .select(`
-        *,
-        fields:extraction_fields(*)
-      `)
-      .eq('project_template_id', templateId)
-      .order('sort_order', {ascending: true});
-
-    if (error) throw error;
-
-    return (data ?? []).map((et) => ({
-      ...et,
-      template_id: et.template_id!,
-      fields: ((et.fields ?? []) as ExtractionField[]).map((field) => ({
-        ...field,
-        allowed_values: field.allowed_values as string[] | null,
-        allowed_units: field.allowed_units as string[] | null,
-        validation_schema: field.validation_schema as unknown,
-      })),
-    })) as ExtractionEntityTypeWithFields[];
-  }, 'loadEntityTypesWithFields');
-}

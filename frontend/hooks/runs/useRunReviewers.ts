@@ -14,7 +14,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/integrations/api";
 import { runsKeys } from "./types";
 
-export interface RunReviewerProfile {
+interface RunReviewerProfile {
   id: string;
   full_name: string | null;
   avatar_url: string | null;

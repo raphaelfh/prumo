@@ -6,4 +6,3 @@ export const patterns = {
     errorTryAgain: 'Try again',
 } as const;
 
-export type PatternsCopy = typeof patterns;

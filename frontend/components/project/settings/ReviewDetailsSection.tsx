@@ -29,7 +29,7 @@ interface PICOTSTiming {
   prediction_horizon?: PICOTSItem;
 }
 
-export type PicotsConfig = {
+type PicotsConfig = {
     population?: PICOTSItem;
     index_models?: PICOTSItem;
     comparator_models?: PICOTSItem;

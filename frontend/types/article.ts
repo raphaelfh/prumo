@@ -12,17 +12,8 @@ import type {Database} from '@/integrations/supabase/types';
  * Usa o tipo gerado do Supabase para garantir type safety
  */
 export type Article = Database['public']['Tables']['articles']['Row'];
-export type ArticleSyncState = 'active' | 'removed_at_source' | 'conflict';
 
-/**
- * Type for Article insert
- */
-export type ArticleInsert = Database['public']['Tables']['articles']['Insert'];
 
-/**
- * Tipo para atualização de Article
- */
-export type ArticleUpdate = Partial<Omit<Article, 'id' | 'created_at'>>;
 
 /**
  * Tipo simplificado de Article para uso em listas

@@ -46,7 +46,7 @@ export interface ExtractionProgress {
  * Full-AI path dispatches with no run view loaded; an empty list must
  * not "succeed" against an empty tree).
  */
-export type BatchSectionExtractionParams =
+type BatchSectionExtractionParams =
   Omit<BatchSectionExtractionRequest, 'sectionIds' | 'pdfText'> & {
     sections?: ModelChildSection[];
   };

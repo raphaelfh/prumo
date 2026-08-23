@@ -19,7 +19,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { openQASession } from "@/services/qaTemplateService";
 
-export interface QAAssessmentSession {
+interface QAAssessmentSession {
   runId: string;
   projectTemplateId: string;
   instancesByEntityType: Record<string, string>;

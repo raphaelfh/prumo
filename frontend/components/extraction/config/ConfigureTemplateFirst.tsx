@@ -73,4 +73,3 @@ export function ConfigureTemplateFirst({
     );
 }
 
-export default ConfigureTemplateFirst;

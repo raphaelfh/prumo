@@ -3,7 +3,7 @@
  * Centralizes error handling and application metrics
  */
 
-export interface ErrorContext {
+interface ErrorContext {
   userId?: string;
   projectId?: string;
   articleId?: string;
@@ -12,14 +12,14 @@ export interface ErrorContext {
   metadata?: Record<string, any>;
 }
 
-export interface PerformanceMetric {
+interface PerformanceMetric {
   name: string;
   value: number;
   unit: 'ms' | 'bytes' | 'count';
   context?: ErrorContext;
 }
 
-export interface ErrorReport {
+interface ErrorReport {
   id: string;
   message: string;
   stack?: string;
@@ -255,29 +255,3 @@ class ErrorTrackingService {
 export const errorTracker = new ErrorTrackingService();
 
 // Hook for use in React
-export const useErrorTracking = () => {
-  const captureError = (error: Error, context: ErrorContext = {}) => {
-    return errorTracker.captureError(error, context);
-  };
-
-  const captureMetric = (metric: PerformanceMetric) => {
-    errorTracker.captureMetric(metric);
-  };
-
-  const startMeasurement = (name: string, context?: ErrorContext) => {
-    return errorTracker.startPerformanceMeasurement(name, context);
-  };
-
-  return {
-    captureError,
-    captureMetric,
-    startMeasurement,
-    captureMemoryUsage: () => errorTracker.captureMemoryUsage(),
-    captureAIUsage: (model: string, tokens: number, duration: number, context?: ErrorContext) => {
-      errorTracker.captureAIUsage(model, tokens, duration, context);
-    },
-    capturePDFMetrics: (pages: number, loadTime: number, fileSize: number, context?: ErrorContext) => {
-      errorTracker.capturePDFMetrics(pages, loadTime, fileSize, context);
-    },
-  };
-};

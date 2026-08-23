@@ -95,4 +95,3 @@ export const auth = {
     passwordResetSuccessDesc: 'Your password has been changed successfully. Redirecting…',
 } as const;
 
-export type AuthCopy = typeof auth;

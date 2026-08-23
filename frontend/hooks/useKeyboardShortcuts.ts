@@ -5,7 +5,7 @@
 import {useEffect, useRef} from 'react';
 import {modifierKey} from '@/lib/platform';
 
-export type ChordBinding = {
+type ChordBinding = {
   type: 'chord';
   key: string;
   mod?: boolean;
@@ -14,7 +14,7 @@ export type ChordBinding = {
   allowInInputs?: boolean;
 };
 
-export type SequenceBinding = {
+type SequenceBinding = {
   type: 'sequence';
   prefix: string;
   key: string;

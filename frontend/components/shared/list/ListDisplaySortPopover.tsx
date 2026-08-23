@@ -5,12 +5,12 @@ import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/c
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {ChevronDown, ChevronsUpDown, ChevronUp, LayoutGrid, SlidersHorizontal} from 'lucide-react';
 
-export interface SortOption {
+interface SortOption {
     value: string;
     label: string;
 }
 
-export interface DisplayColumnOption {
+interface DisplayColumnOption {
     key: string;
     label: string;
     disabled?: boolean;
