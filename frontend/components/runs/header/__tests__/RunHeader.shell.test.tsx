@@ -33,4 +33,28 @@ describe('RunHeader through HeaderShell', () => {
     // position="relative" (run pages don't scroll the header out), not sticky.
     expect(header!.className).toContain('relative');
   });
+
+  it('gives both side tracks an equal share so the centre track is centred', () => {
+    render(
+      <RunHeader value={base}>
+        <RunHeader.Left>left</RunHeader.Left>
+        <RunHeader.Center>centre</RunHeader.Center>
+        <RunHeader.Right>right</RunHeader.Right>
+      </RunHeader>,
+    );
+    const left = screen.getByText('left');
+    const centre = screen.getByTestId('run-header-center');
+    const right = screen.getByText('right').closest('div')!;
+
+    // Both side tracks grow from a 0 basis with weight 1 — that is what puts
+    // the centre track on the geometric centre.
+    expect(left).toHaveClass('flex-1', 'min-w-0');
+    expect(right).toHaveClass('flex-1', 'justify-end');
+    // Right must NOT get min-w-0: its automatic min-content floor is what
+    // keeps PrimaryAction from ever being clipped.
+    expect(right).not.toHaveClass('min-w-0');
+    // ml-auto is gone — it would pin Right and break the even split.
+    expect(right).not.toHaveClass('ml-auto');
+    expect(centre).toHaveClass('shrink-0');
+  });
 });
