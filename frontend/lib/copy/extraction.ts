@@ -495,6 +495,8 @@ export const extraction = {
     sectionNavRequiredLeft: '{{count}} required left',
     sectionNavComplete: 'All required fields complete',
     sectionNavAria: 'Section navigation',
+    sectionNavJumpNext: 'Go to next unfilled',
+    sectionNavJumpNextHint: 'Jump to the next required field still waiting for an answer.',
     errorCalculatingProgress: 'Error calculating progress',
     loadingComparison: 'Loading comparison…',
     requiredLabel: 'Required',

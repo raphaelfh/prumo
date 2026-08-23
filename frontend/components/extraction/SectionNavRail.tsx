@@ -1,7 +1,10 @@
 // frontend/components/extraction/SectionNavRail.tsx
+import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/copy';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRunEditability } from '@/components/runs/RunEditabilityContext';
 import {
   globalProgressFromRegistry,
@@ -14,6 +17,11 @@ export interface SectionNavRailProps {
   activeId: string | null;
   onSelect: (id: string) => void;
   collapsed?: boolean;
+  /**
+   * Scroll to (and focus) the next required field still waiting for an answer.
+   * Optional: without it the rail keeps its counters and simply omits the control.
+   */
+  onJumpToNextPending?: () => void;
 }
 
 const DOT_COLOR: Record<SectionNavState, string> = {
@@ -22,11 +30,21 @@ const DOT_COLOR: Record<SectionNavState, string> = {
   empty: 'bg-muted-foreground/40',
 };
 
-export default function SectionNavRail({ items, activeId, onSelect, collapsed }: SectionNavRailProps) {
+export default function SectionNavRail({
+  items,
+  activeId,
+  onSelect,
+  collapsed,
+  onJumpToNextPending,
+}: SectionNavRailProps) {
   // Read-only run: the "N required left" footer is a fill-completion CTA —
   // noise on a published view. Navigation (dots + labels) stays.
   const { readOnly } = useRunEditability();
   const global = globalProgressFromRegistry(items);
+  // Counters tell you how many are missing; this is the affordance that takes
+  // you to one. It rides the same read-only gate as the footer, and retires
+  // once there is nothing left to answer.
+  const showJump = !readOnly && !!onJumpToNextPending && global.requiredLeft > 0;
   return (
     <nav
       aria-label={t('extraction', 'sectionNavAria')}
@@ -66,14 +84,55 @@ export default function SectionNavRail({ items, activeId, onSelect, collapsed }:
           );
         })}
       </ul>
-      {!collapsed && !readOnly && (
-        <div className="mt-2 border-t border-border/40 px-2.5 pt-2">
-          <Progress value={global.percentage} className="h-1" />
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {global.requiredLeft > 0
-              ? t('extraction', 'sectionNavRequiredLeft').replace('{{count}}', String(global.requiredLeft))
-              : t('extraction', 'sectionNavComplete')}
-          </p>
+      {(showJump || (!collapsed && !readOnly)) && (
+        <div className={cn('mt-2 border-t border-border/40 pt-2', collapsed ? 'w-full px-1' : 'px-2.5')}>
+          {!collapsed && !readOnly && (
+            <>
+              <Progress value={global.percentage} className="h-1" />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {global.requiredLeft > 0
+                  ? t('extraction', 'sectionNavRequiredLeft').replace('{{count}}', String(global.requiredLeft))
+                  : t('extraction', 'sectionNavComplete')}
+              </p>
+            </>
+          )}
+          {showJump && (
+            // Local provider: the rail is mounted deep in the form tree and
+            // cannot assume a caller-supplied TooltipProvider (same reason the
+            // disposition row in FieldInput carries its own).
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  {collapsed ? (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={onJumpToNextPending}
+                      aria-label={t('extraction', 'sectionNavJumpNext')}
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={onJumpToNextPending}
+                      className="mt-2 h-7 w-full justify-start gap-1.5 px-2 text-[11px] font-normal"
+                    >
+                      <ArrowDown className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{t('extraction', 'sectionNavJumpNext')}</span>
+                    </Button>
+                  )}
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  <p>{t('extraction', 'sectionNavJumpNextHint')}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
       )}
     </nav>
