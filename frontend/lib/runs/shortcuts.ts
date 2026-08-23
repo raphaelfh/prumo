@@ -7,9 +7,9 @@
  * panel promised J/K on both run screens while only extraction bound them.
  */
 
-export type RunShortcutId = 'palette' | 'nextPrev' | 'togglePdf' | 'sidebar' | 'esc';
+type RunShortcutId = 'palette' | 'nextPrev' | 'togglePdf' | 'sidebar' | 'esc';
 
-export type RunShortcutCopyKey =
+type RunShortcutCopyKey =
   | 'shortcutPalette'
   | 'shortcutNextPrev'
   | 'shortcutTogglePdf'

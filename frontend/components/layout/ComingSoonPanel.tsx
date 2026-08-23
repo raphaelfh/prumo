@@ -24,4 +24,3 @@ export const ComingSoonPanel: React.FC<ComingSoonPanelProps> = ({title, icon: Ic
   </div>
 );
 
-export default ComingSoonPanel;

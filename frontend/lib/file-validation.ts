@@ -78,27 +78,6 @@ export function validateFile(file: File | null): FileValidationResult {
   };
 }
 
-/**
- * Validates multiple files
- */
-export function validateFiles(files: File[]): {
-  valid: File[];
-  invalid: Array<{ file: File; error: string }>;
-} {
-  const valid: File[] = [];
-  const invalid: Array<{ file: File; error: string }> = [];
-
-  files.forEach(file => {
-    const result = validateFile(file);
-    if (result.valid && result.file) {
-      valid.push(result.file);
-    } else if (result.error) {
-      invalid.push({ file, error: result.error });
-    }
-  });
-
-  return { valid, invalid };
-}
 
 /**
  * Generates a unique, safe storage key

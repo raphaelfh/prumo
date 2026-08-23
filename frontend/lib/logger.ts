@@ -55,16 +55,4 @@ class Logger {
 export const logger = new Logger();
 
 // Helper for performance logs
-export const perfLog = {
-  start(label: string) {
-    if (isDev) {
-      console.time(label);
-    }
-  },
-  end(label: string) {
-    if (isDev) {
-      console.timeEnd(label);
-    }
-  }
-};
 

@@ -9,9 +9,9 @@
 
 // =================== TYPES ===================
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-export interface LogEntry {
+interface LogEntry {
   timestamp: string;
   level: LogLevel;
   operation: string;
@@ -21,7 +21,7 @@ export interface LogEntry {
   error?: Error;
 }
 
-export interface PerformanceMetric {
+interface PerformanceMetric {
   operation: string;
   startTime: number;
   endTime?: number;
@@ -126,7 +126,7 @@ const metricsStorage = new MetricsStorage();
 
 // =================== LOGGER ===================
 
-export class ExtractionLogger {
+class ExtractionLogger {
   private context: Record<string, any>;
 
   constructor(context: Record<string, any> = {}) {
@@ -234,7 +234,7 @@ export class ExtractionLogger {
 
 // =================== PERFORMANCE TRACKER ===================
 
-export class PerformanceTracker {
+class PerformanceTracker {
   private activeMetrics = new Map<string, PerformanceMetric>();
 
   /**
@@ -334,52 +334,40 @@ export const extractionLogger = new ExtractionLogger({ module: 'extraction' });
  */
 export const performanceTracker = new PerformanceTracker();
 
-/**
- * Create logger with specific context
- */
-export function createLogger(context: Record<string, any>): ExtractionLogger {
-  return new ExtractionLogger(context);
-}
 
 /**
  * Get all logs (useful for debug)
  */
-export function getLogs(): LogEntry[] {
+function getLogs(): LogEntry[] {
   return logStorage.getAll();
 }
 
-/**
- * Get logs for a specific operation
- */
-export function getLogsByOperation(operation: string): LogEntry[] {
-  return logStorage.getByOperation(operation);
-}
 
 /**
  * Get all errors
  */
-export function getErrors(): LogEntry[] {
+function getErrors(): LogEntry[] {
   return logStorage.getErrors();
 }
 
 /**
  * Get performance metrics
  */
-export function getMetrics(): PerformanceMetric[] {
+function getMetrics(): PerformanceMetric[] {
   return metricsStorage.getAll();
 }
 
 /**
  * Get performance stats
  */
-export function getPerformanceStats(operation: string) {
+function getPerformanceStats(operation: string) {
   return metricsStorage.getStats(operation);
 }
 
 /**
  * Clear logs and metrics (useful for tests)
  */
-export function clearObservability() {
+function clearObservability() {
   logStorage.clear();
   metricsStorage.clear();
 }
@@ -387,7 +375,7 @@ export function clearObservability() {
 /**
  * Export logs as JSON (useful for analysis)
  */
-export function exportLogs(): string {
+function exportLogs(): string {
   return JSON.stringify({
     logs: logStorage.getAll(),
     metrics: metricsStorage.getAll(),

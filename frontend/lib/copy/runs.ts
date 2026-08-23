@@ -100,4 +100,3 @@ export const runs = {
   revisionDerivedFrom: 'Derived from a previous version',
 } as const;
 
-export type RunsCopy = typeof runs;

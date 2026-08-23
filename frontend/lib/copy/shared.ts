@@ -41,4 +41,3 @@ export const shared = {
     compareNoValue: '—',
 } as const;
 
-export type SharedCopy = typeof shared;

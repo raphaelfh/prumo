@@ -19,13 +19,13 @@ export interface ExtractionExportRequest {
     anonymize_reviewer_names?: boolean;
 }
 
-export interface StartExtractionExportSyncResult {
+interface StartExtractionExportSyncResult {
     kind: "sync";
     blob: Blob;
     filename: string;
 }
 
-export interface StartExtractionExportAsyncResult {
+interface StartExtractionExportAsyncResult {
     kind: "async";
     job_id: string;
 }
@@ -42,6 +42,3 @@ export interface ExtractionExportStatus {
     error?: string;
 }
 
-export interface ExtractionExportCancelResult {
-    cancelled: boolean;
-}

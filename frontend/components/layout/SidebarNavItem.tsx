@@ -39,4 +39,3 @@ export const SidebarNavItem: React.FC<SidebarNavItemProps> = ({icon: Icon, label
   </Button>
 );
 
-export default SidebarNavItem;

@@ -119,4 +119,3 @@ export const user = {
     apiKeysRemoveDescription: 'Are you sure you want to remove this API key? This action cannot be undone.',
 } as const;
 
-export type UserCopy = typeof user;

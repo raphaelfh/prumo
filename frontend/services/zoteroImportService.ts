@@ -369,15 +369,3 @@ export function importZoteroCollection(
   }, 'zoteroImportService.importZoteroCollection');
 }
 
-/**
- * Fetch the sync status for one run.
- * Returns ErrorResult so the polling loop in useZoteroSyncStatus has no
- * try/catch/finally.
- */
-export function fetchZoteroSyncStatus(
-  syncRunId: string,
-): Promise<ErrorResult<ZoteroSyncStatus>> {
-  return toResult(async () => {
-    return zoteroService.getSyncStatus(syncRunId);
-  }, 'zoteroImportService.fetchZoteroSyncStatus');
-}

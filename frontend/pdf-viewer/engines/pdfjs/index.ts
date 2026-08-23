@@ -35,5 +35,5 @@ class PdfJsEngineImpl implements PDFEngine {
 export const pdfJsEngine: PDFEngine = new PdfJsEngineImpl();
 
 // Re-export the handle classes so consumers can identify them in tests.
-export {PdfJsDocumentHandle} from './document';
-export {PdfJsPageHandle} from './page';
+;
+;

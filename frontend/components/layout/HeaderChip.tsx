@@ -1,4 +1,4 @@
-import { cva, type VariantProps } from 'class-variance-authority';
+import { cva } from 'class-variance-authority';
 
 // Shared chip/pill for header metadata (AI count, reviewers divergence, role,
 // kind badge). Replaces the hand-rolled per-call-site pills so radius / focus
@@ -16,4 +16,3 @@ export const headerChip = cva(
   },
 );
 
-export type HeaderChipVariants = VariantProps<typeof headerChip>;

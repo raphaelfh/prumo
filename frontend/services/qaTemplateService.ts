@@ -34,65 +34,6 @@ export interface QATemplateWithDomains {
 // useQATemplate: load a global QA template + entity types + fields
 // ---------------------------------------------------------------------------
 
-/**
- * Load a global QA template (from extraction_templates_global) together
- * with its entity types and fields tree. Validates that the template kind
- * is "quality_assessment".
- *
- * NOTE: error messages are stored in hook state, not shown as toasts.
- */
-export function loadGlobalQATemplate(
-  templateId: string,
-): Promise<ErrorResult<QATemplateWithDomains>> {
-  return toResult(async () => {
-    // 1) Template
-    const tplRes = await supabase
-      .from('extraction_templates_global')
-      .select('id, name, description, framework, version, kind')
-      .eq('id', templateId)
-      .maybeSingle();
-    if (tplRes.error) throw tplRes.error;
-    if (!tplRes.data) throw new Error('Template not found');
-    if (tplRes.data.kind !== 'quality_assessment') {
-      throw new Error(
-        `Template kind '${tplRes.data.kind}' is not 'quality_assessment'`,
-      );
-    }
-
-    // 2) Entity types (domains)
-    const etRes = await supabase
-      .from('extraction_entity_types')
-      .select('*')
-      .eq('template_id', templateId)
-      .order('sort_order', {ascending: true});
-    if (etRes.error) throw etRes.error;
-
-    // 3) Fields for each entity type
-    const entityIds = (etRes.data ?? []).map((e) => e.id);
-    const fieldsRes = entityIds.length
-      ? await supabase
-          .from('extraction_fields')
-          .select('*')
-          .in('entity_type_id', entityIds)
-          .order('sort_order', {ascending: true})
-      : {data: [], error: null};
-    if (fieldsRes.error) throw fieldsRes.error;
-
-    const fieldsByEntity = new Map<string, ExtractionField[]>();
-    for (const f of fieldsRes.data ?? []) {
-      const list = fieldsByEntity.get(f.entity_type_id) ?? [];
-      list.push(f as ExtractionField);
-      fieldsByEntity.set(f.entity_type_id, list);
-    }
-
-    const domains: QADomain[] = (etRes.data ?? []).map((et) => ({
-      entityType: et as ExtractionEntityType,
-      fields: fieldsByEntity.get(et.id) ?? [],
-    }));
-
-    return {template: tplRes.data as QATemplate, domains};
-  }, 'qaTemplateService.loadGlobalQATemplate');
-}
 
 // ---------------------------------------------------------------------------
 // useProjectQATemplate: load a project-scoped QA template + entity types

@@ -231,17 +231,4 @@ export function filterSuggestionsByConfidence(
   );
 }
 
-/**
- * Sorts suggestions by confidence (highest first)
- *
- * @param suggestions - Record of suggestions
- * @returns Sorted array of [key, suggestion]
- */
-export function sortSuggestionsByConfidence(
-  suggestions: Record<string, AISuggestion>
-): Array<[string, AISuggestion]> {
-  return Object.entries(suggestions).sort(
-    ([, a], [, b]) => b.confidence - a.confidence
-  );
-}
 

@@ -8,5 +8,5 @@ export {
   ViewerProvider,
   useViewerStore,
   useViewerStoreApi,
-  type ViewerProviderProps,
+  
 } from './context';

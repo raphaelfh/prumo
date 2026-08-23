@@ -6,7 +6,7 @@ import type {StoreApi} from 'zustand';
 import type {ViewerState} from '../core/state';
 import type {createViewerStore} from '../core/store';
 
-export interface RootProps {
+interface RootProps {
   source: PDFSource | null;
   store?: StoreApi<ViewerState>;
   initial?: Parameters<typeof createViewerStore>[0];

@@ -44,7 +44,7 @@ export async function resolveAuthToken(page?: Page): Promise<string> {
   return token;
 }
 
-export async function extractSupabaseTokenFromLocalStorage(page: Page): Promise<string | null> {
+async function extractSupabaseTokenFromLocalStorage(page: Page): Promise<string | null> {
   return page.evaluate(() => {
     const storageEntries = Object.entries(localStorage);
     for (const [key, value] of storageEntries) {

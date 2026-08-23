@@ -14,13 +14,13 @@ const EXPORT_BASE = "/api/v1/articles-export";
 export type ExportFormat = "csv" | "ris" | "rdf";
 export type FileScope = "none" | "main_only" | "all";
 
-export interface StartExportSyncResult {
+interface StartExportSyncResult {
     kind: "sync";
     blob: Blob;
     filename: string;
 }
 
-export interface StartExportAsyncResult {
+interface StartExportAsyncResult {
     kind: "async";
     job_id: string;
 }
@@ -117,13 +117,3 @@ export async function getExportStatus(
     return data;
 }
 
-/**
- * Cancel export: POST .../cancel or DELETE .../status/{job_id}.
- */
-export async function cancelExport(jobId: string): Promise<{ cancelled: boolean }> {
-    const data = await apiClient<{ cancelled: boolean }>(
-        `${EXPORT_BASE}/status/${jobId}`,
-        {method: "DELETE"}
-    );
-    return data;
-}

@@ -7,9 +7,7 @@ import {cn} from "@/lib/utils";
 
 const Sheet = SheetPrimitive.Root;
 
-const SheetTrigger = SheetPrimitive.Trigger;
 
-const SheetClose = SheetPrimitive.Close;
 
 const SheetPortal = SheetPrimitive.Portal;
 
@@ -101,13 +99,13 @@ SheetDescription.displayName = SheetPrimitive.Description.displayName;
 
 export {
   Sheet,
-  SheetClose,
+  
   SheetContent,
   SheetDescription,
-  SheetFooter,
+  
   SheetHeader,
-  SheetOverlay,
-  SheetPortal,
+  
+  
   SheetTitle,
-  SheetTrigger,
+  
 };
