@@ -18,6 +18,7 @@ from app.seed import (
     _QUADAS2_SIGNALING,
     _YES_NO,
     _YES_NO_UNCLEAR,
+    _field,
     _signaling,
     seed_charms,
     seed_charms_mm,
@@ -128,3 +129,38 @@ def test_llm_enum_values_exclude_disposition_codes() -> None:
     field = _signaling(_SENTINEL_EID, "q", "Question?", 0, _PROBAST_SIGNALING)
     assert _enum_values(field) == ["Y", "PY", "PN", "N"]
     assert _DISPOSITION_STRINGS.isdisjoint(_enum_values(field))
+
+
+# --- explicit helper knobs (spec 2026-08-22 §5: the v2 seed needs optional
+# fields, llm-less assessor-owned fields, and NA on exactly 6 of 42 rows) ---
+
+
+def test_field_accepts_optional_and_llm_none() -> None:
+    f = _field(_SENTINEL_EID, "x", "X", "d", "text", 0, llm=None, is_required=False)
+    assert f.is_required is False
+    assert f.llm_description is None
+
+
+def test_field_defaults_stay_required_with_llm() -> None:
+    f = _field(_SENTINEL_EID, "x", "X", "d", "text", 0, llm="prompt")
+    assert f.is_required is True
+    assert f.llm_description == "prompt"
+
+
+def test_signaling_explicit_na_override_beats_identity() -> None:
+    f = _signaling(_SENTINEL_EID, "q", "Q?", 0, _PROBAST_SIGNALING, allows_not_applicable=False)
+    assert f.allows_not_applicable is False
+
+
+def test_signaling_explicit_na_true_on_a_copy() -> None:
+    f = _signaling(
+        _SENTINEL_EID, "q", "Q?", 0, list(_PROBAST_SIGNALING), allows_not_applicable=True
+    )
+    assert f.allows_not_applicable is True
+
+
+def test_signaling_default_keeps_the_identity_rule() -> None:
+    assert _signaling(_SENTINEL_EID, "q", "Q?", 0, _PROBAST_SIGNALING).allows_not_applicable
+    assert not _signaling(
+        _SENTINEL_EID, "q", "Q?", 0, list(_PROBAST_SIGNALING)
+    ).allows_not_applicable

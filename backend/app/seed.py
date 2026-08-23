@@ -1346,23 +1346,27 @@ def _field(
     ftype: str,
     sort: int,
     *,
-    llm: str,
+    llm: str | None,
     allowed: list[str] | None = None,
     unit: str | None = None,
     allows_not_applicable: bool = False,
     allows_not_evaluated: bool = False,
+    is_required: bool = True,
 ) -> ExtractionField:
     """Build an ``ExtractionField`` row. Shared by the seeded templates.
 
-    ``llm`` is required rather than optional: a field with no extraction
-    prompt silently degrades AI extraction for that variable, and every
-    seeded field has always supplied one.
+    ``llm`` stays a required keyword so omitting it is a loud choice: a field
+    with no extraction prompt silently degrades AI extraction for that
+    variable. ``None`` is the deliberate case — assessor-owned fields
+    (judgments, their rationales, Step-4 summaries) are excluded from every
+    LLM call and carry no prompt at all.
 
-    ``is_required`` is always ``True``, matching every seeded template. A
-    seeded field is answerable with the universal ``no_information`` marker,
-    which the finalize gate counts as *filled*, so marking fields required
-    turns "the source is silent" into an explicitly recorded answer instead
-    of an indistinguishable blank (constitution IX). Managers relax
+    ``is_required`` defaults ``True``: a seeded field is answerable with the
+    universal ``no_information`` marker, which the finalize gate counts as
+    *filled*, so marking fields required turns "the source is silent" into
+    an explicitly recorded answer instead of an indistinguishable blank
+    (constitution IX). Optional is for free-text describe/rationale/summary
+    boxes the instrument itself leaves optional. Managers still relax
     ``is_required`` per project clone when they want a looser gate.
     """
     return ExtractionField(
@@ -1372,7 +1376,7 @@ def _field(
         description=desc,
         field_type=ftype,
         sort_order=sort,
-        is_required=True,
+        is_required=is_required,
         allowed_values=allowed,
         unit=unit,
         llm_description=llm,
@@ -1389,13 +1393,17 @@ def _signaling(
     allowed: list[str],
     *,
     llm: str | None = None,
+    allows_not_applicable: bool | None = None,
 ) -> ExtractionField:
     """Build a signaling-question ExtractionField (select with fixed answer set).
 
     PROBAST signaling questions historically offered "NA" (not applicable); under
     ADR-0016 that becomes the opt-in ``not_applicable`` disposition flag. Detected
     by identity of the PROBAST answer set (QUADAS-2's Y/N/Unclear set never
-    offered NA, so it stays flag-free).
+    offered NA, so it stays flag-free). An EXPLICIT ``allows_not_applicable``
+    overrides the identity rule — PROBAST+AI v2 restricts NA to the
+    instrument's four conditional items, so its seed passes the flag per row
+    while the classic seeds keep the default.
 
     ``llm`` overrides the generic instruction for checklists (PROBAST+AI) whose
     published elaboration gives each question its own criterion. Always route
@@ -1410,7 +1418,11 @@ def _signaling(
         "select",
         sort,
         allowed=allowed,
-        allows_not_applicable=(allowed is _PROBAST_SIGNALING),
+        allows_not_applicable=(
+            (allowed is _PROBAST_SIGNALING)
+            if allows_not_applicable is None
+            else allows_not_applicable
+        ),
         llm=llm or f"Answer the signaling question: {question}",
     )
 
