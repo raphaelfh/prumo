@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 last_reviewed: 2026-08-23
 owner: '@raphaelfh'
 ---

@@ -174,4 +174,10 @@ export async function ensureFixtures(): Promise<void> {
   // Import-test project: owner only, intentionally NO CHARMS.
   await ensureProject(F.IMPORT_PROJECT_ID, "E2E Import Project", ownerId);
   await ensureMembership(F.IMPORT_PROJECT_ID, ownerId, "manager");
+
+  // Portable import/export flow: needs an ACTIVE template from the start and
+  // must not share a project with the catalogue-import spec.
+  await ensureProject(F.PORTABLE_PROJECT_ID, "E2E Portable Project", ownerId);
+  await ensureMembership(F.PORTABLE_PROJECT_ID, ownerId, "manager");
+  await ensureCharmsImported(F.PORTABLE_PROJECT_ID, ownerToken);
 }

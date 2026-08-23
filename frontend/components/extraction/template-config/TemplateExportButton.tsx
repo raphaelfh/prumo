@@ -64,11 +64,14 @@ export function TemplateExportButton({projectId, templateId}: TemplateExportButt
             variant="ghost"
             size="sm"
             data-testid="template-config-export"
+            aria-label={t('templateConfig', 'exportTemplateButton')}
             onClick={handleClick}
             className="h-8 text-muted-foreground hover:text-foreground"
           >
-            <FileDown className="mr-2 h-4 w-4" />
-            {t('templateConfig', 'exportTemplateButton')}
+            <FileDown className="h-4 w-4 2xl:mr-2" />
+            {/* The command bar is full at 1280 (its title truncated once this
+                button joined it); the label earns its room only from 2xl. */}
+            <span className="hidden 2xl:inline">{t('templateConfig', 'exportTemplateButton')}</span>
           </Button>
         </TooltipTrigger>
         <TooltipContent>{t('templateConfig', 'exportTemplateTooltip')}</TooltipContent>

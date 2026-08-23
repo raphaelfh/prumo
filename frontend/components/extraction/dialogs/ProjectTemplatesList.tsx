@@ -92,7 +92,11 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
                   <span className="truncate font-medium text-foreground">{tpl.name}</span>
                   <Badge variant="outline" className="text-[11px] uppercase">{tpl.framework}</Badge>
                   {tpl.is_active && (
-                    <Badge data-testid={`project-template-active-${tpl.id}`} className="text-[11px]">
+                    <Badge
+                      variant="secondary"
+                      data-testid={`project-template-active-${tpl.id}`}
+                      className="text-[11px]"
+                    >
                       {t('templateConfig', 'projectTemplateActive')}
                     </Badge>
                   )}
