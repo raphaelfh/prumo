@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { toast } from "sonner";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -1224,6 +1224,138 @@ describe("QualityAssessmentFullScreen — worklist navigation", () => {
         "/projects/p1?tab=quality",
       ),
     );
+  });
+});
+
+/**
+ * Header article pager + shortcut parity with the extraction screen
+ * (2026-08-22). The shared help panel has always advertised "J / K — Next /
+ * previous article" on BOTH run screens; until this change the QA screen had
+ * no pager, no J/K and no ⌘K palette, so the help panel promised a binding
+ * that did not exist.
+ */
+describe("QualityAssessmentFullScreen — header pager, J/K and ⌘K", () => {
+  beforeAll(() => {
+    // cmdk scrolls the selected item into view; jsdom has no scrollIntoView.
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  // Self-contained: the describes above end on vi.restoreAllMocks(), which
+  // wipes the module-factory apiClient implementation for everything after it.
+  beforeEach(() => {
+    mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
+    vi.mocked(apiClient).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/hitl/sessions") {
+        return {
+          run_id: "run-1",
+          kind: "quality_assessment",
+          project_template_id: "tpl-1",
+          instances_by_entity_type: { "et-1": "inst-1" },
+        };
+      }
+      if (url === "/api/v1/runs/run-1/view") {
+        return {
+          run: {
+            id: "run-1",
+            project_id: "p1",
+            article_id: "a1",
+            template_id: "tpl-1",
+            kind: "quality_assessment",
+            version_id: "v-1",
+            stage: "extract",
+            status: "running",
+            hitl_config_snapshot: {},
+            parameters: {},
+            results: {},
+            created_at: new Date().toISOString(),
+            created_by: "u-1",
+          },
+          proposals: [],
+          decisions: [],
+          consensus_decisions: [],
+          published_states: [],
+          entity_types: [],
+          current_values: [],
+        };
+      }
+      if (url.includes("/suggestions")) {
+        return { suggestions: [], count: 0 };
+      }
+      if (url.includes("/files") || url.includes("/text-blocks")) {
+        return [];
+      }
+      return {};
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("mounts the pager in the header's centre track", async () => {
+    renderPage();
+    const centre = await screen.findByTestId("run-header-center");
+    await waitFor(() =>
+      expect(
+        within(centre).getByRole("button", { name: /next article/i }),
+      ).toBeInTheDocument(),
+    );
+    // First of two articles: previous is disabled, next is live.
+    expect(
+      within(centre).getByRole("button", { name: /previous article/i }),
+    ).toBeDisabled();
+    expect(within(centre).getByLabelText("Article 1 of 2")).toBeInTheDocument();
+  });
+
+  it("the next arrow opens the next article, carrying :templateId verbatim", async () => {
+    renderPage();
+    const next = await screen.findByRole("button", { name: /next article/i });
+    await waitFor(() => expect(next).not.toBeDisabled());
+    await userEvent.click(next);
+    await waitFor(() =>
+      expect(screen.getByTestId("probe-location")).toHaveTextContent(
+        "/projects/p1/articles/a2/quality-assessment/tpl-1",
+      ),
+    );
+  });
+
+  it("J opens the next article — the binding the help panel already promised", async () => {
+    renderPage();
+    // Wait for the worklist read to land; below two articles J/K is inert.
+    await screen.findByRole("button", { name: /next article/i });
+    await userEvent.keyboard("j");
+    await waitFor(() =>
+      expect(screen.getByTestId("probe-location")).toHaveTextContent(
+        "/projects/p1/articles/a2/quality-assessment/tpl-1",
+      ),
+    );
+  });
+
+  it("K on the LAST article stays put (end-of-list guard, no wrap)", async () => {
+    renderPage("/projects/p1/articles/a2/quality-assessment/tpl-1");
+    await screen.findByRole("button", { name: /next article/i });
+    // "a2" is last, so J has nowhere to go; K walks back to "a1".
+    await userEvent.keyboard("j");
+    expect(screen.getByTestId("probe-location")).toHaveTextContent(
+      "/projects/p1/articles/a2/quality-assessment/tpl-1",
+    );
+    await userEvent.keyboard("k");
+    await waitFor(() =>
+      expect(screen.getByTestId("probe-location")).toHaveTextContent(
+        "/projects/p1/articles/a1/quality-assessment/tpl-1",
+      ),
+    );
+  });
+
+  it("⌘K opens the command palette with the run's actions", async () => {
+    renderPage();
+    await screen.findByTestId("run-stage-current");
+    await userEvent.keyboard("{Meta>}k{/Meta}");
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText("Toggle source panel"),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("View run status")).toBeInTheDocument();
   });
 });
 
