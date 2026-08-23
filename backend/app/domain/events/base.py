@@ -181,19 +181,6 @@ class EventBus:
 
         return results
 
-    def publish_sync(self, event: DomainEvent) -> None:
-        """
-        Publica evento de forma sincrona (para contextos sync).
-
-        Dispara task assincrona em background.
-        """
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(self.publish(event))
-        except RuntimeError:
-            # Nao ha loop rodando, criar um
-            asyncio.run(self.publish(event))
-
 
 # Instancia global do event bus
 event_bus = EventBus()
