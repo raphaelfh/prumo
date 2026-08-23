@@ -188,6 +188,7 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
               key={modelContainer.id}
               entityType={modelContainer}
               instances={activeModelInstance}
+              totalInstanceCount={models.length}
               fields={modelContainer.fields}
               values={values}
               onValueChange={updateValue}

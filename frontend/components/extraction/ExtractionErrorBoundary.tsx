@@ -13,6 +13,7 @@ import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {exportLogs, extractionLogger} from '@/lib/extraction/observability';
 import {t} from '@/lib/copy';
+import {triggerDownload} from '@/lib/download';
 
 interface Props {
   children: ReactNode;
@@ -76,12 +77,7 @@ export class ExtractionErrorBoundary extends Component<Props, State> {
   handleExportLogs = () => {
     const logs = exportLogs();
     const blob = new Blob([logs], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `extraction-error-logs-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload(blob, `extraction-error-logs-${Date.now()}.json`);
   };
 
   handleGoHome = () => {

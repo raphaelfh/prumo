@@ -116,6 +116,9 @@ export function useHITLProjectTemplates({
     const result = await fetchProjectTemplates(projectId, kind, includeInactive);
     if (result.ok) {
       setTemplates(result.data as ProjectTemplate[]);
+      // A recovered fetch clears the last failure: consumers render `error`
+      // as a banner, which must not outlive the condition it reports.
+      setError(null);
       return result.data as ProjectTemplate[];
     }
     setError(result.error.message);
@@ -138,6 +141,7 @@ export function useHITLProjectTemplates({
       if (projectResult.ok && globalResult.ok) {
         setTemplates(projectResult.data as ProjectTemplate[]);
         setGlobalTemplates(globalResult.data as GlobalTemplate[]);
+        setError(null);
       } else {
         const err = projectResult.ok ? globalResult : projectResult;
         if (!err.ok) setError(err.error.message);

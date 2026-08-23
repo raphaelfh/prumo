@@ -23,6 +23,7 @@ from app.llm.extractor import LlmUsage, extract_structured
 from app.llm.prompts import model_identification
 from app.llm.provider import build_model
 from app.models.extraction import (
+    DEFAULT_ENTRY_LABEL,
     ExtractionEntityRole,
     ExtractionInstance,
     ExtractionRun,
@@ -479,7 +480,7 @@ class ModelExtractionService(LoggerMixin):
             None,
         )
         entry_label = container.entry_label if container else None
-        return (entry_label or "model").title()
+        return (entry_label or DEFAULT_ENTRY_LABEL).title()
 
     async def _get_child_entity_types(
         self,

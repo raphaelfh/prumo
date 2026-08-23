@@ -62,10 +62,7 @@ export const runs = {
   // Navigation
   articlePrevious: 'Previous article',
   articleNext: 'Next article',
-  // Worklist popover
-  worklistSearch: 'Go to article…',
-  worklistPosition: '{{n}} of {{m}}',
-  worklistPositionLabel: 'Article {{n}} of {{m}}, open list',
+  worklistPositionLabel: 'Article {{n}} of {{m}}',
   aiPendingSuggestions: '{{n}} AI suggestions pending',
   compareToggleLabel: 'Compare',
   // CommandPalette
@@ -73,8 +70,6 @@ export const runs = {
   commandEmpty: 'No results',
   commandActions: 'Actions',
   commandGoToArticle: 'Go to article…',
-  keyboardShortcuts: 'Keyboard shortcuts',
-  commandPaletteOpen: 'Open command palette',
   viewRunStatus: 'View run status',
   // SidebarToggle (left, mirrors PanelToggle)
   sidebarToggle: 'Toggle navigation',
