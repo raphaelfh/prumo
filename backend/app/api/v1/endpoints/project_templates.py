@@ -19,13 +19,21 @@
   back over the live rows and clear the marker. Partial by construction —
   nodes the review workflow already references are kept and reported.
 
+* ``GET /api/v1/projects/{project_id}/templates/{template_id}/export`` —
+  the template's LIVE structure as a ``prumo-template@1`` document.
+* ``POST /api/v1/projects/{project_id}/templates/import`` — a NEW active
+  project template from such a document (same response as clone).
+* ``DELETE /api/v1/projects/{project_id}/templates/{template_id}`` —
+  inactive, unreferenced templates only (typed 409s otherwise).
+
 These are project-scoped. ``POST /api/v1/hitl/sessions`` is per-article run
 lifecycle and is separate.
 """
 
+from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 
 from app.api.deps.security import require_project_manager, require_project_scope
 from app.core.deps import DbSession
@@ -42,10 +50,13 @@ from app.schemas.hitl_session import (
     TemplateActiveVersionRead,
     TemplateConfigDiffRead,
     TemplateConfigStatusRead,
+    TemplateDeleteRefusalResponse,
+    TemplateDeleteResponse,
     TemplateDiscardRefusalResponse,
     TemplateDraftLockRefusalResponse,
     TemplateInstructionRead,
     TemplateKind,
+    TemplatePortableRefusalResponse,
     TemplatePublishRefusalResponse,
     TemplateVersionHistoryRead,
     UpdateTemplateActiveRequest,
@@ -53,6 +64,7 @@ from app.schemas.hitl_session import (
     UpdateTemplateInstructionRequest,
     UpdateTemplateInstructionResponse,
 )
+from app.schemas.template_portable import PortableTemplate
 from app.services.project_template_active_service import (
     LastActiveExtractionTemplateError,
     ProjectTemplateNotFoundError,
@@ -63,11 +75,17 @@ from app.services.template_clone_service import (
     TemplateCloneService,
     TemplateNotFoundError,
 )
+from app.services.template_delete_service import delete_template
 from app.services.template_discard_service import discard_draft
 from app.services.template_draft_lock_service import take_over_draft_lock
 from app.services.template_instruction_service import (
     get_template_instruction,
     set_template_instruction,
+)
+from app.services.template_portable_service import (
+    import_portable,
+    parse_portable_document,
+    to_portable,
 )
 from app.services.template_restore_version_service import (
     VersionNotFoundError,
@@ -171,10 +189,112 @@ async def update_project_template_active(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except LastActiveExtractionTemplateError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    await db.commit()
     return ApiResponse.success(
         result,
         trace_id=getattr(request.state, "trace_id", None),
     )
+
+
+@router.get(
+    "/{project_id}/templates/{template_id}/export",
+    # The file IS the document: defaults omitted, file keys (``type``,
+    # ``required``) not attribute names. ``ok`` is a required envelope field
+    # so it survives exclude_defaults; ``error``/``trace_id`` drop when None.
+    response_model_exclude_defaults=True,
+    responses={
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": TemplatePortableRefusalResponse,
+            # Explicit: the default is http.HTTPStatus(422).phrase, which Python
+            # 3.13 renamed ("Unprocessable Content" vs 3.12's "Entity") — the
+            # generated contract must not depend on the generator's Python.
+            "description": "Refused: not a valid prumo-template@1 document (or template)",
+        }
+    },
+)
+@limiter.limit("30/minute")
+async def export_project_template(
+    project_id: UUID,
+    template_id: UUID,
+    request: Request,
+    db: DbSession,
+    _user_sub: UUID = Depends(require_project_manager),
+) -> ApiResponse[PortableTemplate]:
+    """Export the template's LIVE structure as a ``prumo-template@1`` document.
+
+    Extraction templates only (a QA id 404s). Reads no draft state and takes
+    no locks — the pending-draft confirmation is the frontend's (it already
+    holds ``config-status``). The frontend writes ``data`` to disk, never the
+    envelope. ``TemplateExportInvalidError`` (legacy rows the format cannot
+    carry) is an ``AppError`` and reaches ``app_error_handler`` typed.
+    """
+    try:
+        doc = await to_portable(db, project_id=project_id, template_id=template_id)
+    except ProjectTemplateNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return ApiResponse.success(doc, trace_id=getattr(request.state, "trace_id", None))
+
+
+@router.post(
+    "/{project_id}/templates/import",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": TemplatePortableRefusalResponse,
+            # Explicit: the default is http.HTTPStatus(422).phrase, which Python
+            # 3.13 renamed ("Unprocessable Content" vs 3.12's "Entity") — the
+            # generated contract must not depend on the generator's Python.
+            "description": "Refused: not a valid prumo-template@1 document (or template)",
+        }
+    },
+)
+@limiter.limit("10/minute")
+async def import_project_template(
+    project_id: UUID,
+    request: Request,
+    db: DbSession,
+    body: dict[str, Any] = Body(...),
+    current_user_sub: UUID = Depends(require_project_manager),
+) -> ApiResponse[CloneTemplateResponse]:
+    """Import a ``prumo-template@1`` document as a NEW active project template.
+
+    The body is deliberately untyped at the HTTP layer: there is no
+    ``RequestValidationError`` handler, so a typed body would yield FastAPI's
+    un-enveloped 422 — parsing in the service is what turns a bad file into
+    the typed ``TemplatePortableRefusalCode`` 422s (declared above so the
+    contract still reaches schema.d.ts; the document's own schema is the
+    export response's ``PortableTemplate`` component). Same response shape
+    as the catalogue clone. A concurrent activation race is a 409 CONFLICT.
+    """
+    doc = parse_portable_document(body)
+    result = await import_portable(db, project_id=project_id, doc=doc, user_id=current_user_sub)
+    await db.commit()
+    return ApiResponse.success(result, trace_id=getattr(request.state, "trace_id", None))
+
+
+@router.delete(
+    "/{project_id}/templates/{template_id}",
+    responses={status.HTTP_409_CONFLICT: {"model": TemplateDeleteRefusalResponse}},
+)
+@limiter.limit("10/minute")
+async def delete_project_template(
+    project_id: UUID,
+    template_id: UUID,
+    request: Request,
+    db: DbSession,
+    _user_sub: UUID = Depends(require_project_manager),
+) -> ApiResponse[TemplateDeleteResponse]:
+    """Delete an INACTIVE, unreferenced project template (spec §5.7).
+
+    ``TemplateActiveError`` / ``TemplateInUseError`` are ``AppError``s and
+    reach ``app_error_handler`` typed (``TemplateDeleteRefusalCode``).
+    """
+    try:
+        result = await delete_template(db, project_id=project_id, template_id=template_id)
+    except ProjectTemplateNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    await db.commit()
+    return ApiResponse.success(result, trace_id=getattr(request.state, "trace_id", None))
 
 
 @router.get(

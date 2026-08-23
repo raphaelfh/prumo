@@ -1,0 +1,9 @@
+{"run_id":"2026-08-23-1530-portable-templates","gate":"fitness:run_all","exit_code":0,"note":"10/10 checkers OK"}
+{"run_id":"2026-08-23-1530-portable-templates","gate":"subagent:concept-drift","exit_code":0,"rows":6}
+{"run_id":"2026-08-23-1530-portable-templates","gate":"subagent:layered-arch","exit_code":0,"rows":4}
+{"run_id":"2026-08-23-1530-portable-templates","gate":"subagent:security","exit_code":0,"rows":4}
+{"run_id":"2026-08-23-1530-portable-templates","gate":"subagent:legacy-spotter","exit_code":0,"rows":3}
+{"run_id":"2026-08-23-1530-portable-templates","gate":"subagent:test-gaps","exit_code":0,"rows":9}
+{"run_id":"2026-08-23-1530-portable-templates","gate":"subagent:converge","exit_code":0,"rows":4}
+{"run_id":"2026-08-23-1530-portable-templates","gate":"verify_all.sh#1","exit_code":1,"note":"check_file_size GREW extraction_export_service.py 2342/2341"}
+{"run_id":"2026-08-23-1530-portable-templates","gate":"verify_all.sh#2","exit_code":0,"note":"pytest 3592, vitest 2014, playwright 42"}
