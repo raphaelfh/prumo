@@ -45,12 +45,21 @@ async def owned_template(
     nonexistent id raises the same ``ProjectTemplateNotFoundError`` (no
     existence oracle). ``kind`` narrows to one lineage; ``for_update`` locks
     the row for callers whose guards must not race a concurrent writer.
+
+    Ownership and kind are part of the WHERE clause, not a post-read check:
+    ``FOR UPDATE`` locks only the rows the query returns, so a foreign
+    template's row is never locked — not even for the instant before a 404.
     """
-    stmt = select(ProjectExtractionTemplate).where(ProjectExtractionTemplate.id == template_id)
+    stmt = select(ProjectExtractionTemplate).where(
+        ProjectExtractionTemplate.id == template_id,
+        ProjectExtractionTemplate.project_id == project_id,
+    )
+    if kind is not None:
+        stmt = stmt.where(ProjectExtractionTemplate.kind == kind)
     if for_update:
         stmt = stmt.with_for_update()
     tpl = (await db.execute(stmt)).scalar_one_or_none()
-    if tpl is None or tpl.project_id != project_id or (kind is not None and tpl.kind != kind):
+    if tpl is None:
         raise ProjectTemplateNotFoundError(f"Project template {template_id} not found")
     return tpl
 
