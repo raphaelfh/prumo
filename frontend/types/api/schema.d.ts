@@ -7495,7 +7495,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponse_CloneTemplateResponse_"];
                 };
             };
-            /** @description Unprocessable Content */
+            /** @description Refused: not a valid prumo-template@1 document (or template) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7886,7 +7886,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponse_PortableTemplate_"];
                 };
             };
-            /** @description Unprocessable Content */
+            /** @description Refused: not a valid prumo-template@1 document (or template) */
             422: {
                 headers: {
                     [name: string]: unknown;

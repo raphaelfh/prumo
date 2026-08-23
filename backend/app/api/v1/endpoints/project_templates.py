@@ -202,7 +202,15 @@ async def update_project_template_active(
     # ``required``) not attribute names. ``ok`` is a required envelope field
     # so it survives exclude_defaults; ``error``/``trace_id`` drop when None.
     response_model_exclude_defaults=True,
-    responses={status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": TemplatePortableRefusalResponse}},
+    responses={
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": TemplatePortableRefusalResponse,
+            # Explicit: the default is http.HTTPStatus(422).phrase, which Python
+            # 3.13 renamed ("Unprocessable Content" vs 3.12's "Entity") — the
+            # generated contract must not depend on the generator's Python.
+            "description": "Refused: not a valid prumo-template@1 document (or template)",
+        }
+    },
 )
 @limiter.limit("30/minute")
 async def export_project_template(
@@ -230,7 +238,15 @@ async def export_project_template(
 @router.post(
     "/{project_id}/templates/import",
     status_code=status.HTTP_201_CREATED,
-    responses={status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": TemplatePortableRefusalResponse}},
+    responses={
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": TemplatePortableRefusalResponse,
+            # Explicit: the default is http.HTTPStatus(422).phrase, which Python
+            # 3.13 renamed ("Unprocessable Content" vs 3.12's "Entity") — the
+            # generated contract must not depend on the generator's Python.
+            "description": "Refused: not a valid prumo-template@1 document (or template)",
+        }
+    },
 )
 @limiter.limit("10/minute")
 async def import_project_template(

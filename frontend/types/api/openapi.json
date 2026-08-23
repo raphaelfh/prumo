@@ -12485,7 +12485,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Refused: not a valid prumo-template@1 document (or template)"
           }
         },
         "security": [
@@ -13185,7 +13185,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Refused: not a valid prumo-template@1 document (or template)"
           }
         },
         "security": [
