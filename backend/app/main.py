@@ -170,6 +170,8 @@ def create_app() -> FastAPI:
         return {
             "status": "healthy",
             "version": "0.1.0",
+            # The deployed commit (Railway-injected); "unknown" off-platform.
+            "commit": settings.RAILWAY_GIT_COMMIT_SHA or "unknown",
             "checks": {
                 "jwks_ready": bool(getattr(app.state, "jwks_ready", False)),
                 "db_ready": bool(getattr(app.state, "db_ready", False)),
