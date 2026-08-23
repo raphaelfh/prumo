@@ -23,6 +23,7 @@ import {Label} from '@/components/ui/label';
 import {Alert, AlertDescription} from '@/components/ui/alert';
 import {AlertTriangle, CheckCircle2, FileText, Layers, Loader2, Upload} from 'lucide-react';
 import {useGlobalTemplates} from '@/hooks/extraction/useGlobalTemplates';
+import {useInvalidateProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
 import {importGlobalTemplate} from '@/services/templateImportService';
 
 import {ImportTemplateFilePane} from './ImportTemplateFilePane';
@@ -54,6 +55,7 @@ export function ImportTemplateDialog({
                                          initialTemplateId,
 }: ImportTemplateDialogProps) {
   const { templates, loading: loadingTemplates } = useGlobalTemplates();
+  const invalidateProjectTemplates = useInvalidateProjectTemplates();
   const catalogueHeadingId = useId();
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -105,12 +107,17 @@ export function ImportTemplateDialog({
     toast.success(
         `${t('templateConfig', 'importSuccess')}: "${selectedTemplate.name}". ${result.data.entityTypesAdded} ${t('templateConfig', 'importSections')}, ${result.data.fieldsAdded} ${t('templateConfig', 'importFields')}.`
     );
-    closeWith(result.data.templateId);
+    await closeWith(result.data.templateId);
   };
 
-  /** Every path that changed the active template ends the same way. */
-  const closeWith = (templateId: string) => {
+  /**
+   * Every path that changed the active template ends the same way: close now,
+   * then hand the host the id — but only once the shared project-template
+   * query has refetched, so the host re-points onto a row it can already see.
+   */
+  const closeWith = async (templateId: string) => {
     onOpenChange(false);
+    await invalidateProjectTemplates();
     onActiveTemplateChanged(templateId);
   };
 

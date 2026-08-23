@@ -5,12 +5,13 @@
  * row, so this list is the only place it stays reachable once deactivated).
  * Inactive rows carry Switch (PATCH is_active) and Delete (confirm → DELETE);
  * the active row carries neither. Delete reports to nobody: nothing outside
- * this list holds an inactive row, and the list refreshes itself.
+ * this list holds an inactive row, and both writes invalidate the shared
+ * project-template query, so the list (and the screen behind it) re-render
+ * from one fetch.
  */
 
 import {useId, useState} from 'react';
 import {Loader2, Trash2} from 'lucide-react';
-import {toast} from 'sonner';
 
 import {
   AlertDialog,
@@ -25,9 +26,13 @@ import {
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
-import {useHITLProjectTemplates, type ProjectTemplate} from '@/hooks/hitl/useHITLProjectTemplates';
+import {
+  useDeleteProjectTemplate,
+  useProjectTemplates,
+  useSetProjectTemplateActive,
+  type ProjectTemplate,
+} from '@/hooks/hitl/useProjectTemplates';
 import {t} from '@/lib/copy';
-import {deleteTemplate} from '@/services/templateImportService';
 
 interface ProjectTemplatesListProps {
   projectId: string;
@@ -35,40 +40,37 @@ interface ProjectTemplatesListProps {
 }
 
 export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesListProps) {
-  const {templates, loading, error, refresh, setTemplateActive} = useHITLProjectTemplates({
-    projectId,
-    kind: 'extraction',
-    includeInactive: true,
-  });
+  const {
+    data,
+    isLoading,
+    error,
+  } = useProjectTemplates({projectId, kind: 'extraction', includeInactive: true});
+  const switchTemplate = useSetProjectTemplateActive(projectId);
+  const deleteProjectTemplate = useDeleteProjectTemplate(projectId);
   const headingId = useId();
   const [pendingDelete, setPendingDelete] = useState<ProjectTemplate | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const handleSwitch = async (tpl: ProjectTemplate) => {
-    setBusyId(tpl.id);
-    const ok = await setTemplateActive(tpl.id, true);
-    setBusyId(null);
-    if (ok) onSwitched(tpl.id);
+  const templates = data ?? [];
+  // One row at a time: whichever write is in flight owns the spinner and
+  // disables the others.
+  const busyId = switchTemplate.isPending
+    ? switchTemplate.variables?.templateId ?? null
+    : deleteProjectTemplate.isPending
+      ? deleteProjectTemplate.variables ?? null
+      : null;
+
+  const handleSwitch = (tpl: ProjectTemplate) => {
+    // Report only what the server accepted; the refusal already toasted.
+    void switchTemplate
+      .mutateAsync({templateId: tpl.id, isActive: true})
+      .then(() => onSwitched(tpl.id), () => undefined);
   };
 
-  const handleDeleteConfirmed = async () => {
+  const handleDeleteConfirmed = () => {
     if (!pendingDelete) return;
     const target = pendingDelete;
     setPendingDelete(null);
-    setDeleteError(null);
-    setBusyId(target.id);
-    const result = await deleteTemplate(projectId, target.id);
-    setBusyId(null);
-    if (!result.ok) {
-      setDeleteError(result.error.message);
-      return;
-    }
-    toast.success(t('templateConfig', 'projectTemplateDeleted'));
-    // The hook records a failed reload in its own `error` state (rendered
-    // below), so a deleted row can never sit on screen under a success toast
-    // without a visible warning; the catch only stops the rejection escaping.
-    await refresh().catch(() => undefined);
+    deleteProjectTemplate.mutate(target.id);
   };
 
   return (
@@ -76,7 +78,7 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
       <h3 id={headingId} className="text-[13px] font-medium text-foreground">
         {t('templateConfig', 'projectTemplatesHeading')}
       </h3>
-      {loading ? (
+      {isLoading ? (
         <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
           {t('templateConfig', 'importLoadingTemplates')}
@@ -121,7 +123,7 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
                         variant="outline"
                         data-testid={`project-template-switch-${tpl.id}`}
                         disabled={busyId !== null}
-                        onClick={() => void handleSwitch(tpl)}
+                        onClick={() => handleSwitch(tpl)}
                       >
                         {busyId === tpl.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> : null}
                         {t('templateConfig', 'projectTemplateSwitch')}
@@ -153,12 +155,12 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
       )}
       {error && (
         <p role="alert" data-testid="project-templates-error" className="text-xs text-destructive">
-          {t('templateConfig', 'projectTemplatesRefreshFailed')}: {error}
+          {t('templateConfig', 'projectTemplatesRefreshFailed')}: {error.message}
         </p>
       )}
-      {deleteError && (
+      {deleteProjectTemplate.error && (
         <p role="alert" data-testid="project-template-delete-error" className="text-xs text-destructive">
-          {deleteError}
+          {deleteProjectTemplate.error.message}
         </p>
       )}
 
@@ -174,7 +176,7 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
             <AlertDialogCancel>{t('common', 'cancel')}</AlertDialogCancel>
             <AlertDialogAction
               data-testid="project-template-delete-confirm"
-              onClick={() => void handleDeleteConfirmed()}
+              onClick={handleDeleteConfirmed}
             >
               {t('templateConfig', 'projectTemplateDelete')}
             </AlertDialogAction>

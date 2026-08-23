@@ -1,5 +1,7 @@
 // frontend/components/extraction/dialogs/ImportTemplateDialog.test.tsx
+import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {fireEvent, render, screen, waitFor} from '@testing-library/react';
+import type {ReactNode} from 'react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 // One stable array: the dialog's render-phase sync compares `templates` by
@@ -26,8 +28,20 @@ vi.mock('@/services/templateImportService', () => ({
 }));
 const toast = vi.hoisted(() => ({success: vi.fn(), error: vi.fn()}));
 vi.mock('sonner', () => ({toast}));
+// The dialog reaches the project-template hooks (to refresh the shared list
+// query), whose import graph loads the supabase client — that throws at
+// module load in the env-less Frontend Tests CI job. Stub it (the convention
+// for tests that pull it in); this file makes no supabase calls.
+vi.mock('@/integrations/supabase/client', () => ({supabase: {}}));
 
 import {ImportTemplateDialog} from './ImportTemplateDialog';
+
+/** The dialog refreshes the shared project-template query before it reports
+ * the new id, so it needs a real client. */
+function renderDialog(ui: ReactNode) {
+  const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 describe('ImportTemplateDialog (switch template)', () => {
   beforeEach(() => {
@@ -43,7 +57,7 @@ describe('ImportTemplateDialog (switch template)', () => {
       ok: true,
       data: {templateId: 'cloned', entityTypesAdded: 14, fieldsAdded: 82},
     });
-    render(
+    renderDialog(
       <ImportTemplateDialog
         projectId="p"
         open
@@ -67,10 +81,10 @@ describe('ImportTemplateDialog (switch template)', () => {
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
-  it('composes the three parts under the new title and forwards switch/import as one event', () => {
+  it('composes the three parts under the new title and forwards switch/import as one event', async () => {
     const onOpenChange = vi.fn();
     const onActiveTemplateChanged = vi.fn();
-    render(
+    renderDialog(
       <ImportTemplateDialog
         projectId="p"
         open
@@ -83,9 +97,10 @@ describe('ImportTemplateDialog (switch template)', () => {
 
     fireEvent.click(screen.getByTestId('stub-switch'));
     expect(onOpenChange).toHaveBeenCalledWith(false);
-    expect(onActiveTemplateChanged).toHaveBeenCalledWith('switched-id');
+    // Reported only after the shared list query was refreshed.
+    await waitFor(() => expect(onActiveTemplateChanged).toHaveBeenCalledWith('switched-id'));
 
     fireEvent.click(screen.getByTestId('stub-import'));
-    expect(onActiveTemplateChanged).toHaveBeenCalledWith('imported-id');
+    await waitFor(() => expect(onActiveTemplateChanged).toHaveBeenCalledWith('imported-id'));
   });
 });
