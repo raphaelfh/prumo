@@ -27,6 +27,18 @@ This directory contains robust end-to-end coverage for the app's active flows.
 Core:
 
 - `E2E_FRONTEND_URL` (default: `http://127.0.0.1:8080`)
+  - Port 8080 is owned by the main checkout. A concurrent git worktree
+    must serve Vite somewhere else (`npm run dev -- --port 8090`) and
+    point `E2E_FRONTEND_URL` at it.
+  - Any `http://localhost:<port>` / `http://127.0.0.1:<port>` origin
+    passes the backend CORS preflight while the backend runs with
+    `DEBUG=true` (`Settings.cors_origin_regex`), so a non-default port
+    needs no `CORS_ORIGINS` edit. Outside DEBUG only the explicit
+    allow-list applies — production is unchanged.
+  - If you do hit a rejected preflight, the symptom is misleading: no
+    CORS error surfaces, the page just never reaches ready and the spec
+    skips for an unrelated-looking reason. Check that the backend is on
+    `DEBUG=true` before debugging the test.
 - `E2E_API_URL` (default: `http://127.0.0.1:8000`)
 - `E2E_AUTH_TOKEN` (optional if UI login is used)
 - `E2E_USER_EMAIL`, `E2E_USER_PASSWORD` (required for UI login fallback)
