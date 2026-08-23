@@ -466,6 +466,39 @@ Template-specific notes, from the instrument review:
   across article navigation (§7b): answer → J/K within the debounce
   window → value lands on the OLD run, no error toast on the new one.
 
+## Simplicity & dead-code pass (2026-08-23)
+
+Standing rule for the plan and every PR of this work (CLAUDE.md YAGNI +
+clean-in-code-you-touch): minimal diff per task, and any v1 construct a
+task makes unreferenced is deleted in the SAME PR — no dual-version
+constants, no grandfathered leftovers.
+
+Already cut from this design during review: `{"derived"}` spec refs,
+the `"section"` spec key, the answer-synonym table, a route-remount fix
+for the autosave bug (surgical pair instead), per-reviewer derived
+export columns, a user-visible dangling-spec indicator, and the
+condensed-describe variant.
+
+Deletions the plan must carry:
+
+- `QASectionAccordion`'s synthetic `instanceId` fallback
+  (`instanceIdProp ?? entityType.id`) — dead (its only caller always
+  passes the real id and skips domains without one) and a doomed-write
+  footgun. The prop becomes required.
+- `seed_probast_ai.py` is rewritten wholesale for v2 — v1 constants,
+  the v1 `derived_judgments` spec, and the "aggregate the signaling
+  questions" judgment `llm_description` all go with it.
+
+Deliberately NOT dead — do not "clean" these:
+
+- Collapse support in `derived_judgment_service`: load-bearing twice
+  (v1 clones' D4 overall collapse; v2's `signaling_worst` per-type
+  groups).
+- `judgmentFields.ts` and the editable judgment-card path: serve
+  applicability fields and every v1/classic template clone.
+- The export's no-spec/legacy branches: classic PROBAST and QUADAS-2
+  still use them until their own migrations (§11).
+
 ## Non-goals
 
 - Overall-level override (discretion is domain-level).
