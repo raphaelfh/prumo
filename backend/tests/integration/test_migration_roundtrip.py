@@ -88,7 +88,13 @@ async def _drop_stale_scratch_dbs(admin: asyncpg.Connection) -> None:
         if match is None or _pid_is_alive(int(match.group(1))):
             continue
         # datname is regex-validated above, so it is safe to interpolate.
-        await admin.execute(f"DROP DATABASE IF EXISTS {datname} WITH (FORCE)")
+        try:
+            await admin.execute(f"DROP DATABASE IF EXISTS {datname} WITH (FORCE)")
+        except asyncpg.exceptions.InvalidCatalogNameError:
+            # Two sessions can sweep the same orphan at once: IF EXISTS is not
+            # atomic against a concurrent drop, so the loser sees "database
+            # does not exist". Someone reclaimed it; that is the goal.
+            continue
 
 
 def _run_alembic(*args: str, database_url: str) -> str:
@@ -1342,3 +1348,26 @@ async def test_sweep_is_a_noop_when_every_pid_is_alive(
     await _drop_stale_scratch_dbs(admin)
 
     assert admin.dropped == []
+
+
+async def test_sweep_tolerates_a_concurrent_sweeper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`DROP DATABASE IF EXISTS` is not atomic against a concurrent drop, so
+    the loser of a sweep race must not fail the whole session."""
+    monkeypatch.setattr(
+        "tests.integration.test_migration_roundtrip._pid_is_alive",
+        lambda _pid: False,
+    )
+
+    class _RacingAdmin(_FakeAdmin):
+        async def execute(self, sql: str) -> None:
+            self.dropped.append(sql)
+            raise asyncpg.exceptions.InvalidCatalogNameError("database does not exist")
+
+    admin = _RacingAdmin([f"{_SCRATCH_DB_PREFIX}1", f"{_SCRATCH_DB_PREFIX}2"])
+
+    await _drop_stale_scratch_dbs(admin)
+
+    # Both attempted, neither raised out of the sweep.
+    assert len(admin.dropped) == 2
