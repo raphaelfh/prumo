@@ -33,7 +33,12 @@ and revoking it would blank the template pickers.
 INSERT also closes ``templateService.createCustomTemplate``. That path is
 user-reachable, not dead code — it is the Configuration-tab empty-state
 button, i.e. the first-run onboarding path — but it is already broken for
-an unrelated reason; see its JSDoc.
+an unrelated reason; see its JSDoc. This removes the client's bypass, not
+the capability: creating a template is endpoint work (``/templates/clone``
+and ``/templates/import`` today, blank-create when it lands), all
+manager-gated and running as ``service_role``, which this migration
+leaves untouched. Nothing about "create a template" regresses here — the
+button this closes was already failing before it.
 
 ``service_role`` and ``postgres`` are untouched — the backend, the seed
 and the E2E admin fixtures all connect with those, not ``authenticated``.
