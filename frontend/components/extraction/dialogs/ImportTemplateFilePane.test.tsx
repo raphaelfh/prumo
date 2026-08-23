@@ -4,10 +4,8 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 const importTemplateFromFile = vi.fn();
 // The real module exports the refusal class the pane branches on; only the
-// integration clients it loads are stubbed (the supabase one throws at
-// module load in CI, which has no VITE_SUPABASE_URL).
+// api client it loads is stubbed.
 vi.mock('@/integrations/api/client', () => ({apiClient: vi.fn(), ApiError: class ApiError extends Error {}}));
-vi.mock('@/integrations/supabase/client', () => ({supabase: {auth: {getUser: vi.fn()}}}));
 vi.mock('@/services/templateImportService', async (orig) => ({
   ...(await orig<typeof import('@/services/templateImportService')>()),
   importTemplateFromFile: (...a: unknown[]) => importTemplateFromFile(...a),

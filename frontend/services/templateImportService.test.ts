@@ -16,15 +16,13 @@ vi.mock('@/integrations/api/client', () => ({
     }
   },
 }));
-vi.mock('@/integrations/supabase/client', () => ({
-  supabase: {auth: {getUser: vi.fn(async () => ({data: {user: {id: 'u'}}}))}},
-}));
 
 import {ApiError, apiClient} from '@/integrations/api/client';
 import {
   TemplatePortableRefusal,
   deleteTemplate,
   exportTemplate,
+  importGlobalTemplate,
   importTemplateFromFile,
   templateExportFilename,
 } from '@/services/templateImportService';
@@ -65,6 +63,26 @@ describe('templateImportService (portable)', () => {
       expect.objectContaining({method: 'POST', body: {prumo_template: 1}, timeout: 120_000}),
     );
     expect(result.ok && result.data).toEqual({templateId: 'new', entityTypesAdded: 3, fieldsAdded: 7});
+  });
+
+  it('importGlobalTemplate POSTs the clone request and maps the response', async () => {
+    mockedApi.mockResolvedValueOnce({
+      project_template_id: 'cloned', version_id: 'v', entity_type_count: 14, field_count: 82, created: true,
+    });
+    const result = await importGlobalTemplate('p1', 'g1');
+    expect(mockedApi).toHaveBeenCalledWith(
+      '/api/v1/projects/p1/templates/clone',
+      expect.objectContaining({method: 'POST', body: {global_template_id: 'g1', kind: 'extraction'}}),
+    );
+    expect(result.ok && result.data).toEqual({templateId: 'cloned', entityTypesAdded: 14, fieldsAdded: 82});
+  });
+
+  it('importGlobalTemplate surfaces the server 404 as an error result', async () => {
+    mockedApi.mockRejectedValueOnce(new ApiError('HTTP_ERROR', 'Global template x not found', 404));
+    const result = await importGlobalTemplate('p1', 'x');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toBe('Global template x not found');
   });
 
   it('deleteTemplate DELETEs the template route', async () => {

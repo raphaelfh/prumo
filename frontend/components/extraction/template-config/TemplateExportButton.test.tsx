@@ -6,15 +6,13 @@ import {TooltipProvider} from '@/components/ui/tooltip';
 
 const statusState = {data: {has_pending_changes: false}};
 vi.mock('@/hooks/extraction/useTemplateConfigStatus', () => ({useTemplateConfigStatus: () => statusState}));
-// The REAL service runs (filename + unwrap are what we test); only the two
-// integration clients are stubbed — the supabase one because the service
-// module loads it, and CI's Frontend Tests job has no VITE_SUPABASE_URL.
+// The REAL service runs (filename + unwrap are what we test); only the api
+// client is stubbed.
 const apiClient = vi.fn();
 vi.mock('@/integrations/api/client', () => ({
   apiClient: (...a: unknown[]) => apiClient(...a),
   ApiError: class ApiError extends Error {},
 }));
-vi.mock('@/integrations/supabase/client', () => ({supabase: {auth: {getUser: vi.fn()}}}));
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn(), info: vi.fn()}}));
 
 import {TemplateExportButton} from './TemplateExportButton';

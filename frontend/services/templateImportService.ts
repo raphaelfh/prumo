@@ -4,12 +4,11 @@
  * Import is **server-authoritative**: the browser must not insert
  * `project_extraction_templates` directly (DB invariant: active version required).
  *
- * Flow: validate the global row exists (Supabase read), then call the clone API.
+ * Every function here speaks to the backend through `apiClient` only.
  *
  * @module services/templateImportService
  */
 
-import {supabase} from '@/integrations/supabase/client';
 import {ApiError, apiClient} from '@/integrations/api/client';
 import {t} from '@/lib/copy';
 import {generateSnakeCaseName} from '@/lib/extraction/slug';
@@ -23,28 +22,16 @@ type CloneTemplateResponse = components['schemas']['CloneTemplateResponse'];
 /**
  * Import a global extraction template into a project (idempotent on the server).
  *
- * 1. Require an authenticated Supabase user (for API JWT).
- * 2. Load `extraction_templates_global` so we fail fast if the id is missing.
- * 3. `POST /api/v1/projects/{projectId}/templates/clone` with `kind: extraction`.
- *
- * Returns counts from the server (totals for the clone after the call, not a delta).
+ * `POST /api/v1/projects/{projectId}/templates/clone` with `kind: extraction`;
+ * an unknown catalogue id is the server's 404 (no browser-side pre-read — one
+ * read path). Returns counts from the server (totals for the clone after the
+ * call, not a delta).
  */
 export function importGlobalTemplate(
   projectId: string,
   globalTemplateId: string,
 ): Promise<ErrorResult<ImportedTemplate>> {
   return toResult(async () => {
-    const {data: {user}} = await supabase.auth.getUser();
-    if (!user) throw new Error(t('common', 'errors_userNotAuthenticated'));
-
-    const {data: globalTemplate, error: templateError} = await supabase
-      .from('extraction_templates_global')
-      .select('*')
-      .eq('id', globalTemplateId)
-      .single();
-    if (templateError) throw templateError;
-    if (!globalTemplate) throw new Error(t('common', 'errors_templateNotFound'));
-
     const result = await apiClient<CloneTemplateResponse>(
       `/api/v1/projects/${projectId}/templates/clone`,
       {
@@ -57,64 +44,6 @@ export function importGlobalTemplate(
     );
     return fromCloneResponse(result);
   }, 'templateImportService.importGlobalTemplate');
-}
-
-/**
- * Create one `extraction_instances` row per root entity type with `cardinality='one'`.
- *
- * Skips types under a parent (`parent_entity_type_id` set). Ignores duplicate
- * inserts so the call is safe to retry.
- */
-export async function createInitialInstances(
-  projectId: string,
-  articleId: string,
-  templateId: string,
-  userId: string
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    console.warn('[templateImport] createInitialInstances for template', templateId);
-
-    const { data: entityTypes, error: etError } = await supabase
-      .from('extraction_entity_types')
-      .select('id, name, label, cardinality, parent_entity_type_id')
-      .eq('project_template_id', templateId)
-      .eq('cardinality', 'one')
-      .is('parent_entity_type_id', null);
-
-    if (etError) throw etError;
-
-    for (const et of entityTypes || []) {
-      const { error: insertError } = await supabase
-        .from('extraction_instances')
-        .insert({
-          project_id: projectId,
-          article_id: articleId,
-          template_id: templateId,
-          entity_type_id: et.id,
-          parent_instance_id: null,
-          label: et.label,
-          sort_order: 0,
-          created_by: userId,
-        });
-
-      // Detect unique-constraint violations by PostgreSQL SQLSTATE, not by
-      // matching the human-readable message — `lc_messages` is locale-dependent
-      // and other errors can incidentally contain the word "duplicate".
-      // PostgreSQL `unique_violation` is SQLSTATE 23505.
-      if (insertError && insertError.code !== '23505') {
-        throw insertError;
-      }
-    }
-
-    console.warn('[templateImport] initial instances done');
-    return { success: true };
-  } catch (err: any) {
-    console.error('[templateImport] createInitialInstances error', err);
-    return {
-      success: false,
-      error: err.message,
-    };
-  }
 }
 
 // --- Portable import/export (prumo-template@1) ---
