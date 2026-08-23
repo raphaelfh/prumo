@@ -1,5 +1,7 @@
 """Service: toggle the `is_active` flag on a project template, with the
-single-active-extraction-template invariant baked in.
+single-active-extraction-template invariant baked in — and the shared
+``deactivate_sibling_extraction_templates`` helper that clone, portable
+import and Switch all use to keep that invariant on ONE write path.
 
 Owns the multi-row read + update transaction that the
 `PATCH /projects/{id}/templates/{tid}` endpoint used to do inline,
@@ -10,7 +12,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ProjectExtractionTemplate, TemplateKind
@@ -25,6 +27,37 @@ class LastActiveExtractionTemplateError(Exception):
     """Raised when disabling an extraction template would leave the project with
     zero active extraction templates. The extraction workflow assumes at least
     one active template at all times; QA has no such constraint."""
+
+
+async def deactivate_sibling_extraction_templates(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    keep_active_id: UUID | None,
+) -> None:
+    """Deactivate the project's active EXTRACTION templates.
+
+    ``keep_active_id`` is excluded from the update (idempotent re-import of
+    the same clone; activating a template that is already active). ``None``
+    deactivates every active extraction template — used right before
+    inserting a brand-new one whose id is not known yet.
+
+    Shared by clone, portable import, and ``set_template_active`` so the
+    single-active invariant (`uq_one_active_extraction_template_per_project`)
+    has exactly one write path. Kind-scoped: QA templates may coexist.
+    """
+    stmt = (
+        update(ProjectExtractionTemplate)
+        .where(
+            ProjectExtractionTemplate.project_id == project_id,
+            ProjectExtractionTemplate.kind == TemplateKind.EXTRACTION.value,
+            ProjectExtractionTemplate.is_active.is_(True),
+        )
+        .values(is_active=False)
+    )
+    if keep_active_id is not None:
+        stmt = stmt.where(ProjectExtractionTemplate.id != keep_active_id)
+    await db.execute(stmt)
 
 
 async def set_template_active(
@@ -58,6 +91,15 @@ async def set_template_active(
                 "Cannot disable the only active extraction template for "
                 "this project; import another extraction template first."
             )
+
+    if tpl.kind == TemplateKind.EXTRACTION.value and is_active:
+        # Switch: the partial unique index forbids two active extraction
+        # templates, so the sibling goes first (spec §5.6). keep_active_id
+        # makes this a no-op when the template is already active.
+        await deactivate_sibling_extraction_templates(
+            db, project_id=project_id, keep_active_id=template_id
+        )
+        await db.flush()
 
     tpl.is_active = is_active
     await db.flush()
