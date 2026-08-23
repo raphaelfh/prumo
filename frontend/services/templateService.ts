@@ -457,6 +457,14 @@ export interface CreatedTemplate {
 /**
  * Insert a new project_extraction_templates row.
  * NOTE: caller toasts success ("${name}" created) + info (add sections).
+ *
+ * BROKEN — do not extend this path. The insert cannot succeed: the 0004
+ * constraint trigger needs an active `extraction_template_versions` row that a
+ * single PostgREST insert cannot create, and since migration 0057 the
+ * `authenticated` role no longer holds INSERT on the table at all. Creation
+ * belongs on the manager-gated endpoints (`POST /projects/{id}/templates/clone`
+ * or `/import`), which own the active-template and in-use invariants this path
+ * skips. Tracked separately.
  */
 export async function createCustomTemplate(
   params: CreateCustomTemplateParams,
