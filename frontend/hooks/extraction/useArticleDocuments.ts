@@ -29,7 +29,6 @@ type PDFLazySource = ReturnType<typeof articleFileSourceFromStorageKey>;
 
 export interface UseArticleDocumentsResult {
   files: ArticleFileListItem[];
-  filesLoading: boolean;
   /** The currently selected file id (MAIN by default), or null when empty. */
   selectedFileId: string | null;
   /** Select a document by id. */
@@ -39,6 +38,7 @@ export interface UseArticleDocumentsResult {
   source: PDFLazySource | null;
   /** Reader-view blocks for the selected file (empty until parsed). */
   readerBlocks: ArticleTextBlock[];
+  /** True while the files list or the selected file's text blocks are still resolving. */
   readerLoading: boolean;
 }
 
@@ -85,12 +85,17 @@ export function useArticleDocuments(
 
   return {
     files,
-    filesLoading: filesQuery.isLoading,
     selectedFileId,
     setSelectedFileId: setOverride,
     selectedFile,
     source,
     readerBlocks: blocksQuery.data ?? [],
-    readerLoading: blocksQuery.isLoading,
+    // The blocks query is disabled until the files list yields a selection, and
+    // a disabled query is never "loading" — so the blocks flag alone would read
+    // "loaded, empty" during the files fetch and the reader would flash its
+    // "requires indexing" empty state. isPending gated by enablement, not
+    // isLoading (see useActiveTemplateStructure for the paused/offline trap);
+    // the gate matters because a disabled query is isPending forever.
+    readerLoading: (Boolean(articleId) && filesQuery.isPending) || blocksQuery.isPending,
   };
 }

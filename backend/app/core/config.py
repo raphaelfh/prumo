@@ -62,6 +62,35 @@ class Settings(BaseSettings):
                 merged.append(origin)
         return merged
 
+    @property
+    def cors_origin_regex(self) -> str | None:
+        """Return an extra CORS origin pattern for local development.
+
+        In DEBUG, accept any ``http://localhost:<port>`` /
+        ``http://127.0.0.1:<port>`` origin on top of the explicit
+        allow-list. Concurrent git worktrees cannot all serve Vite on the
+        pinned dev ports (the main checkout owns 8080), and a worktree on
+        e.g. 8090 otherwise fails every preflight -- which surfaces not as
+        a CORS error but as a page that never reaches ready, or an E2E
+        spec that skips with a misleading reason.
+
+        Returns ``None`` outside DEBUG so production keeps the explicit
+        allow-list: constitution IV forbids wildcard origins in
+        production, and this pattern is deliberately not one -- the
+        scheme is pinned to http and the host to the loopback names, both
+        anchored so ``http://localhost.evil.example:8090`` cannot match.
+        """
+        if not self.DEBUG:
+            return None
+        return r"^http://(localhost|127\.0\.0\.1):\d+$"
+
+    # =================== DEPLOY IDENTITY ===================
+    # Injected by Railway on every deploy. Surfaced by /health so the
+    # post-deploy smoke can prove WHICH build is live — reachability alone
+    # cannot distinguish a fresh deploy from one stuck on an older SHA.
+    # ``None`` outside Railway (local dev, tests, CI).
+    RAILWAY_GIT_COMMIT_SHA: str | None = None
+
     # =================== SUPABASE ===================
     SUPABASE_URL: str
     SUPABASE_SERVICE_ROLE_KEY: str

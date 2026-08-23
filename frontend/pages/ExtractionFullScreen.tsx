@@ -462,7 +462,7 @@ export default function ExtractionFullScreen() {
     // stage. The hook flushes pending edits on unmount, ``pagehide``,
     // and visibility changes so navigating mid-debounce never drops a
     // save.
-  const { saveState, lastSavedAt, hasUnsavedChanges, saveNow } = useAutoSaveProposals({
+  const { saveState, lastSavedAt, saveNow } = useAutoSaveProposals({
     runId: activeRunId,
     stage,
     values,
@@ -618,6 +618,20 @@ export default function ExtractionFullScreen() {
     [instances, modelParentEntityType],
   );
 
+  // Restore preference for the active model (persisted below). A
+  // per-article mount snapshot, deliberately not live: the hook applies
+  // it only when no current selection survives a load. Guarded read —
+  // localStorage can throw in restricted contexts (SidebarContext
+  // precedent).
+  const initialModelId = useMemo(() => {
+    if (!articleId) return null;
+    try {
+      return localStorage.getItem(`active-model-${articleId}`);
+    } catch {
+      return null;
+    }
+  }, [articleId]);
+
   // Hook for model management
   const {
     models,
@@ -634,27 +648,20 @@ export default function ExtractionFullScreen() {
     templateId: template?.id || '',
     modelParentEntityTypeId: modelParentEntityType?.id || null,
     modelInstances,
+    initialModelId,
     enabled: !!template && !!modelParentEntityType
   });
 
-    // Persist active model in localStorage
+    // Persist active model in localStorage (guarded like the read above).
   useEffect(() => {
     if (activeModelId && articleId) {
-      localStorage.setItem(`active-model-${articleId}`, activeModelId);
-    }
-  }, [activeModelId, articleId]);
-
-  // Restore the active model on load
-  useEffect(() => {
-    if (articleId && models.length > 0 && !activeModelId) {
-      const saved = localStorage.getItem(`active-model-${articleId}`);
-      if (saved && models.some(m => m.instanceId === saved)) {
-        setActiveModelId(saved);
-      } else {
-        setActiveModelId(models[0].instanceId);
+      try {
+        localStorage.setItem(`active-model-${articleId}`, activeModelId);
+      } catch {
+        // Restricted context — losing the preference is fine.
       }
     }
-  }, [articleId, models, activeModelId, setActiveModelId]);
+  }, [activeModelId, articleId]);
 
     // Redirect on critical error
   useEffect(() => {
@@ -1291,12 +1298,7 @@ export default function ExtractionFullScreen() {
         isBlindMode={permissions.isBlindMode}
         saveState={saveState}
         lastSavedAt={lastSavedAt}
-        hasUnsavedChanges={hasUnsavedChanges}
-        isComplete={isComplete}
         submitting={submitting}
-        templateId={template?.id}
-        templateName={template?.name}
-        runId={activeRunId}
         // RunHeader feature props
         stage={stage ?? undefined}
         transition={transition}
@@ -1322,8 +1324,6 @@ export default function ExtractionFullScreen() {
         // Gated on an OPEN session run — extraction always targets that run, so
         // it never forks a parallel run that would orphan the reviewer's edits.
         canRunAI={!!activeRunId && (stage === 'extract' || stage == null)}
-        onExtractionComplete={handleExtractionComplete}
-        aiSuggestions={aiSuggestions}
         aiPendingCount={isFinalized ? 0 : aiPendingCount}
         onAISuggestionsClick={() => {
           // Header "Review N pending suggestions": scroll the form to the
@@ -1334,10 +1334,8 @@ export default function ExtractionFullScreen() {
             : undefined;
           if (entityTypeId) scrollToSectionById(entityTypeId);
         }}
-        onRefreshInstances={handleRefreshInstances}
         onExtractWithAI={onExtractWithAI}
         extractingAI={extractingAI}
-        onExtractionStateChange={setAiExtractionState}
         // Reopen moved into the header Menu
         canReopen={canReopen}
         onReopen={() => void handleReopen()}

@@ -12,10 +12,11 @@ import {createSection, deleteSection, updateEntityTypeLabel} from '@/services/te
 import {Card, CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
-import {AlertTriangle, Download, Loader2, Plus, Settings} from 'lucide-react';
+import {AlertTriangle, Loader2, Plus, Settings, Upload} from 'lucide-react';
 import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructionRow';
 import {TemplateConfigGridPanel} from '@/components/extraction/template-config/TemplateConfigGridPanel';
 import {TemplateConfigPublishControls} from '@/components/extraction/template-config/TemplateConfigPublishControls';
+import {TemplateExportButton} from '@/components/extraction/template-config/TemplateExportButton';
 import type {GridField} from '@/components/extraction/template-config/templateTree';
 import type {ExtractionFieldInsert} from '@/types/extraction';
 import {toast} from 'sonner';
@@ -32,9 +33,17 @@ import {STRUCTURAL_UNDO_TOAST_ID} from '@/components/extraction/template-config/
 interface TemplateConfigEditorProps {
   projectId: string;
   templateId: string;
+  /** The dialog inside this editor can switch/import the ACTIVE template;
+   * the host owns that state (this editor is keyed by it), so it must be
+   * told which id is active now. */
+  onActiveTemplateChanged?: (templateId: string) => void;
 }
 
-export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEditorProps) {
+export function TemplateConfigEditor({
+  projectId,
+  templateId,
+  onActiveTemplateChanged,
+}: TemplateConfigEditorProps) {
   // ONE cached read of the template structure, shared with the grid panel
   // (same key, same query). Every config mutation on this screen already
   // invalidates `templateEntityTypesKeys.byTemplate`, so the header count
@@ -65,7 +74,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   // reaches published data, and the grid arms a 6s Undo for the misclick.
   // The mutation stays here because the editor owns the cache refresh.
   const deleteFieldMutation = useDeleteTemplateField(projectId, templateId);
-  const {invalidateStructure, invalidateAfterImport} = useTemplateConfigCaches(
+  const {invalidateStructure} = useTemplateConfigCaches(
     projectId,
     templateId,
   );
@@ -249,7 +258,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     // un-cap the grid card.
     <div className="flex h-full min-h-0 flex-col gap-6">
       {/* Thin command bar (replaces the tall header Card). */}
-      <div className="flex h-12 shrink-0 items-center justify-between gap-3 rounded-md border border-border/40 bg-card px-4">
+      <div className="@container/configbar flex h-12 shrink-0 items-center justify-between gap-3 rounded-md border border-border/40 bg-card px-4">
         <div className="flex min-w-0 items-center gap-2">
           <Settings className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
           <span className="truncate text-sm font-medium">{t('extraction', 'configHeaderTitle')}</span>
@@ -263,6 +272,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
               .replace('{{n}}', String(entityTypes.length))
               .replace('{{main}}', String(rootEntityTypes.length))}
           </Badge>
+          <TemplateExportButton projectId={projectId} templateId={templateId} />
           <Button
             variant="ghost"
             size="sm"
@@ -270,7 +280,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
             onClick={() => setShowImportDialog(true)}
             className="h-8 text-muted-foreground hover:text-foreground"
           >
-            <Download className="h-4 w-4 mr-2" />
+            <Upload className="h-4 w-4 mr-2" />
             {t('extraction', 'configImportTemplateButton')}
           </Button>
           <TemplateConfigPublishControls
@@ -353,7 +363,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                   data-testid="template-config-open-import"
                   onClick={() => setShowImportDialog(true)}
                 >
-                  <Download className="h-4 w-4 mr-2" />
+                  <Upload className="h-4 w-4 mr-2" />
                   {t('extraction', 'configImportTemplateButton')}
                 </Button>
                 <Button
@@ -395,13 +405,10 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         projectId={projectId}
         open={showImportDialog}
         onOpenChange={setShowImportDialog}
-        onTemplateImported={() => {
-          setShowImportDialog(false);
-          // Import publishes server-side (clone routes through republish),
-          // possibly for a DIFFERENT template — id-free .all invalidation,
-          // which covers this template's entity-types key too.
-          void invalidateAfterImport();
-        }}
+        // Pure pass-through: the dialog already closed itself, and the host
+        // owns both the cache refresh and `activeTemplate` (this editor is
+        // keyed by it) — doing either here would just do it twice.
+        onActiveTemplateChanged={(activeTemplateId) => onActiveTemplateChanged?.(activeTemplateId)}
       />
     </div>
   );

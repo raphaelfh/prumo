@@ -1,0 +1,144 @@
+/**
+ * Characterisation test: does a pending (un-debounced) edit survive a keyboard
+ * article change?
+ *
+ * Article navigation is a route-PARAM change on the same route element, so the
+ * `useAutoSaveProposals` unmount flush does not obviously fire. The sibling
+ * `extraction-edit.ui.e2e.ts` deliberately waits out the 600ms debounce
+ * (`useAutoSaveProposals`'s default `debounceMs`, unoverridden by either run
+ * screen); this one deliberately does not.
+ *
+ * The J/K shortcut (`useRunShortcuts`) ignores keypresses while an editable
+ * element has focus (see `hooks/runs/useRunShortcuts.ts`'s `isEditing` guard,
+ * pinned by the unit test "ignores J/K while the user is typing in a field").
+ * So the field is blurred (not waited on) right after typing, before the
+ * pager key is pressed — otherwise the keystroke would just be typed into
+ * the field and the pager would never navigate at all.
+ *
+ * Field discovery deliberately does NOT reuse `extraction-edit.ui.e2e.ts`'s
+ * `form input[type='text']` fragment: the extraction form has no `<form>`
+ * element (`FieldValueEditor.tsx`'s `<Input>` for a text field never sets a
+ * `type` prop, so the DOM node carries no `type` attribute at all), so that
+ * selector matches nothing here and would skip every run unconditionally.
+ * Instead this scopes to the form panel's own
+ * `[data-scroll-container="extraction-form"]` wrapper (already used by
+ * `extraction-navigation.ui.e2e.ts`) and queries by ARIA role, which is
+ * robust to the missing `type` attribute.
+ *
+ * Direction is picked at runtime, not hardcoded to "next": the pager's
+ * article list is sorted `created_at DESC` (`extractionDataService.ts`), and
+ * `ensure-fixtures.ts` inserts `F.ARTICLE_ID` (what `E2E_ARTICLE_ID` resolves
+ * to) strictly before the four QA articles via sequential awaited calls, so
+ * it holds the oldest `created_at` of the group and lands LAST in that
+ * DESC-sorted list on the standard fixture. That makes "Next article"
+ * permanently disabled and only "Previous article" live. The test exercises
+ * whichever direction the pager actually enables (preferring next) and
+ * presses the matching key, so it is not structurally starved by fixture
+ * insertion order — it only skips when BOTH directions are disabled, which
+ * genuinely means a single-article worklist.
+ *
+ * The pager itself is also a load race, not just a fixture-order trap: the
+ * ready-state render (and its Back button) can commit before the article
+ * worklist array has actually landed in `useExtractionData` state, so
+ * sampling the pager once — right after the Back button becomes visible —
+ * can read a transient zero-button state and misreport a multi-article
+ * project as "single article". `waitFor({ state: "visible" })` on the pager
+ * `<nav>` polls through that window instead of sampling once; the `.catch`
+ * swallows a genuine timeout (the real single-article case) so the test
+ * skips instead of failing, and the skip check runs only after the wait has
+ * had its full chance.
+ */
+
+import { expect, test } from "@playwright/test";
+
+import { loginViaUi } from "../_fixtures/auth";
+import { loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+import { ARTICLE_NEXT_KEY, ARTICLE_PREV_KEY } from "../../lib/runs/shortcuts";
+
+const REQUIRED = ["E2E_USER_EMAIL", "E2E_USER_PASSWORD", "E2E_PROJECT_ID", "E2E_ARTICLE_ID"];
+
+test.describe.configure({ mode: "serial" });
+
+test.describe("Extraction article pager", () => {
+  test("a keyboard article change does not lose a pending edit", async ({ page }) => {
+    const missing = missingEnvKeys(REQUIRED);
+    test.skip(missing.length > 0, `Missing required env: ${missing.join(", ")}`);
+
+    const env = loadE2EEnv();
+    await loginViaUi(page);
+    await page.goto(`${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`);
+
+    // The Back button confirms the page reached SOME ready render (a fast,
+    // clear failure if login or routing is broken) — it is deliberately NOT
+    // used as a proxy for "the pager's data has resolved" (see file header).
+    await expect(page.getByRole("button", { name: /^back$/i }).first()).toBeVisible({ timeout: 15000 });
+
+    // The pager renders null on a single-article project — that is a valid
+    // fixture state, not a failure. Poll for it instead of sampling once.
+    const pager = page.getByRole("navigation", { name: /article \d+ of \d+/i });
+    await pager.waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+    const pagerCount = await pager.count();
+    test.skip(
+      pagerCount === 0,
+      "Project has a single article, or the page never reached its ready state (e.g. a misconfiguration) — no pager to exercise",
+    );
+
+    // Prefer "next", but fall back to "previous": on the standard fixture
+    // E2E_ARTICLE_ID is the oldest article of the group (see file header),
+    // so it sorts LAST and only "previous" is actually enabled. Only skip
+    // when neither direction can move — that is the genuine single-article
+    // case, already covered by the pagerCount check above as a fixture
+    // regression guard but re-checked explicitly here.
+    const nextButton = pager.getByRole("button", { name: /next article/i });
+    const prevButton = pager.getByRole("button", { name: /previous article/i });
+    const nextEnabled = !(await nextButton.isDisabled());
+    const prevEnabled = !(await prevButton.isDisabled());
+    test.skip(!nextEnabled && !prevEnabled, "Both pager directions disabled — single-article worklist");
+    const key = (nextEnabled ? ARTICLE_NEXT_KEY : ARTICLE_PREV_KEY).toLowerCase();
+
+    const formPanel = page.locator('[data-scroll-container="extraction-form"]');
+    const textFields = formPanel.getByRole("textbox");
+    const fieldCount = await textFields.count();
+    test.skip(fieldCount === 0, "No free-text field on the page to probe with");
+
+    const probe = `pager-probe-${Date.now()}`;
+    const field = textFields.first();
+    await field.fill(probe);
+    // Move focus off the field so the pager key is read as a shortcut rather
+    // than typed into the input (the shortcut is disabled while editing).
+    // This is not a wait — it does not give the autosave debounce any time.
+    await field.blur();
+
+    // Deliberately do NOT wait out the autosave debounce.
+    const urlBefore = page.url();
+    await page.keyboard.press(key);
+    await expect.poll(() => page.url(), { timeout: 10000 }).not.toBe(urlBefore);
+    expect(page.url()).toContain("/extraction/");
+
+    // Back to the original article: the probe must still be there.
+    await page.goto(`${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`);
+    await expect(page.getByRole("button", { name: /^back$/i }).first()).toBeVisible({ timeout: 15000 });
+    await expect(formPanel.getByRole("textbox").first()).toHaveValue(probe, { timeout: 15000 });
+  });
+
+  test("the pager renders two buttons and an inert counter", async ({ page }) => {
+    const missing = missingEnvKeys(REQUIRED);
+    test.skip(missing.length > 0, `Missing required env: ${missing.join(", ")}`);
+
+    const env = loadE2EEnv();
+    await loginViaUi(page);
+    await page.goto(`${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`);
+    await expect(page.getByRole("button", { name: /^back$/i }).first()).toBeVisible({ timeout: 15000 });
+
+    // Same load-race fix as the test above: poll for the pager instead of
+    // sampling its count once right after the Back button appears.
+    const pager = page.getByRole("navigation", { name: /article \d+ of \d+/i });
+    await pager.waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+    test.skip(
+      (await pager.count()) === 0,
+      "Project has a single article, or the page never reached its ready state (e.g. a misconfiguration) — no pager to exercise",
+    );
+    await expect(pager.getByRole("button")).toHaveCount(2);
+    await expect(pager).toContainText(/\d+\s*\/\s*\d+/);
+  });
+});

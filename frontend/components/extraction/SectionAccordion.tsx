@@ -47,6 +47,12 @@ interface SectionAccordionProps {
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   onAddInstance?: () => void;
   onRemoveInstance?: (instanceId: string) => void;
+  /**
+   * Badge count override for containers that render only the active
+   * instance but represent more entries (the model container passes the
+   * total model count).
+   */
+  totalInstanceCount?: number;
     onExtractionComplete?: (runId?: string) => void | Promise<void>; // Callback to refresh suggestions after extraction
 }
 
@@ -124,7 +130,10 @@ export function SectionAccordion(props: SectionAccordionProps) {
                   <h3 className="font-medium text-[14px]">{entityType.label}</h3>
                   {isMultiple && (
                     <Badge variant="outline" className="text-xs">
-                        Multiple ({instances.length})
+                        {t('extraction', 'sectionMultipleBadge').replace(
+                            '{{count}}',
+                            String(props.totalInstanceCount ?? instances.length),
+                        )}
                     </Badge>
                   )}
                 </div>

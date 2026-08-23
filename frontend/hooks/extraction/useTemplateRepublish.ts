@@ -117,8 +117,18 @@ export function useTemplateConfigCaches(
     ]);
   };
 
-  /** After an import (server-side publish, possibly of ANOTHER template):
-   * id-free `.all` invalidation. */
+  /**
+   * After an import (server-side publish, possibly of ANOTHER template):
+   * id-free `.all` invalidation of the template STRUCTURE caches.
+   *
+   * The project's template LIST is not one of them — it is refreshed by the
+   * write itself (`hooks/hitl/useProjectTemplates`: every mutation there
+   * invalidates `projectTemplatesKeys.all` and awaits it before resolving,
+   * which is what lets callers re-point a selection onto a row that already
+   * exists). Folding it in here would make every caller of this helper wait
+   * on the run and structure families too, so the two stay separate: an
+   * import path needs BOTH.
+   */
   const invalidateAfterImport = async (): Promise<void> => {
     await Promise.all([
       queryClient.invalidateQueries({queryKey: templateEntityTypesKeys.all}),

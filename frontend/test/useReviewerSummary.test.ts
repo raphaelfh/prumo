@@ -27,7 +27,6 @@ function decision(
 function runDetail(
   overrides: Partial<RunDetailResponse> & {
     decisions: ReviewerDecisionResponse[];
-    reviewer_count?: number;
   },
 ): RunDetailResponse {
   return {
@@ -40,7 +39,7 @@ function runDetail(
       version_id: "v1",
       stage: "review",
       status: "running",
-      hitl_config_snapshot: { reviewer_count: overrides.reviewer_count ?? 1 },
+      hitl_config_snapshot: {},
       parameters: {},
       results: {},
       created_at: "2026-04-28T09:00:00Z",
@@ -58,15 +57,14 @@ describe("useReviewerSummary", () => {
   it("returns the empty default for a null runDetail", () => {
     const { result } = renderHook(() => useReviewerSummary(null));
     expect(result.current.reviewers).toEqual([]);
-    expect(result.current.requiredReviewerCount).toBe(1);
-    expect(result.current.completionRatio).toBe(0);
+    expect(result.current.divergentCoords.size).toBe(0);
+    expect(result.current.touchedCoords.size).toBe(0);
   });
 
   it("counts distinct reviewers regardless of how many decisions each made", () => {
     const { result } = renderHook(() =>
       useReviewerSummary(
         runDetail({
-          reviewer_count: 3,
           decisions: [
             decision({
               reviewer_id: "user-a",
@@ -93,8 +91,6 @@ describe("useReviewerSummary", () => {
     expect(new Set(result.current.reviewers)).toEqual(
       new Set(["user-a", "user-b"]),
     );
-    expect(result.current.requiredReviewerCount).toBe(3);
-    expect(result.current.completionRatio).toBeCloseTo(2 / 3, 5);
   });
 
   it("treats append-only decision history as latest-wins per (reviewer, coord)", () => {
@@ -392,21 +388,5 @@ describe("useReviewerSummary", () => {
     expect(result.current.filledCoords.has("i1::f1")).toBe(false);
     expect(result.current.touchedCoords.has("i1::f2")).toBe(true);
     expect(result.current.filledCoords.has("i1::f2")).toBe(true);
-  });
-
-  it("clamps completionRatio at 1 when more reviewers participated than required", () => {
-    const { result } = renderHook(() =>
-      useReviewerSummary(
-        runDetail({
-          reviewer_count: 1,
-          decisions: [
-            decision({ reviewer_id: "user-a" }),
-            decision({ reviewer_id: "user-b" }),
-            decision({ reviewer_id: "user-c" }),
-          ],
-        }),
-      ),
-    );
-    expect(result.current.completionRatio).toBe(1);
   });
 });

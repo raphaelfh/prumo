@@ -135,7 +135,9 @@ WARN: tuple[Pattern, ...] = (
     Pattern(
         "initialize_article_instances",
         "warn",
-        re.compile(r"initializeArticleInstances"),
+        # createInitialInstances: the same concept survived in
+        # templateImportService.ts under a different name until 2026-08-23.
+        re.compile(r"initializeArticleInstances|createInitialInstances"),
         ("docs/", "scripts/fitness/"),
         "Backend owns instance creation via hitl_session_service.",
         7,

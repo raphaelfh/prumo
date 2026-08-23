@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-08-18
+last_reviewed: 2026-08-23
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-08-18 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-08-23 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -135,7 +135,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0056_proposal_provenance` (post-squash numbering; run
+`0057_revoke_project_tpl_writes` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -386,6 +386,20 @@ The extraction **Import template** dialog reads `extraction_templates_global` th
 | **UI** | Calls `POST /api/v1/projects/{project_id}/templates/clone` with `global_template_id` and `kind=extraction` (JWT via `apiClient`). The UI may still load the global row first to validate that the id exists in the catalogue. |
 | **Service** | `TemplateCloneService.clone` is **idempotent** on `(project_id, global_template_id)`: first call creates the project row, `extraction_entity_types`, `extraction_fields`, and exactly one active version; later calls return the existing clone and current counts. |
 | **Heal** | Drift is measured against the **active version snapshot**, never the global template. Zero-state clones (empty live structure) rebuild from the global. Non-empty drift (e.g. an edit whose republish call was lost) **self-heals by publishing the live structure** as a new version (`TemplateVersionService.republish`) — never wipe-and-rebuild: with user-editable templates a count mismatch is indistinguishable from a deliberate edit, and the historical wipe destroyed customizations. Factory recovery = delete the template and re-import. |
+
+**File import/export (2026-08-23).** The same dialog (now "Switch template")
+also lists the project's own templates — active and inactive — with *Switch
+to* (`PATCH …/templates/{id}`, which since this slice deactivates the
+extraction sibling first) and *Delete* (`DELETE …/templates/{id}`: guards run
+under `SELECT … FOR UPDATE` — 409 `TEMPLATE_ACTIVE` / `TEMPLATE_IN_USE`, else
+DB cascade plus the template-scoped `extraction_hitl_configs` row; the locked
+pre-check is load-bearing because `extraction_runs` also carries a composite
+CASCADE FK to the template). `GET …/templates/{id}/export` serializes the
+**live** structure as a `prumo-template@1` document (`app/schemas/
+template_portable.py`: nested, UUID-free, `role` derived from nesting + a
+`group` flag); `POST …/templates/import` creates a **new** active template
+from one and publishes v1 through `republish`. Design:
+`docs/superpowers/specs/2026-08-23-template-portable-import-export-design.md`.
 
 Configuration flows for QA tools may call the same clone endpoint before sessions; session lifecycle for QA vs extraction is in §5.
 

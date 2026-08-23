@@ -14,6 +14,7 @@ export type E2EEnvConfig = {
   reviewerCPassword?: string;
   projectId?: string;
   importProjectId?: string;
+  portableProjectId?: string;
   articleId?: string;
   templateId?: string;
   entityTypeId?: string;
@@ -41,6 +42,7 @@ export function loadE2EEnv(): E2EEnvConfig {
     reviewerCPassword: process.env.E2E_REVIEWER_C_PASSWORD || F.FIXTURE_PASSWORD,
     projectId: process.env.E2E_PROJECT_ID || F.PROJECT_ID,
     importProjectId: process.env.E2E_IMPORT_PROJECT_ID || F.IMPORT_PROJECT_ID,
+    portableProjectId: process.env.E2E_PORTABLE_PROJECT_ID || F.PORTABLE_PROJECT_ID,
     articleId: process.env.E2E_ARTICLE_ID || F.ARTICLE_ID,
     templateId: process.env.E2E_TEMPLATE_ID,
     entityTypeId: process.env.E2E_ENTITY_TYPE_ID,

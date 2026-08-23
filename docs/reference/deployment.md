@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-08-10
+last_reviewed: 2026-08-23
 owner: '@raphaelfh'
 ---
 
@@ -246,9 +246,29 @@ head commit. As of 2026-05-24 the relevant ones for backend code:
    from the repo root).
 
 After a deploy, the `post-deploy-smoke` workflow (push-triggered +
-every 6 hours) re-checks `/health`, the frontend, and a CORS preflight
-from the prod origin; a failure emails the owner. It is the deploy
-safety net, not a gate.
+every 6 hours) verifies prod in three layers; a failure emails the
+owner. It is the deploy safety net, not a gate.
+
+1. **Reachability** — `/health`, the frontend root, and a CORS preflight
+   from the prod origin.
+2. **Deployed commit** — `/health.commit` (the Railway-injected
+   `RAILWAY_GIT_COMMIT_SHA`, surfaced via `settings`) must equal the
+   promoted SHA. This is what actually catches the wedge described above:
+   reachability alone cannot tell a fresh deploy from one stuck on an
+   older commit. Missing/`unknown` degrades to a warning; a mismatch on a
+   push fails, on the 6-hourly run it warns (a deploy may be in flight).
+3. **Authenticated read-only probe** — password grant against prod GoTrue
+   plus `GET /api/v1/user-api-keys`, asserting 200 and the `ApiResponse`
+   envelope. Exercises JWKS/JWT, the DB read path and the envelope
+   without writing: a monitor must never mutate prod. Needs repo variable
+   `PROD_SUPABASE_URL` and secrets `PROD_SUPABASE_ANON_KEY`,
+   `PROD_SMOKE_EMAIL`, `PROD_SMOKE_PASSWORD`; until they exist the step
+   skips with a visible `::warning::`, never silently.
+
+There is deliberately **no Playwright suite pointed at prod**. The former
+`remote-smoke` project dispatched a real AI extraction (LLM spend + a run
+left behind per execution) and had never run in CI — no secrets were ever
+provisioned — so it silently self-skipped to a green "pass".
 
 Override the env-driven thresholds via repo variables
 (`PRUMO_DIFF_COVERAGE_MIN`, `PRUMO_CRITICAL_COVERAGE_MIN`) when
