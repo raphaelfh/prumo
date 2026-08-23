@@ -29,6 +29,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.error_handler import AppError
 from app.models.extraction import (
+    DEFAULT_ENTRY_LABEL,
+    ExtractionCardinality,
     ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionField,
@@ -154,7 +156,7 @@ def _section_dict(et: ExtractionEntityType, children: list[ExtractionEntityType]
         "description": et.description,
         "required": et.is_required,
         # A group always repeats; ``repeats`` is only meaningful elsewhere.
-        "repeats": (et.cardinality == "many") and not is_group,
+        "repeats": (et.cardinality == ExtractionCardinality.MANY.value) and not is_group,
         "group": is_group,
         "entry_label": et.entry_label if is_group else None,
         "fields": [
@@ -227,9 +229,13 @@ def _entity_type_row(
         name=section.name,
         label=section.label,
         description=section.description,
-        entry_label=(section.entry_label or "model") if is_group else None,
+        entry_label=(section.entry_label or DEFAULT_ENTRY_LABEL) if is_group else None,
         parent_entity_type_id=parent_id,
-        cardinality="many" if (is_group or section.repeats) else "one",
+        cardinality=(
+            ExtractionCardinality.MANY.value
+            if (is_group or section.repeats)
+            else ExtractionCardinality.ONE.value
+        ),
         role=role.value,
         sort_order=sort_order,
         is_required=section.is_required,

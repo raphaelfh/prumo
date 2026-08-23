@@ -28,6 +28,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.extraction import Framework
 from app.schemas.template_structure import (
     AllowedUnits,
     AllowedValues,
@@ -40,7 +41,6 @@ from app.schemas.template_structure import (
 
 PORTABLE_FORMAT_VERSION: Literal[1] = 1
 
-Framework = Literal["CHARMS", "PICOS", "CUSTOM"]
 
 # Spec §5.5: a pathological file becomes a fast 422, never a long transaction.
 # The per-level caps multiply (100 × 200 × 2 levels), so a total bounds them.

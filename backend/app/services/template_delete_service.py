@@ -61,7 +61,7 @@ class TemplateInUseError(AppError):
             code=TemplateDeleteRefusalCode.TEMPLATE_IN_USE,
             message=(
                 "This template cannot be deleted: extractions already reference it "
-                f"({runs} assessment(s), {instances} entry/entries)."
+                f"({runs} extraction(s), {instances} extracted item(s))."
             ),
             status_code=status.HTTP_409_CONFLICT,
             details=TemplateDeleteRefusalDetails(runs=runs, instances=instances).model_dump(
