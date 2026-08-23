@@ -31,8 +31,7 @@ const base = {
   articles: [{ id: 'art-1', title: 'A' }], currentArticleId: 'art-1', onNavigateToArticle: vi.fn(),
   completedFields: 0, totalFields: 0, completionPercentage: 0,
   showPDF: false, onTogglePDF: vi.fn(), viewMode: 'extract' as const, onViewModeChange: vi.fn(),
-  hasComparison: false, isComplete: false, onFinalize: vi.fn(),
-  templateId: 'tpl-1',
+  hasComparison: false,
 };
 
 describe('ExtractionHeader (post legacy-cascade)', () => {
@@ -78,7 +77,6 @@ describe('ExtractionHeader (post legacy-cascade)', () => {
         <ExtractionHeader
           {...base}
           stage="extract"
-          isComplete={true}
           completedFields={5}
           totalFields={5}
           transition={{
@@ -156,22 +154,31 @@ describe('ExtractionHeader (post legacy-cascade)', () => {
       expect(onNavigate).toHaveBeenCalledWith('art-3');
     });
 
-    it('prev button is disabled on the first article', () => {
+    it('prev button is aria-disabled on the first article', () => {
       render(
         <MemoryRouter>
           <ExtractionHeader {...base} articles={articles} currentArticleId="art-1" onNavigateToArticle={onNavigate} />
         </MemoryRouter>,
       );
-      expect(screen.getByRole('button', { name: /previous article/i })).toBeDisabled();
+      // `aria-disabled`, not the native `disabled` attribute — the arrow
+      // stays focusable so a click that lands here does not strand keyboard
+      // focus on `<body>`.
+      expect(screen.getByRole('button', { name: /previous article/i })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
     });
 
-    it('next button is disabled on the last article', () => {
+    it('next button is aria-disabled on the last article', () => {
       render(
         <MemoryRouter>
           <ExtractionHeader {...base} articles={articles} currentArticleId="art-3" onNavigateToArticle={onNavigate} />
         </MemoryRouter>,
       );
-      expect(screen.getByRole('button', { name: /next article/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /next article/i })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
     });
 
     it('does not render pager when there is only one article', () => {
