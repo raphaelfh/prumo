@@ -67,7 +67,7 @@ async function expectOk(res: APIResponse, label: string): Promise<void> {
  * `extraction_published_states` is `ON DELETE CASCADE`, so a single delete
  * here is enough to wipe the whole HITL state for the triple.
  */
-export async function resetQaRuns(
+async function resetQaRuns(
   projectId: string,
   articleId: string,
 ): Promise<void> {

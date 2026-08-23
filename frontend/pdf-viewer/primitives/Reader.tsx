@@ -49,7 +49,7 @@ export interface ReaderTextBlock {
     | 'footer';
 }
 
-export interface ReaderProps {
+interface ReaderProps {
   blocks: readonly ReaderTextBlock[];
   /** Shown when `blocks` is empty AND `loading` is false. */
   emptyState?: ReactNode;

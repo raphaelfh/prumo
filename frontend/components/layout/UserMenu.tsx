@@ -101,4 +101,3 @@ export const UserMenu: React.FC<UserMenuProps> = ({collapsed}) => {
   );
 };
 
-export default UserMenu;

@@ -162,9 +162,6 @@ class Settings(BaseSettings):
     # per-task Celery time limits (parsing_tasks) must stay above 2x this.
     LLAMA_PARSE_TIMEOUT_SECONDS: float = 240.0
 
-    # =================== EVALUATION ===================
-    EVALUATION_EVIDENCE_BUCKET: str = "articles"
-
     # =================== RATE LIMITING ===================
     RATE_LIMIT_PER_MINUTE: int = 60
 

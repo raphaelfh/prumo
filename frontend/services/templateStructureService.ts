@@ -15,8 +15,6 @@ import type {components} from '@/types/api/schema';
 
 export type TemplateActiveVersionRead =
   components['schemas']['TemplateActiveVersionRead'];
-export type ActiveVersionEntityType =
-  components['schemas']['RunViewEntityType'];
 
 export function getActiveTemplateStructure(
   projectId: string,

@@ -12,7 +12,7 @@ import type { ReviewKind } from '@/lib/comparison/permissions';
 import type { components } from '@/types/api/schema';
 
 export type ConsensusRule = 'unanimous' | 'majority' | 'arbitrator';
-export type HitlConfigScopeKind = 'project' | 'template' | 'system_default';
+type HitlConfigScopeKind = 'project' | 'template' | 'system_default';
 
 export interface HitlConfigRead {
   scope_kind: HitlConfigScopeKind;

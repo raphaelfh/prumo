@@ -80,4 +80,3 @@ export const navigation = {
     sectionDescriptionQuality: 'Assess article quality with PROBAST, QUADAS-2, and other risk-of-bias tools',
 } as const;
 
-export type NavigationCopy = typeof navigation;

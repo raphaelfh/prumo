@@ -118,4 +118,3 @@ export const consensus = {
     finalizeWarnSingleFiller: '{{count}} field(s) were filled by a single reviewer.',
 } as const;
 
-export type ConsensusCopy = typeof consensus;

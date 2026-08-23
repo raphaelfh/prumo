@@ -32,7 +32,6 @@ export type RepublishTemplateVersionResponse =
 export type RepublishTemplateVersionRequest =
   components['schemas']['RepublishTemplateVersionRequest'];
 
-export type TemplateChangeAck = components['schemas']['TemplateChangeAck'];
 
 export type TemplateConfigStatus =
   components['schemas']['TemplateConfigStatusRead'];

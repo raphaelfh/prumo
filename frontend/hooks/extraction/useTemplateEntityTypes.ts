@@ -41,7 +41,7 @@ export interface TemplateEntityTypeWithFields {
   fields: ExtractionField[];
 }
 
-export { templateEntityTypesKeys };
+;
 
 export function useTemplateEntityTypes(templateId: string | null | undefined) {
   const query = useQuery({

@@ -61,6 +61,15 @@ jobs:
       - name: Run MyPy (no-new-errors ratchet)
         run: '{ uv run mypy app --ignore-missing-imports || true; } | uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline'
 
+      # Dead-code ratchet: same shape as the mypy ratchet above. Findings
+      # must be a subset of backend/.vulture_baseline (shrink-only — each
+      # entry is a framework false positive or unaudited debt). Config in
+      # [tool.vulture]; after deleting dead code, tighten in the same PR:
+      #   uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec --update
+      # Frontend counterpart: the knip zero-findings gate in Frontend Lint.
+      - name: Run Vulture (dead-code ratchet)
+        run: uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec
+
   # =================== ARCHITECTURAL FITNESS ===================
   # REQUIRED gate (promoted from advisory on 2026-05-20 after baselines hit
   # zero across every check). Runs every architectural fitness function from
@@ -451,6 +460,14 @@ jobs:
       # blocking: any new type error fails CI.
       - name: Type check (frontend)
         run: npm run typecheck
+
+      # Dead-code gate: ZERO knip findings (burned down 2026-08-23: 40 dead
+      # files, 11 unused deps, ~400 unused exports/types deleted). Legitimate
+      # exceptions live in knip.jsonc, each with a reason — extend that file,
+      # never let a finding through. Backend counterpart: the vulture ratchet
+      # in Backend Lint.
+      - name: Knip (dead code)
+        run: npx knip
 
       # Manual memoization was removed on the assumption the React Compiler
       # runs (PR enabling it); a config refactor that silently drops the

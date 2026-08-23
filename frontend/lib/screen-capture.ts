@@ -15,7 +15,7 @@ interface ImageCaptureCtor {
 }
 
 /** Stop all tracks in a MediaStream. */
-export function stopStream(stream: MediaStream): void {
+function stopStream(stream: MediaStream): void {
   for (const track of stream.getTracks()) track.stop();
 }
 

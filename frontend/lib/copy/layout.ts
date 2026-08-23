@@ -42,4 +42,3 @@ export const layout = {
     sidebarToggleAriaLabel: 'Toggle sidebar',
 } as const;
 
-export type LayoutCopy = typeof layout;

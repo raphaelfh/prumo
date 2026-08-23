@@ -1,4 +1,3 @@
-import { APIRequestContext, expect } from "@playwright/test";
 
 export type ApiEnvelope<T> = {
   ok: boolean;
@@ -24,25 +23,3 @@ export async function parseEnvelope<T>(response: Response | { json(): Promise<un
   return body;
 }
 
-export async function expectEnvelopeOk<T>(
-  request: APIRequestContext,
-  method: "get" | "post" | "patch" | "delete",
-  url: string,
-  options: {
-    token: string;
-    traceId: string;
-    data?: unknown;
-    expectedStatus?: number;
-  }
-): Promise<ApiEnvelope<T>> {
-  const response = await request.fetch(url, {
-    method: method.toUpperCase(),
-    headers: authHeaders(options.token, options.traceId),
-    data: options.data,
-  });
-  expect(response.status()).toBe(options.expectedStatus ?? 200);
-  const body = (await response.json()) as ApiEnvelope<T>;
-  expect(body.ok).toBeTruthy();
-  expect(body.trace_id).toBeTruthy();
-  return body;
-}

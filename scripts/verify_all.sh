@@ -191,6 +191,16 @@ run_gate "lint:eslint" \
 run_gate "lint:tsc" \
   npm run typecheck --silent
 
+# 3b. Dead code (repo rule: none ships). Frontend gates at ZERO knip findings
+#     (config-as-baseline: every legitimate exception lives in knip.jsonc with
+#     a reason). Backend is a vulture ratchet: findings must be a subset of
+#     backend/.vulture_baseline, which only shrinks (--exec exists so this
+#     gate needs no pipe — a pipe would hide vulture's own exit status).
+run_gate "deadcode:knip" \
+  npx knip
+run_gate "deadcode:vulture" \
+  bash -c 'cd backend && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec'
+
 # 4. Backend tests (pytest)
 run_gate "test:pytest" \
   bash -c 'cd backend && uv run pytest -q --tb=short'
