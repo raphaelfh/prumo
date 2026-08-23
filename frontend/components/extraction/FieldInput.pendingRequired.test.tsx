@@ -72,6 +72,16 @@ describe('FieldInput pending-required marker', () => {
     expect(pendingRow(container)).toBeNull();
   });
 
+  it('a required number field holding 0 SHOWS the 0 while staying unflagged', () => {
+    // The two halves must agree end-to-end. When the editor collapsed 0 to '',
+    // this field rendered an empty box that the marker deliberately did not
+    // flag (0 is answered) — a blank input nothing pointed at, which is exactly
+    // what the accent was built to eliminate.
+    const { container } = renderField({ field: { field_type: 'number' }, value: 0 });
+    expect(screen.getByRole('spinbutton')).toHaveValue(0);
+    expect(pendingRow(container)).toBeNull();
+  });
+
   it('hides the marker on a read-only run', () => {
     // Same rule as the nav rail footer: a fill-completion CTA is noise on a
     // published view.

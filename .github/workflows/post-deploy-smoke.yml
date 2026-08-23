@@ -1,9 +1,23 @@
 name: Post-deploy Smoke
 
 # The closing gate: everything else proves the application works, this
-# proves it shipped. Catches the documented failure class where the
-# Railway deploy silently sticks on a SKIPPED-CI SHA — CI is green,
-# prod is stale, nobody notices.
+# proves it shipped, in three layers.
+#
+#   1. Reachability — /health, frontend root, CORS preflight.
+#   2. Deployed commit — /health.commit vs the promoted SHA. Reachability
+#      alone cannot tell a fresh deploy from one stuck on an older commit,
+#      which is the documented failure class (CI green, prod stale).
+#   3. Authenticated read-only probe — password grant + one authenticated
+#      GET. Exercises JWKS/JWT verification, the DB read path and the
+#      ApiResponse envelope WITHOUT writing anything: prod must never be
+#      mutated by a monitor (the deleted remote-smoke Playwright project
+#      dispatched a real AI extraction, burning LLM budget and leaving a
+#      run behind on every execution).
+#
+# Layer 3 is skipped with a visible ::warning:: until its credentials are
+# provisioned — never silently, because a silent skip reads as coverage.
+# Required: repo variable PROD_SUPABASE_URL; secrets PROD_SUPABASE_ANON_KEY,
+# PROD_SMOKE_EMAIL, PROD_SMOKE_PASSWORD (a low-privilege prod test account).
 #
 # Runs after every push to main (deploy trigger) with a delay for
 # Railway's Wait-for-CI + build, plus every 6 hours as a synthetic
@@ -17,6 +31,10 @@ on:
     - cron: "7 */6 * * *"
   workflow_dispatch:
 
+env:
+  API_BASE: https://web-production-48b398.up.railway.app
+  FRONTEND_BASE: https://prumoai.vercel.app
+
 jobs:
   smoke:
     name: Prod reachability
@@ -29,27 +47,88 @@ jobs:
       - name: Backend /health
         run: |
           CODE=$(curl -fsS --max-time 15 -o /tmp/health.json -w "%{http_code}" \
-            https://web-production-48b398.up.railway.app/health) || CODE=000
+            "$API_BASE/health") || CODE=000
           echo "health -> $CODE"
           cat /tmp/health.json 2>/dev/null || true
           [ "$CODE" = "200" ]
 
+      - name: Deployed commit matches this ref
+        env:
+          EXPECTED: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          DEPLOYED=$(jq -r '.commit // empty' /tmp/health.json 2>/dev/null || echo "")
+          echo "deployed=${DEPLOYED:-<none>} expected=$EXPECTED"
+          if [ -z "$DEPLOYED" ] || [ "$DEPLOYED" = "unknown" ]; then
+            echo "::warning::backend reports no commit (build pre-dates this check, or RAILWAY_GIT_COMMIT_SHA is not injected) — cannot prove which build is live"
+            exit 0
+          fi
+          if [ "$DEPLOYED" = "$EXPECTED" ]; then
+            echo "the promoted build is live"
+            exit 0
+          fi
+          if [ "$EVENT" = "push" ]; then
+            echo "::error::prod runs $DEPLOYED but this push promoted $EXPECTED — the deploy is stale or stuck"
+            exit 1
+          fi
+          # A scheduled run can legitimately catch a deploy mid-flight; warn
+          # rather than page, the push-triggered run is the blocking check.
+          echo "::warning::prod=$DEPLOYED main=$EXPECTED — a deploy may be in flight"
+
       - name: Frontend root
         run: |
           CODE=$(curl -fsSL --max-time 15 -o /dev/null -w "%{http_code}" \
-            https://prumoai.vercel.app) || CODE=000
+            "$FRONTEND_BASE") || CODE=000
           echo "frontend -> $CODE"
           [ "$CODE" = "200" ]
 
       - name: API CORS preflight from prod origin
         run: |
           # Selective CORS breakage (allow-list drift on Railway) is a
-          # documented incident class — probe it synthetically.
+          # documented incident class — probe it synthetically, against a
+          # route that actually exists (the middleware answers OPTIONS
+          # before routing, so a bogus path would pass on a broken build).
           HDR=$(curl -fsS --max-time 15 -o /dev/null -D - \
-            -H "Origin: https://prumoai.vercel.app" \
+            -H "Origin: $FRONTEND_BASE" \
             -H "Access-Control-Request-Method: GET" \
             -X OPTIONS \
-            https://web-production-48b398.up.railway.app/api/v1/projects \
+            "$API_BASE/api/v1/user-api-keys/providers" \
             | grep -i '^access-control-allow-origin' || true)
           echo "cors -> ${HDR:-MISSING}"
           [ -n "$HDR" ]
+
+      - name: Authenticated read-only probe
+        id: auth_probe
+        if: ${{ vars.PROD_SUPABASE_URL != '' && secrets.PROD_SUPABASE_ANON_KEY != '' && secrets.PROD_SMOKE_EMAIL != '' && secrets.PROD_SMOKE_PASSWORD != '' }}
+        env:
+          SUPABASE_URL: ${{ vars.PROD_SUPABASE_URL }}
+          ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
+          SMOKE_EMAIL: ${{ secrets.PROD_SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.PROD_SMOKE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # jq -n --arg keeps the password out of the process' argv-visible
+          # shell expansion and JSON-escapes it correctly.
+          BODY=$(jq -n --arg e "$SMOKE_EMAIL" --arg p "$SMOKE_PASSWORD" '{email:$e,password:$p}')
+          TOKEN=$(curl -fsS --max-time 20 \
+            -H "apikey: $ANON_KEY" -H "Content-Type: application/json" \
+            -d "$BODY" "$SUPABASE_URL/auth/v1/token?grant_type=password" \
+            | jq -r '.access_token // empty')
+          if [ -z "$TOKEN" ]; then
+            echo "::error::password grant returned no access_token"
+            exit 1
+          fi
+          echo "login -> ok"
+          CODE=$(curl -sS --max-time 20 -o /tmp/probe.json -w "%{http_code}" \
+            -H "Authorization: Bearer $TOKEN" -H "Accept: application/json" \
+            "$API_BASE/api/v1/user-api-keys") || CODE=000
+          echo "GET /api/v1/user-api-keys -> $CODE"
+          [ "$CODE" = "200" ]
+          # Shape only — the body is never printed (it is user-scoped data).
+          jq -e 'has("ok") and has("data")' /tmp/probe.json > /dev/null
+          echo "envelope -> ok"
+
+      - name: Flag an unprovisioned probe
+        if: ${{ steps.auth_probe.outcome == 'skipped' }}
+        run: |
+          echo "::warning::Authenticated probe skipped — prod coverage is reachability + deployed-commit only. Provision repo variable PROD_SUPABASE_URL and secrets PROD_SUPABASE_ANON_KEY / PROD_SMOKE_EMAIL / PROD_SMOKE_PASSWORD to enable it."

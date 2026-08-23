@@ -58,6 +58,23 @@ export interface FieldValueEditorProps {
   textAccentClassName?: string;
 }
 
+/**
+ * A stored value as a string a controlled input can render.
+ *
+ * The old `value={x || ''}` lost every falsy-but-real answer. `0` is a
+ * legitimate extraction result ("0 events observed"), and collapsing it to `''`
+ * rendered a blank box that the emptiness oracle still counts as *answered* —
+ * so the field also escaped the pending-required accent and nothing flagged it.
+ * Only `null`/`undefined` are genuinely absent. Objects (a `{value,
+ * absent_reason}` marker reaching a text-typed field) have no scalar rendering
+ * and must not leak `[object Object]` into an input.
+ */
+function toInputValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return '';
+  return String(value);
+}
+
 export function FieldValueEditor({
   field,
   value,
@@ -91,7 +108,7 @@ export function FieldValueEditor({
       if (isLongText) {
         return (
           <Textarea
-            value={(value as string) || ''}
+            value={toInputValue(value)}
             onChange={(e) => onChange(e.target.value)}
             placeholder={t('extraction', 'fieldPlaceholderEnter').replace(
               '{{label}}',
@@ -105,7 +122,7 @@ export function FieldValueEditor({
 
       return (
         <Input
-          value={(value as string) || ''}
+          value={toInputValue(value)}
           onChange={(e) => onChange(e.target.value)}
           placeholder={t('extraction', 'fieldPlaceholderEnter').replace(
             '{{label}}',
@@ -139,7 +156,7 @@ export function FieldValueEditor({
         <div className="flex gap-2">
           <Input
             type="number"
-            value={numValue || ''}
+            value={toInputValue(numValue)}
             onChange={(e) => {
               if (hasMultipleUnits) {
                 onChange({ value: e.target.value, unit: currentUnit || field.unit });
@@ -198,7 +215,7 @@ export function FieldValueEditor({
       return (
         <Input
           type="date"
-          value={(value as string) || ''}
+          value={toInputValue(value)}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           className={cn(inputHeight, 'text-sm', inputClassName)}
@@ -281,7 +298,7 @@ export function FieldValueEditor({
       // Simple comma-separated fallback
       return (
         <Input
-          value={Array.isArray(value) ? value.join(', ') : (value as string) || ''}
+          value={Array.isArray(value) ? value.join(', ') : toInputValue(value)}
           onChange={(e) => onChange(e.target.value.split(',').map((v) => v.trim()))}
           placeholder={t('extraction', 'valuesCommaSeparated')}
           disabled={disabled}
@@ -307,7 +324,7 @@ export function FieldValueEditor({
     default:
       return (
         <Input
-          value={(value as string) || ''}
+          value={toInputValue(value)}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           className={cn(inputHeight, 'text-sm', inputClassName)}

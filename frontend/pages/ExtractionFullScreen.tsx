@@ -462,7 +462,7 @@ export default function ExtractionFullScreen() {
     // stage. The hook flushes pending edits on unmount, ``pagehide``,
     // and visibility changes so navigating mid-debounce never drops a
     // save.
-  const { saveState, lastSavedAt, hasUnsavedChanges, saveNow } = useAutoSaveProposals({
+  const { saveState, lastSavedAt, saveNow } = useAutoSaveProposals({
     runId: activeRunId,
     stage,
     values,
@@ -1298,12 +1298,7 @@ export default function ExtractionFullScreen() {
         isBlindMode={permissions.isBlindMode}
         saveState={saveState}
         lastSavedAt={lastSavedAt}
-        hasUnsavedChanges={hasUnsavedChanges}
-        isComplete={isComplete}
         submitting={submitting}
-        templateId={template?.id}
-        templateName={template?.name}
-        runId={activeRunId}
         // RunHeader feature props
         stage={stage ?? undefined}
         transition={transition}
@@ -1329,8 +1324,6 @@ export default function ExtractionFullScreen() {
         // Gated on an OPEN session run — extraction always targets that run, so
         // it never forks a parallel run that would orphan the reviewer's edits.
         canRunAI={!!activeRunId && (stage === 'extract' || stage == null)}
-        onExtractionComplete={handleExtractionComplete}
-        aiSuggestions={aiSuggestions}
         aiPendingCount={isFinalized ? 0 : aiPendingCount}
         onAISuggestionsClick={() => {
           // Header "Review N pending suggestions": scroll the form to the
@@ -1341,10 +1334,8 @@ export default function ExtractionFullScreen() {
             : undefined;
           if (entityTypeId) scrollToSectionById(entityTypeId);
         }}
-        onRefreshInstances={handleRefreshInstances}
         onExtractWithAI={onExtractWithAI}
         extractingAI={extractingAI}
-        onExtractionStateChange={setAiExtractionState}
         // Reopen moved into the header Menu
         canReopen={canReopen}
         onReopen={() => void handleReopen()}

@@ -9,6 +9,7 @@ import {ArticleFileUploadDialogNew} from "./ArticleFileUploadDialogNew";
 import {formatFileSize} from "@/lib/file-validation";
 import {FILE_ROLE_LABELS} from "@/lib/file-constants";
 import {t} from "@/lib/copy";
+import {triggerDownload} from "@/lib/download";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -103,14 +104,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
       toast.error(t('articles', 'errorDownloadFile'));
       return;
     }
-    const url = URL.createObjectURL(result.data);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = file.original_filename || "document.pdf";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    triggerDownload(result.data, file.original_filename || "document.pdf");
   };
 
   const viewPDF = async (file: ArticleFileRecord) => {
