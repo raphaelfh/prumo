@@ -1,3 +1,12 @@
+/**
+ * RunHeader.CommandPalette — the ⌘K command palette, including the
+ * searchable "go to article" list.
+ *
+ * TODO(plan-future): per-article status is not shown in the article list —
+ * the `articles` prop carries only id + title, and a batch runs endpoint
+ * would be needed to show it here.
+ */
+
 import { t } from '@/lib/copy';
 import {
   CommandDialog,

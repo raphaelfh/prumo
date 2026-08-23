@@ -18,40 +18,50 @@ import { Worklist } from './Worklist';
 import { CommandPalette } from './CommandPalette';
 
 /**
- * RESPONSIVE CASCADE (3 rules — the RunStatus popover absorbed the old
- * stage-rail / reviewers / role-chip fold ladder):
+ * LAYOUT — Identity | Navigation | Controls & Status.
  *
- *   1. The article title truncates (pure flex-shrink) — never drops.
- *   2. Reviewer avatars drop <64rem (RunStatus.tsx — they can only hide,
- *      never shrink, so they fold first in the packed consensus config).
- *   3. Back arrow drops <42rem (Breadcrumb.tsx); the stage chip folds to its
- *      dot <58rem but NEVER drops — it is the status anchor.
+ * Centring is a free-space split: `Left` and `Right` are both
+ * `flex: 1 1 0%`, so the space either side of the `shrink-0` `Center` track is
+ * even and the article pager lands on the geometric centre. `Right` has no
+ * `min-w-0`, so it floors at min-content: when the control cluster genuinely
+ * outgrows its half it pushes, and the pager slides left. Nothing here is
+ * absolutely positioned, so overlap is impossible by construction.
  *
- * The ‹N/M› pager keeps its own protected shrink-0 slot; Left/Center keep
- * overflow-hidden purely as an anti-overlap backstop for whitespace-nowrap
- * leaves.
+ * RESPONSIVE CASCADE, by header container width:
+ *
+ *   >= 64rem  everything visible; pager on the exact centre.
+ *   48-64rem  RunStatus reviewer avatars drop (RunStatus.tsx) — they can only
+ *             hide, never shrink, so they fold first in the packed consensus
+ *             config.
+ *   42-48rem  Breadcrumb back arrow drops (Breadcrumb.tsx). The stage chip
+ *             folds to its dot < 58rem but NEVER drops — it is the status
+ *             anchor.
+ *   < 42rem   The pager stays INTACT — it is the highest-priority navigation.
+ *             The article title truncates; it is the designated flex cushion.
+ *
+ *   Single-article worklist: Worklist renders null and the centre is empty.
  */
 function Left({ children }: { children: ReactNode }) {
-  // Identity track. It SHRINKS (the breadcrumb title truncates) and keeps
+  // Identity track. Grows from a 0 basis with weight 1 (see Center), and keeps
   // `overflow-hidden` ONLY as an anti-overlap backstop: its leaves are
   // `whitespace-nowrap`, so without it a shrunk track would paint its text on
-  // top of the next slot. The ‹N/M› pager lives OUT in its own protected slot
-  // (see RunHeader.Worklist placement), so a clip can never bite it. The
-  // article title is the flex cushion; the back arrow drops via @container.
-  return <div className={cn('flex min-w-0 shrink items-center gap-1.5 overflow-hidden @[48rem]/headerbar:gap-3')}>{children}</div>;
+  // top of the next slot. The article title is the flex cushion — it truncates
+  // and never drops.
+  return <div className={cn('flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden @[48rem]/headerbar:gap-3')}>{children}</div>;
 }
 function Center({ children }: { children: ReactNode }) {
-  // Status track (RunStatus cluster). shrink-0 — NEVER flex-clipped: its
-  // content already folds internally (avatars drop <64rem, the chip label
-  // folds to the dot <58rem), so squeezing this track would only clip the
-  // chip mid-word while the title still has room to truncate.
-  return <div className={cn('flex shrink-0 items-center gap-2')}>{children}</div>;
+  // Navigation track (the article pager). `shrink-0` so it is never clipped.
+  // Left and Right both have `flex-basis: 0` and `flex-grow: 1`, so the free
+  // space either side of this track is split evenly — that is what centres it.
+  return <div data-testid="run-header-center" className={cn('flex shrink-0 items-center gap-2')}>{children}</div>;
 }
 function Right({ children }: { children: ReactNode }) {
-  // `ml-auto` makes this cluster absorb all free space and pin right (the job
-  // Left's `flex-1` used to do, minus the starvation). `shrink-0` so the
-  // PrimaryAction is never clipped; only the inter-item gap tightens.
-  return <div className={cn('ml-auto flex shrink-0 items-center gap-1 @[48rem]/headerbar:gap-2')}>{children}</div>;
+  // Controls + status track. Grows symmetrically with Left, `justify-end` to
+  // pin its content right. Deliberately WITHOUT `min-w-0`: the automatic
+  // `min-width: auto` floors it at min-content, which is what guarantees
+  // PrimaryAction is never clipped. When the cluster genuinely outgrows its
+  // half, it pushes and the pager slides left rather than overlapping.
+  return <div className={cn('flex flex-1 items-center justify-end gap-1 @[48rem]/headerbar:gap-2')}>{children}</div>;
 }
 
 function RunHeaderRoot({
