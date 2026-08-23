@@ -115,10 +115,12 @@ describe('useModelManagement → createModel guard rails', () => {
 
   it('delegates to createManualModelHierarchy with trimmed model_name + scoped ids', async () => {
     mockLoadModelsToEmpty();
+    // The wire shape is the generated CreateModelHierarchyResponse
+    // (camelCase aliases) — proven in-process against the real endpoint.
     (createManualModelHierarchy as any).mockResolvedValue({
-      model_id: 'parent-inst',
-      model_label: 'LogReg',
-      child_instances: [],
+      modelId: 'parent-inst',
+      modelLabel: 'LogReg',
+      childInstances: [],
     });
 
     const { result } = renderHook(() => useModelManagement(baseProps));
@@ -127,20 +129,20 @@ describe('useModelManagement → createModel guard rails', () => {
     });
 
     expect(createManualModelHierarchy).toHaveBeenCalledWith({
-      project_id: 'p-1',
-      article_id: 'a-1',
-      template_id: 't-1',
-      model_name: 'LogReg',
-      modelling_method: null,
+      projectId: 'p-1',
+      articleId: 'a-1',
+      templateId: 't-1',
+      modelName: 'LogReg',
+      modellingMethod: null,
     });
   });
 
   it('forwards modelling_method to the backend (no client-side ReviewerDecision write)', async () => {
     mockLoadModelsToEmpty();
     (createManualModelHierarchy as any).mockResolvedValue({
-      model_id: 'inst-x',
-      model_label: 'M',
-      child_instances: [],
+      modelId: 'inst-x',
+      modelLabel: 'M',
+      childInstances: [],
     });
 
     const { result } = renderHook(() => useModelManagement(baseProps));
@@ -149,7 +151,7 @@ describe('useModelManagement → createModel guard rails', () => {
     });
 
     expect(createManualModelHierarchy).toHaveBeenCalledWith(
-      expect.objectContaining({ modelling_method: 'Neural Net' }),
+      expect.objectContaining({ modellingMethod: 'Neural Net' }),
     );
     // The hook must not bypass the backend by writing the method as a
     // ReviewerDecision from the client.
@@ -162,13 +164,13 @@ describe('useModelManagement → createModel guard rails', () => {
   it('adds the new model to local state on success and maps child_instances', async () => {
     mockLoadModelsToEmpty();
     (createManualModelHierarchy as any).mockResolvedValue({
-      model_id: 'parent-inst',
-      model_label: 'XGBoost',
-      child_instances: [
+      modelId: 'parent-inst',
+      modelLabel: 'XGBoost',
+      childInstances: [
         {
           id: 'child-1',
-          entity_type_id: 'et-section-1',
-          parent_instance_id: 'parent-inst',
+          entityTypeId: 'et-section-1',
+          parentInstanceId: 'parent-inst',
           label: 'Performance',
         },
       ],
@@ -496,9 +498,9 @@ describe('useModelManagement → optimistic mutation vs in-flight load', () => {
 
     // While the refresh is parked, the user creates Beta.
     (createManualModelHierarchy as any).mockResolvedValue({
-      model_id: 'm-B',
-      model_label: 'Beta',
-      child_instances: [],
+      modelId: 'm-B',
+      modelLabel: 'Beta',
+      childInstances: [],
     });
     await act(async () => {
       await result.current.createModel('Beta', '');
@@ -550,5 +552,37 @@ describe('useModelManagement → optimistic mutation vs in-flight load', () => {
 
     expect(result.current.models).toHaveLength(0);
     expect(result.current.activeModelId).toBeNull();
+  });
+});
+
+describe('useModelManagement → initial model preference', () => {
+  // The page persists the last active model per article (localStorage);
+  // the hook must prefer that id over the first-model fallback when no
+  // current selection survives a load — the restore effect at the page
+  // level always lost this race because loadModels batches
+  // setModels + setActiveModelId(first) in one commit.
+
+  it('restores initialModelId instead of falling back to the first model', async () => {
+    const { result } = renderHook(() =>
+      useModelManagement({
+        ...baseProps,
+        modelInstances: [modelRow('m1', 'Model A'), modelRow('m2', 'Model B')],
+        initialModelId: 'm2',
+      }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.activeModelId).toBe('m2');
+  });
+
+  it('falls back to the first model when initialModelId is not in the list', async () => {
+    const { result } = renderHook(() =>
+      useModelManagement({
+        ...baseProps,
+        modelInstances: [modelRow('m1', 'Model A'), modelRow('m2', 'Model B')],
+        initialModelId: 'gone',
+      }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.activeModelId).toBe('m1');
   });
 });

@@ -11,6 +11,7 @@ export {
   ApiError,
   type ApiResponse,
   type ApiRequestOptions,
+  type ManualModelHierarchyChild,
   type ManualModelHierarchyRequest,
   type ManualModelHierarchyResponse,
   type ZoteroAction,

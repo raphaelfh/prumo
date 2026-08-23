@@ -618,6 +618,20 @@ export default function ExtractionFullScreen() {
     [instances, modelParentEntityType],
   );
 
+  // Restore preference for the active model (persisted below). A
+  // per-article mount snapshot, deliberately not live: the hook applies
+  // it only when no current selection survives a load. Guarded read —
+  // localStorage can throw in restricted contexts (SidebarContext
+  // precedent).
+  const initialModelId = useMemo(() => {
+    if (!articleId) return null;
+    try {
+      return localStorage.getItem(`active-model-${articleId}`);
+    } catch {
+      return null;
+    }
+  }, [articleId]);
+
   // Hook for model management
   const {
     models,
@@ -634,27 +648,20 @@ export default function ExtractionFullScreen() {
     templateId: template?.id || '',
     modelParentEntityTypeId: modelParentEntityType?.id || null,
     modelInstances,
+    initialModelId,
     enabled: !!template && !!modelParentEntityType
   });
 
-    // Persist active model in localStorage
+    // Persist active model in localStorage (guarded like the read above).
   useEffect(() => {
     if (activeModelId && articleId) {
-      localStorage.setItem(`active-model-${articleId}`, activeModelId);
-    }
-  }, [activeModelId, articleId]);
-
-  // Restore the active model on load
-  useEffect(() => {
-    if (articleId && models.length > 0 && !activeModelId) {
-      const saved = localStorage.getItem(`active-model-${articleId}`);
-      if (saved && models.some(m => m.instanceId === saved)) {
-        setActiveModelId(saved);
-      } else {
-        setActiveModelId(models[0].instanceId);
+      try {
+        localStorage.setItem(`active-model-${articleId}`, activeModelId);
+      } catch {
+        // Restricted context — losing the preference is fine.
       }
     }
-  }, [articleId, models, activeModelId, setActiveModelId]);
+  }, [activeModelId, articleId]);
 
     // Redirect on critical error
   useEffect(() => {

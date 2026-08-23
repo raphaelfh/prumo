@@ -19,7 +19,10 @@ from app.models.extraction import (
 )
 from app.models.extraction_versioning import TemplateKind
 from app.repositories.extraction_repository import ExtractionEntityTypeRepository
-from app.services.extraction_review_service import ExtractionReviewService
+from app.services.extraction_review_service import (
+    ExtractionReviewService,
+    InvalidDecisionError,
+)
 
 
 @dataclass
@@ -122,13 +125,20 @@ class ModelHierarchyService:
             self.db.add_all(children)
             await self.db.flush()
 
-        proposal_run_id = await self._record_modelling_method_if_possible(
+        proposal_run_id = await self._record_initial_field_values(
+            project_id=project_id,
             article_id=article_id,
             template_id=template_id,
             model_entity_type_id=model_entity_type.id,
             model_instance_id=parent.id,
             user_id=user_id,
-            modelling_method=modelling_method,
+            # parent.label, not the raw input: the label may have been
+            # uniquified ("Cox Model (2)") and the append-only decision
+            # value must match every visible surface.
+            values={
+                "model_name": parent.label,
+                "modelling_method": modelling_method,
+            },
         )
 
         return ModelHierarchyResult(
@@ -211,30 +221,39 @@ class ModelHierarchyService:
             candidate = f"{base_label} ({attempt})"
         raise ValueError("Could not derive a unique model label after multiple attempts")
 
-    async def _record_modelling_method_if_possible(
+    async def _record_initial_field_values(
         self,
         *,
+        project_id: UUID,
         article_id: UUID,
         template_id: UUID,
         model_entity_type_id: UUID,
         model_instance_id: UUID,
         user_id: UUID,
-        modelling_method: str | None,
+        values: dict[str, str | None],
     ) -> UUID | None:
-        if not modelling_method:
-            return None
+        """Record the dialog-provided values as per-user ReviewerDecisions.
+
+        ``values`` maps container field *names* to raw strings; empty/None
+        entries and names the template does not carry are skipped. Returns
+        the live extract-stage run id when at least one decision landed,
+        ``None`` otherwise (no run open, nothing to record, or the run
+        advanced out of extract mid-flight).
+        """
+        to_record = {name: value for name, value in values.items() if value}
 
         field_stmt = select(ExtractionField).where(
             ExtractionField.entity_type_id == model_entity_type_id,
-            ExtractionField.name == "modelling_method",
+            ExtractionField.name.in_(to_record.keys()),
         )
-        field = (await self.db.execute(field_stmt)).scalars().first()
-        if field is None:
+        fields = list((await self.db.execute(field_stmt)).scalars().all())
+        if not fields:
             return None
 
         run_stmt = (
             select(ExtractionRun)
             .where(
+                ExtractionRun.project_id == project_id,
                 ExtractionRun.article_id == article_id,
                 ExtractionRun.template_id == template_id,
                 ExtractionRun.kind == TemplateKind.EXTRACTION.value,
@@ -252,12 +271,19 @@ class ModelHierarchyService:
         # the form's /decisions path does the same. Recording it as a proposal
         # would leak this reviewer's value to peers via the shared proposal track.
         review_service = ExtractionReviewService(self.db)
-        await review_service.record_decision(
-            run_id=run.id,
-            instance_id=model_instance_id,
-            field_id=field.id,
-            reviewer_id=user_id,
-            decision="edit",
-            value={"value": modelling_method},
-        )
+        try:
+            for field in fields:
+                await review_service.record_decision(
+                    run_id=run.id,
+                    instance_id=model_instance_id,
+                    field_id=field.id,
+                    reviewer_id=user_id,
+                    decision="edit",
+                    value={"value": to_record[field.name]},
+                )
+        except InvalidDecisionError:
+            # The run advanced out of extract between lookup and record —
+            # the model itself was created fine; losing the prefill must
+            # not 500 the whole creation.
+            return None
         return run.id
