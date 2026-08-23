@@ -51,10 +51,10 @@ vi.mock('@/services/extractionFieldService', () => ({
   deleteField: vi.fn(),
   insertField: vi.fn(),
 }));
-// The export button (Task 10) reads config-status; without this the real
-// useQuery would hit the wholesale-mocked templateService.
-vi.mock('@/hooks/extraction/useTemplateConfigStatus', () => ({
-  useTemplateConfigStatus: () => ({data: undefined}),
+// Heavy sibling with its own data path (config-status): stubbed as a
+// component, like TemplateConfigPublishControls below.
+vi.mock('@/components/extraction/template-config/TemplateExportButton', () => ({
+  TemplateExportButton: () => null,
 }));
 vi.mock('@/hooks/extraction/useTemplateRepublish', () => ({
   useTemplateConfigCaches: vi.fn(),

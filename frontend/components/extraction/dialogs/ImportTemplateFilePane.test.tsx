@@ -3,12 +3,18 @@ import {fireEvent, render, screen, waitFor} from '@testing-library/react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 const importTemplateFromFile = vi.fn();
-vi.mock('@/services/templateImportService', () => ({
+// The real module exports the refusal class the pane branches on; only the
+// integration clients it loads are stubbed (the supabase one throws at
+// module load in CI, which has no VITE_SUPABASE_URL).
+vi.mock('@/integrations/api/client', () => ({apiClient: vi.fn(), ApiError: class ApiError extends Error {}}));
+vi.mock('@/integrations/supabase/client', () => ({supabase: {auth: {getUser: vi.fn()}}}));
+vi.mock('@/services/templateImportService', async (orig) => ({
+  ...(await orig<typeof import('@/services/templateImportService')>()),
   importTemplateFromFile: (...a: unknown[]) => importTemplateFromFile(...a),
-  portableIssuesFromError: (error: unknown) =>
-    (error as {details?: {errors?: unknown[]}}).details?.errors ?? null,
 }));
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
+
+import {TemplatePortableRefusal} from '@/services/templateImportService';
 
 import {ImportTemplateFilePane} from './ImportTemplateFilePane';
 
@@ -44,11 +50,11 @@ describe('ImportTemplateFilePane', () => {
   it('renders the typed rejection list, one line per issue', async () => {
     importTemplateFromFile.mockResolvedValueOnce({
       ok: false,
-      error: {
-        code: 'TEMPLATE_IMPORT_INVALID',
-        message: 'Invalid template file (1 issue(s)):\nsections[0].fields[1].name: String should match pattern',
-        details: {errors: [{path: 'sections[0].fields[1].name', message: 'String should match pattern'}], error_count: 1},
-      },
+      error: new TemplatePortableRefusal(
+        'Invalid template file (1 issue(s)):\nsections[0].fields[1].name: String should match pattern',
+        'TEMPLATE_IMPORT_INVALID',
+        [{path: 'sections[0].fields[1].name', message: 'String should match pattern'}],
+      ),
     });
     render(<ImportTemplateFilePane projectId="p" onImported={vi.fn()} />);
     pickFile();
@@ -62,7 +68,10 @@ describe('ImportTemplateFilePane', () => {
   it('falls back to the message when there are no typed details', async () => {
     importTemplateFromFile.mockResolvedValueOnce({
       ok: false,
-      error: {code: 'TEMPLATE_IMPORT_WRONG_KIND', message: 'Only extraction templates can be imported here.'},
+      error: new TemplatePortableRefusal(
+        'Only extraction templates can be imported here.',
+        'TEMPLATE_IMPORT_WRONG_KIND',
+      ),
     });
     render(<ImportTemplateFilePane projectId="p" onImported={vi.fn()} />);
     pickFile();

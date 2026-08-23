@@ -64,14 +64,15 @@ export function TemplateExportButton({projectId, templateId}: TemplateExportButt
             variant="ghost"
             size="sm"
             data-testid="template-config-export"
-            aria-label={t('templateConfig', 'exportTemplateButton')}
+            aria-label={t('extraction', 'exportButton')}
             onClick={handleClick}
             className="h-8 text-muted-foreground hover:text-foreground"
           >
-            <FileDown className="h-4 w-4 2xl:mr-2" />
-            {/* The command bar is full at 1280 (its title truncated once this
-                button joined it); the label earns its room only from 2xl. */}
-            <span className="hidden 2xl:inline">{t('templateConfig', 'exportTemplateButton')}</span>
+            <FileDown className="h-4 w-4 @6xl/configbar:mr-2" />
+            {/* The command bar (a @container) is full at ~920px — its title
+                truncated once this button joined it — so the label earns its
+                room only when the BAR is wide, not the viewport. */}
+            <span className="hidden @6xl/configbar:inline">{t('extraction', 'exportButton')}</span>
           </Button>
         </TooltipTrigger>
         <TooltipContent>{t('templateConfig', 'exportTemplateTooltip')}</TooltipContent>

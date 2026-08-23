@@ -8,7 +8,7 @@
  * this list holds an inactive row, and the list refreshes itself.
  */
 
-import {useState} from 'react';
+import {useId, useState} from 'react';
 import {Loader2, Trash2} from 'lucide-react';
 import {toast} from 'sonner';
 
@@ -40,6 +40,7 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
     kind: 'extraction',
     includeInactive: true,
   });
+  const headingId = useId();
   const [pendingDelete, setPendingDelete] = useState<ProjectTemplate | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -68,14 +69,14 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
   };
 
   return (
-    <section aria-labelledby="project-templates-heading" className="space-y-2">
-      <h3 id="project-templates-heading" className="text-[13px] font-medium text-foreground">
+    <section aria-labelledby={headingId} className="space-y-2">
+      <h3 id={headingId} className="text-[13px] font-medium text-foreground">
         {t('templateConfig', 'projectTemplatesHeading')}
       </h3>
       {loading ? (
         <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          {t('extraction', 'importLoadingTemplates')}
+          {t('templateConfig', 'importLoadingTemplates')}
         </div>
       ) : templates.length === 0 ? (
         <p className="py-3 text-sm text-muted-foreground">{t('templateConfig', 'projectTemplatesEmpty')}</p>

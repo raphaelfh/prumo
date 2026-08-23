@@ -6,7 +6,7 @@
  * `onActiveTemplateChanged(id)`, so the host can re-point its state.
  */
 
-import {useState} from 'react';
+import {useId, useState} from 'react';
 import {
     Dialog,
     DialogContent,
@@ -54,6 +54,7 @@ export function ImportTemplateDialog({
                                          initialTemplateId,
 }: ImportTemplateDialogProps) {
   const { templates, loading: loadingTemplates } = useGlobalTemplates();
+  const catalogueHeadingId = useId();
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
 
@@ -84,7 +85,7 @@ export function ImportTemplateDialog({
 
   const handleImport = async () => {
     if (!selectedTemplate) {
-        toast.error(t('extraction', 'importErrorSelect'));
+        toast.error(t('templateConfig', 'importErrorSelect'));
       return;
     }
 
@@ -96,16 +97,21 @@ export function ImportTemplateDialog({
 
     setImporting(false);
 
-    if (result.success) {
-      toast.success(
-          `${t('extraction', 'importSuccess')}: "${selectedTemplate.name}". ${result.details?.entityTypesAdded} ${t('extraction', 'importSections')}, ${result.details?.fieldsAdded} ${t('templateConfig', 'importFields')}.`
-      );
-      onOpenChange(false);
-      if (result.templateId) onActiveTemplateChanged(result.templateId);
-    } else {
+    if (!result.ok) {
       console.error('[ImportTemplateDialog] import failed', result.error);
-      toast.error(`${t('extraction', 'importErrorImport')}: ${result.error || 'Unknown error'}`);
+      toast.error(`${t('templateConfig', 'importErrorImport')}: ${result.error.message}`);
+      return;
     }
+    toast.success(
+        `${t('templateConfig', 'importSuccess')}: "${selectedTemplate.name}". ${result.data.entityTypesAdded} ${t('templateConfig', 'importSections')}, ${result.data.fieldsAdded} ${t('templateConfig', 'importFields')}.`
+    );
+    closeWith(result.data.templateId);
+  };
+
+  /** Every path that changed the active template ends the same way. */
+  const closeWith = (templateId: string) => {
+    onOpenChange(false);
+    onActiveTemplateChanged(templateId);
   };
 
   const handleClose = () => {
@@ -124,35 +130,29 @@ export function ImportTemplateDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
-              {t('extraction', 'importTitle')}
+              {t('templateConfig', 'importTitle')}
           </DialogTitle>
           <DialogDescription>
-              {t('extraction', 'importDesc')}
+              {t('templateConfig', 'importDesc')}
           </DialogDescription>
         </DialogHeader>
 
-        <ProjectTemplatesList
-          projectId={projectId}
-          onSwitched={(id) => {
-            onOpenChange(false);
-            onActiveTemplateChanged(id);
-          }}
-        />
+        <ProjectTemplatesList projectId={projectId} onSwitched={closeWith} />
 
-        <section aria-labelledby="catalogue-heading" className="space-y-2">
-        <h3 id="catalogue-heading" className="text-[13px] font-medium text-foreground">
+        <section aria-labelledby={catalogueHeadingId} className="space-y-2">
+        <h3 id={catalogueHeadingId} className="text-[13px] font-medium text-foreground">
           {t('templateConfig', 'importFromCatalogueHeading')}
         </h3>
         {loadingTemplates ? (
           <div className="flex items-center justify-center p-8">
             <Loader2 className="h-6 w-6 animate-spin mr-2" />
-              <span>{t('extraction', 'importLoadingTemplates')}</span>
+              <span>{t('templateConfig', 'importLoadingTemplates')}</span>
           </div>
         ) : templates.length === 0 ? (
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-                {t('extraction', 'importNoTemplates')}
+                {t('templateConfig', 'importNoTemplates')}
             </AlertDescription>
           </Alert>
         ) : (
@@ -197,7 +197,7 @@ export function ImportTemplateDialog({
                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
                           <div className="flex items-center gap-1.5">
                             <Layers className="h-4 w-4" strokeWidth={1.5} />
-                              <span>{template.entityTypesCount} {t('extraction', 'importSections')}</span>
+                              <span>{template.entityTypesCount} {t('templateConfig', 'importSections')}</span>
                           </div>
                           <div className="flex items-center gap-1.5">
                             <FileText className="h-4 w-4" strokeWidth={1.5} />
@@ -216,9 +216,9 @@ export function ImportTemplateDialog({
               <Alert>
                 <CheckCircle2 className="h-4 w-4" />
                 <AlertDescription>
-                    <div className="font-medium mb-1">{t('extraction', 'importTemplateSelected')}</div>
+                    <div className="font-medium mb-1">{t('templateConfig', 'importTemplateSelected')}</div>
                   <div className="text-sm">
-                      <strong>{selectedTemplate.name}</strong> — {selectedTemplate.entityTypesCount} {t('extraction', 'importSections')}. {t('extraction', 'importTemplateSelectedDetail')}
+                      <strong>{selectedTemplate.name}</strong> — {selectedTemplate.entityTypesCount} {t('templateConfig', 'importSections')}. {t('templateConfig', 'importTemplateSelectedDetail')}
                   </div>
                 </AlertDescription>
               </Alert>
@@ -227,13 +227,7 @@ export function ImportTemplateDialog({
         )}
         </section>
 
-        <ImportTemplateFilePane
-          projectId={projectId}
-          onImported={(id) => {
-            onOpenChange(false);
-            onActiveTemplateChanged(id);
-          }}
-        />
+        <ImportTemplateFilePane projectId={projectId} onImported={closeWith} />
 
         <DialogFooter>
           <Button
@@ -253,12 +247,12 @@ export function ImportTemplateDialog({
             {importing ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  {t('extraction', 'importImporting')}
+                  {t('templateConfig', 'importImporting')}
               </>
             ) : (
               <>
                 <Upload className="h-4 w-4 mr-2" />
-                  {t('extraction', 'importImportButton')}
+                  {t('templateConfig', 'importImportButton')}
               </>
             )}
           </Button>

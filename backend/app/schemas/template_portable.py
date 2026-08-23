@@ -106,11 +106,6 @@ class PortableSection(BaseModel):
         return self
 
 
-# Self-referencing ``sections: list[PortableSection]`` under
-# ``from __future__ import annotations`` — resolve the forward ref eagerly.
-PortableSection.model_rebuild()
-
-
 class PortableTemplate(BaseModel):
     """The document. ``prumo_template`` and ``kind`` have NO default so they
     are always emitted even under ``exclude_defaults``."""

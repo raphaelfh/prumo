@@ -314,9 +314,21 @@ export const templateConfig = {
   undoFieldMissing: 'This field no longer exists — nothing to undo',
   undoMoveToast: 'Moved {{field}}',
 
-  // Switch-template dialog + portable import/export (spec 2026-08-23).
-  // Lives here, not in extraction.ts: that file sits at its file-size
-  // ratchet ceiling and must not grow.
+  // Switch-template dialog (moved from extraction.ts, which sits at its
+  // file-size ratchet ceiling; the dialog now reads ONE namespace).
+  importTitle: 'Switch template',
+  importDesc: "Switch between this project's templates, or add one from the catalogue or a file.",
+  importLoadingTemplates: 'Loading templates…',
+  importNoTemplates: 'No global templates available at the moment.',
+  importSections: 'sections',
+  importTemplateSelected: 'Selected template:',
+  importTemplateSelectedDetail: 'with pre-configured sections. All sections and fields will be imported to your project.',
+  importImporting: 'Importing…',
+  importImportButton: 'Import Template',
+  importErrorSelect: 'Select a template to import',
+  importErrorImport: 'Error importing template',
+  importSuccess: 'Template imported successfully',
+  // Portable import/export (spec 2026-08-23).
   projectTemplatesHeading: "This project's templates",
   projectTemplatesEmpty: 'No templates yet.',
   projectTemplateActive: 'Active',
@@ -337,7 +349,6 @@ export const templateConfig = {
   importFileNotJson: 'This is not a valid JSON file.',
   importFileErrorsHeading: 'The file was rejected:',
   importFields: 'fields',
-  exportTemplateButton: 'Export',
   exportTemplateTooltip: 'Download this template as a JSON file',
   exportDraftTitle: 'Export unpublished changes?',
   exportDraftBody: 'This file includes unpublished changes.',

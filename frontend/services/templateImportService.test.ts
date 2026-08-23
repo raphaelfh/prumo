@@ -22,10 +22,10 @@ vi.mock('@/integrations/supabase/client', () => ({
 
 import {ApiError, apiClient} from '@/integrations/api/client';
 import {
+  TemplatePortableRefusal,
   deleteTemplate,
   exportTemplate,
   importTemplateFromFile,
-  portableIssuesFromError,
   templateExportFilename,
 } from '@/services/templateImportService';
 
@@ -74,13 +74,32 @@ describe('templateImportService (portable)', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('portableIssuesFromError reads the typed details, else null', () => {
-    const typed = new ApiError('TEMPLATE_IMPORT_INVALID', 'Invalid', 422, undefined, {
-      errors: [{path: 'sections[0].fields[1].name', message: 'bad'}],
-      error_count: 1,
-    });
-    expect(portableIssuesFromError(typed)).toEqual([{path: 'sections[0].fields[1].name', message: 'bad'}]);
-    expect(portableIssuesFromError(new Error('x'))).toBeNull();
-    expect(portableIssuesFromError(new ApiError('CONFLICT', 'y', 409))).toBeNull();
+  it('a 422 refusal surfaces as TemplatePortableRefusal with validated issues', async () => {
+    mockedApi.mockRejectedValueOnce(
+      new ApiError('TEMPLATE_IMPORT_INVALID', 'Invalid', 422, undefined, {
+        errors: [
+          {path: 'sections[0].fields[1].name', message: 'bad'},
+          {path: 'dropped'}, // no message → filtered, never rendered as "undefined"
+        ],
+        error_count: 7,
+      }),
+    );
+    const result = await importTemplateFromFile('p1', new File(['{}'], 'x.json'));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeInstanceOf(TemplatePortableRefusal);
+    const refusal = result.error as TemplatePortableRefusal;
+    expect(refusal.code).toBe('TEMPLATE_IMPORT_INVALID');
+    expect(refusal.issues).toEqual([{path: 'sections[0].fields[1].name', message: 'bad'}]);
+    expect(refusal.errorCount).toBe(7);
+  });
+
+  it('a non-portable ApiError passes through unchanged', async () => {
+    mockedApi.mockRejectedValueOnce(new ApiError('CONFLICT', 'busy', 409));
+    const result = await importTemplateFromFile('p1', new File(['{}'], 'x.json'));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).not.toBeInstanceOf(TemplatePortableRefusal);
+    expect(result.error.message).toBe('busy');
   });
 });

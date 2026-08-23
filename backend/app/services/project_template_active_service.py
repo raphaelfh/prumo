@@ -13,14 +13,62 @@ from __future__ import annotations
 from uuid import UUID
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_handler import ConflictError
+from app.core.integrity import violates_constraint
 from app.models.extraction import ProjectExtractionTemplate, TemplateKind
 from app.schemas.hitl_session import UpdateTemplateActiveResponse
 
 
 class ProjectTemplateNotFoundError(Exception):
     """Raised when the template_id does not resolve to a row in the project."""
+
+
+SINGLE_ACTIVE_INDEX = "uq_one_active_extraction_template_per_project"
+"""The partial unique index behind the single-active-extraction invariant."""
+
+
+async def owned_template(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    template_id: UUID,
+    kind: str | None = None,
+    for_update: bool = False,
+) -> ProjectExtractionTemplate:
+    """The project template ``template_id`` of ``project_id`` — or 404.
+
+    The BOLA guard every template-scoped service needs: a foreign or
+    nonexistent id raises the same ``ProjectTemplateNotFoundError`` (no
+    existence oracle). ``kind`` narrows to one lineage; ``for_update`` locks
+    the row for callers whose guards must not race a concurrent writer.
+    """
+    stmt = select(ProjectExtractionTemplate).where(ProjectExtractionTemplate.id == template_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    tpl = (await db.execute(stmt)).scalar_one_or_none()
+    if tpl is None or tpl.project_id != project_id or (kind is not None and tpl.kind != kind):
+        raise ProjectTemplateNotFoundError(f"Project template {template_id} not found")
+    return tpl
+
+
+async def flush_activation(db: AsyncSession) -> None:
+    """Flush a write that activates an extraction template.
+
+    Two activations racing (two imports, an import and a Switch, two
+    clones) both deactivate the sibling on a snapshot that never saw the
+    winner; the loser's own activation then trips ``SINGLE_ACTIVE_INDEX``.
+    That is a 409 the caller can retry, not a 500 — and nothing is written
+    because the request session never commits.
+    """
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        if violates_constraint(exc, SINGLE_ACTIVE_INDEX):
+            raise ConflictError("Another template was activated at the same time; retry.") from exc
+        raise
 
 
 class LastActiveExtractionTemplateError(Exception):
@@ -74,9 +122,7 @@ async def set_template_active(
     requires exactly one). QA templates are independent — disabling the
     last QA template just means the project chose not to run any QA tool.
     """
-    tpl = await db.get(ProjectExtractionTemplate, template_id)
-    if tpl is None or tpl.project_id != project_id:
-        raise ProjectTemplateNotFoundError(f"Project template {template_id} not found")
+    tpl = await owned_template(db, project_id=project_id, template_id=template_id)
 
     if tpl.kind == TemplateKind.EXTRACTION.value and is_active is False:
         siblings_stmt = select(ProjectExtractionTemplate).where(
@@ -99,10 +145,9 @@ async def set_template_active(
         await deactivate_sibling_extraction_templates(
             db, project_id=project_id, keep_active_id=template_id
         )
-        await db.flush()
 
     tpl.is_active = is_active
-    await db.flush()
+    await flush_activation(db)
     await db.commit()
     return UpdateTemplateActiveResponse(
         project_template_id=tpl.id,

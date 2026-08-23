@@ -24,11 +24,10 @@ from uuid import UUID, uuid4
 from fastapi import status
 from pydantic import ValidationError
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.error_handler import AppError, ConflictError
+from app.core.error_handler import AppError
 from app.models.extraction import (
     ExtractionEntityRole,
     ExtractionEntityType,
@@ -36,7 +35,12 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
 )
 from app.models.extraction_versioning import TemplateKind
-from app.schemas.hitl_session import CloneTemplateResponse, TemplatePortableRefusalCode
+from app.schemas.hitl_session import (
+    CloneTemplateResponse,
+    TemplatePortableIssue,
+    TemplatePortableRefusalCode,
+    TemplatePortableRefusalDetails,
+)
 from app.schemas.template_portable import (
     PORTABLE_FORMAT_VERSION,
     PortableField,
@@ -44,19 +48,13 @@ from app.schemas.template_portable import (
     PortableTemplate,
 )
 from app.services.project_template_active_service import (
-    ProjectTemplateNotFoundError,
     deactivate_sibling_extraction_templates,
+    flush_activation,
+    owned_template,
 )
 from app.services.template_version_service import TemplateVersionService
 
 MAX_REPORTED_ERRORS = 20
-_SINGLE_ACTIVE_INDEX = "uq_one_active_extraction_template_per_project"
-
-
-def _issues(exc: ValidationError) -> tuple[list[dict[str, str]], int]:
-    """``[{path, message}]`` capped at MAX_REPORTED_ERRORS, plus the total."""
-    found = [{"path": _loc_to_path(tuple(e["loc"])), "message": e["msg"]} for e in exc.errors()]
-    return found[:MAX_REPORTED_ERRORS], len(found)
 
 
 def _loc_to_path(loc: tuple[int | str, ...]) -> str:
@@ -67,44 +65,44 @@ def _loc_to_path(loc: tuple[int | str, ...]) -> str:
 
 
 class _PortableRefusal(AppError):
-    """422 with the capped issue list in BOTH ``details`` (typed, what the UI
-    renders) and ``message`` (one line per issue, for clients that only read
-    the message — spec §5.4)."""
+    """422 carrying the issue list twice: typed in ``details`` (built from the
+    declared ``TemplatePortableRefusalDetails`` so the producer cannot drift
+    from the contract) and one line per issue in ``message`` for clients that
+    only read the message (spec §5.4). Capped at MAX_REPORTED_ERRORS."""
 
     def __init__(
-        self,
-        code: TemplatePortableRefusalCode,
-        heading: str,
-        issues: list[dict[str, str]],
-        total: int,
+        self, code: TemplatePortableRefusalCode, heading: str, exc: ValidationError
     ) -> None:
-        lines = [f"{i['path']}: {i['message']}" for i in issues]
-        suffix = f"\n(+{total - len(issues)} more)" if total > len(issues) else ""
+        issues = [
+            TemplatePortableIssue(path=_loc_to_path(e["loc"]), message=e["msg"])
+            for e in exc.errors()
+        ]
+        shown = issues[:MAX_REPORTED_ERRORS]
+        lines = [f"{i.path}: {i.message}" for i in shown]
+        suffix = f"\n(+{len(issues) - len(shown)} more)" if len(issues) > len(shown) else ""
         super().__init__(
             code=code,
-            message=f"{heading} ({total} issue(s)):\n" + "\n".join(lines) + suffix,
+            message=f"{heading} ({len(issues)} issue(s)):\n" + "\n".join(lines) + suffix,
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            details={"errors": issues, "error_count": total},
+            details=TemplatePortableRefusalDetails(
+                errors=shown, error_count=len(issues)
+            ).model_dump(mode="json"),
         )
 
 
 class TemplateImportInvalidError(_PortableRefusal):
-    def __init__(self, issues: list[dict[str, str]], *, total: int) -> None:
+    def __init__(self, exc: ValidationError) -> None:
         super().__init__(
-            TemplatePortableRefusalCode.TEMPLATE_IMPORT_INVALID,
-            "Invalid template file",
-            issues,
-            total,
+            TemplatePortableRefusalCode.TEMPLATE_IMPORT_INVALID, "Invalid template file", exc
         )
 
 
 class TemplateExportInvalidError(_PortableRefusal):
-    def __init__(self, issues: list[dict[str, str]], *, total: int) -> None:
+    def __init__(self, exc: ValidationError) -> None:
         super().__init__(
             TemplatePortableRefusalCode.TEMPLATE_EXPORT_INVALID,
             "This template cannot be exported",
-            issues,
-            total,
+            exc,
         )
 
 
@@ -142,20 +140,10 @@ def parse_portable_document(raw: dict[str, Any]) -> PortableTemplate:
     try:
         return PortableTemplate.model_validate(raw)
     except ValidationError as exc:
-        issues, total = _issues(exc)
-        raise TemplateImportInvalidError(issues, total=total) from exc
+        raise TemplateImportInvalidError(exc) from exc
 
 
 # ---------------------------------------------------------------- export
-
-
-async def _owned_extraction_template(
-    db: AsyncSession, *, project_id: UUID, template_id: UUID
-) -> ProjectExtractionTemplate:
-    tpl = await db.get(ProjectExtractionTemplate, template_id)
-    if tpl is None or tpl.project_id != project_id or tpl.kind != TemplateKind.EXTRACTION.value:
-        raise ProjectTemplateNotFoundError(f"Project template {template_id} not found")
-    return tpl
 
 
 def _section_dict(et: ExtractionEntityType, children: list[ExtractionEntityType]) -> dict[str, Any]:
@@ -179,7 +167,9 @@ def _section_dict(et: ExtractionEntityType, children: list[ExtractionEntityType]
 
 async def to_portable(db: AsyncSession, *, project_id: UUID, template_id: UUID) -> PortableTemplate:
     """Serialize the LIVE structure (what the grid shows — spec §3.3)."""
-    tpl = await _owned_extraction_template(db, project_id=project_id, template_id=template_id)
+    tpl = await owned_template(
+        db, project_id=project_id, template_id=template_id, kind=TemplateKind.EXTRACTION.value
+    )
     rows = (
         (
             await db.execute(
@@ -213,8 +203,7 @@ async def to_portable(db: AsyncSession, *, project_id: UUID, template_id: UUID) 
     except ValidationError as exc:
         # Legacy rows the format cannot carry (e.g. an empty allowed_values
         # list) are a typed 422 naming the path, never a 500.
-        issues, total = _issues(exc)
-        raise TemplateExportInvalidError(issues, total=total) from exc
+        raise TemplateExportInvalidError(exc) from exc
 
 
 # ---------------------------------------------------------------- import
@@ -264,7 +253,6 @@ async def import_portable(
     pre-assigned so the whole tree lands in ONE flush (the clone service's
     shape); the deferred model_section-parent trigger fires at commit."""
     await deactivate_sibling_extraction_templates(db, project_id=project_id, keep_active_id=None)
-    await db.flush()
 
     tpl = ProjectExtractionTemplate(
         id=uuid4(),
@@ -300,17 +288,7 @@ async def import_portable(
 
     db.add(tpl)
     db.add_all(rows)
-    try:
-        await db.flush()
-    except IntegrityError as exc:
-        if _SINGLE_ACTIVE_INDEX in str(getattr(exc, "orig", exc)):
-            # Two imports/switches raced on the single-active index: the
-            # sibling UPDATE above ran on a snapshot that never saw the
-            # winner. Nothing is written (caller never commits).
-            raise ConflictError(
-                "Another template was activated at the same time; retry the import."
-            ) from exc
-        raise
+    await flush_activation(db)
 
     # Publish v1 through the one publish path: snapshots under its locks and
     # clears the draft marker the inserts above just stamped.
@@ -320,7 +298,8 @@ async def import_portable(
     return CloneTemplateResponse(
         project_template_id=tpl.id,
         version_id=republished.version_id,
-        entity_type_count=sum(isinstance(r, ExtractionEntityType) for r in rows),
-        field_count=sum(isinstance(r, ExtractionField) for r in rows),
+        # ``order`` counted every entity type; everything else in ``rows`` is a field.
+        entity_type_count=order,
+        field_count=len(rows) - order,
         created=True,
     )

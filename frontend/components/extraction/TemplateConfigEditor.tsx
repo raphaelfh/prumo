@@ -74,7 +74,7 @@ export function TemplateConfigEditor({
   // reaches published data, and the grid arms a 6s Undo for the misclick.
   // The mutation stays here because the editor owns the cache refresh.
   const deleteFieldMutation = useDeleteTemplateField(projectId, templateId);
-  const {invalidateStructure, invalidateAfterImport} = useTemplateConfigCaches(
+  const {invalidateStructure} = useTemplateConfigCaches(
     projectId,
     templateId,
   );
@@ -258,7 +258,7 @@ export function TemplateConfigEditor({
     // un-cap the grid card.
     <div className="flex h-full min-h-0 flex-col gap-6">
       {/* Thin command bar (replaces the tall header Card). */}
-      <div className="flex h-12 shrink-0 items-center justify-between gap-3 rounded-md border border-border/40 bg-card px-4">
+      <div className="@container/configbar flex h-12 shrink-0 items-center justify-between gap-3 rounded-md border border-border/40 bg-card px-4">
         <div className="flex min-w-0 items-center gap-2">
           <Settings className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
           <span className="truncate text-sm font-medium">{t('extraction', 'configHeaderTitle')}</span>
@@ -405,15 +405,10 @@ export function TemplateConfigEditor({
         projectId={projectId}
         open={showImportDialog}
         onOpenChange={setShowImportDialog}
-        onActiveTemplateChanged={(activeTemplateId) => {
-          setShowImportDialog(false);
-          // Import/switch publish server-side, possibly for a DIFFERENT
-          // template — id-free .all invalidation, which covers this
-          // template's entity-types key too — then let the host re-point
-          // `activeTemplate` (it owns that state; this editor is keyed by it).
-          void invalidateAfterImport();
-          onActiveTemplateChanged?.(activeTemplateId);
-        }}
+        // Pure pass-through: the dialog already closed itself, and the host
+        // owns both the cache refresh and `activeTemplate` (this editor is
+        // keyed by it) — doing either here would just do it twice.
+        onActiveTemplateChanged={(activeTemplateId) => onActiveTemplateChanged?.(activeTemplateId)}
       />
     </div>
   );

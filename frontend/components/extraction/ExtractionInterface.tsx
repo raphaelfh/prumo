@@ -415,13 +415,10 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
    * invalidation, refresh the active-only list, re-point `activeTemplate`.
    */
   const handleActiveTemplateChanged = async (templateId: string) => {
-    setImportInitialTemplateId(null);
     void invalidateAfterImport();
-    const updatedTemplates = (await refreshTemplates()) || [];
+    const updatedTemplates = await refreshTemplates();
     handleTabChange('configuration');
-    const next =
-      updatedTemplates.find((tpl: ProjectTemplate) => tpl.id === templateId) ??
-      updatedTemplates[0];
+    const next = updatedTemplates.find((tpl) => tpl.id === templateId) ?? updatedTemplates[0];
     if (next) setActiveTemplate(next);
   };
 

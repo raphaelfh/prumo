@@ -16,6 +16,7 @@ from app.models.extraction import (
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.services.project_template_active_service import (
     deactivate_sibling_extraction_templates,
+    flush_activation,
 )
 
 
@@ -191,7 +192,7 @@ class TemplateCloneService:
                 await self.db.flush()
             if not existing.is_active:
                 existing.is_active = True
-            await self.db.flush()
+            await flush_activation(self.db)
             return TemplateClone(
                 project_template_id=existing.id,
                 version_id=version.id,
@@ -228,7 +229,7 @@ class TemplateCloneService:
             created_by=user_id,
         )
         self.db.add(project_tpl)
-        await self.db.flush()
+        await flush_activation(self.db)
 
         global_entity_types = await self._global_entity_types(global_template_id)
         field_count = await self._insert_project_structure_from_global(
