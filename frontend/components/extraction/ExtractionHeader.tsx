@@ -8,7 +8,7 @@
  * @component
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { type UserRole } from '@/lib/comparison/permissions';
 import { RunHeader, type RunHeaderValue, type StageTransition } from '@/components/runs/header';
 // Utility is imported directly (not via the RunHeader compound): it pulls in the
@@ -17,6 +17,7 @@ import { RunHeader, type RunHeaderValue, type StageTransition } from '@/componen
 import { Utility } from '@/components/runs/header/Utility';
 import type { ExtractionRunStage } from '@/types/ai-extraction';
 import type { SaveState } from '@/hooks/runs';
+import { useRunShortcuts } from '@/hooks/runs/useRunShortcuts';
 import { t } from '@/lib/copy';
 
 // =================== INTERFACES ===================
@@ -176,55 +177,16 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
 
-  // Header keyboard shortcuts (documented in the "?" Help panel). The changing
-  // callbacks/lists live in a ref so the listener registers ONCE (empty deps)
-  // rather than re-binding every render. Cleanup via return, NOT try/finally
-  // (React Compiler). ⌘B (sidebar) is owned by the RunWorkspaceShell, not here.
-  const kbdRef = useRef({ articles, currentArticleId, onNavigateToArticle, onTogglePDF });
-  useEffect(() => {
-    kbdRef.current = { articles, currentArticleId, onNavigateToArticle, onTogglePDF };
-  }, [articles, currentArticleId, onNavigateToArticle, onTogglePDF]);
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const { articles, currentArticleId, onNavigateToArticle, onTogglePDF } = kbdRef.current;
-      const target = e.target as HTMLElement;
-      const isEditing =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target.isContentEditable;
-      // ⌘K / Ctrl+K — toggle the command palette.
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        if (isEditing) return;
-        e.preventDefault();
-        setPaletteOpen((prev) => !prev);
-        return;
-      }
-      // Remaining shortcuts are unmodified single keys, never while typing.
-      if (e.metaKey || e.ctrlKey || e.altKey || isEditing) return;
-      if (e.key === 'Escape') {
-        setPaletteOpen(false);
-        return;
-      }
-      if (e.key === '\\') {
-        e.preventDefault();
-        onTogglePDF();
-        return;
-      }
-      if (articles.length > 1 && (e.key === 'j' || e.key === 'J')) {
-        const i = articles.findIndex((a) => a.id === currentArticleId);
-        if (i >= 0 && i < articles.length - 1) onNavigateToArticle(articles[i + 1].id);
-        return;
-      }
-      if (articles.length > 1 && (e.key === 'k' || e.key === 'K')) {
-        const i = articles.findIndex((a) => a.id === currentArticleId);
-        if (i > 0) onNavigateToArticle(articles[i - 1].id);
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, []);
+  // Header keyboard shortcuts (documented in the "?" Help panel). ⌘B (sidebar)
+  // is owned by the RunWorkspaceShell, not here.
+  useRunShortcuts({
+    articles,
+    currentArticleId,
+    onNavigateToArticle,
+    onTogglePanel: onTogglePDF,
+    onTogglePalette: () => setPaletteOpen((prev) => !prev),
+    onClosePalette: () => setPaletteOpen(false),
+  });
 
   // ---- Palette actions: surface all edge-action handlers ----
   // note: Export lives in ExtractionExportDialog, not the header
@@ -301,23 +263,16 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
             />
           </RunHeader.Left>
 
-          {/* The ‹N/M› pager is the highest-priority navigation, so it lives in
-              its OWN protected slot between the (overflow-hidden) identity and
-              context tracks — never clipped by either, shrink-0, always visible
-              whenever there is more than one article. */}
-          {articles.length > 1 && (
+          <RunHeader.Center>
             <RunHeader.Worklist
               articles={articles}
               currentId={currentArticleId}
               onNavigate={onNavigateToArticle}
             />
-          )}
-
-          <RunHeader.Center>
-            {stage != null && <RunHeader.RunStatus open={statusOpen} onOpenChange={setStatusOpen} />}
           </RunHeader.Center>
 
           <RunHeader.Right>
+            {stage != null && <RunHeader.RunStatus open={statusOpen} onOpenChange={setStatusOpen} />}
             {hasComparison && (
               <RunHeader.CompareToggle
                 active={viewMode === 'compare'}
