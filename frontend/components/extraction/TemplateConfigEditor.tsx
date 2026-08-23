@@ -32,9 +32,17 @@ import {STRUCTURAL_UNDO_TOAST_ID} from '@/components/extraction/template-config/
 interface TemplateConfigEditorProps {
   projectId: string;
   templateId: string;
+  /** The dialog inside this editor can switch/import the ACTIVE template;
+   * the host owns that state (this editor is keyed by it), so it must be
+   * told which id is active now. */
+  onActiveTemplateChanged?: (templateId: string) => void;
 }
 
-export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEditorProps) {
+export function TemplateConfigEditor({
+  projectId,
+  templateId,
+  onActiveTemplateChanged,
+}: TemplateConfigEditorProps) {
   // ONE cached read of the template structure, shared with the grid panel
   // (same key, same query). Every config mutation on this screen already
   // invalidates `templateEntityTypesKeys.byTemplate`, so the header count
@@ -395,12 +403,14 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         projectId={projectId}
         open={showImportDialog}
         onOpenChange={setShowImportDialog}
-        onTemplateImported={() => {
+        onActiveTemplateChanged={(activeTemplateId) => {
           setShowImportDialog(false);
-          // Import publishes server-side (clone routes through republish),
-          // possibly for a DIFFERENT template — id-free .all invalidation,
-          // which covers this template's entity-types key too.
+          // Import/switch publish server-side, possibly for a DIFFERENT
+          // template — id-free .all invalidation, which covers this
+          // template's entity-types key too — then let the host re-point
+          // `activeTemplate` (it owns that state; this editor is keyed by it).
           void invalidateAfterImport();
+          onActiveTemplateChanged?.(activeTemplateId);
         }}
       />
     </div>

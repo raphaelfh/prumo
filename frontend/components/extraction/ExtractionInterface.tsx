@@ -407,6 +407,24 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     }
   };
 
+  /**
+   * The active template changed to `templateId` — after a catalogue import,
+   * a file import, or a Switch, from EITHER dialog instance (the one below
+   * or the one inside TemplateConfigEditor). Server-side work already
+   * published, possibly for a different template: id-free .all
+   * invalidation, refresh the active-only list, re-point `activeTemplate`.
+   */
+  const handleActiveTemplateChanged = async (templateId: string) => {
+    setImportInitialTemplateId(null);
+    void invalidateAfterImport();
+    const updatedTemplates = (await refreshTemplates()) || [];
+    handleTabChange('configuration');
+    const next =
+      updatedTemplates.find((tpl: ProjectTemplate) => tpl.id === templateId) ??
+      updatedTemplates[0];
+    if (next) setActiveTemplate(next);
+  };
+
   // The versioned-card side of the Configuration tab (everything BELOW the
   // project-regime chrome row that hosts the engine chip).
   const renderConfigurationBody = () => {
@@ -414,6 +432,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           <TemplateConfigEditor
             projectId={projectId}
             templateId={activeTemplate.id}
+            onActiveTemplateChanged={handleActiveTemplateChanged}
           />
         ) : (
             <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
@@ -590,29 +609,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             setShowImportDialog(open);
         }}
         initialTemplateId={importInitialTemplateId}
-        onTemplateImported={async (templateId?: string) => {
-            setImportInitialTemplateId(null);
-            // Import publishes server-side, possibly for a DIFFERENT
-            // template — id-free .all invalidation (shared contract).
-            void invalidateAfterImport();
-            // Refresh templates without reloading the page
-          const updatedTemplates = await refreshTemplates() || [];
-            // Stay on configuration tab
-          handleTabChange('configuration');
-            // Select the newly imported template
-          if (templateId && updatedTemplates.length > 0) {
-            const newTemplate = updatedTemplates.find((t: ProjectTemplate) => t.id === templateId);
-            if (newTemplate) {
-              setActiveTemplate(newTemplate);
-            } else {
-                // If not found by ID, select the most recent
-              setActiveTemplate(updatedTemplates[0]);
-            }
-          } else if (updatedTemplates.length > 0) {
-              // Select the most recent if no ID
-            setActiveTemplate(updatedTemplates[0]);
-          }
-        }}
+        onActiveTemplateChanged={handleActiveTemplateChanged}
       />
 
             {/* Dialog to create custom template */}
