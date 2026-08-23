@@ -107,15 +107,23 @@ export function ImportTemplateDialog({
     toast.success(
         `${t('templateConfig', 'importSuccess')}: "${selectedTemplate.name}". ${result.data.entityTypesAdded} ${t('templateConfig', 'importSections')}, ${result.data.fieldsAdded} ${t('templateConfig', 'importFields')}.`
     );
-    await closeWith(result.data.templateId);
+    await closeAfterImport(result.data.templateId);
+  };
+
+  /** Every path that changed the active template ends the same way: close,
+   * then hand the host the id to select. */
+  const closeWith = (templateId: string) => {
+    onOpenChange(false);
+    onActiveTemplateChanged(templateId);
   };
 
   /**
-   * Every path that changed the active template ends the same way: close now,
-   * then hand the host the id — but only once the shared project-template
-   * query has refetched, so the host re-points onto a row it can already see.
+   * The two import panes go straight to a typed service, so nothing has
+   * refreshed the shared project-template query yet — do it before the host
+   * re-points, or it lands on a row it cannot see. Switch needs no such wait:
+   * its mutation awaits its own invalidation before calling back.
    */
-  const closeWith = async (templateId: string) => {
+  const closeAfterImport = async (templateId: string) => {
     onOpenChange(false);
     await invalidateProjectTemplates();
     onActiveTemplateChanged(templateId);
@@ -234,7 +242,7 @@ export function ImportTemplateDialog({
         )}
         </section>
 
-        <ImportTemplateFilePane projectId={projectId} onImported={closeWith} />
+        <ImportTemplateFilePane projectId={projectId} onImported={closeAfterImport} />
 
         <DialogFooter>
           <Button

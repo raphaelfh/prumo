@@ -47,7 +47,7 @@ function renderList(onSwitched = vi.fn(), client = newClient()) {
       <ProjectTemplatesList projectId="p" onSwitched={onSwitched} />
     </Wrapper>,
   );
-  return {onSwitched, client, Wrapper, view};
+  return {onSwitched, Wrapper, view};
 }
 
 function newClient() {

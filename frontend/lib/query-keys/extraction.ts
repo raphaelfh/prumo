@@ -80,9 +80,10 @@ export const templateDiffKeys = {
 
 /**
  * The project's own HITL templates (`project_extraction_templates`), by
- * kind. `includeInactive` is part of the identity because it changes the
- * server-side filter: the QA Configuration tab and the "switch template"
- * list need the deactivated rows, every other reader wants the active set.
+ * kind. Deliberately NOT keyed on "active only": that list is exactly this
+ * one filtered, so the readers that want it narrow these cached rows with a
+ * `select` instead of opening a second entry that every write would have to
+ * refetch alongside the first.
  *
  * Every write that adds, activates, or removes a project template
  * invalidates `.all` — an import may land on a DIFFERENT template than the
@@ -90,8 +91,8 @@ export const templateDiffKeys = {
  */
 export const projectTemplatesKeys = {
   all: ['project-templates'] as const,
-  byProject: (projectId: string, kind: string, includeInactive: boolean) =>
-    [...projectTemplatesKeys.all, projectId, kind, includeInactive] as const,
+  byProject: (projectId: string, kind: string) =>
+    [...projectTemplatesKeys.all, projectId, kind] as const,
 };
 
 /** The global catalogue offered for import, by kind (read-only). */

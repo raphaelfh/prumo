@@ -34,13 +34,17 @@ vi.mock('sonner', () => ({toast}));
 // for tests that pull it in); this file makes no supabase calls.
 vi.mock('@/integrations/supabase/client', () => ({supabase: {}}));
 
+import {projectTemplatesKeys} from '@/lib/query-keys/extraction';
+
 import {ImportTemplateDialog} from './ImportTemplateDialog';
 
-/** The dialog refreshes the shared project-template query before it reports
- * the new id, so it needs a real client. */
+/** The two IMPORT panes refresh the shared project-template query before
+ * reporting the new id, so the dialog needs a real client. `invalidateSpy`
+ * counts that refresh — Switch must not add one of its own. */
 function renderDialog(ui: ReactNode) {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+  return {...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>), invalidateSpy};
 }
 
 describe('ImportTemplateDialog (switch template)', () => {
@@ -97,10 +101,32 @@ describe('ImportTemplateDialog (switch template)', () => {
 
     fireEvent.click(screen.getByTestId('stub-switch'));
     expect(onOpenChange).toHaveBeenCalledWith(false);
-    // Reported only after the shared list query was refreshed.
     await waitFor(() => expect(onActiveTemplateChanged).toHaveBeenCalledWith('switched-id'));
 
     fireEvent.click(screen.getByTestId('stub-import'));
     await waitFor(() => expect(onActiveTemplateChanged).toHaveBeenCalledWith('imported-id'));
+  });
+
+  it('refreshes the list for an import but NOT for a Switch', async () => {
+    const {invalidateSpy} = renderDialog(
+      <ImportTemplateDialog
+        projectId="p"
+        open
+        onOpenChange={vi.fn()}
+        onActiveTemplateChanged={vi.fn()}
+      />,
+    );
+
+    // Switch went through the set-active mutation, which already awaited its
+    // own invalidation — a second one here is a wasted round trip.
+    fireEvent.click(screen.getByTestId('stub-switch'));
+    await waitFor(() => expect(invalidateSpy).not.toHaveBeenCalled());
+
+    // A file import spoke straight to the service, so nothing refreshed yet.
+    fireEvent.click(screen.getByTestId('stub-import'));
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({queryKey: projectTemplatesKeys.all}),
+    );
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,25 +1,12 @@
 /**
- * Project + global templates for the HITL flows (extraction & quality
- * assessment), as one combined shape.
+ * The project's templates AND the catalogue to import from, in one shape,
+ * for the two screens that render both: the extraction Configuration panel
+ * and the QA Configuration tab.
  *
- * This is a thin composition over `useProjectTemplates` — the cached
- * TanStack query that owns the list — plus the catalogue query and the
- * writes. Read it when a screen needs BOTH the project's templates and the
- * catalogue to import from (the QA Configuration tab, the extraction
- * Configuration panel); a screen that only lists the project's own
- * templates should take `useProjectTemplates` directly and skip the
- * catalogue fetch entirely.
- *
- * - ``templates`` lists ``project_extraction_templates`` rows for the
- *   project filtered by ``kind``. Default: only ``is_active=true``; pass
- *   ``includeInactive`` to see the full set (the QA Configuration tab
- *   needs this to render disabled toggles for previously-imported tools).
- * - ``globalTemplates`` lists every global template of the same kind so
- *   the Configuration UI can offer them for import.
- * - ``cloneTemplate`` and ``setTemplateActive`` go through the
- *   ``/api/v1/projects/:id/templates`` endpoints — single source of truth
- *   lives server-side in ``template_clone_service`` — and invalidate the
- *   project-template family so every reader re-renders from one fetch.
+ * A screen that only lists the project's own templates should take
+ * `useProjectTemplates` directly and skip the catalogue fetch entirely —
+ * `loading` below ORs the two, so a reader that discards `globalTemplates`
+ * would still block its first paint on them.
  */
 
 import {useQueryClient} from '@tanstack/react-query';
@@ -50,7 +37,6 @@ interface UseHITLProjectTemplatesResult {
   globalTemplates: GlobalTemplate[];
   loading: boolean;
   error: string | null;
-  refresh: () => Promise<ProjectTemplate[]>;
   cloneTemplate: (globalTemplateId: string) => Promise<ProjectTemplate | null>;
   setTemplateActive: (templateId: string, isActive: boolean) => Promise<boolean>;
   isTemplateImported: (globalTemplateId: string) => boolean;
@@ -63,33 +49,28 @@ export function useHITLProjectTemplates({
 }: UseHITLProjectTemplatesProps): UseHITLProjectTemplatesResult {
   const queryClient = useQueryClient();
   const projectQuery = useProjectTemplates({projectId, kind, includeInactive});
-  const catalogueQuery = useGlobalTemplateCatalogue(kind);
+  const catalogueQuery = useGlobalTemplateCatalogue(kind, {enabled: Boolean(projectId)});
   const activeMutation = useSetProjectTemplateActive(projectId);
   const cloneMutation = useCloneGlobalTemplate(projectId, kind);
 
   const templates = projectQuery.data ?? [];
-  const listKey = projectTemplatesKeys.byProject(projectId, kind, includeInactive);
-
-  const refresh = (): Promise<ProjectTemplate[]> =>
-    projectQuery.refetch().then((result) => result.data ?? []);
 
   /**
    * Clone, then read the created row back so the success copy can name it.
    * `mutateAsync` resolves only after the mutation's invalidation settles,
-   * so the cache already holds the new row here. A clone the server treated
-   * as a no-op (`created: false`) reports nothing — it changed nothing.
+   * so the cache already holds the new row — `projectQuery.data` would be
+   * the stale render-time value. A clone the server treated as a no-op
+   * (`created: false`) reports nothing: it changed nothing.
    */
   const cloneTemplate = async (globalTemplateId: string): Promise<ProjectTemplate | null> => {
-    const response = await cloneMutation
-      .mutateAsync(globalTemplateId)
-      // The failure toast fires in the mutation's onError; null ends it here.
-      .then((data) => data, () => null);
+    // The failure toast fires in the mutation's onError; null ends it here.
+    const response = await cloneMutation.mutateAsync(globalTemplateId).catch(() => null);
     if (!response) return null;
 
     const created =
-      (queryClient.getQueryData<ProjectTemplate[]>(listKey) ?? []).find(
-        (tpl) => tpl.id === response.project_template_id,
-      ) ?? null;
+      (queryClient.getQueryData<ProjectTemplate[]>(
+        projectTemplatesKeys.byProject(projectId, kind),
+      ) ?? []).find((tpl) => tpl.id === response.project_template_id) ?? null;
     if (response.created) {
       toast.success(
         t('extraction', 'templateClonedSuccess').replace('{{name}}', created?.name ?? ''),
@@ -110,11 +91,8 @@ export function useHITLProjectTemplates({
   return {
     templates,
     globalTemplates: catalogueQuery.data ?? [],
-    // Without a project there is nothing to load: the list query is disabled
-    // and the catalogue alone must not put the screen in a loading state.
-    loading: Boolean(projectId) && (projectQuery.isLoading || catalogueQuery.isLoading),
+    loading: projectQuery.isLoading || catalogueQuery.isLoading,
     error: projectQuery.error?.message ?? catalogueQuery.error?.message ?? null,
-    refresh,
     cloneTemplate,
     setTemplateActive,
     isTemplateImported,

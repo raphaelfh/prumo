@@ -64,13 +64,11 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
     // `activeTemplateId` holds UI intent only — what the user last picked or
     // imported. The selection itself is DERIVED from the list, so a template
-    // that was deleted or replaced can never linger as a stale selection; the
-    // fallbacks cover the first paint and an id the list no longer has.
+    // that was deleted or replaced can never linger as a stale selection.
+    // `templates` is the active set, newest first, so the fallback covers both
+    // the first paint and an id the list no longer has.
   const activeTemplate =
-    templates.find((tpl) => tpl.id === activeTemplateId) ??
-    templates.find((tpl) => tpl.is_active) ??
-    templates[0] ??
-    null;
+    templates.find((tpl) => tpl.id === activeTemplateId) ?? templates[0] ?? null;
 
   // Per-article values + required-field structure, shared with the list
   // tables. "Overall progress" below is the mean of the canonical per-article

@@ -22,7 +22,7 @@ import {
   useUpsertProjectHitlConfig,
 } from '@/hooks/hitl/useHitlConfig';
 import { useProjectMembers } from '@/hooks/hitl/useProjectMembers';
-import { useHITLProjectTemplates } from '@/hooks/hitl/useHITLProjectTemplates';
+import { useProjectTemplates } from '@/hooks/hitl/useProjectTemplates';
 import { useProjectMemberRole } from '@/hooks/useProjectMemberRole';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useComparisonPermissions } from '@/hooks/shared/useComparisonPermissions';
@@ -52,18 +52,18 @@ export function ReviewConsensusSection({
   const members = useProjectMembers(projectId);
 
   // We want both extraction and quality-assessment templates side by side.
-  const extractionTemplates = useHITLProjectTemplates({
+  const extractionTemplates = useProjectTemplates({
     projectId,
     kind: 'extraction',
   });
-  const qaTemplates = useHITLProjectTemplates({
+  const qaTemplates = useProjectTemplates({
     projectId,
     kind: 'quality_assessment',
   });
 
   const allTemplates = [
-    ...extractionTemplates.templates,
-    ...qaTemplates.templates,
+    ...(extractionTemplates.data ?? []),
+    ...(qaTemplates.data ?? []),
   ].sort((a, b) => a.name.localeCompare(b.name));
 
   const [draft, setDraft] = useState<HitlConfigPayload>(() =>
@@ -133,7 +133,7 @@ export function ReviewConsensusSection({
   };
 
   const templatesLoading =
-    extractionTemplates.loading || qaTemplates.loading;
+    extractionTemplates.isLoading || qaTemplates.isLoading;
 
   return (
     <SettingsSection

@@ -54,9 +54,9 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
   // One row at a time: whichever write is in flight owns the spinner and
   // disables the others.
   const busyId = switchTemplate.isPending
-    ? switchTemplate.variables?.templateId ?? null
+    ? switchTemplate.variables.templateId
     : deleteProjectTemplate.isPending
-      ? deleteProjectTemplate.variables ?? null
+      ? deleteProjectTemplate.variables
       : null;
 
   const handleSwitch = (tpl: ProjectTemplate) => {

@@ -25,6 +25,7 @@ const toast = vi.hoisted(() => ({success: vi.fn(), error: vi.fn()}));
 vi.mock('sonner', () => ({toast}));
 
 import {useHITLProjectTemplates} from '@/hooks/hitl/useHITLProjectTemplates';
+import {useProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
 
 const PROBAST = {
   id: 'tpl-probast',
@@ -40,16 +41,10 @@ const PROBAST = {
   created_by: null,
 };
 
-function wrapper() {
+function renderTemplates() {
   const client = new QueryClient({
     defaultOptions: {queries: {retry: false}, mutations: {retry: false}},
   });
-  return ({children}: {children: ReactNode}) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
-  );
-}
-
-function renderTemplates() {
   return renderHook(
     () =>
       useHITLProjectTemplates({
@@ -57,7 +52,11 @@ function renderTemplates() {
         kind: 'quality_assessment',
         includeInactive: true,
       }),
-    {wrapper: wrapper()},
+    {
+      wrapper: ({children}: {children: ReactNode}) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    },
   );
 }
 
@@ -105,6 +104,7 @@ describe('useHITLProjectTemplates', () => {
     expect(apiClient).toHaveBeenCalledWith('/api/v1/projects/p/templates/clone', {
       method: 'POST',
       body: {global_template_id: 'g-probast', kind: 'quality_assessment'},
+      timeout: 120_000,
     });
     expect(created).toMatchObject({id: 'tpl-probast', name: 'PROBAST'});
     expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('PROBAST'));
@@ -171,5 +171,35 @@ describe('useHITLProjectTemplates', () => {
     const {result} = renderTemplates();
     await waitFor(() => expect(result.current.error).toBe('down'));
     expect(result.current.templates).toEqual([]);
+  });
+});
+
+describe('useProjectTemplates', () => {
+  beforeEach(() => {
+    fetchProjectTemplates.mockReset();
+    fetchProjectTemplates.mockResolvedValue({
+      ok: true,
+      data: [PROBAST, {...PROBAST, id: 'tpl-old', name: 'Retired', is_active: false}],
+    });
+  });
+
+  it('serves the active-only and full readers from ONE fetch', async () => {
+    const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
+    const {result} = renderHook(
+      () => ({
+        all: useProjectTemplates({projectId: 'p', kind: 'quality_assessment', includeInactive: true}),
+        active: useProjectTemplates({projectId: 'p', kind: 'quality_assessment'}),
+      }),
+      {
+        wrapper: ({children}: {children: ReactNode}) => (
+          <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        ),
+      },
+    );
+
+    await waitFor(() => expect(result.current.all.data).toHaveLength(2));
+    // Same cache entry, narrowed by `select` — not a second request.
+    expect(result.current.active.data).toEqual([PROBAST]);
+    expect(fetchProjectTemplates).toHaveBeenCalledExactlyOnceWith('p', 'quality_assessment', true);
   });
 });

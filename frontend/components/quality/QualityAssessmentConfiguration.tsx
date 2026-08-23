@@ -39,13 +39,9 @@ import { ManagerReviewVisibilityToggle } from "@/components/runs/ManagerReviewVi
 
 interface Props {
   projectId: string;
-  onAfterChange?: () => void;
 }
 
-export function QualityAssessmentConfiguration({
-  projectId,
-  onAfterChange,
-}: Props) {
+export function QualityAssessmentConfiguration({ projectId }: Props) {
   const {
     templates,
     globalTemplates,
@@ -101,7 +97,6 @@ export function QualityAssessmentConfiguration({
           await setTemplateActive(active.id, false);
         }
       }
-      onAfterChange?.();
     };
     void doToggle().finally(() => setPendingId(null));
   };
