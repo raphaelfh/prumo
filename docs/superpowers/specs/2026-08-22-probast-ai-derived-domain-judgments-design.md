@@ -337,6 +337,40 @@ gates don't block on them). What changes is only where judgment values
 come from: an assessor decision informed by a visible derived default
 instead of a blank dropdown or an AI guess.
 
+## 7b. In-blast-path fixes — the live QA autosave bug (not scope creep)
+
+Diagnosed 2026-08-23 (error toast + lost answer, QA only). Two defects
+share one dead premise — "navigating to another article remounts the
+page" — which the in-place article pagers (#657/#671) invalidated:
+
+- **Q1 (QA only — the toast):** `QualityAssessmentFullScreen` hydration
+  merges the new run's `loadedValues` into the PREVIOUS article's
+  `values` state and never resets on run change (`if (!(k in next))`
+  over the stale `prev`). Stale run-A coords look dirty against run-B's
+  baseline, so autosave POSTs run-A instances at
+  `/runs/run-B/decisions` → rejected → error toast, retried per
+  keystroke. Extraction is immune: `useExtractedValues` tracks
+  `hydratedRunIdRef` and REPLACES on a new run.
+- **H1 (both screens — the silent loss):** `useAutoSaveProposals`
+  flushes only on unmount; on in-place navigation the debounce-effect
+  cleanup cancels the armed 600ms timer with no flush, so the last
+  edit never reaches the old run. Proven by a deterministic unit repro
+  (run switch mid-debounce → 0 writes; real unmount → 1 write).
+
+Fixes (phase 0 of the plan, independent of the v2 template — the v2
+form's 95 fields make autosave correctness a precondition):
+
+1. **Hook:** the unmount-flush effect gains `runId` as a dependency —
+   cleanup flushes on run switch AND unmount. Effect destroy runs
+   before the ref-sync effect re-runs, so the flush still sees the old
+   run's id and values by construction.
+2. **QA page:** reset `values` to the new run's `loadedValues` when the
+   run changes (extraction's replace-on-new-run semantics); local
+   unsaved edits of the old run are carried by fix 1's flush.
+
+Regression tests: the two unit repros above (hook-level switch flush;
+QA hydration replace-on-run-change), plus the §12 suite.
+
 ## 8. Export (xlsx)
 
 - Stored judgments remain the record and the appraisal sheet's domain
@@ -428,7 +462,9 @@ Template-specific notes, from the instrument review:
   fields/sections, copy keys; update existing QA suites (seed counts,
   dispositions assertions, appraisal resolution, run-view derived
   judgments).
-- Manual/design-review: evidence locate on the QA screen (§6).
+- Manual/design-review: evidence locate on the QA screen (§6). Autosave
+  across article navigation (§7b): answer → J/K within the debounce
+  window → value lands on the OLD run, no error toast on the new one.
 
 ## Non-goals
 
