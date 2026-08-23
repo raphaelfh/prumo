@@ -314,8 +314,8 @@ export const extraction = {
     tableNoArticlesInProject: 'No articles found in this project',
     tableNoArticles: 'No articles found',
     // ImportTemplateDialog
-    importTitle: 'Import Global Template',
-    importDesc: 'Select a standardized template to use in your project.',
+    importTitle: 'Switch template',
+    importDesc: "Switch between this project's templates, or add one from the catalogue or a file.",
     importLoadingTemplates: 'Loading templates…',
     importNoTemplates: 'No global templates available at the moment.',
     importSections: 'sections',

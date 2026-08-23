@@ -10,8 +10,11 @@
  */
 
 import {supabase} from '@/integrations/supabase/client';
-import {apiClient} from '@/integrations/api/client';
+import {ApiError, apiClient} from '@/integrations/api/client';
 import {t} from '@/lib/copy';
+import {generateSnakeCaseName} from '@/lib/extraction/slug';
+import {toResult, type ErrorResult} from '@/lib/error-utils';
+import type {components} from '@/types/api/schema';
 
 // --- Types ---
 
@@ -25,13 +28,7 @@ export interface ImportResult {
   };
 }
 
-interface CloneTemplateResponse {
-  project_template_id: string;
-  version_id: string;
-  entity_type_count: number;
-  field_count: number;
-  created: boolean;
-}
+type CloneTemplateResponse = components['schemas']['CloneTemplateResponse'];
 
 /**
  * Import a global extraction template into a project (idempotent on the server).
@@ -147,4 +144,78 @@ export async function createInitialInstances(
       error: err.message,
     };
   }
+}
+
+// --- Portable import/export (prumo-template@1) ---
+
+export type PortableTemplateDoc = components['schemas']['PortableTemplate'];
+export type PortableIssue = components['schemas']['TemplatePortableIssue'];
+
+/** `<slug>.prumo-template.json`; falls back to `template` for an empty slug. */
+export function templateExportFilename(name: string): string {
+  const slug = generateSnakeCaseName(name).replace(/_/g, '-');
+  return `${slug || 'template'}.prumo-template.json`;
+}
+
+/** The export endpoint returns the document as `data`; the caller writes
+ * THAT to disk — never the envelope (the importer is `extra="forbid"`). */
+export function exportTemplate(
+  projectId: string,
+  templateId: string,
+): Promise<ErrorResult<PortableTemplateDoc>> {
+  return toResult(
+    () =>
+      apiClient<PortableTemplateDoc>(
+        `/api/v1/projects/${projectId}/templates/${templateId}/export`,
+        {method: 'GET'},
+      ),
+    'templateImportService.exportTemplate',
+  );
+}
+
+export interface FileImportResult {
+  templateId: string;
+  entityTypesAdded: number;
+  fieldsAdded: number;
+}
+
+/** Read → JSON.parse (syntax only — the SERVER validates the document) → POST. */
+export function importTemplateFromFile(
+  projectId: string,
+  file: File,
+): Promise<ErrorResult<FileImportResult>> {
+  return toResult(async () => {
+    const text = await file.text();
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error(t('templateConfig', 'importFileNotJson'));
+    }
+    const result = await apiClient<CloneTemplateResponse>(
+      `/api/v1/projects/${projectId}/templates/import`,
+      {method: 'POST', body: parsed, timeout: 120_000},
+    );
+    return {
+      templateId: result.project_template_id,
+      entityTypesAdded: result.entity_type_count,
+      fieldsAdded: result.field_count,
+    };
+  }, 'templateImportService.importTemplateFromFile');
+}
+
+export function deleteTemplate(projectId: string, templateId: string): Promise<ErrorResult<void>> {
+  return toResult(async () => {
+    await apiClient<components['schemas']['TemplateDeleteResponse']>(
+      `/api/v1/projects/${projectId}/templates/${templateId}`,
+      {method: 'DELETE'},
+    );
+  }, 'templateImportService.deleteTemplate');
+}
+
+/** The typed issue list a 422 refusal carries (`TemplatePortableRefusalDetails`), or null. */
+export function portableIssuesFromError(error: unknown): PortableIssue[] | null {
+  if (!(error instanceof ApiError)) return null;
+  const errors = error.details?.errors;
+  return Array.isArray(errors) ? (errors as PortableIssue[]) : null;
 }
