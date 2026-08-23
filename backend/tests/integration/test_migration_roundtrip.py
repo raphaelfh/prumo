@@ -4,9 +4,9 @@ Drives ``alembic downgrade <parent> → upgrade head`` to verify that every
 DDL migration on top of the squash baseline round-trips without leaving the
 schema in a different state than where it started.
 
-The round-trips run against an ephemeral database (``prumo_migration_test``)
-created per test session on the same Postgres server — never against the
-shared dev database. Replaying the chain drops and re-adds columns, and
+The round-trips run against an ephemeral database
+(``prumo_migration_test_<pid>``) created per test session on the same
+Postgres server — never against the shared dev database. Replaying the chain drops and re-adds columns, and
 every dropped column leaves a permanent ``pg_attribute`` tombstone that
 counts toward Postgres's 1600-column table limit until the table is
 recreated (VACUUM FULL does not clear them), so repeated runs against the
@@ -17,6 +17,7 @@ database, then ``alembic upgrade head``.
 """
 
 import os
+import re
 import subprocess
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -39,9 +40,55 @@ _BACKEND_DIR = Path(__file__).resolve().parents[2]
 # reference them at CREATE POLICY time), Supabase roles, storage.objects.
 _STUB_SQL = Path(__file__).with_name("supabase_stub.sql")
 
-# Fixed name is safe: concurrent pytest sessions are already forbidden for
-# this suite (cross-session advisory locks hang), and setup drops leftovers.
-_SCRATCH_DB_NAME = "prumo_migration_test"
+# Unique per pytest process. A fixed name was NOT safe: the local Postgres is
+# one server shared by every worktree/session, so a second run's setup
+# `DROP DATABASE ... WITH (FORCE)` deleted this run's scratch DB mid-flight —
+# surfacing as InvalidCatalogNameError here, or ConnectionDoesNotExistError in
+# whichever test held a connection when FORCE terminated it. Both were read as
+# "the suite is flaky" across two sessions on 2026-08-23. The previous comment
+# rested on "concurrent pytest sessions are already forbidden for this suite";
+# nothing enforces that, and parallel agent worktrees violate it routinely.
+# This removes the scratch-DB hazard ONLY — cross-session advisory-lock
+# contention elsewhere in the suite is unchanged, so concurrent full runs are
+# still not endorsed.
+_SCRATCH_DB_PREFIX = "prumo_migration_test_"
+_SCRATCH_DB_NAME = f"{_SCRATCH_DB_PREFIX}{os.getpid()}"
+# Databases from the old fixed-name scheme are deliberately NOT matched by the
+# sweep below: a peer session still running the old code owns that exact name.
+_STALE_SCRATCH_RE = re.compile(rf"^{_SCRATCH_DB_PREFIX}(\d+)$")
+
+
+def _pid_is_alive(pid: int) -> bool:
+    """True if a process with this pid exists (signal 0 probes, never kills)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Alive, owned by another user.
+        return True
+    return True
+
+
+async def _drop_stale_scratch_dbs(admin: asyncpg.Connection) -> None:
+    """Reclaim scratch DBs leaked by hard-killed runs.
+
+    Per-pid naming means a crashed run no longer has its database reclaimed by
+    the next run's DROP, so sweep them here. Only databases whose embedded pid
+    is gone are dropped, which is what keeps a concurrently-running session's
+    scratch DB untouched — the exact failure this naming scheme fixes.
+    """
+    rows = await admin.fetch(
+        "SELECT datname FROM pg_database WHERE datname LIKE $1",
+        f"{_SCRATCH_DB_PREFIX}%",
+    )
+    for row in rows:
+        datname = row["datname"]
+        match = _STALE_SCRATCH_RE.match(datname)
+        if match is None or _pid_is_alive(int(match.group(1))):
+            continue
+        # datname is regex-validated above, so it is safe to interpolate.
+        await admin.execute(f"DROP DATABASE IF EXISTS {datname} WITH (FORCE)")
 
 
 def _run_alembic(*args: str, database_url: str) -> str:
@@ -84,6 +131,7 @@ async def migration_db_url() -> AsyncGenerator[str, None]:
 
     admin = await asyncpg.connect(dsn=admin_dsn)
     try:
+        await _drop_stale_scratch_dbs(admin)
         await admin.execute(f"DROP DATABASE IF EXISTS {_SCRATCH_DB_NAME} WITH (FORCE)")
         await admin.execute(f"CREATE DATABASE {_SCRATCH_DB_NAME}")
     finally:
@@ -1220,3 +1268,77 @@ async def test_alembic_history_chain_is_continuous() -> None:
     # No two files may declare the same revision id.
     rev_ids = [r for r, _ in revisions]
     assert len(rev_ids) == len(set(rev_ids)), f"Duplicate revision id detected: {rev_ids}"
+
+
+# --- scratch-DB isolation ------------------------------------------------
+# These are pure unit tests (no database); they live here because they guard
+# the naming/sweep logic defined above. The invariant they protect is the
+# whole point of per-pid naming: the sweep must never drop a database that a
+# concurrently-running session still owns.
+
+
+class _FakeAdmin:
+    """Minimal ``asyncpg.Connection`` stand-in for ``_drop_stale_scratch_dbs``."""
+
+    def __init__(self, datnames: list[str]) -> None:
+        self._datnames = datnames
+        self.dropped: list[str] = []
+
+    async def fetch(self, _query: str, pattern: str) -> list[dict[str, str]]:
+        prefix = pattern.rstrip("%")
+        return [{"datname": name} for name in self._datnames if name.startswith(prefix)]
+
+    async def execute(self, sql: str) -> None:
+        self.dropped.append(sql)
+
+
+def test_scratch_db_name_is_unique_per_process() -> None:
+    expected = f"{_SCRATCH_DB_PREFIX}{os.getpid()}"
+    assert expected == _SCRATCH_DB_NAME
+    assert _SCRATCH_DB_NAME != "prumo_migration_test"
+
+
+def test_legacy_fixed_name_is_never_swept() -> None:
+    """A peer session on the old code still owns the unsuffixed name."""
+    assert _STALE_SCRATCH_RE.match("prumo_migration_test") is None
+
+
+def test_pid_is_alive_for_this_process() -> None:
+    assert _pid_is_alive(os.getpid()) is True
+
+
+async def test_sweep_drops_only_dead_pid_databases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The safety property: a live session's scratch DB survives the sweep."""
+    live, dead = 4242, 4243
+    monkeypatch.setattr(
+        "tests.integration.test_migration_roundtrip._pid_is_alive",
+        lambda pid: pid == live,
+    )
+    admin = _FakeAdmin(
+        [
+            f"{_SCRATCH_DB_PREFIX}{live}",
+            f"{_SCRATCH_DB_PREFIX}{dead}",
+            "prumo_migration_test",  # legacy fixed name, owned by old-code runs
+            "postgres",
+        ]
+    )
+
+    await _drop_stale_scratch_dbs(admin)
+
+    assert admin.dropped == [f"DROP DATABASE IF EXISTS {_SCRATCH_DB_PREFIX}{dead} WITH (FORCE)"]
+
+
+async def test_sweep_is_a_noop_when_every_pid_is_alive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "tests.integration.test_migration_roundtrip._pid_is_alive",
+        lambda _pid: True,
+    )
+    admin = _FakeAdmin([f"{_SCRATCH_DB_PREFIX}1", f"{_SCRATCH_DB_PREFIX}2"])
+
+    await _drop_stale_scratch_dbs(admin)
+
+    assert admin.dropped == []
