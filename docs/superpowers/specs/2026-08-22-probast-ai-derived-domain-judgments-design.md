@@ -209,6 +209,32 @@ that is 20 fields: 8 judgments + 8 judgment rationales + 4 summaries.
   extraction; applicability is the user's explicit decision.
 - The `quality_assessment` prompt needs no change.
 
+### Shared-pipeline modularity (invariants, not aspirations)
+
+QA extraction is the SAME pipeline as data extraction — one
+`section_extraction_service`, where `run.kind` only selects the prompt
+pair and both prompts share one response shape. Everything else is
+inherited: field-schema builder, proposal writes, evidence, engine
+pinning, per-section repeat/model choice, per-proposal engine
+provenance, ✨ template instruction (`general_instructions_for_version`
+— where the Step-1 PICOTS lives, shared by every call). This design
+must keep it that way:
+
+- The exclusion filter is a pure helper over spec data (the
+  `target`/`rationale`/`summary` coordinates), applied at the single
+  point where `fields_override` is assembled. A template without a
+  spec yields an empty exclusion set and passes through byte-identical.
+- **No new `kind == "quality_assessment"` branch anywhere** in the
+  extraction path; the filter is template-data-driven and kind-agnostic.
+- Within a section, describes + SQs go to the model in ONE call (the
+  instrument's describe-then-answer flow inside a single response);
+  across sections there is no chaining — each call stands alone, which
+  is what makes per-section repeat with a different model coherent.
+- Regression guard (§12): an extraction-kind template with no spec
+  reaches `build_output_models` with its field list unchanged — so
+  future extraction-pipeline updates keep propagating to QA and
+  vice versa.
+
 ## 4. Payload
 
 `RunViewDerivedJudgment` gains nullable fields resolved by
@@ -389,7 +415,9 @@ Template-specific notes, from the instrument review:
   (inputs/target/rationale/summary → seeded fields), new UUIDs.
 - LLM exclusion: excluded fields never reach `build_output_models`; the
   `overall_judgement` section skips the call; describes + applicability
-  + rationale still included.
+  + rationale still included. Modularity guard: a spec-less
+  extraction template passes the filter byte-identical, and no
+  QA-kind branch exists in the extraction path (grep-able assertion).
 - Payload: target/rationale/summary id resolution, 12 entries for v2 /
   4 for v1-shaped specs, blind vs revealed unchanged.
 - Export: D4 type + scope + overall sections contribute no verdict
