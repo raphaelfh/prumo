@@ -152,6 +152,10 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
+        # DEBUG only: additionally accept any localhost port so worktree
+        # dev servers work without editing an untracked .env. None in
+        # production, where the explicit list above is the only gate.
+        allow_origin_regex=settings.cors_origin_regex,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

@@ -39,6 +39,34 @@ _ERROR_RE = re.compile(
     r"^(?P<file>.+?\.py):\d+:(?:\d+:)?\s*error:.*\[(?P<code>[a-z][a-z0-9-]*)\]\s*$"
 )
 
+# Proof-of-life: a mypy run that reached the end always prints exactly one of
+# these on stdout (singular forms included):
+#   Success: no issues found in 412 source files
+#   Found 3 errors in 2 files (checked 412 source files)
+_SUMMARY_RE = re.compile(
+    r"^(?:Success: no issues found in \d+ source files?"
+    r"|Found \d+ errors? in \d+ files? \(checked \d+ source files?\))\s*$"
+)
+
+
+def mypy_ran(lines: list[str], signatures: set[str]) -> bool:
+    """Did mypy actually produce this output, or is the gate reading nothing?
+
+    The CI step is ``{ uv run mypy ... || true; } | mypy_baseline.py``. The
+    ``|| true`` is required (mypy exits 1 whenever it reports errors) but it
+    also swallows a *spawn* failure — a venv without mypy prints "Failed to
+    spawn: `mypy`" on **stderr**, so the pipe carries an empty stdin and the
+    ratchet used to grade "0 signatures" as a clean run. Same blindness for a
+    crash, a bad path, or "There are no .py[i] files in directory".
+
+    Two independent proofs are accepted, so this can never produce a false RED:
+      * at least one parsed error signature — mypy demonstrably type-checked;
+      * a terminal summary line — mypy finished, with or without errors.
+    """
+    if signatures:
+        return True
+    return any(_SUMMARY_RE.match(line.rstrip("\n")) for line in lines)
+
 
 def parse_signatures(lines: list[str]) -> set[str]:
     """Reduce raw mypy output to a set of stable ``file:error-code`` signatures."""
@@ -91,7 +119,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    current = parse_signatures(args.input.readlines())
+    lines = args.input.readlines()
+    current = parse_signatures(lines)
+
+    # Before grading anything — including --update, where an empty read would
+    # silently WIPE the ratchet baseline instead of merely passing it.
+    if not mypy_ran(lines, current):
+        print(
+            "::error::mypy ratchet: mypy did not run — its output carried "
+            "neither an error line nor a terminal summary "
+            '("Success: no issues found in N source files" / "Found N errors '
+            'in M files (checked K source files)").'
+        )
+        print(
+            "The gate reads mypy's STDOUT through `|| true`, which hides a "
+            "spawn/crash failure (that goes to stderr). Check that mypy is "
+            "installed in the environment running the step: "
+            "`cd backend && uv sync --frozen --extra dev`."
+        )
+        preview = [line.rstrip("\n") for line in lines[:5]]
+        print(f"Input was {len(lines)} line(s); first lines: {preview or '<empty>'}")
+        return 2
 
     if args.update:
         write_baseline(args.baseline, current)

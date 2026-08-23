@@ -39,6 +39,11 @@ jobs:
   smoke:
     name: Prod reachability
     runs-on: ubuntu-latest
+    # `secrets` cannot be referenced from a step-level `if` — GitHub fails to
+    # parse the whole workflow. A job-level `env` may reference it, so the
+    # credential check collapses to this boolean and the step gates on it.
+    env:
+      PROBE_READY: ${{ (vars.PROD_SUPABASE_URL != '' && secrets.PROD_SUPABASE_ANON_KEY != '' && secrets.PROD_SMOKE_EMAIL != '' && secrets.PROD_SMOKE_PASSWORD != '') && 'yes' || 'no' }}
     steps:
       - name: Wait for Railway deploy (push only)
         if: github.event_name == 'push'
@@ -99,7 +104,7 @@ jobs:
 
       - name: Authenticated read-only probe
         id: auth_probe
-        if: ${{ vars.PROD_SUPABASE_URL != '' && secrets.PROD_SUPABASE_ANON_KEY != '' && secrets.PROD_SMOKE_EMAIL != '' && secrets.PROD_SMOKE_PASSWORD != '' }}
+        if: ${{ env.PROBE_READY == 'yes' }}
         env:
           SUPABASE_URL: ${{ vars.PROD_SUPABASE_URL }}
           ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
