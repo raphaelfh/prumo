@@ -114,25 +114,6 @@ class BaseRepository(Generic[T]):
         )
         return result.scalar_one_or_none()
 
-    async def get_all(
-        self,
-        *,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> list[T]:
-        """
-        List todas as entidades with paginacao.
-
-        Args:
-            skip: Offset for paginacao.
-            limit: Limite de resultados.
-
-        Returns:
-            List de entidades.
-        """
-        result = await self.db.execute(select(self.model).offset(skip).limit(limit))
-        return list(result.scalars().all())
-
     async def create(self, obj: T) -> T:
         """
         Create nova entidade.
@@ -167,19 +148,6 @@ class BaseRepository(Generic[T]):
             db_duration_ms=query_duration_ms,
         )
         return obj
-
-    async def create_from_dict(self, data: dict[str, Any]) -> T:
-        """
-        Create entidade a partir de dicionario.
-
-        Args:
-            data: Dados for criar a entidade.
-
-        Returns:
-            Entidade criada.
-        """
-        obj = self.model(**data)
-        return await self.create(obj)
 
     async def update(self, obj: T, data: dict[str, Any]) -> T:
         """
@@ -247,22 +215,6 @@ class BaseRepository(Generic[T]):
             record_id=str(getattr(obj, "id", "unknown")),
             db_duration_ms=query_duration_ms,
         )
-
-    async def delete_by_id(self, id: UUID | str) -> bool:
-        """
-        Remove entidade por ID.
-
-        Args:
-            id: entidade.
-
-        Returns:
-            True se removida, False se not found.
-        """
-        obj = await self.get_by_id(id)
-        if obj:
-            await self.delete(obj)
-            return True
-        return False
 
     async def exists(self, id: UUID | str) -> bool:
         """

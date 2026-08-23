@@ -43,7 +43,7 @@ export function isPrintableKey(event: React.KeyboardEvent): boolean {
   return event.key.length === 1 && !event.ctrlKey && !event.metaKey;
 }
 
-export function targetCovers(el: HTMLElement, column: string): boolean {
+function targetCovers(el: HTMLElement, column: string): boolean {
   const cols = el.dataset.cellCols ?? '';
   return cols === '*' || cols.split(' ').includes(column);
 }

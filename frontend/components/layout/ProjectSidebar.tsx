@@ -74,4 +74,3 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
   );
 };
 
-export default ProjectSidebar;

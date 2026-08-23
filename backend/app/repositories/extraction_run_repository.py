@@ -372,30 +372,6 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def get_latest_by_article(
-        self,
-        article_id: UUID,
-        stage: ExtractionRunStage,
-    ) -> ExtractionRun | None:
-        """
-        Fetch the most recent run of an article for a stage.
-
-        Args:
-            article_id: article.
-            stage: run stage.
-
-        Returns:
-            The most recent ExtractionRun, or None.
-        """
-        result = await self.db.execute(
-            select(ExtractionRun)
-            .where(ExtractionRun.article_id == article_id)
-            .where(ExtractionRun.stage == stage.value)
-            .order_by(ExtractionRun.created_at.desc())
-            .limit(1)
-        )
-        return result.scalar_one_or_none()
-
     async def get_by_project(
         self,
         project_id: UUID,

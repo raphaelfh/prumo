@@ -21,4 +21,3 @@ export const ui = {
     multiSelectTypeHere: 'Type here',
 } as const;
 
-export type UiCopy = typeof ui;

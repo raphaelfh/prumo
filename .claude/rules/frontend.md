@@ -55,6 +55,18 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   (`/design-review <route>`) — render, screenshot, compare to the
   Plane/Linear target, fix, re-screenshot.
 
+## Dead code
+
+- CI gates the frontend at **zero knip findings** (`npx knip` from the
+  repo root; also a `verify_all.sh` gate). Unused files, exports, types
+  and dependencies fail the build — delete them, don't export "just in
+  case". Legitimate exceptions (generated files, shell-invoked scripts,
+  browser-runtime imports) live in `knip.jsonc`, each with a comment
+  explaining why; extend that file only with a reason a reviewer can
+  check. Generated files (`frontend/types/api/schema.d.ts`,
+  `frontend/integrations/supabase/types.ts`) are knip-ignored — never
+  hand-edit them to silence a finding.
+
 ## Tests
 
 - Run from the repo root: `npm run test:run` (vitest; plain `npm test`

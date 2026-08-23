@@ -50,27 +50,9 @@ export class SupabaseRepositoryError extends Error {
   }
 }
 
-export class AuthenticationError extends Error {
-    constructor(message = 'User not authenticated') {
-    super(message);
-    this.name = 'AuthenticationError';
-  }
-}
 
 // =================== HELPERS ===================
 
-/**
- * Ensures user is authenticated
- */
-export async function requireAuth(): Promise<string> {
-  const { data: { session }, error } = await supabase.auth.getSession();
-  
-  if (error || !session) {
-    throw new AuthenticationError();
-  }
-  
-  return session.access_token;
-}
 
 /**
  * Handles Supabase error consistently
@@ -194,56 +176,7 @@ export async function insertOne<T>(
   return result as T;
 }
 
-/**
- * Standardized insert many helper
- *
- * NOTE: Uses type assertion due to strict Supabase typing.
- */
-export async function insertMany<T>(
-  table: string,
-  data: Partial<T>[],
-  context = 'insertMany'
-): Promise<T[]> {
 
-    const { data: result, error } = await (supabase.from(table as any) as DynamicSupabaseTable)
-    .insert(data)
-    .select();
-
-  if (error) {
-    handleSupabaseError(error, context);
-  }
-
-  return (result || []) as T[];
-}
-
-/**
- * Standardized update helper
- *
- * NOTE: Uses type assertion due to strict Supabase typing.
- */
-export async function updateOne<T>(
-  table: string,
-  id: string,
-  updates: Partial<T>,
-  context = 'update'
-): Promise<T> {
-
-    const { data: result, error } = await (supabase.from(table as any) as DynamicSupabaseTable)
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) {
-    handleSupabaseError(error, context);
-  }
-
-  if (!result) {
-      throw new SupabaseRepositoryError(`Failed to update ${table} (id: ${id}): no data returned`);
-  }
-
-  return result as T;
-}
 
 /**
  * Standardized delete helper

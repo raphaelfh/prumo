@@ -125,4 +125,3 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
   );
 };
 
-export default SidebarHeader;

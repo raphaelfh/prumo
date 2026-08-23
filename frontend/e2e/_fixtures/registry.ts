@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-export type ResourceKind =
+type ResourceKind =
   | "auth_user"
   | "extraction_instance"
   | "extraction_entity_type"
@@ -67,6 +67,3 @@ export function clearRegistry(): void {
   writeAll([]);
 }
 
-export function registryPath(): string {
-  return REGISTRY_PATH;
-}

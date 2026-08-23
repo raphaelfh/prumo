@@ -10,7 +10,6 @@
 
 import {apiBlobClient, apiClient} from "@/integrations/api/client";
 import type {
-    ExtractionExportCancelResult,
     ExtractionExportRequest,
     ExtractionExportStatus,
     StartExtractionExportResult,
@@ -63,15 +62,3 @@ export async function getExportStatus(
     return apiClient<ExtractionExportStatus>(statusEndpoint(projectId, jobId));
 }
 
-/**
- * Cancel a queued or running extraction export.
- */
-export async function cancelExport(
-    projectId: string,
-    jobId: string,
-): Promise<ExtractionExportCancelResult> {
-    return apiClient<ExtractionExportCancelResult>(
-        statusEndpoint(projectId, jobId),
-        {method: "DELETE"},
-    );
-}

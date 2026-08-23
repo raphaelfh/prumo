@@ -135,6 +135,11 @@ def test_gate_roster_is_pinned() -> None:
         "lint:ruff": "bash -c 'cd backend && uv run ruff check . && uv run ruff format --check .'",
         "lint:eslint": "npm run lint --silent",
         "lint:tsc": "npm run typecheck --silent",
+        "deadcode:knip": "npx knip",
+        "deadcode:vulture": (
+            "bash -c 'cd backend && uv run python ../scripts/vulture_baseline.py "
+            "--baseline .vulture_baseline --exec'"
+        ),
         "test:pytest": "bash -c 'cd backend && uv run pytest -q --tb=short'",
         "test:vitest": "npm test -- --run",
         "build:react-compiler": "node scripts/check_compiler_coverage.mjs",

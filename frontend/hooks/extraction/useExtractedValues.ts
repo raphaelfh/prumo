@@ -39,14 +39,6 @@ import type {
   RunViewCurrentValue,
 } from '@/hooks/runs/types';
 
-export interface ExtractedValueData {
-  id?: string;
-  instanceId: string;
-  fieldId: string;
-  value: any;
-  source?: 'human' | 'ai' | 'rule';
-  confidence?: number;
-}
 
 interface UseExtractedValuesProps {
   runId: string | null | undefined;

@@ -89,4 +89,3 @@ export const pdf = {
     docReparseConfirmCta: 'Re-parse',
 } as const;
 
-export type PdfCopy = typeof pdf;

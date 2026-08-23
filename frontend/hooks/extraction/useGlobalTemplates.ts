@@ -17,7 +17,7 @@ import {loadGlobalTemplates} from '@/services/templateService';
 
 // =================== INTERFACES ===================
 
-export interface GlobalTemplate extends GlobalExtractionTemplate {
+interface GlobalTemplate extends GlobalExtractionTemplate {
   entityTypesCount: number;
 }
 

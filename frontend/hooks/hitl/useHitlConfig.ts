@@ -14,7 +14,7 @@ import {
   type HitlConfigRead,
 } from '@/services/hitlConfigService';
 
-export const hitlConfigKeys = {
+const hitlConfigKeys = {
   all: ['hitl-config'] as const,
   project: (projectId: string) =>
     [...hitlConfigKeys.all, 'project', projectId] as const,

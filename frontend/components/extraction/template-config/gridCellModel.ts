@@ -36,7 +36,7 @@ export interface GridRowShape {
   inlineEditor?: boolean;
 }
 
-export type GridEffect =
+type GridEffect =
   | {kind: 'commit'; coord: CellCoord}
   | {kind: 'cancelEdit'; coord: CellCoord}
   | {kind: 'activateControl'; coord: CellCoord}
@@ -71,7 +71,7 @@ export const initialGridState: GridModelState = {
 
 /** Always-visible column order for horizontal roving. Optional columns
  * (key/options) are spliced in by the grid when displayed. */
-export const GRID_COLUMNS = ['label', 'type', 'required', 'sparkle', 'actions'] as const;
+const GRID_COLUMNS = ['label', 'type', 'required', 'sparkle', 'actions'] as const;
 
 export type GridEvent =
   | {type: 'click'; coord: CellCoord; cellKind: CellKind; rows: GridRowShape[]}

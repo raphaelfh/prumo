@@ -1,4 +1,4 @@
-import React, {Component, ErrorInfo, ReactNode} from 'react';
+import {Component, ErrorInfo, ReactNode} from 'react';
 import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {AlertTriangle, Bug, Home, RefreshCw} from 'lucide-react';
@@ -177,29 +177,5 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 }
 
 // Hook to use error boundary in functional components
-export const useErrorHandler = () => {
-  const handleError = (error: Error, context?: string) => {
-    console.error(`[useErrorHandler${context ? ` - ${context}` : ''}]`, error);
-      toast.error(
-          (context ? t('common', 'errors_inContext').replace('{{context}}', context) : t('common', 'error')) + ': ' + error.message
-      );
-  };
-
-  return { handleError };
-};
 
 // HOC para wrappear componentes com ErrorBoundary
-export const withErrorBoundary = <P extends object>(
-  Component: React.ComponentType<P>,
-  errorBoundaryProps?: Omit<ErrorBoundaryProps, 'children'>
-) => {
-  const WrappedComponent = (props: P) => (
-    <ErrorBoundary {...errorBoundaryProps}>
-      <Component {...props} />
-    </ErrorBoundary>
-  );
-
-  WrappedComponent.displayName = `withErrorBoundary(${Component.displayName || Component.name})`;
-  
-  return WrappedComponent;
-};

@@ -79,14 +79,4 @@ export const ProjectLayout: React.FC<AppLayoutProps> = ({children, className}) =
 };
 
 // Simple layout for auth pages
-export const AuthLayout: React.FC<AppLayoutProps> = ({ children, className }) => {
-  return (
-    <div className={cn("min-h-screen bg-background flex items-center justify-center p-4", className)}>
-      <div className="w-full max-w-md">
-        {children || <Outlet />}
-      </div>
-    </div>
-  );
-};
 
-export default AppLayout;

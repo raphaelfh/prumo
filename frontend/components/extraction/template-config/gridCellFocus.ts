@@ -45,7 +45,7 @@ export function rovingTabIndex(
 }
 
 /** Same outline vocabulary as the selected-state ring, painted on the td. */
-export const CELL_RING = 'outline outline-2 -outline-offset-2 outline-ring';
+const CELL_RING = 'outline outline-2 -outline-offset-2 outline-ring';
 
 export function ringClass(
   focus: CellFocus,

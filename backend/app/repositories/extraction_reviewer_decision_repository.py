@@ -29,26 +29,6 @@ class ExtractionReviewerDecisionRepository:
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_by_reviewer_item(
-        self,
-        run_id: UUID,
-        reviewer_id: UUID,
-        instance_id: UUID,
-        field_id: UUID,
-    ) -> list[ExtractionReviewerDecision]:
-        stmt = (
-            select(ExtractionReviewerDecision)
-            .where(
-                ExtractionReviewerDecision.run_id == run_id,
-                ExtractionReviewerDecision.reviewer_id == reviewer_id,
-                ExtractionReviewerDecision.instance_id == instance_id,
-                ExtractionReviewerDecision.field_id == field_id,
-            )
-            .order_by(ExtractionReviewerDecision.created_at.asc())
-        )
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
-
     async def get_latest_for_coord(
         self,
         run_id: UUID,

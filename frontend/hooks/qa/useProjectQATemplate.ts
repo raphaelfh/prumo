@@ -9,19 +9,12 @@
 import { useEffect, useState } from "react";
 
 import { loadProjectQATemplate } from "@/services/qaTemplateService";
-import type {
-  ExtractionEntityType,
-  ExtractionField,
-} from "@/types/extraction";
 
 import type { QADomain, QATemplate } from "./useQATemplate";
 
-export type { QADomain, QATemplate };
+;
 
 // Re-export EntityTypeWithFields shape for consumers that need it.
-export type EntityTypeWithFields = ExtractionEntityType & {
-  extraction_fields?: ExtractionField[];
-};
 
 interface UseProjectQATemplateProps {
   projectTemplateId: string | undefined;

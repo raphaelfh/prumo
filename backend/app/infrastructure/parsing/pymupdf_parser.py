@@ -207,10 +207,10 @@ class PymupdfParser(DocumentParser):
                     x0, y0, x1, y1 = block["bbox"]
                     entries.append((float(y0), float(x0), "text", block))
                 for rect, rows, header_rows in data["tables"]:
-                    tx0, ty0, tx1, ty1 = rect
+                    tx0, ty0, _, _ = rect
                     entries.append((float(ty0), float(tx0), "table", (rows, header_rows)))
                 for img in data.get("images", []):
-                    ix0, iy0, ix1, iy1 = img["bbox"]
+                    ix0, iy0, _, _ = img["bbox"]
                     entries.append((float(iy0), float(ix0), "figure", img))
                 entries.sort(key=lambda e: (e[0], e[1]))
 

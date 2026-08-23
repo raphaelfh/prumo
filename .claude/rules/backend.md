@@ -42,6 +42,18 @@ objects; repositories never contain business logic.
 - Every project-scoped endpoint checks project membership (BOLA is a
   recurring incident class here — see the `code-review` skill).
 
+## Dead code
+
+- CI runs a vulture **shrink-only ratchet** (config in `[tool.vulture]`,
+  baseline in `backend/.vulture_baseline`, gate in
+  `scripts/vulture_baseline.py` — also a `verify_all.sh` gate). A new
+  finding fails CI: delete the dead symbol, or — only if it is genuinely
+  framework-consumed (Starlette `dispatch`, Celery `on_failure`) —
+  baseline it with `--exec --update` in the same PR and say why in the
+  PR body. After deleting dead code, tighten the baseline the same way.
+  Pydantic/SQLAlchemy field declarations under `app/schemas` and
+  `app/models` are excluded by design; don't move dead logic there.
+
 ## Tests
 
 - Integration over mocks: pytest runs against the real local Supabase

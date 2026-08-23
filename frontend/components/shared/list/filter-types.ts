@@ -4,7 +4,7 @@
  * and maps FilterValues to its filter application logic.
  */
 
-export type FilterFieldType =
+type FilterFieldType =
     | 'text'
     | 'categorical'
     | 'numericRange'

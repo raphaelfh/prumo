@@ -5,16 +5,16 @@
  * allowing the user to keep using the app while they run.
  */
 
-export type JobType = 'zotero-import' | 'articles-export' | 'extraction-export';
+type JobType = 'zotero-import' | 'articles-export' | 'extraction-export';
 
-export type JobStatus =
+type JobStatus =
     | 'pending'      // Waiting to start
     | 'running'      // Running
     | 'completed'    // Completed successfully
     | 'failed'       // Failed with error
     | 'cancelled';   // Cancelled by user
 
-export interface JobProgress {
+interface JobProgress {
   phase: string;
   current: number;
   total: number;
@@ -22,7 +22,7 @@ export interface JobProgress {
   currentFile?: string;
 }
 
-export interface JobStats {
+interface JobStats {
   imported?: number;
   updated?: number;
   skipped?: number;
