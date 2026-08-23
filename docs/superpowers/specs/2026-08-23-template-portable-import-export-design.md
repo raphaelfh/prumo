@@ -179,11 +179,11 @@ carries `sort_order`, and defaults are omitted on export.
 | `prumo_template` | yes | — | Format version. Must equal `1`. Makes a future v2 detectable; no migration machinery ships. |
 | `kind` | yes | `kind` | Must be `"extraction"` in v1. |
 | `name` | yes | `name` | 1–200 chars. |
-| `description` | no | `description` | |
+| `description` | no | `description` | ≤ 2000 chars. |
 | `framework` | no | `framework` | `CHARMS` / `PICOS` / `CUSTOM`; defaults to `CUSTOM` (the column is NOT NULL). Display-only in the product — nothing branches on it. |
 | `version` | no | `version` | Free-text label, defaults `"1.0.0"`. **Not** the `extraction_template_versions.version` counter. |
 | `llm_template_instruction` | no | `llm_template_instruction` | ≤ 4000 chars (mirrors the `llm_instruction_len` CHECK). |
-| `sections` | yes | — | 1–100 entries. |
+| `sections` | yes | — | 1–100 entries. At most 2000 fields in the whole document (the per-level caps multiply). |
 
 ### 4.2 Section keys
 
@@ -191,7 +191,7 @@ carries `sort_order`, and defaults are omitted on export.
 | --- | --- | --- | --- |
 | `name` | yes | `name` | `SectionName` (`^[a-zA-Z_][a-zA-Z0-9_]*$`, 2–50). **Not** required to be unique — see below. |
 | `label` | yes | `label` | `SectionLabel` (trimmed, 1–100). |
-| `description` | no | `description` | |
+| `description` | no | `description` | ≤ 500 chars (it is prompt text — mirrors `SectionCreateRequest`). |
 | `required` | no | `is_required` | Default `false`. |
 | `repeats` | no | `cardinality` | `true` → `many`, `false`/absent → `one`. Forced `many` when `group` is true. |
 | `group` | no | `role` | Root-only. `true` → `model_container`. Default `false`. |
@@ -229,7 +229,7 @@ name (parent comes from nesting), so duplicates are harmless.
 | `type` | yes | `field_type` | `FieldType`: `text` / `number` / `date` / `select` / `multiselect` / `boolean`. |
 | `description` | no | `description` | ≤ 500. |
 | `required` | no | `is_required` | Default `false`. |
-| `llm_description` | no | `llm_description` | ≤ 1000. |
+| `llm_description` | no | `llm_description` | ≤ **4000** — deliberately looser than the editor's 1000: the seeded CHARMS+Multimodal ships ~1.4k-char descriptions, the DB has no CHECK, and a 1000 cap would make the official template un-exportable (FastAPI re-validates the response) and un-importable. |
 | `allowed_values` | no | `allowed_values` | `AllowedValues`: 1–100 unique strings. |
 | `unit` | no | `unit` | ≤ 50. |
 | `allowed_units` | no | `allowed_units` | `AllowedUnits`: 1–20 unique strings, each ≤ 50. |
@@ -282,11 +282,14 @@ DELETE /api/v1/projects/{project_id}/templates/{template_id}          (new)
 PATCH  /api/v1/projects/{project_id}/templates/{template_id}          (fixed, §5.6)
 ```
 
-All guarded by `require_project_manager`, all returning the standard
-`ApiResponse` envelope.
+All guarded by `require_project_manager`, all rate-limited (`@limiter.limit`:
+export 30/minute, import and delete 10/minute), all returning the standard
+`ApiResponse` envelope; every refusal body is declared on the route
+(`responses={...}`) so its code reaches `schema.d.ts`.
 
 - **Export** reads the live rows for the path template (BOLA chain: template →
-  project) and returns the portable document as the response payload. It reads
+  project; a QA template id is a 404 — v1 is extraction-only) and returns the
+  portable document as the response payload. It reads
   no draft state and takes no locks — the draft confirmation is a frontend
   concern (§6.1) built on the existing `config-status` read.
 
@@ -346,8 +349,16 @@ construction. This is why the import does **not** reuse
 drag machinery the file path does not need. Only the tail (deactivate siblings,
 republish) is shared.
 
-Any `IntegrityError` rolls the transaction back and surfaces as a typed 422 —
-a partially-imported template is never representable.
+`sort_order` for entity types is one **template-wide pre-order counter**
+(parents first), never a per-level index: `SNAPSHOT_SQL` orders by the bare
+column, so ties would make the snapshot's array order scan-dependent and let
+a no-op Publish mint a phantom version.
+
+After validation the only DB-level failure left is the concurrent-activation
+race on `uq_one_active_extraction_template_per_project` (two imports, or an
+import and a switch, at once); it surfaces as a 409 `CONFLICT` and nothing is
+written (the request session never commits). A partially-imported template is
+never representable.
 
 ### 5.4 Errors
 
@@ -356,13 +367,18 @@ a partially-imported template is never representable.
 | Schema/structural validation failure | 422 | `TEMPLATE_IMPORT_INVALID` |
 | `kind` is not `extraction` | 422 | `TEMPLATE_IMPORT_WRONG_KIND` |
 | `prumo_template` is not `1` | 422 | `TEMPLATE_IMPORT_UNSUPPORTED_VERSION` |
+| Export: a live row the format cannot carry (e.g. an empty `allowed_values`) | 422 | `TEMPLATE_EXPORT_INVALID` |
+| Import/switch: concurrent activation race | 409 | `CONFLICT` |
 | Delete: template is active | 409 | `TEMPLATE_ACTIVE` |
 | Delete: a run or instance references the template | 409 | `TEMPLATE_IN_USE` |
 | Template not in the path project | 404 | existing not-found handling |
 
 Validation failures carry a human-readable list built from Pydantic's `loc`
 paths — `sections[2].fields[5].name: must match ^[a-z][a-z0-9_]*$` — capped at
-the first 20 entries, delivered in the standard envelope's `error.message`.
+the first 20 entries, delivered twice: typed in `error.details.errors`
+(`[{path, message}]`, plus `error_count`; what the UI renders) and as one line
+per issue in `error.message` (for clients that only read the message). Raw
+`prumo_template` / `kind` values echoed in a message are truncated to 80 chars.
 
 ### 5.5 Size caps
 
@@ -383,7 +399,8 @@ extraction template") is unchanged.
 
 ### 5.7 Delete
 
-`delete_template(db, project_id, template_id)`, one transaction:
+`delete_template(db, project_id, template_id)`, one transaction, with the
+template row locked `SELECT … FOR UPDATE` before any guard runs:
 
 1. 404 unless the template belongs to the path project.
 2. **409 `TEMPLATE_ACTIVE`** if `is_active` — "switch to another template
@@ -392,10 +409,19 @@ extraction template") is unchanged.
    screen. (QA tabs already have toggles: deactivate, then delete.)
 3. **409 `TEMPLATE_IN_USE`** if any `extraction_runs` or `extraction_instances`
    row references the template — one query with two scalar subqueries, so the
-   user sees a message rather than a 500. The `RESTRICT` foreign keys
-   (`extraction_runs.template_id`, `extraction_runs.version_id`,
-   `extraction_instances.template_id`) remain the hard guarantee.
-4. Delete the row. `extraction_entity_types` (→ `extraction_fields`) and
+   user sees a message rather than a 500. **This locked pre-check is
+   load-bearing, not belt-and-braces:** `extraction_runs` carries a second,
+   composite FK to the template (`fk_extraction_runs_template_kind_coherence`,
+   `ON DELETE CASCADE`) next to the `RESTRICT` one, and Postgres fires RI
+   triggers in name order — today RESTRICT happens to fire first on local and
+   prod, by oid accident. The `FOR UPDATE` serializes against `create_run`'s
+   `FOR SHARE` and the instance-insert `KEY SHARE`, so no run can appear
+   between the check and the delete; if one still does, the FK constraint
+   names map to the same 409.
+4. Delete the row with `DELETE … WHERE id = :tid AND is_active = false`; a
+   zero rowcount means a concurrent Switch activated it and is the
+   `TEMPLATE_ACTIVE` 409 — the project can never be left with no active
+   template. `extraction_entity_types` (→ `extraction_fields`) and
    `extraction_template_versions` cascade. The template-scoped
    `extraction_hitl_configs` row (`scope_kind = 'template'`, `scope_id` has no
    FK and would otherwise be orphaned) is deleted in the same transaction.
@@ -437,7 +463,14 @@ spec named. It is hosted by both `TemplateConfigEditor` and
 
 **The browser does not validate the document.** It reads the file, `JSON.parse`s
 it (a syntax error becomes a local "not a valid JSON file" message), and posts
-the object; the server validates it and errors render as the returned list.
+the object; the server validates it and the typed issue list
+(`error.details.errors`) renders one line per issue.
+
+**The editor host forwards the change.** `ExtractionInterface` owns
+`activeTemplate` (an active-only read, not TanStack); a switch or import
+launched from the dialog inside `TemplateConfigEditor` therefore calls back
+up (`onActiveTemplateChanged(id)`) so the grid re-points to the new active
+template instead of keeping the now-inactive one on screen.
 Re-implementing the schema in TypeScript would duplicate exactly the knowledge
 this design consolidates in one Pydantic model.
 
@@ -451,8 +484,10 @@ composes them (the file-size ratchet, and the dialog is already 243 lines).
 - `exportTemplate(projectId, templateId)` and `deleteTemplate(projectId,
   templateId)` alongside it. Switch reuses `setTemplateActive` from
   `useHITLProjectTemplates`.
-- New copy keys in `frontend/lib/copy/extraction.ts`, English only, avoiding
-  the banned user-facing noun "Run".
+- New copy keys in the `templateConfig` namespace
+  (`frontend/lib/copy/templateConfig.ts`) — `extraction.ts` sits at its
+  file-size ratchet ceiling and must not grow — English only, avoiding the
+  banned user-facing noun "Run".
 
 ## 7. Accepted costs and adjacent breakage
 
@@ -480,9 +515,15 @@ An imported document carries `llm_description` (per field) and
 extraction prompts. Importing a third-party template is therefore a
 prompt-injection vector into that project's runs.
 
-What already mitigates it: the endpoint is manager-only, the length caps are
-enforced (1000 / 4000), and the document is inert data — nothing in it is
-executed or fetched. The import pane carries one line of copy: *"Only import
+Every key that reaches a prompt: `llm_template_instruction` (≤ 4000),
+`llm_description` (≤ 4000), section `description` (≤ 500, interpolated into
+the section-extraction prompt), field `description` (≤ 500, the fallback when
+`llm_description` is empty), section `name`/`label`/`entry_label`, and
+`allowed_values` (become a JSON-schema enum). What already mitigates it: the
+endpoint is manager-only and rate-limited, every one of those keys is
+length-capped, instruction text enters prompts as a `str.format` *argument*
+after rendering (braces cannot inject placeholders), and the document is
+inert data — nothing in it is executed or fetched. The import pane carries one line of copy: *"Only import
 templates you trust."* A content scanner is not justified at this scope.
 
 ## 9. Verification
@@ -537,3 +578,22 @@ Frontend:
 - Renaming a project template (§7).
 - Fixing the custom-template dialog (§7).
 - Format migration. `prumo_template: 1` only makes a future v2 detectable.
+
+## 11. Amendments (2026-08-23, after the plan's adversarial panel)
+
+- §4.1–4.3: caps on template `description` (2000), section `description`
+  (500), total fields (2000); `llm_description` relaxed to 4000 so the seeded
+  CHARMS+Multimodal round-trips.
+- §5.1: rate limits; export rejects QA ids; refusal bodies declared on routes.
+- §5.3: template-wide `sort_order` counter; the concurrent-activation race is
+  a 409 `CONFLICT` (replaces the earlier "any IntegrityError → 422" wording).
+- §5.4: `TEMPLATE_EXPORT_INVALID`; typed `details.errors`; truncated echoes.
+- §5.7: guards under `FOR UPDATE`, conditional delete, the composite CASCADE
+  FK fact that makes the locked pre-check load-bearing.
+- §6.2/6.3: the editor host forwards the active-template change; copy lives
+  in `templateConfig`.
+- §8: the full list of prompt-reaching keys.
+- Out of slice, tracked separately: `authenticated` holds `DELETE/INSERT/
+  UPDATE` on `project_extraction_templates` via PostgREST (the new guards are
+  API-only); `extraction_entity_types`/`extraction_fields` SELECT policies
+  are `USING (true)`; three private `triggerDownload` copies.
