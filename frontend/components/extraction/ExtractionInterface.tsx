@@ -12,10 +12,8 @@ import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {Skeleton} from '@/components/ui/skeleton';
 import {AlertCircle, Download, PlusCircle, Settings} from 'lucide-react';
-import {
-    type ProjectTemplate,
-    useHITLProjectTemplates,
-} from '@/hooks/hitl/useHITLProjectTemplates';
+import {useHITLProjectTemplates} from '@/hooks/hitl/useHITLProjectTemplates';
+import {useInvalidateProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {useArticleExtractionValues} from '@/hooks/extraction/useArticleExtractionValues';
 import {useActiveTemplateStructure} from '@/hooks/extraction/useActiveTemplateStructure';
@@ -47,12 +45,31 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     ? tabFromUrl 
     : 'extraction';
   
-  const [activeTemplate, setActiveTemplate] = useState<ProjectTemplate | null>(null);
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'extraction' | 'dashboard' | 'configuration'>(initialTab);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showCreateCustomDialog, setShowCreateCustomDialog] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [articles, setArticles] = useState<any[]>([]);
+
+    // The project's templates: one cached query, shared with the "switch
+    // template" list inside the import dialog. Every write invalidates it.
+  const {
+    templates,
+      globalTemplates,
+    loading: templatesLoading,
+    error: templatesError,
+  } = useHITLProjectTemplates({ projectId, kind: 'extraction' });
+  const invalidateProjectTemplates = useInvalidateProjectTemplates();
+
+    // `activeTemplateId` holds UI intent only — what the user last picked or
+    // imported. The selection itself is DERIVED from the list, so a template
+    // that was deleted or replaced can never linger as a stale selection.
+    // `templates` is the active set, newest first, so the fallback covers both
+    // the first paint and an id the list no longer has.
+  const activeTemplate =
+    templates.find((tpl) => tpl.id === activeTemplateId) ?? templates[0] ?? null;
+
   // Per-article values + required-field structure, shared with the list
   // tables. "Overall progress" below is the mean of the canonical per-article
   // completion (previously "% of articles touched").
@@ -127,44 +144,10 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     ];
   })();
 
-    // Hook to manage templates
-  const {
-    templates,
-      globalTemplates,
-    loading: templatesLoading,
-    error: templatesError,
-    refresh: refreshTemplates,
-  } = useHITLProjectTemplates({ projectId, kind: 'extraction' });
-
     // Pre-select template when opening import dialog from config list
     const [importInitialTemplateId, setImportInitialTemplateId] = useState<string | null>(null);
 
     const {isManager, loading: roleLoading} = useProjectMemberRole(projectId);
-
-    // Keep the active template in sync with the template list (adjusted
-    // during render instead of via effect; the null sentinel makes the
-    // first render perform the initial selection).
-  const [prevTemplates, setPrevTemplates] = useState<ProjectTemplate[] | null>(null);
-  if (templates !== prevTemplates) {
-    setPrevTemplates(templates);
-    if (templates.length > 0) {
-      if (!activeTemplate) {
-          // If no active template, select the default
-        const defaultTemplate = templates.find(t => t.is_active) || templates[0];
-        setActiveTemplate(defaultTemplate);
-      } else {
-          // Check if active template still exists in the list
-        const currentTemplate = templates.find(t => t.id === activeTemplate.id);
-        if (!currentTemplate) {
-            // Template was removed or recreated; use the latest
-          const defaultTemplate = templates.find(t => t.is_active) || templates[0];
-          if (defaultTemplate) {
-            setActiveTemplate(defaultTemplate);
-          }
-        }
-      }
-    }
-  }
 
     // Non-manager cannot access Configuration: clamp back to extraction.
     // Render-phase invariant — the guard guarantees termination.
@@ -410,16 +393,16 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   /**
    * The active template changed to `templateId` — after a catalogue import,
    * a file import, or a Switch, from EITHER dialog instance (the one below
-   * or the one inside TemplateConfigEditor). Server-side work already
-   * published, possibly for a different template: id-free .all
-   * invalidation, refresh the active-only list, re-point `activeTemplate`.
+   * or the one inside TemplateConfigEditor). The dialog already refreshed
+   * the project-template query, so this carries UI intent only: point at the
+   * new row and land on Configuration. Server-side work published too,
+   * possibly for a different template — hence the id-free `.all`
+   * invalidation of the structure caches.
    */
-  const handleActiveTemplateChanged = async (templateId: string) => {
+  const handleActiveTemplateChanged = (templateId: string) => {
     void invalidateAfterImport();
-    const updatedTemplates = await refreshTemplates();
     handleTabChange('configuration');
-    const next = updatedTemplates.find((tpl) => tpl.id === templateId) ?? updatedTemplates[0];
-    if (next) setActiveTemplate(next);
+    setActiveTemplateId(templateId);
   };
 
   // The versioned-card side of the Configuration tab (everything BELOW the
@@ -615,23 +598,11 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         open={showCreateCustomDialog}
         onOpenChange={setShowCreateCustomDialog}
         onTemplateCreated={async (templateId?: string) => {
-            // Refresh templates without reloading the page
-          const updatedTemplates = await refreshTemplates() || [];
-            // Stay on configuration tab
+            // Refetch the list first so the new row exists before we point at
+            // it; without an id the derived selection picks it up anyway.
+          await invalidateProjectTemplates();
           handleTabChange('configuration');
-            // Select the newly created template
-          if (templateId && updatedTemplates.length > 0) {
-            const newTemplate = updatedTemplates.find((t: ProjectTemplate) => t.id === templateId);
-            if (newTemplate) {
-              setActiveTemplate(newTemplate);
-            } else {
-                // If not found by ID, select the most recent
-              setActiveTemplate(updatedTemplates[0]);
-            }
-          } else if (updatedTemplates.length > 0) {
-              // Select the most recent if no ID
-            setActiveTemplate(updatedTemplates[0]);
-          }
+          if (templateId) setActiveTemplateId(templateId);
         }}
       />
 
