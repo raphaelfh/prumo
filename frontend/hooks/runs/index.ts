@@ -22,6 +22,9 @@ export {
   type CurrentDecisionEntry,
   type ReviewerSummary,
 } from "./useReviewerSummary";
+// useExpectedReviewerCount is deliberately NOT re-exported here: it reaches
+// the supabase client (via useProjectMembers), and this barrel must stay
+// importable with only apiClient mocked. Import it from its module directly.
 export {
   useRunReviewers,
   type RunReviewerProfile,

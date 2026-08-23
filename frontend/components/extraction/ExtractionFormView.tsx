@@ -15,12 +15,13 @@
  * has moved into ``ModelSection``.
  */
 
-import {memo} from 'react';
+import {memo, useRef} from 'react';
 import {ModelSection} from './ModelSection';
 import {SectionAccordion} from './SectionAccordion';
 import SectionNavRail from '@/components/extraction/SectionNavRail';
 import {buildSectionRegistry} from '@/lib/extraction/sectionRegistry';
 import {useActiveSection} from '@/hooks/extraction/useActiveSection';
+import {useJumpToNextPendingField} from '@/hooks/extraction/useJumpToNextPendingField';
 import {useExtractionFormAIActions} from '@/hooks/extraction/useExtractionFormAIActions';
 import type {
   ExtractionEntityTypeWithFields,
@@ -94,6 +95,10 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
   });
   const sectionIds = sectionRegistry.map((s) => s.id);
   const { activeId, registerSection, scrollToSection } = useActiveSection(sectionIds);
+  // Scoped to the form column so the jump only ever walks field rows, never
+  // anything the rail or surrounding chrome might render.
+  const formColumnRef = useRef<HTMLDivElement>(null);
+  const jumpToNextPending = useJumpToNextPendingField(formColumnRef);
 
   return (
     <div className="flex gap-4">
@@ -102,8 +107,9 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
         activeId={activeId}
         onSelect={scrollToSection}
         collapsed={props.showPDF}
+        onJumpToNextPending={jumpToNextPending}
       />
-      <div className="min-w-0 flex-1 space-y-4">
+      <div ref={formColumnRef} className="min-w-0 flex-1 space-y-4">
         {props.studyLevelSections.map(entityType => {
           const typeInstances = props.instances.filter(i => i.entity_type_id === entityType.id);
           return (

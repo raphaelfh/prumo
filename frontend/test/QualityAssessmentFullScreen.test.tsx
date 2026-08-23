@@ -95,6 +95,13 @@ const WORKLIST_ARTICLES = [
   { id: "a2", title: "Second article" },
 ];
 
+// Mutable roster consumed by the supabase.rpc("get_project_members") stub
+// below — vi.mock factories are hoisted, so this shared state must be too.
+// Default [] keeps the role-derived denominator at the participant count.
+const membersFixture = vi.hoisted(() => ({
+  rows: [] as Array<Record<string, unknown>>,
+}));
+
 vi.mock("@/integrations/supabase/client", () => {
   function makeQuery(rows: unknown) {
     const result = { data: rows, error: null };
@@ -121,6 +128,14 @@ vi.mock("@/integrations/supabase/client", () => {
           error: null,
         }),
       },
+      // useProjectMembers (run-header reviewer denominator) goes through the
+      // get_project_members RPC.
+      rpc: (fn: string) =>
+        Promise.resolve(
+          fn === "get_project_members"
+            ? { data: membersFixture.rows, error: null }
+            : { data: null, error: null },
+        ),
       from: (table: string) => {
         if (table === "project_extraction_templates") {
           return makeQuery(PROBAST_TEMPLATE);
@@ -1209,5 +1224,105 @@ describe("QualityAssessmentFullScreen — worklist navigation", () => {
         "/projects/p1?tab=quality",
       ),
     );
+  });
+});
+
+describe("QualityAssessmentFullScreen — status popover reviewer denominator", () => {
+  // Regression (2026-08-22): the QA header derived "N of M reviewers" from
+  // run.hitl_config_snapshot.reviewer_count — an inert knob no UI has set
+  // since #388, so snapshots carry the system default 1 and two submitted
+  // reviewers read "2 of 1 reviewers". M must be role-derived (members with
+  // the reviewer/manager role), exactly like the extraction header.
+  function memberRow(userId: string, role: string) {
+    return {
+      id: `pm-${userId}`,
+      user_id: userId,
+      role,
+      user_email: `${userId}@x.test`,
+      user_full_name: userId,
+      user_avatar_url: null,
+    };
+  }
+
+  beforeEach(() => {
+    mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
+    // 3 reviewers + 1 manager are extraction-eligible; the viewer is not.
+    membersFixture.rows = [
+      memberRow("m1", "reviewer"),
+      memberRow("m2", "reviewer"),
+      memberRow("m3", "reviewer"),
+      memberRow("m4", "manager"),
+      memberRow("m5", "viewer"),
+    ];
+    vi.mocked(apiClient).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/hitl/sessions") {
+        return {
+          run_id: "run-1",
+          kind: "quality_assessment",
+          project_template_id: "tpl-1",
+          instances_by_entity_type: { "et-1": "inst-1" },
+        };
+      }
+      if (url === "/api/v1/runs/run-1/view") {
+        return {
+          run: {
+            id: "run-1",
+            project_id: "p1",
+            article_id: "a1",
+            template_id: "tpl-1",
+            kind: "quality_assessment",
+            version_id: "v-1",
+            stage: "extract",
+            status: "running",
+            // The snapshot deliberately has NO reviewer_count — the header
+            // must not fall back to the config default of 1.
+            hitl_config_snapshot: {},
+            parameters: {},
+            results: {},
+            created_at: new Date().toISOString(),
+            created_by: "u-1",
+          },
+          proposals: [],
+          // Two distinct reviewers have submitted → participant count 2.
+          decisions: ["peer-a", "peer-b"].map((reviewer, i) => ({
+            id: `dec-${i}`,
+            run_id: "run-1",
+            instance_id: "inst-1",
+            field_id: "f-1",
+            reviewer_id: reviewer,
+            decision: "edit",
+            proposal_record_id: null,
+            value: { value: "Y" },
+            rationale: null,
+            created_at: new Date().toISOString(),
+          })),
+          consensus_decisions: [],
+          published_states: [],
+          entity_types: [],
+          current_values: [],
+        };
+      }
+      if (url.includes("/suggestions")) {
+        return { suggestions: [], count: 0 };
+      }
+      if (url.includes("/files") || url.includes("/text-blocks")) {
+        return [];
+      }
+      return {};
+    });
+  });
+
+  afterEach(() => {
+    membersFixture.rows = [];
+    vi.restoreAllMocks();
+  });
+
+  it("derives the denominator from project roles, not the run's config snapshot", async () => {
+    renderPage();
+    await userEvent.click(await screen.findByTestId("run-stage-current"));
+    const popover = await screen.findByTestId("run-status-popover");
+    expect(
+      await within(popover).findByText("2 of 4 reviewers"),
+    ).toBeInTheDocument();
   });
 });

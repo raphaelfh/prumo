@@ -11,7 +11,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps.security import ensure_project_member, get_current_user_sub
+from app.api.deps.security import (
+    ensure_project_member,
+    ensure_project_reviewer,
+    get_current_user_sub,
+)
 from app.api.v1.endpoints._integrity import (
     ONE_LIVE_RUN_CONFLICT_DETAIL,
     is_one_live_run_conflict,
@@ -60,6 +64,11 @@ async def create_manual_model_hierarchy(
     service = ModelHierarchyService(db)
 
     await ensure_project_member(db, payload.project_id, current_user_sub)
+    # Manual creation records ReviewerDecisions (model_name /
+    # modelling_method), so it carries the same reviewer gate as
+    # POST /runs/{id}/decisions — a read-only viewer is a member but
+    # must not author audit-trail rows.
+    await ensure_project_reviewer(db, payload.project_id, current_user_sub)
 
     try:
         result = await service.create_model_hierarchy(

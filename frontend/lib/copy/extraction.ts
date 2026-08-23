@@ -189,6 +189,9 @@ export const extraction = {
     errors_loadExtractedValues: 'Error loading extracted values',
     errors_updateLabel: 'Error updating label',
     labelUpdatedSuccess: 'Label updated successfully',
+    instanceRemoveAction: 'Remove "{{label}}"',
+    instanceLabelSaveAction: 'Save label',
+    instanceLabelCancelAction: 'Cancel label editing',
     processingArticle: 'Processing article {{current}}/{{total}}: {{title}}',
     zoteroImportCompletedWithErrors: 'Import completed with errors',
     modelNotAuthenticatedOrInvalid: 'User not authenticated or invalid template',
@@ -495,6 +498,8 @@ export const extraction = {
     sectionNavRequiredLeft: '{{count}} required left',
     sectionNavComplete: 'All required fields complete',
     sectionNavAria: 'Section navigation',
+    sectionNavJumpNext: 'Go to next unfilled',
+    sectionNavJumpNextHint: 'Jump to the next required field still waiting for an answer.',
     errorCalculatingProgress: 'Error calculating progress',
     loadingComparison: 'Loading comparison…',
     requiredLabel: 'Required',
@@ -557,6 +562,7 @@ export const extraction = {
     templateCreatedAt: 'Created on',
     // SectionAccordion
     sectionNoInstances: 'No instances created for this section',
+    sectionMultipleBadge: 'Multiple ({{count}})',
     sectionAddInstance: 'Add',
     // AllowedUnitsList
     unitMoveUp: 'Move up',

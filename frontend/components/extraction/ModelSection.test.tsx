@@ -111,7 +111,9 @@ const childInstance = {
 
 const instances = [modelInstance, childInstance];
 
-function renderModelSection() {
+type ModelSectionProps = Parameters<typeof ModelSection>[0];
+
+function renderModelSection(overrides: Partial<ModelSectionProps> = {}) {
   return render(
     <ModelSection
       modelContainer={containerType}
@@ -146,6 +148,7 @@ function renderModelSection() {
       onExtractAllSectionsForAllModels={vi.fn()}
       extractingAllSectionsForAllModels={false}
       allModelsProgress={null}
+      {...overrides}
     />,
     { wrapper: Wrapper },
   );
@@ -164,6 +167,16 @@ describe('ModelSection container accordion', () => {
     expect(
       screen.getByRole('button', { name: 'Add Final Predictors' }),
     ).toBeInTheDocument();
+  });
+
+  it('shows the total entry count on the container badge, not the active-only count', () => {
+    renderModelSection({
+      models: [
+        { instanceId: 'm1', modelName: 'Model A' },
+        { instanceId: 'm2', modelName: 'Model B' },
+      ],
+    });
+    expect(screen.getByText('Multiple (2)')).toBeInTheDocument();
   });
 
   it('offers no per-card trash for the container instance (removal goes through the selector)', () => {
