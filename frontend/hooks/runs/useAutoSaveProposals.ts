@@ -169,6 +169,22 @@ export function useAutoSaveProposals(
     );
 
   const performSave = (): Promise<boolean> => {
+    // Capture the save context SYNCHRONOUSLY at invocation. The run-switch
+    // flush below runs in an effect cleanup; by the time the deferred
+    // microtask executes, the ref-sync effect has already re-pointed the
+    // refs at the NEW run, so reading them lazily would drop the old run's
+    // pending edit (or worse, POST it against the new run). The dirty diff
+    // itself is still computed after any in-flight batch settles, against
+    // the then-current ``lastSavedByKeyRef``, so queued saves never
+    // re-write coords the first batch already acknowledged.
+    const currentRunId = runIdRef.current;
+    const currentEnabled = enabledRef.current;
+    const currentStage = stageRef.current;
+    const currentValues = valuesRef.current;
+    const currentBaseline = baselineRef.current;
+    const currentLinkByKey = linkByKeyRef.current;
+    const currentBaselineLink = baselineLinkRef.current;
+
     // Serialize concurrent saves: wait for any in-flight batch, swallowing
     // its error (the owner invocation surfaces it; queued calls still retry
     // dirty values that weren't acknowledged).
@@ -177,19 +193,24 @@ export function useAutoSaveProposals(
       : Promise.resolve();
 
     const savePromise: Promise<boolean> = waitForActive.then(() => {
-      const currentRunId = runIdRef.current;
       // Skip when there's no run, autosave is disabled, or the run stage
       // does not accept writes (consensus/finalized/pending). The stage
       // guard here also protects the flush paths (unmount, pagehide,
       // visibilitychange) so a consolidated run never fires a doomed POST.
       if (
         !currentRunId ||
-        !enabledRef.current ||
-        !isWritableStage(stageRef.current)
+        !currentEnabled ||
+        !isWritableStage(currentStage)
       )
         return true;
 
-      const dirty = computeDirtyEntries();
+      const dirty = selectDirtyEntries(
+        currentValues,
+        lastSavedByKeyRef.current,
+        currentBaseline,
+        currentLinkByKey,
+        currentBaselineLink,
+      );
       if (dirty.length === 0) return true;
 
       setSaveState('saving');
@@ -224,13 +245,13 @@ export function useAutoSaveProposals(
             fieldId,
             normalizedValue: normalized,
             absentReason,
-            proposalRecordId: linkByKeyRef.current[key] ?? null,
+            proposalRecordId: currentLinkByKey[key] ?? null,
           }).then(() => {
             // Acknowledge value AND link together (the D0 fingerprint) so a
             // later link-only adoption re-dirties the coord.
             lastSavedByKeyRef.current[key] = fingerprintCoord(
               valueData,
-              linkByKeyRef.current[key],
+              currentLinkByKey[key],
             );
           });
         }),
@@ -346,16 +367,20 @@ export function useAutoSaveProposals(
     computeDirtyEntries,
   ]);
 
-  // (2) Flush pending edits on UNMOUNT. Separate effect with stable
-  // deps so the cleanup only fires when the component truly unmounts —
-  // not on every ``values`` change. React doesn't await async cleanups,
+  // (2) Flush pending edits on UNMOUNT and on an IN-PLACE RUN SWITCH.
+  // The article pagers (#657/#671) navigate without unmounting this
+  // hook's owner, so an unmount-only flush dropped the armed debounce's
+  // edit. ``runId`` in the deps makes the cleanup fire on both paths;
+  // the cleanup runs before the ref-sync effect above re-runs, so the
+  // flush still reads the OLD run's id, values, stage and baselines
+  // from the refs by construction. React doesn't await async cleanups,
   // but ``keepalive: true`` on the POST(s) lets the browser carry the
   // request through the route change / page unload.
   useEffect(() => {
     return () => {
       void performSave();
     };
-  }, [performSave]);
+  }, [performSave, runId]);
 
   // (3) Survive tab close + mobile background. ``pagehide`` is the
   // cross-platform unload signal; ``beforeunload`` is unreliable on
