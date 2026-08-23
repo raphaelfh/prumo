@@ -61,6 +61,12 @@ class ExtractionCardinality(str, PyEnum):
     MANY = "many"
 
 
+# Default entry noun of a model_container when none was authored (B-8 seeded
+# "model"): the AI instance label, the export record stem and the portable
+# importer all fall back to it, so it lives here once.
+DEFAULT_ENTRY_LABEL = "model"
+
+
 class ExtractionEntityRole(str, PyEnum):
     """Structural role of an entity type within a template.
 

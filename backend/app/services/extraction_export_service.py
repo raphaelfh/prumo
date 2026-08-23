@@ -32,6 +32,7 @@ from app.core.logging import LoggerMixin
 from app.infrastructure.storage.base import StorageAdapter
 from app.models.article import Article
 from app.models.extraction import (
+    DEFAULT_ENTRY_LABEL,
     ExtractionCardinality,
     ExtractionEntityRole,
     ExtractionEntityType,
@@ -2063,12 +2064,11 @@ def _build_tidy_tables(
     non-model ``MANY`` fans out per ``section_instances``; non-model ``ONE`` is
     one row per article. ``MODEL_CONTAINER`` and field-less sections are skipped.
     """
-    # B-8: model records are labelled with the container's entry noun, read
-    # from the PINNED snapshot descriptors (never live rows). No container,
-    # or a pre-0051 snapshot without the key, falls back to the legacy
-    # "Model" stem byte-identically.
+    # B-8: model records are labelled with the container's entry noun, read from
+    # the PINNED snapshot descriptors (never live rows). No container, or a
+    # pre-0051 snapshot without the key, falls back to DEFAULT_ENTRY_LABEL.
     container = next((s for s in sections if s.role is ExtractionEntityRole.MODEL_CONTAINER), None)
-    model_stem = ((container.entry_label if container else None) or "model").title()
+    model_stem = ((container.entry_label if container else None) or DEFAULT_ENTRY_LABEL).title()
     tables: list[TidyTable] = []
     for section in sections:
         if section.role is ExtractionEntityRole.MODEL_CONTAINER:

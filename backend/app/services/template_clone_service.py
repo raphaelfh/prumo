@@ -3,7 +3,7 @@
 from collections import deque
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, text, update
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
@@ -14,6 +14,10 @@ from app.models.extraction import (
     TemplateKind,
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
+from app.services.project_template_active_service import (
+    deactivate_sibling_extraction_templates,
+    flush_activation,
+)
 
 
 class TemplateNotFoundError(Exception):
@@ -182,13 +186,13 @@ class TemplateCloneService:
             # ``uq_one_active_extraction_template_per_project`` is checked
             # eagerly on every flush, so we must clear the field first.
             if kind == TemplateKind.EXTRACTION:
-                await self._deactivate_sibling_extraction_templates(
-                    project_id=project_id, keep_active_id=existing.id
+                await deactivate_sibling_extraction_templates(
+                    self.db, project_id=project_id, keep_active_id=existing.id
                 )
                 await self.db.flush()
             if not existing.is_active:
                 existing.is_active = True
-            await self.db.flush()
+            await flush_activation(self.db)
             return TemplateClone(
                 project_template_id=existing.id,
                 version_id=version.id,
@@ -206,8 +210,8 @@ class TemplateCloneService:
         # QUADAS-2) and are not affected — kind discriminator on the index
         # keeps QA out of scope.
         if kind == TemplateKind.EXTRACTION:
-            await self._deactivate_sibling_extraction_templates(
-                project_id=project_id, keep_active_id=None
+            await deactivate_sibling_extraction_templates(
+                self.db, project_id=project_id, keep_active_id=None
             )
             await self.db.flush()
 
@@ -225,7 +229,7 @@ class TemplateCloneService:
             created_by=user_id,
         )
         self.db.add(project_tpl)
-        await self.db.flush()
+        await flush_activation(self.db)
 
         global_entity_types = await self._global_entity_types(global_template_id)
         field_count = await self._insert_project_structure_from_global(
@@ -253,39 +257,6 @@ class TemplateCloneService:
             field_count=field_count,
             created=True,
         )
-
-    async def _deactivate_sibling_extraction_templates(
-        self,
-        *,
-        project_id: UUID,
-        keep_active_id: UUID | None,
-    ) -> None:
-        """Deactivate active extraction templates in the project.
-
-        ``keep_active_id`` is excluded from the update (idempotent re-import
-        of the same clone). Passing ``None`` deactivates every active
-        extraction template, e.g. just before inserting a brand-new one
-        whose id is not known yet.
-
-        Mirrors the constraint enforced on the manual deactivate path in
-        ``update_project_template_active``: the extraction workflow assumes
-        exactly one active template per project at any time. Clone must
-        therefore supersede the previous active template rather than create
-        ambiguity that would split the Configuration view from the
-        Extraction view.
-        """
-        stmt = (
-            update(ProjectExtractionTemplate)
-            .where(
-                ProjectExtractionTemplate.project_id == project_id,
-                ProjectExtractionTemplate.kind == TemplateKind.EXTRACTION.value,
-                ProjectExtractionTemplate.is_active.is_(True),
-            )
-            .values(is_active=False)
-        )
-        if keep_active_id is not None:
-            stmt = stmt.where(ProjectExtractionTemplate.id != keep_active_id)
-        await self.db.execute(stmt)
 
     @staticmethod
     def _topologically_sorted(

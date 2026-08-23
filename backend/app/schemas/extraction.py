@@ -11,6 +11,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+# Mirrors ``ExtractionFramework`` (app.models.extraction) — declared once in the
+# schema layer so request/response models never import the ORM enum.
+Framework = Literal["CHARMS", "PICOS", "CUSTOM"]
+
 # =================== INTERNAL ASSEMBLY SCHEMAS ===================
 
 
@@ -381,7 +385,7 @@ class ExtractionTemplateSchema(BaseModel):
     id: UUID
     name: str
     description: str | None = None
-    framework: Literal["CHARMS", "PICOS", "CUSTOM"]
+    framework: Framework
     version: str
     entity_types: list[ExtractionEntityTypeSchema] = Field(default=[], alias="entityTypes")
 

@@ -51,6 +51,11 @@ vi.mock('@/services/extractionFieldService', () => ({
   deleteField: vi.fn(),
   insertField: vi.fn(),
 }));
+// Heavy sibling with its own data path (config-status): stubbed as a
+// component, like TemplateConfigPublishControls below.
+vi.mock('@/components/extraction/template-config/TemplateExportButton', () => ({
+  TemplateExportButton: () => null,
+}));
 vi.mock('@/hooks/extraction/useTemplateRepublish', () => ({
   useTemplateConfigCaches: vi.fn(),
 }));
