@@ -8,13 +8,15 @@ owner: '@raphaelfh'
 
 > **Status:** Approved · Date: 2026-08-23 · Deciders: @raphaelfh
 > **Scope:** export an extraction template's live structure as a portable,
-> UUID-free JSON document, and import such a document as a **new** project
-> template. Two endpoints, one format module, no changes to the
-> draft/publish/version machinery.
+> UUID-free JSON document; import such a document as a **new** project
+> template; make every project template reachable (switch) and removable
+> (delete) from the template dialog. Three new endpoints, one fixed
+> endpoint, one format module, no changes to the draft/publish/version
+> machinery.
 
 ## 1. Problem
 
-Authoring an extraction template today has exactly two paths, and both are
+Authoring an extraction template today has two working paths, and both are
 bad:
 
 1. **Write Python seed code.** `backend/app/seed.py` is 3235 lines of
@@ -26,6 +28,8 @@ bad:
    to review the result as a diffable artifact, hand it to a collaborator,
    or move it between projects.
 
+(A third path, the "Create custom template" dialog, is broken — see §7.)
+
 There is no way to take a template out of prumo, and no way to bring one in
 that did not originate in the global catalogue. A researcher who has built a
 good template in project A cannot reuse it in project B; a methodologist who
@@ -36,12 +40,15 @@ wants to contribute a template cannot express it in anything but Python.
 | Asset | Where | How this design uses it |
 | --- | --- | --- |
 | The template tree | `project_extraction_templates` → `extraction_entity_types` → `extraction_fields` | The thing being serialized. |
-| A JSON serialization of that tree | `extraction_template_versions.schema_`, built by `SNAPSHOT_SQL` in `app/services/extraction_snapshot.py` | Prior art for the shape; **not** the wire format (see §3.1). |
-| Server-authoritative template creation | `POST /projects/{id}/templates/clone` → `TemplateCloneService` | Same lifecycle semantics; the import reuses its *tail*, not its insert loop (§5.2). |
+| A JSON serialization of that tree | `extraction_template_versions.schema_`, built by `SNAPSHOT_SQL` in `app/services/extraction_snapshot.py` | Prior art for the shape; **not** the wire format (§3.2). |
+| Server-authoritative template creation | `POST /projects/{id}/templates/clone` → `TemplateCloneService` | Same lifecycle semantics; the import reuses its *tail*, not its insert loop (§5.3). |
 | Publish path | `TemplateVersionService.republish` | Publishes the imported template's v1. |
 | Validation rules | `FieldName`, `FieldType`, `AllowedValues`, `AllowedUnits`, `SectionName`, `SectionLabel`, `SectionEntryLabel` in `app/schemas/template_structure.py` | Reused verbatim — **the import introduces zero new validation rules**. |
-| Manager authorization | `require_project_manager` | Guards both new endpoints. |
-| Draft state | `project_extraction_templates.config_draft_since`, surfaced by `GET .../config-status` | Drives the export confirmation (§4.1). |
+| Activate/deactivate | `PATCH /projects/{id}/templates/{tid}` → `project_template_active_service.set_template_active` | The "Switch to" action (§5.6); gains sibling deactivation. |
+| Project template listing | `fetchProjectTemplates(projectId, kind, includeInactive)` in `frontend/services/qaTemplateService.ts` | Lists the project's templates in the dialog (§6.2). |
+| The template dialog | `frontend/components/extraction/dialogs/ImportTemplateDialog.tsx`, hosted by `TemplateConfigEditor` and `ExtractionInterface` | Grows into the "Switch template" dialog the 2026-08-05 spec named (§6.2). |
+| Manager authorization | `require_project_manager` | Guards every new and changed endpoint. |
+| Draft state | `project_extraction_templates.config_draft_since`, surfaced by `GET .../config-status` | Drives the export confirmation (§6.1). |
 
 ## 3. Decisions
 
@@ -72,7 +79,7 @@ template outside the app).
 Export serializes what the grid is showing, so the serializer is the exact
 inverse of the importer — one module, two directions, one round-trip test that
 proves both. When `config_draft_since` is set, the UI confirms before
-downloading (§4.1), so unpublished work is never handed to a colleague
+downloading (§6.1), so unpublished work is never handed to a colleague
 silently.
 
 **Rejected:** exporting the active published version. Export and import would
@@ -85,6 +92,31 @@ A file whose `kind` is not `extraction` is rejected with a typed error. QA
 import/export and a global-catalogue path (the thing that would eventually
 retire the seed-in-Python pattern) are follow-ups; this design's format is
 what enables them.
+
+### 3.5 Imported templates must stay reachable
+
+Today the template dialog lists **only the global catalogue**
+(`useGlobalTemplates`), and nothing else in the product lists a project's
+inactive extraction templates. A file-imported template has
+`global_template_id = NULL`, so the moment a later catalogue import deactivates
+it, it disappears from every screen — and any edits made in the grid after the
+import are stranded (intact in the database, unreachable in the UI).
+
+No working path produces such rows today, so this trap would be **introduced**
+by this feature, not inherited. The dialog therefore gains a list of the
+project's own extraction templates — active and inactive — with a "Switch to"
+action (§6.2, §5.6).
+
+**Rejected:** documenting "re-import the file". The file does not contain the
+post-import edits.
+
+### 3.6 Delete ships in this slice
+
+The import is the feature that makes templates accumulate, and there is no
+delete endpoint (`template_structure.py` deletes sections and fields only), so
+cleanup would mean SQL. A guarded `DELETE` (§5.7) lands here, surfaced from the
+same list (§6.2). Guards keep it boring: only inactive templates, only
+templates no run or instance references.
 
 ## 4. The format — `prumo-template@1`
 
@@ -148,7 +180,7 @@ carries `sort_order`, and defaults are omitted on export.
 | `kind` | yes | `kind` | Must be `"extraction"` in v1. |
 | `name` | yes | `name` | 1–200 chars. |
 | `description` | no | `description` | |
-| `framework` | no | `framework` | `CHARMS` / `PICOS` / `CUSTOM`; defaults to `CUSTOM` (the column is NOT NULL). |
+| `framework` | no | `framework` | `CHARMS` / `PICOS` / `CUSTOM`; defaults to `CUSTOM` (the column is NOT NULL). Display-only in the product — nothing branches on it. |
 | `version` | no | `version` | Free-text label, defaults `"1.0.0"`. **Not** the `extraction_template_versions.version` counter. |
 | `llm_template_instruction` | no | `llm_template_instruction` | ≤ 4000 chars (mirrors the `llm_instruction_len` CHECK). |
 | `sections` | yes | — | 1–100 entries. |
@@ -206,36 +238,51 @@ name (parent comes from nesting), so duplicates are harmless.
 | `other_placeholder` | no | `other_placeholder` | ≤ 200. |
 | `allows_not_applicable` | no | `allows_not_applicable` | Default `false`. |
 | `allows_not_evaluated` | no | `allows_not_evaluated` | Default `false`. |
-| `validation_schema` | no | `validation_schema` | Opaque object, passed through unread. |
 
-**Every data column of `extraction_fields` and `extraction_entity_types` is
-represented.** A lossy export is a bug, not a simplification.
-`validation_schema` is included even though it has no functional reader in the
-product today (see the note at `frontend/lib/copy/templateConfig.ts`), because
-the editor threads the column and round-trip fidelity is the contract.
+Three keys are renamed relative to their columns so the file is writable by
+hand and guessable by an LLM — `type` and `required` appear on every field,
+and they are the JSON Schema convention: `field_type` → `type`,
+`is_required` → `required`, `cardinality` → `repeats` (boolean). `group` is
+not a rename but a derivation (§4.2). Every other key uses its column name.
+The cost is two `serialization_alias` declarations in the Pydantic model.
 
-Four keys are renamed relative to their columns so the file is writable by
-hand: `field_type` → `type`, `is_required` → `required`, `cardinality` →
-`repeats` (boolean), `role` → `group` (boolean, root-only). Every other key
-uses its column name.
+### 4.4 What the format carries, and what it deliberately does not
 
-Columns deliberately **absent** from the format: `id`, `template_id`,
-`project_template_id`, `entity_type_id`, `parent_entity_type_id` (structural,
-re-derived), `sort_order` (array order), `created_at` / `updated_at` /
-`created_by` (audit), `is_active`, `global_template_id`,
-`config_draft_since` / `config_draft_by`, `schema_` (vestigial JSONB on the
-template row — the import writes `{}`).
+**Every column the product reads or writes is represented.** A lossy export
+of a live column is a bug, not a simplification.
+
+Two columns are **vestigial** and deliberately excluded:
+`project_extraction_templates.schema_` and `extraction_fields.validation_schema`.
+No UI writes either (the field inspector has no control for
+`validation_schema`; the create path sends `{}`), no code reads either (see
+the note at `frontend/lib/copy/templateConfig.ts`: "no functional reader
+anywhere in the product"), and every seeded or editor-created row holds `{}`
+or `null`. Carrying them would let a file promise behavior the product does
+not have — a hand-written `"validation_schema": {"maximum": 120}` that nothing
+enforces. Because the format model is `extra="forbid"`, a file that includes
+either key is rejected with the key named, which tells the author plainly that
+per-field validation rules are not a feature. Should either column gain
+semantics, adding an optional key is additive within v1 — old files stay
+valid. The import writes `{}` to both, matching the existing create path.
+
+Columns absent because they are structural or audit, not data: `id`,
+`template_id`, `project_template_id`, `entity_type_id`,
+`parent_entity_type_id` (re-derived from nesting), `sort_order` (array
+order), `created_at` / `updated_at` / `created_by`, `is_active`,
+`global_template_id`, `config_draft_since` / `config_draft_by`.
 
 ## 5. Backend
 
 ### 5.1 Endpoints
 
 ```text
-GET  /api/v1/projects/{project_id}/templates/{template_id}/export
-POST /api/v1/projects/{project_id}/templates/import
+GET    /api/v1/projects/{project_id}/templates/{template_id}/export   (new)
+POST   /api/v1/projects/{project_id}/templates/import                 (new)
+DELETE /api/v1/projects/{project_id}/templates/{template_id}          (new)
+PATCH  /api/v1/projects/{project_id}/templates/{template_id}          (fixed, §5.6)
 ```
 
-Both guarded by `require_project_manager`, both returning the standard
+All guarded by `require_project_manager`, all returning the standard
 `ApiResponse` envelope.
 
 - **Export** reads the live rows for the path template (BOLA chain: template →
@@ -252,7 +299,8 @@ Both guarded by `require_project_manager`, both returning the standard
 - **Import** takes the parsed document as its body and returns the same
   envelope shape the clone endpoint already returns —
   `{project_template_id, version_id, entity_type_count, field_count, created}` —
-  so the import dialog's success path is unchanged.
+  so the dialog's success path is unchanged.
+- **Delete** and **PATCH** are specified in §5.6–5.7.
 
 ### 5.2 Modules
 
@@ -265,6 +313,15 @@ Both guarded by `require_project_manager`, both returning the standard
 - `app/services/template_portable_service.py` — the two directions side by
   side: `to_portable(db, template_id) -> PortableTemplate` and
   `import_portable(db, project_id, doc, user_id) -> TemplateClone`.
+- `app/services/project_template_active_service.py` — gains the module-level
+  helper `deactivate_sibling_extraction_templates(db, project_id,
+  keep_active_id)`, promoted from `TemplateCloneService`'s private method. Three
+  callers share it: clone, import, and `set_template_active` (§5.6). The
+  import direction is dependency-safe: the clone service imports from this
+  module, which imports only models and schemas.
+- `app/services/template_delete_service.py` — `delete_template(db,
+  project_id, template_id)` with the §5.7 guards. Its own module, like its
+  siblings `template_discard_service.py` / `template_restore_service.py`.
 
 ### 5.3 Import algorithm
 
@@ -272,13 +329,13 @@ One transaction:
 
 1. Validate the document (Pydantic). Reject `kind != "extraction"` with a
    typed error.
-2. Deactivate the project's active extraction templates
-   (the sibling-deactivation step the clone service already performs; promoted
-   from a private method to a module-level helper so both callers share it).
-3. Insert the `ProjectExtractionTemplate` row with `global_template_id = NULL`.
+2. Deactivate the project's active extraction templates via the shared helper
+   (§5.2).
+3. Insert the `ProjectExtractionTemplate` row with `global_template_id = NULL`
+   and `schema_ = {}`.
 4. Walk `sections` parent-first, in array order: insert each entity type with
    `sort_order = index` and the derived `role`/`parent`, then its fields with
-   `sort_order = index`.
+   `sort_order = index` and `validation_schema = {}`.
 5. Publish v1 through `TemplateVersionService.republish`, which snapshots the
    structure and clears the draft marker the inserts just stamped.
 
@@ -299,6 +356,8 @@ a partially-imported template is never representable.
 | Schema/structural validation failure | 422 | `TEMPLATE_IMPORT_INVALID` |
 | `kind` is not `extraction` | 422 | `TEMPLATE_IMPORT_WRONG_KIND` |
 | `prumo_template` is not `1` | 422 | `TEMPLATE_IMPORT_UNSUPPORTED_VERSION` |
+| Delete: template is active | 409 | `TEMPLATE_ACTIVE` |
+| Delete: a run or instance references the template | 409 | `TEMPLATE_IN_USE` |
 | Template not in the path project | 404 | existing not-found handling |
 
 Validation failures carry a human-readable list built from Pydantic's `loc`
@@ -309,6 +368,37 @@ the first 20 entries, delivered in the standard envelope's `error.message`.
 
 `sections` ≤ 100 per level, `fields` ≤ 200 per section, enforced by Pydantic.
 A pathological file becomes a fast 422 instead of a long transaction.
+
+### 5.6 Switch — `set_template_active` deactivates siblings
+
+`set_template_active(is_active=True)` on an **extraction** template today
+flips the flag and nothing else. With another extraction template active, the
+flush trips the partial unique index
+`uq_one_active_extraction_template_per_project` — a latent bug: the endpoint
+cannot currently activate a second extraction template, which is exactly what
+"Switch to" needs. The fix is the shared helper from §5.2, called before the
+flag write, kind-scoped so QA (where several templates may be active) is
+untouched. The deactivate-path guard ("cannot disable the only active
+extraction template") is unchanged.
+
+### 5.7 Delete
+
+`delete_template(db, project_id, template_id)`, one transaction:
+
+1. 404 unless the template belongs to the path project.
+2. **409 `TEMPLATE_ACTIVE`** if `is_active` — "switch to another template
+   first". One rule for every kind: it keeps the at-least-one-active extraction
+   rule intact by construction and makes it impossible to delete what is on
+   screen. (QA tabs already have toggles: deactivate, then delete.)
+3. **409 `TEMPLATE_IN_USE`** if any `extraction_runs` or `extraction_instances`
+   row references the template — one query with two scalar subqueries, so the
+   user sees a message rather than a 500. The `RESTRICT` foreign keys
+   (`extraction_runs.template_id`, `extraction_runs.version_id`,
+   `extraction_instances.template_id`) remain the hard guarantee.
+4. Delete the row. `extraction_entity_types` (→ `extraction_fields`) and
+   `extraction_template_versions` cascade. The template-scoped
+   `extraction_hitl_configs` row (`scope_kind = 'template'`, `scope_id` has no
+   FK and would otherwise be orphaned) is deleted in the same transaction.
 
 ## 6. Frontend
 
@@ -323,42 +413,65 @@ control:
   reports a pending draft, an `AlertDialog` confirms first: *"This file
   includes unpublished changes."*
 - The existing **`Import template`** button keeps its position and opens the
-  same dialog; its icon changes from `Download` to `Upload` (it competed with
+  dialog below; its icon changes from `Download` to `Upload` (it competed with
   the new Export affordance — a one-line fix in code this change already
   touches).
 
-### 6.2 Import dialog
+### 6.2 The template dialog
 
-The existing catalogue dialog gains a source selector: **From catalogue** |
-**From a file**. The file pane is a file input plus an Import button, and a
-one-line trust notice (§8).
+`ImportTemplateDialog` becomes the "Switch template" dialog the 2026-08-05
+spec named. It is hosted by both `TemplateConfigEditor` and
+`ExtractionInterface`, so both get the behavior. Three parts, top to bottom:
 
-**The browser does not parse the JSON.** The file is posted as-is and the
-server validates it; errors render as the returned list. Re-implementing the
-schema in TypeScript would duplicate exactly the knowledge this design
-consolidates in one Pydantic model.
+1. **This project's templates** — every extraction template of the project,
+   active and inactive (`fetchProjectTemplates(..., includeInactive = true)`),
+   with name, framework, and created date (the date is what makes two
+   same-named imports distinguishable). The active row is marked. Inactive
+   rows carry **Switch to** (the PATCH, §5.6) and a **trash** action that opens
+   an `AlertDialog` — *"Delete '<name>'? Its sections and fields are removed.
+   This cannot be undone."* — then calls the DELETE; a 409 renders its message
+   inline. The active row carries neither.
+2. **Add from catalogue** — the existing global list, unchanged.
+3. **Add from a file** — a file input, an Import button, and one line of
+   trust copy (§8).
+
+**The browser does not validate the document.** It reads the file, `JSON.parse`s
+it (a syntax error becomes a local "not a valid JSON file" message), and posts
+the object; the server validates it and errors render as the returned list.
+Re-implementing the schema in TypeScript would duplicate exactly the knowledge
+this design consolidates in one Pydantic model.
+
+The project list and the file pane are their own components; the dialog
+composes them (the file-size ratchet, and the dialog is already 243 lines).
 
 ### 6.3 Services and copy
 
 - `frontend/services/templateImportService.ts` gains
   `importTemplateFromFile(projectId, file)`.
-- A new `exportTemplate(projectId, templateId)` alongside it.
+- `exportTemplate(projectId, templateId)` and `deleteTemplate(projectId,
+  templateId)` alongside it. Switch reuses `setTemplateActive` from
+  `useHITLProjectTemplates`.
 - New copy keys in `frontend/lib/copy/extraction.ts`, English only, avoiding
   the banned user-facing noun "Run".
 
-## 7. Accepted costs
+## 7. Accepted costs and adjacent breakage
 
-**No duplicate-name guard.** Importing the same file twice creates two
-templates; only one is active, and no extraction surface lists inactive ones
-(`fetchProjectTemplates` filters `is_active=true` unless `includeInactive` is
-passed, which only the QA Configuration tab does). Blocking on a name
-collision would dead-end the legitimate "import my revised CHARMS" flow;
-warning would cost a pre-flight round trip. Neither earns its keep.
+**No duplicate-name guard on import.** Importing the same file twice creates
+two templates. With §6.2 both are visible, dated, and the stale one is one
+trash click away, so blocking (which would dead-end "import my revised CHARMS")
+or warning (a pre-flight round trip) would buy nothing.
 
-**There is no delete-project-template endpoint.** `template_structure.py`
-deletes sections and fields only. Inactive imports therefore accumulate as
-invisible rows. This is a pre-existing gap, not one this design introduces; it
-deserves its own issue.
+**No rename.** No surface renames a project template, so an imported
+template's name is frozen at import; change it in the file. Not worth a slice.
+
+**Pre-existing, out of scope — the "Create custom template" dialog is
+broken.** `createCustomTemplate` in `frontend/services/templateService.ts`
+inserts `project_extraction_templates` directly through PostgREST with no
+version row; the deferred constraint trigger
+`project_extraction_templates_active_version` (migration 0004) fails the
+commit. The button is reachable from `ExtractionInterface`. It is tracked
+separately; after this slice, a minimal portable file is the working way to
+start a template from scratch.
 
 ## 8. Security note
 
@@ -378,27 +491,39 @@ The first test written, and written failing:
 
 **Round-trip.** Seed CHARMS → clone into project A → export → import into
 project B → export again → assert the two documents are equal. This exercises
-both directions and every column at once, and fails loudly if either side
-drops a key.
+both directions and every carried column at once, and fails loudly if either
+side drops a key.
 
-Then:
+Then, backend:
 
-- Each rejection case in §5.4 returns a typed 422 **and writes nothing**
+- Each rejection case in §5.4 returns its typed status **and writes nothing**
   (assert the rollback: no new `project_extraction_templates` row).
 - Structural rejections: `sections` under a non-group, two groups, nesting
   deeper than one level, duplicate field name within a section, bad `name`
-  patterns, unknown `type`.
+  patterns, unknown `type`, a `validation_schema` key (rejected as unknown).
 - Two sections sharing a `name` import successfully (the import must not be
   stricter than the editor — §4.2).
-- Import activates the new template and deactivates the previously active one.
-- Import leaves exactly one active `extraction_template_versions` row whose
-  `schema_` matches the imported structure.
-- Frontend (vitest): the export button downloads with the expected filename
-  **and a blob whose parsed contents are the unwrapped document** (top-level
+- Import activates the new template and deactivates the previously active one;
+  exactly one active `extraction_template_versions` row exists afterwards and
+  its `schema_` matches the imported structure.
+- Switch: activating an inactive extraction template via PATCH deactivates the
+  active sibling (the §5.6 regression — today this trips the unique index);
+  activating a QA template deactivates nothing.
+- Delete: 409 on the active template; 409 on a template with a run; 404 across
+  projects; on success the entity types, fields, versions, and template-scoped
+  hitl config row are gone.
+
+Frontend:
+
+- vitest: the export button downloads with the expected filename **and a blob
+  whose parsed contents are the unwrapped document** (top-level
   `prumo_template`, no `data`/`error` envelope keys — §5.1); a pending draft
-  raises the confirmation; a server validation error renders in the dialog.
-- E2E (Playwright): export from a project, re-import into the same project,
-  and assert the grid renders the same sections and fields.
+  raises the confirmation; a server validation error renders in the dialog;
+  the project list shows an inactive file-imported template with Switch and
+  trash, and the active row with neither; delete asks for confirmation.
+- Playwright: export from a project, re-import into the same project, assert
+  the grid renders the same sections and fields; switch back to the original;
+  delete the import.
 
 ## 10. Out of scope
 
@@ -406,7 +531,9 @@ Then:
   template.
 - Global-catalogue import and retiring the Python seed pattern — the natural
   follow-up, and the reason the format is worth getting right now.
-- `kind: quality_assessment`.
+- `kind: quality_assessment` import/export (the delete endpoint is
+  kind-agnostic by construction, but only the extraction dialog surfaces it).
 - Multi-template bundles, YAML, CSV.
-- Deleting or archiving a project template (§7).
+- Renaming a project template (§7).
+- Fixing the custom-template dialog (§7).
 - Format migration. `prumo_template: 1` only makes a future v2 detectable.
