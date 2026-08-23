@@ -65,7 +65,7 @@ export const runs = {
   // Worklist popover
   worklistSearch: 'Go to article…',
   worklistPosition: '{{n}} of {{m}}',
-  worklistPositionLabel: 'Article {{n}} of {{m}}, open list',
+  worklistPositionLabel: 'Article {{n}} of {{m}}',
   aiPendingSuggestions: '{{n}} AI suggestions pending',
   compareToggleLabel: 'Compare',
   // CommandPalette

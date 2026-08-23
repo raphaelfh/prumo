@@ -1,15 +1,11 @@
 // frontend/components/runs/header/__tests__/Worklist.test.tsx
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { Worklist } from '@/components/runs/header/Worklist';
 
 vi.mock('@/lib/copy', () => ({ t: (_n: string, k: string) => k }));
-
-// cmdk calls scrollIntoView on the selected item — jsdom doesn't implement it
-beforeEach(() => {
-  window.HTMLElement.prototype.scrollIntoView = vi.fn();
-});
 
 const articles = [
   { id: 'a1', title: 'Article One' },
@@ -17,51 +13,73 @@ const articles = [
   { id: 'a3', title: 'Article Three' },
 ];
 
+function renderWorklist(props: Partial<React.ComponentProps<typeof Worklist>> = {}) {
+  return render(
+    <TooltipProvider>
+      <Worklist articles={articles} currentId="a2" onNavigate={vi.fn()} {...props} />
+    </TooltipProvider>,
+  );
+}
+
 describe('RunHeader.Worklist', () => {
-  it('renders "2 / 3" trigger when current is middle article', () => {
-    render(<Worklist articles={articles} currentId="a2" onNavigate={vi.fn()} />);
-    expect(screen.getByRole('button', { name: 'worklistPositionLabel' })).toHaveTextContent('2 / 3');
+  it('renders exactly two buttons — the counter is not interactive', () => {
+    renderWorklist();
+    expect(screen.getAllByRole('button')).toHaveLength(2);
   });
 
-  it('calls onNavigate with first article id when prev is clicked', async () => {
+  it('shows the position as text', () => {
+    renderWorklist();
+    expect(screen.getByRole('navigation')).toHaveTextContent('2 / 3');
+  });
+
+  it('names the nav with the position for assistive tech', () => {
+    renderWorklist();
+    expect(screen.getByRole('navigation', { name: 'worklistPositionLabel' })).toBeInTheDocument();
+  });
+
+  it('calls onNavigate with the previous article id', async () => {
     const onNavigate = vi.fn();
-    render(<Worklist articles={articles} currentId="a2" onNavigate={onNavigate} />);
+    renderWorklist({ onNavigate });
     await userEvent.click(screen.getByRole('button', { name: 'articlePrevious' }));
     expect(onNavigate).toHaveBeenCalledWith('a1');
   });
 
-  it('calls onNavigate with third article id when next is clicked', async () => {
+  it('calls onNavigate with the next article id', async () => {
     const onNavigate = vi.fn();
-    render(<Worklist articles={articles} currentId="a2" onNavigate={onNavigate} />);
+    renderWorklist({ onNavigate });
     await userEvent.click(screen.getByRole('button', { name: 'articleNext' }));
     expect(onNavigate).toHaveBeenCalledWith('a3');
   });
 
-  it('disables prev button when at first article', () => {
-    render(<Worklist articles={articles} currentId="a1" onNavigate={vi.fn()} />);
+  it('disables prev at the first article without removing it', () => {
+    renderWorklist({ currentId: 'a1' });
     expect(screen.getByRole('button', { name: 'articlePrevious' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'articleNext' })).not.toBeDisabled();
+    expect(screen.getAllByRole('button')).toHaveLength(2);
   });
 
-  it('disables next button when at last article', () => {
-    render(<Worklist articles={articles} currentId="a3" onNavigate={vi.fn()} />);
+  it('disables next at the last article without removing it', () => {
+    renderWorklist({ currentId: 'a3' });
     expect(screen.getByRole('button', { name: 'articleNext' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'articlePrevious' })).not.toBeDisabled();
+    expect(screen.getAllByRole('button')).toHaveLength(2);
   });
 
-  it('opens popover and lists all article titles on trigger click', async () => {
-    render(<Worklist articles={articles} currentId="a2" onNavigate={vi.fn()} />);
-    await userEvent.click(screen.getByRole('button', { name: 'worklistPositionLabel' }));
-    expect(screen.getByText('Article One')).toBeInTheDocument();
-    expect(screen.getByText('Article Two')).toBeInTheDocument();
-    expect(screen.getByText('Article Three')).toBeInTheDocument();
+  it('renders nothing for a single-article worklist', () => {
+    const { container } = render(
+      <TooltipProvider>
+        <Worklist articles={[articles[0]]} currentId="a1" onNavigate={vi.fn()} />
+      </TooltipProvider>,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 
-  it('calls onNavigate with article id when a row in the popover is clicked', async () => {
-    const onNavigate = vi.fn();
-    render(<Worklist articles={articles} currentId="a2" onNavigate={onNavigate} />);
-    await userEvent.click(screen.getByRole('button', { name: 'worklistPositionLabel' }));
-    await userEvent.click(screen.getByText('Article One'));
-    expect(onNavigate).toHaveBeenCalledWith('a1');
+  it('renders nothing when the current article is not in the worklist', () => {
+    const { container } = render(
+      <TooltipProvider>
+        <Worklist articles={articles} currentId="missing" onNavigate={vi.fn()} />
+      </TooltipProvider>,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 });
