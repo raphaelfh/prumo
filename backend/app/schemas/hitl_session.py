@@ -2,10 +2,10 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 # The diff vocabulary lives in app.domain rather than the diff engine: the
 # wire model below references those enums rather than restating them, so the
@@ -23,6 +23,7 @@ from app.domain.template_change import (
 # canonical enum value without importing directly from app.models.* —
 # enforced by scripts/fitness/check_layered_arch.py.
 from app.models.extraction_versioning import TemplateKind  # noqa: E402,F401
+from app.schemas.extraction import Framework
 from app.schemas.extraction_run import RunViewEntityType, RunViewResponse
 
 
@@ -56,6 +57,26 @@ class OpenHITLSessionResponse(BaseModel):
 class CloneTemplateRequest(BaseModel):
     global_template_id: UUID
     kind: Literal["extraction", "quality_assessment"]
+
+
+class CreateProjectTemplateRequest(BaseModel):
+    """Name a template that starts with no sections; the tree is built after.
+
+    ``extra="forbid"``: ``is_active``, ``project_id`` and ``created_by`` are
+    the server's to set — the invariants in ``template_create_service`` are
+    exactly what a client-supplied field set would break.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # ``StringConstraints`` trims inside the core string schema, so the bounds
+    # below see the trimmed value — a whitespace-only name is too short rather
+    # than sneaking past a post-validator. Same idiom as ``SectionLabel``.
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=100)]
+    description: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = (
+        None
+    )
+    framework: Framework = "CUSTOM"
 
 
 class CloneTemplateResponse(BaseModel):

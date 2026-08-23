@@ -401,6 +401,18 @@ template_portable.py`: nested, UUID-free, `role` derived from nesting + a
 from one and publishes v1 through `republish`. Design:
 `docs/superpowers/specs/2026-08-23-template-portable-import-export-design.md`.
 
+**Create from scratch (2026-08-23).** `POST …/templates` (manager-gated,
+`template_create_service.create_blank_template`) is the third creation path
+and the one with no source: it inserts the row with **no sections** and
+publishes v1, so the manager lands in the configuration editor on a
+published — not permanently draft — template. It is the same tail as the
+file import (deactivate the extraction sibling via
+`deactivate_sibling_extraction_templates`, then `republish`), minus the
+document parse and tree build. This is the path that replaced a direct
+frontend insert, which could not satisfy either invariant above: it commits
+alone (so the deferred trigger fires with no active version) and it cannot
+deactivate the incumbent (so the partial unique index refuses it).
+
 Configuration flows for QA tools may call the same clone endpoint before sessions; session lifecycle for QA vs extraction is in §5.
 
 **Production timeouts** — The SPA (e.g. on Vercel) calls the API host directly (`VITE_API_URL`). Slow clones are usually capped by **Gunicorn’s worker timeout** (defaults to **30s** if not raised): the master kills the worker while SQLAlchemy is still working, and the browser sees a timeout or connection reset. Set Gunicorn `-t` to at least the clone request budget (the production Dockerfile uses **120s** (`-t 120`)); the import client uses the same **120s** `fetch` budget.

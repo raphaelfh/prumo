@@ -708,6 +708,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Project Template
+         * @description Create a project template that starts with no sections.
+         *
+         *     Manager-gated like clone and import below: it deactivates the project's
+         *     current extraction template, which is project-wide configuration. Same
+         *     response shape as those two — the manager lands in the configuration
+         *     editor on a published, empty v1.
+         */
+        post: operations["create_project_template_api_v1_projects__project_id__templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/clone": {
         parameters: {
             query?: never;
@@ -3250,6 +3275,26 @@ export interface components {
             modelLabel: string;
             /** Proposalrunid */
             proposalRunId?: string | null;
+        };
+        /**
+         * CreateProjectTemplateRequest
+         * @description Name a template that starts with no sections; the tree is built after.
+         *
+         *     ``extra="forbid"``: ``is_active``, ``project_id`` and ``created_by`` are
+         *     the server's to set — the invariants in ``template_create_service`` are
+         *     exactly what a client-supplied field set would break.
+         */
+        CreateProjectTemplateRequest: {
+            /** Description */
+            description?: string | null;
+            /**
+             * Framework
+             * @default CUSTOM
+             * @enum {string}
+             */
+            framework: "CHARMS" | "PICOS" | "CUSTOM";
+            /** Name */
+            name: string;
         };
         /** CreateProposalRequest */
         CreateProposalRequest: {
@@ -7421,6 +7466,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_ParserSettingsRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_project_template_api_v1_projects__project_id__templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProjectTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_CloneTemplateResponse_"];
                 };
             };
             /** @description Validation Error */

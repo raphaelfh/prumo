@@ -69,6 +69,18 @@ async def auth_as_manager(db_session: AsyncSession) -> AsyncGenerator[UUID, None
         yield user_id
 
 
+@pytest_asyncio.fixture
+async def auth_as_reviewer(db_session: AsyncSession) -> AsyncGenerator[UUID, None]:
+    """JWT sub = a member of the primary project who is NOT a manager.
+
+    The negative half of ``auth_as_manager``: every manager-gated endpoint
+    owes a 403 test, so this lives here for the same reason its sibling
+    does rather than being redeclared per suite."""
+    del db_session  # fixture ordering only: the seed must run first
+    async for user_id in authenticated_as(SEED.reviewer_profile, "r@example.com"):
+        yield user_id
+
+
 # --------------------------------------------------------------------------
 # Baseline setup
 # --------------------------------------------------------------------------
