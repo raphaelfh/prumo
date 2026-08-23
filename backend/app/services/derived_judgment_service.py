@@ -201,13 +201,18 @@ def worst_of(values: Iterable[Any]) -> str | None:
 
 
 def worst_domain(values: Iterable[Any]) -> str | None:
-    """Worst judgment among *values*, None if ANY entry is unjudged (strict).
+    """Worst judgment among *values*; None if any entry is unjudged — below High.
 
-    A ``no_information`` marker counts as Unclear here (see ``_judgment``); a
-    genuinely missing value still yields None, so an overall is never concluded
+    A single High propagates regardless of unrated siblings: the official
+    step-4 tables say "at least one domain high → high" without requiring the
+    rest to be rated (spec 2026-08-22 §1). Below High the strictness holds —
+    a ``no_information`` marker counts as Unclear (see ``_judgment``), but a
+    genuinely missing value yields None, so Low/Unclear are never concluded
     from an unfinished assessment.
     """
     judgments = [_judgment(v, no_information_as_unclear=True) for v in values]
+    if any(j == "High" for j in judgments):
+        return "High"
     if not judgments or any(j is None for j in judgments):
         return None
     ranked = [j for j in judgments if j is not None]

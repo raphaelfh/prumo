@@ -66,6 +66,15 @@ def test_worst_domain_of_nothing_is_none() -> None:
     assert worst_domain([]) is None
 
 
+def test_worst_domain_high_propagates_through_missing() -> None:
+    """Official step-4 tables (spec 2026-08-22 §1): "at least one domain high
+    -> high" does not require the other domains to be rated. The completeness
+    gate still holds below High."""
+    assert worst_domain(["High", None]) == "High"
+    assert worst_domain(["High", "", {"value": None}]) == "High"
+    assert worst_domain(["Unclear", None]) is None
+
+
 def test_worst_domain_maps_no_information_to_unclear() -> None:
     """methodology.md §4b: "NI que impeça julgar leva a Unclear" — an explicit
     no-information answer on a domain IS a judgment, not an absence."""
