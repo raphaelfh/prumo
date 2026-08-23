@@ -40,10 +40,9 @@ from tests.integration.test_config_write_grant_revoked import _attempt
 
 _TABLE = "public.project_extraction_templates"
 
-# ``is_active`` defaults to true, which would collide with
-# ``uq_one_active_extraction_template_per_project`` on a project that already
-# has an active extraction template. Pinning it false keeps a regression
-# failing on the GRANT (or on RLS), never on an unrelated index.
+# ``is_active`` pinned false: the default true trips
+# ``uq_one_active_extraction_template_per_project``, which would fail a
+# regression on the index instead of on the GRANT.
 _INSERT_TEMPLATE = f"""
     INSERT INTO {_TABLE} (project_id, name, framework, created_by, is_active)
     VALUES (:pid, 'grant-probe', 'CUSTOM', :uid, false)
