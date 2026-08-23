@@ -112,6 +112,20 @@ describe('templateImportService (portable)', () => {
     expect(refusal.errorCount).toBe(7);
   });
 
+  it('exportTemplate surfaces a 422 refusal as TemplatePortableRefusal', async () => {
+    mockedApi.mockRejectedValueOnce(
+      new ApiError('TEMPLATE_EXPORT_INVALID', 'cannot export', 422, undefined, {
+        errors: [{path: 'sections[0].fields[2].allowed_values', message: 'too short'}],
+        error_count: 1,
+      }),
+    );
+    const result = await exportTemplate('p1', 't1');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeInstanceOf(TemplatePortableRefusal);
+    expect((result.error as TemplatePortableRefusal).code).toBe('TEMPLATE_EXPORT_INVALID');
+  });
+
   it('a non-portable ApiError passes through unchanged', async () => {
     mockedApi.mockRejectedValueOnce(new ApiError('CONFLICT', 'busy', 409));
     const result = await importTemplateFromFile('p1', new File(['{}'], 'x.json'));

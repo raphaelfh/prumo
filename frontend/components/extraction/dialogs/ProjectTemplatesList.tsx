@@ -35,7 +35,7 @@ interface ProjectTemplatesListProps {
 }
 
 export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesListProps) {
-  const {templates, loading, refresh, setTemplateActive} = useHITLProjectTemplates({
+  const {templates, loading, error, refresh, setTemplateActive} = useHITLProjectTemplates({
     projectId,
     kind: 'extraction',
     includeInactive: true,
@@ -65,6 +65,9 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
       return;
     }
     toast.success(t('templateConfig', 'projectTemplateDeleted'));
+    // The hook records a failed reload in its own `error` state (rendered
+    // below), so a deleted row can never sit on screen under a success toast
+    // without a visible warning; the catch only stops the rejection escaping.
     await refresh().catch(() => undefined);
   };
 
@@ -147,6 +150,11 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
             </li>
           ))}
         </ul>
+      )}
+      {error && (
+        <p role="alert" data-testid="project-templates-error" className="text-xs text-destructive">
+          {t('templateConfig', 'projectTemplatesRefreshFailed')}: {error}
+        </p>
       )}
       {deleteError && (
         <p role="alert" data-testid="project-template-delete-error" className="text-xs text-destructive">

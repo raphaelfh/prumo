@@ -8,12 +8,26 @@ const statusState = {data: {has_pending_changes: false}};
 vi.mock('@/hooks/extraction/useTemplateConfigStatus', () => ({useTemplateConfigStatus: () => statusState}));
 // The REAL service runs (filename + unwrap are what we test); only the api
 // client is stubbed.
-const apiClient = vi.fn();
+const {apiClient, ApiError, toast} = vi.hoisted(() => ({
+  apiClient: vi.fn(),
+  ApiError: class ApiError extends Error {
+    constructor(
+      public code: string,
+      message: string,
+      public status: number,
+      public traceId?: string,
+      public details?: Record<string, unknown>,
+    ) {
+      super(message);
+    }
+  },
+  toast: {success: vi.fn(), error: vi.fn(), info: vi.fn()},
+}));
 vi.mock('@/integrations/api/client', () => ({
   apiClient: (...a: unknown[]) => apiClient(...a),
-  ApiError: class ApiError extends Error {},
+  ApiError,
 }));
-vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn(), info: vi.fn()}}));
+vi.mock('sonner', () => ({toast}));
 
 import {TemplateExportButton} from './TemplateExportButton';
 
@@ -53,6 +67,20 @@ describe('TemplateExportButton', () => {
     expect(parsed).toEqual(DOC);
     expect(parsed).not.toHaveProperty('data');
     expect(parsed).not.toHaveProperty('ok');
+  });
+
+  it('a server refusal toasts and downloads nothing', async () => {
+    apiClient.mockRejectedValueOnce(
+      new ApiError('TEMPLATE_EXPORT_INVALID', 'This template cannot be exported', 422, undefined, {
+        errors: [{path: 'sections[3].fields[0].allowed_values', message: 'too short'}],
+        error_count: 1,
+      }),
+    );
+    renderButton();
+    fireEvent.click(screen.getByTestId('template-config-export'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(String(toast.error.mock.calls[0][0])).toContain('This template cannot be exported');
+    expect(captured).toBeNull();
   });
 
   it('confirms first when a draft is pending', async () => {

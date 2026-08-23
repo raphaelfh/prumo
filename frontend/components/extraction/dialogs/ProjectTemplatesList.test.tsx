@@ -6,7 +6,14 @@ import {TooltipProvider} from '@/components/ui/tooltip';
 
 const setTemplateActive = vi.fn(async () => true);
 const refresh = vi.fn(async () => []);
-const templatesState = {
+const templatesState: {
+  templates: Array<{id: string; name: string; framework: string; is_active: boolean; created_at: string}>;
+  loading: boolean;
+  error: string | null;
+  refresh: typeof refresh;
+  setTemplateActive: typeof setTemplateActive;
+} = {
+  error: null,
   templates: [
     {id: 'a', name: 'Current CHARMS', framework: 'CHARMS', is_active: true, created_at: '2026-08-01T00:00:00Z'},
     {id: 'b', name: 'Imported', framework: 'CUSTOM', is_active: false, created_at: '2026-08-20T00:00:00Z'},
@@ -38,8 +45,25 @@ function renderList(onSwitched = vi.fn()) {
 describe('ProjectTemplatesList', () => {
   beforeEach(() => {
     setTemplateActive.mockClear();
+    setTemplateActive.mockResolvedValue(true);
     refresh.mockClear();
     deleteTemplate.mockReset();
+    templatesState.error = null;
+  });
+
+  it('surfaces a failed list reload instead of hiding it', () => {
+    templatesState.error = 'Failed to fetch';
+    renderList();
+    expect(screen.getByTestId('project-templates-error')).toHaveTextContent('Failed to fetch');
+  });
+
+  it('does not report a switch the server refused', async () => {
+    setTemplateActive.mockResolvedValueOnce(false);
+    const onSwitched = renderList();
+    fireEvent.click(screen.getByTestId('project-template-switch-b'));
+    await waitFor(() => expect(setTemplateActive).toHaveBeenCalledWith('b', true));
+    await waitFor(() => expect(screen.getByTestId('project-template-switch-b')).toBeEnabled());
+    expect(onSwitched).not.toHaveBeenCalled();
   });
 
   it('marks the active row and offers Switch/Delete only on inactive rows', () => {

@@ -79,6 +79,36 @@ describe('ImportTemplateFilePane', () => {
     );
   });
 
+  it('tells the user when the server capped the issue list', async () => {
+    importTemplateFromFile.mockResolvedValueOnce({
+      ok: false,
+      error: new TemplatePortableRefusal(
+        'Invalid template file (57 issue(s))',
+        'TEMPLATE_IMPORT_INVALID',
+        Array.from({length: 20}, (_, i) => ({path: `sections[${i}].name`, message: 'bad'})),
+        57,
+      ),
+    });
+    render(<ImportTemplateFilePane projectId="p" onImported={vi.fn()} />);
+    pickFile();
+    fireEvent.click(screen.getByTestId('import-template-file-submit'));
+    const errors = await screen.findByTestId('import-template-file-errors');
+    expect(errors.querySelectorAll('li')).toHaveLength(20);
+    expect(errors).toHaveTextContent('+37 more');
+  });
+
+  it('refuses a file over the size cap without calling the service', async () => {
+    render(<ImportTemplateFilePane projectId="p" onImported={vi.fn()} />);
+    const input = screen.getByTestId('import-template-file-input') as HTMLInputElement;
+    const big = new File([new Uint8Array(2 * 1024 * 1024 + 1)], 'big.prumo-template.json', {
+      type: 'application/json',
+    });
+    fireEvent.change(input, {target: {files: [big]}});
+    expect(screen.getByTestId('import-template-file-submit')).toBeDisabled();
+    expect(await screen.findByTestId('import-template-file-errors')).toHaveTextContent('larger than 2 MB');
+    expect(importTemplateFromFile).not.toHaveBeenCalled();
+  });
+
   it('shows the trust notice', () => {
     render(<ImportTemplateFilePane projectId="p" onImported={vi.fn()} />);
     expect(screen.getByText(/Only import templates you trust/)).toBeInTheDocument();

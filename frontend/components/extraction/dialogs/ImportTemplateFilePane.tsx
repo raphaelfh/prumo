@@ -15,6 +15,10 @@ import {Button} from '@/components/ui/button';
 import {t} from '@/lib/copy';
 import {TemplatePortableRefusal, importTemplateFromFile} from '@/services/templateImportService';
 
+/** A real template is tens of KB; the server parses the whole body before
+ * its own caps apply, so an oversized file never leaves the browser. */
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
+
 interface ImportTemplateFilePaneProps {
   projectId: string;
   onImported: (templateId: string) => void;
@@ -25,20 +29,24 @@ export function ImportTemplateFilePane({projectId, onImported}: ImportTemplateFi
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [errorLines, setErrorLines] = useState<string[] | null>(null);
+  /** Issues the server capped off (spec: 20 shown, total reported). */
+  const [hiddenCount, setHiddenCount] = useState(0);
 
   const handleImport = async () => {
     if (!file) return;
     setImporting(true);
     setErrorLines(null);
+    setHiddenCount(0);
     const result = await importTemplateFromFile(projectId, file);
     setImporting(false);
     if (!result.ok) {
       const refusal = result.error instanceof TemplatePortableRefusal ? result.error : null;
-      setErrorLines(
-        refusal && refusal.issues.length > 0
-          ? refusal.issues.map((i) => `${i.path}: ${i.message}`)
-          : [result.error.message],
-      );
+      if (!refusal || refusal.issues.length === 0) {
+        setErrorLines([result.error.message]);
+        return;
+      }
+      setErrorLines(refusal.issues.map((i) => `${i.path}: ${i.message}`));
+      setHiddenCount(Math.max(0, refusal.errorCount - refusal.issues.length));
       return;
     }
     toast.success(
@@ -69,8 +77,15 @@ export function ImportTemplateFilePane({projectId, onImported}: ImportTemplateFi
             className="sr-only"
             data-testid="import-template-file-input"
             onChange={(event) => {
-              setFile(event.target.files?.[0] ?? null);
+              const picked = event.target.files?.[0] ?? null;
+              if (picked && picked.size > MAX_FILE_BYTES) {
+                setFile(null);
+                setErrorLines([t('templateConfig', 'importFileTooLarge')]);
+                return;
+              }
+              setFile(picked);
               setErrorLines(null);
+              setHiddenCount(0);
             }}
           />
         </label>
@@ -97,6 +112,11 @@ export function ImportTemplateFilePane({projectId, onImported}: ImportTemplateFi
                 <li key={i}>{line}</li>
               ))}
             </ul>
+            {hiddenCount > 0 && (
+              <p className="mt-1 text-xs">
+                {t('templateConfig', 'importFileMoreIssues').replace('{{n}}', String(hiddenCount))}
+              </p>
+            )}
           </AlertDescription>
         </Alert>
       )}
