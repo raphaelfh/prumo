@@ -153,7 +153,7 @@ export interface ProjectTemplateRow {
   description: string | null;
   framework: string;
   version: string;
-  kind: string;
+  kind: ReviewKind;
   is_active: boolean;
   created_at: string;
   created_by: string | null;
@@ -165,7 +165,7 @@ export interface GlobalTemplateRow {
   description: string | null;
   framework: string;
   version: string;
-  kind: string;
+  kind: ReviewKind;
 }
 
 /**
