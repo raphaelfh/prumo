@@ -54,6 +54,7 @@ import {ArticleKeywordsField} from './ArticleKeywordsField';
 import {PageHeader} from '@/components/patterns/PageHeader';
 import {SettingsCard, SettingsField, SettingsSection} from '@/components/settings';
 import {t} from '@/lib/copy';
+import {triggerDownload} from '@/lib/download';
 import {
     fetchArticle,
     fetchArticleFiles,
@@ -526,14 +527,7 @@ export function ArticleForm({
       toast.error(t('articles', 'errorDownloadFile'));
       return;
     }
-    const url = URL.createObjectURL(result.data);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = file.original_filename || "document.pdf";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    triggerDownload(result.data, file.original_filename || "document.pdf");
   };
 
   const handleDeleteFile = async () => {

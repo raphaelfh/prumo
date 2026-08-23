@@ -31,6 +31,7 @@ import {
 import {AlertCircle, Loader2} from "lucide-react";
 import {toast} from "sonner";
 import {t} from "@/lib/copy";
+import {triggerDownload} from "@/lib/download";
 import {useEligibleReviewers} from "@/hooks/exports/useEligibleReviewers";
 import {useAuth} from "@/contexts/AuthContext";
 import {
@@ -63,17 +64,6 @@ interface ExtractionExportDialogProps {
     defaultArticleScope?: ExtractionArticleScope;
     /** Total field count in the active template — drives the live preview. */
     fieldCount?: number;
-}
-
-function triggerDownload(blob: Blob, filename: string): void {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
 }
 
 /** Mirror of the backend SYNC_EXPORT_MAX_ARTICLES (research.md §3). */
