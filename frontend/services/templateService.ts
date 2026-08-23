@@ -456,7 +456,18 @@ export interface CreatedTemplate {
 
 /**
  * Insert a new project_extraction_templates row.
- * NOTE: caller toasts success ("${name}" created) + info (add sections).
+ *
+ * BROKEN — do not extend this path, and note it is still user-reachable: the
+ * "Create template" card in `ExtractionInterface.tsx` opens
+ * `CreateCustomTemplateDialog`, which calls this. The insert cannot succeed —
+ * the 0004 constraint trigger needs an active `extraction_template_versions`
+ * row that a single PostgREST insert cannot create, and since migration 0057
+ * the `authenticated` role no longer holds INSERT on the table at all, so the
+ * failure is now `permission denied` rather than a constraint violation.
+ * Creation belongs on the manager-gated endpoints
+ * (`POST /projects/{id}/templates/clone` or `/import`), which own the
+ * active-template and in-use invariants this path skips. Rewiring the dialog
+ * is tracked separately.
  */
 export async function createCustomTemplate(
   params: CreateCustomTemplateParams,
