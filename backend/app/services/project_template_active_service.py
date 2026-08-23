@@ -3,9 +3,10 @@ single-active-extraction-template invariant baked in — and the shared
 ``deactivate_sibling_extraction_templates`` helper that clone, portable
 import and Switch all use to keep that invariant on ONE write path.
 
-Owns the multi-row read + update transaction that the
-`PATCH /projects/{id}/templates/{tid}` endpoint used to do inline,
-so the endpoint module stops importing from `app.models.*`.
+Owns the multi-row read + update that the
+`PATCH /projects/{id}/templates/{tid}` endpoint used to do inline, so the
+endpoint module stops importing from `app.models.*`. Flushes only — the
+endpoint commits, like every sibling handler in that router.
 """
 
 from __future__ import annotations
@@ -148,7 +149,6 @@ async def set_template_active(
 
     tpl.is_active = is_active
     await flush_activation(db)
-    await db.commit()
     return UpdateTemplateActiveResponse(
         project_template_id=tpl.id,
         is_active=tpl.is_active,

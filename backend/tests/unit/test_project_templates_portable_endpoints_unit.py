@@ -19,11 +19,20 @@ from app.api.v1.endpoints.project_templates import (
     delete_project_template,
     export_project_template,
     import_project_template,
+    update_project_template_active,
 )
 from app.main import app
-from app.schemas.hitl_session import CloneTemplateResponse, TemplateDeleteResponse
+from app.schemas.hitl_session import (
+    CloneTemplateResponse,
+    TemplateDeleteResponse,
+    UpdateTemplateActiveRequest,
+    UpdateTemplateActiveResponse,
+)
 from app.schemas.template_portable import PortableTemplate
-from app.services.project_template_active_service import ProjectTemplateNotFoundError
+from app.services.project_template_active_service import (
+    LastActiveExtractionTemplateError,
+    ProjectTemplateNotFoundError,
+)
 
 _EP = "app.api.v1.endpoints.project_templates"
 
@@ -144,3 +153,70 @@ async def test_delete_not_found_is_404() -> None:
             _user_sub=uuid4(),
         )
     assert exc.value.status_code == 404
+
+
+# ---------------------------------------------------------------- PATCH (Switch)
+
+
+@pytest.mark.asyncio
+async def test_patch_active_commits_in_the_handler() -> None:
+    """The transaction boundary is the endpoint's, like every sibling handler
+    in this router — the service only flushes."""
+    project_id, template_id = uuid4(), uuid4()
+    payload = UpdateTemplateActiveResponse(project_template_id=template_id, is_active=True)
+    db = AsyncMock()
+    with patch(f"{_EP}.set_template_active", AsyncMock(return_value=payload)) as svc:
+        resp = await update_project_template_active(
+            project_id=project_id,
+            template_id=template_id,
+            body=UpdateTemplateActiveRequest(is_active=True),
+            request=_request("PATCH"),
+            db=db,
+            _user_sub=uuid4(),
+        )
+    assert svc.await_args.kwargs == {
+        "project_id": project_id,
+        "template_id": template_id,
+        "is_active": True,
+    }
+    db.commit.assert_awaited_once()
+    assert resp.data == payload
+
+
+@pytest.mark.asyncio
+async def test_patch_active_not_found_is_404() -> None:
+    with (
+        patch(
+            f"{_EP}.set_template_active", AsyncMock(side_effect=ProjectTemplateNotFoundError("x"))
+        ),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await update_project_template_active(
+            project_id=uuid4(),
+            template_id=uuid4(),
+            body=UpdateTemplateActiveRequest(is_active=False),
+            request=_request("PATCH"),
+            db=AsyncMock(),
+            _user_sub=uuid4(),
+        )
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_patch_active_last_active_is_400() -> None:
+    with (
+        patch(
+            f"{_EP}.set_template_active",
+            AsyncMock(side_effect=LastActiveExtractionTemplateError("only one")),
+        ),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await update_project_template_active(
+            project_id=uuid4(),
+            template_id=uuid4(),
+            body=UpdateTemplateActiveRequest(is_active=False),
+            request=_request("PATCH"),
+            db=AsyncMock(),
+            _user_sub=uuid4(),
+        )
+    assert exc.value.status_code == 400

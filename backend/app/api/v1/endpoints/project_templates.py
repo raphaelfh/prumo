@@ -189,6 +189,7 @@ async def update_project_template_active(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except LastActiveExtractionTemplateError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    await db.commit()
     return ApiResponse.success(
         result,
         trace_id=getattr(request.state, "trace_id", None),
