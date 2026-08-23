@@ -3197,8 +3197,10 @@ async def backfill_llm_template_instructions(session: AsyncSession) -> None:
             "attention to data leakage, train/test split hygiene, and "
             "evaluation practices specific to machine learning. Absence of "
             "information is a reason for concern, never reassurance. Quote "
-            "the passage that grounds each judgment. [customize: describe "
-            "the review's intended setting, population, and model scope]"
+            "the passage that grounds each judgment. [customize: state the "
+            "review's Step-1 PICOTS — Population, Index model(s), "
+            "Comparator model(s), Outcome(s), Timing, Setting/intended use "
+            "— which every applicability judgment is made against]"
         ),
     }
     for template_id, instruction_text in instructions.items():

@@ -25,8 +25,66 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.seed_probast_ai import _PAI_DERIVED_JUDGMENTS
+from app.seed_probast_ai import _PAI_DERIVED_JUDGMENTS as _V2_SPEC
 from app.services.derived_judgment_service import compute_derived_judgments, worst_domain
+
+# The v1 PROBAST+AI derivation spec, FROZEN VERBATIM as v1 project clones'
+# ``schema_`` rows still carry it in prod (clones copy the spec at clone time
+# and are never healed from the global row). The v2 seed rewrite deleted the
+# constant from code, but the shape stays live data — these end-to-end
+# scenarios are its only real-spec guard. Do not "modernise" this literal.
+_V1_DERIVED_JUDGMENTS: list[dict[str, Any]] = [
+    {
+        "id": "dev_overall_quality",
+        "label": "Overall quality (development)",
+        "rule": "worst_domain",
+        "inputs": [
+            {"section": "dev_d1_participants", "field": "quality_concern"},
+            {"section": "dev_d2_predictors", "field": "quality_concern"},
+            {"section": "dev_d3_outcome", "field": "quality_concern"},
+            {"section": "dev_d4_analysis", "field": "quality_concern"},
+        ],
+    },
+    {
+        "id": "dev_overall_applicability",
+        "label": "Overall applicability (development)",
+        "rule": "worst_domain",
+        "inputs": [
+            {"section": "dev_d1_participants", "field": "applicability_concerns"},
+            {"section": "dev_d2_predictors", "field": "applicability_concerns"},
+            {"section": "dev_d3_outcome", "field": "applicability_concerns"},
+        ],
+    },
+    {
+        "id": "eval_overall_rob",
+        "label": "Overall risk of bias (evaluation)",
+        "rule": "worst_domain",
+        "inputs": [
+            {"section": "eval_d1_participants", "field": "risk_of_bias"},
+            {"section": "eval_d2_predictors", "field": "risk_of_bias"},
+            {"section": "eval_d3_outcome", "field": "risk_of_bias"},
+            {
+                "collapse": "worst_of",
+                "label": "Evaluation D4: Analysis",
+                "inputs": [
+                    {"section": "eval_d4_analysis_apparent", "field": "risk_of_bias"},
+                    {"section": "eval_d4_analysis_internal", "field": "risk_of_bias"},
+                    {"section": "eval_d4_analysis_external", "field": "risk_of_bias"},
+                ],
+            },
+        ],
+    },
+    {
+        "id": "eval_overall_applicability",
+        "label": "Overall applicability (evaluation)",
+        "rule": "worst_domain",
+        "inputs": [
+            {"section": "eval_d1_participants", "field": "applicability_concerns"},
+            {"section": "eval_d2_predictors", "field": "applicability_concerns"},
+            {"section": "eval_d3_outcome", "field": "applicability_concerns"},
+        ],
+    },
+]
 
 NI: dict[str, Any] = {"value": None, "absent_reason": "no_information"}
 
@@ -82,7 +140,7 @@ def test_only_internal_validation_reported_is_not_penalised() -> None:
         eval_d4_analysis_apparent__risk_of_bias=NI,
         eval_d4_analysis_external__risk_of_bias=NI,
     )
-    got = {d.id: d.value for d in compute_derived_judgments(_PAI_DERIVED_JUDGMENTS, values)}
+    got = {d.id: d.value for d in compute_derived_judgments(_V1_DERIVED_JUDGMENTS, values)}
     assert got["eval_overall_rob"] == "Low"
 
 
@@ -106,10 +164,51 @@ def test_prod_run_21681ee0_now_computes() -> None:
         ("eval_d2_predictors", "applicability_concerns"): NI,
         ("eval_d3_outcome", "applicability_concerns"): {"value": "High"},
     }
-    got = {d.id: d.value for d in compute_derived_judgments(_PAI_DERIVED_JUDGMENTS, values)}
+    got = {d.id: d.value for d in compute_derived_judgments(_V1_DERIVED_JUDGMENTS, values)}
     assert got == {
         "dev_overall_quality": "Unclear",
         "dev_overall_applicability": "High",
         "eval_overall_rob": "High",
         "eval_overall_applicability": "High",
     }
+
+
+# --- v2 end-to-end scenarios against the REAL seeded spec -------------------
+
+
+def test_v2_internal_only_study_derives_low_from_the_internal_group() -> None:
+    """Through the real v2 spec: gate=Y, apparent + external groups entirely
+    unreported, internal group fully answered favourably — the eval-D4
+    recommendation derives Low from the internal validation alone."""
+    values: dict[tuple[str, str], Any] = {
+        ("eval_d4_analysis_apparent", "q1_apparent_only_avoided"): {"value": "Y"},
+    }
+    for q in (
+        "q2_reasonable_sample_size",
+        "q3_missing_censored_handling",
+        "q4_uncorrected_imbalance_evaluation",
+        "q5_data_leakage_avoided",
+        "q6_resampling_replicates_all_steps",
+        "q7_appropriate_performance_measures",
+    ):
+        values[("eval_d4_analysis_internal", q)] = {"value": "Y"}
+    got = {d.id: d.value for d in compute_derived_judgments(_V2_SPEC, values)}
+    assert got["eval_d4_rob"] == "Low"
+
+
+def test_v2_overalls_read_the_stored_judgments_not_the_recommendations() -> None:
+    """The assessor's RECORD feeds the overalls: a stored High on the single
+    eval-D4 judgment fires the overall even while every recommendation input
+    is blank."""
+    values: dict[tuple[str, str], Any] = {
+        ("eval_d1_participants", "risk_of_bias"): {"value": "Low"},
+        ("eval_d2_predictors", "risk_of_bias"): {"value": "Low"},
+        ("eval_d3_outcome", "risk_of_bias"): {"value": "Low"},
+        ("eval_d4_judgment", "risk_of_bias"): {"value": "High"},
+    }
+    got = {d.id: d.value for d in compute_derived_judgments(_V2_SPEC, values)}
+    assert got["eval_overall_rob"] == "High"
+    # The NI-on-a-judgment regression holds on v2 shapes too.
+    values[("eval_d4_judgment", "risk_of_bias")] = NI
+    got = {d.id: d.value for d in compute_derived_judgments(_V2_SPEC, values)}
+    assert got["eval_overall_rob"] == "Unclear"

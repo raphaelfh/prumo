@@ -100,13 +100,23 @@ async def test_probast_signaling_fields_allow_not_applicable() -> None:
 
 
 @pytest.mark.asyncio
-async def test_probast_ai_signaling_fields_allow_not_applicable() -> None:
-    """PROBAST+AI signaling questions offer NA in the instrument, so every one
-    opts into the not_applicable disposition; the 16 judgment fields do not."""
+async def test_probast_ai_na_restricted_to_conditional_rows() -> None:
+    """PROBAST+AI v2: NA is official on exactly the instrument's four
+    conditional (asterisked) items — six field rows after triplication
+    (spec 2026-08-22 §5). The other 36 signaling rows and every judgment
+    field carry no disposition flag."""
     fields = await _seeded_fields(seed_probast_ai)
     signaling = [f for f in fields if f.allowed_values == _PROBAST_SIGNALING]
     assert len(signaling) == 42
-    assert all(f.allows_not_applicable for f in signaling)
+    flagged = sorted(f.name for f in signaling if f.allows_not_applicable)
+    assert flagged == [
+        "q4_imbalance_recalibration",
+        "q4_uncorrected_imbalance_evaluation",
+        "q4_uncorrected_imbalance_evaluation",
+        "q4_uncorrected_imbalance_evaluation",
+        "q5_data_leakage_avoided",
+        "q6_resampling_replicates_all_steps",
+    ]
     judgments = [f for f in fields if f.allowed_values == _PROBAST_JUDGMENT]
     assert judgments
     assert not any(f.allows_not_applicable or f.allows_not_evaluated for f in judgments)
