@@ -35,6 +35,17 @@
  * presses the matching key, so it is not structurally starved by fixture
  * insertion order — it only skips when BOTH directions are disabled, which
  * genuinely means a single-article worklist.
+ *
+ * The pager itself is also a load race, not just a fixture-order trap: the
+ * ready-state render (and its Back button) can commit before the article
+ * worklist array has actually landed in `useExtractionData` state, so
+ * sampling the pager once — right after the Back button becomes visible —
+ * can read a transient zero-button state and misreport a multi-article
+ * project as "single article". `waitFor({ state: "visible" })` on the pager
+ * `<nav>` polls through that window instead of sampling once; the `.catch`
+ * swallows a genuine timeout (the real single-article case) so the test
+ * skips instead of failing, and the skip check runs only after the wait has
+ * had its full chance.
  */
 
 import { expect, test } from "@playwright/test";
@@ -56,12 +67,16 @@ test.describe("Extraction article pager", () => {
     await loginViaUi(page);
     await page.goto(`${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`);
 
-    // The pager renders null on a single-article project — that is a valid
-    // fixture state, not a failure.
-    const nextButton = page.getByRole("button", { name: /next article/i });
-    const prevButton = page.getByRole("button", { name: /previous article/i });
+    // The Back button confirms the page reached SOME ready render (a fast,
+    // clear failure if login or routing is broken) — it is deliberately NOT
+    // used as a proxy for "the pager's data has resolved" (see file header).
     await expect(page.getByRole("button", { name: /^back$/i }).first()).toBeVisible({ timeout: 15000 });
-    const pagerCount = await nextButton.count();
+
+    // The pager renders null on a single-article project — that is a valid
+    // fixture state, not a failure. Poll for it instead of sampling once.
+    const pager = page.getByRole("navigation", { name: /article \d+ of \d+/i });
+    await pager.waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+    const pagerCount = await pager.count();
     test.skip(pagerCount === 0, "Project has a single article — no pager to exercise");
 
     // Prefer "next", but fall back to "previous": on the standard fixture
@@ -70,6 +85,8 @@ test.describe("Extraction article pager", () => {
     // when neither direction can move — that is the genuine single-article
     // case, already covered by the pagerCount check above as a fixture
     // regression guard but re-checked explicitly here.
+    const nextButton = pager.getByRole("button", { name: /next article/i });
+    const prevButton = pager.getByRole("button", { name: /previous article/i });
     const nextEnabled = !(await nextButton.isDisabled());
     const prevEnabled = !(await prevButton.isDisabled());
     test.skip(!nextEnabled && !prevEnabled, "Both pager directions disabled — single-article worklist");
@@ -109,7 +126,10 @@ test.describe("Extraction article pager", () => {
     await page.goto(`${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`);
     await expect(page.getByRole("button", { name: /^back$/i }).first()).toBeVisible({ timeout: 15000 });
 
+    // Same load-race fix as the test above: poll for the pager instead of
+    // sampling its count once right after the Back button appears.
     const pager = page.getByRole("navigation", { name: /article \d+ of \d+/i });
+    await pager.waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
     test.skip((await pager.count()) === 0, "Project has a single article — no pager to exercise");
     await expect(pager.getByRole("button")).toHaveCount(2);
     await expect(pager).toContainText(/\d+\s*\/\s*\d+/);
