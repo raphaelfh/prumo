@@ -63,33 +63,14 @@ export interface ExtractionHeaderProps {
   // Status and actions
   saveState?: SaveState;
   lastSavedAt?: Date | null;
-  hasUnsavedChanges?: boolean;
-  isComplete: boolean;
-  /** @deprecated Legacy header finalize path; the primary action now flows
-   * through `transition` (Finish extraction / Start consensus / Approve &
-   * finalize). Optional + unused; full removal is HITL Phase 3. */
-  onFinalize?: () => void;
-  /** @deprecated Pass transition instead; kept for backward compat. */
-  finalizeLabel?: string;
   submitting?: boolean;
 
   // AI Extraction (optional - kept for compatibility)
-  templateId?: string;
-  templateName?: string;
-  /** Active run id — forwarded but not rendered directly by this header. */
-  runId?: string | null;
   /** Whether AI extraction may run (only in PROPOSAL; one-time-done after). */
   canRunAI?: boolean;
-  onExtractionComplete?: (runId?: string) => void | Promise<void>;
 
   // AI suggestions (for badge)
-  aiSuggestions?: Record<string, unknown>;
   onAISuggestionsClick?: () => void;
-
-  // Callback to refresh after extraction
-  onRefreshInstances?: () => Promise<void>;
-  // Callback to expose AI extraction state
-  onExtractionStateChange?: (state: { loading: boolean; progress: unknown }) => void;
 
   // ---- NEW optional RunHeader features ----
 

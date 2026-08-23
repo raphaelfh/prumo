@@ -7,10 +7,6 @@
  *
  * The arrows are DISABLED at the ends rather than hidden: hiding one changes
  * the block's width and would displace the header's centre by half an arrow.
- *
- * TODO(plan-future): per-article status is not shown — the `articles` prop
- * carries only id + title, and a batch runs endpoint would be needed. The list
- * this refers to now lives in CommandPalette.tsx.
  */
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';

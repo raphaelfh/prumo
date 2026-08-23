@@ -31,8 +31,7 @@ const base = {
   articles: [{ id: 'art-1', title: 'A' }], currentArticleId: 'art-1', onNavigateToArticle: vi.fn(),
   completedFields: 0, totalFields: 0, completionPercentage: 0,
   showPDF: false, onTogglePDF: vi.fn(), viewMode: 'extract' as const, onViewModeChange: vi.fn(),
-  hasComparison: false, isComplete: false, onFinalize: vi.fn(),
-  templateId: 'tpl-1',
+  hasComparison: false,
 };
 
 describe('ExtractionHeader (post legacy-cascade)', () => {
@@ -78,7 +77,6 @@ describe('ExtractionHeader (post legacy-cascade)', () => {
         <ExtractionHeader
           {...base}
           stage="extract"
-          isComplete={true}
           completedFields={5}
           totalFields={5}
           transition={{

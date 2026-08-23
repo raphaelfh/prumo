@@ -40,8 +40,6 @@ const baseHeaderProps = {
   viewMode: 'extract' as const,
   onViewModeChange: vi.fn(),
   hasComparison: false,
-  isComplete: false,
-  onFinalize: vi.fn(),
 };
 
 describe('ExtractionHeader reveal threading (RunStatus popover)', () => {
