@@ -18,6 +18,7 @@ from app.services.derived_judgment_service import (
     DerivedJudgment,
     compute_derived_judgments,
     derived_spec,
+    excluded_field_coordinates,
     is_recommendation,
     spec_coordinates,
     worst_domain,
@@ -407,3 +408,31 @@ def test_is_recommendation_discriminates_on_target() -> None:
     assert is_recommendation({"target": {"section": "s", "field": "f"}})
     assert not is_recommendation({"summary": {"section": "s", "field": "f"}})
     assert not is_recommendation({})
+
+
+def test_excluded_field_coordinates_unions_the_assessor_pointers() -> None:
+    """§3: the LLM exclusion set is the union of every entry's target /
+    rationale / summary coordinates — declared data, no name conventions."""
+    spec = [
+        {
+            "id": "dev_d1_quality",
+            "rule": "signaling_worst",
+            "target": {"section": "dev_d1", "field": "quality_concern"},
+            "rationale": {"section": "dev_d1", "field": "quality_concern_rationale"},
+            "inputs": [{"section": "dev_d1", "field": "q1"}],
+        },
+        {
+            "id": "dev_overall_quality",
+            "rule": "worst_domain",
+            "summary": {"section": "overall_judgement", "field": "summary_quality_development"},
+            "inputs": [{"section": "dev_d1", "field": "quality_concern"}],
+        },
+    ]
+    assert excluded_field_coordinates(spec) == {
+        ("dev_d1", "quality_concern"),
+        ("dev_d1", "quality_concern_rationale"),
+        ("overall_judgement", "summary_quality_development"),
+    }
+    assert excluded_field_coordinates([]) == set()
+    assert excluded_field_coordinates(None) == set()
+    assert excluded_field_coordinates(_SPEC) == set()  # v1-shaped: no pointers

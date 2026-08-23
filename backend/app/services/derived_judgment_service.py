@@ -378,11 +378,33 @@ def spec_coordinates(spec: Any) -> list[tuple[str, str]]:
         if not isinstance(derived, dict):
             continue
         _walk(derived.get("inputs"))
-        for key in (_RECOMMENDATION_KEY, "rationale", "summary"):
-            pointer = derived.get(key)
-            if isinstance(pointer, dict):
-                found.append((str(pointer.get("section", "")), str(pointer.get("field", ""))))
+        found.extend(_assessor_pointers(derived))
     return found
+
+
+def _assessor_pointers(derived: Mapping[str, Any]) -> list[tuple[str, str]]:
+    """The entry's assessor-owned coordinates: target, rationale, summary."""
+    pointers: list[tuple[str, str]] = []
+    for key in (_RECOMMENDATION_KEY, "rationale", "summary"):
+        pointer = derived.get(key)
+        if isinstance(pointer, dict):
+            pointers.append((str(pointer.get("section", "")), str(pointer.get("field", ""))))
+    return pointers
+
+
+def excluded_field_coordinates(spec: Any) -> set[tuple[str, str]]:
+    """The assessor-owned ``(section, field)`` names the LLM must never see (§3).
+
+    The union of every entry's target/rationale/summary pointers — declared
+    data, no name conventions, kind-agnostic: a template without a spec
+    yields an empty set and the extraction field list passes through
+    untouched.
+    """
+    excluded: set[tuple[str, str]] = set()
+    for derived in spec if isinstance(spec, list) else []:
+        if isinstance(derived, dict):
+            excluded.update(_assessor_pointers(derived))
+    return excluded
 
 
 def _resolve_input(
