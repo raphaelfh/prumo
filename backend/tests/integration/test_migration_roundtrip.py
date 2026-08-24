@@ -1225,8 +1225,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0057_revoke_project_tpl_writes" in out, (
-        f"Expected head revision '0057_revoke_project_tpl_writes', got:\n{out}"
+    assert "0058_scope_config_read_rls" in out, (
+        f"Expected head revision '0058_scope_config_read_rls', got:\n{out}"
     )
 
 
