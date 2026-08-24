@@ -370,12 +370,61 @@ def test_signaling_group_breakdown_row() -> None:
     group_rows = [i for i in out[0].inputs if i.label]
     assert group_rows == [
         DerivedInput(
-            sections=("d4_a", "d4_a"), label="Apparent performance", value=None, contribution=None
+            sections=("d4_a", "d4_a"),
+            label="Apparent performance",
+            value=None,
+            contribution=None,
+            state="unreported",
         ),
         DerivedInput(
-            sections=("d4_i", "d4_i"), label="Internal validation", value=None, contribution="High"
+            sections=("d4_i", "d4_i"),
+            label="Internal validation",
+            value=None,
+            contribution="High",
+            state=None,
         ),
     ]
+
+
+def test_signaling_group_row_separates_unreported_from_in_progress() -> None:
+    """The two contribute-nothing groups must not look alike to a client.
+
+    Both aggregate to no contribution, but they mean opposite things: the
+    apparent group is a performance type the study never reported (not a gap
+    in the assessment), while the internal group is half-answered (a gap).
+    Rendering them identically tells a reviewer a finished assessment is
+    unfinished — the failure this row's ``state`` exists to prevent.
+    """
+    out = compute_derived_judgments(
+        _D4_SPEC,
+        {
+            ("d4_a", "q1_gate"): "Y",
+            # apparent: nothing answered at all -> the study did not report it
+            ("d4_i", "q2"): "Y",
+            # internal: q3 still unanswered -> the assessment is unfinished
+        },
+    )
+    group_rows = [i for i in out[0].inputs if i.label]
+    assert [(r.label, r.contribution, r.state) for r in group_rows] == [
+        ("Apparent performance", None, "unreported"),
+        ("Internal validation", None, "in-progress"),
+    ]
+
+
+def test_signaling_group_row_state_is_empty_when_the_group_contributed() -> None:
+    """``contribution`` and ``state`` are complementary — never both set."""
+    out = compute_derived_judgments(
+        _D4_SPEC,
+        {
+            ("d4_a", "q1_gate"): "Y",
+            ("d4_a", "q2"): "Y",
+            ("d4_a", "q3"): "PY",
+            ("d4_i", "q2"): "Y",
+            ("d4_i", "q3"): "unclear",
+        },
+    )
+    group_rows = [i for i in out[0].inputs if i.label]
+    assert [(r.contribution, r.state) for r in group_rows] == [("Low", None), ("Unclear", None)]
 
 
 # --- spec-shape helpers ---------------------------------------------------
