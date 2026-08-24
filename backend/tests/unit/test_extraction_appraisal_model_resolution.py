@@ -267,13 +267,12 @@ def test_v2_shapes_contribute_columns_only_for_the_judgment_section() -> None:
             sort_order=order,
         )
 
-    def fld(section_id, name, ftype, allowed):
+    def fld(name, ftype, allowed):
         return FieldDescriptor(
             field_id=uuid.uuid4(),
             label=name,
             type=ftype,
             allowed_values=allowed,
-            parent_section_id=section_id,
             name=name,
         )
 
@@ -282,7 +281,6 @@ def test_v2_shapes_contribute_columns_only_for_the_judgment_section() -> None:
         "Evaluation D4 (internal)",
         [
             fld(
-                None,
                 "q2_reasonable_sample_size",
                 ExtractionFieldType.SELECT,
                 ("Y", "PY", "PN", "N"),
@@ -295,7 +293,6 @@ def test_v2_shapes_contribute_columns_only_for_the_judgment_section() -> None:
         "Assessment scope",
         [
             fld(
-                None,
                 "study_type",
                 ExtractionFieldType.SELECT,
                 ("development_only", "evaluation_only", "combination"),
@@ -306,20 +303,19 @@ def test_v2_shapes_contribute_columns_only_for_the_judgment_section() -> None:
     judgment = sec(
         "eval_d4_judgment",
         "Evaluation D4 — judgment",
-        [fld(None, "risk_of_bias", ExtractionFieldType.SELECT, ("Low", "High", "Unclear"))],
+        [fld("risk_of_bias", ExtractionFieldType.SELECT, ("Low", "High", "Unclear"))],
         3,
     )
     overall = sec(
         "overall_judgement",
         "Overall judgement",
-        [fld(None, "summary_rob_evaluation", ExtractionFieldType.TEXT, ())],
+        [fld("summary_rob_evaluation", ExtractionFieldType.TEXT, ())],
         4,
     )
     article = ArticleDescriptor(
         article_id=uuid.uuid4(),
         header_label="A",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={judgment.entity_type_id: (uuid.uuid4(),)},
