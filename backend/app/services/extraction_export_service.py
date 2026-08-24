@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError, AuthorizationError, NotFoundError
-from app.core.logging import LoggerMixin, get_logger
+from app.core.logging import LoggerMixin
 from app.infrastructure.storage.base import StorageAdapter
 from app.models.article import Article
 from app.models.extraction import (
@@ -54,7 +54,7 @@ from app.services.derived_judgment_service import (
     compute_derived_judgments,
     derived_spec,
     is_recommendation,
-    spec_coordinates,
+    warn_dangling_spec_refs,
 )
 from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
@@ -67,11 +67,6 @@ from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 # ----------------------------------------------------------------------
 # Enums
 # ----------------------------------------------------------------------
-
-
-# Module-level (not LoggerMixin): the appraisal roll-up is a pure
-# @staticmethod, and its dangling-spec warning must fire from there.
-logger = get_logger(__name__)
 
 
 class ExportMode(StrEnum):
@@ -678,13 +673,10 @@ class ExtractionExportService(LoggerMixin):
 
         # §9: the run view already warns on spec coordinates the frozen tree
         # no longer carries; the export used to blank the column in silence.
-        # Same event, full spec (pointers included), so both surfaces name
-        # the same broken coordinates.
+        # Same event, same emitter, so the two surfaces cannot drift.
         if spec_entries:
             known = {(s.name, f.name) for s in sections for f in s.fields}
-            unresolvable = sorted({c for c in spec_coordinates(spec_entries) if c not in known})
-            if unresolvable:
-                logger.warning("qa_derived_spec_dangling_ref", coordinates=unresolvable)
+            warn_dangling_spec_refs(spec_entries, known)
 
         domain_section_ids = tuple(s.entity_type_id for s, _ in domains)
         domain_labels = tuple(s.label for s, _ in domains)

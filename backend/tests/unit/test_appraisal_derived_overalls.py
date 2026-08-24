@@ -291,7 +291,7 @@ def test_export_warns_on_a_dangling_spec_coordinate() -> None:
             }
         ]
     }
-    with patch("app.services.extraction_export_service.logger") as mock_logger:
+    with patch("app.services.derived_judgment_service.logger") as mock_logger:
         model = ExtractionExportService._build_appraisal_model(
             sections=(s1,),
             articles=(article,),
@@ -322,7 +322,7 @@ def test_export_stays_silent_when_the_spec_resolves() -> None:
             }
         ]
     }
-    with patch("app.services.extraction_export_service.logger") as mock_logger:
+    with patch("app.services.derived_judgment_service.logger") as mock_logger:
         ExtractionExportService._build_appraisal_model(
             sections=(s1,),
             articles=(article,),

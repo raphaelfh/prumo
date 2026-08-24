@@ -44,6 +44,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from app.core.logging import get_logger
 from app.services.value_semantics import (
     ABSENT_REASON_LABELS,
     AbsentReason,
@@ -387,6 +388,23 @@ def spec_coordinates(spec: Any) -> list[tuple[str, str]]:
         _walk(derived.get("inputs"))
         found.extend(_assessor_pointers(derived))
     return found
+
+
+logger = get_logger(__name__)
+
+
+def warn_dangling_spec_refs(spec: Any, known: set[tuple[str, str]]) -> None:
+    """Log ``qa_derived_spec_dangling_ref`` for spec coordinates *known* lacks.
+
+    The one emitter for the full-spec surfaces (run-view payload, xlsx
+    export): the spec is read live off the template while coordinates come
+    from a frozen tree, and a rename must never null an overall — or
+    un-pair a recommendation — in silence. ``known`` is the caller's
+    ``(section_name, field_name)`` existence set.
+    """
+    unresolvable = sorted({c for c in spec_coordinates(spec) if c not in known})
+    if unresolvable:
+        logger.warning("qa_derived_spec_dangling_ref", coordinates=unresolvable)
 
 
 def _assessor_pointers(derived: Mapping[str, Any]) -> list[tuple[str, str]]:
