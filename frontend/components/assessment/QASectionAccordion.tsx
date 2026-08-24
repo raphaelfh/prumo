@@ -262,13 +262,20 @@ export function QASectionAccordion({
     next: unknown,
   ) {
     const derived = entry.value ?? null;
+    // The gate holds only an EXPLICIT judgment pick (a non-empty string from
+    // the Low/High/Unclear select) that differs from a non-null derived
+    // default. Everything else writes through immediately: a disposition
+    // marker is an object envelope ("No information" IS an answer — the
+    // backend maps it to Unclear), and a clear arrives as ''/null — holding
+    // either turned it into garbage ("[object Object]") or silently lost it.
+    const isExplicitPick = typeof next === "string" && next.trim() !== "";
     if (
       derived !== null &&
-      next != null &&
+      isExplicitPick &&
       next !== derived &&
       rationaleIsEmpty(entry)
     ) {
-      setHeldJudgments((prev) => ({ ...prev, [fieldId]: String(next) }));
+      setHeldJudgments((prev) => ({ ...prev, [fieldId]: next }));
       return;
     }
     clearHeld(fieldId);

@@ -468,3 +468,33 @@ describe("QASectionAccordion — editability, scope sections, paired rationales"
     ).not.toBeInTheDocument();
   });
 });
+
+describe("QASectionAccordion — markers and clears bypass the divergence gate", () => {
+  it("a 'No information' marker on a gated judgment writes through as the envelope", async () => {
+    const user = userEvent.setup();
+    const { onValueChange } = renderV2();
+    const card = screen.getByTestId("qa-judgment-card-j1");
+    // The universal disposition chip on the judgment FieldInput.
+    await user.click(
+      within(card).getAllByRole("button", { name: "dispositionNoInformation" })[0],
+    );
+    expect(onValueChange).toHaveBeenCalledWith("j1", {
+      value: null,
+      absent_reason: "no_information",
+    });
+    expect(screen.queryByTestId("qa-divergence-j1")).not.toBeInTheDocument();
+  });
+
+  it("clearing a stored marker writes through instead of being held", async () => {
+    const user = userEvent.setup();
+    const marker = { value: null, absent_reason: "no_information" };
+    const { onValueChange } = renderV2({ values: { j1: marker } });
+    const card = screen.getByTestId("qa-judgment-card-j1");
+    // The active chip toggles off with an empty-string clear.
+    await user.click(
+      within(card).getAllByRole("button", { name: /dispositionNoInformation/ })[0],
+    );
+    expect(onValueChange).toHaveBeenCalledWith("j1", "");
+    expect(screen.queryByTestId("qa-divergence-j1")).not.toBeInTheDocument();
+  });
+});

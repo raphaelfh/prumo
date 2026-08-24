@@ -97,6 +97,11 @@ export function DerivedDefaultChip({
               {inputs.map((input) => {
                 const causes =
                   derived !== null && input.contribution === derived;
+                // Plain rows display the RAW stored answer; collapse-group
+                // rows carry no single answer (value=null by contract) and
+                // display their resolved contribution instead. Only a row
+                // that resolved to NOTHING reads as not answered.
+                const display = input.value ?? input.contribution ?? null;
                 return (
                   <li
                     key={input.label}
@@ -113,12 +118,10 @@ export function DerivedDefaultChip({
                     <span
                       className={cn(
                         "shrink-0",
-                        input.value == null
-                          ? "text-warning"
-                          : "text-foreground",
+                        display == null ? "text-warning" : "text-foreground",
                       )}
                     >
-                      {input.value ?? qa.derivedInputNotAnswered}
+                      {display ?? qa.derivedInputNotAnswered}
                     </span>
                   </li>
                 );

@@ -75,3 +75,34 @@ describe("DerivedDefaultChip", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("DerivedDefaultChip — collapse-group rows", () => {
+  it("a judged group displays its resolved contribution, never 'Not answered'", async () => {
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <DerivedDefaultChip
+          judgment={{
+            ...ENTRY,
+            id: "eval_d4_rob",
+            value: "High",
+            inputs: [
+              // Group rows carry value=null by backend contract; the resolved
+              // state lives in `contribution`.
+              { label: "Internal validation", value: null, contribution: "High" },
+              { label: "External validation", value: null, contribution: null },
+            ],
+          }}
+          onApply={() => {}}
+        />
+      </TooltipProvider>,
+    );
+    await user.click(screen.getByTestId("qa-derived-explain-toggle-eval_d4_rob"));
+    const rows = screen.getAllByTestId(/qa-derived-input-row/);
+    expect(rows[0]).toHaveTextContent("High");
+    expect(rows[0]).toHaveAttribute("data-causes", "true");
+    expect(rows[0]).not.toHaveTextContent("Not answered");
+    // A group that resolved to nothing still reads as not answered.
+    expect(rows[1]).toHaveTextContent("Not answered");
+  });
+});
