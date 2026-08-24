@@ -31,9 +31,10 @@ _SPEC: dict[str, Any] = {
 
 
 class _Field:
-    def __init__(self, fid: Any, name: str) -> None:
+    def __init__(self, fid: Any, name: str, label: str = "") -> None:
         self.id = fid
         self.name = name
+        self.label = label
 
 
 class _EntityType:
@@ -379,4 +380,48 @@ def test_contribution_passes_through_to_the_breakdown() -> None:
         values=[_Value(iid, ids["q1"], {"value": "PN"})],
     )
     assert out[0].value == "High"
-    assert out[0].inputs == [RunViewDerivedInput(label="D1", value="PN", contribution="High")]
+    # Recommendation rows are named after the QUESTION (field label; the fake
+    # field carries none, so its machine name), never the shared section.
+    assert out[0].inputs == [RunViewDerivedInput(label="q1", value="PN", contribution="High")]
+
+
+def test_recommendation_rows_are_named_after_the_question() -> None:
+    """All of a recommendation's inputs live in ONE section — naming them by
+    the section label would repeat identically on every row and leave the
+    reviewer unable to tell WHICH answer caused the default."""
+    q1, q2 = uuid4(), uuid4()
+    d1 = _EntityType(
+        "dev_d1_participants",
+        [
+            _Field(q1, "q1_appropriate_data_sources", "Were appropriate data sources used?"),
+            _Field(q2, "q2_appropriate_study_design", "Was an appropriate study design used?"),
+            _Field(uuid4(), "quality_concern", "Quality"),
+            _Field(uuid4(), "quality_concern_rationale", "Rationale of quality rating"),
+        ],
+        label="Development D1",
+    )
+    spec = {
+        "derived_judgments": [
+            {
+                "id": "dev_d1_quality",
+                "label": "Development D1: quality",
+                "rule": "signaling_worst",
+                "target": {"section": "dev_d1_participants", "field": "quality_concern"},
+                "rationale": {
+                    "section": "dev_d1_participants",
+                    "field": "quality_concern_rationale",
+                },
+                "inputs": [
+                    {"section": "dev_d1_participants", "field": "q1_appropriate_data_sources"},
+                    {"section": "dev_d1_participants", "field": "q2_appropriate_study_design"},
+                ],
+            }
+        ]
+    }
+    out = build_derived_judgments_payload(
+        template_schema=spec, entity_types=[d1], instances=[], values=[]
+    )
+    assert [i.label for i in out[0].inputs] == [
+        "Were appropriate data sources used?",
+        "Was an appropriate study design used?",
+    ]

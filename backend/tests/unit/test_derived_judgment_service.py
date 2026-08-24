@@ -269,9 +269,11 @@ def test_signaling_breakdown_carries_raw_answers() -> None:
         # q3 unanswered
     )
     assert out[0].inputs == (
-        DerivedInput(sections=("s",), label="", value="PN", contribution="High"),
-        DerivedInput(sections=("s",), label="", value="No information", contribution="Unclear"),
-        DerivedInput(sections=("s",), label="", value=None, contribution=None),
+        DerivedInput(sections=("s",), label="", value="PN", contribution="High", field="q1"),
+        DerivedInput(
+            sections=("s",), label="", value="No information", contribution="Unclear", field="q2"
+        ),
+        DerivedInput(sections=("s",), label="", value=None, contribution=None, field="q3"),
     )
 
 

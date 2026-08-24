@@ -128,6 +128,11 @@ class DerivedInput:
     label: str
     value: str | None
     contribution: str | None = None
+    # The plain input's field name ("" for collapse groups) — with
+    # ``sections[0]`` it is the full coordinate, so the payload can name a
+    # recommendation row after the QUESTION (field label) instead of the
+    # section every sibling row shares.
+    field: str = ""
 
 
 @dataclass(frozen=True)
@@ -317,7 +322,8 @@ def _compute_signaling_entry(
                 )
             )
         else:
-            raw = values_by_coord.get((str(item.get("section", "")), str(item.get("field", ""))))
+            field_name = str(item.get("field", ""))
+            raw = values_by_coord.get((str(item.get("section", "")), field_name))
             state = _signaling_contribution(raw)
             plain_states.append(state)
             rows.append(
@@ -326,6 +332,7 @@ def _compute_signaling_entry(
                     label=label,
                     value=_raw_display(raw),
                     contribution=state if state in JUDGMENT_SEVERITY else None,
+                    field=field_name,
                 )
             )
     return _aggregate_signaling(plain_states, group_states), tuple(rows)

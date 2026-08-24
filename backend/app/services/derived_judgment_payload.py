@@ -18,6 +18,7 @@ from app.schemas.extraction_run import RunViewDerivedInput, RunViewDerivedJudgme
 from app.services.derived_judgment_service import (
     compute_derived_judgments,
     derived_spec,
+    is_recommendation,
     spec_coordinates,
 )
 
@@ -84,11 +85,13 @@ def build_derived_judgments_payload(
     # target/rationale/summary pointers.
     ids_by_coord: dict[tuple[str, str], tuple[Any, Any]] = {}
     label_by_section: dict[str, str] = {}
+    label_by_coord: dict[tuple[str, str], str] = {}
     for et in entity_types:
         instance_id = instance_by_entity_type.get(et.id)
         label_by_section[et.name] = getattr(et, "label", "") or et.name
         for field in et.fields:
             ids_by_coord[(et.name, field.name)] = (et.id, field.id)
+            label_by_coord[(et.name, field.name)] = getattr(field, "label", "") or field.name
             if instance_id is None:
                 continue
             raw = value_by_ids.get((instance_id, field.id))
@@ -114,9 +117,25 @@ def build_derived_judgments_payload(
     # malformed entries, so positional zipping against the spec would misalign.
     entry_by_id = {str(e.get("id", "")): e for e in spec if isinstance(e, dict)}
 
+    def _input_label(inp: Any, *, recommendation: bool) -> str:
+        # The spec's own name for a group wins. A RECOMMENDATION's plain rows
+        # are individual signaling questions inside ONE section, so they are
+        # named after the QUESTION (field label) — the section label would
+        # repeat identically on every sibling row and leave the reviewer
+        # unable to tell which answer caused the default. Overalls keep the
+        # section (domain) name, which is the row's identity there.
+        if inp.label:
+            return str(inp.label)
+        if recommendation and inp.field and inp.sections:
+            question = label_by_coord.get((inp.sections[0], inp.field))
+            if question:
+                return question
+        return _group_label(inp.sections, label_by_section)
+
     payload: list[RunViewDerivedJudgment] = []
     for d in compute_derived_judgments(spec, values_by_coord):
         entry = entry_by_id.get(d.id, {})
+        recommendation = is_recommendation(entry)
         target_et_id, target_field_id = _pointer_field_ids(entry, "target")
         _, rationale_field_id = _pointer_field_ids(entry, "rationale")
         _, summary_field_id = _pointer_field_ids(entry, "summary")
@@ -125,13 +144,9 @@ def build_derived_judgments_payload(
                 id=d.id,
                 label=d.label,
                 value=d.value,
-                # The spec's own name for a group wins; otherwise the label is
-                # derived from the sections behind the row, so the breakdown
-                # reads in the same words as the accordion the reviewer
-                # scrolls through.
                 inputs=[
                     RunViewDerivedInput(
-                        label=inp.label or _group_label(inp.sections, label_by_section),
+                        label=_input_label(inp, recommendation=recommendation),
                         value=inp.value,
                         contribution=inp.contribution,
                     )
