@@ -71,20 +71,17 @@ async def _create_run_in_extract(client: AsyncClient) -> UUID:
 
 
 async def _seed_ai_proposal(db: AsyncSession, run_id: UUID) -> UUID:
-    """Seed the AI basis a link can point at.
+    """Seed the AI basis a link can point at, on the seed coordinate.
 
-    The API rejects source='ai' (server-generated), so this goes straight to
-    the table. ``db_client`` overrides ``get_db`` with this very session, so
-    the row is visible over HTTP.
+    ``db_client`` overrides ``get_db`` with this very session, so the row is
+    visible over HTTP.
     """
-    record = await make_ai_proposal(
+    return await make_ai_proposal(
         db,
         run_id=run_id,
         instance_id=SEED.primary_instance,
         field_id=SEED.primary_field,
-        confidence_score=0.9,
     )
-    return record.id
 
 
 def _edit_body(field_id: UUID, proposal_id: UUID) -> dict[str, object]:

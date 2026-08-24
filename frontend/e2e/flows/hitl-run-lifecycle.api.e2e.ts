@@ -171,7 +171,7 @@ test.describe("HITL run lifecycle invariants", () => {
         failOnStatusCode: false,
       },
     );
-    expect(humanProposalRejected.status()).toBeGreaterThanOrEqual(400);
+    expect(humanProposalRejected.status()).toBe(404);
 
     // 4. Record the reviewer's value as a `decision='edit'` — accepted in
     //    EXTRACT (the per-user write path).

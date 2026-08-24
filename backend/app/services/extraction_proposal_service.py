@@ -82,7 +82,7 @@ class ExtractionProposalService:
             allowed_stages = {ExtractionRunStage.EXTRACT.value}
         else:
             raise InvalidProposalError(
-                "Human writes must go through /decisions (ReviewerDecision), not /proposals."
+                "Human writes must go through /decisions (ReviewerDecision), not as a proposal."
             )
         if run.stage not in allowed_stages:
             raise InvalidProposalError(

@@ -1,14 +1,14 @@
 /**
  * AI proposal pipeline E2E.
  *
- * Proposal rows carry three sources, and NONE may be authored through
- * `POST /proposals`: `ai` and `system` are server-generated (the API
- * rejects them), and `human` writes go to /decisions. This test exercises
- * the AI path end-to-end without calling the LLM:
+ * No HTTP route writes proposals: the `/proposals` endpoint was removed once
+ * every source it accepted turned out to be forbidden (ADR-0019). `ai` and
+ * `system` rows are written in-process; `human` values go to /decisions. This
+ * test exercises the AI path end-to-end without calling the LLM:
  *   1. Create a Run for an article+template, advance to PROPOSAL.
- *   2. Assert the API refuses a caller-authored `source='ai'` row, then
- *      seed one the way SectionExtractionService writes it — in-process,
- *      with `confidence_score` + `rationale`.
+ *   2. Assert the route is gone, then seed the row the way
+ *      SectionExtractionService writes it, with `confidence_score` +
+ *      `rationale`.
  *   3. Advance to REVIEW; record a `decision='accept_proposal'` keyed
  *      to the proposal_record_id.
  *   4. Advance through CONSENSUS → FINALIZED via manual_override
@@ -197,12 +197,6 @@ test.describe("HITL AI proposal pipeline", () => {
         rationale: "E2E AI proposal",
       },
     ]);
-    const proposal: ProposalRecordResponse = {
-      id: proposalId,
-      source: "ai",
-      proposed_value: { value: "ai-proposed" },
-      confidence_score: 0.87,
-    };
 
     // 4. Accept the AI proposal (recorded as a decision in extract).
     const decisionRes = await request.post(
@@ -213,7 +207,7 @@ test.describe("HITL AI proposal pipeline", () => {
           instance_id: instance.id,
           field_id: field.id,
           decision: "accept_proposal",
-          proposal_record_id: proposal.id,
+          proposal_record_id: proposalId,
         },
         timeout: 15000,
       },
@@ -259,10 +253,11 @@ test.describe("HITL AI proposal pipeline", () => {
     );
     const detail = (await parseEnvelope<RunDetailResponse>(detailRes)).data;
     expect(detail.run.stage).toBe("finalized");
-    const ai = detail.proposals.find((p) => p.source === "ai");
-    expect(ai).toBeTruthy();
+    const ai = detail.proposals.find((p) => p.id === proposalId);
+    expect(ai?.source).toBe("ai");
+    expect(ai?.confidence_score).toBeCloseTo(0.87, 2);
     const accept = detail.decisions.find((d) => d.decision === "accept_proposal");
-    expect(accept?.proposal_record_id).toBe(proposal.id);
+    expect(accept?.proposal_record_id).toBe(proposalId);
     const published = detail.published_states.find(
       (p) => p.instance_id === instance.id && p.field_id === field.id,
     );

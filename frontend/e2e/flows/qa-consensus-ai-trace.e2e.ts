@@ -255,11 +255,10 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     // --- Seed AI proposals directly in the table + run provenance so the
     // popover's ran-by header has an identity to reveal.
     //
-    // The API refuses source='ai' (server-generated): the real writer is
-    // SectionExtractionService, in-process. Blind peers read AI rows
-    // unattributed, so a caller-authored one would be a forged model
-    // suggestion. Seeding here mirrors how the pipeline writes them — the
-    // same reason the pre-D8 human row below is seeded directly.
+    // No HTTP route writes proposals (ADR-0019): the real writer is
+    // SectionExtractionService, in-process. Seeding here mirrors how the
+    // pipeline writes them — the same reason the pre-D8 human row below is
+    // seeded directly.
     await adminInsert(
       "extraction_proposal_records",
       (

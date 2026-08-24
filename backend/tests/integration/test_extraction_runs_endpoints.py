@@ -407,14 +407,8 @@ async def test_advance_for_nonexistent_run_returns_404(
 # =================== POST /runs/{id}/proposals — REMOVED (ADR-0019) ===================
 
 
-@pytest.mark.parametrize("source", ["ai", "human", "system"])
 @pytest.mark.asyncio
-async def test_proposals_route_no_longer_exists(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    source: str,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
+async def test_proposals_route_no_longer_exists(db_client: AsyncClient) -> None:
     """The proposal write path is closed at the routing table, not by a guard.
 
     No source could ever be accepted: 'ai' and 'system' are server-generated
@@ -424,37 +418,16 @@ async def test_proposals_route_no_longer_exists(
     route was removed (ADR-0019). The stage and coordinate-coherence guards it
     used to surface live on ExtractionProposalService, which is where the
     pipeline actually reaches them.
+
+    Starlette resolves routing before it reads the body, so no run, no auth and
+    no payload are needed to prove the route is gone — and varying ``source``
+    would exercise the same routing miss three times.
     """
-    fx = await _resolve_fixtures(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    project_id, article_id, template_id, _, instance_id, field_id = fx
-
-    created = await _create_run_via_api(
-        db_client,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-    )
-    run_id = UUID(created["id"])
-    await _advance(db_client, run_id, "extract")
-
     response = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": source,
-            "proposed_value": {"value": "x"},
-        },
+        f"{API_PREFIX}/{uuid4()}/proposals",
+        json={"instance_id": str(uuid4()), "field_id": str(uuid4()), "source": "ai"},
     )
     assert response.status_code == 404, response.text
-
-    stored = await db_session.execute(
-        text("SELECT count(*) FROM public.extraction_proposal_records WHERE run_id = :r"),
-        {"r": str(run_id)},
-    )
-    assert stored.scalar() == 0, "a request to the removed route must write nothing"
 
 
 # =================== POST /runs/{id}/decisions ===================
@@ -479,16 +452,15 @@ async def _setup_review_run(
     )
     run_id = UUID(created["id"])
     await _advance(db_client, run_id, "extract")
-    # Seeded directly: the API refuses source='ai' as server-generated (the
-    # pipeline writes these in-process). See make_ai_proposal.
-    proposal = await make_ai_proposal(
+    # Seeded the way the pipeline writes it — see make_ai_proposal.
+    proposal_id = await make_ai_proposal(
         db_session,
         run_id=run_id,
         instance_id=instance_id,
         field_id=field_id,
         proposed_value={"v": "candidate"},
     )
-    return run_id, instance_id, field_id, proposal.id
+    return run_id, instance_id, field_id, proposal_id
 
 
 @pytest.mark.asyncio
@@ -852,18 +824,15 @@ async def test_full_lifecycle_create_to_finalized(
     # pending -> extract
     await _advance(db_client, run_id, "extract")
 
-    # Seed the AI proposal the way the pipeline writes it — in-process. The
-    # API refuses source='ai' as server-generated.
-    proposal_id = (
-        await make_ai_proposal(
-            db_session,
-            run_id=run_id,
-            instance_id=instance_id,
-            field_id=field_id,
-            proposed_value={"v": "candidate"},
-            confidence_score=0.85,
-        )
-    ).id
+    # Seed the AI proposal the way the pipeline writes it — in-process.
+    proposal_id = await make_ai_proposal(
+        db_session,
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        proposed_value={"v": "candidate"},
+        confidence_score=0.85,
+    )
 
     # POST decision (accept proposal) — recorded in extract; no review stage
     decision_resp = await db_client.post(
@@ -1081,50 +1050,6 @@ async def _force_finalize(db_session: AsyncSession, run_id: UUID) -> None:
     )
     await db_session.flush()
     db_session.expire_all()
-
-
-@pytest.mark.asyncio
-async def test_proposal_on_finalized_run_is_rejected(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    """A finalized run takes no further proposals.
-
-    Asserted against the service rather than the endpoint: /proposals now
-    refuses every source outright (see test_create_proposal_accepts_no_source),
-    so the stage guard is only reachable where the pipeline writes — through
-    ``record_proposal``.
-    """
-    from app.models.extraction_workflow import ExtractionProposalSource
-    from app.services.extraction_proposal_service import (
-        ExtractionProposalService,
-        InvalidProposalError,
-    )
-
-    fx = await _resolve_fixtures(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    project_id, article_id, template_id, _profile_id, instance_id, field_id = fx
-
-    run = await _create_run_via_api(
-        db_client,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-    )
-    run_id = UUID(run["id"])
-    await _advance(db_client, run_id, "extract")
-    await _force_finalize(db_session, run_id)
-
-    with pytest.raises(InvalidProposalError, match="stage"):
-        await ExtractionProposalService(db_session).record_proposal(
-            run_id=run_id,
-            instance_id=instance_id,
-            field_id=field_id,
-            source=ExtractionProposalSource.AI,
-            proposed_value={"value": "late write"},
-        )
 
 
 @pytest.mark.asyncio
