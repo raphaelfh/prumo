@@ -25,6 +25,7 @@ import {getSuggestionKey} from '@/types/ai-extraction';
 import {AISuggestionService} from '@/services/aiSuggestionService';
 import {filterSuggestionsByConfidence, isAbstention} from '@/lib/ai-extraction/suggestionUtils';
 import {getErrorMessage} from '@/lib/ai-extraction/errors';
+import {EMPTY_SESSION_ADOPTION} from '@/lib/runs/aiLink';
 
 // =================== HOOK ===================
 
@@ -48,7 +49,28 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
   // NEVER hydrated from the read endpoint: the server marks any non-reject
   // caller decision 'accepted' (including plain manual edits), so hydrated
   // status would fabricate AI provenance for manually-typed values.
-  const [sessionAdoption, setSessionAdoption] = useState<Record<string, string | null>>({});
+  //
+  // Tagged with the run the adoptions happened on, for the same reason the
+  // hydration must not be: coord keys are NOT run-scoped
+  // (``extraction_instances`` has no ``run_id``, and ``POST /runs/{id}/reopen``
+  // seeds the child run with the parent's ``instance_id`` verbatim) while both
+  // full-screen pages swap ``runId`` in place rather than remounting. An
+  // adoption filed under a previous run therefore reads as absent instead of
+  // stamping this run's decisions with a proposal id the reviewer never chose
+  // here — or, for a reject tombstone, silently severing this run's own
+  // persisted link.
+  const [adoption, setAdoption] = useState<{
+    runId: string | null | undefined;
+    byKey: Record<string, string | null>;
+  }>({ runId, byKey: {} });
+  const sessionAdoption =
+    adoption.runId === runId ? adoption.byKey : EMPTY_SESSION_ADOPTION;
+  const recordAdoption = (key: string, proposalRecordId: string | null) =>
+    setAdoption(prev =>
+      prev.runId === runId
+        ? { runId, byKey: { ...prev.byKey, [key]: proposalRecordId } }
+        : { runId, byKey: { [key]: proposalRecordId } },
+    );
   // True only after a successful load — consumers use it to tell "no AI
   // suggestion exists" apart from "the AI-existence signal is unavailable"
   // (a failed load must not mislabel decisions as Manual in consensus).
@@ -187,7 +209,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     });
 
     // D0: record the real adoption event for autosave's linkByKey.
-    setSessionAdoption(prev => ({ ...prev, [key]: proposalRecordId }));
+    recordAdoption(key, proposalRecordId);
 
       // Callback to fill input automatically (non-blocking)
     if (onSuggestionAccepted) {
@@ -255,7 +277,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
 
     // D0: a reject severs any AI link for the coord (tombstone overrides
     // the caller's persisted decision link in deriveAiLinkByKey).
-    setSessionAdoption(prev => ({ ...prev, [key]: null }));
+    recordAdoption(key, null);
 
       // Callback to clear field when rejecting
     if (onSuggestionRejected) {

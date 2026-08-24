@@ -229,3 +229,42 @@ def test_build_appraisal_model_without_a_spec_has_no_derived_columns() -> None:
     assert model.derived_labels == ()
     assert model.rows[0].derived_values == ()
     assert model.rows[0].overall == "Low"
+
+
+def test_recommendation_entries_contribute_no_derived_column() -> None:
+    """Spec 2026-08-22 §8: derived columns are the OVERALLS only — entries
+    with a ``target`` are recommendations (advice for a stored judgment, not
+    record) and must not become workbook columns."""
+    s1, f1 = _section("d1", "D1", "risk_of_bias")
+    run_id, i1 = uuid4(), uuid4()
+    article = _article(run_id, {s1.entity_type_id: (i1,)})
+    spec = {
+        "derived_judgments": [
+            {
+                "id": "d1_rob",
+                "label": "D1 recommendation",
+                "rule": "signaling_worst",
+                "target": {"section": "d1", "field": "risk_of_bias"},
+                "rationale": {"section": "d1", "field": "risk_of_bias_rationale"},
+                "inputs": [{"section": "d1", "field": "q1"}],
+            },
+            {
+                "id": "overall_rob",
+                "label": "Overall RoB",
+                "rule": "worst_domain",
+                "summary": {"section": "overall", "field": "summary_rob"},
+                "inputs": [{"section": "d1", "field": "risk_of_bias"}],
+            },
+        ]
+    }
+    model = ExtractionExportService._build_appraisal_model(
+        sections=(s1,),
+        articles=(article,),
+        reviewers=(),
+        value_map={(run_id, i1, f1.field_id): "High"},
+        mode=ExportMode.CONSENSUS,
+        template_schema=spec,
+    )
+    assert model is not None
+    assert model.derived_labels == ("Overall RoB",)
+    assert model.rows[0].derived_values == ("High",)

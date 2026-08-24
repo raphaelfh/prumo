@@ -33,6 +33,7 @@ import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Textarea} from '@/components/ui/textarea';
 import {Switch} from '@/components/ui/switch';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/components/ui/select';
 import {Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,} from '@/components/ui/form';
 import {Info, Loader2, Plus} from 'lucide-react';
@@ -235,11 +236,19 @@ export function AddSectionDialog({
                   <FormLabel className="flex items-center gap-2">
                       Technical name *
                     <div className="flex items-center gap-1">
-                      <Switch
-                        checked={autoGenerateName}
-                        onCheckedChange={setAutoGenerateName}
-                      />
-                      <span className="text-xs text-muted-foreground">Auto</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Switch
+                            aria-label={t('extraction', 'autoNameAriaLabel')}
+                            checked={autoGenerateName}
+                            onCheckedChange={setAutoGenerateName}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent>{t('extraction', 'autoNameTooltip')}</TooltipContent>
+                      </Tooltip>
+                      <span className="text-xs text-muted-foreground">
+                        {t('extraction', 'autoNameLabel')}
+                      </span>
                     </div>
                   </FormLabel>
                   <FormControl>

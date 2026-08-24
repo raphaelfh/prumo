@@ -9,6 +9,7 @@ tests/unit/llm/test_schema.py; prompt content by
 tests/unit/llm/test_prompts.py.
 """
 
+from pathlib import Path
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -2567,3 +2568,179 @@ async def test_build_prompt_input_called_with_correct_kwargs(mock_db, mock_stora
     assert kwargs["user_id"] == "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     assert kwargs["trace_id"] == "trace-section-wiring"
     assert kwargs["storage"] is mock_storage
+
+
+class TestLlmExclusion:
+    """§3 (spec 2026-08-22): assessor-owned coordinates — every derived-spec
+    entry's target/rationale/summary — never reach the model. The filter
+    lives inside ``_extract_with_llm``, the one seam every extraction path
+    funnels through, INCLUDING the re-pin fallback that carries
+    ``fields_override=None`` (the path a helper-level filter would miss)."""
+
+    @staticmethod
+    def _fields(*names: str) -> list:
+        out = []
+        for n in names:
+            f = MagicMock()
+            f.id = uuid4()
+            f.name = n
+            out.append(f)
+        return out
+
+    @staticmethod
+    def _entity(name: str, fields: list):
+        et = MagicMock()
+        et.id = uuid4()
+        et.name = name
+        et.description = "desc"
+        et.fields = fields
+        return et
+
+    @pytest.mark.asyncio
+    async def test_exclusion_filters_exactly_the_assessor_owned_fields(self, service):
+        """Anti-over-exclusion control: the mixed v2 section keeps its
+        describes, SQs, applicability AND applicability rationale — only the
+        spec-named judgment + judgment rationale drop."""
+        fields = self._fields(
+            "desc_data_sources",
+            "q1_appropriate_data_sources",
+            "q2_appropriate_study_design",
+            "applicability_concerns",
+            "applicability_concerns_rationale",
+            "quality_concern",
+            "quality_concern_rationale",
+        )
+        et = self._entity("dev_d1_participants", fields)
+        excluded = {
+            ("dev_d1_participants", "quality_concern"),
+            ("dev_d1_participants", "quality_concern_rationale"),
+            ("overall_judgement", "summary_quality_development"),
+        }
+        with patch(
+            "app.services.section_extraction_service.build_output_models", return_value=[]
+        ) as bom:
+            await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=list(fields),
+                excluded_coordinates=excluded,
+            )
+        sent = [f.name for f in bom.call_args.kwargs["fields"]]
+        assert sent == [
+            "desc_data_sources",
+            "q1_appropriate_data_sources",
+            "q2_appropriate_study_design",
+            "applicability_concerns",
+            "applicability_concerns_rationale",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_all_excluded_section_skips_the_llm_call(self, service):
+        """overall_judgement: every field is a summary -> no call at all."""
+        fields = self._fields("summary_quality_development", "summary_rob_evaluation")
+        et = self._entity("overall_judgement", fields)
+        excluded = {
+            ("overall_judgement", "summary_quality_development"),
+            ("overall_judgement", "summary_rob_evaluation"),
+        }
+        with patch(
+            "app.services.section_extraction_service.build_output_models", return_value=[]
+        ) as bom:
+            extracted, usage = await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=list(fields),
+                excluded_coordinates=excluded,
+            )
+        assert bom.call_args.kwargs["fields"] == []
+        assert extracted == {}
+        assert usage.prompt_tokens == 0
+
+    @pytest.mark.asyncio
+    async def test_fallback_path_without_override_is_still_filtered(self, service):
+        """The re-pin race hands _extract_with_llm fields_override=None and the
+        LIVE entity type — the leak a call-site filter cannot cover."""
+        fields = self._fields("q1", "risk_of_bias", "risk_of_bias_rationale")
+        et = self._entity("eval_d4_judgment", fields)
+        excluded = {
+            ("eval_d4_judgment", "risk_of_bias"),
+            ("eval_d4_judgment", "risk_of_bias_rationale"),
+        }
+        with patch(
+            "app.services.section_extraction_service.build_output_models", return_value=[]
+        ) as bom:
+            await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=None,
+                excluded_coordinates=excluded,
+            )
+        sent = [f.name for f in bom.call_args.kwargs["fields"]]
+        assert sent == ["q1"]
+
+    @pytest.mark.asyncio
+    async def test_spec_less_template_passes_the_field_list_through_untouched(self, service):
+        """Modularity guard (§3): no spec -> the exact same list object reaches
+        build_output_models, so extraction templates are byte-identical."""
+        fields = self._fields("a", "b")
+        et = self._entity("any_section", fields)
+        override = list(fields)
+        with patch(
+            "app.services.section_extraction_service.build_output_models", return_value=[]
+        ) as bom:
+            await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=override,
+                excluded_coordinates=set(),
+            )
+        assert bom.call_args.kwargs["fields"] is override
+
+    @pytest.mark.asyncio
+    async def test_dangling_exclusion_coordinate_warns_and_fails_open(self, service):
+        """A live rename that orphans an exclusion must never be silent: it
+        would quietly re-open an assessor-owned field to the model (§9)."""
+        fields = self._fields("q1", "quality_score")  # renamed live
+        et = self._entity("dev_d1_participants", fields)
+        excluded = {("dev_d1_participants", "quality_concern")}  # stale spec name
+        mock_logger = MagicMock()
+        with (
+            patch.object(SectionExtractionService, "logger", mock_logger),
+            patch(
+                "app.services.section_extraction_service.build_output_models", return_value=[]
+            ) as bom,
+        ):
+            await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=list(fields),
+                excluded_coordinates=excluded,
+            )
+        sent = [f.name for f in bom.call_args.kwargs["fields"]]
+        assert sent == ["q1", "quality_score"]  # fails open...
+        warned = [
+            c
+            for c in mock_logger.warning.call_args_list
+            if c.args[:1] == ("qa_derived_spec_dangling_ref",)
+        ]
+        assert warned, "expected a qa_derived_spec_dangling_ref warning on the extraction path"
+        assert warned[0].kwargs["coordinates"] == [("dev_d1_participants", "quality_concern")]
+
+
+def test_no_qa_kind_branch_in_the_extraction_path():
+    """§3 modularity invariant: the exclusion filter is template-data-driven —
+    nothing in this module branches on the QA kind. Docstrings and comments
+    are stripped; the canonical enum spelling and the negated forms are all
+    banned (a lowercase-literal-only grep would miss
+    ``TemplateKind.QUALITY_ASSESSMENT.value`` and ``kind != "extraction"``)."""
+    import re
+
+    import app.services.section_extraction_service as mod
+
+    source = Path(mod.__file__).read_text()
+    source = re.sub(r'("""|\'\'\')(?s:.*?)\1', "", source)
+    source = "\n".join(line.split("#", 1)[0] for line in source.splitlines())
+    low = source.lower()
+    assert "quality_assessment" not in low
+    assert 'kind != "extraction"' not in low
+    assert "kind not in" not in low

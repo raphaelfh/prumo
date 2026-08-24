@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 from typing import Any
+from unittest.mock import patch
 from uuid import uuid4
 
 from app.schemas.extraction_run import RunViewDerivedInput, RunViewDerivedJudgment
@@ -30,9 +31,10 @@ _SPEC: dict[str, Any] = {
 
 
 class _Field:
-    def __init__(self, fid: Any, name: str) -> None:
+    def __init__(self, fid: Any, name: str, label: str = "") -> None:
         self.id = fid
         self.name = name
+        self.label = label
 
 
 class _EntityType:
@@ -83,7 +85,9 @@ def test_maps_names_to_coordinates_and_computes() -> None:
             value="High",
             # The breakdown names the contributing domain in the SECTION's own
             # words, so the banner reads like the accordion below it.
-            inputs=[RunViewDerivedInput(label="D1 — Participants", value="High")],
+            inputs=[
+                RunViewDerivedInput(label="D1 — Participants", value="High", contribution="High")
+            ],
         )
     ]
 
@@ -114,7 +118,9 @@ def test_breakdown_falls_back_to_the_section_name_without_a_label() -> None:
         instances=[_Instance(et.id, iid)],
         values=[_Value(iid, fid, "Low")],
     )
-    assert out[0].inputs == [RunViewDerivedInput(label="dev_d1_participants", value="Low")]
+    assert out[0].inputs == [
+        RunViewDerivedInput(label="dev_d1_participants", value="Low", contribution="Low")
+    ]
 
 
 def test_unjudged_domain_yields_null_not_low() -> None:
@@ -201,7 +207,9 @@ def test_unlabelled_collapse_is_named_by_what_its_sections_share() -> None:
         instances=instances,
         values=values,
     )
-    assert out[0].inputs == [RunViewDerivedInput(label="Evaluation D4: Analysis", value="Low")]
+    assert out[0].inputs == [
+        RunViewDerivedInput(label="Evaluation D4: Analysis", value="Low", contribution="Low")
+    ]
 
 
 def test_a_single_section_label_is_used_verbatim() -> None:
@@ -273,3 +281,147 @@ def test_revealed_caller_before_anything_is_published_falls_back_to_own_values()
     assert (
         values_for_derivation(peers_revealed=True, published_states=[], current_values=_OWN) == _OWN
     )
+
+
+# --- target/rationale/summary id resolution (spec 2026-08-22 §4) ------------
+
+_V2_SPEC: dict[str, Any] = {
+    "derived_judgments": [
+        {
+            "id": "dev_d1_quality",
+            "label": "Development D1: quality",
+            "rule": "signaling_worst",
+            "target": {"section": "dev_d1_participants", "field": "quality_concern"},
+            "rationale": {
+                "section": "dev_d1_participants",
+                "field": "quality_concern_rationale",
+            },
+            "inputs": [{"section": "dev_d1_participants", "field": "q1"}],
+        },
+        {
+            "id": "dev_overall_quality",
+            "label": "Overall quality (development)",
+            "rule": "worst_domain",
+            "summary": {"section": "overall_judgement", "field": "summary_quality_development"},
+            "inputs": [{"section": "dev_d1_participants", "field": "quality_concern"}],
+        },
+    ]
+}
+
+
+def _v2_tree() -> tuple[_EntityType, _EntityType, dict[str, Any]]:
+    ids = {"q1": uuid4(), "qc": uuid4(), "qcr": uuid4(), "sm": uuid4()}
+    d1 = _EntityType(
+        "dev_d1_participants",
+        [
+            _Field(ids["q1"], "q1"),
+            _Field(ids["qc"], "quality_concern"),
+            _Field(ids["qcr"], "quality_concern_rationale"),
+        ],
+        label="D1",
+    )
+    overall = _EntityType("overall_judgement", [_Field(ids["sm"], "summary_quality_development")])
+    return d1, overall, ids
+
+
+def test_recommendation_resolves_target_and_rationale_ids() -> None:
+    d1, overall, ids = _v2_tree()
+    out = build_derived_judgments_payload(
+        template_schema=_V2_SPEC, entity_types=[d1, overall], instances=[], values=[]
+    )
+    rec, ov = out
+    assert rec.target_entity_type_id == d1.id
+    assert rec.target_field_id == ids["qc"]
+    assert rec.rationale_field_id == ids["qcr"]
+    assert rec.summary_field_id is None
+    assert ov.target_entity_type_id is None
+    assert ov.target_field_id is None
+    assert ov.rationale_field_id is None
+    assert ov.summary_field_id == ids["sm"]
+
+
+def test_v1_shaped_spec_has_no_pointer_ids() -> None:
+    et = _EntityType("dev_d1_participants", [_Field(uuid4(), "quality_concern")])
+    out = build_derived_judgments_payload(
+        template_schema=_SPEC, entity_types=[et], instances=[], values=[]
+    )
+    assert out[0].target_entity_type_id is None
+    assert out[0].target_field_id is None
+    assert out[0].rationale_field_id is None
+    assert out[0].summary_field_id is None
+
+
+def test_dangling_target_pointer_warns_and_leaves_ids_none() -> None:
+    spec = copy.deepcopy(_V2_SPEC)
+    spec["derived_judgments"][0]["target"]["field"] = "renamed_gone"
+    d1, overall, _ids = _v2_tree()
+    with patch("app.services.derived_judgment_payload.logger") as mock_logger:
+        out = build_derived_judgments_payload(
+            template_schema=spec, entity_types=[d1, overall], instances=[], values=[]
+        )
+    assert out[0].target_entity_type_id is None
+    assert out[0].target_field_id is None
+    # The rationale still resolves independently of the broken target.
+    assert out[0].rationale_field_id is not None
+    warned = mock_logger.warning.call_args
+    assert warned.args[0] == "qa_derived_spec_dangling_ref"
+    assert ("dev_d1_participants", "renamed_gone") in warned.kwargs["coordinates"]
+
+
+def test_contribution_passes_through_to_the_breakdown() -> None:
+    """signaling_worst rows carry the RAW answer plus the judgment consumed —
+    the client highlights by contribution with zero rule knowledge."""
+    d1, overall, ids = _v2_tree()
+    iid = uuid4()
+    out = build_derived_judgments_payload(
+        template_schema=_V2_SPEC,
+        entity_types=[d1, overall],
+        instances=[_Instance(d1.id, iid)],
+        values=[_Value(iid, ids["q1"], {"value": "PN"})],
+    )
+    assert out[0].value == "High"
+    # Recommendation rows are named after the QUESTION (field label; the fake
+    # field carries none, so its machine name), never the shared section.
+    assert out[0].inputs == [RunViewDerivedInput(label="q1", value="PN", contribution="High")]
+
+
+def test_recommendation_rows_are_named_after_the_question() -> None:
+    """All of a recommendation's inputs live in ONE section — naming them by
+    the section label would repeat identically on every row and leave the
+    reviewer unable to tell WHICH answer caused the default."""
+    q1, q2 = uuid4(), uuid4()
+    d1 = _EntityType(
+        "dev_d1_participants",
+        [
+            _Field(q1, "q1_appropriate_data_sources", "Were appropriate data sources used?"),
+            _Field(q2, "q2_appropriate_study_design", "Was an appropriate study design used?"),
+            _Field(uuid4(), "quality_concern", "Quality"),
+            _Field(uuid4(), "quality_concern_rationale", "Rationale of quality rating"),
+        ],
+        label="Development D1",
+    )
+    spec = {
+        "derived_judgments": [
+            {
+                "id": "dev_d1_quality",
+                "label": "Development D1: quality",
+                "rule": "signaling_worst",
+                "target": {"section": "dev_d1_participants", "field": "quality_concern"},
+                "rationale": {
+                    "section": "dev_d1_participants",
+                    "field": "quality_concern_rationale",
+                },
+                "inputs": [
+                    {"section": "dev_d1_participants", "field": "q1_appropriate_data_sources"},
+                    {"section": "dev_d1_participants", "field": "q2_appropriate_study_design"},
+                ],
+            }
+        ]
+    }
+    out = build_derived_judgments_payload(
+        template_schema=spec, entity_types=[d1], instances=[], values=[]
+    )
+    assert [i.label for i in out[0].inputs] == [
+        "Were appropriate data sources used?",
+        "Was an appropriate study design used?",
+    ]

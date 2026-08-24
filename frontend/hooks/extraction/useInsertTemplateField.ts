@@ -328,7 +328,13 @@ function enqueueUpdateTask(
   enqueueTask(s, null, () => runUpdate(s, clientKey, updates));
 }
 
-/** Test seam: the queue is module state, so suites must reset it. */
+/**
+ * Test seam: the insert queue is module state that outlives any single hook
+ * instance, so suites must reset it between cases. Production has no reason
+ * to reset a live queue, so this has no production caller by design.
+ *
+ * @internal
+ */
 export function resetTemplateFieldInsertQueueForTests(): void {
   session = null;
   queueTail = Promise.resolve();

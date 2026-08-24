@@ -708,6 +708,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Project Template
+         * @description Create a project template that starts with no sections.
+         *
+         *     Manager-gated like clone and import below: it deactivates the project's
+         *     current extraction template, which is project-wide configuration. Same
+         *     response shape as those two — the manager lands in the configuration
+         *     editor on a published, empty v1.
+         */
+        post: operations["create_project_template_api_v1_projects__project_id__templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/clone": {
         parameters: {
             query?: never;
@@ -3251,6 +3276,26 @@ export interface components {
             /** Proposalrunid */
             proposalRunId?: string | null;
         };
+        /**
+         * CreateProjectTemplateRequest
+         * @description Name a template that starts with no sections; the tree is built after.
+         *
+         *     ``extra="forbid"``: ``is_active``, ``project_id`` and ``created_by`` are
+         *     the server's to set — the invariants in ``template_create_service`` are
+         *     exactly what a client-supplied field set would break.
+         */
+        CreateProjectTemplateRequest: {
+            /** Description */
+            description?: string | null;
+            /**
+             * Framework
+             * @default CUSTOM
+             * @enum {string}
+             */
+            framework: "CHARMS" | "PICOS" | "CUSTOM";
+            /** Name */
+            name: string;
+        };
         /** CreateProposalRequest */
         CreateProposalRequest: {
             /** Confidence Score */
@@ -4826,13 +4871,20 @@ export interface components {
         };
         /**
          * RunViewDerivedInput
-         * @description One domain judgment feeding a computed overall, as the rule consumed it.
+         * @description One input feeding a derived judgment, as the rule consumed it.
          *
-         *     ``value`` is None when that domain is unjudged — which is exactly why the
-         *     overall shows a dash, so the client can name the blocking domain instead of
-         *     leaving the reviewer to hunt for it across ten sections.
+         *     ``value`` is the display value: the judgment for a ``worst_domain`` row,
+         *     the reviewer's RAW answer ("PN", a marker label) for a ``signaling_worst``
+         *     row, None when unjudged/unanswered — which is exactly why the derived
+         *     value shows a dash, so the client can name the blocking input instead of
+         *     leaving the reviewer to hunt for it. ``contribution`` is uniformly the
+         *     Low/High/Unclear the rule consumed from this row (None when it
+         *     contributed nothing) — clients highlight and color by it with zero
+         *     answer-mapping knowledge.
          */
         RunViewDerivedInput: {
+            /** Contribution */
+            contribution?: string | null;
             /** Label */
             label: string;
             /** Value */
@@ -4840,12 +4892,16 @@ export interface components {
         };
         /**
          * RunViewDerivedJudgment
-         * @description One computed overall judgment (never stored, never entered).
+         * @description One computed judgment (never stored, never entered).
          *
          *     Present only for templates whose ``schema`` JSONB declares a
-         *     ``derived_judgments`` spec (today: PROBAST+AI). ``value`` is None when the
-         *     inputs are incomplete — the client renders that as an em dash, never as the
-         *     most favourable judgment.
+         *     ``derived_judgments`` spec. Entries WITH ``target_field_id`` are
+         *     RECOMMENDATIONS: the derived default for the assessor-owned stored field
+         *     the ids point at (resolved against the run's frozen tree; None when the
+         *     spec coordinate does not resolve). Entries without one are computed
+         *     OVERALLS, whose paired Step-4 narrative field is ``summary_field_id``.
+         *     ``value`` is None when the inputs are incomplete — the client renders
+         *     that as an em dash, never as the most favourable judgment.
          */
         RunViewDerivedJudgment: {
             /** Id */
@@ -4854,6 +4910,14 @@ export interface components {
             inputs?: components["schemas"]["RunViewDerivedInput"][];
             /** Label */
             label: string;
+            /** Rationale Field Id */
+            rationale_field_id?: string | null;
+            /** Summary Field Id */
+            summary_field_id?: string | null;
+            /** Target Entity Type Id */
+            target_entity_type_id?: string | null;
+            /** Target Field Id */
+            target_field_id?: string | null;
             /** Value */
             value?: string | null;
         };
@@ -7421,6 +7485,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_ParserSettingsRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_project_template_api_v1_projects__project_id__templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProjectTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_CloneTemplateResponse_"];
                 };
             };
             /** @description Validation Error */

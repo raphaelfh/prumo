@@ -53,22 +53,6 @@ export function isEmptyValue(value: any): boolean {
 }
 
 /**
- * Normalizes a value to standard format
- *
- * Converts empty values to null and ensures consistent format.
- *
- * @param value - Value to normalize
- * @returns Normalized value
- */
-export function normalizeValue(value: any): any {
-  if (isEmptyValue(value)) {
-    return null;
-  }
-
-  return extractValue(value);
-}
-
-/**
  * Validates whether a value is a valid number
  *
  * @param value - Value to validate
@@ -82,20 +66,6 @@ export function isValidNumber(value: any): boolean {
   }
 
   return !isNaN(Number(extracted));
-}
-
-/**
- * Converts value to number, returning null if invalid
- *
- * @param value - Value to convert
- * @returns Number or null if invalid
- */
-export function toNumber(value: any): number | null {
-  if (!isValidNumber(value)) {
-    return null;
-  }
-
-  return Number(extractValue(value));
 }
 
 /**

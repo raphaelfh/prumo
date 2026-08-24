@@ -400,6 +400,10 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
    * invalidation of the structure caches.
    */
   const handleActiveTemplateChanged = (templateId: string) => {
+    // Every caller (catalogue import, file import, create-from-scratch, Switch)
+    // changes WHICH template is active, so the list query is stale too —
+    // `invalidateAfterImport` only covers the structure/status/run families.
+    void invalidateProjectTemplates();
     void invalidateAfterImport();
     handleTabChange('configuration');
     setActiveTemplateId(templateId);
@@ -597,13 +601,9 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         projectId={projectId}
         open={showCreateCustomDialog}
         onOpenChange={setShowCreateCustomDialog}
-        onTemplateCreated={async (templateId?: string) => {
-            // Refetch the list first so the new row exists before we point at
-            // it; without an id the derived selection picks it up anyway.
-          await invalidateProjectTemplates();
-          handleTabChange('configuration');
-          if (templateId) setActiveTemplateId(templateId);
-        }}
+        // Creating deactivates the incumbent and publishes v1 server-side —
+        // the same post-condition as an import, so it takes the same handler.
+        onTemplateCreated={handleActiveTemplateChanged}
       />
 
       {/* Dialog to export extraction data as .xlsx (009-extraction-excel-export) */}

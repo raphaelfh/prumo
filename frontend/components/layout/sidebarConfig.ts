@@ -71,5 +71,3 @@ export const tabIdToLabel: Record<string, string> = {
     prisma: t('layout', 'navPrismaReport'),
     settings: t('layout', 'navSettings'),
 };
-
-export const VALID_TAB_IDS: readonly string[] = sidebarItems.map((i) => i.id);
