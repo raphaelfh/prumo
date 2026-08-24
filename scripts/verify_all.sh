@@ -196,8 +196,19 @@ run_gate "lint:tsc" \
 #     a reason). Backend is a vulture ratchet: findings must be a subset of
 #     backend/.vulture_baseline, which only shrinks (--exec exists so this
 #     gate needs no pipe — a pipe would hide vulture's own exit status).
+#     Both knip gates go through npm scripts so this file and CI cannot drift
+#     apart on flags — the same reason the typecheck gate is `npm run
+#     typecheck` (pinned by test_verify_all_gates.py).
 run_gate "deadcode:knip" \
-  npx knip
+  npm run deadcode --silent
+#     Same config, but only production code counts as a consumer: this is the
+#     gate that catches a feature going orphaned while its unit test keeps it
+#     "used" (it found the dead useCreateRun hook and the never-adopted
+#     HeaderChip). Both scripts pass --no-tag-hints: exports marked @internal
+#     are reachable from tests, so default mode calls the tag redundant and
+#     prints a hint on every run; the tag is there for THIS gate.
+run_gate "deadcode:knip:production" \
+  npm run deadcode:production --silent
 run_gate "deadcode:vulture" \
   bash -c 'cd backend && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec'
 

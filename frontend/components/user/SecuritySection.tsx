@@ -109,8 +109,8 @@ export function SecuritySection() {
                                       htmlFor="security-new-password"
                                       hint={t('user', 'securityNewPasswordHint')}
                                   >
-                                      <FormControl>
-                                          <div className="relative">
+                                      <div className="relative">
+                                          <FormControl>
                                               <Input
                                                   id="security-new-password"
                                                   {...field}
@@ -118,25 +118,25 @@ export function SecuritySection() {
                                                   placeholder={t('user', 'securityNewPasswordPlaceholder')}
                                                   className="h-9 text-[13px]"
                                               />
-                                              <Button
-                                                  type="button"
-                                                  variant="ghost"
-                                                  size="sm"
-                                                  className="absolute right-1 top-1 h-7"
-                                                  aria-label={showPasswords.new ? t('user', 'securityAriaHidePassword') : t('user', 'securityAriaShowPassword')}
-                                                  onClick={() => setShowPasswords({
-                                                      ...showPasswords,
-                                                      new: !showPasswords.new
-                                                  })}
-                                              >
-                                                  {showPasswords.new ? (
-                                                      <EyeOff className="h-4 w-4" strokeWidth={1.5}/>
-                                                  ) : (
-                                                      <Eye className="h-4 w-4" strokeWidth={1.5}/>
-                                                  )}
-                                              </Button>
-                                          </div>
-                                      </FormControl>
+                                          </FormControl>
+                                          <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="sm"
+                                              className="absolute right-1 top-1 h-7"
+                                              aria-label={showPasswords.new ? t('user', 'securityAriaHidePassword') : t('user', 'securityAriaShowPassword')}
+                                              onClick={() => setShowPasswords({
+                                                  ...showPasswords,
+                                                  new: !showPasswords.new
+                                              })}
+                                          >
+                                              {showPasswords.new ? (
+                                                  <EyeOff className="h-4 w-4" strokeWidth={1.5}/>
+                                              ) : (
+                                                  <Eye className="h-4 w-4" strokeWidth={1.5}/>
+                                              )}
+                                          </Button>
+                                      </div>
                                   </SettingsField>
                                   {newPassword && (
                                       <div className="space-y-1.5 pt-1">
@@ -175,8 +175,8 @@ export function SecuritySection() {
                                       htmlFor="security-confirm-password"
                                       hint={t('user', 'securityConfirmHint')}
                                   >
-                                      <FormControl>
-                                          <div className="relative">
+                                      <div className="relative">
+                                          <FormControl>
                                               <Input
                                                   id="security-confirm-password"
                                                   {...field}
@@ -184,27 +184,27 @@ export function SecuritySection() {
                                                   placeholder={t('user', 'securityConfirmPlaceholder')}
                                                   className="h-9 text-[13px]"
                                               />
-                                              <Button
-                                                  type="button"
-                                                  variant="ghost"
-                                                  size="sm"
-                                                  className="absolute right-1 top-1 h-7"
-                                                  aria-label={showPasswords.confirm ? t('user', 'securityAriaHideConfirm') : t('user', 'securityAriaShowConfirm')}
-                                                  onClick={() =>
-                                                      setShowPasswords({
-                                                          ...showPasswords,
-                                                          confirm: !showPasswords.confirm
-                                                      })
-                                                  }
-                                              >
-                                                  {showPasswords.confirm ? (
-                                                      <EyeOff className="h-4 w-4" strokeWidth={1.5}/>
-                                                  ) : (
-                                                      <Eye className="h-4 w-4" strokeWidth={1.5}/>
-                                                  )}
-                                              </Button>
-                                          </div>
-                                      </FormControl>
+                                          </FormControl>
+                                          <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="sm"
+                                              className="absolute right-1 top-1 h-7"
+                                              aria-label={showPasswords.confirm ? t('user', 'securityAriaHideConfirm') : t('user', 'securityAriaShowConfirm')}
+                                              onClick={() =>
+                                                  setShowPasswords({
+                                                      ...showPasswords,
+                                                      confirm: !showPasswords.confirm
+                                                  })
+                                              }
+                                          >
+                                              {showPasswords.confirm ? (
+                                                  <EyeOff className="h-4 w-4" strokeWidth={1.5}/>
+                                              ) : (
+                                                  <Eye className="h-4 w-4" strokeWidth={1.5}/>
+                                              )}
+                                          </Button>
+                                      </div>
                                   </SettingsField>
                                   {confirmPassword && (
                                       <div className="flex items-center gap-1.5 text-[12px] pt-0.5">

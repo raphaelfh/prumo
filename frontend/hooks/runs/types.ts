@@ -4,13 +4,6 @@
  * These mirror the FastAPI schemas in backend/app/schemas/extraction_run.py.
  */
 
-export interface CreateRunRequest {
-  project_id: string;
-  article_id: string;
-  project_template_id: string;
-  parameters?: Record<string, unknown> | null;
-}
-
 export interface CreateDecisionRequest {
   instance_id: string;
   field_id: string;
