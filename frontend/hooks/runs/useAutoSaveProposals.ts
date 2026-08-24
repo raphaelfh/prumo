@@ -159,6 +159,32 @@ export function useAutoSaveProposals(
   // as a synchronous lock across overlapping ``performSave`` invocations.
   const activeSavePromiseRef = useRef<Promise<boolean> | null>(null);
 
+  // An acknowledgment is a statement about ONE run, but the coord key it is
+  // filed under is not: ``extraction_instances`` has no ``run_id`` (its scope
+  // is (article_id, template_id)), and ``POST /runs/{id}/reopen`` forks a
+  // child run seeded from the parent's published states — carrying the
+  // parent's ``instance_id`` verbatim. Both full-screen pages then swap
+  // ``activeRunId`` in place via ``sessionResult.refetch()`` rather than
+  // remounting, so without this reset a value re-entered identically to one
+  // saved on the parent run fingerprint-matches and never reaches the child.
+  // That is the same silent-drop class the ``autosaveDirty`` docstring
+  // describes for a stale baseline, on the run axis: consensus publishes the
+  // other reviewer's value, the reviewer re-asserts theirs on the revision,
+  // and the write is skipped with a clean badge and no error.
+  //
+  // The reset swaps in a FRESH object instead of emptying this one. Effect
+  // cleanups all run before any setup, so the run-keyed flush below has
+  // already CAPTURED the outgoing map by identity — it keeps diffing and
+  // acknowledging against the run it was invoked for, and never re-POSTs
+  // coords that run already acknowledged.
+  const lastSavedRunIdRef = useRef(runId);
+  useEffect(() => {
+    if (lastSavedRunIdRef.current === runId) return;
+    lastSavedRunIdRef.current = runId;
+    lastSavedByKeyRef.current = {};
+    setLastSavedByKey({});
+  }, [runId]);
+
   const computeDirtyEntries = (): Array<[string, unknown]> =>
     selectDirtyEntries(
       valuesRef.current,
@@ -175,8 +201,10 @@ export function useAutoSaveProposals(
     // refs at the NEW run, so reading them lazily would drop the old run's
     // pending edit (or worse, POST it against the new run). The dirty diff
     // itself is still computed after any in-flight batch settles, against
-    // the then-current ``lastSavedByKeyRef``, so queued saves never
-    // re-write coords the first batch already acknowledged.
+    // the acknowledgment map captured here BY IDENTITY: saves within one run
+    // share that object, so a queued save still sees what the in-flight batch
+    // acknowledged and never re-writes those coords, while the run-change
+    // reset above swaps in a fresh object that this invocation cannot see.
     const currentRunId = runIdRef.current;
     const currentEnabled = enabledRef.current;
     const currentStage = stageRef.current;
@@ -184,6 +212,7 @@ export function useAutoSaveProposals(
     const currentBaseline = baselineRef.current;
     const currentLinkByKey = linkByKeyRef.current;
     const currentBaselineLink = baselineLinkRef.current;
+    const currentLastSaved = lastSavedByKeyRef.current;
 
     // Serialize concurrent saves: wait for any in-flight batch, swallowing
     // its error (the owner invocation surfaces it; queued calls still retry
@@ -206,7 +235,7 @@ export function useAutoSaveProposals(
 
       const dirty = selectDirtyEntries(
         currentValues,
-        lastSavedByKeyRef.current,
+        currentLastSaved,
         currentBaseline,
         currentLinkByKey,
         currentBaselineLink,
@@ -248,8 +277,11 @@ export function useAutoSaveProposals(
             proposalRecordId: currentLinkByKey[key] ?? null,
           }).then(() => {
             // Acknowledge value AND link together (the D0 fingerprint) so a
-            // later link-only adoption re-dirties the coord.
-            lastSavedByKeyRef.current[key] = fingerprintCoord(
+            // later link-only adoption re-dirties the coord. Written to the
+            // CAPTURED map, so a write that lands after a run switch records
+            // against the run it addressed instead of vouching for a coord
+            // the new run has never been told about.
+            currentLastSaved[key] = fingerprintCoord(
               valueData,
               currentLinkByKey[key],
             );

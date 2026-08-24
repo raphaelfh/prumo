@@ -770,6 +770,116 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     expect(apiClientMock).toHaveBeenCalledTimes(0);
   });
 
+  it('re-writes a value on the NEW run when the same coord was acknowledged on the old one', async () => {
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
+
+    const { result, rerender } = renderHook(
+      (props: Parameters<typeof useAutoSaveProposals>[0]) =>
+        useAutoSaveProposals(props),
+      {
+        initialProps: {
+          runId: 'run-A',
+          stage: 'extract',
+          values: { 'inst-1_field-1': 'V1' } as Record<string, unknown>,
+          baselineValues: {} as Record<string, unknown>,
+          debounceMs: 5000,
+        },
+      },
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock.mock.calls.map(([url]) => String(url))).toEqual([
+      '/api/v1/runs/run-A/decisions',
+    ]);
+
+    // `POST /runs/{id}/reopen` forks a child run over the SAME
+    // (project, article, template) coordinate and seeds it from the parent's
+    // published states — carrying the parent's `instance_id` verbatim, since
+    // `extraction_instances` has no `run_id` (it is scoped to
+    // (article_id, template_id)). The page swaps `activeRunId` in place via
+    // `sessionResult.refetch()`, so this hook keeps its acknowledgment cache
+    // while every coord key now addresses a DIFFERENT run.
+    rerender({
+      runId: 'run-B',
+      stage: 'extract',
+      values: {},
+      baselineValues: {},
+      debounceMs: 5000,
+    });
+    // Consensus published the other reviewer's value, so run-B hydrates as
+    // 'V2'; the reviewer re-asserts the same judgment they made on run-A.
+    rerender({
+      runId: 'run-B',
+      stage: 'extract',
+      values: { 'inst-1_field-1': 'V1' } as Record<string, unknown>,
+      baselineValues: { 'inst-1_field-1': 'V2' } as Record<string, unknown>,
+      debounceMs: 5000,
+    });
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    // Without a run-scoped cache the run-A fingerprint matches and the write
+    // is silently dropped: no POST, no error, badge clean, dissent lost.
+    expect(apiClientMock.mock.calls.map(([url]) => String(url))).toEqual([
+      '/api/v1/runs/run-A/decisions',
+      '/api/v1/runs/run-B/decisions',
+    ]);
+    expect(apiClientMock).toHaveBeenLastCalledWith(
+      '/api/v1/runs/run-B/decisions',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          instance_id: 'inst-1',
+          field_id: 'field-1',
+          decision: 'edit',
+          value: { value: 'V1' },
+        }),
+      }),
+    );
+  });
+
+  it('does not re-POST coords the OLD run already acknowledged when the run swaps', async () => {
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
+
+    const { result, rerender } = renderHook(
+      (props: Parameters<typeof useAutoSaveProposals>[0]) =>
+        useAutoSaveProposals(props),
+      {
+        initialProps: {
+          runId: 'run-A',
+          stage: 'extract',
+          values: { 'inst-1_field-1': 'V1' } as Record<string, unknown>,
+          debounceMs: 5000,
+        },
+      },
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+
+    // The run-switch flush (#684) and the cache reset race the same commit.
+    // Resetting the map the flush diffs against would make every coord the
+    // reviewer edited on run-A look dirty again and append a duplicate
+    // `edit` decision per run switch — the exact churn the diff prevents.
+    rerender({
+      runId: 'run-B',
+      stage: 'extract',
+      values: {},
+      debounceMs: 5000,
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+    expect(result.current.saveState).not.toBe('error');
+  });
+
   it('pagehide triggers an immediate flush', async () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
