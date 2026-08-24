@@ -193,8 +193,34 @@ Only the two **extraction** lineages need seeding. PROBAST+AI is
 | CHARMS + Multimodal `000e…0001` | `prediction_models` | `mdl_name` | text |
 | CHARMS + Multimodal `000e…0001` | `numeric_performance` | `pnum_validation_type` | select |
 
-Seeding these is what makes the fix effective on day 1 without anyone
-editing a template.
+### 6.2.1 The seed cannot reach existing installations — the migration backfills
+
+`app.seed` guards every template with an early return: `seed.py:241`
+(`_CHARMS_TEMPLATE_ID`) and `seed.py:2030` (`_MM_TEMPLATE_ID`) both read
+`session.get(...)` and `return` on a hit. Production already has both
+templates, so **editing the seed alone stamps nothing there** — and the
+seed does not run on deploy in the first place.
+
+Left uncorrected that is a production regression, not a no-op: the column
+would exist, no CHARMS template would declare a key, and §5.3 would then
+refuse AI re-runs on the primary workflow.
+
+So the migration carries a **backfill**, and it is the part that actually
+ships the fix:
+
+- Stamp `is_entity_key` on the four coordinates of §6.2 in both **global**
+  lineages, matched by `entity_type.name` + `field.name` (never by id —
+  a project clone has fresh ids).
+- Stamp the same coordinates on **project clones** derived from them,
+  matched the same way, so existing projects keep working without a
+  re-clone.
+- Idempotent (`WHERE is_entity_key IS DISTINCT FROM true`) and guarded by
+  the partial unique index, so a template that already declares a key for
+  that entity type is left alone rather than conflicting.
+
+The seed edit stays for **fresh** installations. Neither mechanism alone
+is sufficient: the seed covers new databases, the backfill covers every
+database that already exists.
 
 ### 6.3 Portable bundle
 
