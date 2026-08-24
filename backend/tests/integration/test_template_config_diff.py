@@ -18,12 +18,10 @@ never be about recorded work.
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import UUID
 
 import pytest
-import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -43,7 +41,6 @@ from tests.integration.helpers.template_fixtures import (
     ARTICLE_ID,
     add_field,
     add_section,
-    authenticated_as,
     delete_field,
     entity_id,
     field_id,
@@ -61,14 +58,7 @@ from tests.integration.helpers.template_fixtures import (
 #: imported by name: an import binding collides with the identically named
 #: parameter in every test that requests it (ruff F811).
 auth_as_manager = template_fixtures.auth_as_manager
-
-
-@pytest_asyncio.fixture
-async def auth_as_reviewer(db_session: AsyncSession) -> AsyncGenerator[UUID, None]:
-    """JWT sub = a member of the primary project who is NOT a manager."""
-    del db_session  # fixture ordering only: the seed must run first
-    async for user_id in authenticated_as(SEED.reviewer_profile, "r@example.com"):
-        yield user_id
+auth_as_reviewer = template_fixtures.auth_as_reviewer
 
 
 async def _diff(db: AsyncSession, project_id: UUID, template_id: UUID) -> TemplateConfigDiffRead:

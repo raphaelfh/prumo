@@ -1,8 +1,12 @@
 /**
- * Global → project template import and related helpers.
+ * Server-authoritative project-template creation: from the global catalogue,
+ * from a `prumo-template@1` file, or from scratch. All three land on the same
+ * `ImportedTemplate` shape.
  *
- * Import is **server-authoritative**: the browser must not insert
- * `project_extraction_templates` directly (DB invariant: active version required).
+ * The browser must not insert `project_extraction_templates` directly (DB
+ * invariant: an active version row is required at commit, and only one
+ * extraction template per project may be active) — see
+ * docs/reference/extraction-hitl-architecture.md §4.3.
  *
  * Every function here speaks to the backend through `apiClient` only.
  *
@@ -44,6 +48,35 @@ export function importGlobalTemplate(
     );
     return fromCloneResponse(result);
   }, 'templateImportService.importGlobalTemplate');
+}
+
+// --- Create from scratch ---
+
+/** What the create dialog collects — the generated request shape itself, so it
+ * cannot drift from the endpoint. The server sets everything else: it owns the
+ * sibling deactivation and the v1 publish that make the row legal. */
+export type CustomTemplateDraft = components['schemas']['CreateProjectTemplateRequest'];
+
+/**
+ * Create a project template that starts with no sections.
+ *
+ * `POST /api/v1/projects/{projectId}/templates`. Server-side for the same
+ * reason as the two importers above: a direct insert cannot publish the
+ * active version the deferred trigger demands, nor deactivate the incumbent
+ * the partial unique index forbids duplicating. Returns the same
+ * `ImportedTemplate` shape, so the caller's success path is theirs.
+ */
+export function createCustomTemplate(
+  projectId: string,
+  draft: CustomTemplateDraft,
+): Promise<ErrorResult<ImportedTemplate>> {
+  return toResult(async () => {
+    const result = await apiClient<CloneTemplateResponse>(
+      `/api/v1/projects/${projectId}/templates`,
+      {method: 'POST', body: draft},
+    );
+    return fromCloneResponse(result);
+  }, 'templateImportService.createCustomTemplate');
 }
 
 // --- Portable import/export (prumo-template@1) ---
