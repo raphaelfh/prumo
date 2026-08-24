@@ -100,3 +100,13 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   `'use no memo'` directive plus a `// kept:` comment with the reason.
 - `scripts/enumerate_compiler_bailouts.mjs` lists every non-compiling
   file in one pass (useful before compiler upgrades).
+- **The silent hazard: subscriptions registered on a parent.** The rules
+  above cover the *loud* failure (build stops). The quiet one has no build
+  error, no type error and no lint: the compiler memoizes a parent's JSX, so
+  a child that depends on the parent re-rendering never updates. Read a
+  subscription **where you consume it**, not off a value handed down from the
+  component that opened it. Concretely: `useFormState({name})`, never
+  `useFormContext().formState`. This class shipped once already — every
+  inline form validation message in the app rendered nothing while blocking
+  submits correctly. Worked example and mutation-checked guard:
+  `frontend/components/ui/form.validation.test.tsx`.
