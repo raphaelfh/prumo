@@ -1,0 +1,24 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // Node scripts invoked from bash (verify_all.sh, CI), not imported — knip
+  // cannot see shell callers, so they are declared as entry points.
+  "entry": ["scripts/*.mjs"],
+  // Generated files: schema.d.ts by scripts/generate_api_types.sh
+  // (openapi-typescript), supabase types.ts by `supabase gen types`
+  // (scripts/sync-remote-to-local.sh). Their top-level exports are the
+  // generators' fixed contract, not our code.
+  "ignore": [
+    "frontend/types/api/schema.d.ts",
+    "frontend/integrations/supabase/types.ts"
+  ],
+  // Invoked via npx inside scripts/generate_api_types.sh — a shell caller
+  // knip cannot see.
+  "ignoreDependencies": ["openapi-typescript"],
+  // Browser-runtime imports inside page.evaluate(), served by the Vite dev
+  // server at the repo root. Build-time resolution is impossible by design;
+  // both modules are also imported statically elsewhere, so they stay live.
+  "ignoreUnresolved": [
+    "/frontend/lib/extraction/valueUpdates.ts",
+    "/frontend/integrations/supabase/client.ts"
+  ]
+}

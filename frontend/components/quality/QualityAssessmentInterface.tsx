@@ -36,7 +36,7 @@ import {
 } from "@/components/hitl/HITLActiveTemplateBar";
 import { HITLArticleTable } from "@/components/hitl/HITLArticleTable";
 import { QualityAssessmentConfiguration } from "@/components/quality/QualityAssessmentConfiguration";
-import { useHITLProjectTemplates } from "@/hooks/hitl/useHITLProjectTemplates";
+import { useProjectTemplates } from "@/hooks/hitl/useProjectTemplates";
 
 type QaTab = "assessment" | "dashboard" | "configuration";
 
@@ -54,14 +54,11 @@ export function QualityAssessmentInterface({ projectId }: Props) {
       ? tabFromUrl
       : "assessment";
 
-  const {
-    templates,
-    loading: templatesLoading,
-    refresh,
-  } = useHITLProjectTemplates({
+  const {data, isLoading: templatesLoading} = useProjectTemplates({
     projectId,
     kind: "quality_assessment",
   });
+  const templates = data ?? [];
 
   const { activeTemplate, selectTemplate } = useActiveTemplateSelection(templates);
 
@@ -109,10 +106,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
         <div className="min-h-0 flex-1 overflow-y-auto pb-4 p-4 lg:p-6">
-          <QualityAssessmentConfiguration
-            projectId={projectId}
-            onAfterChange={() => void refresh()}
-          />
+          <QualityAssessmentConfiguration projectId={projectId} />
         </div>
       </div>
     );

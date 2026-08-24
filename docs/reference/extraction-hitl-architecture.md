@@ -135,7 +135,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0056_proposal_provenance` (post-squash numbering; run
+`0057_revoke_project_tpl_writes` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -400,6 +400,18 @@ template_portable.py`: nested, UUID-free, `role` derived from nesting + a
 `group` flag); `POST …/templates/import` creates a **new** active template
 from one and publishes v1 through `republish`. Design:
 `docs/superpowers/specs/2026-08-23-template-portable-import-export-design.md`.
+
+**Create from scratch (2026-08-23).** `POST …/templates` (manager-gated,
+`template_create_service.create_blank_template`) is the third creation path
+and the one with no source: it inserts the row with **no sections** and
+publishes v1, so the manager lands in the configuration editor on a
+published — not permanently draft — template. It is the same tail as the
+file import (deactivate the extraction sibling via
+`deactivate_sibling_extraction_templates`, then `republish`), minus the
+document parse and tree build. This is the path that replaced a direct
+frontend insert, which could not satisfy either invariant above: it commits
+alone (so the deferred trigger fires with no active version) and it cannot
+deactivate the incumbent (so the partial unique index refuses it).
 
 Configuration flows for QA tools may call the same clone endpoint before sessions; session lifecycle for QA vs extraction is in §5.
 

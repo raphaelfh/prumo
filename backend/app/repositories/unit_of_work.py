@@ -83,8 +83,6 @@ from app.repositories.article_repository import (
 from app.repositories.extraction_repository import (
     ExtractionEntityTypeRepository,
     ExtractionInstanceRepository,
-    ExtractionTemplateRepository,
-    GlobalTemplateRepository,
 )
 from app.repositories.integration_repository import ZoteroIntegrationRepository
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
@@ -150,8 +148,6 @@ class UnitOfWork:
         self.project_members = ProjectMemberRepository(self.session)
 
         # Extractions
-        self.extraction_templates = ExtractionTemplateRepository(self.session)
-        self.global_templates = GlobalTemplateRepository(self.session)
         self.entity_types = ExtractionEntityTypeRepository(self.session)
         self.extraction_instances = ExtractionInstanceRepository(self.session)
 
@@ -219,8 +215,8 @@ class UnitOfWork:
     async def __aexit__(
         self,
         exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
+        _exc_val: BaseException | None,
+        _exc_tb: TracebackType | None,
     ) -> None:
         """
         Sai do contexto async.

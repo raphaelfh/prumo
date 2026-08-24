@@ -120,6 +120,5 @@ export function SelectWithOther(props: SelectWithOtherProps) {
   );
 }
 
-export default SelectWithOther;
 
 

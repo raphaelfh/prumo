@@ -31,7 +31,7 @@ export interface AllModelsSectionsProgress {
   sectionProgress: ExtractionProgress | null;
 }
 
-export interface AllModelsSectionsParams {
+interface AllModelsSectionsParams {
   projectId: string;
   articleId: string;
   templateId: string;

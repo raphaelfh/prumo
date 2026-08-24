@@ -205,14 +205,13 @@ self-skipping to a green "pass").
 - **Re-run `post-deploy-smoke` after the deploy reports SUCCESS** and confirm
   it is green. The run triggered by the push races the deploy — its first
   green certifies the OLD build. The workflow covers: reachability
-  (`/health`, frontend root, CORS preflight from the prod origin), the
+  (`/health` — including its `jwks_ready` / `db_ready` / `storage_ready`
+  checks — frontend root, and a CORS preflight from the prod origin) and the
   **deployed-commit assertion** (`/health.commit` == the promoted SHA — the
-  only check that catches a Railway deploy stuck on an older commit), and an
-  **authenticated read-only probe** (password-grant + `GET /api/v1/projects`,
-  which exercises JWKS/JWT, membership/RLS and the envelope without writing).
-- If the probe step reports `::warning:: skipped`, its secrets are not
-  provisioned — say so explicitly in the verdict instead of counting the
-  workflow as full coverage.
+  only check that catches a Railway deploy stuck on an older commit).
+- That is the whole of the automated prod coverage: there is no credentialed
+  probe and no prod-facing Playwright suite. Say so plainly in the verdict
+  rather than implying end-to-end verification happened.
 - For a shipped API change, prove the contract is live rather than assuming:
   probe `https://web-production-48b398.up.railway.app/api/v1/openapi.json`
   (200 in prod) for the new route/field, or use the 401-vs-404 route probe.

@@ -23,10 +23,6 @@ import { stableStringify } from "@/lib/runs/valueEquality";
 
 import type { ReviewerDecisionResponse, RunDetailResponse } from "./types";
 
-export interface CurrentDecisionEntry {
-  decision: ReviewerDecisionResponse;
-  coordKey: string;
-}
 
 export interface ReviewerSummary {
   reviewers: string[];

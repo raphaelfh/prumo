@@ -1,16 +1,14 @@
 # residual single-read-path violations grandfathered post-#324; shrink, don't grow
+# line numbers refreshed by the dead-code sweep (two sites deleted outright)
 frontend/hooks/extraction/helpers/queryEntityTypes.ts:15
 frontend/hooks/extraction/helpers/queryEntityTypes.ts:17
-frontend/lib/supabase/baseRepository.ts:100
-frontend/lib/supabase/baseRepository.ts:120
-frontend/lib/supabase/baseRepository.ts:181
-frontend/lib/supabase/baseRepository.ts:208
-frontend/lib/supabase/baseRepository.ts:231
-frontend/lib/supabase/baseRepository.ts:259
+frontend/lib/supabase/baseRepository.ts:82
+frontend/lib/supabase/baseRepository.ts:102
+frontend/lib/supabase/baseRepository.ts:163
+frontend/lib/supabase/baseRepository.ts:192
 frontend/services/articlesExportService.ts:11
 frontend/services/articlesService.ts:130
 frontend/services/articlesService.ts:146
-frontend/services/extractionDataService.ts:63
-frontend/services/extractionDataService.ts:64
+frontend/services/extractionDataService.ts:61
+frontend/services/extractionDataService.ts:62
 frontend/services/extractionExportService.ts:7
-frontend/test/services/articlesService.test.ts:244

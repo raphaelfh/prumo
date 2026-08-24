@@ -21,7 +21,7 @@ import type { RunHeaderValue } from '../RunHeaderContext';
  * RunHeader.test, RunHeader.shell.test) use meaningfully different shapes and
  * are left with their own inline constants.
  */
-export const BASE_RUN_HEADER_VALUE: RunHeaderValue = {
+const BASE_RUN_HEADER_VALUE: RunHeaderValue = {
   kind: 'extraction',
   stage: 'extract',
   isRevision: false,

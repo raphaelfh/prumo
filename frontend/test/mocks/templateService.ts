@@ -31,11 +31,11 @@ export const restoreTemplateVersion = vi.fn();
 export const loadTemplateConfigStatus = vi.fn();
 export const republishTemplateVersion = vi.fn();
 export const discardTemplateDraft = vi.fn();
-export const updateSection = vi.fn();
+const updateSection = vi.fn();
 
 /** Mirrors the real class (B-9c2): a 409 the server deliberately refused,
  * carrying the code and the fields a Discard would strand. */
-export class TemplateDiscardRefusal extends Error {
+class TemplateDiscardRefusal extends Error {
   constructor(
     message: string,
     public readonly code: string,
@@ -51,7 +51,7 @@ export class TemplateDiscardRefusal extends Error {
 
 /** The publish counterpart (B-9b0 D4): useTemplateRepublish reads this
  * binding on EVERY failed publish, typed or not. */
-export class TemplatePublishRefusal extends Error {
+class TemplatePublishRefusal extends Error {
   constructor(
     message: string,
     public readonly code: string,

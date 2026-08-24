@@ -23,6 +23,7 @@ import {Label} from '@/components/ui/label';
 import {Alert, AlertDescription} from '@/components/ui/alert';
 import {AlertTriangle, CheckCircle2, FileText, Layers, Loader2, Upload} from 'lucide-react';
 import {useGlobalTemplates} from '@/hooks/extraction/useGlobalTemplates';
+import {useInvalidateProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
 import {importGlobalTemplate} from '@/services/templateImportService';
 
 import {ImportTemplateFilePane} from './ImportTemplateFilePane';
@@ -54,6 +55,7 @@ export function ImportTemplateDialog({
                                          initialTemplateId,
 }: ImportTemplateDialogProps) {
   const { templates, loading: loadingTemplates } = useGlobalTemplates();
+  const invalidateProjectTemplates = useInvalidateProjectTemplates();
   const catalogueHeadingId = useId();
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -105,12 +107,25 @@ export function ImportTemplateDialog({
     toast.success(
         `${t('templateConfig', 'importSuccess')}: "${selectedTemplate.name}". ${result.data.entityTypesAdded} ${t('templateConfig', 'importSections')}, ${result.data.fieldsAdded} ${t('templateConfig', 'importFields')}.`
     );
-    closeWith(result.data.templateId);
+    await closeAfterImport(result.data.templateId);
   };
 
-  /** Every path that changed the active template ends the same way. */
+  /** Every path that changed the active template ends the same way: close,
+   * then hand the host the id to select. */
   const closeWith = (templateId: string) => {
     onOpenChange(false);
+    onActiveTemplateChanged(templateId);
+  };
+
+  /**
+   * The two import panes go straight to a typed service, so nothing has
+   * refreshed the shared project-template query yet — do it before the host
+   * re-points, or it lands on a row it cannot see. Switch needs no such wait:
+   * its mutation awaits its own invalidation before calling back.
+   */
+  const closeAfterImport = async (templateId: string) => {
+    onOpenChange(false);
+    await invalidateProjectTemplates();
     onActiveTemplateChanged(templateId);
   };
 
@@ -227,7 +242,7 @@ export function ImportTemplateDialog({
         )}
         </section>
 
-        <ImportTemplateFilePane projectId={projectId} onImported={closeWith} />
+        <ImportTemplateFilePane projectId={projectId} onImported={closeAfterImport} />
 
         <DialogFooter>
           <Button

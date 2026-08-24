@@ -14,7 +14,7 @@
  */
 
 /** Casefolded risk-label vocabulary; mirrors the backend `_RISK_LABELS`. */
-export const JUDGMENT_LABELS: ReadonlySet<string> = new Set([
+const JUDGMENT_LABELS: ReadonlySet<string> = new Set([
   "critical",
   "serious",
   "high",

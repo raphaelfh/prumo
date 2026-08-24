@@ -29,7 +29,7 @@ interface RpcRow {
   user_avatar_url: string | null;
 }
 
-export const projectMembersKeys = {
+const projectMembersKeys = {
   all: ['project-members'] as const,
   byProject: (projectId: string) =>
     [...projectMembersKeys.all, projectId] as const,

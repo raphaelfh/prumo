@@ -67,4 +67,3 @@ export const pages = {
     extractionScreenErrorFinalizeUnknown: 'Unknown error while finalizing extraction',
 } as const;
 
-export type PagesCopy = typeof pages;
