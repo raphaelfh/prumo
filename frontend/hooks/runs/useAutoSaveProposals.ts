@@ -113,6 +113,21 @@ function isWritableStage(stage?: string | null): boolean {
   return stage === 'extract';
 }
 
+/**
+ * Acknowledgments — what this client has successfully written — tagged with
+ * the run they describe. Coord keys are NOT run-scoped: ``extraction_instances``
+ * has no ``run_id`` (it is keyed by (article_id, template_id)), and
+ * ``POST /runs/{id}/reopen`` seeds the child run with the parent's
+ * ``instance_id`` verbatim, while both full-screen pages swap ``activeRunId``
+ * in place rather than remounting this hook.
+ */
+interface AckCache {
+  runId: string | null | undefined;
+  byKey: Record<string, string>;
+}
+
+const NO_ACKS: Record<string, string> = {};
+
 export function useAutoSaveProposals(
   props: UseAutoSaveProposalsProps,
 ): UseAutoSaveProposalsReturn {
@@ -148,21 +163,33 @@ export function useAutoSaveProposals(
   });
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // Stringified last successful write per `${instanceId}_${fieldId}` —
-  // the diff check against the current values map. The ref is the live
-  // map updated per write; the state mirror below lets render-phase
-  // consumers (dirty badge, hasUnsavedChanges) recompute without
-  // reading a ref during render.
-  const lastSavedByKeyRef = useRef<Record<string, string>>({});
-  const [lastSavedByKey, setLastSavedByKey] = useState<Record<string, string>>({});
+  // Stringified last successful write per `${instanceId}_${fieldId}`, tagged
+  // with the run it describes — the diff check against the current values
+  // map. The ref is the live cache updated per write; the state mirror below
+  // lets render-phase consumers (dirty badge, hasUnsavedChanges) recompute
+  // without reading a ref during render.
+  const ackRef = useRef<AckCache>({ runId, byKey: {} });
+  const [ackState, setAckState] = useState<AckCache>({ runId, byKey: {} });
   // React state is async, so ``saveState === 'saving'`` cannot be used
   // as a synchronous lock across overlapping ``performSave`` invocations.
   const activeSavePromiseRef = useRef<Promise<boolean> | null>(null);
 
+  // Hand out the acknowledgments for ONE run. A cache filed under another run
+  // is not an answer about this one, so it reads as empty — the run switch IS
+  // the cache miss. Swapping (rather than clearing in place) also hands the
+  // outgoing object intact to any save already holding it, so an in-flight
+  // batch keeps acknowledging against the run it addressed. Never called
+  // during render (refs must not be written there) — the render path reads
+  // ``acks`` below.
+  const acksFor = (forRunId: string | null | undefined): Record<string, string> => {
+    if (ackRef.current.runId !== forRunId) ackRef.current = { runId: forRunId, byKey: {} };
+    return ackRef.current.byKey;
+  };
+
   const computeDirtyEntries = (): Array<[string, unknown]> =>
     selectDirtyEntries(
       valuesRef.current,
-      lastSavedByKeyRef.current,
+      acksFor(runIdRef.current),
       baselineRef.current,
       linkByKeyRef.current,
       baselineLinkRef.current,
@@ -175,8 +202,7 @@ export function useAutoSaveProposals(
     // refs at the NEW run, so reading them lazily would drop the old run's
     // pending edit (or worse, POST it against the new run). The dirty diff
     // itself is still computed after any in-flight batch settles, against
-    // the then-current ``lastSavedByKeyRef``, so queued saves never
-    // re-write coords the first batch already acknowledged.
+    // ``runAcks`` below.
     const currentRunId = runIdRef.current;
     const currentEnabled = enabledRef.current;
     const currentStage = stageRef.current;
@@ -184,6 +210,10 @@ export function useAutoSaveProposals(
     const currentBaseline = baselineRef.current;
     const currentLinkByKey = linkByKeyRef.current;
     const currentBaselineLink = baselineLinkRef.current;
+    // Captured by identity, never copied: this object IS the run's
+    // acknowledgment set, so a queued save sees the in-flight batch's writes
+    // and a run switch leaves it behind with the run it addressed.
+    const runAcks = acksFor(currentRunId);
 
     // Serialize concurrent saves: wait for any in-flight batch, swallowing
     // its error (the owner invocation surfaces it; queued calls still retry
@@ -206,7 +236,7 @@ export function useAutoSaveProposals(
 
       const dirty = selectDirtyEntries(
         currentValues,
-        lastSavedByKeyRef.current,
+        runAcks,
         currentBaseline,
         currentLinkByKey,
         currentBaselineLink,
@@ -216,9 +246,9 @@ export function useAutoSaveProposals(
       setSaveState('saving');
       setError(null);
 
-      // ``Promise.allSettled`` so a single failed write does not abort
-      // the others mid-flight; otherwise their ``lastSavedByKeyRef``
-      // updates race the error path and leave the diff map inconsistent.
+      // ``Promise.allSettled`` so a single failed write does not abort the
+      // others mid-flight; otherwise their ``runAcks`` updates race the
+      // error path and leave the diff map inconsistent.
       const batchPromise = Promise.allSettled(
         dirty.map(([key, valueData]) => {
           const [instanceId, fieldId] = key.split('_');
@@ -249,7 +279,7 @@ export function useAutoSaveProposals(
           }).then(() => {
             // Acknowledge value AND link together (the D0 fingerprint) so a
             // later link-only adoption re-dirties the coord.
-            lastSavedByKeyRef.current[key] = fingerprintCoord(
+            runAcks[key] = fingerprintCoord(
               valueData,
               currentLinkByKey[key],
             );
@@ -257,8 +287,10 @@ export function useAutoSaveProposals(
         }),
       ).then((results) => {
         // Mirror the diff map into state — partial successes updated the
-        // ref even when some writes failed.
-        setLastSavedByKey({ ...lastSavedByKeyRef.current });
+        // ref even when some writes failed. Tagged with the run these writes
+        // addressed, so a straggler from the outgoing run cannot make the
+        // badge vouch for the new one (the render view filters on it).
+        setAckState({ runId: currentRunId, byKey: { ...runAcks } });
 
         // Any acknowledged write moved the server, so the save clock advances
         // even when a sibling failed: server-DERIVED reads key off it (the QA
@@ -323,6 +355,11 @@ export function useAutoSaveProposals(
   // unchanged value must flip the badge and schedule a save like a keystroke.
   const valuesKey = JSON.stringify([values, linkByKey ?? {}]);
   const [prevValuesKey, setPrevValuesKey] = useState(valuesKey);
+  // Render-safe view of the acknowledgments: a mirror filed under another run
+  // reads empty, so the badge never vouches for this run using the previous
+  // one's writes. Derived, so it is already correct in the render that swaps
+  // the run — no reset commit, no window where ref and state disagree.
+  const acks = ackState.runId === runId ? ackState.byKey : NO_ACKS;
   if (valuesKey !== prevValuesKey) {
     setPrevValuesKey(valuesKey);
     if (
@@ -331,7 +368,7 @@ export function useAutoSaveProposals(
       isWritableStage(stage) &&
       selectDirtyEntries(
         values,
-        lastSavedByKey,
+        acks,
         baselineValues ?? {},
         linkByKey ?? {},
         baselineLinkByKey ?? {},
@@ -416,12 +453,12 @@ export function useAutoSaveProposals(
   };
 
   // Re-evaluate the dirty diff whenever ``values`` changes (user typed)
-  // or a save acknowledges (``lastSavedByKey`` advances). Computed from
+  // or a save acknowledges (``ackState`` advances). Computed from
   // render-safe state — never from the mutable refs.
   const hasUnsavedChanges =
     selectDirtyEntries(
       values,
-      lastSavedByKey,
+      acks,
       baselineValues ?? {},
       linkByKey ?? {},
       baselineLinkByKey ?? {},
