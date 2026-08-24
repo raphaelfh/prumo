@@ -35,7 +35,6 @@ def _field(label, *, unit=None, required=False, allow_other=False, desc=None):
         label=label,
         type=ExtractionFieldType.SELECT,
         allowed_values=("Cohort", "RCT"),
-        parent_section_id=uuid4(),
         description=desc,
         unit=unit,
         is_required=required,

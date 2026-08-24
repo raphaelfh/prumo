@@ -146,35 +146,6 @@ class TestGetDefault:
 
 
 # ---------------------------------------------------------------------------
-# get_by_user_and_provider
-# ---------------------------------------------------------------------------
-
-
-class TestGetByUserAndProvider:
-    @pytest.mark.asyncio
-    async def test_returns_matching_keys(self) -> None:
-        db = make_db()
-        keys = [make_key(provider="anthropic")]
-        db.execute = AsyncMock(return_value=make_scalars_result(keys))
-        repo = UserAPIKeyRepository(db)
-
-        result = await repo.get_by_user_and_provider(USER_ID, "anthropic")
-
-        assert result == keys
-
-    @pytest.mark.asyncio
-    async def test_active_only_false_returns_all(self) -> None:
-        db = make_db()
-        keys = [make_key(is_active=False, provider="gemini")]
-        db.execute = AsyncMock(return_value=make_scalars_result(keys))
-        repo = UserAPIKeyRepository(db)
-
-        result = await repo.get_by_user_and_provider(USER_ID, "gemini", active_only=False)
-
-        assert result == keys
-
-
-# ---------------------------------------------------------------------------
 # get_by_id_and_user
 # ---------------------------------------------------------------------------
 

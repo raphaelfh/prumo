@@ -110,3 +110,41 @@ describe("OverallJudgmentBanner — calculation disclosure", () => {
     expect(screen.queryByTestId("qa-overall-explain-toggle")).not.toBeInTheDocument();
   });
 });
+
+describe("OverallJudgmentBanner — recommendation entries are not overalls", () => {
+  it("renders only entries without a target (loose null check: an absent key counts as an overall)", () => {
+    renderBanner([
+      // Overall, target key entirely absent (older payloads/fixtures).
+      { id: "dev_overall_quality", label: "Overall quality", value: "Low" },
+      // Overall, explicit null target.
+      {
+        id: "eval_overall_rob",
+        label: "Overall RoB",
+        value: "High",
+        target_field_id: null,
+      },
+      // Recommendation — must never render in the banner.
+      {
+        id: "dev_d1_quality",
+        label: "Development D1: quality",
+        value: "High",
+        target_field_id: "f-1",
+      },
+    ]);
+    expect(screen.getByTestId("qa-overall-dev_overall_quality")).toBeInTheDocument();
+    expect(screen.getByTestId("qa-overall-eval_overall_rob")).toBeInTheDocument();
+    expect(screen.queryByTestId("qa-overall-dev_d1_quality")).not.toBeInTheDocument();
+  });
+
+  it("renders nothing when every entry is a recommendation", () => {
+    const { container } = renderBanner([
+      {
+        id: "dev_d1_quality",
+        label: "Development D1: quality",
+        value: "High",
+        target_field_id: "f-1",
+      },
+    ]);
+    expect(container).toBeEmptyDOMElement();
+  });
+});

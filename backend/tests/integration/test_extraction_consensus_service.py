@@ -15,7 +15,6 @@ from app.models.extraction_workflow import (
 from app.services.extraction_consensus_service import (
     ExtractionConsensusService,
     InvalidConsensusError,
-    OptimisticConcurrencyError,
 )
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
@@ -294,40 +293,6 @@ async def test_record_consensus_rejects_incoherent_coordinates(
 
 
 @pytest.mark.asyncio
-async def test_publish_optimistic_concurrency_conflict(
-    db_session: AsyncSession,
-) -> None:
-    fx = await _setup_consensus_run(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    run_id, instance_id, field_id, profile_id, decision_id = fx
-
-    service = ExtractionConsensusService(db_session)
-    _, published = await service.record_consensus(
-        run_id=run_id,
-        instance_id=instance_id,
-        field_id=field_id,
-        consensus_user_id=profile_id,
-        mode=ExtractionConsensusMode.SELECT_EXISTING,
-        selected_decision_id=decision_id,
-    )
-    # Second consensus with stale expected_version should raise.
-    with pytest.raises(OptimisticConcurrencyError):
-        await service.publish(
-            run_id=run_id,
-            instance_id=instance_id,
-            field_id=field_id,
-            value={"v": "stale"},
-            published_by=profile_id,
-            expected_version=99,  # stale
-        )
-    await db_session.rollback()
-
-
-# ---- Bug-fix regression tests ----
-
-
-@pytest.mark.asyncio
 async def test_select_existing_rejects_reject_decision(
     db_session: AsyncSession,
 ) -> None:
@@ -472,108 +437,6 @@ async def test_select_existing_rejects_cross_coordinate_decision(
             consensus_user_id=profile_id,
             mode=ExtractionConsensusMode.SELECT_EXISTING,
             selected_decision_id=decision_id,
-        )
-    await db_session.rollback()
-
-
-@pytest.mark.asyncio
-async def test_publish_requires_consensus_stage(
-    db_session: AsyncSession,
-) -> None:
-    """Issue #43: publish() must reject runs that are not in CONSENSUS stage."""
-    project_id = (
-        await db_session.execute(
-            text("SELECT id FROM public.projects WHERE id = :pid"),
-            {"pid": str(SEED.primary_project)},
-        )
-    ).scalar()
-    article_id = (
-        await db_session.execute(
-            text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
-            {"pid": project_id},
-        )
-    ).scalar()
-    template_id = (
-        await db_session.execute(
-            text(
-                "SELECT id FROM public.project_extraction_templates WHERE project_id = :pid LIMIT 1"
-            ),
-            {"pid": project_id},
-        )
-    ).scalar()
-    profile_id = (
-        await db_session.execute(
-            text(
-                "SELECT user_id FROM public.project_members "
-                "WHERE project_id = :pid AND role = 'manager' LIMIT 1"
-            ),
-            {"pid": str(project_id)},
-        )
-    ).scalar()
-    if not all((project_id, article_id, template_id, profile_id)):
-        pytest.skip("Missing fixtures.")
-    row = await db_session.execute(
-        text(
-            """
-            SELECT i.id, f.id FROM public.extraction_instances i
-            JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
-            JOIN public.extraction_fields f ON f.entity_type_id = et.id
-            WHERE i.template_id = :tid LIMIT 1
-            """
-        ),
-        {"tid": template_id},
-    )
-    pair = row.first()
-    if pair is None:
-        pytest.skip("Missing instance/field.")
-    instance_id, field_id = pair
-
-    lifecycle = RunLifecycleService(db_session)
-    run = await lifecycle.create_run(
-        project_id=project_id,
-        article_id=article_id,
-        project_template_id=template_id,
-        user_id=profile_id,
-    )
-    # Leave the run in PROPOSAL — not CONSENSUS.
-    service = ExtractionConsensusService(db_session)
-    with pytest.raises(InvalidConsensusError, match="not 'consensus'"):
-        await service.publish(
-            run_id=run.id,
-            instance_id=instance_id,
-            field_id=field_id,
-            value={"v": "x"},
-            published_by=profile_id,
-            expected_version=1,
-        )
-    await db_session.rollback()
-
-
-@pytest.mark.asyncio
-async def test_publish_unknown_run_raises(db_session: AsyncSession) -> None:
-    """Issue #43: publish() must reject unknown run_id."""
-    import uuid as _uuid
-
-    profile_id = (
-        await db_session.execute(
-            text(
-                "SELECT user_id FROM public.project_members "
-                "WHERE project_id = :pid AND role = 'manager' LIMIT 1"
-            ),
-            {"pid": str(SEED.primary_project)},
-        )
-    ).scalar()
-    if profile_id is None:
-        pytest.skip("Missing profile.")
-    service = ExtractionConsensusService(db_session)
-    with pytest.raises(InvalidConsensusError, match="not found"):
-        await service.publish(
-            run_id=_uuid.uuid4(),
-            instance_id=_uuid.uuid4(),
-            field_id=_uuid.uuid4(),
-            value={"v": "x"},
-            published_by=profile_id,
-            expected_version=1,
         )
     await db_session.rollback()
 

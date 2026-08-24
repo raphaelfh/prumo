@@ -22,23 +22,53 @@ async def get_current_user_sub(user: CurrentUser) -> UUID:
         )
 
 
-async def _ensure_project_role(
-    db: DbSession, *, sql: str, project_id: UUID, user_sub: UUID, error: str
-) -> None:
-    """Run a parameterised ``public.is_project_*`` boolean and 403 when false.
+async def _project_role_allows(
+    db: DbSession, *, sql: str, project_id: UUID, user_sub: UUID
+) -> bool:
+    """Evaluate a parameterised ``public.is_project_*`` boolean.
 
     The DB session runs as service-role (RLS bypassed), so these gates must live
     at the API layer using the same SQL helpers the RLS policies use. ``sql`` is a
     module-internal literal (never request-derived) — no injection surface.
     """
-    allowed = (
-        await db.execute(
-            text(sql),
-            {"pid": str(project_id), "uid": str(user_sub)},
-        )
-    ).scalar_one()
-    if not allowed:
+    return bool(
+        (
+            await db.execute(
+                text(sql),
+                {"pid": str(project_id), "uid": str(user_sub)},
+            )
+        ).scalar_one()
+    )
+
+
+async def _ensure_project_role(
+    db: DbSession, *, sql: str, project_id: UUID, user_sub: UUID, error: str
+) -> None:
+    """Run a role boolean and 403 when it is false."""
+    if not await _project_role_allows(db, sql=sql, project_id=project_id, user_sub=user_sub):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=error)
+
+
+async def is_project_member(db: DbSession, project_id: UUID, user_sub: UUID | str) -> bool:
+    """Report project-membership without raising.
+
+    The non-raising counterpart to :func:`ensure_project_member`, for endpoints
+    that own their refusal shape — ``zotero_import`` raises ``AuthorizationError``
+    and ``articles_export`` returns an ``ApiResponse.failure`` envelope, neither
+    of which is the 403 ``HTTPException`` the ``ensure_*`` helpers raise. Both
+    read membership through the same ``public.is_project_member`` the RLS
+    policies use, so the API and the database cannot drift apart.
+
+    Accepts a raw ``user.sub`` and normalises it here, so a malformed subject
+    raises from inside the membership check rather than ahead of it — which is
+    where ``ProjectMemberRepository.is_member`` used to do the same conversion.
+    """
+    return await _project_role_allows(
+        db,
+        sql="SELECT public.is_project_member(:pid, :uid) AS ok",
+        project_id=project_id,
+        user_sub=UUID(user_sub) if isinstance(user_sub, str) else user_sub,
+    )
 
 
 async def ensure_project_member(db: DbSession, project_id: UUID, user_sub: UUID) -> None:

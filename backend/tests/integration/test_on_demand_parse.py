@@ -60,9 +60,6 @@ class _StubStorage(StorageAdapter):
     async def get_signed_url(self, bucket: str, path: str, expires_in: int = 3600) -> str:
         raise NotImplementedError
 
-    async def list_files(self, bucket: str, prefix: str = "", limit: int = 100) -> list[dict]:
-        raise NotImplementedError
-
 
 # ---------------------------------------------------------------------------
 # DB helpers

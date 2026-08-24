@@ -17,11 +17,11 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps.security import is_project_member
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.error_handler import AppError, AuthorizationError, NotFoundError
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
-from app.core.transactions import UnitOfWork
 from app.schemas.common import ApiResponse
 from app.schemas.zotero import (
     DownloadAttachmentRequest,
@@ -82,9 +82,7 @@ async def _assert_project_member(db: AsyncSession, project_id: UUID, user_sub: s
     Raises:
         AuthorizationError: if the user is not a member of the project.
     """
-    async with UnitOfWork(db) as uow:
-        is_member = await uow.project_members.is_member(project_id, user_sub)
-    if not is_member:
+    if not await is_project_member(db, project_id, user_sub):
         raise AuthorizationError("User is not authorized for this project")
 
 

@@ -314,26 +314,6 @@ class APIKeyService(LoggerMixin):
                 return True
         return self._get_global_key(provider) is not None
 
-    async def get_decrypted_key(
-        self,
-        key_id: UUID | str,
-    ) -> str | None:
-        """
-        Get decrypted API key by ID.
-
-        Args:
-            key_id: API key ID.
-
-        Returns:
-            Decrypted API key or None.
-        """
-        key = await self._repo.get_by_id_and_user(key_id, self.user_id)
-
-        if key and key.encrypted_api_key:
-            return self._decrypt(key.encrypted_api_key)
-
-        return None
-
     def _get_global_key(self, provider: str) -> str | None:
         """
         Return provider global API key from settings.

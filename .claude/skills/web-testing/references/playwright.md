@@ -19,7 +19,7 @@ frontend/e2e/
 The four-project split exists because:
 - `local-api` and `local-ui` are stateless and parallelize cleanly.
 - `local-hitl` shares a fixed (project, article, template) triple — running >1 worker causes runs to step on each other. Don't fight this; add new HITL-stateful tests under matching glob patterns.
-- There is no prod-facing project: production is verified by the post-deploy smoke workflow (reachability + deployed-commit + authenticated read-only probe), never by a suite that writes to prod.
+- There is no prod-facing project: production is verified by the post-deploy smoke workflow (reachability + deployed-commit), never by a suite that writes to prod.
 
 ## 2. Choosing your project
 

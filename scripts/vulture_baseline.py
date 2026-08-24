@@ -2,13 +2,16 @@
 """Vulture ratchet — fail only when NEW dead-code findings are introduced.
 
 Backend counterpart of the frontend's knip gate (which runs at zero findings).
-The backend cannot gate at zero yet: vulture's 60%-confidence tier — the only
-tier that sees unused functions/methods/classes — also flags framework-consumed
-symbols (Starlette ``dispatch``, Celery ``on_failure``, written-but-never-read
-contract fields) that need a per-case audit before deletion. The committed
-baseline is that audit backlog: an allow-list of ``file:kind:name`` signatures
-that only shrinks. A new signature fails CI; deleting dead code lets you
-tighten the baseline (``--update``) in the same PR.
+The backend cannot gate at zero: vulture's 60%-confidence tier — the only tier
+that sees unused functions/methods/classes — also flags framework-consumed
+symbols (Starlette ``dispatch``, Celery ``on_failure``, ORM column writes) that
+no reader in ``app/`` ever touches by name. The committed baseline is the
+allow-list of those, and it only shrinks. A new signature fails CI; deleting
+dead code lets you tighten the baseline (``--update``) in the same PR.
+
+The baseline carries no dead-code backlog: every entry is a false positive of
+one of the shapes the generated header lists. Treat anything outside them as
+dead code to delete, not as a new entry.
 
 Why ``file:kind:name`` and not line numbers: lines churn on every edit, which
 would make the baseline noisy. The triple is the stable unit "this symbol in
@@ -68,10 +71,23 @@ def load_baseline(path: Path) -> set[str]:
 def write_baseline(path: Path, signatures: set[str]) -> None:
     header = (
         "# vulture ratchet baseline — (file:kind:name) findings tolerated today.\n"
-        "# Only shrinks; a new finding fails CI. Each entry is either a\n"
-        "# framework-consumed false positive or unaudited dead-code debt —\n"
-        "# audit, delete the dead ones, then regenerate with\n"
-        "# scripts/vulture_baseline.py --update.\n"
+        "# Only shrinks; a new finding fails CI.\n"
+        "#\n"
+        "# ADMISSION RULE: an entry belongs here only if the symbol is consumed\n"
+        "# by a framework or library rather than by name from app/. In practice\n"
+        "# that is one of five shapes:\n"
+        "#   * Starlette `dispatch` — BaseHTTPMiddleware calls it per request.\n"
+        "#   * Celery — LoggedTask's on_failure/on_success/on_retry hooks, and\n"
+        "#     signal-handler kwargs the framework passes by name.\n"
+        "#   * SQLAlchemy column writes — persisted by the ORM, read back out\n"
+        "#     of the database, never by a Python reader in app/.\n"
+        "#   * Library option objects — docling pipeline options, openpyxl\n"
+        "#     worksheet properties: written here, read by the library.\n"
+        "#   * AIProposalRow — consumed positionally via `dataclasses.astuple`,\n"
+        "#     so no field is ever read by name (see ai_metadata.py).\n"
+        "#\n"
+        "# Anything that does not fit one of those is dead code: delete it,\n"
+        "# then regenerate with scripts/vulture_baseline.py --update.\n"
     )
     body = "\n".join(sorted(signatures))
     path.write_text(header + body + ("\n" if body else ""))

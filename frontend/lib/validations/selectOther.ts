@@ -1,5 +1,3 @@
-import {z} from 'zod';
-
 // =================== CONSTANTS ===================
 
 /**
@@ -7,20 +5,6 @@ import {z} from 'zod';
  * Not stored in DB, only used for UI control
  */
 export const OTHER_OPTION_VALUE = '__OTHER__';
-
-// =================== SCHEMAS ===================
-
-const SingleWithOtherSchema = z.union([
-  z.string().min(1),
-  z.object({ selected: z.literal('other'), other_text: z.string().trim().min(1).max(200) }),
-  z.null()
-]);
-
-const MultiWithOtherSchema = z.union([
-  z.array(z.string().min(1)),
-  z.object({ selected: z.array(z.string().min(1)).default([]), other_texts: z.array(z.string().trim().min(1).max(200)).default([]) }),
-  z.null()
-]);
 
 // =================== TYPE GUARDS ===================
 
@@ -84,20 +68,6 @@ function isOtherValueFromDb(dbValue: any): boolean {
   
   return isOtherValue(actualValue);
 }
-
-// =================== NORMALIZATION ===================
-
-export function normalizeSingle(value: any): string | { selected: 'other'; other_text: string } | null {
-  const parsed = SingleWithOtherSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
-}
-
-export function normalizeMulti(value: any): string[] | { selected: string[]; other_texts: string[] } | null {
-  const parsed = MultiWithOtherSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
-}
-
-
 
 // =================== VALUE EXTRACTION (DRY) ===================
 

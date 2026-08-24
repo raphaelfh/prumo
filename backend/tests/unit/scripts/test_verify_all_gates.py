@@ -135,7 +135,8 @@ def test_gate_roster_is_pinned() -> None:
         "lint:ruff": "bash -c 'cd backend && uv run ruff check . && uv run ruff format --check .'",
         "lint:eslint": "npm run lint --silent",
         "lint:tsc": "npm run typecheck --silent",
-        "deadcode:knip": "npx knip",
+        "deadcode:knip": "npm run deadcode --silent",
+        "deadcode:knip:production": "npm run deadcode:production --silent",
         "deadcode:vulture": (
             "bash -c 'cd backend && uv run python ../scripts/vulture_baseline.py "
             "--baseline .vulture_baseline --exec'"

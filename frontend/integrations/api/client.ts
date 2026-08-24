@@ -89,7 +89,7 @@ export class ApiError extends Error {
  * );
  *
  * // GET request
- * const data = await apiClient<ProjectData>('/api/v1/projects/123');
+ * const data = await apiClient<Project>('/api/v1/projects/123');
  * ```
  */
 export async function apiClient<T>(
@@ -335,19 +335,6 @@ export async function zoteroClient<T>(
   return apiClient<T>(`/api/v1/zotero/${action}`, {
     method: "POST",
     body,
-  });
-}
-
-/**
- * Client for section extraction endpoints.
- */
-export async function sectionExtractionClient<T>(
-  body: Record<string, unknown>
-): Promise<T> {
-  return apiClient<T>("/api/v1/extraction/sections", {
-    method: "POST",
-    body,
-    timeout: 120000,
   });
 }
 
