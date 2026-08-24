@@ -34,6 +34,13 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
+// Import AFTER the mocks are registered, at module scope: the `vi.mock` factory
+// above closes over `legacyPdfjs`, and PrumoPdfViewer's graph (pdfjs, plus
+// react-markdown + katex via Reader) costs seconds to transform — inside an
+// `it()` that is charged against `testTimeout` and flakes under parallelism.
+const {Viewer} = await import('../primitives/Viewer');
+const {PrumoPdfViewer} = await import('../PrumoPdfViewer');
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers — mirrors context.test.tsx
 
@@ -95,8 +102,7 @@ describe('injected store: ViewerProvider + Viewer.Root + PrumoPdfViewer', () => 
   });
 
   // ── 3. Viewer.Root forwards store to ViewerProvider ───────────────────────
-  it('Viewer.Root: external store is used by child components', async () => {
-    const {Viewer} = await import('../primitives/Viewer');
+  it('Viewer.Root: external store is used by child components', () => {
     const external = createViewerStore({currentPage: 7});
 
     render(
@@ -110,7 +116,6 @@ describe('injected store: ViewerProvider + Viewer.Root + PrumoPdfViewer', () => 
   });
 
   it('Viewer.Root: action dispatched on external store is reflected inside', async () => {
-    const {Viewer} = await import('../primitives/Viewer');
     const external = createViewerStore({currentPage: 1});
 
     render(
@@ -129,7 +134,6 @@ describe('injected store: ViewerProvider + Viewer.Root + PrumoPdfViewer', () => 
 
   // ── 4. PrumoPdfViewer forwards store end-to-end ───────────────────────────
   it('PrumoPdfViewer: injected store is used (not a fresh internal one)', async () => {
-    const {PrumoPdfViewer} = await import('../PrumoPdfViewer');
     const external = createViewerStore({scale: 1.75});
 
     // We render PrumoPdfViewer with a sibling CurrentScale also wrapped in
@@ -158,7 +162,6 @@ describe('injected store: ViewerProvider + Viewer.Root + PrumoPdfViewer', () => 
   });
 
   it('PrumoPdfViewer: goToPage on injected store is reflected outside the viewer', async () => {
-    const {PrumoPdfViewer} = await import('../PrumoPdfViewer');
     const external = createViewerStore({currentPage: 1});
 
     render(
