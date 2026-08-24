@@ -76,9 +76,7 @@ async def _count(db: AsyncSession, entity_type_id: UUID) -> int:
 async def _run_extraction(
     service: ModelExtractionService, entity_type_id: UUID, names: list[str]
 ) -> list:
-    run = SimpleNamespace(
-        id=uuid4(), version_id=uuid4(), template_id=SEED.primary_template
-    )
+    run = SimpleNamespace(id=uuid4(), version_id=uuid4(), template_id=SEED.primary_template)
     with (
         patch(
             "app.services.model_extraction_service.entity_types_for_version",

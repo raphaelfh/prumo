@@ -51,6 +51,7 @@ fields tree here, expose a ``seed_<name>`` function, and call it from
 """
 
 import asyncio
+from collections.abc import Sequence
 from typing import Any, NamedTuple
 from uuid import UUID
 
@@ -134,6 +135,24 @@ ENTITY_KEY_FIELDS: frozenset[tuple[str, str]] = frozenset(
         ("numeric_performance", "pnum_validation_type"),  # CHARMS + Multimodal (000e)
     }
 )
+
+
+def _apply_entity_keys(
+    entity_specs: Sequence[_EntitySpec], fields: Sequence[ExtractionField]
+) -> None:
+    """Stamp ``is_entity_key`` on the fields named by ``ENTITY_KEY_FIELDS``.
+
+    Derived here rather than hand-passed at each call site so the constant
+    is load-bearing rather than decorative. The seed and migration 0059's
+    backfill must agree on ONE list; a literal at the call site would let
+    them drift while the constant sat beside them looking authoritative —
+    and the dead-code gate would be right to call it dead.
+    """
+    name_by_id = {spec.id: spec.name for spec in entity_specs}
+    for field in fields:
+        if (name_by_id.get(field.entity_type_id), field.name) in ENTITY_KEY_FIELDS:
+            field.is_entity_key = True
+
 
 # PROBAST — quality_assessment template
 _PROBAST_TEMPLATE_ID = UUID("00b00000-0000-0000-0000-000000000001")
@@ -453,7 +472,6 @@ async def seed_charms(session: AsyncSession) -> None:
         llm: str | None = None,
         allows_not_applicable: bool = False,
         allows_not_evaluated: bool = False,
-        is_entity_key: bool = False,
     ) -> ExtractionField:
         return ExtractionField(
             entity_type_id=eid,
@@ -468,7 +486,6 @@ async def seed_charms(session: AsyncSession) -> None:
             llm_description=llm,
             allows_not_applicable=allows_not_applicable,
             allows_not_evaluated=allows_not_evaluated,
-            is_entity_key=is_entity_key,
         )
 
     fields = [
@@ -481,7 +498,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "text",
             0,
             llm="Extract the name or identifier of the prediction model. If multiple models are presented, extract each separately.",
-            is_entity_key=True,
         ),
         _f(
             _ET_PREDICTION_MODELS,
@@ -880,7 +896,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "text",
             0,
             llm="Extract the name of each final predictor included in the prediction model.",
-            is_entity_key=True,
         ),
         _f(
             _ET_FINAL_PREDICTORS,
@@ -1348,6 +1363,8 @@ async def seed_charms(session: AsyncSession) -> None:
         ),
     ]
 
+    _apply_entity_keys(_charms_entity_types, fields)
+
     for field in fields:
         session.add(field)
 
@@ -1373,7 +1390,6 @@ def _field(
     allows_not_applicable: bool = False,
     allows_not_evaluated: bool = False,
     is_required: bool = True,
-    is_entity_key: bool = False,
 ) -> ExtractionField:
     """Build an ``ExtractionField`` row. Shared by the seeded templates.
 
@@ -1404,7 +1420,6 @@ def _field(
         llm_description=llm,
         allows_not_applicable=allows_not_applicable,
         allows_not_evaluated=allows_not_evaluated,
-        is_entity_key=is_entity_key,
     )
 
 
@@ -2625,7 +2640,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
                 "the article? If it is not named, describe the classifier "
                 "briefly."
             ),
-            is_entity_key=True,
         ),
         _field(
             _MM_ET_MODELS,
@@ -2933,7 +2947,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
                 "(the same data used for development), internal (resampling or "
                 "cross-validation), or external (independent external data)?"
             ),
-            is_entity_key=True,
         ),
         _field(
             _MM_ET_NUMERIC_PERF,
@@ -3145,6 +3158,8 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             ),
         ),
     ]
+    _apply_entity_keys(entity_types, fields)
+
     for field in fields:
         session.add(field)
 

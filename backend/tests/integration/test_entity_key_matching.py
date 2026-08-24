@@ -33,7 +33,11 @@ async def _repeating_group(db: AsyncSession, *, with_key: bool) -> tuple[UUID, U
             "(id, project_template_id, name, label, cardinality, role, sort_order) "
             "VALUES (:id, :tpl, :name, 'Probe Group', 'many', 'study_section', 90)"
         ),
-        {"id": entity_type_id, "tpl": SEED.primary_template, "name": f"probe_{entity_type_id.hex[:8]}"},
+        {
+            "id": entity_type_id,
+            "tpl": SEED.primary_template,
+            "name": f"probe_{entity_type_id.hex[:8]}",
+        },
     )
     field_id = uuid4()
     await db.execute(
@@ -124,9 +128,12 @@ async def test_pre_0059_instances_carry_no_key_and_are_not_matched(
     """
     entity_type_id, _ = await _repeating_group(db_session, with_key=True)
     await _instance(db_session, entity_type_id, None)
-    assert await existing_keys(
-        db_session, article_id=SEED.primary_article, entity_type_id=entity_type_id
-    ) == {}
+    assert (
+        await existing_keys(
+            db_session, article_id=SEED.primary_article, entity_type_id=entity_type_id
+        )
+        == {}
+    )
 
 
 async def test_keys_are_scoped_to_the_parent_instance(db_session: AsyncSession) -> None:

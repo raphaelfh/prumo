@@ -33,16 +33,20 @@ async def test_backfill_flags_every_seeded_coordinate(
     db_session: AsyncSession, entity_type_name: str, field_name: str
 ) -> None:
     rows = (
-        await db_session.execute(
-            text(
-                "SELECT f.is_entity_key "
-                "FROM public.extraction_fields f "
-                "JOIN public.extraction_entity_types et ON et.id = f.entity_type_id "
-                "WHERE et.name = :et AND f.name = :f"
-            ),
-            {"et": entity_type_name, "f": field_name},
+        (
+            await db_session.execute(
+                text(
+                    "SELECT f.is_entity_key "
+                    "FROM public.extraction_fields f "
+                    "JOIN public.extraction_entity_types et ON et.id = f.entity_type_id "
+                    "WHERE et.name = :et AND f.name = :f"
+                ),
+                {"et": entity_type_name, "f": field_name},
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert rows, f"seed did not create ({entity_type_name}, {field_name})"
     assert all(rows), f"backfill missed ({entity_type_name}, {field_name})"
 

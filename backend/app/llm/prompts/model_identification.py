@@ -59,6 +59,7 @@ def _render_existing_section(container_label: str, existing_keys: list[str] | No
     listed = "\n".join(f"- {name}" for name in existing_keys)
     return _EXISTING_TEMPLATE.format(container_label=container_label, existing_list=listed)
 
+
 # Canary: hashes the shared block renderer's literal prefix (see
 # section_extraction.py) so helper edits bump VERSION.
 VERSION = content_version(

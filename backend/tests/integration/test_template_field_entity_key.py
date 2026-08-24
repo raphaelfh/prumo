@@ -98,14 +98,21 @@ async def test_moving_the_key_to_another_field_is_allowed(
             payload=TemplateFieldUpdateRequest(is_entity_key=value),
         )
     flagged = (
-        await db_session.execute(
-            text("SELECT id FROM public.extraction_fields WHERE is_entity_key AND id IN (:a, :b)"),
-            {"a": first, "b": second},
+        (
+            await db_session.execute(
+                text(
+                    "SELECT id FROM public.extraction_fields WHERE is_entity_key AND id IN (:a, :b)"
+                ),
+                {"a": first, "b": second},
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert flagged == [second]
 
 
-async def test_is_entity_key_may_not_be_nulled(db_session: AsyncSession) -> None:
+async def test_is_entity_key_may_not_be_nulled() -> None:
+    """Pure schema rule — no database needed."""
     with pytest.raises(ValueError, match="may be omitted but not null"):
         TemplateFieldUpdateRequest(is_entity_key=None)

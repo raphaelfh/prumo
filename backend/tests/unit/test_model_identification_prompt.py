@@ -27,9 +27,7 @@ def test_prompt_lists_the_already_identified_entities() -> None:
 
 def test_prompt_asks_for_the_exact_existing_name() -> None:
     """Reuse hinges on the LLM returning the existing spelling verbatim."""
-    out = render(
-        container_label="prediction models", article_text="…", existing_keys=["XGBoost"]
-    )
+    out = render(container_label="prediction models", article_text="…", existing_keys=["XGBoost"])
     assert "exact" in out.lower()
 
 

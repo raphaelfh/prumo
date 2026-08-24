@@ -49,10 +49,7 @@ def test_migration_backfill_names_the_same_coordinates() -> None:
     databases get it and production silently does not.
     """
     sql = (
-        pathlib.Path(__file__).parents[2]
-        / "alembic"
-        / "versions"
-        / "0059_entity_key_field.py"
+        pathlib.Path(__file__).parents[2] / "alembic" / "versions" / "0059_entity_key_field.py"
     ).read_text()
     for entity_type, field in ENTITY_KEY_FIELDS:
         assert f"'{entity_type}'" in sql, f"backfill is missing entity type {entity_type}"
