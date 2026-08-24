@@ -29,6 +29,14 @@ import { cn } from "@/lib/utils";
 interface DerivedJudgmentInputView {
   label: string;
   value: string | null;
+  /** The judgment the rule consumed from this row; null when it consumed none. */
+  contribution?: string | null;
+  /**
+   * Why a collapse-group row contributed nothing — `"unreported"` or
+   * `"in-progress"`. Set by the backend only on group rows, and never
+   * alongside `contribution`.
+   */
+  state?: string | null;
 }
 
 export interface DerivedJudgmentView {
@@ -55,6 +63,29 @@ function toneFor(value: string | null): string {
   }
 }
 
+/**
+ * What one breakdown row shows on the right, and in which tone.
+ *
+ * A collapse group (Evaluation D4's performance types) has no single stored
+ * answer, so `value` is null on every group row — judged or not. Reading only
+ * `value` therefore labelled ALL of them "Not judged", including groups that
+ * contributed a judgment, and warning-toned a study that had simply never done
+ * external validation. `contribution` supplies the judgment; `state` separates
+ * the two ways a group can contribute nothing, and only `"in-progress"` is a
+ * gap the reviewer can close — so only it is warning-toned.
+ */
+function rowDisplay(input: DerivedJudgmentInputView): { text: string; tone: string } {
+  if (input.state === "unreported") {
+    return { text: qa.overallExplainInputUnreported, tone: "text-muted-foreground" };
+  }
+  if (input.state === "in-progress") {
+    return { text: qa.overallExplainInputInProgress, tone: "text-warning" };
+  }
+  const judged = input.value ?? input.contribution;
+  if (judged != null) return { text: judged, tone: "text-foreground" };
+  return { text: qa.overallExplainInputNotJudged, tone: "text-warning" };
+}
+
 /** One overall's contributing domains, so a dash can be traced to its cause. */
 function InputBreakdown({ judgment }: { judgment: DerivedJudgmentView }) {
   const inputs = judgment.inputs ?? [];
@@ -64,22 +95,18 @@ function InputBreakdown({ judgment }: { judgment: DerivedJudgmentView }) {
     <div className="min-w-0">
       <p className="mb-1 text-[11px] font-medium text-foreground">{judgment.label}</p>
       <ul className="space-y-0.5">
-        {inputs.map((input) => (
-          <li
-            key={input.label}
-            className="flex items-baseline justify-between gap-3 text-[11px] leading-5"
-          >
-            <span className="min-w-0 truncate text-muted-foreground">{input.label}</span>
-            <span
-              className={cn(
-                "shrink-0 font-medium",
-                input.value === null ? "text-warning" : "text-foreground",
-              )}
+        {inputs.map((input) => {
+          const { text, tone } = rowDisplay(input);
+          return (
+            <li
+              key={input.label}
+              className="flex items-baseline justify-between gap-3 text-[11px] leading-5"
             >
-              {input.value ?? qa.overallExplainInputNotJudged}
-            </span>
-          </li>
-        ))}
+              <span className="min-w-0 truncate text-muted-foreground">{input.label}</span>
+              <span className={cn("shrink-0 font-medium", tone)}>{text}</span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

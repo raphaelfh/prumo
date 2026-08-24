@@ -149,6 +149,7 @@ def build_derived_judgments_payload(
                         label=_input_label(inp, recommendation=recommendation),
                         value=inp.value,
                         contribution=inp.contribution,
+                        state=inp.state,
                     )
                     for inp in d.inputs
                 ],

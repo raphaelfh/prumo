@@ -41,6 +41,13 @@ export const qa = {
   overallExplainNoInformation:
     '“No information” on a domain judgment counts as Unclear: on the Low / High / Unclear scale, “cannot determine from this article” is a judgment. Inside Evaluation D4 it means the study did not report that performance type, so it is left out instead — a study is not marked down for validation it never claimed to perform.',
   overallExplainInputNotJudged: 'Not judged',
+  // The two ways an Evaluation D4 collapse group can contribute nothing. They
+  // look identical on the wire apart from `state`, and mean opposite things:
+  // "Not reported" is a finished assessment of a performance type the study
+  // never claimed, while "In progress" is work the reviewer still owes. Only
+  // the second is a gap, so only the second is warning-toned.
+  overallExplainInputUnreported: 'Not reported',
+  overallExplainInputInProgress: 'In progress',
 
   // Tabs
   tabAssessment: 'Assessment',
