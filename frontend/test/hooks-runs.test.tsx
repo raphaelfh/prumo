@@ -11,15 +11,13 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { runsKeys } from "@/hooks/runs/types";
+import { runsKeys, type RunDetailResponse } from "@/hooks/runs/types";
 import {
   useAdvanceRun,
   useApproveFinalize,
   useCreateConsensus,
-  useCreateRun,
   useMarkReady,
   useRun,
-  type RunDetailResponse,
 } from "@/hooks/runs";
 import { useRunReviewers } from "@/hooks/runs/useRunReviewers";
 
@@ -101,47 +99,6 @@ describe("useRun", () => {
   });
 });
 
-describe("useCreateRun", () => {
-  it("POSTs /api/v1/runs with the request body", async () => {
-    apiClientMock.mockResolvedValueOnce({
-      id: "run-2",
-      project_id: "project-2",
-      article_id: "article-2",
-      template_id: "template-2",
-      kind: "extraction",
-      version_id: "version-2",
-      stage: "pending",
-      status: "pending",
-      hitl_config_snapshot: {},
-      parameters: {},
-      results: {},
-      created_at: "2026-04-26T12:00:00Z",
-      created_by: "user-1",
-    });
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useCreateRun(), { wrapper });
-
-    const body = {
-      project_id: "project-2",
-      article_id: "article-2",
-      project_template_id: "template-2",
-    };
-
-    let mutationResult: Awaited<ReturnType<typeof result.current.mutateAsync>> | undefined;
-    await act(async () => {
-      mutationResult = await result.current.mutateAsync(body);
-    });
-
-    expect(apiClientMock).toHaveBeenCalledTimes(1);
-    expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs", {
-      method: "POST",
-      body,
-    });
-    expect(mutationResult?.id).toBe("run-2");
-    await waitFor(() => expect(result.current.data?.id).toBe("run-2"));
-  });
-});
 
 describe("useCreateConsensus", () => {
   it("POSTs /api/v1/runs/{runId}/consensus and returns consensus + published payload", async () => {

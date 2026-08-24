@@ -21,11 +21,6 @@ export const ENTITY_ROLE: Record<Uppercase<ExtractionEntityRole>, ExtractionEnti
   MODEL_SECTION: 'model_section',
 };
 
-/** True for root entity types rendered as top-level accordions. */
-export function isStudySection<T extends {role: ExtractionEntityRole}>(et: T): boolean {
-  return et.role === ENTITY_ROLE.STUDY_SECTION;
-}
-
 /**
  * True for the (at most one) entity type that drives the model selector.
  * Backed by a partial unique index on the database, so the array

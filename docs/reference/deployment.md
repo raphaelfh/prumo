@@ -83,7 +83,6 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 | --- | --- |
 | `ENCRYPTION_KEY` | rotated by hand; MUST be the same value across web + worker (Zotero credentials are cross-process) |
 | `SUPABASE_URL` | Supabase project settings |
-| `SUPABASE_ANON_KEY` | Supabase project settings |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase project settings |
 | `DATABASE_URL` | Supabase pooler (used for app traffic) |
 | `DIRECT_DATABASE_URL` | Supabase direct (used by Alembic at boot) |
@@ -255,8 +254,15 @@ owner. It is the deploy safety net, not a gate.
    `RAILWAY_GIT_COMMIT_SHA`, surfaced via `settings`) must equal the
    promoted SHA. This is what actually catches the wedge described above:
    reachability alone cannot tell a fresh deploy from one stuck on an
-   older commit. Missing/`unknown` degrades to a warning; a mismatch on a
-   push fails, on the 6-hourly run it warns (a deploy may be in flight).
+   older commit. **Only the 6-hourly scheduled run fails on a mismatch.**
+   A push-triggered run polls (up to ~10 min) and then merely warns,
+   because it races the deploy it is verifying and a red check on the SHA
+   makes Railway's wait-for-CI skip that deploy — which deadlocks prod
+   into permanent staleness. That deadlock was observed on `a4dc5b65`
+   (2026-08-24): the first promotion after the assertion went live had its
+   deploy SKIPPED on both services, leaving prod on the previous build.
+   The scheduled run is not attached to a commit, so it can page without
+   wedging anything.
 There is deliberately **no credentialed probe and no Playwright suite
 pointed at prod**. An authenticated probe was built and then removed
 (2026-08-23): beyond layer 1 it only adds the narrow delta between "JWKS

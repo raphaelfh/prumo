@@ -10,6 +10,10 @@ from app.models.extraction import ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionProposalSource,
     ExtractionReviewerDecisionType,
+    ExtractionReviewerState,
+)
+from app.repositories.extraction_reviewer_state_repository import (
+    ExtractionReviewerStateRepository,
 )
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import (
@@ -18,6 +22,23 @@ from app.services.extraction_review_service import (
 )
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
+
+
+async def _reviewer_state(
+    db: AsyncSession,
+    *,
+    run_id: UUID,
+    reviewer_id: UUID,
+    instance_id: UUID,
+    field_id: UUID,
+) -> ExtractionReviewerState | None:
+    """Read the materialized reviewer state for one (run, reviewer, item)."""
+    return await ExtractionReviewerStateRepository(db).get(
+        run_id=run_id,
+        reviewer_id=reviewer_id,
+        instance_id=instance_id,
+        field_id=field_id,
+    )
 
 
 async def _setup_review_run(
@@ -116,7 +137,8 @@ async def test_record_accept_proposal_decision(db_session: AsyncSession) -> None
     assert decision.proposal_record_id == proposal_id
 
     # ReviewerState was upserted
-    state = await service.get_reviewer_state(
+    state = await _reviewer_state(
+        db_session,
         run_id=run_id,
         reviewer_id=profile_id,
         instance_id=instance_id,
@@ -343,7 +365,8 @@ async def test_second_decision_replaces_reviewer_state(
         value={"text": "edited"},
         rationale="changed my mind",
     )
-    state = await service.get_reviewer_state(
+    state = await _reviewer_state(
+        db_session,
         run_id=run_id,
         reviewer_id=profile_id,
         instance_id=instance_id,
@@ -356,7 +379,7 @@ async def test_second_decision_replaces_reviewer_state(
 
 
 @pytest.mark.asyncio
-async def test_get_reviewer_state_returns_none_for_unknown_coordinates(
+async def test_reviewer_state_is_none_for_unknown_coordinates(
     db_session: AsyncSession,
 ) -> None:
     """A coordinates tuple (run, reviewer, instance, field) with no recorded
@@ -366,10 +389,10 @@ async def test_get_reviewer_state_returns_none_for_unknown_coordinates(
         pytest.skip("Missing fixtures.")
     run_id, instance_id, field_id, profile_id, _proposal_id, _ = fx
 
-    service = ExtractionReviewService(db_session)
     # Use a UUID that is not bound to any reviewer in the system.
     unknown_reviewer = UUID("00000000-0000-0000-0000-000000000000")
-    state = await service.get_reviewer_state(
+    state = await _reviewer_state(
+        db_session,
         run_id=run_id,
         reviewer_id=unknown_reviewer,
         instance_id=instance_id,
@@ -378,7 +401,8 @@ async def test_get_reviewer_state_returns_none_for_unknown_coordinates(
     assert state is None, "expected None for coordinates without a recorded decision"
 
     # The real reviewer also has no state YET (no record_decision called).
-    state2 = await service.get_reviewer_state(
+    state2 = await _reviewer_state(
+        db_session,
         run_id=run_id,
         reviewer_id=profile_id,
         instance_id=instance_id,
@@ -389,14 +413,14 @@ async def test_get_reviewer_state_returns_none_for_unknown_coordinates(
 
 
 @pytest.mark.asyncio
-async def test_get_reviewer_state_returns_state_after_record_decision(
+async def test_reviewer_state_points_at_the_decision_after_record_decision(
     db_session: AsyncSession,
 ) -> None:
     """Explicit positive retrieval (companion to the None-case test).
 
-    The existing tests only exercise get_reviewer_state as a side effect of
-    record_decision; this test calls it directly and asserts the round-trip
-    matches the recorded decision id.
+    The other tests only observe the state as a side effect of record_decision;
+    this one reads it back explicitly and asserts the round-trip matches the
+    recorded decision id.
     """
     fx = await _setup_review_run(db_session)
     if fx is None:
@@ -411,7 +435,8 @@ async def test_get_reviewer_state_returns_state_after_record_decision(
         decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
         proposal_record_id=proposal_id,
     )
-    state = await service.get_reviewer_state(
+    state = await _reviewer_state(
+        db_session,
         run_id=run_id,
         reviewer_id=profile_id,
         instance_id=instance_id,

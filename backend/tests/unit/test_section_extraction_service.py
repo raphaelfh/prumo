@@ -9,6 +9,7 @@ tests/unit/llm/test_schema.py; prompt content by
 tests/unit/llm/test_prompts.py.
 """
 
+from pathlib import Path
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -1163,7 +1164,6 @@ class TestCreateSuggestions:
         service._instances.get_by_article = AsyncMock(return_value=[instance])
         service._proposals.record_proposal = AsyncMock(return_value=MagicMock(id=uuid4()))
         service.db.flush = AsyncMock()
-        service._runs.merge_results = AsyncMock()
         # Stub the per-section provenance merge explicitly: an auto-attribute on
         # the MagicMock would let a typo'd method name pass the assertions.
         service._runs.merge_provenance_section = AsyncMock()
@@ -1195,8 +1195,7 @@ class TestCreateSuggestions:
             run=run,
         )
 
-        # Per-section merge, not the shallow run-level merge_results.
-        service._runs.merge_results.assert_not_awaited()
+        # Provenance lands through the per-section merge, keyed by entity type.
         service._runs.merge_provenance_section.assert_awaited_once()
         merged_run_id, merged_et_id, snapshot = (
             service._runs.merge_provenance_section.await_args.args
@@ -2569,3 +2568,276 @@ async def test_build_prompt_input_called_with_correct_kwargs(mock_db, mock_stora
     assert kwargs["user_id"] == "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     assert kwargs["trace_id"] == "trace-section-wiring"
     assert kwargs["storage"] is mock_storage
+
+
+class TestLlmExclusion:
+    """§3 (spec 2026-08-22): assessor-owned coordinates — every derived-spec
+    entry's target/rationale/summary — never reach the model. The filter
+    lives inside ``_extract_with_llm``, the one seam every extraction path
+    funnels through, INCLUDING the re-pin fallback that carries
+    ``fields_override=None`` (the path a helper-level filter would miss)."""
+
+    @staticmethod
+    def _fields(*names: str) -> list:
+        out = []
+        for n in names:
+            f = MagicMock()
+            f.id = uuid4()
+            f.name = n
+            out.append(f)
+        return out
+
+    @staticmethod
+    def _entity(name: str, fields: list):
+        et = MagicMock()
+        et.id = uuid4()
+        et.name = name
+        et.description = "desc"
+        et.fields = fields
+        return et
+
+    @pytest.mark.asyncio
+    async def test_exclusion_filters_exactly_the_assessor_owned_fields(self, service):
+        """Anti-over-exclusion control: the mixed v2 section keeps its
+        describes, SQs, applicability AND applicability rationale — only the
+        spec-named judgment + judgment rationale drop."""
+        fields = self._fields(
+            "desc_data_sources",
+            "q1_appropriate_data_sources",
+            "q2_appropriate_study_design",
+            "applicability_concerns",
+            "applicability_concerns_rationale",
+            "quality_concern",
+            "quality_concern_rationale",
+        )
+        et = self._entity("dev_d1_participants", fields)
+        excluded = {
+            ("dev_d1_participants", "quality_concern"),
+            ("dev_d1_participants", "quality_concern_rationale"),
+            ("overall_judgement", "summary_quality_development"),
+        }
+        with patch(
+            "app.services.section_extraction_service.build_output_models", return_value=[]
+        ) as bom:
+            await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=list(fields),
+                excluded_coordinates=excluded,
+            )
+        sent = [f.name for f in bom.call_args.kwargs["fields"]]
+        assert sent == [
+            "desc_data_sources",
+            "q1_appropriate_data_sources",
+            "q2_appropriate_study_design",
+            "applicability_concerns",
+            "applicability_concerns_rationale",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_all_excluded_section_skips_the_llm_call(self, service):
+        """overall_judgement: every field is a summary -> no call at all."""
+        fields = self._fields("summary_quality_development", "summary_rob_evaluation")
+        et = self._entity("overall_judgement", fields)
+        excluded = {
+            ("overall_judgement", "summary_quality_development"),
+            ("overall_judgement", "summary_rob_evaluation"),
+        }
+        with patch(
+            "app.services.section_extraction_service.build_output_models", return_value=[]
+        ) as bom:
+            extracted, usage = await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=list(fields),
+                excluded_coordinates=excluded,
+            )
+        assert bom.call_args.kwargs["fields"] == []
+        assert extracted == {}
+        assert usage.prompt_tokens == 0
+
+    @pytest.mark.asyncio
+    async def test_fallback_path_without_override_is_still_filtered(self, service):
+        """The re-pin race hands _extract_with_llm fields_override=None and the
+        LIVE entity type — the leak a call-site filter cannot cover."""
+        fields = self._fields("q1", "risk_of_bias", "risk_of_bias_rationale")
+        et = self._entity("eval_d4_judgment", fields)
+        excluded = {
+            ("eval_d4_judgment", "risk_of_bias"),
+            ("eval_d4_judgment", "risk_of_bias_rationale"),
+        }
+        with patch(
+            "app.services.section_extraction_service.build_output_models", return_value=[]
+        ) as bom:
+            await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=None,
+                excluded_coordinates=excluded,
+            )
+        sent = [f.name for f in bom.call_args.kwargs["fields"]]
+        assert sent == ["q1"]
+
+    @pytest.mark.asyncio
+    async def test_spec_less_template_passes_the_field_list_through_untouched(self, service):
+        """Modularity guard (§3): no spec -> the exact same list object reaches
+        build_output_models, so extraction templates are byte-identical."""
+        fields = self._fields("a", "b")
+        et = self._entity("any_section", fields)
+        override = list(fields)
+        with patch(
+            "app.services.section_extraction_service.build_output_models", return_value=[]
+        ) as bom:
+            await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=override,
+                excluded_coordinates=set(),
+            )
+        assert bom.call_args.kwargs["fields"] is override
+
+    @pytest.mark.asyncio
+    async def test_dangling_exclusion_coordinate_warns_and_fails_open(self, service):
+        """A live rename that orphans an exclusion must never be silent: it
+        would quietly re-open an assessor-owned field to the model (§9)."""
+        fields = self._fields("q1", "quality_score")  # renamed live
+        et = self._entity("dev_d1_participants", fields)
+        excluded = {("dev_d1_participants", "quality_concern")}  # stale spec name
+        mock_logger = MagicMock()
+        with (
+            patch.object(SectionExtractionService, "logger", mock_logger),
+            patch(
+                "app.services.section_extraction_service.build_output_models", return_value=[]
+            ) as bom,
+        ):
+            await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=list(fields),
+                excluded_coordinates=excluded,
+            )
+        sent = [f.name for f in bom.call_args.kwargs["fields"]]
+        assert sent == ["q1", "quality_score"]  # fails open...
+        warned = [
+            c
+            for c in mock_logger.warning.call_args_list
+            if c.args[:1] == ("qa_derived_spec_dangling_ref",)
+        ]
+        assert warned, "expected a qa_derived_spec_dangling_ref warning on the extraction path"
+        assert warned[0].kwargs["coordinates"] == [("dev_d1_participants", "quality_concern")]
+
+
+def test_no_qa_kind_branch_in_the_extraction_path():
+    """§3 modularity invariant: the exclusion filter is template-data-driven —
+    nothing in this module branches on the QA kind. Docstrings and comments
+    are stripped; the canonical enum spelling and the negated forms are all
+    banned (a lowercase-literal-only grep would miss
+    ``TemplateKind.QUALITY_ASSESSMENT.value`` and ``kind != "extraction"``)."""
+    import re
+
+    import app.services.section_extraction_service as mod
+
+    source = Path(mod.__file__).read_text()
+    source = re.sub(r'("""|\'\'\')(?s:.*?)\1', "", source)
+    source = "\n".join(line.split("#", 1)[0] for line in source.splitlines())
+    low = source.lower()
+    assert "quality_assessment" not in low
+    assert 'kind != "extraction"' not in low
+    assert "kind not in" not in low
+    # The natural enum spellings evade the literal greps above — comparing
+    # against TemplateKind.EXTRACTION (or importing the enum at all) is the
+    # same forbidden branch wearing different clothes. The module handles
+    # ``kind`` as an opaque pass-through string only.
+    assert "templatekind" not in low
+    assert 'kind == "extraction"' not in low
+
+
+class TestLlmExclusionWiring:
+    """The template→exclusion WIRING, not just the filter: a run whose
+    project template declares a v2-shaped derived spec must have its
+    assessor-owned fields subtracted on the REAL call path
+    (run.template_id → _excluded_field_names → _extract_with_llm), with only
+    the model-facing leaf mocked. The TestLlmExclusion suite passes
+    excluded_coordinates by hand and proves the filter; this proves the
+    plumbing that feeds it (adversarial-review finding: the suite alone
+    would stay green if no call site threaded the template at all)."""
+
+    @pytest.mark.asyncio
+    async def test_run_path_threads_the_template_spec_into_the_filter(self, service):
+        from app.models.extraction import ExtractionRunStage
+
+        run = MagicMock()
+        run.id = uuid4()
+        run.project_id = uuid4()
+        run.article_id = uuid4()
+        run.template_id = uuid4()
+        run.stage = ExtractionRunStage.EXTRACT.value
+        run.kind = "extraction"
+        run.version_id = uuid4()
+
+        q1 = MagicMock()
+        q1.id = uuid4()
+        q1.name = "q1_appropriate_data_sources"
+        judgment = MagicMock()
+        judgment.id = uuid4()
+        judgment.name = "quality_concern"
+        rationale = MagicMock()
+        rationale.id = uuid4()
+        rationale.name = "quality_concern_rationale"
+
+        entity = MagicMock()
+        entity.id = uuid4()
+        entity.name = "dev_d1_participants"
+        entity.description = "desc"
+        entity.fields = [q1, judgment, rationale]
+
+        template = MagicMock()
+        template.schema_ = {
+            "derived_judgments": [
+                {
+                    "id": "dev_d1_quality",
+                    "label": "Development D1: quality",
+                    "rule": "signaling_worst",
+                    "target": {
+                        "section": "dev_d1_participants",
+                        "field": "quality_concern",
+                    },
+                    "rationale": {
+                        "section": "dev_d1_participants",
+                        "field": "quality_concern_rationale",
+                    },
+                    "inputs": [
+                        {
+                            "section": "dev_d1_participants",
+                            "field": "q1_appropriate_data_sources",
+                        }
+                    ],
+                }
+            ]
+        }
+
+        # Real _excluded_field_names reads the template off the session.
+        service.db.get = AsyncMock(return_value=template)
+        # Live-intersection + instance probes use the harness mocks.
+        service._entity_types.get_with_fields = AsyncMock(return_value=entity)
+        service._instances.get_by_article = AsyncMock(
+            return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
+        )
+        service._create_suggestions = AsyncMock(return_value=0)
+        service._maybe_verify = AsyncMock(side_effect=lambda *_a, **_k: (None, LlmUsage()))
+
+        with patch(
+            "app.services.section_extraction_service.build_output_models",
+            return_value=[],
+        ) as bom:
+            await service._extract_one_entity_type_for_run(
+                run=run,
+                entity_type=entity,
+                pdf_text="text",
+                framework=None,
+                kind="extraction",
+                skip_fields_with_human_proposals=False,
+            )
+
+        sent = [f.name for f in bom.call_args.kwargs["fields"]]
+        assert sent == ["q1_appropriate_data_sources"]

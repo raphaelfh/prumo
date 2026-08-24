@@ -41,6 +41,10 @@ from app.models.extraction import ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionProposalSource,
     ExtractionReviewerDecisionType,
+    ExtractionReviewerState,
+)
+from app.repositories.extraction_reviewer_state_repository import (
+    ExtractionReviewerStateRepository,
 )
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import (
@@ -49,6 +53,23 @@ from app.services.extraction_review_service import (
 )
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
+
+
+async def _reviewer_state(
+    db: AsyncSession,
+    *,
+    run_id: UUID,
+    reviewer_id: UUID,
+    instance_id: UUID,
+    field_id: UUID,
+) -> ExtractionReviewerState | None:
+    """Read the materialized reviewer state for one (run, reviewer, item)."""
+    return await ExtractionReviewerStateRepository(db).get(
+        run_id=run_id,
+        reviewer_id=reviewer_id,
+        instance_id=instance_id,
+        field_id=field_id,
+    )
 
 
 async def _coords(
@@ -251,7 +272,8 @@ async def test_decision_targets_specific_run_even_with_siblings(
     )
 
     # Reviewer state for THIS run carries the decision.
-    state_for_target = await service.get_reviewer_state(
+    state_for_target = await _reviewer_state(
+        db_session,
         run_id=target_run.id,
         reviewer_id=profile_id,
         instance_id=instance_id,
@@ -261,14 +283,16 @@ async def test_decision_targets_specific_run_even_with_siblings(
     assert state_for_target.current_decision_id == decision.id
 
     # No reviewer state was created for the sibling runs.
-    state_for_pending = await service.get_reviewer_state(
+    state_for_pending = await _reviewer_state(
+        db_session,
         run_id=pending_sibling.id,
         reviewer_id=profile_id,
         instance_id=instance_id,
         field_id=field_id,
     )
     assert state_for_pending is None
-    state_for_proposal = await service.get_reviewer_state(
+    state_for_proposal = await _reviewer_state(
+        db_session,
         run_id=proposal_sibling.id,
         reviewer_id=profile_id,
         instance_id=instance_id,

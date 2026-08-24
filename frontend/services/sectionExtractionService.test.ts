@@ -32,7 +32,6 @@ vi.mock('@/integrations/api/client', () => ({
       this.traceId = traceId;
     }
   },
-  sectionExtractionClient: vi.fn(),
   modelExtractionClient: vi.fn(),
 }));
 

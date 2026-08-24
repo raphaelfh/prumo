@@ -18,6 +18,7 @@ import {useState} from 'react';
 
 import {Badge} from '@/components/ui/badge';
 import {Input} from '@/components/ui/input';
+import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
 import {useUpdateTemplateSection} from '@/hooks/extraction/useUpdateTemplateSection';
 import {t} from '@/lib/copy';
 
@@ -53,8 +54,32 @@ export function SectionInspectorForm({
   parentGroupLabel: string | null;
 }) {
   const update = useUpdateTemplateSection(projectId, templateId);
+  const updateFieldMutation = useUpdateTemplateField(projectId, templateId);
   const [entryLabel, setEntryLabel] = useState(section.entryNoun);
   const [cardinality, setCardinality] = useState(section.cardinality);
+
+  // A group always repeats; a per-model section only when it says so.
+  const repeats = section.kind === 'group' || cardinality === 'many';
+  const entryKeyFieldId = section.fields.find((f) => f.isEntityKey)?.id ?? '';
+
+  // Moving the key is clear-then-set: the API allows one per section and
+  // refuses a second with a 409, so the previous holder is cleared first.
+  const commitEntryKey = (nextFieldId: string) => {
+    if (nextFieldId === entryKeyFieldId) return;
+    const clearPrevious = entryKeyFieldId
+      ? updateFieldMutation.mutateAsync({
+          fieldId: entryKeyFieldId,
+          updates: {is_entity_key: false},
+        })
+      : Promise.resolve();
+    void clearPrevious.then(() => {
+      if (!nextFieldId) return undefined;
+      return updateFieldMutation.mutateAsync({
+        fieldId: nextFieldId,
+        updates: {is_entity_key: true},
+      });
+    });
+  };
   // Own-save baseline (the field pane's contract): between a successful
   // commit and the refetch-driven remount the `section` prop is STALE —
   // comparing against it would swallow an immediate revert edit as a
@@ -201,6 +226,38 @@ export function SectionInspectorForm({
                     : 'repeatsOncePerArticle',
                 )}
           </ReadOnlyValue>
+        </>
+      )}
+
+      {/* 0059 — a repeating section needs an identity, or an AI re-run
+          cannot tell a new entry from one it already extracted and the
+          backend refuses rather than duplicating. Only rendered where it
+          is meaningful: a group always repeats, a groupChild only when
+          its cardinality says so. */}
+      {repeats && (
+        <>
+          <Label htmlFor="inspector-entry-key">
+            {t('templateConfig', 'inspectorEntryKeyLabel')}
+          </Label>
+          <div className="space-y-1">
+            <select
+              id="inspector-entry-key"
+              value={entryKeyFieldId}
+              onChange={(e) => commitEntryKey(e.target.value)}
+              disabled={updateFieldMutation.isPending || section.fields.length === 0}
+              className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="">{t('templateConfig', 'inspectorEntryKeyNone')}</option>
+              {section.fields.map((field) => (
+                <option key={field.id} value={field.id}>
+                  {field.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              {t('templateConfig', 'inspectorEntryKeyHint')}
+            </p>
+          </div>
         </>
       )}
 

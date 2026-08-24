@@ -80,7 +80,6 @@ CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,h
 
 # Supabase
 SUPABASE_URL=https://seu-projeto.supabase.co
-SUPABASE_ANON_KEY=sua-anon-key
 SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key
 
 # Database (PostgreSQL)

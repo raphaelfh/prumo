@@ -97,8 +97,6 @@ def _make_batch_result(run_id: str) -> BatchExtractionResult:
         successful_sections=2,
         failed_sections=0,
         total_suggestions_created=6,
-        total_tokens_used=300,
-        duration_ms=400.0,
         sections=[],
     )
 

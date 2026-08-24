@@ -4432,6 +4432,11 @@ export interface components {
             allows_not_evaluated: boolean;
             /** Description */
             description?: string | null;
+            /**
+             * Is Entity Key
+             * @default false
+             */
+            is_entity_key: boolean;
             /** Label */
             label: string;
             /** Llm Description */
@@ -4871,26 +4876,47 @@ export interface components {
         };
         /**
          * RunViewDerivedInput
-         * @description One domain judgment feeding a computed overall, as the rule consumed it.
+         * @description One input feeding a derived judgment, as the rule consumed it.
          *
-         *     ``value`` is None when that domain is unjudged — which is exactly why the
-         *     overall shows a dash, so the client can name the blocking domain instead of
-         *     leaving the reviewer to hunt for it across ten sections.
+         *     ``value`` is the display value: the judgment for a ``worst_domain`` row,
+         *     the reviewer's RAW answer ("PN", a marker label) for a ``signaling_worst``
+         *     row, None when unjudged/unanswered — which is exactly why the derived
+         *     value shows a dash, so the client can name the blocking input instead of
+         *     leaving the reviewer to hunt for it. ``contribution`` is uniformly the
+         *     Low/High/Unclear the rule consumed from this row (None when it
+         *     contributed nothing) — clients highlight and color by it with zero
+         *     answer-mapping knowledge.
+         *
+         *     ``state`` is set only on a collapse-group row that contributed nothing,
+         *     and is the complement of ``contribution`` (never both). It is
+         *     ``"unreported"`` when the study did not report that performance type — a
+         *     legitimate outcome, not a gap — and ``"in-progress"`` when the group is
+         *     only half-answered. A group has no stored answer, so ``value`` is always
+         *     None there and this is the only thing telling the two apart: render them
+         *     with different copy and tone, or a complete assessment looks unfinished.
          */
         RunViewDerivedInput: {
+            /** Contribution */
+            contribution?: string | null;
             /** Label */
             label: string;
+            /** State */
+            state?: string | null;
             /** Value */
             value?: string | null;
         };
         /**
          * RunViewDerivedJudgment
-         * @description One computed overall judgment (never stored, never entered).
+         * @description One computed judgment (never stored, never entered).
          *
          *     Present only for templates whose ``schema`` JSONB declares a
-         *     ``derived_judgments`` spec (today: PROBAST+AI). ``value`` is None when the
-         *     inputs are incomplete — the client renders that as an em dash, never as the
-         *     most favourable judgment.
+         *     ``derived_judgments`` spec. Entries WITH ``target_field_id`` are
+         *     RECOMMENDATIONS: the derived default for the assessor-owned stored field
+         *     the ids point at (resolved against the run's frozen tree; None when the
+         *     spec coordinate does not resolve). Entries without one are computed
+         *     OVERALLS, whose paired Step-4 narrative field is ``summary_field_id``.
+         *     ``value`` is None when the inputs are incomplete — the client renders
+         *     that as an em dash, never as the most favourable judgment.
          */
         RunViewDerivedJudgment: {
             /** Id */
@@ -4899,6 +4925,14 @@ export interface components {
             inputs?: components["schemas"]["RunViewDerivedInput"][];
             /** Label */
             label: string;
+            /** Rationale Field Id */
+            rationale_field_id?: string | null;
+            /** Summary Field Id */
+            summary_field_id?: string | null;
+            /** Target Entity Type Id */
+            target_entity_type_id?: string | null;
+            /** Target Field Id */
+            target_field_id?: string | null;
             /** Value */
             value?: string | null;
         };
@@ -5748,6 +5782,11 @@ export interface components {
              */
             field_type: "text" | "number" | "date" | "select" | "multiselect" | "boolean";
             /**
+             * Is Entity Key
+             * @default false
+             */
+            is_entity_key: boolean;
+            /**
              * Is Required
              * @default false
              */
@@ -5853,6 +5892,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Is Entity Key
+             * @default false
+             */
+            is_entity_key: boolean;
             /** Is Required */
             is_required: boolean;
             /** Label */
@@ -5930,6 +5974,8 @@ export interface components {
             description?: string | null;
             /** Field Type */
             field_type?: ("text" | "number" | "date" | "select" | "multiselect" | "boolean") | null;
+            /** Is Entity Key */
+            is_entity_key?: boolean | null;
             /** Is Required */
             is_required?: boolean | null;
             /** Label */

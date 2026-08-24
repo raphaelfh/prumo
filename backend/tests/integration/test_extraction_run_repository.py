@@ -75,7 +75,11 @@ async def test_merge_provenance_section_preserves_flat_legacy_keys(
     AND gains the sections map — the mixed-era shape Task 4's resolver relies on."""
     repo = ExtractionRunRepository(db_session)
     run = await _seed_run(db_session)
-    await repo.merge_results(run.id, {"provenance": {"model": "legacy", "prompt_text": "SYS"}})
+    # Plant the pre-deploy flat provenance directly — the shape a run carries
+    # when it was written before the per-section snapshot existed. Reassign
+    # (not mutate) so SQLAlchemy tracks the JSONB change.
+    run.results = {"provenance": {"model": "legacy", "prompt_text": "SYS"}}
+    await db_session.flush()
 
     et = uuid4()
     await repo.merge_provenance_section(run.id, et, {"model": "sectioned"})

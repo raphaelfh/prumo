@@ -197,6 +197,8 @@ def _configure_worker_observability(**_kwargs: Any) -> None:
 
 @task_unknown.connect
 def _on_task_unknown(
+    # Celery passes every kwarg below positionally-by-name; the signature
+    # must accept them even where the handler ignores the value.
     sender: Any = None,  # noqa: ARG001
     name: str | None = None,
     id: str | None = None,  # noqa: A002 — Celery signal kwarg name

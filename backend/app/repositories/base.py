@@ -1,41 +1,37 @@
 """
 Base Repository.
 
-Classe base generica for todos os repositories.
-Implementa operacoes CRUD comuns with SQLAlchemy async.
+Generic base class for every repository. Implements the common CRUD
+operations with SQLAlchemy async.
 
-IMPORTANTE - Managesmento de Transacoes:
-=========================================
+IMPORTANT — transaction management:
+===================================
 
-Os metodos deste repository NAO fazem commit automaticamente.
-Usamos flush() for sincronizar mudancas and obter IDs gerados,
-mas o commit() deve ser chamado explicitamente via UnitOfWork.
+These methods never commit. They flush() to push changes to the database
+and obtain generated IDs; the commit is always someone else's call
+(constitution §I).
 
-Por que flush() em vez de commit()?
------------------------------------
-1. Permite operacoes compostas (criar multiplas entidades relacionadas)
-2. Possibilita rollback se alguma parte falhar
-3. Segue o padrao Unit of Work corretamente
-4. Evita commits parciais em operacoes complexas
+Why flush() instead of commit()?
+--------------------------------
+1. Lets callers compose operations (create several related entities).
+2. Keeps a rollback possible when a later step fails.
+3. Avoids partial commits in the middle of a multi-step operation.
 
-Como usar corretamente:
------------------------
-    # Forma recomendada: via UnitOfWork
-    async with UnitOfWork(session) as uow:
-        article = Article(title="Novo")
-        await uow.articles.create(article)
-        await uow.commit()  # Commit explicito
-
-    # If using repository directly (not recommended):
+Who commits, then?
+------------------
+    # The usual case: the service or endpoint owning the request commits.
     repo = ArticleRepository(session)
-    article = await repo.create(Article(title="Novo"))
-    await session.commit()  # VOCE deve fazer o commit!
+    article = await repo.create(Article(title="New"))
+    await session.commit()
 
-Relacionamento with UnitOfWork:
-------------------------------
-- Repositories sao criados pelo UnitOfWork
-- UnitOfWork controla commit/rollback
-- Se excecao ocorrer, UnitOfWork faz rollback automatico
+    # Several repository calls land atomically by sharing one session and
+    # committing once at the end — each flush() is part of the same
+    # transaction until that commit.
+    articles = ArticleRepository(session)
+    authors = ArticleAuthorRepository(session)
+    article = await articles.create(Article(title="New"))
+    await authors.create(ArticleAuthor(display_name="Doe, J."))
+    await session.commit()  # both, or neither
 """
 
 from time import perf_counter
@@ -55,26 +51,19 @@ logger = get_logger(__name__)
 
 class BaseRepository(Generic[T]):
     """
-    Repository base generico with operacoes CRUD.
+    Generic base repository with CRUD operations.
 
-    IMPORTANTE: Este repository usa flush() and NAO commit().
-    O commit deve ser feito via UnitOfWork or diretamente in the session.
-    Isso permite agrupar multiplas operacoes em uma transacao.
+    IMPORTANT: this repository flushes and never commits. The caller owns
+    the commit, which is what lets several operations share one transaction.
 
     Attributes:
-        db: Sessao async do SQLAlchemy.
-        model: Classe do modelo SQLAlchemy.
+        db: SQLAlchemy async session.
+        model: SQLAlchemy model class.
 
-    Usage with UnitOfWork (recomendado):
-        async with UnitOfWork(session) as uow:
-            article = await uow.articles.get_by_id(id)
-            await uow.articles.update(article, {"title": "Novo"})
-            await uow.commit()  # Commit explicito
-
-    Usage direto (apenas for casos especiais):
+    Usage:
         repo = ArticleRepository(session)
         article = await repo.create(Article(title="Test"))
-        await session.commit()  # Voce controla o commit
+        await session.commit()  # the caller controls the commit
     """
 
     def __init__(self, db: AsyncSession, model: type[T]):
@@ -116,23 +105,22 @@ class BaseRepository(Generic[T]):
 
     async def create(self, obj: T) -> T:
         """
-        Create nova entidade.
+        Create a new entity.
 
-        NOTA: Faz flush() for obter ID gerado, mas NAO faz commit().
-        Use UnitOfWork.commit() or session.commit() apos criar.
+        NOTE: flushes to obtain the generated ID, but never commits.
+        The caller commits through the session afterwards.
 
         Args:
-            obj: Instancia do modelo a criar.
+            obj: model instance to create.
 
         Returns:
-            Entidade criada with ID gerado.
+            The created entity, with its generated ID.
 
         Example:
-            async with UnitOfWork(session) as uow:
-                article = Article(title="Novo", project_id=project_id)
-                created = await uow.articles.create(article)
-                # created.id is available after flush()
-                await uow.commit()  # Persiste in the banco
+            repo = ArticleRepository(session)
+            created = await repo.create(Article(title="New", project_id=pid))
+            # created.id is available after flush()
+            await session.commit()  # persists it
         """
         query_start = perf_counter()
         self.db.add(obj)
@@ -151,23 +139,23 @@ class BaseRepository(Generic[T]):
 
     async def update(self, obj: T, data: dict[str, Any]) -> T:
         """
-        Update entidade existente.
+        Update an existing entity.
 
-        NOTA: Faz flush() for sincronizar, mas NAO faz commit().
-        Use UnitOfWork.commit() or session.commit() apos atualizar.
+        NOTE: flushes to synchronise, but never commits.
+        The caller commits through the session afterwards.
 
         Args:
-            obj: Entidade a atualizar.
-            data: Dados for atualizar (key=atributo, valor=novo valor).
+            obj: entity to update.
+            data: values to apply (key=attribute, value=new value).
 
         Returns:
-            Entidade atualizada.
+            The updated entity.
 
         Example:
-            async with UnitOfWork(session) as uow:
-                article = await uow.articles.get_by_id(id)
-                updated = await uow.articles.update(article, {"title": "Novo"})
-                await uow.commit()
+            repo = ArticleRepository(session)
+            article = await repo.get_by_id(id)
+            updated = await repo.update(article, {"title": "New"})
+            await session.commit()
         """
         query_start = perf_counter()
         for key, value in data.items():
@@ -189,19 +177,19 @@ class BaseRepository(Generic[T]):
 
     async def delete(self, obj: T) -> None:
         """
-        Remove entidade.
+        Remove an entity.
 
-        NOTA: Faz flush() for sincronizar, mas NAO faz commit().
-        Use UnitOfWork.commit() or session.commit() apos deletar.
+        NOTE: flushes to synchronise, but never commits.
+        The caller commits through the session afterwards.
 
         Args:
-            obj: Entidade a remover.
+            obj: entity to remove.
 
         Example:
-            async with UnitOfWork(session) as uow:
-                article = await uow.articles.get_by_id(id)
-                await uow.articles.delete(article)
-                await uow.commit()
+            repo = ArticleRepository(session)
+            article = await repo.get_by_id(id)
+            await repo.delete(article)
+            await session.commit()
         """
         query_start = perf_counter()
         await self.db.delete(obj)

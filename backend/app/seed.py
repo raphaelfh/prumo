@@ -51,7 +51,8 @@ fields tree here, expose a ``seed_<name>`` function, and call it from
 """
 
 import asyncio
-from typing import NamedTuple
+from collections.abc import Sequence
+from typing import Any, NamedTuple
 from uuid import UUID
 
 from sqlalchemy import update
@@ -117,6 +118,41 @@ def _entity_type_from_spec(
 # ---------------------------------------------------------------------------
 
 _CHARMS_TEMPLATE_ID = UUID("000c0000-0000-0000-0000-000000000001")
+
+
+# The repeating groups that declare an identity key, as
+# (entity_type.name, field.name). Two mechanisms must agree on this list:
+# this seed, which only ever runs on a FRESH database, and migration
+# 0059's backfill, which is the only thing that reaches an installation
+# that already holds the templates (``seed_charms`` and ``seed_charms_mm``
+# both early-return on an existing row). ``test_seed_entity_keys`` pins
+# the two against each other.
+ENTITY_KEY_FIELDS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("prediction_models", "model_name"),  # CHARMS (000c)
+        ("prediction_models", "mdl_name"),  # CHARMS + Multimodal (000e)
+        ("final_predictors", "predictor_name"),  # CHARMS (000c)
+        ("numeric_performance", "pnum_validation_type"),  # CHARMS + Multimodal (000e)
+    }
+)
+
+
+def _apply_entity_keys(
+    entity_specs: Sequence[_EntitySpec], fields: Sequence[ExtractionField]
+) -> None:
+    """Stamp ``is_entity_key`` on the fields named by ``ENTITY_KEY_FIELDS``.
+
+    Derived here rather than hand-passed at each call site so the constant
+    is load-bearing rather than decorative. The seed and migration 0059's
+    backfill must agree on ONE list; a literal at the call site would let
+    them drift while the constant sat beside them looking authoritative —
+    and the dead-code gate would be right to call it dead.
+    """
+    name_by_id = {spec.id: spec.name for spec in entity_specs}
+    for field in fields:
+        if (name_by_id.get(field.entity_type_id), field.name) in ENTITY_KEY_FIELDS:
+            field.is_entity_key = True
+
 
 # PROBAST — quality_assessment template
 _PROBAST_TEMPLATE_ID = UUID("00b00000-0000-0000-0000-000000000001")
@@ -1327,6 +1363,8 @@ async def seed_charms(session: AsyncSession) -> None:
         ),
     ]
 
+    _apply_entity_keys(_charms_entity_types, fields)
+
     for field in fields:
         session.add(field)
 
@@ -1346,23 +1384,27 @@ def _field(
     ftype: str,
     sort: int,
     *,
-    llm: str,
-    allowed: list[str] | None = None,
+    llm: str | None,
+    allowed: list[Any] | None = None,
     unit: str | None = None,
     allows_not_applicable: bool = False,
     allows_not_evaluated: bool = False,
+    is_required: bool = True,
 ) -> ExtractionField:
     """Build an ``ExtractionField`` row. Shared by the seeded templates.
 
-    ``llm`` is required rather than optional: a field with no extraction
-    prompt silently degrades AI extraction for that variable, and every
-    seeded field has always supplied one.
+    ``llm`` stays a required keyword so omitting it is a loud choice: a field
+    with no extraction prompt silently degrades AI extraction for that
+    variable. ``None`` is the deliberate case — assessor-owned fields
+    (judgments, their rationales, Step-4 summaries) are excluded from every
+    LLM call and carry no prompt at all.
 
-    ``is_required`` is always ``True``, matching every seeded template. A
-    seeded field is answerable with the universal ``no_information`` marker,
-    which the finalize gate counts as *filled*, so marking fields required
-    turns "the source is silent" into an explicitly recorded answer instead
-    of an indistinguishable blank (constitution IX). Managers relax
+    ``is_required`` defaults ``True``: a seeded field is answerable with the
+    universal ``no_information`` marker, which the finalize gate counts as
+    *filled*, so marking fields required turns "the source is silent" into
+    an explicitly recorded answer instead of an indistinguishable blank
+    (constitution IX). Optional is for free-text describe/rationale/summary
+    boxes the instrument itself leaves optional. Managers still relax
     ``is_required`` per project clone when they want a looser gate.
     """
     return ExtractionField(
@@ -1372,7 +1414,7 @@ def _field(
         description=desc,
         field_type=ftype,
         sort_order=sort,
-        is_required=True,
+        is_required=is_required,
         allowed_values=allowed,
         unit=unit,
         llm_description=llm,
@@ -1389,13 +1431,17 @@ def _signaling(
     allowed: list[str],
     *,
     llm: str | None = None,
+    allows_not_applicable: bool | None = None,
 ) -> ExtractionField:
     """Build a signaling-question ExtractionField (select with fixed answer set).
 
     PROBAST signaling questions historically offered "NA" (not applicable); under
     ADR-0016 that becomes the opt-in ``not_applicable`` disposition flag. Detected
     by identity of the PROBAST answer set (QUADAS-2's Y/N/Unclear set never
-    offered NA, so it stays flag-free).
+    offered NA, so it stays flag-free). An EXPLICIT ``allows_not_applicable``
+    overrides the identity rule — PROBAST+AI v2 restricts NA to the
+    instrument's four conditional items, so its seed passes the flag per row
+    while the classic seeds keep the default.
 
     ``llm`` overrides the generic instruction for checklists (PROBAST+AI) whose
     published elaboration gives each question its own criterion. Always route
@@ -1410,7 +1456,11 @@ def _signaling(
         "select",
         sort,
         allowed=allowed,
-        allows_not_applicable=(allowed is _PROBAST_SIGNALING),
+        allows_not_applicable=(
+            (allowed is _PROBAST_SIGNALING)
+            if allows_not_applicable is None
+            else allows_not_applicable
+        ),
         llm=llm or f"Answer the signaling question: {question}",
     )
 
@@ -3108,6 +3158,8 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             ),
         ),
     ]
+    _apply_entity_keys(entity_types, fields)
+
     for field in fields:
         session.add(field)
 
@@ -3185,8 +3237,10 @@ async def backfill_llm_template_instructions(session: AsyncSession) -> None:
             "attention to data leakage, train/test split hygiene, and "
             "evaluation practices specific to machine learning. Absence of "
             "information is a reason for concern, never reassurance. Quote "
-            "the passage that grounds each judgment. [customize: describe "
-            "the review's intended setting, population, and model scope]"
+            "the passage that grounds each judgment. [customize: state the "
+            "review's Step-1 PICOTS — Population, Index model(s), "
+            "Comparator model(s), Outcome(s), Timing, Setting/intended use "
+            "— which every applicability judgment is made against]"
         ),
     }
     for template_id, instruction_text in instructions.items():

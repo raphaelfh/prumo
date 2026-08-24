@@ -151,44 +151,6 @@ class ExtractionConsensusService:
         )
         return consensus_record, published
 
-    async def publish(
-        self,
-        *,
-        run_id: UUID,
-        instance_id: UUID,
-        field_id: UUID,
-        value: dict[str, Any],
-        published_by: UUID,
-        expected_version: int,
-    ) -> ExtractionPublishedState:
-        run = await load_run_for_update(self.db, run_id)
-        if run is None:
-            raise InvalidConsensusError(f"Run {run_id} not found")
-        if run.stage != ExtractionRunStage.CONSENSUS.value:
-            raise InvalidConsensusError(
-                f"Cannot publish: run stage is {run.stage!r}, not 'consensus'"
-            )
-        rowcount = await self._published.update_with_optimistic_lock(
-            run_id=run_id,
-            instance_id=instance_id,
-            field_id=field_id,
-            value=value,
-            published_by=published_by,
-            expected_version=expected_version,
-        )
-        if rowcount == 0:
-            raise OptimisticConcurrencyError(
-                f"expected_version={expected_version} did not match current state"
-            )
-        existing = await self._published.get(
-            run_id=run_id, instance_id=instance_id, field_id=field_id
-        )
-        if existing is None:
-            raise RuntimeError(
-                f"PublishedState vanished after update for {run_id}/{instance_id}/{field_id}"
-            )
-        return existing
-
     async def _publish_internal(
         self,
         *,

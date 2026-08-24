@@ -18,7 +18,6 @@ def test_field_descriptor_carries_snapshot_metadata() -> None:
         label="Dose",
         type=ExtractionFieldType.NUMBER,
         allowed_values=(),
-        parent_section_id=uuid4(),
         description="Administered dose",
         unit="mg",
         is_required=True,
@@ -36,7 +35,6 @@ def test_field_descriptor_metadata_defaults_are_back_compat() -> None:
         label="Name",
         type=ExtractionFieldType.TEXT,
         allowed_values=(),
-        parent_section_id=uuid4(),
     )
     assert f.description is None
     assert f.unit is None
