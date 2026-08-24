@@ -9,7 +9,7 @@ Design notes
 - ``replace_for_file`` is for **re-parse** of the same file. Re-upload
   is handled upstream by the ``ON DELETE CASCADE`` on ``article_files``.
 - Uses ``flush()`` only, never ``commit()``.  The caller (service or
-  UnitOfWork) owns transaction boundaries.
+  the caller) owns transaction boundaries.
 - Bulk-insert via ``db.add_all`` + single ``flush`` — avoids N round-trips.
 """
 

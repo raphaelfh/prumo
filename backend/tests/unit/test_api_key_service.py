@@ -272,37 +272,6 @@ class TestGetKeyForProvider:
 
 
 # ---------------------------------------------------------------------------
-# get_decrypted_key
-# ---------------------------------------------------------------------------
-
-
-class TestGetDecryptedKey:
-    @pytest.mark.asyncio
-    async def test_returns_decrypted_key_when_found(self) -> None:
-        repo = make_repo()
-        svc = make_service(repo=repo)
-
-        plaintext = "sk-decrypted-value"
-        encrypted = svc._encrypt(plaintext)
-        key = make_key(encrypted_api_key=encrypted)
-        repo.get_by_id_and_user = AsyncMock(return_value=key)
-
-        result = await svc.get_decrypted_key(KEY_UUID)
-
-        assert result == plaintext
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_not_found(self) -> None:
-        repo = make_repo()
-        svc = make_service(repo=repo)
-        repo.get_by_id_and_user = AsyncMock(return_value=None)
-
-        result = await svc.get_decrypted_key(KEY_UUID)
-
-        assert result is None
-
-
-# ---------------------------------------------------------------------------
 # _get_global_key
 # ---------------------------------------------------------------------------
 

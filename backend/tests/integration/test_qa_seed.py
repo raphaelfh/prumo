@@ -128,11 +128,11 @@ async def test_probast_ai_template_exists(db_session: AsyncSession) -> None:
     assert row is not None, "PROBAST+AI template should exist after seed"
     assert row[0] == "quality_assessment"
     assert row[1] == "CUSTOM"
-    assert len(row[2]["derived_judgments"]) == 4
+    assert len(row[2]["derived_judgments"]) == 12
 
 
 @pytest.mark.asyncio
-async def test_probast_ai_has_ten_flat_sections(db_session: AsyncSession) -> None:
+async def test_probast_ai_has_thirteen_flat_sections(db_session: AsyncSession) -> None:
     rows = (
         await db_session.execute(
             text(
@@ -145,12 +145,12 @@ async def test_probast_ai_has_ten_flat_sections(db_session: AsyncSession) -> Non
             )
         )
     ).all()
-    assert len(rows) == 10
+    assert len(rows) == 13
     assert all(r[0] == "study_section" and r[1] == "one" and r[2] is None for r in rows)
 
 
 @pytest.mark.asyncio
-async def test_probast_ai_has_58_fields(db_session: AsyncSession) -> None:
+async def test_probast_ai_has_95_fields(db_session: AsyncSession) -> None:
     count = (
         await db_session.execute(
             text(
@@ -163,7 +163,7 @@ async def test_probast_ai_has_58_fields(db_session: AsyncSession) -> None:
             )
         )
     ).scalar()
-    assert count == 58
+    assert count == 95
 
 
 @pytest.mark.asyncio

@@ -1,60 +1,33 @@
 # vulture ratchet baseline — (file:kind:name) findings tolerated today.
-# Only shrinks; a new finding fails CI. Each entry is either a
-# framework-consumed false positive or unaudited dead-code debt —
-# audit, delete the dead ones, then regenerate with
-# scripts/vulture_baseline.py --update.
-app/core/config.py:variable:SUPABASE_ANON_KEY
+# Only shrinks; a new finding fails CI.
+#
+# ADMISSION RULE: an entry belongs here only if the symbol is consumed
+# by a framework or library rather than by name from app/. In practice
+# that is one of five shapes:
+#   * Starlette `dispatch` — BaseHTTPMiddleware calls it per request.
+#   * Celery — LoggedTask's on_failure/on_success/on_retry hooks, and
+#     signal-handler kwargs the framework passes by name.
+#   * SQLAlchemy column writes — persisted by the ORM, read back out
+#     of the database, never by a Python reader in app/.
+#   * Library option objects — docling pipeline options, openpyxl
+#     worksheet properties: written here, read by the library.
+#   * AIProposalRow — consumed positionally via `dataclasses.astuple`,
+#     so no field is ever read by name (see ai_metadata.py).
+#
+# Anything that does not fit one of those is dead code: delete it,
+# then regenerate with scripts/vulture_baseline.py --update.
 app/core/middleware.py:method:dispatch
-app/core/security.py:method:invalidate
-app/core/security.py:variable:app_metadata
-app/core/security.py:variable:iat
-app/core/security.py:variable:phone
-app/core/security.py:variable:session_id
-app/core/security.py:variable:user_metadata
-app/domain/events/base.py:method:publish
-app/domain/events/base.py:method:register
-app/domain/events/base.py:method:reset
-app/domain/events/base.py:method:subscribe
-app/domain/events/base.py:method:to_dict
-app/domain/events/base.py:variable:event_bus
 app/infrastructure/parsing/docling_parser.py:attribute:accelerator_options
 app/infrastructure/parsing/docling_parser.py:attribute:do_ocr
 app/infrastructure/parsing/docling_parser.py:attribute:do_table_structure
 app/infrastructure/parsing/docling_parser.py:attribute:table_structure_options
-app/infrastructure/storage/base.py:method:list_files
-app/infrastructure/storage/supabase_storage.py:method:list_files
-app/llm/assembler.py:variable:char_count
 app/repositories/article_repository.py:attribute:last_synced_at
 app/repositories/article_repository.py:attribute:removed_at_source_at
-app/repositories/article_repository.py:method:count_by_project
-app/repositories/article_repository.py:method:get_by_project
-app/repositories/article_repository.py:method:get_by_storage_key
-app/repositories/article_repository.py:method:get_with_files
-app/repositories/extraction_repository.py:method:get_by_project
-app/repositories/extraction_repository.py:method:get_by_template
-app/repositories/extraction_run_repository.py:method:get_by_project
-app/repositories/extraction_run_repository.py:method:merge_results
-app/repositories/project_repository.py:method:get_by_project
-app/repositories/unit_of_work.py:attribute:article_author_links
-app/repositories/unit_of_work.py:attribute:article_authors
-app/repositories/unit_of_work.py:attribute:article_sync_events
-app/repositories/unit_of_work.py:attribute:article_sync_runs
-app/repositories/unit_of_work.py:attribute:extraction_instances
-app/repositories/unit_of_work.py:attribute:projects
-app/repositories/unit_of_work.py:attribute:zotero_integrations
-app/repositories/user_api_key_repository.py:method:get_by_user_and_provider
-app/services/api_key_service.py:method:get_decrypted_key
 app/services/article_file_service.py:attribute:extraction_error
 app/services/article_file_service.py:attribute:extraction_status
-app/services/article_source_normalization.py:function:normalize_manual_entry
-app/services/article_source_normalization.py:function:normalize_ris_entry
-app/services/article_source_normalization.py:variable:source_lineage
-app/services/citation_read_service.py:function:list_article_citations
 app/services/document_parsing_service.py:attribute:extraction_status
 app/services/exports/extraction/sheet_spec.py:attribute:freeze_panes
 app/services/exports/extraction/sheet_spec.py:attribute:tabColor
-app/services/extraction_consensus_service.py:method:publish
-app/services/extraction_export_service.py:property:study_instances
 app/services/extraction_export_service.py:variable:ai_proposed_value
 app/services/extraction_export_service.py:variable:article_label
 app/services/extraction_export_service.py:variable:evidence_pages
@@ -62,15 +35,8 @@ app/services/extraction_export_service.py:variable:evidence_text
 app/services/extraction_export_service.py:variable:final_value_used
 app/services/extraction_export_service.py:variable:instance_index
 app/services/extraction_export_service.py:variable:model_used
-app/services/extraction_export_service.py:variable:parent_section_id
 app/services/extraction_export_service.py:variable:proposed_at
 app/services/extraction_export_service.py:variable:reviewer_outcome
-app/services/extraction_export_service.py:variable:run_stage
-app/services/extraction_export_service.py:variable:template_version_label
-app/services/extraction_review_service.py:method:get_reviewer_state
-app/services/model_extraction_service.py:method:to_dict
-app/services/section_extraction_service.py:variable:total_tokens_used
-app/services/template_diff.py:variable:STRUCTURAL_KEYS
 app/worker/celery_app.py:method:on_failure
 app/worker/celery_app.py:method:on_retry
 app/worker/celery_app.py:method:on_success

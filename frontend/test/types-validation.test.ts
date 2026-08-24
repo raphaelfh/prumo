@@ -8,9 +8,8 @@
  */
 
 import {describe, expect, it} from 'vitest';
-import type {Article, ArticleListItem} from '@/types/article';
-import {toArticleListItem} from '@/types/article';
-import type {Project, ProjectData} from '@/types/project';
+import type {Article} from '@/types/article';
+import type {Project} from '@/types/project';
 
 describe('Type Definitions - Article', () => {
     it('should have Article type defined correctly', () => {
@@ -71,87 +70,6 @@ describe('Type Definitions - Article', () => {
     expect(mockArticle.project_id).toBe('test-project-id');
   });
 
-    it('should have ArticleListItem type defined correctly', () => {
-    const mockListItem: ArticleListItem = {
-      id: 'test-id',
-      title: 'Test Title',
-      authors: ['Author'],
-      publication_year: 2024,
-      journal_title: 'Journal',
-      doi: '10.1234/test',
-      ingestion_source: null,
-      zotero_item_key: null,
-      sync_state: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    expect(mockListItem.id).toBeDefined();
-    expect(mockListItem.title).toBeDefined();
-    expect(typeof mockListItem.publication_year).toBe('number');
-  });
-
-    it('toArticleListItem should convert Article to ArticleListItem', () => {
-    const mockArticle: Article = {
-      id: 'test-id',
-      title: 'Test',
-      authors: ['Author'],
-      publication_year: 2024,
-      journal_title: 'Journal',
-      doi: '10.1234/test',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      abstract: null,
-      article_type: null,
-      arxiv_id: null,
-      conflicts_of_interest: null,
-      data_availability: null,
-      funding: null,
-      hash_fingerprint: null,
-      ingestion_source: null,
-      issue: null,
-      journal_eissn: null,
-      journal_issn: null,
-      journal_publisher: null,
-      keywords: null,
-      language: null,
-      license: null,
-      mesh_terms: null,
-      open_access: null,
-      pages: null,
-      pii: null,
-      pmcid: null,
-      pmid: null,
-      project_id: 'project-id',
-      publication_day: null,
-      publication_month: null,
-      publication_status: null,
-      registration: null,
-      row_version: 1,
-      source_payload: null,
-      source_lineage: null,
-      study_design: null,
-      sync_conflict_log: null,
-      sync_state: 'clean',
-      url_landing: null,
-      url_pdf: null,
-      volume: null,
-      removed_at_source_at: null,
-      last_synced_at: null,
-      zotero_collection_key: null,
-      zotero_item_key: null,
-      zotero_version: null,
-    };
-
-    const listItem = toArticleListItem(mockArticle);
-
-    expect(listItem.id).toBe(mockArticle.id);
-    expect(listItem.title).toBe(mockArticle.title);
-    expect(listItem.authors).toEqual(mockArticle.authors);
-    expect(listItem.publication_year).toBe(mockArticle.publication_year);
-    expect(listItem.journal_title).toBe(mockArticle.journal_title);
-    expect(listItem.doi).toBe(mockArticle.doi);
-  });
 });
 
 describe('Type Definitions - Project', () => {
@@ -183,18 +101,4 @@ describe('Type Definitions - Project', () => {
     expect(mockProject.is_active).toBe(true);
   });
 
-    it('should have ProjectData type extending Project', () => {
-        // ProjectData is used in several places in the code
-        // Validate it is compatible with Project
-    const mockProjectData: Partial<ProjectData> = {
-      id: 'test-id',
-      name: 'Test',
-      description: null,
-      review_title: null,
-      condition_studied: null,
-    };
-
-    expect(mockProjectData.id).toBeDefined();
-    expect(mockProjectData.name).toBeDefined();
-  });
 });

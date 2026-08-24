@@ -12,6 +12,8 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
+    "deadcode": "knip --no-tag-hints",
+    "deadcode:production": "knip --production --no-tag-hints",
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",

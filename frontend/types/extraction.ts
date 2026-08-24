@@ -35,9 +35,6 @@ export type ExtractionValue =
   | boolean     // boolean
     | null;       // unfilled values
 
-// Values with "Other (specify)" support
-
-
 // =================== TEMPLATES ===================
 
 /**
@@ -55,8 +52,6 @@ export interface GlobalExtractionTemplate {
   created_at: string;
   updated_at: string;
 }
-
-// Alias for compatibility (deprecated, use GlobalExtractionTemplate)
 
 export interface ProjectExtractionTemplate {
   id: string;
@@ -151,39 +146,6 @@ export interface ExtractionInstance {
 }
 
 
-// =================== EVIDÊNCIAS ===================
-
-
-// =================== IA E EXECUÇÕES ===================
-
-// Presentation shape for AI proposals; sourced from `extraction_proposal_records`
-// via `aiSuggestionService` (no underlying ai_suggestions table).
-;
-
-// Re-export related types for convenience
-;
-
-// =================== INSERT TYPES ===================
-
-
-
-// =================== FORM TYPES ===================
-
-
-
-// =================== UI TYPES ===================
-
-
-
-
-// =================== EXPORT TYPES ===================
-
-
-
-// =================== VALIDATION TYPES ===================
-
-
-
 // =================== ZOD SCHEMAS (Runtime validation) ===================
 
 /**
@@ -266,6 +228,12 @@ export const ExtractionFieldSchema = z.object({
   allows_not_applicable: z.boolean().default(false).optional(),
   allows_not_evaluated: z.boolean().default(false).optional(),
 
+  // 0059: this field's value identifies an instance of a repeating
+  // section. At most one per section — the API refuses a second with a
+  // 409, so the UI offers it as a single choice rather than a checkbox
+  // per field.
+  is_entity_key: z.boolean().default(false).optional(),
+
   validation_schema: z.record(z.any())
     .optional()
     .nullable(),
@@ -297,17 +265,9 @@ export interface ExtractionFieldInsert extends Omit<ExtractionFieldInput, 'sort_
 
 // =================== FIELD MANAGEMENT TYPES ===================
 
-/**
- * Result of field validation before operations
- */
-export interface FieldValidationResult {
-  canDelete: boolean;
-  canUpdate: boolean;
-  canChangeType: boolean;
-  extractedValuesCount: number;
-  affectedArticles: string[];
-  message?: string;
-}
+// FieldValidationResult lives in services/extractionFieldService.ts, next to
+// the call that produces it. The copy that used to sit here was a stale
+// duplicate (message optional instead of required) that only tests reached.
 
 
 /**
@@ -326,8 +286,4 @@ export interface PermissionCheckResult {
   role: ProjectMemberRole | null;
   message?: string;
 }
-
-// =================== HIERARCHY TYPES ===================
-
-
 

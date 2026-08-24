@@ -65,27 +65,6 @@ class ProjectMemberRepository(BaseRepository[ProjectMember]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, ProjectMember)
 
-    async def get_by_project(
-        self,
-        project_id: UUID | str,
-    ) -> list[ProjectMember]:
-        """
-        List members of a project.
-
-        Args:
-            project_id: Project ID.
-
-        Returns:
-            Member list.
-        """
-        if isinstance(project_id, str):
-            project_id = UUID(project_id)
-
-        result = await self.db.execute(
-            select(ProjectMember).where(ProjectMember.project_id == project_id)
-        )
-        return list(result.scalars().all())
-
     async def get_member(
         self,
         project_id: UUID | str,

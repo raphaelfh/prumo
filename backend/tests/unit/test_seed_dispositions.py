@@ -18,6 +18,7 @@ from app.seed import (
     _QUADAS2_SIGNALING,
     _YES_NO,
     _YES_NO_UNCLEAR,
+    _field,
     _signaling,
     seed_charms,
     seed_charms_mm,
@@ -74,7 +75,7 @@ async def test_no_seeded_field_carries_a_disposition_value(seed_fn) -> None:
     fields = await _seeded_fields(seed_fn)
     assert fields, "seed produced no fields"
     for f in fields:
-        values = set(f.allowed_values or [])
+        values = {v["value"] if isinstance(v, dict) else v for v in (f.allowed_values or [])}
         assert _DISPOSITION_STRINGS.isdisjoint(values), (f.name, values)
 
 
@@ -99,13 +100,23 @@ async def test_probast_signaling_fields_allow_not_applicable() -> None:
 
 
 @pytest.mark.asyncio
-async def test_probast_ai_signaling_fields_allow_not_applicable() -> None:
-    """PROBAST+AI signaling questions offer NA in the instrument, so every one
-    opts into the not_applicable disposition; the 16 judgment fields do not."""
+async def test_probast_ai_na_restricted_to_conditional_rows() -> None:
+    """PROBAST+AI v2: NA is official on exactly the instrument's four
+    conditional (asterisked) items — six field rows after triplication
+    (spec 2026-08-22 §5). The other 36 signaling rows and every judgment
+    field carry no disposition flag."""
     fields = await _seeded_fields(seed_probast_ai)
     signaling = [f for f in fields if f.allowed_values == _PROBAST_SIGNALING]
     assert len(signaling) == 42
-    assert all(f.allows_not_applicable for f in signaling)
+    flagged = sorted(f.name for f in signaling if f.allows_not_applicable)
+    assert flagged == [
+        "q4_imbalance_recalibration",
+        "q4_uncorrected_imbalance_evaluation",
+        "q4_uncorrected_imbalance_evaluation",
+        "q4_uncorrected_imbalance_evaluation",
+        "q5_data_leakage_avoided",
+        "q6_resampling_replicates_all_steps",
+    ]
     judgments = [f for f in fields if f.allowed_values == _PROBAST_JUDGMENT]
     assert judgments
     assert not any(f.allows_not_applicable or f.allows_not_evaluated for f in judgments)
@@ -128,3 +139,38 @@ def test_llm_enum_values_exclude_disposition_codes() -> None:
     field = _signaling(_SENTINEL_EID, "q", "Question?", 0, _PROBAST_SIGNALING)
     assert _enum_values(field) == ["Y", "PY", "PN", "N"]
     assert _DISPOSITION_STRINGS.isdisjoint(_enum_values(field))
+
+
+# --- explicit helper knobs (spec 2026-08-22 §5: the v2 seed needs optional
+# fields, llm-less assessor-owned fields, and NA on exactly 6 of 42 rows) ---
+
+
+def test_field_accepts_optional_and_llm_none() -> None:
+    f = _field(_SENTINEL_EID, "x", "X", "d", "text", 0, llm=None, is_required=False)
+    assert f.is_required is False
+    assert f.llm_description is None
+
+
+def test_field_defaults_stay_required_with_llm() -> None:
+    f = _field(_SENTINEL_EID, "x", "X", "d", "text", 0, llm="prompt")
+    assert f.is_required is True
+    assert f.llm_description == "prompt"
+
+
+def test_signaling_explicit_na_override_beats_identity() -> None:
+    f = _signaling(_SENTINEL_EID, "q", "Q?", 0, _PROBAST_SIGNALING, allows_not_applicable=False)
+    assert f.allows_not_applicable is False
+
+
+def test_signaling_explicit_na_true_on_a_copy() -> None:
+    f = _signaling(
+        _SENTINEL_EID, "q", "Q?", 0, list(_PROBAST_SIGNALING), allows_not_applicable=True
+    )
+    assert f.allows_not_applicable is True
+
+
+def test_signaling_default_keeps_the_identity_rule() -> None:
+    assert _signaling(_SENTINEL_EID, "q", "Q?", 0, _PROBAST_SIGNALING).allows_not_applicable
+    assert not _signaling(
+        _SENTINEL_EID, "q", "Q?", 0, list(_PROBAST_SIGNALING)
+    ).allows_not_applicable

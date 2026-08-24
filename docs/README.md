@@ -37,6 +37,7 @@ tutorial lives here.*
 | [Extraction observability](./reference/observability-extraction.md) | Metrics + structured events; debugging extraction latency/errors (browser → API → DB) |
 | [CHARMS template (v1.1)](./reference/templates/charms-v1.1-complete.md) | Field-by-field spec of the global CHARMS template |
 | [CHARMS visual hierarchy](./reference/templates/charms-v1.1-hierarchy.md) | Tree view of CHARMS entities |
+| [PROBAST+AI instrument mapping](./reference/templates/probast-ai-instrument.md) | Official Moons 2025 tool → v2 template map: steps, items, judgment flow, who fills what |
 
 ## Explanation — *understanding the why*
 

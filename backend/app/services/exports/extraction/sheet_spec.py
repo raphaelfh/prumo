@@ -113,6 +113,8 @@ def _render_sheet_spec(ws: Worksheet, spec: SheetSpec) -> None:
         if width is not None:
             ws.column_dimensions[get_column_letter(c_idx)].width = width
 
+    # ``freeze_panes``/``tabColor`` are openpyxl worksheet properties: written
+    # here, read by openpyxl when it serialises the workbook.
     if spec.freeze is not None:
         ws.freeze_panes = spec.freeze
 

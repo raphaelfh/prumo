@@ -7,11 +7,10 @@ from httpx import AsyncClient
 
 @pytest.mark.asyncio
 async def test_sync_collection_rejects_non_member(client: AsyncClient) -> None:
-    with patch("app.api.v1.endpoints.zotero_import.UnitOfWork") as uow_cls:
-        uow = AsyncMock()
-        uow.project_members.is_member = AsyncMock(return_value=False)
-        uow_cls.return_value.__aenter__.return_value = uow
-
+    with patch(
+        "app.api.v1.endpoints.zotero_import.is_project_member",
+        AsyncMock(return_value=False),
+    ):
         response = await client.post(
             "/api/v1/zotero/sync-collection",
             json={"projectId": str(uuid4()), "collectionKey": "ABC"},
@@ -60,17 +59,16 @@ async def test_sync_item_result_returns_items(client: AsyncClient) -> None:
 
     with (
         patch("app.api.v1.endpoints.zotero_import.ZoteroImportService") as service_cls,
-        patch("app.api.v1.endpoints.zotero_import.UnitOfWork") as uow_cls,
+        # The endpoint re-checks project membership before returning results.
+        patch(
+            "app.api.v1.endpoints.zotero_import.is_project_member",
+            AsyncMock(return_value=True),
+        ),
     ):
         service = MagicMock()
         service.get_sync_status = AsyncMock(return_value=run)
         service.get_sync_item_results = AsyncMock(return_value=([event], 1))
         service_cls.return_value = service
-
-        # The endpoint now re-checks project membership before returning results.
-        uow = AsyncMock()
-        uow.project_members.is_member = AsyncMock(return_value=True)
-        uow_cls.return_value.__aenter__.return_value = uow
 
         response = await client.post(
             "/api/v1/zotero/sync-item-result",

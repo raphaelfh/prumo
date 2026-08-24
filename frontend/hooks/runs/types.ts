@@ -4,13 +4,6 @@
  * These mirror the FastAPI schemas in backend/app/schemas/extraction_run.py.
  */
 
-export interface CreateRunRequest {
-  project_id: string;
-  article_id: string;
-  project_template_id: string;
-  parameters?: Record<string, unknown> | null;
-}
-
 export interface CreateDecisionRequest {
   instance_id: string;
   field_id: string;
@@ -210,15 +203,33 @@ export interface RunViewResponse extends RunDetailResponse {
   ready_count?: number;
   reviewer_count?: number;
   reviewers_ready?: string[];
-  /** Computed overall judgments (worst-domain over the domain judgments).
-   * Empty for templates that declare no derivation spec — i.e. everything
-   * except PROBAST+AI today. `value` is null when the inputs are incomplete;
-   * `inputs` is the per-domain breakdown the banner explains that null from. */
+  /** Computed judgments from the template's derivation spec. Entries with a
+   * `target_field_id` are RECOMMENDATIONS (the derived default for that
+   * assessor-owned stored field, paired with `rationale_field_id`); entries
+   * without one are computed OVERALLS (paired Step-4 narrative via
+   * `summary_field_id`). Empty for templates with no spec. `value` is null
+   * when the inputs are incomplete; `inputs` is the per-input breakdown —
+   * `value` is the display (raw answer for signaling rows), `contribution`
+   * the Low/High/Unclear the rule consumed (highlight/color by it only), and
+   * `state` — set only on a collapse-group row that contributed nothing —
+   * says which of `"unreported"` (the study never reported that performance
+   * type) or `"in-progress"` (half-answered) it was. A group has no stored
+   * answer, so `value` is null on every group row and `state` is the only
+   * thing separating a finished assessment from an unfinished one. */
   derived_judgments?: {
     id: string;
     label: string;
     value: string | null;
-    inputs?: { label: string; value: string | null }[];
+    inputs?: {
+      label: string;
+      value: string | null;
+      contribution?: string | null;
+      state?: string | null;
+    }[];
+    target_entity_type_id?: string | null;
+    target_field_id?: string | null;
+    rationale_field_id?: string | null;
+    summary_field_id?: string | null;
   }[];
 }
 

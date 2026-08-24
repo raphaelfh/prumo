@@ -94,7 +94,10 @@ class Settings(BaseSettings):
     # =================== SUPABASE ===================
     SUPABASE_URL: str
     SUPABASE_SERVICE_ROLE_KEY: str
-    SUPABASE_ANON_KEY: str
+    # No SUPABASE_ANON_KEY here: the anon key is a browser credential
+    # (frontend ``VITE_SUPABASE_*``). The backend talks to Supabase as
+    # service role, so declaring it would force every deploy to carry a
+    # secret nothing reads.
     SUPABASE_JWT_SECRET: str | None = None
     # local | production (default: production)
     SUPABASE_ENV: str | None = None

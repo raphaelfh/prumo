@@ -278,30 +278,53 @@ class RunViewInstance(BaseModel):
 
 
 class RunViewDerivedInput(BaseModel):
-    """One domain judgment feeding a computed overall, as the rule consumed it.
+    """One input feeding a derived judgment, as the rule consumed it.
 
-    ``value`` is None when that domain is unjudged — which is exactly why the
-    overall shows a dash, so the client can name the blocking domain instead of
-    leaving the reviewer to hunt for it across ten sections.
+    ``value`` is the display value: the judgment for a ``worst_domain`` row,
+    the reviewer's RAW answer ("PN", a marker label) for a ``signaling_worst``
+    row, None when unjudged/unanswered — which is exactly why the derived
+    value shows a dash, so the client can name the blocking input instead of
+    leaving the reviewer to hunt for it. ``contribution`` is uniformly the
+    Low/High/Unclear the rule consumed from this row (None when it
+    contributed nothing) — clients highlight and color by it with zero
+    answer-mapping knowledge.
+
+    ``state`` is set only on a collapse-group row that contributed nothing,
+    and is the complement of ``contribution`` (never both). It is
+    ``"unreported"`` when the study did not report that performance type — a
+    legitimate outcome, not a gap — and ``"in-progress"`` when the group is
+    only half-answered. A group has no stored answer, so ``value`` is always
+    None there and this is the only thing telling the two apart: render them
+    with different copy and tone, or a complete assessment looks unfinished.
     """
 
     label: str
     value: str | None = None
+    contribution: str | None = None
+    state: str | None = None
 
 
 class RunViewDerivedJudgment(BaseModel):
-    """One computed overall judgment (never stored, never entered).
+    """One computed judgment (never stored, never entered).
 
     Present only for templates whose ``schema`` JSONB declares a
-    ``derived_judgments`` spec (today: PROBAST+AI). ``value`` is None when the
-    inputs are incomplete — the client renders that as an em dash, never as the
-    most favourable judgment.
+    ``derived_judgments`` spec. Entries WITH ``target_field_id`` are
+    RECOMMENDATIONS: the derived default for the assessor-owned stored field
+    the ids point at (resolved against the run's frozen tree; None when the
+    spec coordinate does not resolve). Entries without one are computed
+    OVERALLS, whose paired Step-4 narrative field is ``summary_field_id``.
+    ``value`` is None when the inputs are incomplete — the client renders
+    that as an em dash, never as the most favourable judgment.
     """
 
     id: str
     label: str
     value: str | None = None
     inputs: list[RunViewDerivedInput] = Field(default_factory=list)
+    target_entity_type_id: UUID | None = None
+    target_field_id: UUID | None = None
+    rationale_field_id: UUID | None = None
+    summary_field_id: UUID | None = None
 
 
 class RunViewResponse(RunDetailResponse):

@@ -129,7 +129,6 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres_test
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ENCRYPTION_KEY: test_encryption_key_32_characters
@@ -380,7 +379,6 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres_test
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ENCRYPTION_KEY: test_encryption_key_32_characters
@@ -467,7 +465,17 @@ jobs:
       # never let a finding through. Backend counterpart: the vulture ratchet
       # in Backend Lint.
       - name: Knip (dead code)
-        run: npx knip
+        run: npm run deadcode
+
+      # Same config, only production code counts as a consumer. This is the
+      # gate for code a test keeps alive after its last real caller is gone —
+      # it found the orphaned useCreateRun hook, the never-adopted HeaderChip,
+      # and two stale duplicate types the tests were asserting against.
+      # A finding here is NOT automatically "delete it": see knip.jsonc for
+      # which shapes are real (dead feature) and which are configured away
+      # (test infra, package API, in-file test seams).
+      - name: Knip (dead code, production mode)
+        run: npm run deadcode:production
 
       # Manual memoization was removed on the assumption the React Compiler
       # runs (PR enabling it); a config refactor that silently drops the
@@ -511,7 +519,6 @@ jobs:
     env:
       # App import only — stubs, no real services touched.
       SUPABASE_URL: http://localhost:54321
-      SUPABASE_ANON_KEY: stub-anon
       SUPABASE_SERVICE_ROLE_KEY: stub-service-role
       ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       DATABASE_URL: postgresql+asyncpg://stub
