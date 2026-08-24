@@ -228,6 +228,12 @@ export const ExtractionFieldSchema = z.object({
   allows_not_applicable: z.boolean().default(false).optional(),
   allows_not_evaluated: z.boolean().default(false).optional(),
 
+  // 0059: this field's value identifies an instance of a repeating
+  // section. At most one per section — the API refuses a second with a
+  // 409, so the UI offers it as a single choice rather than a checkbox
+  // per field.
+  is_entity_key: z.boolean().default(false).optional(),
+
   validation_schema: z.record(z.any())
     .optional()
     .nullable(),

@@ -82,6 +82,8 @@ export interface TemplateFieldInput {
   other_placeholder?: string | null;
   allows_not_applicable?: boolean;
   allows_not_evaluated?: boolean;
+  /** 0059 — absent on a pre-migration payload, which reads as "no key". */
+  is_entity_key?: boolean;
   llm_description?: string | null;
   validation_schema?: Record<string, unknown> | null;
   sort_order?: number;
@@ -99,6 +101,9 @@ export interface GridField {
   key: string;
   fieldType: string;
   isRequired: boolean;
+  /** 0059: this field's value identifies an instance of a repeating
+   * section. At most one per section. */
+  isEntityKey: boolean;
   description: string | null;
   aiInstruction: string | null;
   hasAiInstruction: boolean;
@@ -204,6 +209,7 @@ function toGridField(input: TemplateFieldInput): GridField {
     key: input.name,
     fieldType: input.field_type,
     isRequired: Boolean(input.is_required),
+    isEntityKey: Boolean(input.is_entity_key),
     description: input.description ?? null,
     aiInstruction,
     hasAiInstruction: aiInstruction !== null,
