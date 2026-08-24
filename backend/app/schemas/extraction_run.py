@@ -12,9 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 def _reject_client_verification(field_name: str, v: dict[str, Any] | None) -> dict[str, Any] | None:
     # The Verified-mode verdict is server-written provenance (the
     # ``source_user_id`` precedent): a client-sent copy is a loud 422,
-    # never a silently-stored forgery. Guarded on ALL three write bags
-    # (proposal / decision / consensus) so the key cannot be smuggled into
-    # the agreement mechanism from any side. Known residual: a reviewer can
+    # never a silently-stored forgery. Guarded on BOTH remaining write bags
+    # (decision / consensus) so the key cannot be smuggled into the agreement
+    # mechanism from any side; the proposal bag went with the /proposals route
+    # (ADR-0019). Known residual: a reviewer can
     # still UPDATE a stored row's value bag directly via PostgREST under the
     # baseline RLS policies — tracked as a follow-up; this gate covers the
     # API surface.
@@ -30,26 +31,6 @@ class CreateRunRequest(BaseModel):
     article_id: UUID
     project_template_id: UUID
     parameters: dict[str, Any] | None = None
-
-
-class CreateProposalRequest(BaseModel):
-    # No attribution field: human proposals are attributed server-side to the
-    # authenticated caller. extra="forbid" makes a client-sent
-    # ``source_user_id`` a loud 422 instead of a silently-dropped forgery.
-    model_config = ConfigDict(extra="forbid")
-
-    instance_id: UUID
-    field_id: UUID
-    source: str = Field(pattern="^(ai|human|system)$")
-    proposed_value: dict[str, Any]
-    confidence_score: float | None = None
-    rationale: str | None = None
-
-    @field_validator("proposed_value")
-    @classmethod
-    def _reject_server_owned_verification(cls, v: dict[str, Any]) -> dict[str, Any]:
-        _reject_client_verification("proposed_value", v)
-        return v
 
 
 class CreateDecisionRequest(BaseModel):

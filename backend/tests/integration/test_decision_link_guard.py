@@ -299,42 +299,16 @@ async def test_link_guard_service_direct(
 
 
 @pytest.mark.asyncio
-async def test_human_proposal_forged_source_user_id_rejected(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_manager: UUID,  # noqa: ARG001
-) -> None:
-    """``CreateProposalRequest`` carries no attribution field (extra='forbid'):
-    a client-supplied ``source_user_id`` is an unknown field and dies at body
-    validation. Human proposals are attributed server-side to the
-    authenticated caller, so forged attribution is unrepresentable at the
-    API boundary — not merely guarded."""
-    if not await _seeded(db_session):
-        pytest.skip("Missing fixtures.")
-    run_id = await _create_run_in_extract(db_client)
-
-    res = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(SEED.primary_instance),
-            "field_id": str(SEED.primary_field),
-            "source": "human",
-            "proposed_value": {"value": "typed"},
-            "source_user_id": str(SEED.outsider_profile),
-        },
-    )
-    assert res.status_code == 422, res.text
-    assert "source_user_id" in res.text
-
-
-@pytest.mark.asyncio
-async def test_viewer_cannot_write_decisions_or_proposals(
+async def test_viewer_cannot_write_decisions(
     db_client: AsyncClient,
     db_session: AsyncSession,
     auth_as_manager: UUID,  # noqa: ARG001
 ) -> None:
     """The write endpoints are reviewer-role-gated, not just membership-gated
-    (mirrors mark_ready; a read-only viewer's writes must 403)."""
+    (mirrors mark_ready; a read-only viewer's writes must 403).
+
+    /decisions is the whole surface now — /proposals was removed once every
+    source it could accept turned out to be forbidden (ADR-0019)."""
     if not await _seeded(db_session):
         pytest.skip("Missing fixtures.")
     run_id = await _create_run_in_extract(db_client)
@@ -360,17 +334,6 @@ async def test_viewer_cannot_write_decisions_or_proposals(
     )
     assert dec.status_code == 403, dec.text
     assert "reviewer role required" in dec.json()["error"]["message"].lower()
-
-    prop = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(SEED.primary_instance),
-            "field_id": str(SEED.primary_field),
-            "source": "human",
-            "proposed_value": {"value": "viewer proposal"},
-        },
-    )
-    assert prop.status_code == 403, prop.text
 
 
 @pytest.mark.asyncio
@@ -405,72 +368,3 @@ async def test_viewer_cannot_advance_run(
         )
     ).scalar()
     assert stage == "extract", "a viewer's advance must not transition the run"
-
-
-@pytest.mark.asyncio
-async def test_system_proposal_rejected_via_api(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_manager: UUID,  # noqa: ARG001
-) -> None:
-    """'system' proposals are server-generated (reopen seeding); for QA runs
-    they hydrate into EVERY caller's baseline via current_values Layer-1, so
-    an authenticated member must not be able to plant them."""
-    if not await _seeded(db_session):
-        pytest.skip("Missing fixtures.")
-    run_id = await _create_run_in_extract(db_client)
-
-    res = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(SEED.primary_instance),
-            "field_id": str(SEED.primary_field),
-            "source": "system",
-            "proposed_value": {"value": "planted"},
-        },
-    )
-    assert res.status_code == 400, res.text
-    assert "server-generated" in res.json()["error"]["message"]
-
-
-@pytest.mark.asyncio
-async def test_ai_proposal_rejected_via_api(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_manager: UUID,  # noqa: ARG001
-) -> None:
-    """'ai' proposals are server-generated too: the real writer is
-    ``SectionExtractionService``, which calls ``record_proposal`` in-process
-    and never crosses this endpoint. Accepting 'ai' here let any reviewer
-    plant a forged suggestion that blind peers read as unattributed AI
-    output (extraction_run_read_service strips attribution for them), and
-    the rationale/confidence render as if a model produced them.
-    """
-    if not await _seeded(db_session):
-        pytest.skip("Missing fixtures.")
-    run_id = await _create_run_in_extract(db_client)
-
-    res = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(SEED.primary_instance),
-            "field_id": str(SEED.primary_field),
-            "source": "ai",
-            "proposed_value": {"value": "forged-ai-suggestion"},
-            "confidence_score": 0.99,
-            "rationale": "looks authoritative",
-        },
-    )
-    assert res.status_code == 400, res.text
-    assert "server-generated" in res.json()["error"]["message"]
-
-    planted = (
-        await db_session.execute(
-            text(
-                "SELECT count(*) FROM public.extraction_proposal_records "
-                "WHERE run_id = :r AND source = 'ai'"
-            ),
-            {"r": str(run_id)},
-        )
-    ).scalar()
-    assert planted == 0, "a rejected 'ai' proposal must leave no row behind"

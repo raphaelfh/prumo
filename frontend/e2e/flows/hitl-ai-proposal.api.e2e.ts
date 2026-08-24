@@ -161,9 +161,9 @@ test.describe("HITL AI proposal pipeline", () => {
     );
     expect(advRes.ok()).toBeTruthy();
 
-    // 3a. The API refuses to author an AI proposal, even for a reviewer.
-    // Blind peers read AI rows unattributed, so a caller-authored one is a
-    // forged model suggestion — confidence and rationale included.
+    // 3a. There is no HTTP route to author a proposal at all (ADR-0019).
+    // Blind peers read AI rows unattributed, so a caller-authored one would be
+    // a forged model suggestion — confidence and rationale included.
     const forged = await request.post(
       `${env.apiUrl}/api/v1/runs/${runBody.id}/proposals`,
       {
@@ -179,8 +179,7 @@ test.describe("HITL AI proposal pipeline", () => {
         timeout: 15000,
       },
     );
-    expect(forged.status()).toBe(400);
-    expect(await forged.text()).toContain("server-generated");
+    expect(forged.status()).toBe(404);
 
     // 3b. Seed the AI proposal the way the pipeline writes it —
     // SectionExtractionService calls record_proposal in-process.

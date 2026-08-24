@@ -596,8 +596,8 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
       await parseEnvelope<{ reviewer_id: string }>(divergent)
     ).data!.reviewer_id;
 
-    // The human-proposal write path is closed for QA too (post-drain gate):
-    // an API client replaying the pre-D8 write gets 400 → /decisions.
+    // The human-proposal write path is closed for QA too: the route itself is
+    // gone (ADR-0019), so an API client replaying the pre-D8 write gets a 404.
     const rejectedProposal = await request.post(
       `${env.apiUrl}/api/v1/runs/${runId}/proposals`,
       {
@@ -611,8 +611,7 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
         timeout: 15_000,
       },
     );
-    expect(rejectedProposal.status()).toBe(400);
-    expect(await rejectedProposal.text()).toContain("/decisions");
+    expect(rejectedProposal.status()).toBe(404);
 
     // Pre-D8 mid-flight shape: a bare human proposal with no decision.
     // Legacy rows now exist only as stored data, so seed one the way it

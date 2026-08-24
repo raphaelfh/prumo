@@ -3,7 +3,8 @@
 Walks through the canonical sequence:
   POST /v1/runs                  → create
   POST /v1/runs/{id}/advance     → pending → proposal
-  POST /v1/runs/{id}/proposals   → AI proposal recorded
+  (AI proposal seeded in-process — the pipeline's own write path; there is
+   no HTTP route for it, see ADR-0019)
   POST /v1/runs/{id}/advance     → proposal → review
   POST /v1/runs/{id}/decisions   → accept_proposal
   POST /v1/runs/{id}/advance     → review → consensus
