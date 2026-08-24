@@ -247,3 +247,85 @@ def test_build_appraisal_model_skips_signalling_select_picks_risk_label_field() 
     row = model.rows[0]
     assert row.domain_verdicts == ("Low",)  # risk_of_bias, not "Y" or "High"
     assert row.overall == "Low"
+
+
+def test_v2_shapes_contribute_columns_only_for_the_judgment_section() -> None:
+    """PROBAST+AI v2 (spec 2026-08-22 §8): the three D4 type sections carry
+    only Y/PY/PN/N selects, assessment_scope a non-risk select, and
+    overall_judgement text boxes — none is a verdict column. The single
+    eval-D4 judgment section contributes exactly one."""
+    run_id = uuid.uuid4()
+
+    def sec(name, label, fields, order):
+        return SectionDescriptor(
+            entity_type_id=uuid.uuid4(),
+            label=label,
+            role=ExtractionEntityRole.STUDY_SECTION,
+            parent_entity_type_id=None,
+            fields=tuple(fields),
+            name=name,
+            sort_order=order,
+        )
+
+    def fld(name, ftype, allowed):
+        return FieldDescriptor(
+            field_id=uuid.uuid4(),
+            label=name,
+            type=ftype,
+            allowed_values=allowed,
+            name=name,
+        )
+
+    d4_type = sec(
+        "eval_d4_analysis_internal",
+        "Evaluation D4 (internal)",
+        [
+            fld(
+                "q2_reasonable_sample_size",
+                ExtractionFieldType.SELECT,
+                ("Y", "PY", "PN", "N"),
+            )
+        ],
+        1,
+    )
+    scope = sec(
+        "assessment_scope",
+        "Assessment scope",
+        [
+            fld(
+                "study_type",
+                ExtractionFieldType.SELECT,
+                ("development_only", "evaluation_only", "combination"),
+            )
+        ],
+        2,
+    )
+    judgment = sec(
+        "eval_d4_judgment",
+        "Evaluation D4 — judgment",
+        [fld("risk_of_bias", ExtractionFieldType.SELECT, ("Low", "High", "Unclear"))],
+        3,
+    )
+    overall = sec(
+        "overall_judgement",
+        "Overall judgement",
+        [fld("summary_rob_evaluation", ExtractionFieldType.TEXT, ())],
+        4,
+    )
+    article = ArticleDescriptor(
+        article_id=uuid.uuid4(),
+        header_label="A",
+        run_id=run_id,
+        version_id=None,
+        model_instances=(),
+        section_instances={judgment.entity_type_id: (uuid.uuid4(),)},
+    )
+    model = ExtractionExportService._build_appraisal_model(
+        sections=(d4_type, scope, judgment, overall),
+        articles=(article,),
+        reviewers=(),
+        value_map={},
+        mode=ExportMode.CONSENSUS,
+    )
+    assert model is not None
+    assert model.domain_labels == ("Evaluation D4 — judgment",)

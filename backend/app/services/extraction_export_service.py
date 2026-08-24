@@ -54,6 +54,7 @@ from app.services.derived_judgment_service import (
     compute_derived_judgments,
     derived_spec,
     is_recommendation,
+    warn_dangling_spec_refs,
 )
 from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
@@ -647,8 +648,16 @@ class ExtractionExportService(LoggerMixin):
         # the rule module) are advice, not record — the stored judgments they
         # target already print as domain columns, so only the overalls become
         # derived columns.
-        spec = [d for d in derived_spec(template_schema) if not is_recommendation(d)]
+        spec_entries = derived_spec(template_schema)
+        spec = [d for d in spec_entries if not is_recommendation(d)]
         derived_labels = tuple(str(d.get("label", "")) for d in spec)
+
+        # §9: the run view already warns on spec coordinates the frozen tree
+        # no longer carries; the export used to blank the column in silence.
+        # Same event, same emitter, so the two surfaces cannot drift.
+        if spec_entries:
+            known = {(s.name, f.name) for s in sections for f in s.fields}
+            warn_dangling_spec_refs(spec_entries, known)
 
         domain_section_ids = tuple(s.entity_type_id for s, _ in domains)
         domain_labels = tuple(s.label for s, _ in domains)

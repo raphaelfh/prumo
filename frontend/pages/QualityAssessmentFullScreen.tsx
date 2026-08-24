@@ -62,7 +62,11 @@ import {
 // useProjectMembers, which the barrel deliberately keeps out.
 import { useExpectedReviewerCount } from "@/hooks/runs/useExpectedReviewerCount";
 import { ConsensusResolutionPanel } from "@/components/runs/ConsensusResolutionPanel";
-import { toConsensusValueEnvelope } from "@/lib/extraction/valueSemantics";
+import {
+  toConsensusValueEnvelope,
+  unwrapValueEnvelope,
+} from "@/lib/extraction/valueSemantics";
+import { isDomainOutOfScope, resolveStudyType } from "@/lib/qa/studyTypeScope";
 import { RunHeader } from "@/components/runs/header";
 // Imported directly (not via the RunHeader compound) so the shared compound
 // stays free of the supabase-reaching NotificationCenter/feedback deps.
@@ -558,6 +562,16 @@ export default function QualityAssessmentFullScreen() {
   };
   const sortedDomains = domains;
 
+  // Step-2 display hint (PROBAST+AI v2): the classified study type labels
+  // the sections of the unused part as out of scope. Never gates input.
+  const studyType = resolveStudyType(
+    sortedDomains,
+    session?.instancesByEntityType,
+    values,
+    (instanceId, fieldId) => keyOf({ instanceId, fieldId }),
+    unwrapValueEnvelope,
+  );
+
   // Compare-view inputs derived from the QA template tree: one instance per
   // domain (session.instancesByEntityType), shaped for the shared
   // RunReviewerComparison. ownValues is the form's `_`-keyed map; decisions
@@ -959,6 +973,11 @@ export default function QualityAssessmentFullScreen() {
                     onRejectAI={rejectAISuggestion}
                     selectSuggestion={selectAISuggestion}
                     getSuggestionsHistory={getAISuggestionsHistory}
+                    derivedJudgments={runDetail?.derived_judgments}
+                    outOfScope={isDomainOutOfScope(
+                      domain.entityType.name,
+                      studyType,
+                    )}
                   />
                 );
               })}
