@@ -1,12 +1,14 @@
 /**
  * AI proposal pipeline E2E.
  *
- * The HITL stack accepts proposals from three sources: `ai`, `human`,
- * and `system`. This test exercises the AI path end-to-end without
- * calling the LLM:
+ * Proposal rows carry three sources, and NONE may be authored through
+ * `POST /proposals`: `ai` and `system` are server-generated (the API
+ * rejects them), and `human` writes go to /decisions. This test exercises
+ * the AI path end-to-end without calling the LLM:
  *   1. Create a Run for an article+template, advance to PROPOSAL.
- *   2. POST /v1/runs/{id}/proposals with `source='ai'` +
- *      `confidence_score` + `rationale`.
+ *   2. Assert the API refuses a caller-authored `source='ai'` row, then
+ *      seed one the way SectionExtractionService writes it — in-process,
+ *      with `confidence_score` + `rationale`.
  *   3. Advance to REVIEW; record a `decision='accept_proposal'` keyed
  *      to the proposal_record_id.
  *   4. Advance through CONSENSUS → FINALIZED via manual_override
@@ -14,9 +16,9 @@
  *   5. Verify the published value matches what AI proposed.
  *
  * This is the missing piece that was previously only tested via the
- * `section_extraction_service` unit tests; it ensures the wire format
- * of `source='ai'` proposals + their `confidence_score` round-trip
- * through the API.
+ * `section_extraction_service` unit tests; it ensures a stored
+ * `source='ai'` proposal + its `confidence_score` round-trip through the
+ * read API and the decision/consensus chain.
  */
 
 import { expect, test } from "@playwright/test";
@@ -27,6 +29,7 @@ import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 import { fillRequiredFieldsAndFinalize } from "../_fixtures/hitl-finalize";
 import {
   adminDelete,
+  adminInsert,
   adminSelect,
   resolveActiveExtractionTemplateId,
 } from "../_fixtures/supabase-admin";
@@ -158,8 +161,10 @@ test.describe("HITL AI proposal pipeline", () => {
     );
     expect(advRes.ok()).toBeTruthy();
 
-    // 3. Record an AI proposal.
-    const proposalRes = await request.post(
+    // 3a. The API refuses to author an AI proposal, even for a reviewer.
+    // Blind peers read AI rows unattributed, so a caller-authored one is a
+    // forged model suggestion — confidence and rationale included.
+    const forged = await request.post(
       `${env.apiUrl}/api/v1/runs/${runBody.id}/proposals`,
       {
         headers: authHeaders(token, traceId),
@@ -167,17 +172,38 @@ test.describe("HITL AI proposal pipeline", () => {
           instance_id: instance.id,
           field_id: field.id,
           source: "ai",
-          proposed_value: { value: "ai-proposed" },
-          confidence_score: 0.87,
-          rationale: "E2E AI proposal",
+          proposed_value: { value: "forged-ai-suggestion" },
+          confidence_score: 0.99,
+          rationale: "looks authoritative",
         },
         timeout: 15000,
       },
     );
-    expect(proposalRes.ok()).toBeTruthy();
-    const proposal = (await parseEnvelope<ProposalRecordResponse>(proposalRes)).data;
-    expect(proposal.source).toBe("ai");
-    expect(proposal.confidence_score).toBeCloseTo(0.87, 2);
+    expect(forged.status()).toBe(400);
+    expect(await forged.text()).toContain("server-generated");
+
+    // 3b. Seed the AI proposal the way the pipeline writes it —
+    // SectionExtractionService calls record_proposal in-process.
+    const proposalId = crypto.randomUUID();
+    await adminInsert("extraction_proposal_records", [
+      {
+        id: proposalId,
+        run_id: runBody.id,
+        instance_id: instance.id,
+        field_id: field.id,
+        source: "ai",
+        source_user_id: null,
+        proposed_value: { value: "ai-proposed" },
+        confidence_score: 0.87,
+        rationale: "E2E AI proposal",
+      },
+    ]);
+    const proposal: ProposalRecordResponse = {
+      id: proposalId,
+      source: "ai",
+      proposed_value: { value: "ai-proposed" },
+      confidence_score: 0.87,
+    };
 
     // 4. Accept the AI proposal (recorded as a decision in extract).
     const decisionRes = await request.post(

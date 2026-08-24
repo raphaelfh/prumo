@@ -645,3 +645,43 @@ async def make_proposal(
     db.add(record)
     await db.flush()
     return record.id
+
+
+async def make_ai_proposal(
+    db: AsyncSession,
+    *,
+    run_id: UUID,
+    instance_id: UUID,
+    field_id: UUID,
+    proposed_value: dict | None = None,
+    confidence_score: float | None = None,
+    rationale: str | None = None,
+):
+    """Seed one AI proposal for ``(run, instance, field)``.
+
+    ``source='ai'`` cannot be authored over HTTP — the API rejects it as
+    server-generated, because blind peers read AI rows unattributed and a
+    caller-authored one would be a forged model suggestion. The real writer
+    is ``SectionExtractionService``, which calls
+    ``ExtractionProposalService.record_proposal`` in-process. Tests seed the
+    row directly (sibling of :func:`make_proposal`) so fixture setup stays
+    orthogonal to the run's stage.
+    """
+    from app.models.extraction_workflow import (
+        ExtractionProposalRecord,
+        ExtractionProposalSource,
+    )
+
+    record = ExtractionProposalRecord(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI.value,
+        source_user_id=None,
+        proposed_value=proposed_value if proposed_value is not None else {"value": "candidate"},
+        confidence_score=confidence_score,
+        rationale=rationale,
+    )
+    db.add(record)
+    await db.flush()
+    return record

@@ -256,14 +256,29 @@ async def create_proposal(
     # Writes are reviewer-role-gated (mirrors mark_ready): a read-only viewer
     # is a member but must not author proposals.
     await ensure_project_reviewer(db, run.project_id, current_user_sub)
-    # 'system' proposals are server-generated (reopen seeding) and — for QA
-    # runs — hydrate into EVERY caller's form baseline via current_values
-    # Layer-1. Accepting them from an authenticated member would let one
-    # reviewer plant unattributed values into peers' forms.
-    if body.source == "system":
+    # Both non-human sources are server-generated and carry no attribution,
+    # so neither may be authored by a caller:
+    #
+    # * 'system' — reopen seeding (run_lifecycle_service); for QA runs these
+    #   hydrate into EVERY caller's form baseline via current_values Layer-1.
+    # * 'ai' — the extraction pipeline (SectionExtractionService calls
+    #   ExtractionProposalService.record_proposal in-process; it never crosses
+    #   this endpoint). Blind peers read AI proposals unattributed
+    #   (extraction_run_read_service), so a caller-authored 'ai' row is a
+    #   forged model suggestion — complete with confidence_score and
+    #   rationale — that reviewers cannot tell from real pipeline output.
+    #
+    # Human writes are rejected one layer down, in record_proposal: they must
+    # go through /decisions so the blind-review contract holds. That leaves
+    # this endpoint with no accepted source; it is kept as a loud 400 rather
+    # than removed so existing clients fail visibly instead of on a 404.
+    if body.source in ("ai", "system"):
         raise HTTPException(
             status_code=400,
-            detail="source='system' proposals are server-generated and cannot be created via the API",
+            detail=(
+                f"source='{body.source}' proposals are server-generated "
+                "and cannot be created via the API"
+            ),
         )
     service = ExtractionProposalService(db)
     trace_id = _trace(request)

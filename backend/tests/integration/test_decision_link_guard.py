@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, make_ai_proposal
 
 API_PREFIX = "/api/v1/runs"
 
@@ -70,19 +70,21 @@ async def _create_run_in_extract(client: AsyncClient) -> UUID:
     return run_id
 
 
-async def _post_ai_proposal(client: AsyncClient, run_id: UUID) -> UUID:
-    res = await client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(SEED.primary_instance),
-            "field_id": str(SEED.primary_field),
-            "source": "ai",
-            "proposed_value": {"value": "candidate"},
-            "confidence_score": 0.9,
-        },
+async def _seed_ai_proposal(db: AsyncSession, run_id: UUID) -> UUID:
+    """Seed the AI basis a link can point at.
+
+    The API rejects source='ai' (server-generated), so this goes straight to
+    the table. ``db_client`` overrides ``get_db`` with this very session, so
+    the row is visible over HTTP.
+    """
+    record = await make_ai_proposal(
+        db,
+        run_id=run_id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        confidence_score=0.9,
     )
-    assert res.status_code == 201, res.text
-    return UUID(res.json()["data"]["id"])
+    return record.id
 
 
 def _edit_body(field_id: UUID, proposal_id: UUID) -> dict[str, object]:
@@ -105,7 +107,7 @@ async def test_edit_decision_with_valid_same_coord_link_persists(
     if not await _seeded(db_session):
         pytest.skip("Missing fixtures.")
     run_id = await _create_run_in_extract(db_client)
-    proposal_id = await _post_ai_proposal(db_client, run_id)
+    proposal_id = await _seed_ai_proposal(db_session, run_id)
 
     res = await db_client.post(
         f"{API_PREFIX}/{run_id}/decisions",
@@ -126,7 +128,7 @@ async def test_edit_decision_link_must_match_coord(
     if not await _seeded(db_session):
         pytest.skip("Missing fixtures.")
     run_id = await _create_run_in_extract(db_client)
-    proposal_id = await _post_ai_proposal(db_client, run_id)
+    proposal_id = await _seed_ai_proposal(db_session, run_id)
 
     # A second, coherent field on the seed entity type (raw insert: Python-side
     # column defaults don't apply, so supply them explicitly).
@@ -200,7 +202,7 @@ async def test_edit_decision_link_same_coord_older_run_ok(
     if not await _seeded(db_session):
         pytest.skip("Missing fixtures.")
     older_run = await _create_run_in_extract(db_client)
-    older_proposal = await _post_ai_proposal(db_client, older_run)
+    older_proposal = await _seed_ai_proposal(db_session, older_run)
 
     # uq_one_live_extraction_run_per_coord (0045): only one live run per
     # coordinate — finalize the older run before creating its successor.
@@ -242,7 +244,7 @@ async def test_link_guard_service_direct(
     if not await _seeded(db_session):
         pytest.skip("Missing fixtures.")
     run_id = await _create_run_in_extract(db_client)
-    proposal_id = await _post_ai_proposal(db_client, run_id)
+    proposal_id = await _seed_ai_proposal(db_session, run_id)
 
     other_field = uuid4()
     await db_session.execute(
@@ -429,3 +431,46 @@ async def test_system_proposal_rejected_via_api(
     )
     assert res.status_code == 400, res.text
     assert "server-generated" in res.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_ai_proposal_rejected_via_api(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_manager: UUID,  # noqa: ARG001
+) -> None:
+    """'ai' proposals are server-generated too: the real writer is
+    ``SectionExtractionService``, which calls ``record_proposal`` in-process
+    and never crosses this endpoint. Accepting 'ai' here let any reviewer
+    plant a forged suggestion that blind peers read as unattributed AI
+    output (extraction_run_read_service strips attribution for them), and
+    the rationale/confidence render as if a model produced them.
+    """
+    if not await _seeded(db_session):
+        pytest.skip("Missing fixtures.")
+    run_id = await _create_run_in_extract(db_client)
+
+    res = await db_client.post(
+        f"{API_PREFIX}/{run_id}/proposals",
+        json={
+            "instance_id": str(SEED.primary_instance),
+            "field_id": str(SEED.primary_field),
+            "source": "ai",
+            "proposed_value": {"value": "forged-ai-suggestion"},
+            "confidence_score": 0.99,
+            "rationale": "looks authoritative",
+        },
+    )
+    assert res.status_code == 400, res.text
+    assert "server-generated" in res.json()["error"]["message"]
+
+    planted = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM public.extraction_proposal_records "
+                "WHERE run_id = :r AND source = 'ai'"
+            ),
+            {"r": str(run_id)},
+        )
+    ).scalar()
+    assert planted == 0, "a rejected 'ai' proposal must leave no row behind"
