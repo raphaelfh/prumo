@@ -263,7 +263,7 @@ pointed at prod**. An authenticated probe was built and then removed
 loaded at boot" (already reported by `/health.checks`) and "a freshly
 minted token is accepted", which does not pay for a permanent production
 password living in CI — nor for a `::warning::` on every run while it sits
-unprovisioned, which is how a warning stops being read. The former
+without credentials, which is how a warning stops being read. The former
 `remote-smoke` project dispatched a real AI extraction (LLM spend + a run
 left behind per execution) and had never run in CI — no secrets were ever
 provisioned — so it silently self-skipped to a green "pass".
