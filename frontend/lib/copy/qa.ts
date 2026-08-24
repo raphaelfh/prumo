@@ -33,6 +33,14 @@ export const qa = {
   derivedDefaultApply: 'Apply',
   derivedExplainShow: 'From the signaling answers',
   derivedInputNotAnswered: 'Not answered',
+  // The two ways an Evaluation D4 collapse group can contribute nothing. On
+  // the wire they differ only by `state`, and they mean opposite things:
+  // "Not reported" is a FINISHED assessment of a performance type the study
+  // never claimed ("não se julga o que o estudo não fez"), while "In progress"
+  // is work the reviewer still owes. Only the second is a gap, so only the
+  // second is warning-toned — see DerivedDefaultChip's rowDisplay.
+  derivedInputUnreported: 'Not reported',
+  derivedInputInProgress: 'In progress',
   divergenceNeedsRationale:
     'Differs from the derived default — write the rationale below, then record the judgment.',
   divergenceConfirm: 'Record judgment',

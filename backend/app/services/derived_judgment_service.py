@@ -123,12 +123,23 @@ class DerivedInput:
     this row — None when it contributed nothing (unjudged, excluded,
     unreported, in-progress). Clients highlight and color by ``contribution``
     only, so no answer-mapping knowledge ever leaves this module.
+
+    ``state`` says WHY a collapse-group row contributed nothing, and is the
+    complement of ``contribution``: exactly one of the two is set on a group
+    row, never both. A group carries no stored answer, so without it
+    ``unreported`` (the study never did this performance type — not a gap in
+    the assessment) and ``in-progress`` (half-answered — a real gap) reach the
+    client as the same blank row, and a finished assessment reads as
+    unfinished. It stays None on plain rows, which need no such marker:
+    ``value`` already separates them (a marker label when excluded, None when
+    genuinely unanswered).
     """
 
     sections: tuple[str, ...]
     label: str
     value: str | None
     contribution: str | None = None
+    state: str | None = None
     # The plain input's field name ("" for collapse groups) — with
     # ``sections[0]`` it is the full coordinate, so the payload can name a
     # recommendation row after the QUESTION (field label) instead of the
@@ -264,6 +275,11 @@ def _raw_display(raw: Any) -> str | None:
 # (every member unanswered/excluded: the study never claimed this
 # performance type, so it drops out) vs ``in-progress`` (partially answered:
 # the assessment is unfinished, so the default is withheld).
+#
+# These two LITERALS are wire contract: they ride out on ``DerivedInput.state``
+# and the client keys its copy and tone off them, so changing a value here
+# changes what the run view renders. The tests assert the strings rather than
+# these names for exactly that reason.
 _GROUP_UNREPORTED = "unreported"
 _GROUP_IN_PROGRESS = "in-progress"
 
@@ -314,12 +330,16 @@ def _compute_signaling_entry(
             ]
             state = _signaling_group_state(raws)
             group_states.append(state)
+            judged = state in JUDGMENT_SEVERITY
             rows.append(
                 DerivedInput(
                     sections=sections,
                     label=label,
                     value=None,
-                    contribution=state if state in JUDGMENT_SEVERITY else None,
+                    contribution=state if judged else None,
+                    # The residual state is what the row shows instead of a
+                    # contribution; see DerivedInput.
+                    state=None if judged else state,
                 )
             )
         else:
