@@ -494,6 +494,54 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
     });
   });
 
+  it('drops adoptions from a previous run when runId swaps in place', async () => {
+    (AISuggestionService.loadSuggestions as any).mockResolvedValue({
+      suggestions: { [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
+      count: 1,
+    });
+
+    const { result, rerender } = renderHook(
+      (props: { runId: string }) =>
+        useAISuggestions({
+          articleId: 'art-1',
+          instanceIds: ['inst-1'],
+          runId: props.runId,
+        }),
+      { initialProps: { runId: 'run-A' } },
+    );
+    await waitFor(() =>
+      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
+    );
+
+    await act(async () => {
+      await result.current.acceptSuggestion('inst-1', 'f-1');
+    });
+    expect(result.current.sessionAdoption).toEqual({
+      [getSuggestionKey('inst-1', 'f-1')]: 'proposal-inst-1-f-1',
+    });
+
+    // `POST /runs/{id}/reopen` forks a child run over the same
+    // (article, template) coordinate and both full-screen pages swap runId in
+    // place. Instances carry over verbatim, so the coord key is unchanged —
+    // but the adoption is an event that happened on run-A. Leaking it stamps
+    // run-B's `edit` decisions with a proposal the reviewer never chose there
+    // (the backend accepts a cross-run `proposal_record_id` on an `edit`), so
+    // autosave would fabricate AI provenance in the append-only trail.
+    rerender({ runId: 'run-B' });
+    expect(result.current.sessionAdoption).toEqual({});
+
+    // A reject tombstone leaks the same way, and worse: it would delete
+    // run-B's own persisted link in `deriveAiLinkByKey`.
+    await act(async () => {
+      await result.current.rejectSuggestion('inst-1', 'f-1');
+    });
+    expect(result.current.sessionAdoption).toEqual({
+      [getSuggestionKey('inst-1', 'f-1')]: null,
+    });
+    rerender({ runId: 'run-C' });
+    expect(result.current.sessionAdoption).toEqual({});
+  });
+
   it('suggestionsReady flips true→false when a refresh fails (red-green: kills the always-false mutant)', async () => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
       suggestions: { [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
