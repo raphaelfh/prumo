@@ -452,17 +452,6 @@ via the entry ids from the summary partition). Judgment fields with no
 matching entry render exactly as today (v1 clones, classic templates,
 applicability — keep-list).
 
-A collapse-group row carries NO `value` (a group has no single stored
-answer), so a chip that renders `value` alone labels every group row —
-judged or not — "Not judged". Render `value ?? contribution`, and read
-`inputs[].state` first: `"unreported"` (the study never reported that
-performance type — muted, `overallExplainInputUnreported`) vs
-`"in-progress"` (half-answered — warning,
-`overallExplainInputInProgress`). `OverallJudgmentBanner.tsx` already
-does this in its `rowDisplay` helper — export it alongside `toneFor`
-and reuse it rather than re-deriving the mapping, so the two surfaces
-cannot disagree about what a blank group row means.
-
 - [ ] Failing tests: chip + breakdown + highlight-by-contribution;
   Apply dispatches; no card when no entry matches (positive control);
   badge count excludes non-SQ fields on a v2-shaped fixture.

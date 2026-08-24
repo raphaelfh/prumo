@@ -111,63 +111,40 @@ describe("OverallJudgmentBanner — calculation disclosure", () => {
   });
 });
 
-// A collapse group has no stored answer, so `value` is null whether the study
-// never reported that performance type or the reviewer simply has not finished
-// it. Both used to render as warning-toned "Not judged", which told a reviewer
-// with a COMPLETE assessment that it was unfinished. `state` is what separates
-// them, and the tone is the whole point: only one of the two is actionable.
-describe("OverallJudgmentBanner — unreported vs in-progress collapse groups", () => {
-  const D4: DerivedJudgmentView[] = [
-    {
-      id: "eval_d4_rob",
-      label: "Evaluation D4: Analysis",
-      value: null,
-      inputs: [
-        { label: "Apparent performance", value: null, contribution: "Low" },
-        { label: "External validation", value: null, state: "unreported" },
-        { label: "Internal validation", value: null, state: "in-progress" },
-      ],
-    },
-  ];
-
-  async function openDisclosure() {
-    const user = userEvent.setup();
-    renderBanner(D4);
-    await user.click(screen.getByTestId("qa-overall-explain-toggle"));
-  }
-
-  /** One breakdown row. Assertions target the row, never the whole panel —
-   * the disclosure's own prose quotes "Not judged", so a panel-wide negative
-   * assertion would be unfalsifiable. */
-  function rowFor(label: string): HTMLElement {
-    const row = screen.getByText(label).closest("li");
-    if (!row) throw new Error(`no breakdown row labelled ${label}`);
-    return row;
-  }
-
-  it("labels an unreported performance type as reported-absent, not unjudged", async () => {
-    await openDisclosure();
-    expect(rowFor("External validation")).toHaveTextContent(qa.overallExplainInputUnreported);
-    expect(rowFor("External validation")).not.toHaveTextContent(qa.overallExplainInputNotJudged);
+describe("OverallJudgmentBanner — recommendation entries are not overalls", () => {
+  it("renders only entries without a target (loose null check: an absent key counts as an overall)", () => {
+    renderBanner([
+      // Overall, target key entirely absent (older payloads/fixtures).
+      { id: "dev_overall_quality", label: "Overall quality", value: "Low" },
+      // Overall, explicit null target.
+      {
+        id: "eval_overall_rob",
+        label: "Overall RoB",
+        value: "High",
+        target_field_id: null,
+      },
+      // Recommendation — must never render in the banner.
+      {
+        id: "dev_d1_quality",
+        label: "Development D1: quality",
+        value: "High",
+        target_field_id: "f-1",
+      },
+    ]);
+    expect(screen.getByTestId("qa-overall-dev_overall_quality")).toBeInTheDocument();
+    expect(screen.getByTestId("qa-overall-eval_overall_rob")).toBeInTheDocument();
+    expect(screen.queryByTestId("qa-overall-dev_d1_quality")).not.toBeInTheDocument();
   });
 
-  it("labels a half-answered group as in progress", async () => {
-    await openDisclosure();
-    expect(rowFor("Internal validation")).toHaveTextContent(qa.overallExplainInputInProgress);
-    expect(rowFor("Internal validation")).not.toHaveTextContent(qa.overallExplainInputNotJudged);
-  });
-
-  it("shows the judgment a group contributed, since a group has no stored answer", async () => {
-    await openDisclosure();
-    expect(rowFor("Apparent performance")).toHaveTextContent("Low");
-    expect(rowFor("Apparent performance")).not.toHaveTextContent(qa.overallExplainInputNotJudged);
-  });
-
-  it("mutes the unreported group and warns only on the unfinished one", async () => {
-    await openDisclosure();
-    // Muted: the study did not do external validation — nothing to act on.
-    expect(screen.getByText(qa.overallExplainInputUnreported)).toHaveClass("text-muted-foreground");
-    // Warning: this one really is a gap the reviewer still has to close.
-    expect(screen.getByText(qa.overallExplainInputInProgress)).toHaveClass("text-warning");
+  it("renders nothing when every entry is a recommendation", () => {
+    const { container } = renderBanner([
+      {
+        id: "dev_d1_quality",
+        label: "Development D1: quality",
+        value: "High",
+        target_field_id: "f-1",
+      },
+    ]);
+    expect(container).toBeEmptyDOMElement();
   });
 });

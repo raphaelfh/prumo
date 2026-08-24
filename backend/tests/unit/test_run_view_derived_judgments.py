@@ -355,7 +355,7 @@ def test_dangling_target_pointer_warns_and_leaves_ids_none() -> None:
     spec = copy.deepcopy(_V2_SPEC)
     spec["derived_judgments"][0]["target"]["field"] = "renamed_gone"
     d1, overall, _ids = _v2_tree()
-    with patch("app.services.derived_judgment_payload.logger") as mock_logger:
+    with patch("app.services.derived_judgment_service.logger") as mock_logger:
         out = build_derived_judgments_payload(
             template_schema=spec, entity_types=[d1, overall], instances=[], values=[]
         )
