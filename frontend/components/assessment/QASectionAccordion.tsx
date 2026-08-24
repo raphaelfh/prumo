@@ -18,6 +18,7 @@
  */
 
 import { ShieldAlert } from "lucide-react";
+import { useState } from "react";
 
 import {
   Accordion,
@@ -26,8 +27,13 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DerivedDefaultChip } from "@/components/assessment/DerivedDefaultChip";
+import { toneFor } from "@/components/assessment/OverallJudgmentBanner";
 import { FieldInput } from "@/components/extraction/FieldInput";
 import { isJudgmentField } from "@/lib/extraction/judgmentFields";
+import { unwrapValueEnvelope } from "@/lib/extraction/valueSemantics";
+import { cn } from "@/lib/utils";
 import { qa } from "@/lib/copy/qa";
 import { SectionAIExtractButton } from "@/components/extraction/ai/shared/SectionAIExtractButton";
 import {
@@ -40,6 +46,9 @@ import {
   type AISuggestion,
   type AISuggestionHistoryItem,
 } from "@/types/ai-extraction";
+import type { components } from "@/types/api/schema";
+
+type RunViewDerivedJudgment = components["schemas"]["RunViewDerivedJudgment"];
 
 interface QASectionAccordionProps {
   domain: QADomain;
@@ -53,13 +62,31 @@ interface QASectionAccordionProps {
   onExtractionComplete?: (runId?: string) => void | Promise<void>;
   defaultOpen?: boolean;
   /**
-   * Real instance id for this domain. Required for AI suggestions to
-   * resolve correctly (the suggestion key uses the run's instance id,
-   * not the synthetic ``entityType.id`` the accordion falls back to
-   * when running standalone). The QA page resolves this from
-   * ``session.instancesByEntityType``.
+   * Real instance id for this domain — REQUIRED: the suggestion key and
+   * every value write use the run's instance id, and the QA page (the
+   * sole caller) always resolves it from ``session.instancesByEntityType``
+   * and skips domains without one. The old synthetic ``entityType.id``
+   * fallback was a doomed-write footgun and is deleted (spec 2026-08-22,
+   * simplicity pass).
    */
-  instanceId?: string;
+  instanceId: string;
+  /**
+   * The run view's computed judgments. Entries with a ``target_field_id``
+   * matching a judgment field of THIS domain render the derived-default
+   * recommendation card (chip + Apply + divergence-rationale gate); entries
+   * with a ``summary_field_id`` matching a field here render the computed
+   * overall beside that Step-4 summary box. The union of
+   * target/rationale/summary ids is the assessor-owned (LLM-excluded) set —
+   * a section made entirely of those fields hides its AI extract button.
+   * Absent/empty (v1 clones, classic templates): everything renders as
+   * before.
+   */
+  derivedJudgments?: RunViewDerivedJudgment[];
+  /**
+   * Display hint from ``assessment_scope.study_type``: this part of the
+   * form does not apply to the classified study type. Never gates input.
+   */
+  outOfScope?: boolean;
   /**
    * AI suggestions keyed by ``${instanceId}_${fieldId}``. When a key
    * matches a rendered field, ``FieldInput`` shows the suggestion badge
@@ -106,21 +133,90 @@ export function QASectionAccordion({
   onExtractionComplete,
   defaultOpen = false,
   reviewerActivity,
-  instanceId: instanceIdProp,
+  instanceId,
   aiSuggestions,
   onAcceptAI,
   onRejectAI,
   selectSuggestion,
   getSuggestionsHistory,
+  derivedJudgments,
+  outOfScope = false,
 }: QASectionAccordionProps) {
   const { entityType, fields } = domain;
-  const signaling = fields.filter((f) => !isJudgmentField(f));
-  const summary = fields.filter((f) => isJudgmentField(f));
 
-  // Prefer the real run instance id passed from the QA page so AI
-  // suggestions resolve under the correct key. Standalone usage (no
-  // session yet) falls back to the synthetic entity_type id.
-  const instanceId = instanceIdProp ?? entityType.id;
+  // Spec-declared pairings (empty maps for v1 clones / classic templates,
+  // which keeps every partition below byte-identical to the old behavior).
+  const entries = derivedJudgments ?? [];
+  const entryByTargetId = new Map(
+    entries.filter((d) => d.target_field_id != null).map((d) => [d.target_field_id, d]),
+  );
+  const entryBySummaryId = new Map(
+    entries.filter((d) => d.summary_field_id != null).map((d) => [d.summary_field_id, d]),
+  );
+  const rationaleFieldIds = new Set(
+    entries.map((d) => d.rationale_field_id).filter((id): id is string => id != null),
+  );
+  const excludedFieldIds = new Set(
+    entries
+      .flatMap((d) => [d.target_field_id, d.rationale_field_id, d.summary_field_id])
+      .filter((id): id is string => id != null),
+  );
+
+  // Judgment-linked rationales render INSIDE their judgment card, never in
+  // the signaling list; everything else keeps the judgment/signaling split.
+  const signaling = fields.filter(
+    (f) => !isJudgmentField(f) && !rationaleFieldIds.has(f.id),
+  );
+  const summary = fields.filter((f) => isJudgmentField(f));
+  // The header badge counts actual questions, not free-text boxes (v2 adds
+  // describe/rationale text fields to the section).
+  const signalingQuestionCount = signaling.filter(
+    (f) => f.field_type === "select",
+  ).length;
+  const allFieldsExcluded =
+    fields.length > 0 && fields.every((f) => excludedFieldIds.has(f.id));
+
+  // Divergence gate (spec §6): a judgment pick that differs from a non-null
+  // derived default is HELD here — never written — until the paired
+  // rationale has text and the reviewer confirms. Deliberately volatile
+  // local state: navigating away drops the held pick (the requirement copy
+  // is visible the whole time), so no phantom value ever reaches autosave.
+  const [heldJudgments, setHeldJudgments] = useState<Record<string, string>>({});
+
+  function rationaleIsEmpty(entry: RunViewDerivedJudgment): boolean {
+    if (entry.rationale_field_id == null) return false;
+    const raw = unwrapValueEnvelope(values[entry.rationale_field_id]);
+    return raw == null || (typeof raw === "string" && raw.trim() === "");
+  }
+
+  function clearHeld(fieldId: string) {
+    setHeldJudgments((prev) => {
+      if (!(fieldId in prev)) return prev;
+      const next = { ...prev };
+      delete next[fieldId];
+      return next;
+    });
+  }
+
+  function handleJudgmentChange(
+    fieldId: string,
+    entry: RunViewDerivedJudgment,
+    next: unknown,
+  ) {
+    const derived = entry.value ?? null;
+    if (
+      derived !== null &&
+      next != null &&
+      next !== derived &&
+      rationaleIsEmpty(entry)
+    ) {
+      setHeldJudgments((prev) => ({ ...prev, [fieldId]: String(next) }));
+      return;
+    }
+    clearHeld(fieldId);
+    onValueChange(fieldId, next);
+  }
+
   const sectionLabel = entityType.label || entityType.name;
   const itemValue = `qa-domain-${entityType.id}`;
 
@@ -182,10 +278,19 @@ export function QASectionAccordion({
               <div className="flex items-center gap-2">
                 <ShieldAlert className="h-4 w-4 text-warning" />
                 <span className="text-sm font-semibold">{sectionLabel}</span>
-                {signaling.length > 0 ? (
+                {signalingQuestionCount > 0 ? (
                   <Badge variant="secondary" className="text-[10px]">
-                    {signaling.length} signaling{" "}
-                    {signaling.length === 1 ? "question" : "questions"}
+                    {signalingQuestionCount} signaling{" "}
+                    {signalingQuestionCount === 1 ? "question" : "questions"}
+                  </Badge>
+                ) : null}
+                {outOfScope ? (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] text-muted-foreground"
+                    data-testid={`qa-out-of-scope-${entityType.name}`}
+                  >
+                    {qa.outOfScopeBadge}
                   </Badge>
                 ) : null}
               </div>
@@ -198,16 +303,21 @@ export function QASectionAccordion({
               ) : null}
             </div>
           </AccordionTrigger>
-          {/* Per-domain AI extract — shared with the data-extraction screen. */}
-          <SectionAIExtractButton
-            projectId={projectId}
-            articleId={articleId}
-            templateId={templateId}
-            entityTypeId={entityType.id}
-            entityLabel={sectionLabel}
-            runId={runId}
-            onExtractionComplete={onExtractionComplete}
-          />
+          {/* Per-domain AI extract — shared with the data-extraction screen.
+              Hidden when every field is assessor-owned (LLM-excluded): the
+              backend would skip the call, so the button would be a dead
+              affordance (the ``overall_judgement`` section). */}
+          {!allFieldsExcluded ? (
+            <SectionAIExtractButton
+              projectId={projectId}
+              articleId={articleId}
+              templateId={templateId}
+              entityTypeId={entityType.id}
+              entityLabel={sectionLabel}
+              runId={runId}
+              onExtractionComplete={onExtractionComplete}
+            />
+          ) : null}
         </div>
         <AccordionContent className="px-4 pb-4 pt-0">
           {entityType.description ? (
@@ -222,12 +332,30 @@ export function QASectionAccordion({
                 const stack = fieldStack(field.id);
                 const aiKey = getSuggestionKey(instanceId, field.id);
                 const aiSuggestion = aiSuggestions?.[aiKey];
+                const summaryEntry = entryBySummaryId.get(field.id);
                 return (
                   <div
                     key={field.id}
                     className="py-1"
                     data-testid={`qa-field-row-${field.name}`}
                   >
+                    {summaryEntry ? (
+                      <div className="mb-1 flex items-center gap-2">
+                        <span className="text-[11px] text-muted-foreground">
+                          {summaryEntry.label}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "gap-1 font-normal",
+                            toneFor(summaryEntry.value ?? null),
+                          )}
+                          data-testid={`qa-summary-overall-${summaryEntry.id}`}
+                        >
+                          {summaryEntry.value ?? qa.overallIncomplete}
+                        </Badge>
+                      </div>
+                    ) : null}
                     <FieldInput
                       field={field}
                       instanceId={instanceId}
@@ -277,29 +405,126 @@ export function QASectionAccordion({
                   const stack = fieldStack(field.id);
                   const aiKey = getSuggestionKey(instanceId, field.id);
                   const aiSuggestion = aiSuggestions?.[aiKey];
+                  const entry = entryByTargetId.get(field.id);
+
+                  if (!entry) {
+                    // No recommendation (applicability, v1 clones, classic
+                    // templates): the plain editable judgment row, unchanged.
+                    return (
+                      <div key={field.id} className="py-1">
+                        <FieldInput
+                          field={field}
+                          instanceId={instanceId}
+                          value={values[field.id]}
+                          onChange={(v) => onValueChange(field.id, v)}
+                          projectId={projectId}
+                          aiSuggestion={aiSuggestion}
+                          onAcceptAI={
+                            onAcceptAI
+                              ? () => onAcceptAI(instanceId, field.id)
+                              : undefined
+                          }
+                          onRejectAI={
+                            onRejectAI
+                              ? () => onRejectAI(instanceId, field.id)
+                              : undefined
+                          }
+                          selectSuggestion={selectSuggestion}
+                          getSuggestionsHistory={getSuggestionsHistory}
+                          articleId={articleId}
+                        />
+                        {stack.length > 0 ? (
+                          <div className="mt-1 flex justify-end">
+                            <ReviewerAvatarStack
+                              reviewers={stack}
+                              sizeClass="size-5"
+                              testId={`qa-field-avatars-${field.name}`}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  }
+
+                  // Recommendation card (spec §6): derived-default chip +
+                  // Apply, the assessor's judgment input (gated on
+                  // divergence), and the paired rationale — one block, no AI
+                  // affordances (these fields never receive suggestions).
+                  const rationaleField = fields.find(
+                    (f) => f.id === entry.rationale_field_id,
+                  );
+                  const heldValue = heldJudgments[field.id];
+                  const currentRaw = unwrapValueEnvelope(values[field.id]);
+                  const hydratedDivergent =
+                    heldValue === undefined &&
+                    entry.value != null &&
+                    currentRaw != null &&
+                    String(currentRaw) !== entry.value;
                   return (
-                    <div key={field.id} className="py-1">
+                    <div
+                      key={field.id}
+                      className="py-2"
+                      data-testid={`qa-judgment-card-${field.id}`}
+                    >
+                      <DerivedDefaultChip
+                        judgment={entry}
+                        onApply={(v) => {
+                          clearHeld(field.id);
+                          onValueChange(field.id, v);
+                        }}
+                      />
                       <FieldInput
                         field={field}
                         instanceId={instanceId}
-                        value={values[field.id]}
-                        onChange={(v) => onValueChange(field.id, v)}
+                        value={heldValue ?? values[field.id]}
+                        onChange={(v) => handleJudgmentChange(field.id, entry, v)}
                         projectId={projectId}
-                        aiSuggestion={aiSuggestion}
-                        onAcceptAI={
-                          onAcceptAI
-                            ? () => onAcceptAI(instanceId, field.id)
-                            : undefined
-                        }
-                        onRejectAI={
-                          onRejectAI
-                            ? () => onRejectAI(instanceId, field.id)
-                            : undefined
-                        }
-                        selectSuggestion={selectSuggestion}
-                        getSuggestionsHistory={getSuggestionsHistory}
                         articleId={articleId}
                       />
+                      {heldValue !== undefined ? (
+                        <div
+                          className="mt-1 flex items-center justify-between gap-3 rounded-sm border border-warning/40 bg-warning/10 px-2 py-1"
+                          data-testid={`qa-divergence-${field.id}`}
+                        >
+                          <p className="text-[11px] text-warning">
+                            {qa.divergenceNeedsRationale}
+                          </p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 shrink-0 px-2 text-[11px]"
+                            disabled={rationaleIsEmpty(entry)}
+                            onClick={() => {
+                              clearHeld(field.id);
+                              onValueChange(field.id, heldValue);
+                            }}
+                            data-testid={`qa-divergence-confirm-${field.id}`}
+                          >
+                            {qa.divergenceConfirm}
+                          </Button>
+                        </div>
+                      ) : null}
+                      {hydratedDivergent ? (
+                        <p
+                          className="mt-1 text-[11px] text-muted-foreground"
+                          data-testid={`qa-divergence-note-${field.id}`}
+                        >
+                          {qa.divergenceNote}
+                        </p>
+                      ) : null}
+                      {rationaleField ? (
+                        <div className="mt-1">
+                          <FieldInput
+                            field={rationaleField}
+                            instanceId={instanceId}
+                            value={values[rationaleField.id]}
+                            onChange={(v) => onValueChange(rationaleField.id, v)}
+                            projectId={projectId}
+                            articleId={articleId}
+                          />
+                        </div>
+                      ) : null}
                       {stack.length > 0 ? (
                         <div className="mt-1 flex justify-end">
                           <ReviewerAvatarStack

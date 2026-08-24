@@ -23,6 +23,22 @@ export const qa = {
   // QASectionAccordion — the per-domain judgment card
   domainJudgmentCardTitle: 'Domain judgment',
 
+  // Derived-default recommendation (PROBAST+AI v2): the backend computes a
+  // suggested judgment from the signaling answers; the assessor records the
+  // final value, with a rationale required on divergence (UI-level gate).
+  derivedDefaultLabel: 'Derived default',
+  derivedDefaultIncomplete: 'Incomplete',
+  derivedDefaultIncompleteHint:
+    'Not every signaling question has been answered yet, so no default is derived.',
+  derivedDefaultApply: 'Apply',
+  derivedExplainShow: 'From the signaling answers',
+  derivedInputNotAnswered: 'Not answered',
+  divergenceNeedsRationale:
+    'Differs from the derived default — write the rationale below, then record the judgment.',
+  divergenceConfirm: 'Record judgment',
+  divergenceNote: 'Recorded judgment differs from the derived default.',
+  outOfScopeBadge: 'Out of scope for this study type',
+
   // Computed overall judgments (worst-domain; never entered by a reviewer)
   overallBannerTitle: 'Overall judgments',
   overallBannerHint: 'Computed from the domain judgments (worst domain). Not editable.',
