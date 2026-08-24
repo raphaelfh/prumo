@@ -50,7 +50,11 @@ from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
-from app.services.derived_judgment_service import compute_derived_judgments, derived_spec
+from app.services.derived_judgment_service import (
+    compute_derived_judgments,
+    derived_spec,
+    is_recommendation,
+)
 from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     load_export_sections,
@@ -657,8 +661,12 @@ class ExtractionExportService(LoggerMixin):
         # Computed overalls (§7): a template whose `schema` JSONB declares a
         # `derived_judgments` spec replaces the legacy single worst-case
         # `Overall` with its own named overalls, computed by the SAME module the
-        # run view uses so screen and workbook cannot drift.
-        spec = derived_spec(template_schema)
+        # run view uses so screen and workbook cannot drift. RECOMMENDATION
+        # entries (a derived default for a stored judgment, discriminated by
+        # the rule module) are advice, not record — the stored judgments they
+        # target already print as domain columns, so only the overalls become
+        # derived columns.
+        spec = [d for d in derived_spec(template_schema) if not is_recommendation(d)]
         derived_labels = tuple(str(d.get("label", "")) for d in spec)
 
         domain_section_ids = tuple(s.entity_type_id for s, _ in domains)
