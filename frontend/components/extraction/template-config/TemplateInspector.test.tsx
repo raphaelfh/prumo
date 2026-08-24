@@ -11,6 +11,15 @@ vi.mock('@/services/templateService', () => ({
   updateSection: vi.fn(),
   republishTemplateVersion: vi.fn(),
 }));
+// Same reason, for the entry-key control (0059): useUpdateTemplateField
+// reaches extractionFieldService, which imports the API client and with it
+// the Supabase client. That client builds at MODULE scope and throws
+// "supabaseUrl is required" without VITE_SUPABASE_URL — so an unmocked
+// import fails the whole SUITE at load time in any env without a .env,
+// which is exactly what CI is.
+vi.mock('@/services/extractionFieldService', () => ({
+  updateField: vi.fn(),
+}));
 
 import {toast} from 'sonner';
 
@@ -530,11 +539,15 @@ describe('TemplateInspector section pane — group (B-8 T6, D10)', () => {
     vi.mocked(toast.error).mockClear();
   });
 
-  it('shows the kind line and the LOCKED Repeats row (no select)', () => {
+  it('shows the kind line and the LOCKED Repeats row (no cardinality select)', () => {
     renderSection(groupSection);
     expect(screen.getByText('inspectorGroupKindLine')).toBeInTheDocument();
     expect(screen.getByText('inspectorGroupAlwaysRepeats')).toBeInTheDocument();
-    expect(screen.queryByRole('combobox')).toBeNull();
+    // A group's cardinality is fixed, so it gets the read-only row rather
+    // than the groupChild's select. Asserted by id: since 0059 the pane
+    // also renders the entry-key select, and a bare `queryByRole
+    // ('combobox')` would catch that unrelated control too.
+    expect(document.getElementById('inspector-section-repeats')).toBeNull();
   });
 
   it('entry-label input commits IMMEDIATELY on blur via updateSection', async () => {

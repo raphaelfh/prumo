@@ -434,6 +434,16 @@ class ExtractionField(BaseModel):
         Boolean, nullable=False, server_default=text("false")
     )
 
+    # Identity of an instance within its (article, entity_type,
+    # parent_instance) coordinate. Meaningful only on a repeating group
+    # (``cardinality='many'``); at most one per entity type, enforced by
+    # the partial unique index ``uq_extraction_fields_one_entity_key``.
+    # A key on a cardinality='one' type is inert rather than rejected, so
+    # toggling a section between one/many never trips the constraint.
+    is_entity_key: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
     # Relationships
     entity_type: Mapped["ExtractionEntityType"] = relationship(
         "ExtractionEntityType",
