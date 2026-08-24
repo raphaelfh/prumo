@@ -17,20 +17,28 @@ vi.mock('sonner', () => ({toast: {error: vi.fn(), success: vi.fn()}}));
 
 import {createSection} from '@/services/templateService';
 
+import {TooltipProvider} from '@/components/ui/tooltip';
+
 import {AddSectionDialog, type AddSectionMode} from './AddSectionDialog';
 
 function renderDialog(mode: AddSectionMode) {
   const onOpenChange = vi.fn();
   const onSectionAdded = vi.fn();
+  // TooltipProvider mirrors the app-level provider in App.tsx — the
+  // auto-name switch carries its description in a Tooltip. delayDuration 0
+  // skips Radix's 700ms hover delay, which otherwise dominates the runtime
+  // and leaves almost no headroom under findBy*'s 1s timeout.
   render(
-    <AddSectionDialog
-      projectId="p1"
-      templateId="t1"
-      open
-      mode={mode}
-      onOpenChange={onOpenChange}
-      onSectionAdded={onSectionAdded}
-    />,
+    <TooltipProvider delayDuration={0}>
+      <AddSectionDialog
+        projectId="p1"
+        templateId="t1"
+        open
+        mode={mode}
+        onOpenChange={onOpenChange}
+        onSectionAdded={onSectionAdded}
+      />
+    </TooltipProvider>,
   );
   return {onOpenChange, onSectionAdded};
 }
@@ -149,5 +157,91 @@ describe('AddSectionDialog — per-model mode (New per-{noun} section)', () => {
     // The default (cardinality 'one') renders in the closed trigger.
     expect(screen.getByRole('combobox')).toHaveTextContent('Once per algorithm');
     expect(screen.queryByText('Entry label')).toBeNull();
+  });
+});
+
+describe('AddSectionDialog — inline validation feedback', () => {
+  // These messages regressed silently under babel-plugin-react-compiler: the
+  // submit was blocked correctly but nothing rendered. Root cause and the
+  // shared-primitive guard live in components/ui/form.validation.test.tsx.
+  // Every <FormMessage/> here is bare, so the message text can only have come
+  // from the shared useFormField.
+  it('shows the label-required message on an empty submit', async () => {
+    renderDialog({kind: 'root'});
+    await submit();
+
+    expect(await screen.findByText('Label is required')).toBeInTheDocument();
+    expect(labelInput()).toHaveAttribute('aria-invalid', 'true');
+    expect(createSection).not.toHaveBeenCalled();
+  });
+
+  it('shows the label min-length message on a one-character label', async () => {
+    renderDialog({kind: 'root'});
+    await userEvent.type(labelInput(), 'a');
+    await submit();
+
+    expect(await screen.findByText('Label must be at least 2 characters')).toBeInTheDocument();
+    expect(labelInput()).toHaveAttribute('aria-invalid', 'true');
+    expect(createSection).not.toHaveBeenCalled();
+  });
+
+  it('shows the name-format message when the technical name breaks the regex', async () => {
+    renderDialog({kind: 'root'});
+    await userEvent.type(labelInput(), 'Study design');
+    // Auto-generation owns the name field until the switch is turned off.
+    await userEvent.click(screen.getByRole('switch', {name: 'Auto-generate the technical name'}));
+    const nameInput = screen.getByPlaceholderText('e.g. exclusion_criteria');
+    await userEvent.clear(nameInput);
+    await userEvent.type(nameInput, '9 bad name');
+    await submit();
+
+    expect(await screen.findByText('Invalid name format')).toBeInTheDocument();
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(createSection).not.toHaveBeenCalled();
+  });
+
+  it('clears the message and creates once the label is valid', async () => {
+    renderDialog({kind: 'root'});
+    await userEvent.type(labelInput(), 'a');
+    await submit();
+    expect(await screen.findByText('Label must be at least 2 characters')).toBeInTheDocument();
+
+    await userEvent.type(labelInput(), 'bc');
+
+    await waitFor(() =>
+      expect(screen.queryByText('Label must be at least 2 characters')).toBeNull(),
+    );
+    expect(labelInput()).toHaveAttribute('aria-invalid', 'false');
+
+    await submit();
+
+    // The payload contract is covered exhaustively by the mode suites above;
+    // here the only question is whether the form is unblocked.
+    await waitFor(() => expect(createSection).toHaveBeenCalled());
+  });
+});
+
+describe('AddSectionDialog — switch accessibility', () => {
+  it('names the auto-name switch so it is distinguishable from is_required', async () => {
+    renderDialog({kind: 'root'});
+
+    // Both getByRole calls throw on multiple matches, so resolving each by
+    // name is itself the proof that the two switches are distinguishable.
+    expect(
+      screen.getByRole('switch', {name: 'Auto-generate the technical name'}),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('switch', {name: 'Required section'})).toBeInTheDocument();
+  });
+
+  it('reveals the auto-name description on hover', async () => {
+    renderDialog({kind: 'root'});
+
+    await userEvent.hover(
+      screen.getByRole('switch', {name: 'Auto-generate the technical name'}),
+    );
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Derive the technical name from the label. Turn off to type it yourself.',
+    );
   });
 });

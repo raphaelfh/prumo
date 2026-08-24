@@ -715,6 +715,10 @@ export const extraction = {
     dashboardProgress: 'Progress',
     sectionSingle: 'section',
     sectionMultiple: 'sections',
+    // AddSectionDialog – auto-generated technical name toggle
+    autoNameLabel: 'Auto',
+    autoNameAriaLabel: 'Auto-generate the technical name',
+    autoNameTooltip: 'Derive the technical name from the label. Turn off to type it yourself.',
     // AddSectionDialog – validation messages
     nameRequired: 'Name is required',
     nameMin2: 'Name must be at least 2 characters',
