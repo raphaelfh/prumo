@@ -80,8 +80,6 @@ export const MEMBER_ROLES: Record<
  */
 export type Project = Database['public']['Tables']['projects']['Row'];
 
-
-
 /**
  * Lean type for project lists.
  */
@@ -98,25 +96,6 @@ export type ProjectSummary = Pick<
     'id' | 'name' | 'description' | 'review_title' | 'condition_studied'
 >;
 
-/**
- * Full Project type with all settings
- * Kept for compatibility with existing code
- */
-export interface ProjectData extends Project {
-  review_rationale: string | null;
-  review_keywords: string[];
-  eligibility_criteria: EligibilityCriteria;
-  study_design: StudyDesign;
-  review_context: string | null;
-  search_strategy: string | null;
-  settings: ProjectSettings;
-}
-
-interface ProjectSettings {
-  /** Per-kind: may a manager see other reviewers' values? Default (absent) = blind. */
-  managers_see_reviewers?: { extraction?: boolean; quality_assessment?: boolean };
-  [key: string]: Json | undefined;
-}
 
 export interface EligibilityCriteria {
   inclusion?: string[];

@@ -16,6 +16,11 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
+// Whichever test imports '@prumo/pdf-viewer' first pays a cold load of the
+// whole barrel — PrumoPdfViewer pulls in pdfjs-dist's multi-MB legacy build.
+// Under full-suite load that has exceeded vitest's 5s default and failed with
+// "Test timed out in 5000ms" (no assertion ever ran). The timeout is on the
+// describe so it still covers the cold one if the order changes.
 describe('@prumo/pdf-viewer public API', () => {
   it('exports the runtime entry points from the package root', async () => {
     const mod = await import('@prumo/pdf-viewer');
@@ -55,4 +60,4 @@ describe('@prumo/pdf-viewer public API', () => {
     // High-level component
     expect(typeof mod.PrumoPdfViewer).toBe('function');
   });
-});
+}, 20_000);
