@@ -118,6 +118,23 @@ def _entity_type_from_spec(
 
 _CHARMS_TEMPLATE_ID = UUID("000c0000-0000-0000-0000-000000000001")
 
+
+# The repeating groups that declare an identity key, as
+# (entity_type.name, field.name). Two mechanisms must agree on this list:
+# this seed, which only ever runs on a FRESH database, and migration
+# 0059's backfill, which is the only thing that reaches an installation
+# that already holds the templates (``seed_charms`` and ``seed_charms_mm``
+# both early-return on an existing row). ``test_seed_entity_keys`` pins
+# the two against each other.
+ENTITY_KEY_FIELDS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("prediction_models", "model_name"),  # CHARMS (000c)
+        ("prediction_models", "mdl_name"),  # CHARMS + Multimodal (000e)
+        ("final_predictors", "predictor_name"),  # CHARMS (000c)
+        ("numeric_performance", "pnum_validation_type"),  # CHARMS + Multimodal (000e)
+    }
+)
+
 # PROBAST — quality_assessment template
 _PROBAST_TEMPLATE_ID = UUID("00b00000-0000-0000-0000-000000000001")
 _PROBAST_ET_PARTICIPANTS = UUID("00b00001-0000-0000-0000-000000000000")
@@ -436,6 +453,7 @@ async def seed_charms(session: AsyncSession) -> None:
         llm: str | None = None,
         allows_not_applicable: bool = False,
         allows_not_evaluated: bool = False,
+        is_entity_key: bool = False,
     ) -> ExtractionField:
         return ExtractionField(
             entity_type_id=eid,
@@ -450,6 +468,7 @@ async def seed_charms(session: AsyncSession) -> None:
             llm_description=llm,
             allows_not_applicable=allows_not_applicable,
             allows_not_evaluated=allows_not_evaluated,
+            is_entity_key=is_entity_key,
         )
 
     fields = [
@@ -462,6 +481,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "text",
             0,
             llm="Extract the name or identifier of the prediction model. If multiple models are presented, extract each separately.",
+            is_entity_key=True,
         ),
         _f(
             _ET_PREDICTION_MODELS,
@@ -860,6 +880,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "text",
             0,
             llm="Extract the name of each final predictor included in the prediction model.",
+            is_entity_key=True,
         ),
         _f(
             _ET_FINAL_PREDICTORS,
@@ -1352,6 +1373,7 @@ def _field(
     allows_not_applicable: bool = False,
     allows_not_evaluated: bool = False,
     is_required: bool = True,
+    is_entity_key: bool = False,
 ) -> ExtractionField:
     """Build an ``ExtractionField`` row. Shared by the seeded templates.
 
@@ -1382,6 +1404,7 @@ def _field(
         llm_description=llm,
         allows_not_applicable=allows_not_applicable,
         allows_not_evaluated=allows_not_evaluated,
+        is_entity_key=is_entity_key,
     )
 
 
@@ -2602,6 +2625,7 @@ async def seed_charms_mm(session: AsyncSession) -> None:
                 "the article? If it is not named, describe the classifier "
                 "briefly."
             ),
+            is_entity_key=True,
         ),
         _field(
             _MM_ET_MODELS,
@@ -2909,6 +2933,7 @@ async def seed_charms_mm(session: AsyncSession) -> None:
                 "(the same data used for development), internal (resampling or "
                 "cross-validation), or external (independent external data)?"
             ),
+            is_entity_key=True,
         ),
         _field(
             _MM_ET_NUMERIC_PERF,
