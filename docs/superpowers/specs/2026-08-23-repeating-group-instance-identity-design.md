@@ -135,8 +135,8 @@ service:
 
 1. Resolves the entity type's key field (`is_entity_key = true`).
 2. Reads the existing instances at the coordinate
-   `(article_id, entity_type_id, parent_instance_id)` together with their
-   current key-field values.
+   `(article_id, entity_type_id, parent_instance_id)` together with the
+   key value **materialized on each instance row** (§5.1.1).
 3. Normalizes both sides — trim, collapse internal whitespace, casefold.
 4. On a match, reuses that `instance_id`. On no match, creates a new
    instance.
@@ -144,6 +144,31 @@ service:
 Applies to both AI paths: `_create_model_instances` (which today always
 creates) and the repeating-section path (which today always takes
 `instances[0]`). Fixing the second is what lets repeats 2..N ever be filled.
+
+### 5.1.1 Identity is materialized on the instance, never read from values
+
+The key value is written to `extraction_instances.metadata_->>'entity_key'`
+(normalized) when the instance is created, and matching reads only that.
+
+It must NOT be derived from the key field's *value*. During `extract`,
+field values are per-reviewer and blind: the only resolver,
+`resolve_caller_current_values`
+(`extraction_run_read_service.py:261`), is caller-scoped and documents
+itself as the 4th lockstep copy of migration 0025's blind predicate.
+Deriving identity from it gives a choice of two failures — read it scoped
+and reviewer B cannot see the value reviewer A entered, so the duplicate
+is created anyway; read it unscoped and reviewer judgment leaks across the
+blind boundary that ADR-0012 exists to hold.
+
+Materializing on the instance avoids the choice: the row is already shared
+(instance visibility is not reviewer-scoped), the value is present from
+creation, and no reviewer-attributable table is touched. It is also
+half-true today — the AI path already writes the model's name into
+`label`; this makes the identity explicit and normalized instead of
+implicit in a display string a human can rename.
+
+`label` stays the human-facing, editable name. `entity_key` is the
+identity and is not edited by hand.
 
 Reuse means the instance row is reused. What happens to its field values is
 already decided by the existing per-field guard (§3) and is not re-specified
