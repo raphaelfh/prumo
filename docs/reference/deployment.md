@@ -257,15 +257,13 @@ owner. It is the deploy safety net, not a gate.
    reachability alone cannot tell a fresh deploy from one stuck on an
    older commit. Missing/`unknown` degrades to a warning; a mismatch on a
    push fails, on the 6-hourly run it warns (a deploy may be in flight).
-3. **Authenticated read-only probe** — password grant against prod GoTrue
-   plus `GET /api/v1/user-api-keys`, asserting 200 and the `ApiResponse`
-   envelope. Exercises JWKS/JWT, the DB read path and the envelope
-   without writing: a monitor must never mutate prod. Needs repo variable
-   `PROD_SUPABASE_URL` and secrets `PROD_SUPABASE_ANON_KEY`,
-   `PROD_SMOKE_EMAIL`, `PROD_SMOKE_PASSWORD`; until they exist the step
-   skips with a visible `::warning::`, never silently.
-
-There is deliberately **no Playwright suite pointed at prod**. The former
+There is deliberately **no credentialed probe and no Playwright suite
+pointed at prod**. An authenticated probe was built and then removed
+(2026-08-23): beyond layer 1 it only adds the narrow delta between "JWKS
+loaded at boot" (already reported by `/health.checks`) and "a freshly
+minted token is accepted", which does not pay for a permanent production
+password living in CI — nor for a `::warning::` on every run while it sits
+unprovisioned, which is how a warning stops being read. The former
 `remote-smoke` project dispatched a real AI extraction (LLM spend + a run
 left behind per execution) and had never run in CI — no secrets were ever
 provisioned — so it silently self-skipped to a green "pass".
