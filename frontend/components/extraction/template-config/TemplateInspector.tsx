@@ -23,8 +23,6 @@ import {
   type MoveTargetSection,
 } from './templateTree';
 
-export type {MoveTargetSection} from './templateTree';
-
 /**
  * Docked, non-modal inspector (spec §2).
  *

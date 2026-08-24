@@ -11,8 +11,6 @@ import {
   extractValue,
   isEmptyValue,
   isValidNumber,
-  normalizeValue,
-  toNumber,
   toString,
 } from './valueParser';
 
@@ -66,15 +64,7 @@ describe('isValidNumber', () => {
   });
 });
 
-describe('normalizeValue / toNumber / toString (unchanged helpers)', () => {
-  it('normalizeValue collapses empty to null, else the extracted value', () => {
-    expect(normalizeValue({ value: '' })).toBeNull();
-    expect(normalizeValue({ value: 'x' })).toBe('x');
-  });
-  it('toNumber returns the number or null', () => {
-    expect(toNumber({ value: '7' })).toBe(7);
-    expect(toNumber('nope')).toBeNull();
-  });
+describe('toString (unchanged helper)', () => {
   it('toString returns the placeholder for empty', () => {
     expect(toString({ value: '' }, '—')).toBe('—');
     expect(toString({ value: 'x' })).toBe('x');

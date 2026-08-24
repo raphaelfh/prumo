@@ -17,12 +17,12 @@ import {toast} from 'sonner';
 import {PgError} from '@/lib/error-utils';
 import {updateSection} from '@/services/templateService';
 
+import {TemplateInspector, type SaveFieldHandler} from './TemplateInspector';
 import {
-  TemplateInspector,
+  buildTemplateTree,
+  type GridSection,
   type MoveTargetSection,
-  type SaveFieldHandler,
-} from './TemplateInspector';
-import {buildTemplateTree, type GridSection} from './templateTree';
+} from './templateTree';
 
 const tree = buildTemplateTree(
   [
