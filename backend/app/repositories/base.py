@@ -24,12 +24,14 @@ Who commits, then?
     article = await repo.create(Article(title="New"))
     await session.commit()
 
-    # A UnitOfWork block scopes the same session with rollback-on-exception,
-    # for the repositories it exposes. It is not a facade over all of them —
-    # see app/repositories/unit_of_work.py.
-    async with UnitOfWork(session) as uow:
-        member = await uow.project_members.create(member)
-        await uow.commit()
+    # Several repository calls land atomically by sharing one session and
+    # committing once at the end — each flush() is part of the same
+    # transaction until that commit.
+    articles = ArticleRepository(session)
+    authors = ArticleAuthorRepository(session)
+    article = await articles.create(Article(title="New"))
+    await authors.create(ArticleAuthor(display_name="Doe, J."))
+    await session.commit()  # both, or neither
 """
 
 from time import perf_counter
@@ -106,7 +108,7 @@ class BaseRepository(Generic[T]):
         Create a new entity.
 
         NOTE: flushes to obtain the generated ID, but never commits.
-        Commit through the session (or a UnitOfWork block) afterwards.
+        The caller commits through the session afterwards.
 
         Args:
             obj: model instance to create.
@@ -140,7 +142,7 @@ class BaseRepository(Generic[T]):
         Update an existing entity.
 
         NOTE: flushes to synchronise, but never commits.
-        Commit through the session (or a UnitOfWork block) afterwards.
+        The caller commits through the session afterwards.
 
         Args:
             obj: entity to update.
@@ -178,7 +180,7 @@ class BaseRepository(Generic[T]):
         Remove an entity.
 
         NOTE: flushes to synchronise, but never commits.
-        Commit through the session (or a UnitOfWork block) afterwards.
+        The caller commits through the session afterwards.
 
         Args:
             obj: entity to remove.

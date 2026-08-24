@@ -27,7 +27,7 @@ API (Endpoints) → Service → Repository → Model
 - Endpoints MUST NOT access the database directly (no `db.execute()` in endpoints).
 - Services MUST NOT import endpoint modules or return HTTP objects (`Request`, `Response`, `JSONResponse`). Services receive and return Python domain objects only.
 - Repositories MUST NOT contain business logic. They perform CRUD and query operations exclusively.
-- Repositories MUST call `flush()`, never `commit()`. Commit responsibility belongs to whoever owns the request's session — normally the service or endpoint, or a `UnitOfWork` block when one is in play.
+- Repositories MUST call `flush()`, never `commit()`. Commit responsibility belongs to whoever owns the request's session — normally the service or endpoint.
 - Every new feature MUST respect this flow: define models, create repositories, build services, expose via endpoints.
 
 **Rationale**: Strict layering enforces testability in isolation, prevents circular dependencies, and keeps HTTP concerns out of business logic.
@@ -206,7 +206,7 @@ lowered). No merge is permitted when any required gate fails.
 |--------------------------|------------------------------------------------------------------------------|
 | FastAPI endpoint         | `backend/app/api/v1/endpoints/{domain}.py` + register in `router.py`         |
 | Service                  | `backend/app/services/{domain}_service.py`                                   |
-| Repository               | `backend/app/repositories/{entity}_repository.py` (its owner constructs it directly; add to `unit_of_work.py` ONLY when a caller reaches it through `uow`) |
+| Repository               | `backend/app/repositories/{entity}_repository.py` (constructed directly by the service that owns it)                        |
 | SQLAlchemy model         | `backend/app/models/{entity}.py` + export in `__init__.py`                   |
 | Pydantic schema          | `backend/app/schemas/{domain}.py`                                            |
 | App table migration      | `backend/alembic/versions/{YYYYMMDD}_{rev}_{slug}.py` (Alembic)              |
