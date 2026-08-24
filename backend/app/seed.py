@@ -51,7 +51,7 @@ fields tree here, expose a ``seed_<name>`` function, and call it from
 """
 
 import asyncio
-from typing import NamedTuple
+from typing import Any, NamedTuple
 from uuid import UUID
 
 from sqlalchemy import update
@@ -1347,7 +1347,7 @@ def _field(
     sort: int,
     *,
     llm: str | None,
-    allowed: list[str] | None = None,
+    allowed: list[Any] | None = None,
     unit: str | None = None,
     allows_not_applicable: bool = False,
     allows_not_evaluated: bool = False,

@@ -75,7 +75,7 @@ async def test_no_seeded_field_carries_a_disposition_value(seed_fn) -> None:
     fields = await _seeded_fields(seed_fn)
     assert fields, "seed produced no fields"
     for f in fields:
-        values = set(f.allowed_values or [])
+        values = {v["value"] if isinstance(v, dict) else v for v in (f.allowed_values or [])}
         assert _DISPOSITION_STRINGS.isdisjoint(values), (f.name, values)
 
 

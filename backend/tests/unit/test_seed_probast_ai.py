@@ -202,7 +202,13 @@ async def test_scope_section_shape() -> None:
     assert [f.name for f in rows] == ["study_type", "models_of_interest", "outcome_of_interest"]
     study_type = rows[0]
     assert study_type.field_type == "select"
-    assert study_type.allowed_values == ["development_only", "evaluation_only", "combination"]
+    # {value,label} envelopes: spec-pinned machine codes + display labels.
+    assert [o["value"] for o in study_type.allowed_values] == [
+        "development_only",
+        "evaluation_only",
+        "combination",
+    ]
+    assert all(o["label"] for o in study_type.allowed_values)
     assert study_type.is_required is True
     assert study_type.llm_description
 

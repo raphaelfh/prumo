@@ -268,7 +268,14 @@ def _scope_fields(eid: UUID) -> list[ExtractionField]:
             "model evaluation only, or a combination.",
             "select",
             0,
-            allowed=["development_only", "evaluation_only", "combination"],
+            # {value,label} option envelopes: the stored codes stay the
+            # spec-pinned machine values; the UI renders the labels
+            # (FieldValueEditor + optionLabelMap support this natively).
+            allowed=[
+                {"value": "development_only", "label": "Development only"},
+                {"value": "evaluation_only", "label": "Evaluation only"},
+                {"value": "combination", "label": "Combination"},
+            ],
             llm=(
                 "Step 2 classification: does the publication develop a "
                 "prediction model without evaluation (development_only), "
@@ -554,9 +561,11 @@ _SECTIONS: tuple[tuple[UUID, str, str, str, Any], ...] = (
         "Evaluation D4: Analysis (apparent performance)",
         "PROBAST+AI model-evaluation domain 4, signaling questions for "
         "APPARENT performance (estimated on the same data used for "
-        "development). Leave blank when the study reports no apparent "
-        "performance. The domain judgment is recorded once, in the Evaluation "
-        "D4 judgment section.",
+        "development). Item 4.1 — whether the evaluation went beyond apparent "
+        "performance — is answered here ONCE for the whole domain, whatever "
+        "the study reports; only the remaining questions are left blank when "
+        "no apparent performance is reported. The domain judgment is recorded "
+        "once, in the Evaluation D4 judgment section.",
         lambda eid: _eval_d4_type_fields(eid, _EVAL_D4_GATE + _EVAL_D4_CORE + _EVAL_D4_PERFORMANCE),
     ),
     (
