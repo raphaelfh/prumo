@@ -60,6 +60,35 @@ def mock_db():
     return AsyncMock(spec=AsyncSession)
 
 
+@pytest.fixture(autouse=True)
+def _stub_entity_key():
+    """Neutralize identity resolution for this file's mocked-session tests.
+
+    ``_create_model_instances`` now resolves the container's entity key and
+    matches each finding against the instances that already exist (0059).
+    Both are real queries, and every test here drives the service with an
+    ``AsyncMock`` session that returns no usable ``Result``.
+
+    These tests are about label/entry-noun behaviour and the failure
+    rollback, not about identity, so the identity lookups are stubbed to
+    "declared, and nothing matches" — which keeps them exercising the
+    creation path they were written for. Identity itself is covered against
+    a real database in ``tests/integration/test_model_extraction_rerun.py``
+    and ``test_entity_key_matching.py``.
+    """
+    with (
+        patch(
+            "app.services.model_extraction_service.resolve_key_field",
+            AsyncMock(return_value=MagicMock()),
+        ),
+        patch(
+            "app.services.model_extraction_service.match_or_none",
+            AsyncMock(return_value=None),
+        ),
+    ):
+        yield
+
+
 @pytest.fixture
 def mock_storage():
     """Mock StorageAdapter."""
