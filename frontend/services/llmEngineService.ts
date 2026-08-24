@@ -35,7 +35,6 @@ export type LlmEngineRead = LlmEngineReadWire & {
 };
 export type LlmEngineCatalogEntry =
   components['schemas']['LlmEngineCatalogEntryRead'];
-export type LlmEngineAlternate = components['schemas']['LlmEngineAlternate'];
 export type LlmEngineAlternateRead =
   components['schemas']['LlmEngineAlternateRead'];
 export type LlmEngineUpdateRequest =

@@ -353,4 +353,3 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
   );
 };
 
-export default ResizablePanel;

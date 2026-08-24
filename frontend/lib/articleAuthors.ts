@@ -4,7 +4,7 @@
  */
 import {v4 as uuidv4} from 'uuid';
 
-export type AuthorRowMode = 'person' | 'single';
+type AuthorRowMode = 'person' | 'single';
 
 export interface AuthorFormRow {
     id: string;

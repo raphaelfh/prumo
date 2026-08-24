@@ -162,6 +162,5 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
   );
 }
 
-export default MultiSelectWithOther;
 
 

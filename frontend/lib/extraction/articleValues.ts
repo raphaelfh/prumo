@@ -15,7 +15,7 @@ export interface RawProposal {
   proposed_value: unknown;
 }
 
-export interface ArticleValueRow {
+interface ArticleValueRow {
   instance_id: string;
   field_id: string;
   value: unknown;

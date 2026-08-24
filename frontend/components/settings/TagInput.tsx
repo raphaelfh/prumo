@@ -10,7 +10,7 @@ import {Plus, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 
-export type TagInputVariant = 'badge' | 'list';
+type TagInputVariant = 'badge' | 'list';
 
 export interface TagInputProps {
     items: string[];

@@ -18,7 +18,7 @@ export interface PDFUrlSource {
   httpHeaders?: Record<string, string>;
 }
 
-export interface PDFDataSource {
+interface PDFDataSource {
   kind: 'data';
   data: Uint8Array | ArrayBuffer;
 }

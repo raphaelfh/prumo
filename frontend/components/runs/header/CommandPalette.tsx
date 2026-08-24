@@ -17,7 +17,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 
-export interface CommandAction {
+interface CommandAction {
   id: string;
   label: string;
   run: () => void;

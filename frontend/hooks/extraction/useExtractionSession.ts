@@ -26,7 +26,7 @@ import { openExtractionSession } from "@/services/extractionRunService";
 // synchronously, so the cancelled=true flag is reset to false before any
 // pending in-flight Promise observes it (#23).
 
-export interface ExtractionSession {
+interface ExtractionSession {
   runId: string;
   projectTemplateId: string;
   instancesByEntityType: Record<string, string>;

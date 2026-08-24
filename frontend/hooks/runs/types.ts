@@ -50,7 +50,7 @@ export interface RunReadyStateResponse {
   reviewers_ready: string[];
 }
 
-export interface ProposalRecordResponse {
+interface ProposalRecordResponse {
   id: string;
   run_id: string;
   instance_id: string;
@@ -76,7 +76,7 @@ export interface ReviewerDecisionResponse {
   created_at: string;
 }
 
-export interface ConsensusDecisionResponse {
+interface ConsensusDecisionResponse {
   id: string;
   run_id: string;
   instance_id: string;
@@ -161,7 +161,7 @@ export interface RunViewFieldResponse {
   allows_not_evaluated: boolean;
 }
 
-export interface RunViewEntityType {
+interface RunViewEntityType {
   id: string;
   name: string;
   label: string;
@@ -184,7 +184,7 @@ export interface RunViewCurrentValue {
   decision: string;
 }
 
-export interface RunViewInstanceResponse {
+interface RunViewInstanceResponse {
   id: string;
   entity_type_id: string;
   parent_instance_id: string | null;

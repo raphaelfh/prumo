@@ -20,4 +20,3 @@ export const SidebarSection: React.FC<SidebarSectionProps> = ({title, children})
   </div>
 );
 
-export default SidebarSection;

@@ -24,7 +24,7 @@ import type {ExtractionFieldInsert} from '@/types/extraction';
 type SectionRole = CreateSectionParams['role'];
 
 /** One section of the captured subtree, in creation order (parents first). */
-export interface CapturedSection {
+interface CapturedSection {
   id: string;
   /** The captured parent id — DEAD after the cascade; replay rewrites it. */
   parentId: string | null;
@@ -38,7 +38,7 @@ export interface CapturedSection {
   fields: CapturedField[];
 }
 
-export interface CapturedField {
+interface CapturedField {
   name: string;
   label: string;
   description: string | null;

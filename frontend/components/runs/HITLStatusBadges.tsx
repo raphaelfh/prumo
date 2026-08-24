@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/copy";
 
-export type HITLBadgeKind = "extraction" | "qa";
+type HITLBadgeKind = "extraction" | "qa";
 
 interface HITLStatusBadgesProps {
   kind: HITLBadgeKind;
@@ -37,7 +37,7 @@ interface HITLReopenButtonProps {
   reopening: boolean;
 }
 
-export function HITLStatusBadges({
+function HITLStatusBadges({
   kind,
   finalized,
   parentRunId,
@@ -69,7 +69,7 @@ export function HITLStatusBadges({
   );
 }
 
-export function HITLReopenButton({
+function HITLReopenButton({
   kind,
   visible,
   onClick,

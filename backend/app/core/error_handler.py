@@ -8,7 +8,6 @@ from typing import Any
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 from app.core.logging import get_logger
 
@@ -175,17 +174,6 @@ class AIExtractionError(AppError):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             details={"model": model, **(details or {})},
         )
-
-
-# =================== ERROR RESPONSE MODEL ===================
-
-
-class ErrorResponse(BaseModel):
-    """Standardized error response."""
-
-    ok: bool = False
-    error: dict[str, Any]
-    trace_id: str | None = None
 
 
 # =================== EXCEPTION HANDLERS ===================

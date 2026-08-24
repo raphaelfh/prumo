@@ -20,7 +20,7 @@ const GLOSSARY: ('glossaryExtract' | 'glossaryAssessment' | 'glossaryConsensus' 
  * content renders inside the inline Popover (wide header) AND the kebab-triggered
  * Dialog (narrow header, where Help has folded into the "three dots").
  */
-export function HelpContent() {
+function HelpContent() {
   // Kind-aware glossary: QA runs call the extract stage "Assessment" (the
   // chip does the same), so the Help text never contradicts the header.
   const { kind } = useRunHeader();

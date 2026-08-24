@@ -2,7 +2,7 @@ import { createContext, useContext, type ReactNode } from 'react';
 import type { ExtractionRunStage } from '@/types/ai-extraction';
 import type { UserRole } from '@/lib/comparison/permissions';
 
-export type RunKind = 'extraction' | 'qa';
+type RunKind = 'extraction' | 'qa';
 
 export type StageTransition =
   | { to: string; label: string; tooltip?: string; gate: { ok: true }; onAdvance: () => void | Promise<void> }

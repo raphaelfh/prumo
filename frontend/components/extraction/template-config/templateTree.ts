@@ -14,10 +14,10 @@
  * (`metaKeys`), which the component resolves through `lib/copy`.
  */
 
-export type TemplateSectionKind = 'root' | 'group' | 'groupChild';
+type TemplateSectionKind = 'root' | 'group' | 'groupChild';
 
 /** Copy keys in the `extraction` namespace. */
-export type TemplateSectionMetaKey =
+type TemplateSectionMetaKey =
   | 'sectionMetaRepeatingGroup'
   | 'sectionMetaRepeatsPerArticle'
   | 'sectionMetaRepeatsPerModel';

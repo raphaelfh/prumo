@@ -3,7 +3,7 @@
  * blocks (the backend still hard-blocks unresolved conflicts + required gaps);
  * this only decides whether to show a confirm dialog and why.
  */
-export type FinalizeWarningReason = "missing_reviewers" | "single_filler";
+type FinalizeWarningReason = "missing_reviewers" | "single_filler";
 
 export interface FinalizeWarning {
   shouldWarn: boolean;

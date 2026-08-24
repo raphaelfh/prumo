@@ -378,9 +378,6 @@ export function fetchArticleIdsWithMainFile(
 // ArticlesList: open PDF via signed URL
 // ---------------------------------------------------------------------------
 
-export interface SignedPdfUrl {
-  signedUrl: string;
-}
 
 /** Resolves to null when the article has no MAIN PDF (caller decides messaging). */
 export function fetchArticlePdfSignedUrl(articleId: string): Promise<ErrorResult<string | null>> {

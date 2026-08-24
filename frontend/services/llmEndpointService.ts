@@ -22,8 +22,6 @@ import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {components} from '@/types/api/schema';
 
 export type LlmEndpointRead = components['schemas']['LlmEndpointRead'];
-export type LlmEndpointCapabilities =
-  components['schemas']['LlmEndpointCapabilities'];
 export type LlmEndpointCreateRequest =
   components['schemas']['LlmEndpointCreateRequest'];
 export type LlmEndpointUpdateRequest =

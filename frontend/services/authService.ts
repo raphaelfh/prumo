@@ -40,19 +40,6 @@ export function getRequiredUserId(): Promise<ErrorResult<string>> {
 // ApiKeysSection: session access token
 // ---------------------------------------------------------------------------
 
-/**
- * Return the current session's access token.
- * Throws when there is no active session.
- *
- * NOTE: callers surface the error message directly as a toast.
- */
-export function getAccessToken(): Promise<ErrorResult<string>> {
-  return toResult(async () => {
-    const {data: {session}} = await supabase.auth.getSession();
-    if (!session?.access_token) throw new Error('Session expired — please sign in again');
-    return session.access_token;
-  }, 'authService.getAccessToken');
-}
 
 // ---------------------------------------------------------------------------
 // SecuritySection / ResetPassword: update password

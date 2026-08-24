@@ -26,7 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { qa } from "@/lib/copy/qa";
 import { cn } from "@/lib/utils";
 
-export interface DerivedJudgmentInputView {
+interface DerivedJudgmentInputView {
   label: string;
   value: string | null;
 }
