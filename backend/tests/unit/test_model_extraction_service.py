@@ -65,8 +65,9 @@ def _stub_entity_key():
     """Neutralize identity resolution for this file's mocked-session tests.
 
     ``_create_model_instances`` now resolves the container's entity key and
-    matches each finding against the instances that already exist (0059).
-    Both are real queries, and every test here drives the service with an
+    matches each finding against the instances that already exist, and
+    ``_identify_models`` reads those same identities to ground the prompt
+    (0059). All three are real queries, and every test here drives the service with an
     ``AsyncMock`` session that returns no usable ``Result``.
 
     These tests are about label/entry-noun behaviour and the failure
@@ -85,6 +86,29 @@ def _stub_entity_key():
             "app.services.model_extraction_service.match_or_none",
             AsyncMock(return_value=None),
         ),
+        patch(
+            "app.services.model_extraction_service.existing_keys",
+            AsyncMock(return_value={}),
+        ),
+    ):
+        yield
+
+
+@pytest.fixture
+def no_live_container():
+    """Stub the LIVE container lookup for prompt-focused tests.
+
+    ``_identify_models`` resolves the live container so it can ground the
+    prompt in the identities this article already has. That is a real
+    query; tests that drive it with a mocked session need it neutralized.
+    It is NOT autouse: ``TestInstanceLabelNoun`` exercises the real lookup,
+    and stubbing it to None there would make ``_create_model_instances``
+    return early and create nothing.
+    """
+    with patch.object(
+        ModelExtractionService,
+        "_get_model_container_entity_type_id",
+        AsyncMock(return_value=None),
     ):
         yield
 
@@ -240,6 +264,7 @@ class TestModelIdentification:
     """Tests for model identification."""
 
     @pytest.mark.asyncio
+    @pytest.mark.usefixtures("no_live_container")
     async def test_identify_models_success(self, service):
         """Test successful model identification."""
         mock_entity_type = MagicMock()
@@ -283,6 +308,7 @@ class TestModelIdentification:
         assert usage.total_tokens == 150
 
     @pytest.mark.asyncio
+    @pytest.mark.usefixtures("no_live_container")
     async def test_identify_models_no_models_found(self, service):
         """Test when no model is found."""
         template = MagicMock()
@@ -638,6 +664,7 @@ class TestFullExtractionFlow:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.usefixtures("no_live_container")
     async def test_extract_marks_run_failed_when_llm_call_raises(self, service, mock_storage):
         """Reask budget exhausted → run fails; no silent empty-list degradation."""
         from pydantic_ai import UnexpectedModelBehavior
@@ -814,6 +841,7 @@ async def test_build_prompt_input_called_with_correct_kwargs(service):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("no_live_container")
 async def test_identify_models_sends_full_text_no_truncation(service):
     """model_identification consumes the full assembled text — the legacy 15k
     truncation is gone (A1); _identify_models threads article_text verbatim."""

@@ -39,7 +39,7 @@ from app.repositories import (
 )
 from app.schemas.llm_target import LlmTarget
 from app.services.engine_credentials import EngineCredentials
-from app.services.entity_key import match_or_none, resolve_key_field, stamp
+from app.services.entity_key import existing_keys, match_or_none, resolve_key_field, stamp
 from app.services.extraction_prompt_input import build_prompt_input
 from app.services.extraction_snapshot import (
     entity_types_for_version,
@@ -404,6 +404,26 @@ class ModelExtractionService(LoggerMixin):
 
         container_label = model_entity.label if model_entity else "prediction models"
         general_instructions = await general_instructions_for_version(self.db, run.version_id)
+
+        # Re-run grounding: show the model what this article already has, so
+        # it returns the existing name instead of a fresh wording for the
+        # same entity. The identity key is free text and would otherwise
+        # drift between runs, and matching on a drifted key recreates the
+        # very duplicate it exists to prevent. Reads instances only — no
+        # reviewer-attributable row is touched.
+        already_identified: list[str] = []
+        live_container_id = await self._get_model_container_entity_type_id(run.template_id)
+        if live_container_id is not None:
+            already_identified = sorted(
+                (
+                    await existing_keys(
+                        self.db,
+                        article_id=run.article_id,
+                        entity_type_id=UUID(live_container_id),
+                    )
+                ).keys()
+            )
+
         output, usage = await extract_structured(
             output_model=model_identification.ModelIdentificationOutput,
             system_prompt=model_identification.SYSTEM_PROMPT,
@@ -411,6 +431,7 @@ class ModelExtractionService(LoggerMixin):
                 container_label=container_label,
                 article_text=pdf_text,
                 general_instructions=general_instructions,
+                existing_keys=already_identified,
             ),
             model=build_model(
                 self._engine.provider,
