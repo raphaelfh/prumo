@@ -13,16 +13,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from app.core.logging import get_logger
 from app.schemas.extraction_run import RunViewDerivedInput, RunViewDerivedJudgment
 from app.services.derived_judgment_service import (
     compute_derived_judgments,
     derived_spec,
     is_recommendation,
-    spec_coordinates,
+    warn_dangling_spec_refs,
 )
-
-logger = get_logger(__name__)
 
 
 def _group_label(sections: tuple[str, ...], label_by_section: dict[str, str]) -> str:
@@ -98,13 +95,9 @@ def build_derived_judgments_payload(
             if raw is not None:
                 values_by_coord[(et.name, field.name)] = raw
 
-    # A coordinate the template no longer carries is a definition bug that would
-    # otherwise null an overall (or unpair a recommendation) in silence: the
-    # spec is read live off the template, while the coordinates come from the
-    # frozen version snapshot.
-    unresolvable = sorted({c for c in spec_coordinates(spec) if c not in ids_by_coord})
-    if unresolvable:
-        logger.warning("qa_derived_spec_dangling_ref", coordinates=unresolvable)
+    # A coordinate the template no longer carries is a definition bug that
+    # would otherwise null an overall (or unpair a recommendation) in silence.
+    warn_dangling_spec_refs(spec, set(ids_by_coord))
 
     def _pointer_field_ids(entry: Any, key: str) -> tuple[Any, Any]:
         pointer = entry.get(key) if isinstance(entry, dict) else None

@@ -7,6 +7,7 @@ worst-case ``Overall`` column, byte for byte.
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import patch
 from uuid import uuid4
 
 from app.models.extraction import ExtractionEntityRole, ExtractionFieldType
@@ -270,3 +271,64 @@ def test_recommendation_entries_contribute_no_derived_column() -> None:
     assert model is not None
     assert model.derived_labels == ("Overall RoB",)
     assert model.rows[0].derived_values == ("High",)
+
+
+def test_export_warns_on_a_dangling_spec_coordinate() -> None:
+    """§9: the run view logged dangling refs while the export silently
+    blanked the column — the export path now fires the same event, pointers
+    included."""
+    s1, f1 = _section("d1", "D1", "risk_of_bias")
+    run_id, i1 = uuid4(), uuid4()
+    article = _article(run_id, {s1.entity_type_id: (i1,)})
+    spec = {
+        "derived_judgments": [
+            {
+                "id": "overall_rob",
+                "label": "Overall RoB",
+                "rule": "worst_domain",
+                "summary": {"section": "overall", "field": "summary_gone"},
+                "inputs": [{"section": "d1", "field": "renamed_gone"}],
+            }
+        ]
+    }
+    with patch("app.services.derived_judgment_service.logger") as mock_logger:
+        model = ExtractionExportService._build_appraisal_model(
+            sections=(s1,),
+            articles=(article,),
+            reviewers=(),
+            value_map={(run_id, i1, f1.field_id): "High"},
+            mode=ExportMode.CONSENSUS,
+            template_schema=spec,
+        )
+    assert model is not None
+    warned = mock_logger.warning.call_args
+    assert warned is not None
+    assert warned.args[0] == "qa_derived_spec_dangling_ref"
+    assert ("d1", "renamed_gone") in warned.kwargs["coordinates"]
+    assert ("overall", "summary_gone") in warned.kwargs["coordinates"]
+
+
+def test_export_stays_silent_when_the_spec_resolves() -> None:
+    s1, f1 = _section("d1", "D1", "risk_of_bias")
+    run_id, i1 = uuid4(), uuid4()
+    article = _article(run_id, {s1.entity_type_id: (i1,)})
+    spec = {
+        "derived_judgments": [
+            {
+                "id": "overall_rob",
+                "label": "Overall RoB",
+                "rule": "worst_domain",
+                "inputs": [{"section": "d1", "field": "risk_of_bias"}],
+            }
+        ]
+    }
+    with patch("app.services.derived_judgment_service.logger") as mock_logger:
+        ExtractionExportService._build_appraisal_model(
+            sections=(s1,),
+            articles=(article,),
+            reviewers=(),
+            value_map={(run_id, i1, f1.field_id): "High"},
+            mode=ExportMode.CONSENSUS,
+            template_schema=spec,
+        )
+    assert mock_logger.warning.call_args is None
