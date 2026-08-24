@@ -4,7 +4,6 @@ import {
   sidebarItems,
   sidebarSections,
   tabIdToLabel,
-  VALID_TAB_IDS,
   type SidebarTabId,
 } from '@/components/layout/sidebarConfig';
 
@@ -15,8 +14,8 @@ import {
  * pin all three so a future config refactor doesn't silently drop QA.
  */
 describe('Sidebar config — Quality Assessment tab', () => {
-  it('exposes "quality" in the SidebarTabId union via VALID_TAB_IDS', () => {
-    expect(VALID_TAB_IDS).toContain('quality');
+  it('exposes "quality" as a sidebar tab id', () => {
+    expect(sidebarItems.map((i) => i.id)).toContain('quality');
   });
 
   it('places the QA item directly below "extraction" in the Review section', () => {
@@ -48,9 +47,9 @@ describe('Sidebar config — Quality Assessment tab', () => {
     expect(qaItem?.comingSoon).not.toBe(true);
   });
 
-  it('SidebarTabId stays in sync with the runtime VALID_TAB_IDS list', () => {
-    // Type-level assertion: VALID_TAB_IDS contents are assignable to SidebarTabId.
-    const ids: SidebarTabId[] = VALID_TAB_IDS as SidebarTabId[];
+  it('SidebarTabId stays in sync with the runtime tab ids', () => {
+    // Type-level assertion: every runtime id is assignable to SidebarTabId.
+    const ids: SidebarTabId[] = sidebarItems.map((i) => i.id) as SidebarTabId[];
     expect(new Set(ids).size).toBe(ids.length);
   });
 });

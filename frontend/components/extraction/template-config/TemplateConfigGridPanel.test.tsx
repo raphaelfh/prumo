@@ -44,7 +44,8 @@ import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField'
 import {useContainerNarrow} from '@/hooks/shared/useContainerNarrow';
 import {validateFieldImpact} from '@/services/extractionFieldService';
 import {toast} from 'sonner';
-import type {ExtractionField, FieldValidationResult} from '@/types/extraction';
+import type {ExtractionField} from '@/types/extraction';
+import type {FieldValidationResult} from '@/services/extractionFieldService';
 
 import {
   applyRetentionToFilter,

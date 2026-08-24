@@ -97,7 +97,7 @@ import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
 import {templateEntityTypesKeys} from '@/lib/query-keys/extraction';
 import {deleteField, insertField, validateFieldImpact} from '@/services/extractionFieldService';
-import type {FieldValidationResult} from '@/types/extraction';
+import type {FieldValidationResult} from '@/services/extractionFieldService';
 
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 

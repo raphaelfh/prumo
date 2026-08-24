@@ -57,15 +57,30 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
 
 ## Dead code
 
-- CI gates the frontend at **zero knip findings** (`npx knip` from the
-  repo root; also a `verify_all.sh` gate). Unused files, exports, types
-  and dependencies fail the build — delete them, don't export "just in
-  case". Legitimate exceptions (generated files, shell-invoked scripts,
-  browser-runtime imports) live in `knip.jsonc`, each with a comment
-  explaining why; extend that file only with a reason a reviewer can
-  check. Generated files (`frontend/types/api/schema.d.ts`,
+- CI gates the frontend at **zero knip findings in two modes**, both run
+  from the repo root and both also `verify_all.sh` gates:
+  `npx knip --no-tag-hints` (tests count as consumers) and
+  `npx knip --production --no-tag-hints` (only production code does).
+  Unused files, exports, types and dependencies fail the build — delete
+  them, don't export "just in case". Legitimate exceptions (generated
+  files, shell-invoked scripts, browser-runtime imports) live in
+  `knip.jsonc`, each with a comment explaining why; extend that file only
+  with a reason a reviewer can check. Generated files
+  (`frontend/types/api/schema.d.ts`,
   `frontend/integrations/supabase/types.ts`) are knip-ignored — never
   hand-edit them to silence a finding.
+- **A production-mode finding is not automatically "delete it."** It means
+  no production file imports the export; the code behind it may still be
+  live. Check, in order: (1) is the symbol called inside its own module?
+  then it is live and only the `export` faces the test — `knip.jsonc` sets
+  `ignoreExportsUsedInFile` so this should not reach you; (2) is it a
+  *duplicate* of a type/function that lives closer to its real caller?
+  delete this copy and point the tests at the canonical one (that is how
+  the stale `FieldValidationResult` and `ArticleListItem` copies were
+  found); (3) is it genuinely orphaned — no caller anywhere but its own
+  test? delete the code *and* the test; (4) is it a seam a test must reach
+  and production deliberately cannot? mark it `@internal` at the
+  declaration with a reason. Never silence one by widening `ignore`.
 
 ## Tests
 
