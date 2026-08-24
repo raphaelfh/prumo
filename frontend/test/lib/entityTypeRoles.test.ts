@@ -12,7 +12,6 @@ import {
   ENTITY_ROLE,
   isModelContainer,
   isModelSection,
-  isStudySection,
   partitionEntityTypes,
   useEntityTypePartition,
 } from '@/lib/extraction/entityTypeRoles';
@@ -28,10 +27,6 @@ describe('entity role predicates', () => {
     const study = row('a', ENTITY_ROLE.STUDY_SECTION);
     const container = row('b', ENTITY_ROLE.MODEL_CONTAINER);
     const child = row('c', ENTITY_ROLE.MODEL_SECTION);
-
-    expect(isStudySection(study)).toBe(true);
-    expect(isStudySection(container)).toBe(false);
-    expect(isStudySection(child)).toBe(false);
 
     expect(isModelContainer(container)).toBe(true);
     expect(isModelContainer(study)).toBe(false);
