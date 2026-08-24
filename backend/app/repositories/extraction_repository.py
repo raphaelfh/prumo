@@ -29,36 +29,6 @@ class ExtractionTemplateRepository(BaseRepository[ProjectExtractionTemplate]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, ProjectExtractionTemplate)
 
-    async def get_by_project(
-        self,
-        project_id: UUID | str,
-    ) -> list[ProjectExtractionTemplate]:
-        """
-        List templates for a project.
-
-        Args:
-            project_id: Project ID.
-
-        Returns:
-            Template list.
-        """
-        if isinstance(project_id, str):
-            project_id = UUID(project_id)
-
-        query_start = perf_counter()
-        result = await self.db.execute(
-            select(ProjectExtractionTemplate).where(
-                ProjectExtractionTemplate.project_id == project_id
-            )
-        )
-        logger.debug(
-            "repository_query_db_latency",
-            repository=self.__class__.__name__,
-            operation="get_by_project",
-            db_duration_ms=(perf_counter() - query_start) * 1000,
-        )
-        return list(result.scalars().all())
-
     async def get_with_entity_types(
         self,
         template_id: UUID | str,
@@ -102,45 +72,6 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
 
     def __init__(self, db: AsyncSession):
         super().__init__(db, ExtractionEntityType)
-
-    async def get_by_template(
-        self,
-        template_id: UUID | str,
-        is_project_template: bool = True,
-    ) -> list[ExtractionEntityType]:
-        """
-        List entity types for a template.
-
-        Args:
-            template_id: Template ID.
-            is_project_template: Whether template is project-scoped.
-
-        Returns:
-            Entity type list.
-        """
-        if isinstance(template_id, str):
-            template_id = UUID(template_id)
-
-        if is_project_template:
-            query = select(ExtractionEntityType).where(
-                ExtractionEntityType.project_template_id == template_id
-            )
-        else:
-            query = select(ExtractionEntityType).where(
-                ExtractionEntityType.template_id == template_id
-            )
-
-        query = query.order_by(ExtractionEntityType.sort_order)
-
-        query_start = perf_counter()
-        result = await self.db.execute(query)
-        logger.debug(
-            "repository_query_db_latency",
-            repository=self.__class__.__name__,
-            operation="get_by_template",
-            db_duration_ms=(perf_counter() - query_start) * 1000,
-        )
-        return list(result.scalars().all())
 
     async def get_with_fields(
         self,

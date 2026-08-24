@@ -220,7 +220,6 @@ def test_resolves_with_real_field_descriptor_unit() -> None:
         label="Dose",
         type=ExtractionFieldType.NUMBER,
         allowed_values=(),
-        parent_section_id=uuid4(),
         unit="mg",
     )
     # Envelope omits unit → FieldDescriptor.unit fills it in.

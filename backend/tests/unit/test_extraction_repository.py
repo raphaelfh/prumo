@@ -92,27 +92,6 @@ def make_instance(
 
 class TestExtractionTemplateRepository:
     @pytest.mark.asyncio
-    async def test_get_by_project_returns_templates(self) -> None:
-        db = make_db()
-        templates = [MagicMock(spec=ProjectExtractionTemplate)]
-        db.execute = AsyncMock(return_value=make_scalars_result(templates))
-        repo = ExtractionTemplateRepository(db)
-
-        result = await repo.get_by_project(PROJECT_ID)
-
-        assert result == templates
-
-    @pytest.mark.asyncio
-    async def test_get_by_project_accepts_string_id(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalars_result([]))
-        repo = ExtractionTemplateRepository(db)
-
-        result = await repo.get_by_project(str(PROJECT_ID))
-
-        assert result == []
-
-    @pytest.mark.asyncio
     async def test_get_with_entity_types_returns_template(self) -> None:
         db = make_db()
         tmpl = MagicMock(spec=ProjectExtractionTemplate)
@@ -150,38 +129,6 @@ class TestExtractionTemplateRepository:
 
 
 class TestExtractionEntityTypeRepository:
-    @pytest.mark.asyncio
-    async def test_get_by_template_project(self) -> None:
-        db = make_db()
-        types = [make_entity_type()]
-        db.execute = AsyncMock(return_value=make_scalars_result(types))
-        repo = ExtractionEntityTypeRepository(db)
-
-        result = await repo.get_by_template(TEMPLATE_ID, is_project_template=True)
-
-        assert result == types
-
-    @pytest.mark.asyncio
-    async def test_get_by_template_global(self) -> None:
-        db = make_db()
-        types = [make_entity_type()]
-        db.execute = AsyncMock(return_value=make_scalars_result(types))
-        repo = ExtractionEntityTypeRepository(db)
-
-        result = await repo.get_by_template(TEMPLATE_ID, is_project_template=False)
-
-        assert result == types
-
-    @pytest.mark.asyncio
-    async def test_get_by_template_accepts_string_id(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalars_result([]))
-        repo = ExtractionEntityTypeRepository(db)
-
-        result = await repo.get_by_template(str(TEMPLATE_ID))
-
-        assert result == []
-
     @pytest.mark.asyncio
     async def test_get_with_fields_returns_entity_type(self) -> None:
         db = make_db()

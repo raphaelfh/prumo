@@ -49,20 +49,11 @@ def normalize_author_display_name(creator: dict[str, Any]) -> str:
     return first or last or "Unknown"
 
 
-def _author_creator_rows(names: Any) -> list[dict[str, Any]]:
-    return [
-        {"creator_type": "author", "display_name": str(name).strip(), "raw": {"name": name}}
-        for name in (names or [])
-        if str(name).strip()
-    ]
-
-
 @dataclass(slots=True)
 class CanonicalArticlePayload:
     canonical_identity: dict[str, str | None]
     article_fields: dict[str, Any]
     creator_rows: list[dict[str, Any]]
-    source_lineage: str
 
 
 def normalize_zotero_item(
@@ -116,56 +107,4 @@ def normalize_zotero_item(
         canonical_identity=canonical_identity,
         article_fields=article_fields,
         creator_rows=creator_rows,
-        source_lineage="zotero",
-    )
-
-
-def normalize_ris_entry(entry: dict[str, Any]) -> CanonicalArticlePayload:
-    doi = normalize_doi(entry.get("doi"))
-    url_landing = normalize_url(entry.get("url"))
-    creator_rows = _author_creator_rows(entry.get("authors"))
-    article_fields: dict[str, Any] = {
-        "title": entry.get("title") or "Untitled",
-        "abstract": entry.get("abstract"),
-        "publication_year": entry.get("year"),
-        "journal_title": entry.get("journal"),
-        "doi": doi,
-        "url_landing": url_landing,
-        "authors": [row["display_name"] for row in creator_rows] or None,
-        "keywords": entry.get("keywords"),
-        "ingestion_source": "ris",
-        "source_payload": entry,
-        "sync_state": "active",
-        "source_lineage": "ris",
-    }
-    return CanonicalArticlePayload(
-        canonical_identity={"zotero_item_key": None, "doi": doi, "url_landing": url_landing},
-        article_fields=article_fields,
-        creator_rows=creator_rows,
-        source_lineage="ris",
-    )
-
-
-def normalize_manual_entry(entry: dict[str, Any]) -> CanonicalArticlePayload:
-    doi = normalize_doi(entry.get("doi"))
-    url_landing = normalize_url(entry.get("url_landing"))
-    creator_rows = _author_creator_rows(entry.get("authors"))
-    article_fields: dict[str, Any] = {
-        "title": entry.get("title") or "Untitled",
-        "abstract": entry.get("abstract"),
-        "publication_year": entry.get("publication_year"),
-        "journal_title": entry.get("journal_title"),
-        "doi": doi,
-        "url_landing": url_landing,
-        "authors": [row["display_name"] for row in creator_rows] or None,
-        "ingestion_source": "manual",
-        "source_payload": entry,
-        "sync_state": "active",
-        "source_lineage": "manual",
-    }
-    return CanonicalArticlePayload(
-        canonical_identity={"zotero_item_key": None, "doi": doi, "url_landing": url_landing},
-        article_fields=article_fields,
-        creator_rows=creator_rows,
-        source_lineage="manual",
     )

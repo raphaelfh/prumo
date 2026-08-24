@@ -27,6 +27,32 @@ import { cn } from "@/lib/utils";
 import type { components } from "@/types/api/schema";
 
 type RunViewDerivedJudgment = components["schemas"]["RunViewDerivedJudgment"];
+type RunViewDerivedInput = components["schemas"]["RunViewDerivedInput"];
+
+/**
+ * What one breakdown row shows on the right, and in which tone.
+ *
+ * Plain rows display the RAW stored answer. A collapse group has no single
+ * answer (`value` is null by contract on every group row), so it displays its
+ * resolved `contribution` instead — and when it resolved to nothing, `state`
+ * says which of the two opposite reasons applies. Reading `value ??
+ * contribution` alone collapses them into one warning-toned "Not answered",
+ * which tells a reviewer whose assessment is COMPLETE that a performance type
+ * the study never reported is still owed. Only `"in-progress"` is a gap, so
+ * only it is warning-toned; `"unreported"` is muted because there is nothing
+ * to act on.
+ */
+function rowDisplay(input: RunViewDerivedInput): { text: string; tone: string } {
+  if (input.state === "unreported") {
+    return { text: qa.derivedInputUnreported, tone: "text-muted-foreground" };
+  }
+  if (input.state === "in-progress") {
+    return { text: qa.derivedInputInProgress, tone: "text-warning" };
+  }
+  const display = input.value ?? input.contribution;
+  if (display != null) return { text: display, tone: "text-foreground" };
+  return { text: qa.derivedInputNotAnswered, tone: "text-warning" };
+}
 
 interface DerivedDefaultChipProps {
   judgment: RunViewDerivedJudgment;
@@ -97,11 +123,7 @@ export function DerivedDefaultChip({
               {inputs.map((input) => {
                 const causes =
                   derived !== null && input.contribution === derived;
-                // Plain rows display the RAW stored answer; collapse-group
-                // rows carry no single answer (value=null by contract) and
-                // display their resolved contribution instead. Only a row
-                // that resolved to NOTHING reads as not answered.
-                const display = input.value ?? input.contribution ?? null;
+                const { text, tone } = rowDisplay(input);
                 return (
                   <li
                     key={input.label}
@@ -115,14 +137,7 @@ export function DerivedDefaultChip({
                     <span className="min-w-0 truncate text-muted-foreground">
                       {input.label}
                     </span>
-                    <span
-                      className={cn(
-                        "shrink-0",
-                        display == null ? "text-warning" : "text-foreground",
-                      )}
-                    >
-                      {display ?? qa.derivedInputNotAnswered}
-                    </span>
+                    <span className={cn("shrink-0", tone)}>{text}</span>
                   </li>
                 );
               })}

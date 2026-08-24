@@ -136,7 +136,6 @@ def _workbook_overall(
             label="Risk of bias",
             type=ExtractionFieldType.SELECT,
             allowed_values=("Low", "High", "Unclear"),
-            parent_section_id=section_id,
             name=_ROB,
         )
         sections.append(
@@ -159,7 +158,6 @@ def _workbook_overall(
         article_id=uuid4(),
         header_label="Art 1",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances=section_instances,

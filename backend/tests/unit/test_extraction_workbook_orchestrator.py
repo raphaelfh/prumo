@@ -27,7 +27,6 @@ def _one_field_layout(*, include_ai: bool, n_articles: int = 1) -> ExportLayout:
         label="Source",
         type=ExtractionFieldType.TEXT,
         allowed_values=(),
-        parent_section_id=sec_id,
     )
     section = SectionDescriptor(
         entity_type_id=sec_id,
@@ -41,7 +40,6 @@ def _one_field_layout(*, include_ai: bool, n_articles: int = 1) -> ExportLayout:
             article_id=uuid4(),
             header_label=f"Art {i}",
             run_id=uuid4(),
-            run_stage=None,
             version_id=None,
             model_instances=(),
             section_instances={sec_id: (uuid4(),)},

@@ -210,12 +210,22 @@ export interface RunViewResponse extends RunDetailResponse {
    * `summary_field_id`). Empty for templates with no spec. `value` is null
    * when the inputs are incomplete; `inputs` is the per-input breakdown —
    * `value` is the display (raw answer for signaling rows), `contribution`
-   * the Low/High/Unclear the rule consumed (highlight/color by it only). */
+   * the Low/High/Unclear the rule consumed (highlight/color by it only), and
+   * `state` — set only on a collapse-group row that contributed nothing —
+   * says which of `"unreported"` (the study never reported that performance
+   * type) or `"in-progress"` (half-answered) it was. A group has no stored
+   * answer, so `value` is null on every group row and `state` is the only
+   * thing separating a finished assessment from an unfinished one. */
   derived_judgments?: {
     id: string;
     label: string;
     value: string | null;
-    inputs?: { label: string; value: string | null; contribution?: string | null }[];
+    inputs?: {
+      label: string;
+      value: string | null;
+      contribution?: string | null;
+      state?: string | null;
+    }[];
     target_entity_type_id?: string | null;
     target_field_id?: string | null;
     rationale_field_id?: string | null;
