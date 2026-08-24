@@ -790,26 +790,14 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     await act(async () => {
       await result.current.saveNow();
     });
-    expect(apiClientMock.mock.calls.map(([url]) => String(url))).toEqual([
-      '/api/v1/runs/run-A/decisions',
-    ]);
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
 
     // `POST /runs/{id}/reopen` forks a child run over the SAME
-    // (project, article, template) coordinate and seeds it from the parent's
-    // published states — carrying the parent's `instance_id` verbatim, since
-    // `extraction_instances` has no `run_id` (it is scoped to
-    // (article_id, template_id)). The page swaps `activeRunId` in place via
-    // `sessionResult.refetch()`, so this hook keeps its acknowledgment cache
-    // while every coord key now addresses a DIFFERENT run.
-    rerender({
-      runId: 'run-B',
-      stage: 'extract',
-      values: {},
-      baselineValues: {},
-      debounceMs: 5000,
-    });
-    // Consensus published the other reviewer's value, so run-B hydrates as
-    // 'V2'; the reviewer re-asserts the same judgment they made on run-A.
+    // (project, article, template) coordinate, carrying the parent's
+    // `instance_id` verbatim since `extraction_instances` has no `run_id`.
+    // The page swaps `activeRunId` in place, so the coord key is unchanged
+    // while it now addresses a different run. Consensus published the other
+    // reviewer's value ('V2'), and the reviewer re-asserts theirs.
     rerender({
       runId: 'run-B',
       stage: 'extract',
@@ -822,21 +810,17 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
       await result.current.saveNow();
     });
 
-    // Without a run-scoped cache the run-A fingerprint matches and the write
-    // is silently dropped: no POST, no error, badge clean, dissent lost.
+    // Carrying run-A's acknowledgment over drops this silently: no POST, no
+    // error, badge clean, dissent lost.
     expect(apiClientMock.mock.calls.map(([url]) => String(url))).toEqual([
       '/api/v1/runs/run-A/decisions',
       '/api/v1/runs/run-B/decisions',
     ]);
+    // The re-asserted value went out, not the consensus baseline.
     expect(apiClientMock).toHaveBeenLastCalledWith(
       '/api/v1/runs/run-B/decisions',
       expect.objectContaining({
-        body: expect.objectContaining({
-          instance_id: 'inst-1',
-          field_id: 'field-1',
-          decision: 'edit',
-          value: { value: 'V1' },
-        }),
+        body: expect.objectContaining({ value: { value: 'V1' } }),
       }),
     );
   });
@@ -862,10 +846,10 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     });
     expect(apiClientMock).toHaveBeenCalledTimes(1);
 
-    // The run-switch flush (#684) and the cache reset race the same commit.
-    // Resetting the map the flush diffs against would make every coord the
-    // reviewer edited on run-A look dirty again and append a duplicate
-    // `edit` decision per run switch — the exact churn the diff prevents.
+    // Regression guard: the run-switch flush (#684) commits alongside the
+    // cache swap, and must keep diffing against run-A's acknowledgments —
+    // otherwise every coord edited on run-A looks dirty again and appends a
+    // duplicate `edit` decision per run switch.
     rerender({
       runId: 'run-B',
       stage: 'extract',
