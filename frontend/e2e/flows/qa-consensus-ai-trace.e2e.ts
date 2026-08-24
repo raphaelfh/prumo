@@ -252,30 +252,33 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     test.skip(coords.length < 3, "CHARMS clone exposes fewer than 3 text fields");
     const [coord1, coord2, coord3] = coords;
 
-    // --- Seed AI proposals (owner is reviewer-capable; viewers now 403 here)
-    // + run provenance so the popover's ran-by header has an identity to
-    // reveal (proposal POSTs alone don't write results.provenance).
-    for (const [coord, value] of [
-      [coord1, AI_COORD1],
-      [coord2, A_TYPED_COORD2],
-    ] as const) {
-      const res = await request.post(
-        `${env.apiUrl}/api/v1/runs/${runId}/proposals`,
-        {
-          headers: authHeaders(ownerToken, traceId),
-          data: {
-            instance_id: coord.instanceId,
-            field_id: coord.fieldId,
-            source: "ai",
-            proposed_value: { value },
-            confidence_score: 0.9,
-            rationale: "e2e seeded",
-          },
-          timeout: 15_000,
-        },
-      );
-      expect(res.ok(), await res.text()).toBeTruthy();
-    }
+    // --- Seed AI proposals directly in the table + run provenance so the
+    // popover's ran-by header has an identity to reveal.
+    //
+    // The API refuses source='ai' (server-generated): the real writer is
+    // SectionExtractionService, in-process. Blind peers read AI rows
+    // unattributed, so a caller-authored one would be a forged model
+    // suggestion. Seeding here mirrors how the pipeline writes them — the
+    // same reason the pre-D8 human row below is seeded directly.
+    await adminInsert(
+      "extraction_proposal_records",
+      (
+        [
+          [coord1, AI_COORD1],
+          [coord2, A_TYPED_COORD2],
+        ] as const
+      ).map(([coord, value]) => ({
+        id: crypto.randomUUID(),
+        run_id: runId,
+        instance_id: coord.instanceId,
+        field_id: coord.fieldId,
+        source: "ai",
+        source_user_id: null,
+        proposed_value: { value },
+        confidence_score: 0.9,
+        rationale: "e2e seeded",
+      })),
+    );
     await adminUpdate("extraction_runs", `id=eq.${runId}`, {
       results: { provenance: { model: "e2e-seed", ran_by_user_id: ownerId } },
     });

@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, make_ai_proposal
 
 
 @pytest_asyncio.fixture
@@ -106,20 +106,20 @@ async def test_full_hitl_lifecycle(
     assert advance_res.status_code == 200, advance_res.text
     assert advance_res.json()["data"]["stage"] == "extract"
 
-    # 3) Record AI proposal
-    proposal_res = await db_client.post(
-        f"/api/v1/runs/{run_id}/proposals",
-        json={
-            "instance_id": instance_id,
-            "field_id": field_id,
-            "source": "ai",
-            "proposed_value": {"text": "lifecycle E2E"},
-            "confidence_score": 0.88,
-        },
+    # 3) Record AI proposal — seeded in-process, the way the extraction
+    # pipeline writes it; the API refuses source='ai' as server-generated.
+    proposal_id = str(
+        (
+            await make_ai_proposal(
+                db_session,
+                run_id=UUID(run_id),
+                instance_id=UUID(instance_id),
+                field_id=UUID(field_id),
+                proposed_value={"text": "lifecycle E2E"},
+                confidence_score=0.88,
+            )
+        ).id
     )
-    assert proposal_res.status_code == 201, proposal_res.text
-    proposal_id = proposal_res.json()["data"]["id"]
-    assert UUID(proposal_id)
 
     # 4) Reviewer accepts the proposal (run stays in extract; no review stage)
     decision_res = await db_client.post(
@@ -206,11 +206,23 @@ async def test_invalid_stage_transition_returns_400(
 
 
 @pytest.mark.asyncio
-async def test_proposal_outside_proposal_stage_returns_400(
+async def test_proposal_outside_extract_stage_is_rejected(
     db_client: AsyncClient,
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
+    """A pending run takes no proposals.
+
+    Asserted against the service: /proposals refuses every source outright
+    now, so going through the endpoint would pass for the wrong reason — the
+    source guard fires before the stage is ever consulted.
+    """
+    from app.models.extraction_workflow import ExtractionProposalSource
+    from app.services.extraction_proposal_service import (
+        ExtractionProposalService,
+        InvalidProposalError,
+    )
+
     fx = await _pick_fixtures(db_session)
     if fx is None:
         pytest.skip("Need fixtures.")
@@ -226,17 +238,14 @@ async def test_proposal_outside_proposal_stage_returns_400(
     )
     run_id = create_res.json()["data"]["id"]
 
-    # Run is in pending stage; proposal requires proposal stage
-    bad = await db_client.post(
-        f"/api/v1/runs/{run_id}/proposals",
-        json={
-            "instance_id": instance_id,
-            "field_id": field_id,
-            "source": "ai",
-            "proposed_value": {"v": "x"},
-        },
-    )
-    assert bad.status_code == 400
+    with pytest.raises(InvalidProposalError, match="stage"):
+        await ExtractionProposalService(db_session).record_proposal(
+            run_id=UUID(run_id),
+            instance_id=UUID(instance_id),
+            field_id=UUID(field_id),
+            source=ExtractionProposalSource.AI,
+            proposed_value={"v": "x"},
+        )
 
 
 @pytest.mark.asyncio

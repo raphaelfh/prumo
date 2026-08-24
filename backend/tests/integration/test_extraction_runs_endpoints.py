@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, make_ai_proposal
 
 API_PREFIX = "/api/v1/runs"
 
@@ -407,12 +407,35 @@ async def test_advance_for_nonexistent_run_returns_404(
 # =================== POST /runs/{id}/proposals ===================
 
 
+@pytest.mark.parametrize(
+    ("source", "expected_fragment"),
+    [
+        ("ai", "server-generated"),
+        ("system", "server-generated"),
+        ("human", "/decisions"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_create_proposal_returns_201(
+async def test_create_proposal_accepts_no_source(
     db_client: AsyncClient,
     db_session: AsyncSession,
+    source: str,
+    expected_fragment: str,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
+    """No source may be authored through this endpoint — it is closed.
+
+    'ai' and 'system' are server-generated: the extraction pipeline and
+    reopen seeding write them in-process, and blind peers read them
+    unattributed, so a caller-authored row is a forgery peers cannot
+    distinguish from real output. 'human' writes belong on /decisions so the
+    per-reviewer blind contract holds (rejected one layer down, in
+    ``record_proposal``).
+
+    The stage and coordinate-coherence guards this endpoint used to surface
+    are now unreachable through it; they are covered where they live, in
+    ``test_extraction_proposal_service``.
+    """
     fx = await _resolve_fixtures(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
@@ -432,20 +455,22 @@ async def test_create_proposal_returns_201(
         json={
             "instance_id": str(instance_id),
             "field_id": str(field_id),
-            "source": "ai",
+            "source": source,
             "proposed_value": {"text": "candidate"},
             "confidence_score": 0.91,
             "rationale": "model rationale",
         },
     )
-    assert response.status_code == 201, response.text
-    payload = response.json()
-    assert payload["ok"] is True
-    data = payload["data"]
-    assert UUID(data["id"])
-    assert data["run_id"] == str(run_id)
-    assert data["source"] == "ai"
-    assert data["confidence_score"] == 0.91
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["ok"] is False
+    assert expected_fragment in body["error"]["message"]
+
+    stored = await db_session.execute(
+        text("SELECT count(*) FROM public.extraction_proposal_records WHERE run_id = :r"),
+        {"r": str(run_id)},
+    )
+    assert stored.scalar() == 0, "a refused proposal must leave no row behind"
 
 
 @pytest.mark.asyncio
@@ -516,89 +541,6 @@ async def test_create_proposal_client_verification_returns_422(
 
 
 @pytest.mark.asyncio
-async def test_create_proposal_outside_proposal_stage_returns_400(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    """Run in PENDING stage -> proposal write must fail with 400."""
-    fx = await _resolve_fixtures(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    project_id, article_id, template_id, _, instance_id, field_id = fx
-
-    created = await _create_run_via_api(
-        db_client,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-    )
-    run_id = UUID(created["id"])
-
-    response = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": "ai",
-            "proposed_value": {"v": "x"},
-        },
-    )
-    assert response.status_code == 400
-    body = response.json()
-    assert body["ok"] is False
-    assert "stage" in body["error"]["message"].lower()
-
-
-@pytest.mark.asyncio
-async def test_create_proposal_with_incoherent_coords_returns_422(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    fx = await _resolve_fixtures(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    project_id, article_id, template_id, _, instance_id, _ = fx
-
-    other_field_row = await db_session.execute(
-        text(
-            """
-            SELECT f.id FROM public.extraction_fields f
-            WHERE f.entity_type_id <> (
-                SELECT entity_type_id FROM public.extraction_instances WHERE id = :iid
-            )
-            LIMIT 1
-            """
-        ),
-        {"iid": instance_id},
-    )
-    other_field_id = other_field_row.scalar()
-    if other_field_id is None:
-        pytest.skip("Need >=2 entity_types with fields.")
-
-    created = await _create_run_via_api(
-        db_client,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-    )
-    run_id = UUID(created["id"])
-    await _advance(db_client, run_id, "extract")
-
-    response = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(other_field_id),
-            "source": "ai",
-            "proposed_value": {"v": "x"},
-        },
-    )
-    assert response.status_code == 422
-
-
-@pytest.mark.asyncio
 async def test_create_human_proposal_rejected_for_extraction(
     db_client: AsyncClient,
     db_session: AsyncSession,
@@ -658,18 +600,16 @@ async def _setup_review_run(
     )
     run_id = UUID(created["id"])
     await _advance(db_client, run_id, "extract")
-    proposal_resp = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": "ai",
-            "proposed_value": {"v": "candidate"},
-        },
+    # Seeded directly: the API refuses source='ai' as server-generated (the
+    # pipeline writes these in-process). See make_ai_proposal.
+    proposal = await make_ai_proposal(
+        db_session,
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        proposed_value={"v": "candidate"},
     )
-    assert proposal_resp.status_code == 201, proposal_resp.text
-    proposal_id = UUID(proposal_resp.json()["data"]["id"])
-    return run_id, instance_id, field_id, proposal_id
+    return run_id, instance_id, field_id, proposal.id
 
 
 @pytest.mark.asyncio
@@ -1033,21 +973,20 @@ async def test_full_lifecycle_create_to_finalized(
     # pending -> extract
     await _advance(db_client, run_id, "extract")
 
-    # POST proposal
-    proposal_resp = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": "ai",
-            "proposed_value": {"v": "candidate"},
-            "confidence_score": 0.85,
-        },
-    )
-    assert proposal_resp.status_code == 201, proposal_resp.text
+    # Seed the AI proposal the way the pipeline writes it — in-process. The
+    # API refuses source='ai' as server-generated.
+    proposal_id = (
+        await make_ai_proposal(
+            db_session,
+            run_id=run_id,
+            instance_id=instance_id,
+            field_id=field_id,
+            proposed_value={"v": "candidate"},
+            confidence_score=0.85,
+        )
+    ).id
 
     # POST decision (accept proposal) — recorded in extract; no review stage
-    proposal_id = UUID(proposal_resp.json()["data"]["id"])
     decision_resp = await db_client.post(
         f"{API_PREFIX}/{run_id}/decisions",
         json={
@@ -1266,11 +1205,24 @@ async def _force_finalize(db_session: AsyncSession, run_id: UUID) -> None:
 
 
 @pytest.mark.asyncio
-async def test_proposal_on_finalized_run_returns_400(
+async def test_proposal_on_finalized_run_is_rejected(
     db_client: AsyncClient,
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
+    """A finalized run takes no further proposals.
+
+    Asserted against the service rather than the endpoint: /proposals now
+    refuses every source outright (see test_create_proposal_accepts_no_source),
+    so the stage guard is only reachable where the pipeline writes — through
+    ``record_proposal``.
+    """
+    from app.models.extraction_workflow import ExtractionProposalSource
+    from app.services.extraction_proposal_service import (
+        ExtractionProposalService,
+        InvalidProposalError,
+    )
+
     fx = await _resolve_fixtures(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
@@ -1286,17 +1238,14 @@ async def test_proposal_on_finalized_run_returns_400(
     await _advance(db_client, run_id, "extract")
     await _force_finalize(db_session, run_id)
 
-    resp = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": "ai",
-            "proposed_value": {"value": "late write"},
-        },
-    )
-    assert resp.status_code == 400, resp.text
-    assert "stage" in resp.json()["error"]["message"].lower()
+    with pytest.raises(InvalidProposalError, match="stage"):
+        await ExtractionProposalService(db_session).record_proposal(
+            run_id=run_id,
+            instance_id=instance_id,
+            field_id=field_id,
+            source=ExtractionProposalSource.AI,
+            proposed_value={"value": "late write"},
+        )
 
 
 @pytest.mark.asyncio
