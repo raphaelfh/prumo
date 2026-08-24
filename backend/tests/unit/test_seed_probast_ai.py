@@ -285,6 +285,26 @@ async def test_derived_spec_shape() -> None:
         "Internal validation",
         "External validation",
     ]
+    # Pin the group MEMBERSHIP, not just the labels — a member swapped into
+    # the wrong performance type would still pass a label/count check while
+    # deriving the domain default from the wrong section's answers.
+    core = [
+        "q2_reasonable_sample_size",
+        "q3_missing_censored_handling",
+        "q4_uncorrected_imbalance_evaluation",
+    ]
+    performance = ["q7_appropriate_performance_measures"]
+    internal_only = ["q5_data_leakage_avoided", "q6_resampling_replicates_all_steps"]
+    expected_members = {
+        "Apparent performance": [("eval_d4_analysis_apparent", q) for q in core + performance],
+        "Internal validation": [
+            ("eval_d4_analysis_internal", q) for q in core + internal_only + performance
+        ],
+        "External validation": [("eval_d4_analysis_external", q) for q in core + performance],
+    }
+    for group in groups:
+        members = [(i["section"], i["field"]) for i in group["inputs"]]
+        assert members == expected_members[group["label"]], group["label"]
     # Overalls read the STORED judgments — no collapse anywhere.
     for e in overalls:
         assert all("collapse" not in i for i in e["inputs"]), e["id"]
