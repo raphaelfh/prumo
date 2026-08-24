@@ -22,7 +22,6 @@ from app.services.extraction_export_service import (
 def _field(
     label,
     ftype=ExtractionFieldType.SELECT,
-    parent=None,
     allowed_values=("Low", "Unclear", "High"),
 ):
     return FieldDescriptor(
@@ -30,25 +29,17 @@ def _field(
         label=label,
         type=ftype,
         allowed_values=allowed_values,
-        parent_section_id=parent or uuid.uuid4(),
     )
 
 
 def _section(label, verdict_field, sort_order):
     sid = uuid.uuid4()
-    vf = FieldDescriptor(
-        field_id=verdict_field.field_id,
-        label=verdict_field.label,
-        type=verdict_field.type,
-        allowed_values=verdict_field.allowed_values,
-        parent_section_id=sid,
-    )
     return SectionDescriptor(
         entity_type_id=sid,
         label=label,
         role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
-        fields=(vf,),
+        fields=(verdict_field,),
         cardinality=ExtractionCardinality.ONE,
         sort_order=sort_order,
     )
@@ -68,7 +59,6 @@ def test_build_appraisal_model_consensus_rollup() -> None:
         article_id=aid,
         header_label="Gaca, 2011",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={d1.entity_type_id: (inst1,), d2.entity_type_id: (inst2,)},
@@ -113,7 +103,6 @@ def test_build_appraisal_model_excludes_disposition_marker_verdict() -> None:
         article_id=aid,
         header_label="Gaca, 2011",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={d1.entity_type_id: (inst1,), d2.entity_type_id: (inst2,)},
@@ -162,7 +151,6 @@ def test_build_appraisal_model_all_users_per_reviewer() -> None:
         article_id=aid,
         header_label="Gaca, 2011",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={d1.entity_type_id: (inst1,)},
@@ -209,21 +197,18 @@ def test_build_appraisal_model_skips_signalling_select_picks_risk_label_field() 
         label="q1_1 appropriate data sources",
         type=ExtractionFieldType.SELECT,
         allowed_values=("Y", "PY", "PN", "N", "NI", "NA"),  # _PROBAST_SIGNALING
-        parent_section_id=sid,
     )
     risk = FieldDescriptor(
         field_id=uuid.uuid4(),
         label="Risk of bias",
         type=ExtractionFieldType.SELECT,
         allowed_values=("Low", "High", "Unclear"),  # _PROBAST_JUDGMENT
-        parent_section_id=sid,
     )
     applicability = FieldDescriptor(
         field_id=uuid.uuid4(),
         label="Applicability concerns",
         type=ExtractionFieldType.SELECT,
         allowed_values=("Low", "High", "Unclear"),
-        parent_section_id=sid,
     )
     d1 = SectionDescriptor(
         entity_type_id=sid,
@@ -239,7 +224,6 @@ def test_build_appraisal_model_skips_signalling_select_picks_risk_label_field() 
         article_id=aid,
         header_label="Gaca, 2011",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={sid: (inst,)},

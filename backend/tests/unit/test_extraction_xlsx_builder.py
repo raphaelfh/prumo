@@ -29,13 +29,12 @@ from app.services.extraction_export_service import (
 # ----------------------------------------------------------------------
 
 
-def _field(label: str, ftype: ExtractionFieldType, parent: UUID) -> FieldDescriptor:
+def _field(label: str, ftype: ExtractionFieldType) -> FieldDescriptor:
     return FieldDescriptor(
         field_id=uuid4(),
         label=label,
         type=ftype,
         allowed_values=(),
-        parent_section_id=parent,
     )
 
 
@@ -46,17 +45,7 @@ def _section(
     parent: UUID | None = None,
 ) -> SectionDescriptor:
     eid = uuid4()
-    # Re-parent the fields to this section id so the descriptor coherence holds.
-    f = tuple(
-        FieldDescriptor(
-            field_id=f.field_id,
-            label=f.label,
-            type=f.type,
-            allowed_values=f.allowed_values,
-            parent_section_id=eid,
-        )
-        for f in (fields or [])
-    )
+    f = tuple(fields or ())
     return SectionDescriptor(
         entity_type_id=eid,
         label=label,
@@ -77,12 +66,10 @@ def _article(
         article_id=uuid4(),
         header_label=header,
         run_id=run_id if run_id is not None else uuid4(),
-        run_stage=None,  # not consulted by builder
         version_id=None,
         model_instances=model_instances,
-        # ``study_instances`` is now a read-compat alias property; build the
-        # ordered ``section_instances`` from the legacy single-id-per-section
-        # argument so existing call sites stay unchanged.
+        # Fan the one-instance-per-section shorthand out to the ordered
+        # tuples ArticleDescriptor actually carries.
         section_instances={sid: (iid,) for sid, iid in study_instances.items()},
     )
 
@@ -108,8 +95,6 @@ def _layout(
         include_ai_metadata=include_ai_metadata,
         anonymize_reviewer_names=False,
         notes=ExportNotes(
-            template_version_label=f"{template_name} v1",
-            export_mode_label="Consensus",
             generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
         ),
         value_map=value_map or {},
@@ -169,7 +154,7 @@ def test_sheet_name_is_sanitised_for_openpyxl_constraints():
 def test_single_article_single_section_single_field_consensus():
     # The builder now owns hierarchical numbering (§9), so fixtures carry the
     # bare labels and we assert on the builder-generated "1." / "1.1" prefixes.
-    f = _field("Source of data", ExtractionFieldType.TEXT, parent=uuid4())
+    f = _field("Source of data", ExtractionFieldType.TEXT)
     section = _section("Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
     inst_id = uuid4()
     article = _article("Gaca, 2011", study_instances={section.entity_type_id: inst_id})
@@ -201,8 +186,8 @@ def test_single_article_single_section_single_field_consensus():
 
 def test_multi_instance_article_repeats_study_section_values():
     # Two sections: one study_section ("Author"), one model_section ("Model perf").
-    study_field = _field("Author", ExtractionFieldType.TEXT, parent=uuid4())
-    model_field = _field("Modelling method", ExtractionFieldType.TEXT, parent=uuid4())
+    study_field = _field("Author", ExtractionFieldType.TEXT)
+    model_field = _field("Modelling method", ExtractionFieldType.TEXT)
     study = _section("Study", ExtractionEntityRole.STUDY_SECTION, [study_field])
     model = _section("Model development", ExtractionEntityRole.MODEL_SECTION, [model_field])
 
@@ -266,7 +251,7 @@ def test_multi_instance_article_repeats_study_section_values():
 
 
 def test_section_header_rows_have_bold_font_and_grey_fill():
-    f = _field("Source", ExtractionFieldType.TEXT, parent=uuid4())
+    f = _field("Source", ExtractionFieldType.TEXT)
     section = _section("Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
     article = _article("Gaca, 2011", study_instances={section.entity_type_id: uuid4()})
     data = build_workbook(_layout(sections=(section,), articles=(article,)))
@@ -301,7 +286,7 @@ def test_section_header_rows_have_bold_font_and_grey_fill():
     ],
 )
 def test_format_cell_per_field_type(ftype, raw_value, expected):
-    f = _field("F", ftype, parent=uuid4())
+    f = _field("F", ftype)
     section = _section("S", ExtractionEntityRole.STUDY_SECTION, [f])
     inst = uuid4()
     article = _article("X", study_instances={section.entity_type_id: inst})
@@ -317,7 +302,7 @@ def test_format_cell_per_field_type(ftype, raw_value, expected):
 
 
 def test_none_value_renders_blank_cell():
-    f = _field("F", ExtractionFieldType.TEXT, parent=uuid4())
+    f = _field("F", ExtractionFieldType.TEXT)
     section = _section("S", ExtractionEntityRole.STUDY_SECTION, [f])
     article = _article("X", study_instances={section.entity_type_id: uuid4()})
     # No value in value_map → cell is blank.
@@ -336,8 +321,6 @@ def test_summary_sheet_lists_omitted_articles_by_stage():
     # Summary sheet (the README sub-builder absorbs the rest of Notes).
     notes = ExportNotes(
         omitted_articles_by_stage={"extract": 4, "no_run": 2},
-        template_version_label="CHARMS v1",
-        export_mode_label="Consensus",
         generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
     )
     layout = ExportLayout(
@@ -380,7 +363,7 @@ def test_all_users_mode_fans_out_reviewer_subcolumns():
         ReviewerDescriptor,
     )
 
-    f = _field("Source", ExtractionFieldType.TEXT, parent=uuid4())
+    f = _field("Source", ExtractionFieldType.TEXT)
     section = _section("Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
     inst_id = uuid4()
     article = _article("Gaca, 2011", study_instances={section.entity_type_id: inst_id})
@@ -572,7 +555,6 @@ def test_workbook_emits_sheets_in_section4_order():
                 label="Design",
                 type=ExtractionFieldType.SELECT,
                 allowed_values=("Cohort", "RCT"),
-                parent_section_id=eid,
             ),
         ),
         cardinality=ExtractionCardinality.ONE,
@@ -584,7 +566,6 @@ def test_workbook_emits_sheets_in_section4_order():
         article_id=uuid4(),
         header_label="Gaca, 2011",
         run_id=run,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={eid: (inst,)},

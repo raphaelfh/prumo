@@ -83,7 +83,6 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 | --- | --- |
 | `ENCRYPTION_KEY` | rotated by hand; MUST be the same value across web + worker (Zotero credentials are cross-process) |
 | `SUPABASE_URL` | Supabase project settings |
-| `SUPABASE_ANON_KEY` | Supabase project settings |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase project settings |
 | `DATABASE_URL` | Supabase pooler (used for app traffic) |
 | `DIRECT_DATABASE_URL` | Supabase direct (used by Alembic at boot) |

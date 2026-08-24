@@ -1,14 +1,14 @@
 """Full-chain integration test (spec item #10): persisted blocks → assemble
-(no 15k cut) → anchor → citation read.
+(no 15k cut) → anchor → persisted position.
 
 Proves the A1 win on REAL persisted blocks read through the production repository:
 content that lies *past* the legacy 15,000-char truncation survives assembly, and
 the model's verbatim quote from that post-15k block anchors back to the correct
-block and reads back through ``citation_read_service``.
+block and round-trips through the ``position`` JSONB column.
 
-The anchor write/read primitives (TextCitationAnchor, camelCase round-trip,
-verified flag) are exhaustively covered in ``test_position_v1_anchoring.py``;
-this test reuses its helpers and focuses on the new ``assemble → anchor`` seam.
+The anchor write primitives (TextCitationAnchor, camelCase round-trip) are
+exhaustively covered in ``test_position_v1_anchoring.py``; this test reuses its
+helpers and focuses on the new ``assemble → anchor`` seam.
 """
 
 from __future__ import annotations
@@ -17,17 +17,18 @@ import json
 import uuid
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.parsing.base import ParsedBlock
 from app.llm.assembler import assemble_for_model
+from app.models.extraction import ExtractionEvidence
 from app.repositories.article_text_block_repository import ArticleTextBlockRepository
-from app.schemas.extraction import PositionV1, TextCitationAnchor
-from app.services.citation_read_service import list_article_citations
+from app.schemas.extraction import PositionV1, TextCitationAnchor, parse_position
 from app.services.evidence_anchor_service import build_anchor
 from tests.integration.conftest import SEED
 from tests.integration.test_position_v1_anchoring import (
+    _cleanup_evidence,
     _cleanup_file,
     _insert_article_file,
     _insert_run_and_proposal,
@@ -90,7 +91,7 @@ async def test_post_15k_block_assembles_and_anchors_and_reads_back(
         page2 = "\n".join(b.text for b in blocks if b.page_number == 2)
         assert page2[pos.anchor.range.char_start : pos.anchor.range.char_end] == quote
 
-        # 3. Persist evidence and read it back through citation_read_service.
+        # 3. Persist evidence and read the anchor back out of the JSONB column.
         run_id, proposal_id = await _insert_run_and_proposal(
             db_session_real, project_id=SEED.primary_project, article_id=article_id
         )
@@ -118,21 +119,18 @@ async def test_post_15k_block_assembles_and_anchors_and_reads_back(
         )
         await db_session_real.commit()
 
-        citations = await list_article_citations(db_session_real, article_id)
-        assert len(citations) == 1
-        c = citations[0]
-        assert c["id"] == str(evidence_id)
-        assert c["verified"] is True
-        assert c["anchorKind"] == "text"
-        assert c["anchor"]["range"]["charStart"] == pos.anchor.range.char_start
-        assert c["anchor"]["range"]["charEnd"] == pos.anchor.range.char_end
-        assert c["metadata"]["textContent"] == quote
+        row = (
+            await db_session_real.execute(
+                select(ExtractionEvidence).where(ExtractionEvidence.id == evidence_id)
+            )
+        ).scalar_one()
+        assert row.text_content == quote
+        db_pos = parse_position(row.position)
+        assert db_pos is not None and isinstance(db_pos.anchor, TextCitationAnchor)
+        assert db_pos.anchor.range.char_start == pos.anchor.range.char_start
+        assert db_pos.anchor.range.char_end == pos.anchor.range.char_end
     finally:
-        await db_session_real.execute(
-            text("DELETE FROM public.extraction_evidence WHERE article_id = :aid"),
-            {"aid": str(article_id)},
-        )
-        await db_session_real.commit()
+        await _cleanup_evidence(db_session_real, article_id=article_id)
         await db_session_real.execute(
             text("DELETE FROM public.extraction_runs WHERE article_id = :aid"),
             {"aid": str(article_id)},

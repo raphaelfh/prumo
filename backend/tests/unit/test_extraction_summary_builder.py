@@ -20,13 +20,12 @@ from app.services.extraction_export_service import (
 )
 
 
-def _field(parent):
+def _field():
     return FieldDescriptor(
         field_id=uuid4(),
         label="F",
         type=ExtractionFieldType.TEXT,
         allowed_values=(),
-        parent_section_id=parent,
     )
 
 
@@ -37,7 +36,7 @@ def _study_section_two_fields():
         label="Study",
         role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
-        fields=(_field(eid), _field(eid)),
+        fields=(_field(), _field()),
         cardinality=ExtractionCardinality.ONE,
         sort_order=0,
     )
@@ -73,7 +72,6 @@ def test_summary_one_row_per_article_with_completeness():
         article_id=uuid4(),
         header_label="Gaca, 2011",
         run_id=run,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={section.entity_type_id: (inst,)},
@@ -106,7 +104,6 @@ def test_summary_fans_out_per_model_when_model_container_present():
         article_id=uuid4(),
         header_label="Gaca, 2011",
         run_id=run,
-        run_stage=None,
         version_id=None,
         model_instances=(m_a, m_b),
         section_instances={study.entity_type_id: (uuid4(),)},

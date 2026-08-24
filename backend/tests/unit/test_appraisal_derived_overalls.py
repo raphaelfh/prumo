@@ -152,7 +152,6 @@ def _section(name: str, label: str, field_name: str) -> tuple[SectionDescriptor,
         label="Risk of bias",
         type=ExtractionFieldType.SELECT,
         allowed_values=("Low", "High", "Unclear"),
-        parent_section_id=section_id,
         name=field_name,
     )
     return (
@@ -173,7 +172,6 @@ def _article(run_id: Any, section_instances: dict[Any, tuple[Any, ...]]) -> Arti
         article_id=uuid4(),
         header_label="Art 1",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances=section_instances,

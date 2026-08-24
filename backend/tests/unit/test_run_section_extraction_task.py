@@ -93,8 +93,6 @@ def _batch_result(run_id: str) -> BatchExtractionResult:
         successful_sections=2,
         failed_sections=1,
         total_suggestions_created=7,
-        total_tokens_used=500,
-        duration_ms=600.0,
         sections=[
             {
                 "entity_type_id": "etype-aaa",

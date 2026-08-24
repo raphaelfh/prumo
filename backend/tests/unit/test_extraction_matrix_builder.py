@@ -58,7 +58,6 @@ def test_many_cardinality_study_section_fans_out_one_subcolumn_per_instance():
         label="Index test name",
         type=ExtractionFieldType.TEXT,
         allowed_values=(),
-        parent_section_id=eid,
     )
     section = SectionDescriptor(
         entity_type_id=eid,
@@ -74,7 +73,6 @@ def test_many_cardinality_study_section_fans_out_one_subcolumn_per_instance():
         article_id=uuid4(),
         header_label="Gaca, 2011",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={eid: (inst_a, inst_b)},
@@ -117,7 +115,6 @@ def test_column_guard_rejects_layouts_over_excel_limit():
         label="F",
         type=ExtractionFieldType.TEXT,
         allowed_values=(),
-        parent_section_id=eid,
     )
     section = SectionDescriptor(
         entity_type_id=eid,
@@ -133,7 +130,6 @@ def test_column_guard_rejects_layouts_over_excel_limit():
         article_id=uuid4(),
         header_label="Big",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={eid: instance_ids},
@@ -158,13 +154,12 @@ def _render_matrix(layout: ExportLayout):
     return ws
 
 
-def _spec_field(label: str, ftype: ExtractionFieldType, parent: UUID) -> FieldDescriptor:
+def _spec_field(label: str, ftype: ExtractionFieldType) -> FieldDescriptor:
     return FieldDescriptor(
         field_id=uuid4(),
         label=label,
         type=ftype,
         allowed_values=(),
-        parent_section_id=parent,
     )
 
 
@@ -193,7 +188,7 @@ def _spec_layout(
 
 def test_header_block_labels() -> None:
     sec_id = uuid4()
-    field = _spec_field("1.1 Source", ExtractionFieldType.TEXT, sec_id)
+    field = _spec_field("1.1 Source", ExtractionFieldType.TEXT)
     section = SectionDescriptor(
         entity_type_id=sec_id,
         label="1. Source of data",
@@ -206,7 +201,6 @@ def test_header_block_labels() -> None:
         article_id=art_id,
         header_label="Smith, 2020",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={sec_id: (inst_id,)},
@@ -238,8 +232,8 @@ def test_study_section_repeats_not_merges_across_models() -> None:
     # sub-column (FR-010 repeat-not-merge), never merged.
     study_id = uuid4()
     model_id = uuid4()
-    study_field = _spec_field("Author", ExtractionFieldType.TEXT, study_id)
-    model_field = _spec_field("Method", ExtractionFieldType.TEXT, model_id)
+    study_field = _spec_field("Author", ExtractionFieldType.TEXT)
+    model_field = _spec_field("Method", ExtractionFieldType.TEXT)
     study = SectionDescriptor(
         entity_type_id=study_id,
         label="Study",
@@ -260,7 +254,6 @@ def test_study_section_repeats_not_merges_across_models() -> None:
         article_id=uuid4(),
         header_label="A",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(m1, m2),
         section_instances={study_id: (study_inst,)},
@@ -280,8 +273,8 @@ def test_study_section_repeats_not_merges_across_models() -> None:
 
 def test_matrix_structural_styling() -> None:
     sec_id = uuid4()
-    f1 = _spec_field("Source", ExtractionFieldType.TEXT, sec_id)
-    f2 = _spec_field("Year", ExtractionFieldType.TEXT, sec_id)
+    f1 = _spec_field("Source", ExtractionFieldType.TEXT)
+    f2 = _spec_field("Year", ExtractionFieldType.TEXT)
     section = SectionDescriptor(
         entity_type_id=sec_id,
         label="Source of data",
@@ -294,7 +287,6 @@ def test_matrix_structural_styling() -> None:
         article_id=uuid4(),
         header_label="A",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={sec_id: (inst_id,)},
@@ -328,7 +320,7 @@ def test_matrix_freeze_all_users_uses_two_header_rows() -> None:
     from app.services.extraction_export_service import ReviewerDescriptor
 
     sec_id = uuid4()
-    f1 = _spec_field("Source", ExtractionFieldType.TEXT, sec_id)
+    f1 = _spec_field("Source", ExtractionFieldType.TEXT)
     section = SectionDescriptor(
         entity_type_id=sec_id,
         label="Source",
@@ -342,7 +334,6 @@ def test_matrix_freeze_all_users_uses_two_header_rows() -> None:
         article_id=uuid4(),
         header_label="A",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={sec_id: (inst_id,)},
@@ -380,7 +371,6 @@ def _single_field_layout(field: FieldDescriptor, raw_value, *, sec_id: UUID) -> 
         article_id=uuid4(),
         header_label="A",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={sec_id: (inst_id,)},
@@ -402,7 +392,7 @@ def test_boolean_false_value_renders_no_not_yes() -> None:
     from app.services.exports.value_envelope import resolve_value
 
     sec_id = uuid4()
-    field = _spec_field("BoolFlag", ExtractionFieldType.BOOLEAN, sec_id)
+    field = _spec_field("BoolFlag", ExtractionFieldType.BOOLEAN)
 
     # End-to-end through the production resolve path: False -> "No".
     resolved_false = resolve_value(False, field=field)
@@ -421,21 +411,21 @@ def test_boolean_raw_false_instance_renders_no() -> None:
     # Defensive: even a raw ``False`` bool reaching the cell (field=BOOLEAN)
     # must render ``"No"`` via format_export_scalar, never ``"Yes"``.
     sec_id = uuid4()
-    field = _spec_field("BoolFlag", ExtractionFieldType.BOOLEAN, sec_id)
+    field = _spec_field("BoolFlag", ExtractionFieldType.BOOLEAN)
     ws = _render_matrix(_single_field_layout(field, False, sec_id=sec_id))
     assert _value_cell(ws, field) == "No"
 
 
 def test_select_value_renders_as_string() -> None:
     sec_id = uuid4()
-    field = _spec_field("Choice", ExtractionFieldType.SELECT, sec_id)
+    field = _spec_field("Choice", ExtractionFieldType.SELECT)
     ws = _render_matrix(_single_field_layout(field, "Cohort", sec_id=sec_id))
     assert _value_cell(ws, field) == "Cohort"
 
 
 def test_multiselect_list_value_joins_with_semicolons() -> None:
     sec_id = uuid4()
-    field = _spec_field("Tags", ExtractionFieldType.MULTISELECT, sec_id)
+    field = _spec_field("Tags", ExtractionFieldType.MULTISELECT)
     ws = _render_matrix(_single_field_layout(field, ["age", "sex", "BMI"], sec_id=sec_id))
     assert _value_cell(ws, field) == "age; sex; BMI"
 
