@@ -53,6 +53,7 @@ from app.schemas.template_structure import (
 from app.services.template_draft_lock_service import claim_draft_lock
 from app.services.template_field_service import (
     CrossTemplateMoveError,
+    DuplicateEntityKeyError,
     DuplicateFieldNameError,
     DuplicateReorderIdsError,
     EntityTypeNotFoundError,
@@ -169,6 +170,11 @@ async def update_template_field(
     except (ProjectTemplateNotFoundError, FieldNotFoundError) as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except DuplicateFieldNameError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except DuplicateEntityKeyError as e:
+        # 409, matching the name-collision sibling: another row already
+        # holds the section's one identity slot, and the caller can retry
+        # after clearing it.
         raise HTTPException(status_code=409, detail=str(e)) from e
     except DBAPIError as e:
         if is_deadlock(e):

@@ -251,3 +251,27 @@ def test_description_caps() -> None:
 def test_section_model_is_importable() -> None:
     sec = PortableSection(name="sec", label="S")
     assert sec.fields == [] and sec.sections == []
+
+
+# =================== entity key (0059) ===================
+
+
+def test_portable_field_round_trips_the_entity_key() -> None:
+    """Without this the bundle silently drops a declared key.
+
+    ``PortableField`` is an explicit allowlist under ``extra="forbid"``, so
+    an exported bundle carrying the flag would fail to re-import, and one
+    exported without it would degrade the template to "no key declared" —
+    which the AI path refuses rather than duplicating (spec §5.3).
+    """
+    doc = PortableField.model_validate(
+        {"name": "model_name", "label": "Model Name", "type": "text", "is_entity_key": True}
+    )
+    assert doc.is_entity_key is True
+    assert doc.model_dump()["is_entity_key"] is True
+
+
+def test_portable_field_entity_key_defaults_false() -> None:
+    """A bundle authored before 0059 imports as an unkeyed template."""
+    doc = PortableField.model_validate({"name": "legacy_field", "label": "Legacy", "type": "text"})
+    assert doc.is_entity_key is False
