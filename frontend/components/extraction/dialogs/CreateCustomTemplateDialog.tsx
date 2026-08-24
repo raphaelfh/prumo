@@ -22,17 +22,24 @@ import {Textarea} from '@/components/ui/textarea';
 import {Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,} from '@/components/ui/form';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/components/ui/select';
 import {Loader2, PlusCircle} from 'lucide-react';
-import {createCustomTemplate} from '@/services/templateService';
-import {useAuth} from '@/contexts/AuthContext';
+import {createCustomTemplate} from '@/services/templateImportService';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 
-// Schema built with copy for validation messages
+// Schema built with copy for validation messages.
+//
+// `.trim()` runs before the bounds so the client measures what the server
+// measures: the endpoint trims inside its own string schema, so an untrimmed
+// "  ab  " would pass here and come back a 422 — and FastAPI's validation 422
+// is NOT in the ApiResponse envelope, so apiClient can only surface a generic
+// "unknown error". Trimming keeps the client and server verdicts identical.
 const buildCustomTemplateSchema = () => z.object({
   name: z.string()
+      .trim()
       .min(3, t('extraction', 'createValidationNameMin'))
       .max(100, t('extraction', 'createValidationNameMax')),
   description: z.string()
+      .trim()
       .max(500, t('extraction', 'createValidationDescMax'))
     .optional()
     .nullable(),
@@ -47,7 +54,8 @@ interface CreateCustomTemplateDialogProps {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onTemplateCreated: (templateId?: string) => void;
+  /** The server always names the template it created, so this is never blank. */
+  onTemplateCreated: (templateId: string) => void;
 }
 
 export function CreateCustomTemplateDialog({
@@ -56,7 +64,6 @@ export function CreateCustomTemplateDialog({
   onOpenChange,
   onTemplateCreated,
 }: CreateCustomTemplateDialogProps) {
-  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
     const CustomTemplateSchema = buildCustomTemplateSchema();
 
@@ -70,23 +77,17 @@ export function CreateCustomTemplateDialog({
   });
 
   const handleSubmit = async (data: CustomTemplateInput) => {
-    if (!user) {
-        toast.error(t('extraction', 'createAuthRequired'));
-      return;
-    }
-
     setLoading(true);
 
-    const result = await createCustomTemplate({
-      projectId,
+    // The server owns `created_by` (from the JWT), the sibling deactivation
+    // and the v1 publish — see templateImportService.createCustomTemplate.
+    const result = await createCustomTemplate(projectId, {
       name: data.name,
       description: data.description,
       framework: data.framework,
-      createdBy: user.id,
     });
 
     if (!result.ok) {
-      console.error('Error creating template:', result.error);
       toast.error(`${t('extraction', 'createErrorCreate')}: ${result.error.message}`);
       setLoading(false);
       return;
@@ -96,7 +97,7 @@ export function CreateCustomTemplateDialog({
     toast.info(t('extraction', 'createInfoAddSections'));
 
     form.reset();
-    onTemplateCreated(result.data.id);
+    onTemplateCreated(result.data.templateId);
     onOpenChange(false);
     setLoading(false);
   };
