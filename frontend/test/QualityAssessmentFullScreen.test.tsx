@@ -1360,6 +1360,139 @@ describe("QualityAssessmentFullScreen — header pager, J/K and ⌘K", () => {
   });
 });
 
+describe("QualityAssessmentFullScreen — run-switch hydration (in-place article navigation)", () => {
+  // Regression (spec 2026-08-22 §7b, Q1): the #657/#671 pagers navigate
+  // WITHOUT remounting the page, and hydration used to merge the new run's
+  // loadedValues into the PREVIOUS run's values state. Run-A coords then
+  // looked dirty against run-B's baseline, so autosave POSTed run-A
+  // instances at /runs/run-B/decisions — rejected, error toast per
+  // keystroke. Hydration must REPLACE values when the run changes.
+  beforeAll(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  function runView(
+    runId: string,
+    articleId: string,
+    currentValues: Array<Record<string, unknown>>,
+  ) {
+    return {
+      run: {
+        id: runId,
+        project_id: "p1",
+        article_id: articleId,
+        template_id: "tpl-1",
+        kind: "quality_assessment",
+        version_id: "v-1",
+        stage: "extract",
+        status: "running",
+        hitl_config_snapshot: {},
+        parameters: {},
+        results: {},
+        created_at: new Date().toISOString(),
+        created_by: "u-1",
+      },
+      proposals: [],
+      decisions: [],
+      consensus_decisions: [],
+      published_states: [],
+      entity_types: [],
+      current_values: currentValues,
+    };
+  }
+
+  beforeEach(() => {
+    mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
+    vi.mocked(apiClient).mockImplementation(
+      async (url: string, opts?: { body?: unknown }) => {
+        if (url === "/api/v1/hitl/sessions") {
+          const articleId = (opts?.body as { article_id?: string } | undefined)
+            ?.article_id;
+          return articleId === "a2"
+            ? {
+                run_id: "run-2",
+                kind: "quality_assessment",
+                project_template_id: "tpl-1",
+                instances_by_entity_type: { "et-1": "inst-2" },
+              }
+            : {
+                run_id: "run-1",
+                kind: "quality_assessment",
+                project_template_id: "tpl-1",
+                instances_by_entity_type: { "et-1": "inst-1" },
+              };
+        }
+        if (url === "/api/v1/runs/run-1/view") {
+          return runView("run-1", "a1", [
+            {
+              instance_id: "inst-1",
+              field_id: "f-1",
+              value: { value: "Y" },
+              decision: "edit",
+            },
+          ]);
+        }
+        if (url === "/api/v1/runs/run-2/view") {
+          return runView("run-2", "a2", []);
+        }
+        if (url.includes("/suggestions")) {
+          return { suggestions: [], count: 0 };
+        }
+        if (url.includes("/files") || url.includes("/text-blocks")) {
+          return [];
+        }
+        return {};
+      },
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("REPLACES values on a run change — run-1 coords never dirty-POST against run-2", async () => {
+    renderPage();
+    const domain = await screen.findByTestId("qa-domain-participants");
+    await waitFor(() => expect(within(domain).getByText("Y")).toBeInTheDocument());
+
+    // In-place navigation to the next article (same component, new params).
+    const next = await screen.findByRole("button", { name: /next article/i });
+    await waitFor(() => expect(next).not.toBeDisabled());
+    await userEvent.click(next);
+    await waitFor(() =>
+      expect(screen.getByTestId("probe-location")).toHaveTextContent(
+        "/articles/a2/",
+      ),
+    );
+
+    // Wait for run-2's detail to hydrate, then PAST the 600ms autosave
+    // debounce — the pre-fix merge left run-1's coord in values, which is
+    // dirty against run-2's empty baseline and fires exactly this POST.
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(apiClient)
+          .mock.calls.some(([u]) => u === "/api/v1/runs/run-2/view"),
+      ).toBe(true),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 900));
+
+    const run2DecisionPosts = vi
+      .mocked(apiClient)
+      .mock.calls.filter(
+        ([url, o]) =>
+          typeof url === "string" &&
+          url === "/api/v1/runs/run-2/decisions" &&
+          (o as { method?: string } | undefined)?.method === "POST",
+      );
+    expect(run2DecisionPosts).toHaveLength(0);
+
+    // Replace semantics: run-2's form holds only its own (empty) values.
+    const freshDomain = screen.getByTestId("qa-domain-participants");
+    expect(within(freshDomain).queryByText("Y")).not.toBeInTheDocument();
+  });
+});
+
 describe("QualityAssessmentFullScreen — status popover reviewer denominator", () => {
   // Regression (2026-08-22): the QA header derived "N of M reviewers" from
   // run.hitl_config_snapshot.reviewer_count — an inert knob no UI has set
