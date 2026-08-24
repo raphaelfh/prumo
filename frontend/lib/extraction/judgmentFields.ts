@@ -53,3 +53,23 @@ export function isJudgmentField(field: JudgmentCandidate): boolean {
   const labels = optionLabels(field.allowed_values);
   return labels.length > 0 && labels.every((label) => JUDGMENT_LABELS.has(label));
 }
+
+/**
+ * The instrument's signaling answer vocabularies (PROBAST Y/PY/PN/N;
+ * QUADAS-2 adds a substantive Unclear) — lowercase, mirroring backend
+ * `_SIGNALING_MAP` the same way `JUDGMENT_LABELS` mirrors `_RISK_LABELS`.
+ */
+const SIGNALING_LABELS: ReadonlySet<string> = new Set(["y", "py", "pn", "n", "unclear"]);
+
+/**
+ * A signaling QUESTION: a select whose every option comes from the signaling
+ * vocabulary. `isJudgmentField`'s sibling classifier — same option-shape
+ * tolerance (bare arrays and the `{options: [...]}` envelope), different
+ * vocabulary — so a Low/High/Unclear judgment or a classification select
+ * like `study_type` never counts as one.
+ */
+export function isSignalingSelect(field: JudgmentCandidate): boolean {
+  if (field.field_type !== "select") return false;
+  const labels = optionLabels(field.allowed_values);
+  return labels.length > 0 && labels.every((label) => SIGNALING_LABELS.has(label));
+}

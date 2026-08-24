@@ -32,7 +32,7 @@ import { DerivedDefaultChip } from "@/components/assessment/DerivedDefaultChip";
 import { toneFor } from "@/components/assessment/OverallJudgmentBanner";
 import { FieldInput } from "@/components/extraction/FieldInput";
 import { useRunEditability } from "@/components/runs/RunEditabilityContext";
-import { isJudgmentField } from "@/lib/extraction/judgmentFields";
+import { isJudgmentField, isSignalingSelect } from "@/lib/extraction/judgmentFields";
 import { unwrapValueEnvelope } from "@/lib/extraction/valueSemantics";
 import { cn } from "@/lib/utils";
 import { qa } from "@/lib/copy/qa";
@@ -50,27 +50,6 @@ import {
 import type { components } from "@/types/api/schema";
 
 type RunViewDerivedJudgment = components["schemas"]["RunViewDerivedJudgment"];
-
-// The instrument's signaling answer vocabularies (PROBAST Y/PY/PN/N;
-// QUADAS-2 adds a substantive Unclear). A select counts as a signaling
-// QUESTION only when every option comes from this set — which excludes the
-// Low/High/Unclear judgments and classification selects like study_type.
-const SIGNALING_VOCAB = new Set(["y", "py", "pn", "n", "unclear"]);
-
-function isSignalingSelect(field: {
-  field_type: string;
-  allowed_values?: unknown;
-}): boolean {
-  if (field.field_type !== "select") return false;
-  const raw = Array.isArray(field.allowed_values) ? field.allowed_values : [];
-  const codes = raw.map((o) =>
-    typeof o === "string" ? o : String((o as { value?: unknown })?.value ?? ""),
-  );
-  return (
-    codes.length > 0 &&
-    codes.every((c) => SIGNALING_VOCAB.has(c.toLowerCase()))
-  );
-}
 
 interface QASectionAccordionProps {
   domain: QADomain;
@@ -178,11 +157,13 @@ export function QASectionAccordion({
   const rationaleFieldIds = new Set(
     entries.map((d) => d.rationale_field_id).filter((id): id is string => id != null),
   );
-  const excludedFieldIds = new Set(
-    entries
-      .flatMap((d) => [d.target_field_id, d.rationale_field_id, d.summary_field_id])
-      .filter((id): id is string => id != null),
-  );
+  // The assessor-owned (LLM-excluded) set is exactly the union of the three
+  // pointer maps above — one encoding of the rule, not a fourth pass.
+  const excludedFieldIds = new Set<string>([
+    ...(entryByTargetId.keys() as Iterable<string>),
+    ...rationaleFieldIds,
+    ...(entryBySummaryId.keys() as Iterable<string>),
+  ]);
 
   const summary = fields.filter((f) => isJudgmentField(f));
   // Judgment-vocabulary judgments WITHOUT a recommendation entry
@@ -325,6 +306,58 @@ export function QASectionAccordion({
     return stack;
   })();
 
+  // One shared FieldInput wiring for every row (plain render helpers, not
+  // nested components — the React Compiler memoizes the enclosing component).
+  // Assessor-owned fields (the recommendation card) render without the AI
+  // affordances: the backend never creates suggestions for them.
+  function renderFieldInput(
+    field: QADomain["fields"][number],
+    opts: {
+      withAi?: boolean;
+      onChange?: (v: unknown) => void;
+      value?: unknown;
+    } = {},
+  ) {
+    const { withAi = true, onChange } = opts;
+    const value = "value" in opts ? opts.value : values[field.id];
+    const aiSuggestion = withAi
+      ? aiSuggestions?.[getSuggestionKey(instanceId, field.id)]
+      : undefined;
+    return (
+      <FieldInput
+        field={field}
+        instanceId={instanceId}
+        value={value}
+        onChange={onChange ?? ((v) => onValueChange(field.id, v))}
+        projectId={projectId}
+        aiSuggestion={aiSuggestion}
+        onAcceptAI={
+          withAi && onAcceptAI ? () => onAcceptAI(instanceId, field.id) : undefined
+        }
+        onRejectAI={
+          withAi && onRejectAI ? () => onRejectAI(instanceId, field.id) : undefined
+        }
+        selectSuggestion={withAi ? selectSuggestion : undefined}
+        getSuggestionsHistory={withAi ? getSuggestionsHistory : undefined}
+        articleId={articleId}
+      />
+    );
+  }
+
+  function renderAvatars(field: QADomain["fields"][number]) {
+    const stack = fieldStack(field.id);
+    if (stack.length === 0) return null;
+    return (
+      <div className="mt-1 flex justify-end">
+        <ReviewerAvatarStack
+          reviewers={stack}
+          sizeClass="size-5"
+          testId={`qa-field-avatars-${field.name}`}
+        />
+      </div>
+    );
+  }
+
   return (
     <Accordion
       type="single"
@@ -399,9 +432,6 @@ export function QASectionAccordion({
           {signaling.length > 0 ? (
             <div className="divide-y">
               {signaling.map((field) => {
-                const stack = fieldStack(field.id);
-                const aiKey = getSuggestionKey(instanceId, field.id);
-                const aiSuggestion = aiSuggestions?.[aiKey];
                 const summaryEntry = entryBySummaryId.get(field.id);
                 return (
                   <div
@@ -426,36 +456,8 @@ export function QASectionAccordion({
                         </Badge>
                       </div>
                     ) : null}
-                    <FieldInput
-                      field={field}
-                      instanceId={instanceId}
-                      value={values[field.id]}
-                      onChange={(v) => onValueChange(field.id, v)}
-                      projectId={projectId}
-                      aiSuggestion={aiSuggestion}
-                      onAcceptAI={
-                        onAcceptAI
-                          ? () => onAcceptAI(instanceId, field.id)
-                          : undefined
-                      }
-                      onRejectAI={
-                        onRejectAI
-                          ? () => onRejectAI(instanceId, field.id)
-                          : undefined
-                      }
-                      selectSuggestion={selectSuggestion}
-                      getSuggestionsHistory={getSuggestionsHistory}
-                      articleId={articleId}
-                    />
-                    {stack.length > 0 ? (
-                      <div className="mt-1 flex justify-end">
-                        <ReviewerAvatarStack
-                          reviewers={stack}
-                          sizeClass="size-5"
-                          testId={`qa-field-avatars-${field.name}`}
-                        />
-                      </div>
-                    ) : null}
+                    {renderFieldInput(field)}
+                    {renderAvatars(field)}
                   </div>
                 );
               })}
@@ -472,9 +474,6 @@ export function QASectionAccordion({
               </p>
               <div className="divide-y">
                 {summary.map((field) => {
-                  const stack = fieldStack(field.id);
-                  const aiKey = getSuggestionKey(instanceId, field.id);
-                  const aiSuggestion = aiSuggestions?.[aiKey];
                   const entry = entryByTargetId.get(field.id);
 
                   if (!entry) {
@@ -485,75 +484,18 @@ export function QASectionAccordion({
                     const pairedRationale = pairedRationaleByJudgmentId.get(
                       field.id,
                     );
-                    const rationaleKey = pairedRationale
-                      ? getSuggestionKey(instanceId, pairedRationale.id)
-                      : null;
                     return (
                       <div key={field.id} className="py-1">
-                        <FieldInput
-                          field={field}
-                          instanceId={instanceId}
-                          value={values[field.id]}
-                          onChange={(v) => onValueChange(field.id, v)}
-                          projectId={projectId}
-                          aiSuggestion={aiSuggestion}
-                          onAcceptAI={
-                            onAcceptAI
-                              ? () => onAcceptAI(instanceId, field.id)
-                              : undefined
-                          }
-                          onRejectAI={
-                            onRejectAI
-                              ? () => onRejectAI(instanceId, field.id)
-                              : undefined
-                          }
-                          selectSuggestion={selectSuggestion}
-                          getSuggestionsHistory={getSuggestionsHistory}
-                          articleId={articleId}
-                        />
+                        {renderFieldInput(field)}
                         {pairedRationale ? (
                           <div
                             className="mt-1"
                             data-testid={`qa-paired-rationale-${field.name}`}
                           >
-                            <FieldInput
-                              field={pairedRationale}
-                              instanceId={instanceId}
-                              value={values[pairedRationale.id]}
-                              onChange={(v) =>
-                                onValueChange(pairedRationale.id, v)
-                              }
-                              projectId={projectId}
-                              aiSuggestion={
-                                rationaleKey
-                                  ? aiSuggestions?.[rationaleKey]
-                                  : undefined
-                              }
-                              onAcceptAI={
-                                onAcceptAI
-                                  ? () => onAcceptAI(instanceId, pairedRationale.id)
-                                  : undefined
-                              }
-                              onRejectAI={
-                                onRejectAI
-                                  ? () => onRejectAI(instanceId, pairedRationale.id)
-                                  : undefined
-                              }
-                              selectSuggestion={selectSuggestion}
-                              getSuggestionsHistory={getSuggestionsHistory}
-                              articleId={articleId}
-                            />
+                            {renderFieldInput(pairedRationale)}
                           </div>
                         ) : null}
-                        {stack.length > 0 ? (
-                          <div className="mt-1 flex justify-end">
-                            <ReviewerAvatarStack
-                              reviewers={stack}
-                              sizeClass="size-5"
-                              testId={`qa-field-avatars-${field.name}`}
-                            />
-                          </div>
-                        ) : null}
+                        {renderAvatars(field)}
                       </div>
                     );
                   }
@@ -586,14 +528,11 @@ export function QASectionAccordion({
                           onValueChange(field.id, v);
                         }}
                       />
-                      <FieldInput
-                        field={field}
-                        instanceId={instanceId}
-                        value={heldValue ?? values[field.id]}
-                        onChange={(v) => handleJudgmentChange(field.id, entry, v)}
-                        projectId={projectId}
-                        articleId={articleId}
-                      />
+                      {renderFieldInput(field, {
+                        withAi: false,
+                        value: heldValue ?? values[field.id],
+                        onChange: (v) => handleJudgmentChange(field.id, entry, v),
+                      })}
                       {heldValue !== undefined && !readOnly ? (
                         <div
                           className="mt-1 flex items-center justify-between gap-3 rounded-sm border border-warning/40 bg-warning/10 px-2 py-1"
@@ -628,25 +567,10 @@ export function QASectionAccordion({
                       ) : null}
                       {rationaleField ? (
                         <div className="mt-1">
-                          <FieldInput
-                            field={rationaleField}
-                            instanceId={instanceId}
-                            value={values[rationaleField.id]}
-                            onChange={(v) => onValueChange(rationaleField.id, v)}
-                            projectId={projectId}
-                            articleId={articleId}
-                          />
+                          {renderFieldInput(rationaleField, { withAi: false })}
                         </div>
                       ) : null}
-                      {stack.length > 0 ? (
-                        <div className="mt-1 flex justify-end">
-                          <ReviewerAvatarStack
-                            reviewers={stack}
-                            sizeClass="size-5"
-                            testId={`qa-field-avatars-${field.name}`}
-                          />
-                        </div>
-                      ) : null}
+                      {renderAvatars(field)}
                     </div>
                   );
                 })}
