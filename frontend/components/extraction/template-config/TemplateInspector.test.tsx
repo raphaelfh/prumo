@@ -11,6 +11,15 @@ vi.mock('@/services/templateService', () => ({
   updateSection: vi.fn(),
   republishTemplateVersion: vi.fn(),
 }));
+// Same reason, for the entry-key control (0059): useUpdateTemplateField
+// reaches extractionFieldService, which imports the API client and with it
+// the Supabase client. That client builds at MODULE scope and throws
+// "supabaseUrl is required" without VITE_SUPABASE_URL — so an unmocked
+// import fails the whole SUITE at load time in any env without a .env,
+// which is exactly what CI is.
+vi.mock('@/services/extractionFieldService', () => ({
+  updateField: vi.fn(),
+}));
 
 import {toast} from 'sonner';
 

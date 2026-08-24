@@ -6460,6 +6460,11 @@
             ],
             "title": "Description"
           },
+          "is_entity_key": {
+            "default": false,
+            "title": "Is Entity Key",
+            "type": "boolean"
+          },
           "label": {
             "maxLength": 100,
             "minLength": 1,
@@ -9286,6 +9291,11 @@
             "title": "Field Type",
             "type": "string"
           },
+          "is_entity_key": {
+            "default": false,
+            "title": "Is Entity Key",
+            "type": "boolean"
+          },
           "is_required": {
             "default": false,
             "title": "Is Required",
@@ -9505,6 +9515,11 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "is_entity_key": {
+            "default": false,
+            "title": "Is Entity Key",
+            "type": "boolean"
           },
           "is_required": {
             "title": "Is Required",
@@ -9747,6 +9762,17 @@
               }
             ],
             "title": "Field Type"
+          },
+          "is_entity_key": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Entity Key"
           },
           "is_required": {
             "anyOf": [

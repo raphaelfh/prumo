@@ -4432,6 +4432,11 @@ export interface components {
             allows_not_evaluated: boolean;
             /** Description */
             description?: string | null;
+            /**
+             * Is Entity Key
+             * @default false
+             */
+            is_entity_key: boolean;
             /** Label */
             label: string;
             /** Llm Description */
@@ -5767,6 +5772,11 @@ export interface components {
              */
             field_type: "text" | "number" | "date" | "select" | "multiselect" | "boolean";
             /**
+             * Is Entity Key
+             * @default false
+             */
+            is_entity_key: boolean;
+            /**
              * Is Required
              * @default false
              */
@@ -5872,6 +5882,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Is Entity Key
+             * @default false
+             */
+            is_entity_key: boolean;
             /** Is Required */
             is_required: boolean;
             /** Label */
@@ -5949,6 +5964,8 @@ export interface components {
             description?: string | null;
             /** Field Type */
             field_type?: ("text" | "number" | "date" | "select" | "multiselect" | "boolean") | null;
+            /** Is Entity Key */
+            is_entity_key?: boolean | null;
             /** Is Required */
             is_required?: boolean | null;
             /** Label */
