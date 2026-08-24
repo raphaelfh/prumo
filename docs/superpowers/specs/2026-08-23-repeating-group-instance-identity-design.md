@@ -263,6 +263,27 @@ offers `cardinality: many` (`TemplateInspectorSectionPane.tsx:183`). Add a
 key-field selector there, listing the section's own fields. Without it, a
 hand-built repeating section hits §5.3's refusal with no way to satisfy it.
 
+## 6.5 Shipped in slice 1, and what is not
+
+Slice 1 ships the schema and backfill, the seed, the portable bundle, the
+matcher, **the model-container AI path**, the prompt grounding, the API,
+and the inspector control.
+
+**The repeating-section AI path is deferred to slice 2.** Its bug is real
+and described in §2 — `_get_or_create_instance` and
+`_find_instance_for_entity_type` take `instances[0]`, so repeats 2..N are
+never filled — but it is not the reported bug, it opens no dead end (no
+refusal fires on that path today), and the change lands in
+`_create_suggestions`, the single choke-point through which **every** AI
+proposal flows for both extraction and quality assessment. Trading that
+blast radius for an unrequested fix is the wrong bet inside an
+unattended promotion. Slice 2 does it with its own verification.
+
+Consequence to state plainly: after slice 1 a repeating section still
+collapses onto its first repeat under AI extraction. Nothing regresses —
+that is today's behaviour — but the spec is not fully delivered until
+slice 2 lands.
+
 ## 7. Out of scope
 
 - **Merging or re-anchoring existing instances.** A manager-side tool to
