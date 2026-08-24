@@ -339,3 +339,132 @@ describe("QASectionAccordion — exclusions and summaries (v2)", () => {
     ).toHaveTextContent("High");
   });
 });
+
+describe("QASectionAccordion — editability, scope sections, paired rationales", () => {
+  it("read-only: the derived-default Apply is disabled with the rest of the form", () => {
+    render(
+      <RunEditabilityProvider stage="finalized">
+        <TooltipProvider>
+          <QASectionAccordion
+            domain={V2_DOMAIN}
+            values={{}}
+            onValueChange={() => {}}
+            projectId="p1"
+            articleId="a1"
+            templateId="t1"
+            runId="r1"
+            instanceId="i1"
+            defaultOpen
+            derivedJudgments={[V2_ENTRY]}
+          />
+        </TooltipProvider>
+      </RunEditabilityProvider>,
+    );
+    // The chip still explains the derivation; only the mutation affordance goes.
+    expect(screen.getByTestId("qa-derived-chip-dev_d1_quality")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("qa-derived-apply-dev_d1_quality"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("an instance change drops a held divergent pick (in-place article navigation)", async () => {
+    const user = userEvent.setup();
+    const { onValueChange, rerender } = renderV2();
+    const card = screen.getByTestId("qa-judgment-card-j1");
+    await user.click(within(card).getAllByRole("combobox")[0]);
+    await user.click(screen.getByRole("option", { name: "Low" }));
+    expect(screen.getByTestId("qa-divergence-j1")).toBeInTheDocument();
+
+    // Same accordion instance, next article: new run instance id.
+    rerender(
+      <TooltipProvider>
+        <QASectionAccordion
+          domain={V2_DOMAIN}
+          values={{}}
+          onValueChange={onValueChange}
+          projectId="p1"
+          articleId="a2"
+          templateId="t1"
+          runId="r2"
+          instanceId="i2"
+          defaultOpen
+          derivedJudgments={[V2_ENTRY]}
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.queryByTestId("qa-divergence-j1")).not.toBeInTheDocument();
+    expect(onValueChange).not.toHaveBeenCalledWith("j1", "Low");
+  });
+
+  it("a scope-like section shows neither the risk icon nor a signaling badge", () => {
+    const SCOPE_DOMAIN = {
+      entityType: { ...BASE_ENTITY, id: "scope-et", name: "assessment_scope", label: "Assessment scope" },
+      fields: [
+        v2Field({
+          id: "st1",
+          name: "study_type",
+          label: "Study type",
+          field_type: "select",
+          allowed_values: [
+            { value: "development_only", label: "Development only" },
+            { value: "evaluation_only", label: "Evaluation only" },
+            { value: "combination", label: "Combination" },
+          ],
+          sort_order: 0,
+          entity_type_id: "scope-et",
+        }),
+      ],
+    } as never;
+    render(
+      <TooltipProvider>
+        <QASectionAccordion
+          domain={SCOPE_DOMAIN}
+          values={{}}
+          onValueChange={() => {}}
+          projectId="p1"
+          articleId="a1"
+          templateId="t1"
+          runId="r1"
+          instanceId="i3"
+          defaultOpen
+          derivedJudgments={[]}
+        />
+      </TooltipProvider>,
+    );
+    expect(
+      screen.queryByTestId("qa-section-risk-icon-assessment_scope"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/signaling question/)).not.toBeInTheDocument();
+    // Positive control: a real domain keeps its icon.
+    render(
+      <TooltipProvider>
+        <QASectionAccordion
+          domain={V2_DOMAIN}
+          values={{}}
+          onValueChange={() => {}}
+          projectId="p1"
+          articleId="a1"
+          templateId="t1"
+          runId="r1"
+          instanceId="i1"
+          defaultOpen
+          derivedJudgments={[V2_ENTRY]}
+        />
+      </TooltipProvider>,
+    );
+    expect(
+      screen.getByTestId("qa-section-risk-icon-qa_domain_one"),
+    ).toBeInTheDocument();
+  });
+
+  it("applicability's name-paired rationale renders inside the judgment card", () => {
+    renderV2();
+    const card = screen.getByTestId("qa-domain-summary-qa_domain_one");
+    expect(
+      within(card).getByTestId("qa-paired-rationale-applicability_concerns"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("qa-field-row-applicability_concerns_rationale"),
+    ).not.toBeInTheDocument();
+  });
+});

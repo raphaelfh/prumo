@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { DerivedDefaultChip } from "@/components/assessment/DerivedDefaultChip";
 import { toneFor } from "@/components/assessment/OverallJudgmentBanner";
 import { FieldInput } from "@/components/extraction/FieldInput";
+import { useRunEditability } from "@/components/runs/RunEditabilityContext";
 import { isJudgmentField } from "@/lib/extraction/judgmentFields";
 import { unwrapValueEnvelope } from "@/lib/extraction/valueSemantics";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,27 @@ import {
 import type { components } from "@/types/api/schema";
 
 type RunViewDerivedJudgment = components["schemas"]["RunViewDerivedJudgment"];
+
+// The instrument's signaling answer vocabularies (PROBAST Y/PY/PN/N;
+// QUADAS-2 adds a substantive Unclear). A select counts as a signaling
+// QUESTION only when every option comes from this set — which excludes the
+// Low/High/Unclear judgments and classification selects like study_type.
+const SIGNALING_VOCAB = new Set(["y", "py", "pn", "n", "unclear"]);
+
+function isSignalingSelect(field: {
+  field_type: string;
+  allowed_values?: unknown;
+}): boolean {
+  if (field.field_type !== "select") return false;
+  const raw = Array.isArray(field.allowed_values) ? field.allowed_values : [];
+  const codes = raw.map((o) =>
+    typeof o === "string" ? o : String((o as { value?: unknown })?.value ?? ""),
+  );
+  return (
+    codes.length > 0 &&
+    codes.every((c) => SIGNALING_VOCAB.has(c.toLowerCase()))
+  );
+}
 
 interface QASectionAccordionProps {
   domain: QADomain;
@@ -162,17 +184,37 @@ export function QASectionAccordion({
       .filter((id): id is string => id != null),
   );
 
+  const summary = fields.filter((f) => isJudgmentField(f));
+  // Judgment-vocabulary judgments WITHOUT a recommendation entry
+  // (applicability; every v1/classic judgment) pull their name-paired
+  // ``<name>_rationale`` sibling into the judgment card too, so the pair
+  // never reads disconnected. Display-only convention: templates without
+  // such siblings (v1, classics) are unaffected.
+  const pairedRationaleByJudgmentId = new Map(
+    summary
+      .filter((f) => !entryByTargetId.has(f.id))
+      .map((f) => [f.id, fields.find((s) => s.name === `${f.name}_rationale`)] as const)
+      .filter((pair): pair is [string, QADomain["fields"][number]] => pair[1] != null),
+  );
+  const pairedRationaleIds = new Set(
+    [...pairedRationaleByJudgmentId.values()].map((r) => r.id),
+  );
+
   // Judgment-linked rationales render INSIDE their judgment card, never in
   // the signaling list; everything else keeps the judgment/signaling split.
   const signaling = fields.filter(
-    (f) => !isJudgmentField(f) && !rationaleFieldIds.has(f.id),
+    (f) =>
+      !isJudgmentField(f) &&
+      !rationaleFieldIds.has(f.id) &&
+      !pairedRationaleIds.has(f.id),
   );
-  const summary = fields.filter((f) => isJudgmentField(f));
-  // The header badge counts actual questions, not free-text boxes (v2 adds
-  // describe/rationale text fields to the section).
-  const signalingQuestionCount = signaling.filter(
-    (f) => f.field_type === "select",
-  ).length;
+  // The header badge counts actual signaling QUESTIONS — selects in the
+  // instrument's answer vocabulary — never free-text boxes and never a
+  // classification select like ``study_type``.
+  const signalingQuestionCount = signaling.filter(isSignalingSelect).length;
+  // Scope-like sections (no signaling questions, no judgments) drop the
+  // warning icon too: nothing in them is a risk assessment.
+  const sectionAssesses = signalingQuestionCount > 0 || summary.length > 0;
   const allFieldsExcluded =
     fields.length > 0 && fields.every((f) => excludedFieldIds.has(f.id));
 
@@ -182,6 +224,22 @@ export function QASectionAccordion({
   // local state: navigating away drops the held pick (the requirement copy
   // is visible the whole time), so no phantom value ever reaches autosave.
   const [heldJudgments, setHeldJudgments] = useState<Record<string, string>>({});
+
+  // Field ids are TEMPLATE-level, shared by every article's run — but the
+  // accordion is keyed by entity type and survives in-place article
+  // navigation. Without this reset a pick held on article A would display
+  // (and be confirmable) on article B. Same render-phase adjustment
+  // pattern as the page's hydration.
+  const [prevInstanceId, setPrevInstanceId] = useState(instanceId);
+  if (instanceId !== prevInstanceId) {
+    setPrevInstanceId(instanceId);
+    if (Object.keys(heldJudgments).length > 0) setHeldJudgments({});
+  }
+
+  // Read-only surfaces (finalized runs, viewer role): every input is
+  // disabled, so Apply must be too — otherwise it silently mutates the
+  // displayed values of a published record with nothing persisting.
+  const { readOnly } = useRunEditability();
 
   function rationaleIsEmpty(entry: RunViewDerivedJudgment): boolean {
     if (entry.rationale_field_id == null) return false;
@@ -276,7 +334,12 @@ export function QASectionAccordion({
           <AccordionTrigger className="flex-1 px-4 py-3 hover:no-underline">
             <div className="flex flex-1 items-center justify-between gap-3 text-left">
               <div className="flex items-center gap-2">
-                <ShieldAlert className="h-4 w-4 text-warning" />
+                {sectionAssesses ? (
+                  <ShieldAlert
+                    className="h-4 w-4 text-warning"
+                    data-testid={`qa-section-risk-icon-${entityType.name}`}
+                  />
+                ) : null}
                 <span className="text-sm font-semibold">{sectionLabel}</span>
                 {signalingQuestionCount > 0 ? (
                   <Badge variant="secondary" className="text-[10px]">
@@ -409,7 +472,15 @@ export function QASectionAccordion({
 
                   if (!entry) {
                     // No recommendation (applicability, v1 clones, classic
-                    // templates): the plain editable judgment row, unchanged.
+                    // templates): the plain editable judgment row, with its
+                    // name-paired rationale (when one exists) rendered right
+                    // below it — both keep the full AI suggestion flow.
+                    const pairedRationale = pairedRationaleByJudgmentId.get(
+                      field.id,
+                    );
+                    const rationaleKey = pairedRationale
+                      ? getSuggestionKey(instanceId, pairedRationale.id)
+                      : null;
                     return (
                       <div key={field.id} className="py-1">
                         <FieldInput
@@ -433,6 +504,40 @@ export function QASectionAccordion({
                           getSuggestionsHistory={getSuggestionsHistory}
                           articleId={articleId}
                         />
+                        {pairedRationale ? (
+                          <div
+                            className="mt-1"
+                            data-testid={`qa-paired-rationale-${field.name}`}
+                          >
+                            <FieldInput
+                              field={pairedRationale}
+                              instanceId={instanceId}
+                              value={values[pairedRationale.id]}
+                              onChange={(v) =>
+                                onValueChange(pairedRationale.id, v)
+                              }
+                              projectId={projectId}
+                              aiSuggestion={
+                                rationaleKey
+                                  ? aiSuggestions?.[rationaleKey]
+                                  : undefined
+                              }
+                              onAcceptAI={
+                                onAcceptAI
+                                  ? () => onAcceptAI(instanceId, pairedRationale.id)
+                                  : undefined
+                              }
+                              onRejectAI={
+                                onRejectAI
+                                  ? () => onRejectAI(instanceId, pairedRationale.id)
+                                  : undefined
+                              }
+                              selectSuggestion={selectSuggestion}
+                              getSuggestionsHistory={getSuggestionsHistory}
+                              articleId={articleId}
+                            />
+                          </div>
+                        ) : null}
                         {stack.length > 0 ? (
                           <div className="mt-1 flex justify-end">
                             <ReviewerAvatarStack
@@ -468,6 +573,7 @@ export function QASectionAccordion({
                     >
                       <DerivedDefaultChip
                         judgment={entry}
+                        disabled={readOnly}
                         onApply={(v) => {
                           clearHeld(field.id);
                           onValueChange(field.id, v);
@@ -481,7 +587,7 @@ export function QASectionAccordion({
                         projectId={projectId}
                         articleId={articleId}
                       />
-                      {heldValue !== undefined ? (
+                      {heldValue !== undefined && !readOnly ? (
                         <div
                           className="mt-1 flex items-center justify-between gap-3 rounded-sm border border-warning/40 bg-warning/10 px-2 py-1"
                           data-testid={`qa-divergence-${field.id}`}
