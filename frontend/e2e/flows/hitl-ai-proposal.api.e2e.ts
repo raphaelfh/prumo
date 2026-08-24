@@ -27,11 +27,11 @@ import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { resolveAuthToken, loginViaUi } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 import { fillRequiredFieldsAndFinalize } from "../_fixtures/hitl-finalize";
-import { seedProposals } from "../_fixtures/hitl";
 import {
   adminDelete,
   adminSelect,
   resolveActiveExtractionTemplateId,
+  seedProposals,
 } from "../_fixtures/supabase-admin";
 
 interface RunSummaryResponse {
@@ -181,8 +181,7 @@ test.describe("HITL AI proposal pipeline", () => {
     );
     expect(forged.status()).toBe(404);
 
-    // 3b. Seed the AI proposal the way the pipeline writes it —
-    // SectionExtractionService calls record_proposal in-process.
+    // 3b. Seed it the way the pipeline does.
     const [proposalId] = await seedProposals([
       {
         runId: runBody.id,

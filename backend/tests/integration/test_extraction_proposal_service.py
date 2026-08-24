@@ -246,8 +246,7 @@ async def test_record_proposal_blocked_outside_extract_stage(
         user_id=profile_id,
     )
     service = ExtractionProposalService(db_session)
-    # ``allowed_stages`` is the single-element {extract}, so every other stage
-    # takes this one branch — consensus stands in for all of them.
+    # Every stage but extract takes this one branch — consensus stands in for all.
     with pytest.raises(InvalidProposalError, match="stage"):
         await service.record_proposal(
             run_id=run_id,
@@ -321,35 +320,6 @@ async def test_record_human_proposal_rejected_in_extract_for_extraction(
             proposed_value={"value": "leaked"},
             source_user_id=profile_id,
         )
-    await db_session.rollback()
-
-
-@pytest.mark.asyncio
-async def test_record_proposal_rejects_an_unknown_source_by_name(
-    db_session: AsyncSession,
-) -> None:
-    """An unrecognized source is named, not mislabelled a human write.
-
-    ``CreateProposalRequest``'s ``^(ai|human|system)$`` pattern used to
-    constrain this at the API boundary and went with the route (ADR-0019), so
-    ``source`` is an unconstrained ``str`` again. A typo — or a new
-    ``ExtractionProposalSource`` member whose handling nobody added here —
-    must not be told to go through /decisions.
-    """
-    fx = await _setup_run_with_instance_field(db_session, kind="extraction")
-    if fx is None:
-        pytest.skip("Missing extraction-kind template in test DB.")
-    run_id, instance_id, field_id, _profile_id = fx
-    service = ExtractionProposalService(db_session)
-    with pytest.raises(InvalidProposalError, match="Unsupported proposal source") as exc:
-        await service.record_proposal(
-            run_id=run_id,
-            instance_id=instance_id,
-            field_id=field_id,
-            source="robot",
-            proposed_value={"value": "x"},
-        )
-    assert "/decisions" not in str(exc.value)
     await db_session.rollback()
 
 

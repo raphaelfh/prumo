@@ -33,12 +33,13 @@ import {
   REVIEWER_B_NAME,
   TRACE_ARTICLE_ID,
 } from "../_fixtures/fixture-ids";
-import { prepareCleanQaRun, seedProposals } from "../_fixtures/hitl";
+import { prepareCleanQaRun } from "../_fixtures/hitl";
 import {
   adminDelete,
   adminSelect,
   adminUpdate,
   resolveActiveExtractionTemplateId,
+  seedProposals,
 } from "../_fixtures/supabase-admin";
 
 interface RunViewResponse {
@@ -252,28 +253,28 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     const [coord1, coord2, coord3] = coords;
 
     // --- Seed AI proposals directly in the table + run provenance so the
-    // popover's ran-by header has an identity to reveal.
-    //
-    // No HTTP route writes proposals (ADR-0019): the real writer is
-    // SectionExtractionService, in-process. Seeding here mirrors how the
-    // pipeline writes them — the same reason the pre-D8 human row below is
-    // seeded directly.
-    await seedProposals(
-      (
-        [
-          [coord1, AI_COORD1],
-          [coord2, A_TYPED_COORD2],
-        ] as const
-      ).map(([coord, value]) => ({
+    // popover's ran-by header has an identity to reveal (proposal rows alone
+    // don't write results.provenance).
+    await seedProposals([
+      {
         runId,
-        instanceId: coord.instanceId,
-        fieldId: coord.fieldId,
-        source: "ai" as const,
-        value,
+        instanceId: coord1.instanceId,
+        fieldId: coord1.fieldId,
+        source: "ai",
+        value: AI_COORD1,
         confidenceScore: 0.9,
         rationale: "e2e seeded",
-      })),
-    );
+      },
+      {
+        runId,
+        instanceId: coord2.instanceId,
+        fieldId: coord2.fieldId,
+        source: "ai",
+        value: A_TYPED_COORD2,
+        confidenceScore: 0.9,
+        rationale: "e2e seeded",
+      },
+    ]);
     await adminUpdate("extraction_runs", `id=eq.${runId}`, {
       results: { provenance: { model: "e2e-seed", ran_by_user_id: ownerId } },
     });
