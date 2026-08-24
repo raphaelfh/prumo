@@ -40,7 +40,7 @@ Aggregations, deliberately different:
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -290,7 +290,7 @@ def _aggregate_signaling(plain: list[str], groups: list[str]) -> str | None:
 
 
 def _compute_signaling_entry(
-    items: list[Mapping[str, Any]],
+    items: Sequence[Mapping[str, Any]],
     values_by_coord: Mapping[tuple[str, str], Any],
 ) -> tuple[str | None, tuple[DerivedInput, ...]]:
     """value + breakdown rows for one ``signaling_worst`` recommendation."""
