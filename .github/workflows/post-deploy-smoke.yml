@@ -9,6 +9,11 @@ name: Post-deploy Smoke
 #   2. Deployed commit — /health.commit vs the promoted SHA. Reachability
 #      alone cannot tell a fresh deploy from one stuck on an older commit,
 #      which is the documented failure class (CI green, prod stale).
+#      Push-triggered runs POLL and only ever warn: they race the very
+#      deploy they verify, and a red check on the SHA makes Railway skip
+#      that deploy — which would deadlock prod into staleness. The 6-hourly
+#      scheduled run is the blocking alarm; it is not a commit check, so it
+#      cannot wedge anything.
 #
 # There is deliberately NO credentialed probe and no Playwright suite
 # against prod. An authenticated probe would add only the narrow delta
@@ -55,23 +60,40 @@ jobs:
           EXPECTED: ${{ github.sha }}
           EVENT: ${{ github.event_name }}
         run: |
-          DEPLOYED=$(jq -r '.commit // empty' /tmp/health.json 2>/dev/null || echo "")
-          echo "deployed=${DEPLOYED:-<none>} expected=$EXPECTED"
-          if [ -z "$DEPLOYED" ] || [ "$DEPLOYED" = "unknown" ]; then
-            echo "::warning::backend reports no commit (build pre-dates this check, or RAILWAY_GIT_COMMIT_SHA is not injected) — cannot prove which build is live"
-            exit 0
+          read_commit() {
+            curl -fsS --max-time 15 "$API_BASE/health" 2>/dev/null | jq -r '.commit // empty' || echo ""
+          }
+          DEPLOYED=$(read_commit)
+          if [ "$EVENT" = "push" ] && [ "$DEPLOYED" != "$EXPECTED" ]; then
+            # This run RACES the deploy it is meant to verify, so it polls
+            # instead of judging on the first read.
+            for _ in $(seq 1 20); do
+              sleep 30
+              DEPLOYED=$(read_commit)
+              [ "$DEPLOYED" = "$EXPECTED" ] && break
+            done
           fi
+          echo "deployed=${DEPLOYED:-<none>} expected=$EXPECTED"
           if [ "$DEPLOYED" = "$EXPECTED" ]; then
             echo "the promoted build is live"
             exit 0
           fi
-          if [ "$EVENT" = "push" ]; then
-            echo "::error::prod runs $DEPLOYED but this push promoted $EXPECTED — the deploy is stale or stuck"
-            exit 1
+          if [ -z "$DEPLOYED" ] || [ "$DEPLOYED" = "unknown" ]; then
+            echo "::warning::backend reports no commit (build pre-dates this check, or RAILWAY_GIT_COMMIT_SHA is not injected) — cannot prove which build is live"
+            exit 0
           fi
-          # A scheduled run can legitimately catch a deploy mid-flight; warn
-          # rather than page, the push-triggered run is the blocking check.
-          echo "::warning::prod=$DEPLOYED main=$EXPECTED — a deploy may be in flight"
+          if [ "$EVENT" != "schedule" ]; then
+            # NEVER fail on a commit-attached event. Railway's wait-for-CI
+            # skips the deploy when a check on the SHA goes red, so failing
+            # here deadlocks: the check is red because the deploy has not
+            # happened, and the deploy will not happen because the check is
+            # red — prod then stays stale forever. Observed 2026-08-24 on
+            # a4dc5b65. The scheduled monitor below is the blocking alarm.
+            echo "::warning::prod still runs $DEPLOYED after waiting — the deploy is queued, stuck or SKIPPED; check the Railway deployment list"
+            exit 0
+          fi
+          echo "::error::prod runs $DEPLOYED but main is $EXPECTED — stale deploy"
+          exit 1
 
       - name: Frontend root
         run: |
