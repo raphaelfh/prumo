@@ -4090,6 +4090,45 @@
         "title": "CreateModelHierarchyResponse",
         "type": "object"
       },
+      "CreateProjectTemplateRequest": {
+        "additionalProperties": false,
+        "description": "Name a template that starts with no sections; the tree is built after.\n\n``extra=\"forbid\"``: ``is_active``, ``project_id`` and ``created_by`` are\nthe server's to set \u2014 the invariants in ``template_create_service`` are\nexactly what a client-supplied field set would break.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "framework": {
+            "default": "CUSTOM",
+            "enum": [
+              "CHARMS",
+              "PICOS",
+              "CUSTOM"
+            ],
+            "title": "Framework",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 3,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CreateProjectTemplateRequest",
+        "type": "object"
+      },
       "CreateProposalRequest": {
         "additionalProperties": false,
         "properties": {
@@ -12376,6 +12415,65 @@
         "summary": "Set Parser Settings",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates": {
+      "post": {
+        "description": "Create a project template that starts with no sections.\n\nManager-gated like clone and import below: it deactivates the project's\ncurrent extraction template, which is project-wide configuration. Same\nresponse shape as those two \u2014 the manager lands in the configuration\neditor on a published, empty v1.",
+        "operationId": "create_project_template_api_v1_projects__project_id__templates_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CloneTemplateResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create Project Template",
+        "tags": [
+          "project-templates"
         ]
       }
     },

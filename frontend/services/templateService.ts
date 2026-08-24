@@ -2,8 +2,10 @@
  * Template structure CRUD service (entity-types, sections).
  *
  * IO for template configuration: loading entity types, updating labels,
- * adding/removing sections, creating custom templates.  Article-list
- * queries live in articlesService.ts; auth queries in authService.ts.
+ * adding/removing sections.  Creating a template (from scratch, from the
+ * catalogue, or from a file) is server-authoritative and lives in
+ * templateImportService.ts; article-list queries live in articlesService.ts;
+ * auth queries in authService.ts.
  *
  * Section WRITES (create/rename/delete) go through apiClient onto the
  * typed B-7 endpoints; the reads stay PostgREST until the read-path
@@ -436,65 +438,6 @@ export async function deleteSection(
       throw error;
     }
   }, 'deleteSection');
-}
-
-// --- Custom template creation ---
-
-export interface CreateCustomTemplateParams {
-  projectId: string;
-  name: string;
-  description?: string | null;
-  framework: 'CUSTOM' | 'CHARMS' | 'PICOS';
-  createdBy: string;
-}
-
-export interface CreatedTemplate {
-  id: string;
-  name: string;
-}
-
-/**
- * Insert a new project_extraction_templates row.
- *
- * BROKEN — do not extend this path, and note it is still user-reachable: the
- * "Create template" card in `ExtractionInterface.tsx` opens
- * `CreateCustomTemplateDialog`, which calls this. The insert cannot succeed —
- * the 0004 constraint trigger needs an active `extraction_template_versions`
- * row that a single PostgREST insert cannot create, and since migration 0057
- * the `authenticated` role no longer holds INSERT on the table at all, so the
- * failure is now `permission denied` rather than a constraint violation.
- * Creation belongs on the manager-gated endpoints
- * (`POST /projects/{id}/templates/clone` or `/import`), which own the
- * active-template and in-use invariants this path skips. Rewiring the dialog
- * is tracked separately.
- */
-export async function createCustomTemplate(
-  params: CreateCustomTemplateParams,
-): Promise<ErrorResult<CreatedTemplate>> {
-  return toResult(async () => {
-    const {data: template, error} = await supabase
-      .from('project_extraction_templates')
-      .insert({
-        project_id: params.projectId,
-        name: params.name,
-        description: params.description,
-        framework: params.framework,
-        version: '1.0.0',
-        schema: {
-          description: params.description || '',
-          custom: true,
-          created_via_ui: true,
-        },
-        is_active: true,
-        created_by: params.createdBy,
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    return {id: template.id, name: template.name} satisfies CreatedTemplate;
-  }, 'createCustomTemplate');
 }
 
 // --- Global templates ---

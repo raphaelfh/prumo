@@ -701,6 +701,75 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     expect(apiClientMock).toHaveBeenCalledTimes(1);
   });
 
+  it('flushes the pending edit for the OLD run when runId swaps in place (article pager)', async () => {
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
+
+    const { rerender } = renderHook(
+      (props: Parameters<typeof useAutoSaveProposals>[0]) =>
+        useAutoSaveProposals(props),
+      {
+        initialProps: {
+          runId: 'run-A',
+          stage: 'extract',
+          values: { 'inst-1_field-1': 'answered-on-A' } as Record<string, unknown>,
+          debounceMs: 5000,
+        },
+      },
+    );
+
+    // In-place article navigation (#657/#671 pagers): same component, new
+    // run — no unmount, so only a run-keyed flush can carry the pending
+    // edit. The unmount-flush alone (the pre-fix behavior) drops it.
+    rerender({
+      runId: 'run-B',
+      stage: 'extract',
+      values: {},
+      debounceMs: 5000,
+    });
+
+    await waitFor(() => expect(apiClientMock).toHaveBeenCalledTimes(1));
+    // Exactly one write, addressed to the OLD run — never a stale POST
+    // against run-B.
+    expect(apiClientMock.mock.calls.map(([url]) => String(url))).toEqual([
+      '/api/v1/runs/run-A/decisions',
+    ]);
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/run-A/decisions',
+      expect.objectContaining({ keepalive: true }),
+    );
+  });
+
+  it('does not flush on a run swap when there are no dirty changes', async () => {
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
+
+    const { rerender } = renderHook(
+      (props: Parameters<typeof useAutoSaveProposals>[0]) =>
+        useAutoSaveProposals(props),
+      {
+        initialProps: {
+          runId: 'run-A',
+          stage: 'extract',
+          values: { 'inst-1_field-1': 'persisted' } as Record<string, unknown>,
+          baselineValues: { 'inst-1_field-1': 'persisted' } as Record<string, unknown>,
+          debounceMs: 5000,
+        },
+      },
+    );
+
+    rerender({
+      runId: 'run-B',
+      stage: 'extract',
+      values: {},
+      baselineValues: {},
+      debounceMs: 5000,
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(0);
+  });
+
   it('pagehide triggers an immediate flush', async () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
