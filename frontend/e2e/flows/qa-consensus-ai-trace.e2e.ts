@@ -33,10 +33,9 @@ import {
   REVIEWER_B_NAME,
   TRACE_ARTICLE_ID,
 } from "../_fixtures/fixture-ids";
-import { prepareCleanQaRun } from "../_fixtures/hitl";
+import { prepareCleanQaRun, seedProposals } from "../_fixtures/hitl";
 import {
   adminDelete,
-  adminInsert,
   adminSelect,
   adminUpdate,
   resolveActiveExtractionTemplateId,
@@ -259,22 +258,19 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     // SectionExtractionService, in-process. Seeding here mirrors how the
     // pipeline writes them — the same reason the pre-D8 human row below is
     // seeded directly.
-    await adminInsert(
-      "extraction_proposal_records",
+    await seedProposals(
       (
         [
           [coord1, AI_COORD1],
           [coord2, A_TYPED_COORD2],
         ] as const
       ).map(([coord, value]) => ({
-        id: crypto.randomUUID(),
-        run_id: runId,
-        instance_id: coord.instanceId,
-        field_id: coord.fieldId,
-        source: "ai",
-        source_user_id: null,
-        proposed_value: { value },
-        confidence_score: 0.9,
+        runId,
+        instanceId: coord.instanceId,
+        fieldId: coord.fieldId,
+        source: "ai" as const,
+        value,
+        confidenceScore: 0.9,
         rationale: "e2e seeded",
       })),
     );
@@ -615,15 +611,14 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     // Pre-D8 mid-flight shape: a bare human proposal with no decision.
     // Legacy rows now exist only as stored data, so seed one the way it
     // actually exists in a pre-D8 database — directly in the table.
-    await adminInsert("extraction_proposal_records", [
+    await seedProposals([
       {
-        id: crypto.randomUUID(),
-        run_id: runId,
-        instance_id: fixture.firstInstanceId,
-        field_id: untouchedField!.id,
+        runId,
+        instanceId: fixture.firstInstanceId,
+        fieldId: untouchedField!.id,
         source: "human",
-        source_user_id: reviewerBId,
-        proposed_value: { value: "PY-materialized" },
+        sourceUserId: reviewerBId,
+        value: "PY-materialized",
       },
     ]);
 

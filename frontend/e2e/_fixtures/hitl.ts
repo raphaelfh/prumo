@@ -15,7 +15,7 @@
 import type { APIRequestContext, APIResponse } from "@playwright/test";
 
 import { authHeaders, parseEnvelope } from "./api";
-import { adminDelete, adminSelect } from "./supabase-admin";
+import { adminDelete, adminInsert, adminSelect } from "./supabase-admin";
 import type { ReviewKind } from "../../lib/comparison/permissions";
 
 interface OpenSessionResponse {
@@ -177,4 +177,45 @@ export async function prepareCleanQaRun(
     firstInstanceId,
     firstField,
   };
+}
+
+export interface ProposalSeed {
+  runId: string;
+  instanceId: string;
+  fieldId: string;
+  source: "ai" | "human" | "system";
+  /** Inner value; stored wrapped as `{ value }`, matching the write path. */
+  value: unknown;
+  /** Only human rows carry attribution; ai/system are unattributed. */
+  sourceUserId?: string | null;
+  confidenceScore?: number;
+  rationale?: string;
+}
+
+/**
+ * Seed proposal rows straight into `extraction_proposal_records`.
+ *
+ * No HTTP route writes proposals: the `/proposals` endpoint was removed once
+ * every source it accepted turned out to be forbidden (ADR-0019). `ai` and
+ * `system` rows are written in-process by the pipeline, and bare `human` rows
+ * exist only as pre-D8 legacy data. Both are reproduced here the way they
+ * really land, with the column list in one place so a schema change is one
+ * edit rather than a hunt.
+ *
+ * Returns the generated ids, in the order the seeds were given.
+ */
+export async function seedProposals(seeds: ProposalSeed[]): Promise<string[]> {
+  const rows = seeds.map((seed) => ({
+    id: crypto.randomUUID(),
+    run_id: seed.runId,
+    instance_id: seed.instanceId,
+    field_id: seed.fieldId,
+    source: seed.source,
+    source_user_id: seed.sourceUserId ?? null,
+    proposed_value: { value: seed.value },
+    ...(seed.confidenceScore === undefined ? {} : { confidence_score: seed.confidenceScore }),
+    ...(seed.rationale === undefined ? {} : { rationale: seed.rationale }),
+  }));
+  await adminInsert("extraction_proposal_records", rows);
+  return rows.map((row) => row.id);
 }

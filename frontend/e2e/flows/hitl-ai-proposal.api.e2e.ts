@@ -27,9 +27,9 @@ import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { resolveAuthToken, loginViaUi } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 import { fillRequiredFieldsAndFinalize } from "../_fixtures/hitl-finalize";
+import { seedProposals } from "../_fixtures/hitl";
 import {
   adminDelete,
-  adminInsert,
   adminSelect,
   resolveActiveExtractionTemplateId,
 } from "../_fixtures/supabase-admin";
@@ -183,17 +183,14 @@ test.describe("HITL AI proposal pipeline", () => {
 
     // 3b. Seed the AI proposal the way the pipeline writes it —
     // SectionExtractionService calls record_proposal in-process.
-    const proposalId = crypto.randomUUID();
-    await adminInsert("extraction_proposal_records", [
+    const [proposalId] = await seedProposals([
       {
-        id: proposalId,
-        run_id: runBody.id,
-        instance_id: instance.id,
-        field_id: field.id,
+        runId: runBody.id,
+        instanceId: instance.id,
+        fieldId: field.id,
         source: "ai",
-        source_user_id: null,
-        proposed_value: { value: "ai-proposed" },
-        confidence_score: 0.87,
+        value: "ai-proposed",
+        confidenceScore: 0.87,
         rationale: "E2E AI proposal",
       },
     ]);

@@ -31,6 +31,16 @@ class InvalidProposalError(Exception):
 #: (provider/model/endpoint_id/key_scope/mode_requested) is never rewritten.
 _EXECUTION_KEYS = ("mode_executed", "passes")
 
+#: The sources this service writes. ``system`` stays even though today's
+#: reopen seeding builds its rows directly (``run_lifecycle_service``): every
+#: caller is now trusted in-process code, so narrowing buys no safety, and
+#: routing that seeding back through here — which would gain it coordinate
+#: coherence and ADR-0016 normalization — should not need a schema argument.
+_SERVER_WRITTEN_SOURCES = (
+    ExtractionProposalSource.AI.value,
+    ExtractionProposalSource.SYSTEM.value,
+)
+
 
 class ExtractionProposalService:
     """Append-only proposal writes with rule validation."""
@@ -57,37 +67,41 @@ class ExtractionProposalService:
             raise InvalidProposalError(f"Run {run_id} not found")
 
         source_value = source.value if isinstance(source, ExtractionProposalSource) else source
-        # Stage gate is source-specific in the collapsed ``extract``
-        # lifecycle (pending -> extract -> consensus -> finalized):
-        #
-        # * ``ai`` / ``system`` proposals are produced during ``extract`` —
-        #   the AI phase and any system seeding both live in that single
-        #   stage now that ``proposal``/``review`` are unified.
-        # * ``human`` proposals are REJECTED outright for BOTH kinds —
-        #   humans write via /decisions:
-        #     - kind='extraction' (Layer 1b of the multi-reviewer blind
-        #       fix): a reviewer's values must land as per-user
-        #       ``ReviewerDecision`` rows so the blind-review contract holds
-        #       (``loadValuesForUser`` filters by reviewer_id). A shared
-        #       ``human`` proposal here opens the leak Layer 1 patched on
-        #       the read side; this gate closes it on the write side so a
-        #       frontend bypass (curl, agent client) cannot resurrect it.
-        #     - kind='quality_assessment': the QA form writes /decisions
-        #       since D8 unified the write path. Without this gate any API
-        #       client could still leave bare human proposals that
-        #       ``materialize_qa_decisions`` would have to reconcile at
-        #       every extract->consensus advance, forever; rejecting them
-        #       bounds that materializer to pre-D8 rows already stored.
-        if source_value in ("ai", "system"):
-            allowed_stages = {ExtractionRunStage.EXTRACT.value}
-        else:
+        # ``human`` proposals are REJECTED outright for BOTH kinds — humans
+        # write via /decisions:
+        #   - kind='extraction' (Layer 1b of the multi-reviewer blind fix): a
+        #     reviewer's values must land as per-user ``ReviewerDecision``
+        #     rows so the blind-review contract holds (``loadValuesForUser``
+        #     filters by reviewer_id). A shared ``human`` proposal here opens
+        #     the leak Layer 1 patched on the read side; this gate closes it
+        #     on the write side. No HTTP route can reach this any more
+        #     (ADR-0019), but the invariant is stated where it is owned, so a
+        #     future in-process caller cannot resurrect the leak either.
+        #   - kind='quality_assessment': the QA form writes /decisions since
+        #     D8 unified the write path. Without this gate a caller could
+        #     still leave bare human proposals that ``materialize_qa_decisions``
+        #     would have to reconcile at every extract->consensus advance,
+        #     forever; rejecting them bounds that materializer to pre-D8 rows
+        #     already stored.
+        if source_value == ExtractionProposalSource.HUMAN.value:
             raise InvalidProposalError(
                 "Human writes must go through /decisions (ReviewerDecision), not as a proposal."
             )
-        if run.stage not in allowed_stages:
+        # Anything else is named for what it is. ``CreateProposalRequest``'s
+        # ``^(ai|human|system)$`` pattern used to constrain this at the API
+        # boundary and went with the route (ADR-0019), so ``source`` is now an
+        # unconstrained ``str`` — a typo or a new enum member would otherwise
+        # fall into the human branch and be told to use /decisions, which is
+        # misdirection rather than exhaustiveness.
+        if source_value not in _SERVER_WRITTEN_SOURCES:
+            raise InvalidProposalError(f"Unsupported proposal source: {source_value!r}.")
+        # Stage gate: in the collapsed lifecycle (pending -> extract ->
+        # consensus -> finalized) the AI phase and any system seeding both
+        # live in ``extract``, now that ``proposal``/``review`` are unified.
+        if run.stage != ExtractionRunStage.EXTRACT.value:
             raise InvalidProposalError(
                 f"Cannot record proposal: kind={run.kind} run stage is "
-                f"{run.stage}, not in {sorted(allowed_stages)}."
+                f"{run.stage}, not {ExtractionRunStage.EXTRACT.value}."
             )
 
         await assert_coords_coherent(
