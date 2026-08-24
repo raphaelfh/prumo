@@ -18,7 +18,6 @@ services:
       - DEBUG=true
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
       - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-review_hub_dev_key_change_in_prod}

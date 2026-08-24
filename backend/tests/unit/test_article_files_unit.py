@@ -19,8 +19,8 @@ from app.api.v1.endpoints.article_files import (
 from app.models.article import ArticleFile
 from app.schemas.article import ConfirmUploadRequest
 from app.services.article_file_service import ArticleFileService, ParseEnqueueError
+from app.services.article_read_service import ArticleNotFoundError
 from app.services.article_text_block_read_service import ArticleFileNotFoundError
-from app.services.citation_read_service import ArticleNotFoundError
 
 _INGEST = "app.services.article_file_service.ArticleFileIngestService"
 _EP = "app.api.v1.endpoints.article_files"

@@ -707,23 +707,3 @@ class ModelExtractionService(LoggerMixin):
         )
 
         return created, total_children_created
-
-    def to_dict(self, result: ModelExtractionResult) -> dict[str, Any]:
-        """
-        Converte resultado for dict compativel with resposta do endpoint.
-
-        Mantem formato compativel with a Edge Function original.
-        """
-        return {
-            "extractionRunId": result.extraction_run_id,
-            "modelsCreated": result.models_created,
-            "totalModels": result.total_models,
-            "childInstancesCreated": result.child_instances_created,
-            "metadata": {
-                "duration": int(result.duration_ms),
-                "modelsFound": result.total_models,
-                "tokensPrompt": result.tokens_prompt,
-                "tokensCompletion": result.tokens_completion,
-                "tokensTotal": result.tokens_total,
-            },
-        }

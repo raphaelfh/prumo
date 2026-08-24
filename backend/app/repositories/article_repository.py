@@ -27,57 +27,6 @@ class ArticleRepository(BaseRepository[Article]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, Article)
 
-    async def get_by_project(
-        self,
-        project_id: UUID | str,
-        *,
-        skip: int = 0,
-        limit: int = 100,
-        include_files: bool = False,
-    ) -> list[Article]:
-        """
-        List articles for a project.
-
-        Args:
-            project_id: Project ID.
-            skip: Pagination offset.
-            limit: Maximum number of results.
-            include_files: Whether to eager-load files.
-
-        Returns:
-            Project article list.
-        """
-        if isinstance(project_id, str):
-            project_id = UUID(project_id)
-
-        query = select(Article).where(Article.project_id == project_id)
-
-        if include_files:
-            query = query.options(selectinload(Article.files))
-
-        query = query.offset(skip).limit(limit)
-
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
-
-    async def get_with_files(self, article_id: UUID | str) -> Article | None:
-        """
-        Fetch article with files loaded.
-
-        Args:
-            article_id: Article ID.
-
-        Returns:
-            Article with files or None.
-        """
-        if isinstance(article_id, str):
-            article_id = UUID(article_id)
-
-        result = await self.db.execute(
-            select(Article).options(selectinload(Article.files)).where(Article.id == article_id)
-        )
-        return result.scalar_one_or_none()
-
     async def get_by_ids(
         self,
         article_ids: list[UUID] | list[str],
@@ -138,26 +87,6 @@ class ArticleRepository(BaseRepository[Article]):
             .limit(1)
         )
         return result.scalar_one_or_none()
-
-    async def count_by_project(self, project_id: UUID | str) -> int:
-        """
-        Count articles in a project.
-
-        Args:
-            project_id: Project ID.
-
-        Returns:
-            Article count.
-        """
-        from sqlalchemy import func
-
-        if isinstance(project_id, str):
-            project_id = UUID(project_id)
-
-        result = await self.db.execute(
-            select(func.count()).select_from(Article).where(Article.project_id == project_id)
-        )
-        return result.scalar_one()
 
     async def get_by_canonical_identity(
         self,
@@ -437,20 +366,5 @@ class ArticleFileRepository(BaseRepository[ArticleFile]):
             .where(ArticleFile.file_type.ilike("%pdf%"))
             .order_by(ArticleFile.created_at.desc())
             .limit(1)
-        )
-        return result.scalar_one_or_none()
-
-    async def get_by_storage_key(self, storage_key: str) -> ArticleFile | None:
-        """
-        Fetch file by storage key.
-
-        Args:
-            storage_key: Storage key.
-
-        Returns:
-            File or None.
-        """
-        result = await self.db.execute(
-            select(ArticleFile).where(ArticleFile.storage_key == storage_key)
         )
         return result.scalar_one_or_none()

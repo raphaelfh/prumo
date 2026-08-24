@@ -1,68 +1,37 @@
-"""
-Unit of Work Pattern.
+"""Unit of Work — a transactional context manager over one AsyncSession.
 
-Coordena transacoes and garante consistencia entre repositories.
+WHAT THIS IS (and is not)
+=========================
 
-O QUE E UNIT OF WORK?
+`UnitOfWork` owns a transaction boundary and exposes the repositories that
+have a caller reaching them *through* it. It is deliberately NOT a facade
+over every repository: services construct the repositories they need
+directly (`ArticleRepository(db)`), which is the pattern the codebase
+actually follows. Registering a repository here "because it exists" grows
+members nothing calls.
+
+So the rule for this file is: **add a repository here only when a caller
+goes through `uow`.** Everything else constructs its own.
+
+WHO USES IT
+===========
+
+The API layer, via the `app.core.transactions` re-export — that indirection
+is what lets `check_layered_arch.py` tell "the API touches transaction
+infrastructure" (allowed) from "the API reaches past services into
+repositories" (a violation). Both current call sites gate project
+membership before doing work:
+
+    async with UnitOfWork(db) as uow:
+        is_member = await uow.project_members.is_member(project_id, user_sub)
+
+TRANSACTION SEMANTICS
 =====================
 
-O padrao Unit of Work (UoW) e uma abstracao que:
-1. Agrupa multiplas operacoes de banco em uma unica transacao
-2. Controla quando as mudancas sao commitadas
-3. Faz rollback automatico se algo falhar
-4. Centraliza o acesso a todos os repositories
-
-POR QUE USAR?
-=============
-
-1. ATOMICIDADE: Multiplas operacoes sao tratadas como uma so
-   - Se criar article and file falhar in the file, ambos sao revertidos
-
-2. CONSISTENCIA: Evita estados inconsistentes in the banco
-   - Nao ha commits parciais
-
-3. ORGANIZACAO: Um ponto de entrada for todos os repositories
-   - Nao precisa criar repositories manualmente
-
-4. SEGURANCA: Rollback automatico em excecoes
-   - async with garante cleanup adequado
-
-COMO USAR
-=========
-
-Exemplo basico:
-    async with UnitOfWork(session) as uow:
-        article = await uow.articles.get_by_id(article_id)
-        await uow.articles.update(article, {"title": "Novo titulo"})
-        await uow.commit()  # Persiste a mudanca
-
-Exemplo with multiplas operacoes:
-    async with UnitOfWork(session) as uow:
-        # Criar article
-        article = Article(title="Novo", project_id=project_id)
-        await uow.articles.create(article)
-
-        # Criar file do article (usa article.id ja disponivel)
-        file = ArticleFile(article_id=article.id, file_type="pdf")
-        await uow.article_files.create(file)
-
-        # Commit de tudo de uma vez
-        await uow.commit()
-
-Example with error handling:
-    async with UnitOfWork(session) as uow:
-        try:
-            await uow.articles.create(article)
-            await uow.commit()
-        except Exception as e:
-            # Rollback e automatico via __aexit__
-            raise
-
-WITHOUT UoW (not recommended):
-    # Isso funciona, mas voce perde as garantias de transacao
-    repo = ArticleRepository(session)
-    await repo.create(article)
-    await session.commit()  # Voce controla o commit
+`__aexit__` rolls back if an exception escaped the block and does nothing
+otherwise — it never commits. Repositories `flush()` and never `commit()`
+(constitution §I), so a block that writes must call `commit()` itself or
+the changes are discarded when the request's session closes.
 """
 
 from types import TracebackType
@@ -70,146 +39,48 @@ from typing import Self
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories.article_author_repository import (
-    ArticleAuthorLinkRepository,
-    ArticleAuthorRepository,
-)
-from app.repositories.article_repository import (
-    ArticleFileRepository,
-    ArticleRepository,
-    ArticleSyncEventRepository,
-    ArticleSyncRunRepository,
-)
-from app.repositories.extraction_repository import (
-    ExtractionEntityTypeRepository,
-    ExtractionInstanceRepository,
-)
-from app.repositories.integration_repository import ZoteroIntegrationRepository
-from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
+from app.repositories.project_repository import ProjectMemberRepository
 
 
 class UnitOfWork:
-    """
-    Unit of Work for coordenacao de transacoes.
+    """Transaction boundary + the repositories reached through it.
 
-    Agrupa repositories and controla commit/rollback.
-    Deve SEMPRE ser usado with 'async with' for garantir cleanup.
+    Always use with `async with`: the automatic rollback lives in
+    `__aexit__`, so a bare `UnitOfWork(session)` gives up the only
+    guarantee the class provides.
 
     Attributes:
-        session: Sessao SQLAlchemy subjacente
-        articles: Repository de articles
-        article_files: Repository de files de articles
-        projects: Repository de projects
-        project_members: Repository de membros de projects
-        ... (outros repositories)
-
-    Example:
-        # Uso basico
-        async with UnitOfWork(session) as uow:
-            article = await uow.articles.get_by_id(article_id)
-            await uow.articles.update(article, {"title": "New Title"})
-            await uow.commit()
-
-        # Multiplas operacoes atomicas
-        async with UnitOfWork(session) as uow:
-            project = await uow.projects.create(Project(name="Novo"))
-            member = await uow.project_members.create(
-                ProjectMember(project_id=project.id, user_id=user_id)
-            )
-            await uow.commit()  # Ambos sao criados or nenhum
-
-    Warning:
-        NUNCA use repositories fora do contexto 'async with'.
-        O rollback automatico so funciona dentro do context manager.
+        session: the underlying SQLAlchemy AsyncSession.
+        project_members: project-membership repository.
     """
 
     def __init__(self, session: AsyncSession):
-        """
-        Inicializa Unit of Work.
+        """Initialize the Unit of Work.
 
         Args:
-            session: Sessao async do SQLAlchemy.
+            session: SQLAlchemy async session.
         """
         self.session = session
-        self._init_repositories()
-
-    def _init_repositories(self) -> None:
-        """Inicializa todos os repositories."""
-        # Articles
-        self.articles = ArticleRepository(self.session)
-        self.article_files = ArticleFileRepository(self.session)
-        self.article_authors = ArticleAuthorRepository(self.session)
-        self.article_author_links = ArticleAuthorLinkRepository(self.session)
-        self.article_sync_runs = ArticleSyncRunRepository(self.session)
-        self.article_sync_events = ArticleSyncEventRepository(self.session)
-
-        # Projects
-        self.projects = ProjectRepository(self.session)
-        self.project_members = ProjectMemberRepository(self.session)
-
-        # Extractions
-        self.entity_types = ExtractionEntityTypeRepository(self.session)
-        self.extraction_instances = ExtractionInstanceRepository(self.session)
-
-        # Integrations
-        self.zotero_integrations = ZoteroIntegrationRepository(self.session)
+        # Only repositories with a caller live here — see the module docstring.
+        self.project_members = ProjectMemberRepository(session)
 
     async def commit(self) -> None:
-        """
-        Confirma transacao atual.
+        """Commit the current transaction.
 
-        IMPORTANTE: Sempre chame commit() explicitamente quando terminar
-        as operacoes. Sem commit(), as mudancas NAO sao persistidas.
-
-        Example:
-            async with UnitOfWork(session) as uow:
-                await uow.articles.create(article)
-                await uow.commit()  # OBRIGATORIO for persistir
+        Required after any write: `__aexit__` never commits for you, so
+        without this call the changes are discarded when the session closes.
         """
         await self.session.commit()
 
     async def rollback(self) -> None:
-        """
-        Reverte transacao atual.
+        """Discard every pending change (flushed but not committed).
 
-        Discard all pending changes (flush but no commit).
-        Chamado automaticamente se excecao ocorrer in the 'async with'.
-
-        Example:
-            async with UnitOfWork(session) as uow:
-                await uow.articles.create(article)
-                await uow.rollback()  # Descarta a criacao
+        Called automatically by `__aexit__` when an exception escapes.
         """
         await self.session.rollback()
 
-    async def flush(self) -> None:
-        """
-        Sincroniza mudancas pendentes with o banco.
-
-        Envia os comandos SQL for o banco, mas NAO faz commit.
-        Util for obter IDs gerados or forcar validacao de constraints.
-        Os repositories ja fazem flush() automaticamente.
-        """
-        await self.session.flush()
-
-    async def refresh(self, obj: object) -> None:
-        """
-        Update objeto with data atuais do banco.
-
-        Util for recarregar relacionamentos or verificar mudancas
-        feitas por triggers/defaults do banco.
-
-        Args:
-            obj: Qualquer objeto de modelo SQLAlchemy
-        """
-        await self.session.refresh(obj)
-
     async def __aenter__(self) -> Self:
-        """
-        Entra in the contexto async.
-
-        Return self for uso with 'async with'.
-        """
+        """Enter the async context; returns self for `async with ... as uow`."""
         return self
 
     async def __aexit__(
@@ -218,14 +89,10 @@ class UnitOfWork:
         _exc_val: BaseException | None,
         _exc_tb: TracebackType | None,
     ) -> None:
-        """
-        Sai do contexto async.
+        """Roll back on exception so a failed block commits nothing.
 
-        IMPORTANTE: Faz rollback AUTOMATICO se excecao ocorrer.
-        This ensures partial operations are not committed.
-
-        If there is no exception and you forgot to call commit(),
-        changes will be lost (not committed).
+        On a clean exit this does nothing — in particular it does not
+        commit. See the module docstring.
         """
         if exc_type is not None:
             await self.rollback()

@@ -50,7 +50,6 @@ from app.models.extraction import (
     ExtractionEvidence,
     ExtractionFieldType,
     ExtractionRun,
-    ExtractionRunStage,
     TemplateKind,
 )
 from app.models.extraction_workflow import (
@@ -248,13 +247,12 @@ def _service(db: AsyncSession, *, profile_id: UUID) -> ExtractionExportService:
 
 
 def _article(
-    *, article_id: UUID, run_id: UUID, run_stage: str, entity_type_id: UUID, instance_id: UUID
+    *, article_id: UUID, run_id: UUID, entity_type_id: UUID, instance_id: UUID
 ) -> ArticleDescriptor:
     return ArticleDescriptor(
         article_id=article_id,
         header_label="Article",
         run_id=run_id,
-        run_stage=ExtractionRunStage(run_stage),
         version_id=None,
         model_instances=(),
         section_instances={entity_type_id: (instance_id,)},
@@ -273,7 +271,6 @@ def _section(*, entity_type_id: UUID, field_id: UUID) -> SectionDescriptor:
                 label="Field",
                 type=ExtractionFieldType.TEXT,
                 allowed_values=(),
-                parent_section_id=entity_type_id,
             ),
         ),
     )
@@ -341,7 +338,6 @@ async def test_ai_outcome_accept_not_masked_by_other_reviewer_reject(
             _article(
                 article_id=article_id,
                 run_id=run.id,
-                run_stage=run.stage,
                 entity_type_id=entity_type_id,
                 instance_id=instance_id,
             ),
@@ -420,7 +416,6 @@ async def test_ai_outcome_single_user_scoped_to_target(
             _article(
                 article_id=article_id,
                 run_id=run.id,
-                run_stage=run.stage,
                 entity_type_id=entity_type_id,
                 instance_id=instance_id,
             ),
@@ -506,7 +501,6 @@ async def test_ai_outcome_not_selected_when_terminal_decision_exists(
             _article(
                 article_id=article_id,
                 run_id=run.id,
-                run_stage=run.stage,
                 entity_type_id=entity_type_id,
                 instance_id=instance_id,
             ),
@@ -590,7 +584,6 @@ async def test_ai_evidence_ordered_and_deduped(
             _article(
                 article_id=article_id,
                 run_id=run.id,
-                run_stage=run.stage,
                 entity_type_id=entity_type_id,
                 instance_id=instance_id,
             ),
@@ -650,7 +643,6 @@ async def _ai_metadata_rows(
             _article(
                 article_id=article_id,
                 run_id=run.id,
-                run_stage=run.stage,
                 entity_type_id=entity_type_id,
                 instance_id=instance_id,
             ),

@@ -78,37 +78,6 @@ class UserAPIKeyRepository(BaseRepository[UserAPIKey]):
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
-    async def get_by_user_and_provider(
-        self,
-        user_id: UUID | str,
-        provider: str,
-        active_only: bool = True,
-    ) -> list[UserAPIKey]:
-        """
-        List API keys for a user and provider.
-
-        Args:
-            user_id: User ID.
-            provider: Provider name.
-            active_only: Whether to return only active keys.
-
-        Returns:
-            API key list.
-        """
-        if isinstance(user_id, str):
-            user_id = UUID(user_id)
-
-        query = select(UserAPIKey).where(
-            UserAPIKey.user_id == user_id,
-            UserAPIKey.provider == provider,
-        )
-
-        if active_only:
-            query = query.where(UserAPIKey.is_active.is_(True))
-
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
-
     async def get_by_id_and_user(
         self,
         key_id: UUID | str,

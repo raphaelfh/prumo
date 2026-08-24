@@ -199,5 +199,9 @@ ignore_decorators = [
     "@event.listens_for",
     "@*.connect",
 ]
-ignore_names = ["model_config"]
+# `cls` is the classmethod receiver Pydantic's @field_validator mandates —
+# a validator that ignores it still cannot drop the parameter, so the
+# finding is never actionable. `model_config` is the same story for the
+# Pydantic settings/schema declaration.
+ignore_names = ["model_config", "cls"]
 min_confidence = 60

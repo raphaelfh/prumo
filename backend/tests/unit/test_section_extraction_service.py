@@ -1164,7 +1164,6 @@ class TestCreateSuggestions:
         service._instances.get_by_article = AsyncMock(return_value=[instance])
         service._proposals.record_proposal = AsyncMock(return_value=MagicMock(id=uuid4()))
         service.db.flush = AsyncMock()
-        service._runs.merge_results = AsyncMock()
         # Stub the per-section provenance merge explicitly: an auto-attribute on
         # the MagicMock would let a typo'd method name pass the assertions.
         service._runs.merge_provenance_section = AsyncMock()
@@ -1196,8 +1195,7 @@ class TestCreateSuggestions:
             run=run,
         )
 
-        # Per-section merge, not the shallow run-level merge_results.
-        service._runs.merge_results.assert_not_awaited()
+        # Provenance lands through the per-section merge, keyed by entity type.
         service._runs.merge_provenance_section.assert_awaited_once()
         merged_run_id, merged_et_id, snapshot = (
             service._runs.merge_provenance_section.await_args.args
