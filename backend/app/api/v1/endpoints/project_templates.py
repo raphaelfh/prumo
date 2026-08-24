@@ -41,6 +41,7 @@ from app.schemas.common import ApiResponse
 from app.schemas.hitl_session import (
     CloneTemplateRequest,
     CloneTemplateResponse,
+    CreateProjectTemplateRequest,
     DiscardDraftRequest,
     DiscardDraftResponse,
     RepublishTemplateVersionRequest,
@@ -75,6 +76,7 @@ from app.services.template_clone_service import (
     TemplateCloneService,
     TemplateNotFoundError,
 )
+from app.services.template_create_service import create_blank_template
 from app.services.template_delete_service import delete_template
 from app.services.template_discard_service import discard_draft
 from app.services.template_draft_lock_service import take_over_draft_lock
@@ -105,6 +107,37 @@ from app.services.template_version_service import (
 from app.utils.rate_limiter import limiter
 
 router = APIRouter()
+
+
+@router.post(
+    "/{project_id}/templates",
+    status_code=status.HTTP_201_CREATED,
+)
+@limiter.limit("10/minute")
+async def create_project_template(
+    project_id: UUID,
+    body: CreateProjectTemplateRequest,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(require_project_manager),
+) -> ApiResponse[CloneTemplateResponse]:
+    """Create a project template that starts with no sections.
+
+    Manager-gated like clone and import below: it deactivates the project's
+    current extraction template, which is project-wide configuration. Same
+    response shape as those two — the manager lands in the configuration
+    editor on a published, empty v1.
+    """
+    result = await create_blank_template(
+        db,
+        project_id=project_id,
+        name=body.name,
+        description=body.description,
+        framework=body.framework,
+        user_id=current_user_sub,
+    )
+    await db.commit()
+    return ApiResponse.success(result, trace_id=getattr(request.state, "trace_id", None))
 
 
 @router.post(

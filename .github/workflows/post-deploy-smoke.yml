@@ -1,23 +1,21 @@
 name: Post-deploy Smoke
 
 # The closing gate: everything else proves the application works, this
-# proves it shipped, in three layers.
+# proves it shipped, in two layers.
 #
-#   1. Reachability — /health, frontend root, CORS preflight.
+#   1. Reachability — /health, frontend root, CORS preflight. /health also
+#      reports jwks_ready / db_ready / storage_ready, so subsystem readiness
+#      is covered here without any credential.
 #   2. Deployed commit — /health.commit vs the promoted SHA. Reachability
 #      alone cannot tell a fresh deploy from one stuck on an older commit,
 #      which is the documented failure class (CI green, prod stale).
-#   3. Authenticated read-only probe — password grant + one authenticated
-#      GET. Exercises JWKS/JWT verification, the DB read path and the
-#      ApiResponse envelope WITHOUT writing anything: prod must never be
-#      mutated by a monitor (the deleted remote-smoke Playwright project
-#      dispatched a real AI extraction, burning LLM budget and leaving a
-#      run behind on every execution).
 #
-# Layer 3 is skipped with a visible ::warning:: until its credentials are
-# provisioned — never silently, because a silent skip reads as coverage.
-# Required: repo variable PROD_SUPABASE_URL; secrets PROD_SUPABASE_ANON_KEY,
-# PROD_SMOKE_EMAIL, PROD_SMOKE_PASSWORD (a low-privilege prod test account).
+# There is deliberately NO credentialed probe and no Playwright suite
+# against prod. An authenticated probe would add only the narrow delta
+# between "JWKS loaded at boot" and "a freshly minted token is accepted",
+# at the cost of a permanent prod password living in CI; a writing suite
+# is worse still (the deleted remote-smoke project dispatched a real AI
+# extraction, burning LLM budget and leaving a run behind per execution).
 #
 # Runs after every push to main (deploy trigger) with a delay for
 # Railway's Wait-for-CI + build, plus every 6 hours as a synthetic
@@ -39,11 +37,6 @@ jobs:
   smoke:
     name: Prod reachability
     runs-on: ubuntu-latest
-    # `secrets` cannot be referenced from a step-level `if` — GitHub fails to
-    # parse the whole workflow. A job-level `env` may reference it, so the
-    # credential check collapses to this boolean and the step gates on it.
-    env:
-      PROBE_READY: ${{ (vars.PROD_SUPABASE_URL != '' && secrets.PROD_SUPABASE_ANON_KEY != '' && secrets.PROD_SMOKE_EMAIL != '' && secrets.PROD_SMOKE_PASSWORD != '') && 'yes' || 'no' }}
     steps:
       - name: Wait for Railway deploy (push only)
         if: github.event_name == 'push'
@@ -101,39 +94,3 @@ jobs:
             | grep -i '^access-control-allow-origin' || true)
           echo "cors -> ${HDR:-MISSING}"
           [ -n "$HDR" ]
-
-      - name: Authenticated read-only probe
-        id: auth_probe
-        if: ${{ env.PROBE_READY == 'yes' }}
-        env:
-          SUPABASE_URL: ${{ vars.PROD_SUPABASE_URL }}
-          ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
-          SMOKE_EMAIL: ${{ secrets.PROD_SMOKE_EMAIL }}
-          SMOKE_PASSWORD: ${{ secrets.PROD_SMOKE_PASSWORD }}
-        run: |
-          set -euo pipefail
-          # jq -n --arg keeps the password out of the process' argv-visible
-          # shell expansion and JSON-escapes it correctly.
-          BODY=$(jq -n --arg e "$SMOKE_EMAIL" --arg p "$SMOKE_PASSWORD" '{email:$e,password:$p}')
-          TOKEN=$(curl -fsS --max-time 20 \
-            -H "apikey: $ANON_KEY" -H "Content-Type: application/json" \
-            -d "$BODY" "$SUPABASE_URL/auth/v1/token?grant_type=password" \
-            | jq -r '.access_token // empty')
-          if [ -z "$TOKEN" ]; then
-            echo "::error::password grant returned no access_token"
-            exit 1
-          fi
-          echo "login -> ok"
-          CODE=$(curl -sS --max-time 20 -o /tmp/probe.json -w "%{http_code}" \
-            -H "Authorization: Bearer $TOKEN" -H "Accept: application/json" \
-            "$API_BASE/api/v1/user-api-keys") || CODE=000
-          echo "GET /api/v1/user-api-keys -> $CODE"
-          [ "$CODE" = "200" ]
-          # Shape only — the body is never printed (it is user-scoped data).
-          jq -e 'has("ok") and has("data")' /tmp/probe.json > /dev/null
-          echo "envelope -> ok"
-
-      - name: Flag an unprovisioned probe
-        if: ${{ steps.auth_probe.outcome == 'skipped' }}
-        run: |
-          echo "::warning::Authenticated probe skipped — prod coverage is reachability + deployed-commit only. Provision repo variable PROD_SUPABASE_URL and secrets PROD_SUPABASE_ANON_KEY / PROD_SMOKE_EMAIL / PROD_SMOKE_PASSWORD to enable it."

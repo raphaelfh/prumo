@@ -191,6 +191,19 @@ def test_all_low() -> None:
     )
 
 
+def test_a_high_propagates_through_an_unrated_domain() -> None:
+    """Spec 2026-08-22 §1: the official step-4 "at least one domain high ->
+    high" row does not require the other domains to be rated."""
+    _assert_agree(
+        "High + unrated",
+        {
+            "eval_d1": {"value": "High"},
+            # eval_d2 / eval_d3 / every D4 type unrated
+        },
+        "High",
+    )
+
+
 def test_a_single_high_dominates() -> None:
     _assert_agree(
         "single High",
