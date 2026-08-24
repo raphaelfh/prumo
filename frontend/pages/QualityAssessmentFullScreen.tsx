@@ -239,14 +239,27 @@ export default function QualityAssessmentFullScreen() {
   // Hydrate during render when a new Run detail lands (instead of a
   // synchronous setState in an effect).
   const [prevRunDetail, setPrevRunDetail] = useState(runDetail);
+  // The run whose values the form currently holds. The #657/#671 pagers
+  // navigate WITHOUT remounting this page, so hydration must tell "same
+  // run, fresher detail" (merge — local unsaved edits win) from "another
+  // run" (replace — useExtractedValues' hydratedRunIdRef semantics).
+  // Carrying run-A coords into run-B's state made them look dirty against
+  // the new baseline, and autosave POSTed them at the wrong run (spec
+  // 2026-08-22 §7b, Q1). The old run's pending edit is carried by the
+  // autosave hook's run-keyed flush, never by state bleed-through.
+  const [hydratedRunId, setHydratedRunId] = useState<string | null>(null);
   if (runDetail !== prevRunDetail) {
     setPrevRunDetail(runDetail);
     if (runDetail) {
+      const isNewRun = hydratedRunId !== runDetail.run.id;
+      if (isNewRun) setHydratedRunId(runDetail.run.id);
       if (runDetail.run.stage === "finalized") {
         // Published truth replaces any local/proposal state (spec
         // 2026-07-02 D3): the read-only form shows what was published,
         // never the latest decision stream.
         setValues(publishedStatesToValuesMap(runDetail.published_states));
+      } else if (isNewRun) {
+        setValues({ ...loadedValues });
       } else {
         // D8: hydrate from the caller-scoped ``current_values`` resolution
         // (own decisions over own human proposals over system seeds) — the

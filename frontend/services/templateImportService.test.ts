@@ -20,6 +20,7 @@ vi.mock('@/integrations/api/client', () => ({
 import {ApiError, apiClient} from '@/integrations/api/client';
 import {
   TemplatePortableRefusal,
+  createCustomTemplate,
   deleteTemplate,
   exportTemplate,
   importGlobalTemplate,
@@ -75,6 +76,48 @@ describe('templateImportService (portable)', () => {
       expect.objectContaining({method: 'POST', body: {global_template_id: 'g1', kind: 'extraction'}}),
     );
     expect(result.ok && result.data).toEqual({templateId: 'cloned', entityTypesAdded: 14, fieldsAdded: 82});
+  });
+
+  it('createCustomTemplate POSTs the create route and maps the response', async () => {
+    mockedApi.mockResolvedValueOnce({
+      project_template_id: 'blank', version_id: 'v1', entity_type_count: 0, field_count: 0, created: true,
+    });
+    const result = await createCustomTemplate('p1', {
+      name: 'My template',
+      description: 'why',
+      framework: 'CUSTOM',
+    });
+    expect(mockedApi).toHaveBeenCalledWith(
+      '/api/v1/projects/p1/templates',
+      expect.objectContaining({
+        method: 'POST',
+        body: {name: 'My template', description: 'why', framework: 'CUSTOM'},
+      }),
+    );
+    expect(result.ok && result.data).toEqual({templateId: 'blank', entityTypesAdded: 0, fieldsAdded: 0});
+  });
+
+  it('createCustomTemplate omits description entirely when not supplied', async () => {
+    mockedApi.mockResolvedValueOnce({
+      project_template_id: 'blank', version_id: 'v1', entity_type_count: 0, field_count: 0, created: true,
+    });
+    // The server defaults `description` to None, so absent and null are the
+    // same request — the draft goes through untouched rather than being rebuilt.
+    await createCustomTemplate('p1', {name: 'No description', framework: 'CUSTOM'});
+    expect(mockedApi).toHaveBeenCalledWith(
+      '/api/v1/projects/p1/templates',
+      expect.objectContaining({body: {name: 'No description', framework: 'CUSTOM'}}),
+    );
+  });
+
+  it('createCustomTemplate surfaces a server refusal as an error result', async () => {
+    mockedApi.mockRejectedValueOnce(
+      new ApiError('HTTP_ERROR', 'Another template was activated at the same time; retry.', 409),
+    );
+    const result = await createCustomTemplate('p1', {name: 'Racing', framework: 'CUSTOM'});
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toBe('Another template was activated at the same time; retry.');
   });
 
   it('importGlobalTemplate surfaces the server 404 as an error result', async () => {

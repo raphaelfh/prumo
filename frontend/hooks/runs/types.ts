@@ -203,15 +203,23 @@ export interface RunViewResponse extends RunDetailResponse {
   ready_count?: number;
   reviewer_count?: number;
   reviewers_ready?: string[];
-  /** Computed overall judgments (worst-domain over the domain judgments).
-   * Empty for templates that declare no derivation spec — i.e. everything
-   * except PROBAST+AI today. `value` is null when the inputs are incomplete;
-   * `inputs` is the per-domain breakdown the banner explains that null from. */
+  /** Computed judgments from the template's derivation spec. Entries with a
+   * `target_field_id` are RECOMMENDATIONS (the derived default for that
+   * assessor-owned stored field, paired with `rationale_field_id`); entries
+   * without one are computed OVERALLS (paired Step-4 narrative via
+   * `summary_field_id`). Empty for templates with no spec. `value` is null
+   * when the inputs are incomplete; `inputs` is the per-input breakdown —
+   * `value` is the display (raw answer for signaling rows), `contribution`
+   * the Low/High/Unclear the rule consumed (highlight/color by it only). */
   derived_judgments?: {
     id: string;
     label: string;
     value: string | null;
-    inputs?: { label: string; value: string | null }[];
+    inputs?: { label: string; value: string | null; contribution?: string | null }[];
+    target_entity_type_id?: string | null;
+    target_field_id?: string | null;
+    rationale_field_id?: string | null;
+    summary_field_id?: string | null;
   }[];
 }
 
