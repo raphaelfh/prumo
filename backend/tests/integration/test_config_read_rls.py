@@ -60,10 +60,17 @@ async def _read_as(
     """
     await db.commit()
     try:
+        # authenticated only. Since 0060 ``anon`` holds no SELECT here, and
+        # re-granting it would build the one combination that CRASHES this
+        # Postgres: an RLS policy calling a SECURITY DEFINER function the
+        # current role cannot EXECUTE segfaults the backend instead of
+        # raising "permission denied for function". The anon probes below
+        # assert the table-level denial, which is what actually protects
+        # production.
         await db.execute(
             text(
                 "GRANT SELECT ON public.extraction_entity_types, "
-                "public.extraction_fields TO anon, authenticated"
+                "public.extraction_fields TO authenticated"
             )
         )
         if user_id is None:
@@ -171,27 +178,26 @@ async def test_outsider_cannot_read_project_field(db_session: AsyncSession) -> N
 # =================== the unauthenticated leak ===================
 
 
-async def test_anon_cannot_read_project_entity_type(db_session: AsyncSession) -> None:
-    visible = await _read_as(
-        db_session,
-        user_id=None,
-        sql=_SELECT_ENTITY_TYPE,
-        params={"id": str(SEED.primary_entity_type)},
-    )
-    assert visible == 0, "an unauthenticated caller must not read project sections"
+@pytest.mark.parametrize("table", ["public.extraction_entity_types", "public.extraction_fields"])
+async def test_anon_is_denied_at_the_table(db_session: AsyncSession, table: str) -> None:
+    """The leak 0058/0060 close: the anon key alone used to be enough.
 
+    0058 scoped the ROWS and kept anon's table grant, which required
+    granting anon EXECUTE on the policy helper — and that exposed the
+    helper as an RPC oracle. 0060 removes the grant instead, so anon is
+    refused at the table and the policy never runs.
 
-async def test_anon_cannot_read_project_field(db_session: AsyncSession) -> None:
-    visible = await _read_as(
-        db_session,
-        user_id=None,
-        sql=_SELECT_FIELD,
-        params={"id": str(SEED.primary_field)},
-    )
-    assert visible == 0, (
-        "an unauthenticated caller must not read project fields — this is the leak "
-        "0058 closes; the anon key alone used to be enough"
-    )
+    Asserted as a privilege, not by querying: an anon SELECT that DID
+    reach the policy would call a SECURITY DEFINER function anon cannot
+    execute, which segfaults this Postgres rather than raising.
+    """
+    granted = (
+        await db_session.execute(
+            text("SELECT has_table_privilege('anon', :table, 'SELECT')"),
+            {"table": table},
+        )
+    ).scalar_one()
+    assert granted is False, f"anon must not hold SELECT on {table}"
 
 
 # =================== global catalogue — stays open ===================
