@@ -36,7 +36,7 @@ Design choices
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from typing import NamedTuple
 from uuid import UUID
 
@@ -161,6 +161,46 @@ SEED = IntegrationSeedIds(
 # =================== SEED LOGIC ===================
 
 
+async def purge_templates(session: AsyncSession, template_ids: Sequence[UUID]) -> None:
+    """Delete templates together with the rows their RESTRICT FKs guard.
+
+    ``extraction_runs.template_id`` and ``extraction_instances.template_id``
+    are ``ON DELETE RESTRICT``, and deliberately so: in production
+    ``template_delete_service`` refuses to delete a template that any run or
+    instance references, and that RESTRICT is the only thing stopping the
+    *second*, composite ``ON DELETE CASCADE`` FK on ``extraction_runs`` from
+    silently cascading real extraction work away. Do not "fix" this by
+    relaxing the schema.
+
+    The consequence for fixtures: CASCADE reaches entity types and version
+    snapshots but NOT those two tables, so a bare ``DELETE FROM
+    project_extraction_templates`` raises ``ForeignKeyViolationError`` as
+    soon as a matching template owns a run or an instance — e.g. a QA clone
+    a UI session left behind in a sentinel project. Because the seed is
+    session-scoped, that single failure aborts setup for *every* test in the
+    run, and it survives hand-deleting the rows because the suite recreates
+    them.
+
+    A fixture may drop what the product protects, so clear the guarded rows
+    first, in FK order: runs before instances, because
+    ``extraction_published_states`` hangs off both (CASCADE from the run, NO
+    ACTION from the instance). ``extraction_hitl_configs.scope_id`` has no FK
+    at all and would just be orphaned, so template-scoped overrides go too —
+    mirroring ``template_delete_service``.
+    """
+    ids = [str(i) for i in template_ids]
+    if not ids:
+        return
+    for statement in (
+        "DELETE FROM public.extraction_runs WHERE template_id = ANY(CAST(:ids AS uuid[]))",
+        "DELETE FROM public.extraction_instances WHERE template_id = ANY(CAST(:ids AS uuid[]))",
+        "DELETE FROM public.extraction_hitl_configs "
+        "WHERE scope_kind = 'template' AND scope_id = ANY(CAST(:ids AS uuid[]))",
+        "DELETE FROM public.project_extraction_templates WHERE id = ANY(CAST(:ids AS uuid[]))",
+    ):
+        await session.execute(text(statement), {"ids": ids})
+
+
 async def _seed_minimum_graph(session: AsyncSession) -> None:
     """Insert the minimum integration test graph. Idempotent.
 
@@ -197,32 +237,33 @@ async def _seed_minimum_graph(session: AsyncSession) -> None:
     usage.
     """
     # Garbage-collect any obsolete sentinel rows from prior seed revisions
-    # before re-inserting. CASCADE handles downstream tables
-    # (entity_types, versions, runs, instances) that depend on the dropped
-    # template.
-    if _OBSOLETE_SENTINEL_TEMPLATE_IDS:
-        await session.execute(
-            text("DELETE FROM public.project_extraction_templates WHERE id = ANY(:ids)"),
-            {"ids": [str(i) for i in _OBSOLETE_SENTINEL_TEMPLATE_IDS]},
-        )
+    # before re-inserting. ``purge_templates`` clears the RESTRICT-guarded
+    # runs/instances first; CASCADE handles entity types and versions.
+    await purge_templates(session, _OBSOLETE_SENTINEL_TEMPLATE_IDS)
 
     # Sentinel projects belong wholly to the seed — the sentinel UUID
     # namespace cannot collide with real data. Drop any non-sentinel
     # extraction templates committed into the sentinel projects by prior
     # test runs (commonly ``test_run_lifecycle_concurrency`` fixtures
-    # that committed an extra template, then panicked before cleanup).
+    # that committed an extra template, then panicked before cleanup, or a
+    # QA clone left behind by a UI verification session).
     # Without this, the partial unique index
     # ``uq_one_active_extraction_template_per_project`` rejects the seed's
     # active extraction template because a stale non-sentinel one also
-    # claims the slot. CASCADE handles entity types, versions, runs, etc.
-    await session.execute(
-        text(
-            "DELETE FROM public.project_extraction_templates "
-            "WHERE project_id = ANY(:pids) "
-            "AND id::text NOT LIKE 'ffffffff-9999-%'"
-        ),
-        {"pids": [str(PRIMARY_PROJECT_ID), str(SECONDARY_PROJECT_ID)]},
+    # claims the slot.
+    strays = list(
+        (
+            await session.execute(
+                text(
+                    "SELECT id FROM public.project_extraction_templates "
+                    "WHERE project_id = ANY(CAST(:pids AS uuid[])) "
+                    "AND id::text NOT LIKE 'ffffffff-9999-%'"
+                ),
+                {"pids": [str(PRIMARY_PROJECT_ID), str(SECONDARY_PROJECT_ID)]},
+            )
+        ).scalars()
     )
+    await purge_templates(session, strays)
 
     # Drop any non-sentinel ``extraction_instances`` that collide with
     # the sentinel slot. The cardinality trigger on
@@ -476,12 +517,20 @@ CHARMS_GLOBAL_ID = UUID("000c0000-0000-0000-0000-000000000001")
 
 
 async def clean_project_clones(db: AsyncSession, project_id: UUID) -> None:
-    """Wipe a project's extraction templates (CASCADE clears structure,
-    version snapshots and instances) so a test starts from a clean slate."""
-    await db.execute(
-        text("DELETE FROM public.project_extraction_templates WHERE project_id = :pid"),
-        {"pid": str(project_id)},
+    """Wipe a project's extraction templates so a test starts from a clean
+    slate. Routed through :func:`purge_templates` because instances and runs
+    are RESTRICT-guarded — CASCADE alone reaches only structure and version
+    snapshots, and a clone that has been extracted against would abort the
+    delete."""
+    owned = list(
+        (
+            await db.execute(
+                text("SELECT id FROM public.project_extraction_templates WHERE project_id = :pid"),
+                {"pid": str(project_id)},
+            )
+        ).scalars()
     )
+    await purge_templates(db, owned)
 
 
 async def clone_charms(db: AsyncSession, project_id: UUID, user_id: UUID):
