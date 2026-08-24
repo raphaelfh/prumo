@@ -93,10 +93,14 @@ class _Value:
         self.value = value
 
 
-def _screen_overall(values_by_section: dict[str, Any]) -> str | None:
+def _screen_overall(
+    values_by_section: dict[str, Any],
+    spec: dict[str, Any] | None = None,
+    section_names: tuple[str, ...] = _SECTIONS,
+) -> str | None:
     """What the banner renders — the run-view payload, fed RAW envelopes."""
     entity_types, instances, values = [], [], []
-    for name in _SECTIONS:
+    for name in section_names:
         fid, iid = uuid4(), uuid4()
         et = _EntityType(name, [_Field(fid, _ROB)])
         entity_types.append(et)
@@ -104,7 +108,7 @@ def _screen_overall(values_by_section: dict[str, Any]) -> str | None:
         if name in values_by_section:
             values.append(_Value(iid, fid, values_by_section[name]))
     payload = build_derived_judgments_payload(
-        template_schema=_SPEC,
+        template_schema=spec if spec is not None else _SPEC,
         entity_types=entity_types,
         instances=instances,
         values=values,
@@ -113,7 +117,11 @@ def _screen_overall(values_by_section: dict[str, Any]) -> str | None:
     return payload[0].value
 
 
-def _workbook_overall(values_by_section: dict[str, Any]) -> str | None:
+def _workbook_overall(
+    values_by_section: dict[str, Any],
+    spec: dict[str, Any] | None = None,
+    section_names: tuple[str, ...] = _SECTIONS,
+) -> str | None:
     """What the Appraisal-summary sheet prints — the export model builder, fed
     the value_map AFTER ``resolve_value`` has collapsed each envelope to a
     display label, exactly as ``_build_*_value_map`` does upstream."""
@@ -121,7 +129,7 @@ def _workbook_overall(values_by_section: dict[str, Any]) -> str | None:
     sections: list[SectionDescriptor] = []
     section_instances: dict[Any, tuple[Any, ...]] = {}
     value_map: dict[tuple[Any, ...], Any] = {}
-    for name in _SECTIONS:
+    for name in section_names:
         section_id, field_id, instance_id = uuid4(), uuid4(), uuid4()
         field = FieldDescriptor(
             field_id=field_id,
@@ -160,7 +168,7 @@ def _workbook_overall(values_by_section: dict[str, Any]) -> str | None:
         reviewers=(),
         value_map=value_map,
         mode=ExportMode.CONSENSUS,
-        template_schema=_SPEC,
+        template_schema=spec if spec is not None else _SPEC,
     )
     assert model is not None
     return model.rows[0].derived_values[0]
@@ -359,3 +367,69 @@ def test_not_applicable_is_never_a_judgment() -> None:
         },
         None,
     )
+
+
+# --- v2 shape (spec 2026-08-22 §2): overalls over STORED judgments ----------
+
+_V2_SECTIONS = ("eval_d1", "eval_d2", "eval_d3", "eval_d4_judgment")
+_V2_SPEC: dict[str, Any] = {
+    "derived_judgments": [
+        {
+            "id": "eval_overall_rob",
+            "label": "Overall risk of bias (evaluation)",
+            "rule": "worst_domain",
+            "inputs": [{"section": s, "field": _ROB} for s in _V2_SECTIONS],
+        }
+    ]
+}
+
+
+def _assert_v2_agree(label: str, values: dict[str, Any], expected: str | None) -> None:
+    screen = _screen_overall(dict(values), spec=_V2_SPEC, section_names=_V2_SECTIONS)
+    workbook = _workbook_overall(dict(values), spec=_V2_SPEC, section_names=_V2_SECTIONS)
+    assert screen == expected, f"{label}: banner said {screen!r}, expected {expected!r}"
+    assert workbook == screen, f"{label}: workbook said {workbook!r}, banner said {screen!r}"
+
+
+def test_v2_all_low_agrees() -> None:
+    _assert_v2_agree("v2 all-Low", {s: {"value": "Low"} for s in _V2_SECTIONS}, "Low")
+
+
+def test_v2_high_propagates_through_unrated_domains_on_both_paths() -> None:
+    """The single stored eval-D4 judgment fires the overall even while the
+    other domains are unrated — on the banner AND in the workbook."""
+    _assert_v2_agree("v2 lone High", {"eval_d4_judgment": {"value": "High"}}, "High")
+
+
+def test_v2_ni_on_the_stored_judgment_is_unclear() -> None:
+    values: dict[str, Any] = {s: {"value": "Low"} for s in ("eval_d1", "eval_d2", "eval_d3")}
+    values["eval_d4_judgment"] = _NI
+    _assert_v2_agree("v2 NI judgment", values, "Unclear")
+
+
+def test_signaling_worst_agrees_across_caller_shapes() -> None:
+    """Rule-level parity for the recommendation rule: raw envelopes (run
+    view) and resolved display labels (any future export caller) agree."""
+    from app.services.derived_judgment_service import compute_derived_judgments
+
+    spec = [
+        {
+            "id": "r",
+            "label": "R",
+            "rule": "signaling_worst",
+            "target": {"section": "s", "field": "j"},
+            "inputs": [
+                {"section": "s", "field": "q1"},
+                {"section": "s", "field": "q2"},
+            ],
+        }
+    ]
+    raw = {
+        ("s", "q1"): {"value": "PN"},
+        ("s", "q2"): {"value": None, "absent_reason": "no_information"},
+    }
+    resolved = {("s", "q1"): "PN", ("s", "q2"): "No information"}
+    a = compute_derived_judgments(spec, raw)[0]
+    b = compute_derived_judgments(spec, resolved)[0]
+    assert a.value == b.value == "High"
+    assert [i.contribution for i in a.inputs] == [i.contribution for i in b.inputs]
