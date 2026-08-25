@@ -59,14 +59,25 @@ jobs:
         env:
           EXPECTED: ${{ github.sha }}
           EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          if [ "$EVENT" != "push" ]; then
+            # Scheduled (and dispatched) runs execute on the DEFAULT branch,
+            # which is dev — so github.sha is dev's HEAD, while prod deploys
+            # from main. Comparing prod against dev guarantees a false "stale
+            # deploy" alarm whenever dev is ahead (observed 4x on 2026-08-24).
+            # The monitor's question is always "is prod on main's HEAD?".
+            EXPECTED=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          fi
           read_commit() {
             curl -fsS --max-time 15 "$API_BASE/health" 2>/dev/null | jq -r '.commit // empty' || echo ""
           }
           DEPLOYED=$(read_commit)
-          if [ "$EVENT" = "push" ] && [ "$DEPLOYED" != "$EXPECTED" ]; then
-            # This run RACES the deploy it is meant to verify, so it polls
-            # instead of judging on the first read.
+          if [ "$DEPLOYED" != "$EXPECTED" ]; then
+            # A push run RACES the deploy it is meant to verify, and a
+            # scheduled run can fire while a just-promoted deploy is still
+            # building — so on mismatch, poll instead of judging on the
+            # first read.
             for _ in $(seq 1 20); do
               sleep 30
               DEPLOYED=$(read_commit)
