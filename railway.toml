@@ -57,8 +57,13 @@ dockerfilePath = "Dockerfile"   # relative to source.rootDirectory (/backend)
 #     Healthcheck:           /health (set per-service via Railway dashboard)
 #     Restart policy:        ON_FAILURE, max 3 retries (set per-service)
 #     Start command:         Dockerfile CMD
-#                            (alembic upgrade head && gunicorn -k UvicornWorker
-#                             -w 1 -t 120 -b 0.0.0.0:${PORT:-8000} app.main:app)
+#                            (alembic upgrade head && python -m app.seed &&
+#                             gunicorn -k UvicornWorker -w 1 -t 120
+#                             -b 0.0.0.0:${PORT:-8000} app.main:app)
+#                            The seed is idempotent (early-returns on existing
+#                            templates), so every deploy converges the global
+#                            template catalogue; a seed failure fails the
+#                            deploy and keeps the previous build live.
 #     Public domain:         https://web-production-48b398.up.railway.app
 #     Variables override:    CORS_ORIGINS=https://prumoai.vercel.app
 #                            (live value as of 2026-08-09; the retired
