@@ -4,15 +4,7 @@ import {useNavigate} from "react-router";
 import {Button} from "@/components/ui/button";
 import {Badge} from "@/components/ui/badge";
 import {Checkbox} from "@/components/ui/checkbox";
-import {
-    FileText,
-    Import,
-    MoreHorizontal,
-    Plus,
-    Search,
-    Trash2,
-    Upload,
-} from "lucide-react";
+import {FileText, Import, MoreHorizontal, Plus, Search, Trash2, Upload} from "lucide-react";
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {
     DropdownMenu,
