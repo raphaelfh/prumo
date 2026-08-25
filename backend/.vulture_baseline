@@ -1,0 +1,48 @@
+# vulture ratchet baseline — (file:kind:name) findings tolerated today.
+# Only shrinks; a new finding fails CI.
+#
+# ADMISSION RULE: an entry belongs here only if the symbol is consumed
+# by a framework or library rather than by name from app/. In practice
+# that is one of five shapes:
+#   * Starlette `dispatch` — BaseHTTPMiddleware calls it per request.
+#   * Celery — LoggedTask's on_failure/on_success/on_retry hooks, and
+#     signal-handler kwargs the framework passes by name.
+#   * SQLAlchemy column writes — persisted by the ORM, read back out
+#     of the database, never by a Python reader in app/.
+#   * Library option objects — docling pipeline options, openpyxl
+#     worksheet properties: written here, read by the library.
+#   * AIProposalRow — consumed positionally via `dataclasses.astuple`,
+#     so no field is ever read by name (see ai_metadata.py).
+#
+# Anything that does not fit one of those is dead code: delete it,
+# then regenerate with scripts/vulture_baseline.py --update.
+app/core/middleware.py:method:dispatch
+app/infrastructure/parsing/docling_parser.py:attribute:accelerator_options
+app/infrastructure/parsing/docling_parser.py:attribute:do_ocr
+app/infrastructure/parsing/docling_parser.py:attribute:do_table_structure
+app/infrastructure/parsing/docling_parser.py:attribute:table_structure_options
+app/repositories/article_repository.py:attribute:last_synced_at
+app/repositories/article_repository.py:attribute:removed_at_source_at
+app/services/article_file_service.py:attribute:extraction_error
+app/services/article_file_service.py:attribute:extraction_status
+app/services/document_parsing_service.py:attribute:extraction_status
+app/services/exports/extraction/sheet_spec.py:attribute:freeze_panes
+app/services/exports/extraction/sheet_spec.py:attribute:tabColor
+app/services/extraction_export_service.py:variable:ai_proposed_value
+app/services/extraction_export_service.py:variable:article_label
+app/services/extraction_export_service.py:variable:evidence_pages
+app/services/extraction_export_service.py:variable:evidence_text
+app/services/extraction_export_service.py:variable:final_value_used
+app/services/extraction_export_service.py:variable:instance_index
+app/services/extraction_export_service.py:variable:model_used
+app/services/extraction_export_service.py:variable:proposed_at
+app/services/extraction_export_service.py:variable:reviewer_outcome
+app/worker/celery_app.py:method:on_failure
+app/worker/celery_app.py:method:on_retry
+app/worker/celery_app.py:method:on_success
+app/worker/celery_app.py:variable:sender
+app/worker/tasks/feedback_tasks.py:attribute:forwarded_at
+app/worker/tasks/feedback_tasks.py:attribute:linear_identifier
+app/worker/tasks/feedback_tasks.py:attribute:linear_url
+app/worker/tasks/parsing_tasks.py:attribute:extraction_error
+app/worker/tasks/parsing_tasks.py:attribute:extraction_status

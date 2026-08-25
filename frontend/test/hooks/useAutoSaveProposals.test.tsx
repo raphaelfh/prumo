@@ -701,6 +701,169 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     expect(apiClientMock).toHaveBeenCalledTimes(1);
   });
 
+  it('flushes the pending edit for the OLD run when runId swaps in place (article pager)', async () => {
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
+
+    const { rerender } = renderHook(
+      (props: Parameters<typeof useAutoSaveProposals>[0]) =>
+        useAutoSaveProposals(props),
+      {
+        initialProps: {
+          runId: 'run-A',
+          stage: 'extract',
+          values: { 'inst-1_field-1': 'answered-on-A' } as Record<string, unknown>,
+          debounceMs: 5000,
+        },
+      },
+    );
+
+    // In-place article navigation (#657/#671 pagers): same component, new
+    // run — no unmount, so only a run-keyed flush can carry the pending
+    // edit. The unmount-flush alone (the pre-fix behavior) drops it.
+    rerender({
+      runId: 'run-B',
+      stage: 'extract',
+      values: {},
+      debounceMs: 5000,
+    });
+
+    await waitFor(() => expect(apiClientMock).toHaveBeenCalledTimes(1));
+    // Exactly one write, addressed to the OLD run — never a stale POST
+    // against run-B.
+    expect(apiClientMock.mock.calls.map(([url]) => String(url))).toEqual([
+      '/api/v1/runs/run-A/decisions',
+    ]);
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/run-A/decisions',
+      expect.objectContaining({ keepalive: true }),
+    );
+  });
+
+  it('does not flush on a run swap when there are no dirty changes', async () => {
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
+
+    const { rerender } = renderHook(
+      (props: Parameters<typeof useAutoSaveProposals>[0]) =>
+        useAutoSaveProposals(props),
+      {
+        initialProps: {
+          runId: 'run-A',
+          stage: 'extract',
+          values: { 'inst-1_field-1': 'persisted' } as Record<string, unknown>,
+          baselineValues: { 'inst-1_field-1': 'persisted' } as Record<string, unknown>,
+          debounceMs: 5000,
+        },
+      },
+    );
+
+    rerender({
+      runId: 'run-B',
+      stage: 'extract',
+      values: {},
+      baselineValues: {},
+      debounceMs: 5000,
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(0);
+  });
+
+  it('re-writes a value on the NEW run when the same coord was acknowledged on the old one', async () => {
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
+
+    const { result, rerender } = renderHook(
+      (props: Parameters<typeof useAutoSaveProposals>[0]) =>
+        useAutoSaveProposals(props),
+      {
+        initialProps: {
+          runId: 'run-A',
+          stage: 'extract',
+          values: { 'inst-1_field-1': 'V1' } as Record<string, unknown>,
+          baselineValues: {} as Record<string, unknown>,
+          debounceMs: 5000,
+        },
+      },
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+
+    // `POST /runs/{id}/reopen` forks a child run over the SAME
+    // (project, article, template) coordinate, carrying the parent's
+    // `instance_id` verbatim since `extraction_instances` has no `run_id`.
+    // The page swaps `activeRunId` in place, so the coord key is unchanged
+    // while it now addresses a different run. Consensus published the other
+    // reviewer's value ('V2'), and the reviewer re-asserts theirs.
+    rerender({
+      runId: 'run-B',
+      stage: 'extract',
+      values: { 'inst-1_field-1': 'V1' } as Record<string, unknown>,
+      baselineValues: { 'inst-1_field-1': 'V2' } as Record<string, unknown>,
+      debounceMs: 5000,
+    });
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    // Carrying run-A's acknowledgment over drops this silently: no POST, no
+    // error, badge clean, dissent lost.
+    expect(apiClientMock.mock.calls.map(([url]) => String(url))).toEqual([
+      '/api/v1/runs/run-A/decisions',
+      '/api/v1/runs/run-B/decisions',
+    ]);
+    // The re-asserted value went out, not the consensus baseline.
+    expect(apiClientMock).toHaveBeenLastCalledWith(
+      '/api/v1/runs/run-B/decisions',
+      expect.objectContaining({
+        body: expect.objectContaining({ value: { value: 'V1' } }),
+      }),
+    );
+  });
+
+  it('does not re-POST coords the OLD run already acknowledged when the run swaps', async () => {
+    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
+
+    const { result, rerender } = renderHook(
+      (props: Parameters<typeof useAutoSaveProposals>[0]) =>
+        useAutoSaveProposals(props),
+      {
+        initialProps: {
+          runId: 'run-A',
+          stage: 'extract',
+          values: { 'inst-1_field-1': 'V1' } as Record<string, unknown>,
+          debounceMs: 5000,
+        },
+      },
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+
+    // Regression guard: the run-switch flush (#684) commits alongside the
+    // cache swap, and must keep diffing against run-A's acknowledgments —
+    // otherwise every coord edited on run-A looks dirty again and appends a
+    // duplicate `edit` decision per run switch.
+    rerender({
+      runId: 'run-B',
+      stage: 'extract',
+      values: {},
+      debounceMs: 5000,
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+    expect(result.current.saveState).not.toBe('error');
+  });
+
   it('pagehide triggers an immediate flush', async () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 

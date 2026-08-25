@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-08-10
+last_reviewed: 2026-08-23
 owner: '@raphaelfh'
 ---
 
@@ -83,7 +83,6 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 | --- | --- |
 | `ENCRYPTION_KEY` | rotated by hand; MUST be the same value across web + worker (Zotero credentials are cross-process) |
 | `SUPABASE_URL` | Supabase project settings |
-| `SUPABASE_ANON_KEY` | Supabase project settings |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase project settings |
 | `DATABASE_URL` | Supabase pooler (used for app traffic) |
 | `DIRECT_DATABASE_URL` | Supabase direct (used by Alembic at boot) |
@@ -246,9 +245,34 @@ head commit. As of 2026-05-24 the relevant ones for backend code:
    from the repo root).
 
 After a deploy, the `post-deploy-smoke` workflow (push-triggered +
-every 6 hours) re-checks `/health`, the frontend, and a CORS preflight
-from the prod origin; a failure emails the owner. It is the deploy
-safety net, not a gate.
+every 6 hours) verifies prod in three layers; a failure emails the
+owner. It is the deploy safety net, not a gate.
+
+1. **Reachability** — `/health`, the frontend root, and a CORS preflight
+   from the prod origin.
+2. **Deployed commit** — `/health.commit` (the Railway-injected
+   `RAILWAY_GIT_COMMIT_SHA`, surfaced via `settings`) must equal the
+   promoted SHA. This is what actually catches the wedge described above:
+   reachability alone cannot tell a fresh deploy from one stuck on an
+   older commit. **Only the 6-hourly scheduled run fails on a mismatch.**
+   A push-triggered run polls (up to ~10 min) and then merely warns,
+   because it races the deploy it is verifying and a red check on the SHA
+   makes Railway's wait-for-CI skip that deploy — which deadlocks prod
+   into permanent staleness. That deadlock was observed on `a4dc5b65`
+   (2026-08-24): the first promotion after the assertion went live had its
+   deploy SKIPPED on both services, leaving prod on the previous build.
+   The scheduled run is not attached to a commit, so it can page without
+   wedging anything.
+There is deliberately **no credentialed probe and no Playwright suite
+pointed at prod**. An authenticated probe was built and then removed
+(2026-08-23): beyond layer 1 it only adds the narrow delta between "JWKS
+loaded at boot" (already reported by `/health.checks`) and "a freshly
+minted token is accepted", which does not pay for a permanent production
+password living in CI — nor for a `::warning::` on every run while it sits
+without credentials, which is how a warning stops being read. The former
+`remote-smoke` project dispatched a real AI extraction (LLM spend + a run
+left behind per execution) and had never run in CI — no secrets were ever
+provisioned — so it silently self-skipped to a green "pass".
 
 Override the env-driven thresholds via repo variables
 (`PRUMO_DIFF_COVERAGE_MIN`, `PRUMO_CRITICAL_COVERAGE_MIN`) when

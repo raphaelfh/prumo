@@ -5,8 +5,6 @@ Implements StorageAdapter for Supabase Storage.
 Manages PDFs and other article files.
 """
 
-from typing import Any
-
 from supabase import Client
 
 from app.core.logging import LoggerMixin
@@ -211,40 +209,6 @@ class SupabaseStorageAdapter(StorageAdapter, LoggerMixin):
             return response.get("signedURL", "")
         except Exception as e:
             raise StorageError(f"Failed to get signed URL: {e}", bucket, path)
-
-    async def list_files(
-        self,
-        bucket: str,
-        prefix: str = "",
-        limit: int = 100,
-    ) -> list[dict[str, Any]]:
-        """
-        List files in a bucket/path.
-
-        Args:
-            bucket: Bucket name.
-            prefix: Prefix/folder to filter.
-            limit: Maximum results.
-
-        Returns:
-            List of file metadata.
-        """
-        try:
-            response = self.client.storage.from_(bucket).list(
-                prefix,
-                {"limit": limit},
-            )
-
-            return response or []
-
-        except Exception as e:
-            self.logger.error(
-                "storage_list_error",
-                bucket=bucket,
-                prefix=prefix,
-                error=str(e),
-            )
-            return []
 
     async def move(
         self,

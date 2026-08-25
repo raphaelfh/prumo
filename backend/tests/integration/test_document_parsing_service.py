@@ -61,9 +61,6 @@ class FakeStorageAdapter(StorageAdapter):
     async def get_signed_url(self, bucket: str, path: str, expires_in: int = 3600) -> str:
         raise NotImplementedError
 
-    async def list_files(self, bucket: str, prefix: str = "", limit: int = 100) -> list[dict]:
-        raise NotImplementedError
-
 
 class FakeParser(DocumentParser):
     """Returns a fixed list of 3 ParsedBlock objects spanning 2 pages.

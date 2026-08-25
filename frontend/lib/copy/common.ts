@@ -105,4 +105,3 @@ export const common = {
     listFilterClearAll: 'Clear all',
 } as const;
 
-export type CommonCopy = typeof common;

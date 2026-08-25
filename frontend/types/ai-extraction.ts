@@ -9,8 +9,7 @@
 
 // =================== ENUMS ===================
 
-export type SuggestionStatus = 'pending' | 'accepted' | 'rejected';
-export type ExtractionRunStatus = 'pending' | 'running' | 'completed' | 'failed';
+type SuggestionStatus = 'pending' | 'accepted' | 'rejected';
 export type ExtractionRunStage =
   | 'pending'
   | 'extract'
@@ -37,7 +36,7 @@ export interface EvidenceCitation {
  * budget dropped any of it (a marker stands in for the full text). Part of
  * {@link PromptComposition}.
  */
-export interface PromptCompositionArticleRef {
+interface PromptCompositionArticleRef {
   fileId?: string | null;
   fileName?: string | null;
   truncated?: boolean;
@@ -193,14 +192,6 @@ export interface ModelExtractionRequest {
   runId?: string;
 }
 
-/**
- * Summary memory of an extracted section (for batch context)
- */
-export interface SectionMemory {
-  entityTypeId: string;
-  entityTypeName: string;
-  summary: string; // Max 200 chars - structured summary
-}
 
 /**
  * Request for batch extraction of all sections of a model
@@ -358,18 +349,6 @@ export interface LoadSuggestionsResult {
 
 // =================== COMPONENT PROPS ===================
 
-/**
- * Props for components that display AI suggestions
- */
-export interface AISuggestionDisplayProps {
-  instanceId: string;
-  fieldId: string;
-  suggestion: AISuggestion;
-  onAccept?: () => void;
-  onReject?: () => void;
-  getHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
-  loading?: boolean;
-}
 
 // =================== UTILITIES ===================
 

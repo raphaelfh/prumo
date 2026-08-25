@@ -708,6 +708,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Project Template
+         * @description Create a project template that starts with no sections.
+         *
+         *     Manager-gated like clone and import below: it deactivates the project's
+         *     current extraction template, which is project-wide configuration. Same
+         *     response shape as those two — the manager lands in the configuration
+         *     editor on a published, empty v1.
+         */
+        post: operations["create_project_template_api_v1_projects__project_id__templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/clone": {
         parameters: {
             query?: never;
@@ -726,6 +751,34 @@ export interface paths {
          *     which is project-wide configuration, matching the PATCH endpoint below.
          */
         post: operations["clone_template_into_project_api_v1_projects__project_id__templates_clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Project Template
+         * @description Import a ``prumo-template@1`` document as a NEW active project template.
+         *
+         *     The body is deliberately untyped at the HTTP layer: there is no
+         *     ``RequestValidationError`` handler, so a typed body would yield FastAPI's
+         *     un-enveloped 422 — parsing in the service is what turns a bad file into
+         *     the typed ``TemplatePortableRefusalCode`` 422s (declared above so the
+         *     contract still reaches schema.d.ts; the document's own schema is the
+         *     export response's ``PortableTemplate`` component). Same response shape
+         *     as the catalogue clone. A concurrent activation race is a 409 CONFLICT.
+         */
+        post: operations["import_project_template_api_v1_projects__project_id__templates_import_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -761,7 +814,14 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Project Template
+         * @description Delete an INACTIVE, unreferenced project template (spec §5.7).
+         *
+         *     ``TemplateActiveError`` / ``TemplateInUseError`` are ``AppError``s and
+         *     reach ``app_error_handler`` typed (``TemplateDeleteRefusalCode``).
+         */
+        delete: operations["delete_project_template_api_v1_projects__project_id__templates__template_id__delete"];
         options?: never;
         head?: never;
         /**
@@ -922,6 +982,32 @@ export interface paths {
          *     refuses with the new holder named.
          */
         post: operations["take_over_draft_lock_endpoint_api_v1_projects__project_id__templates__template_id__draft_lock_take_over_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Project Template
+         * @description Export the template's LIVE structure as a ``prumo-template@1`` document.
+         *
+         *     Extraction templates only (a QA id 404s). Reads no draft state and takes
+         *     no locks — the pending-draft confirmation is the frontend's (it already
+         *     holds ``config-status``). The frontend writes ``data`` to disk, never the
+         *     envelope. ``TemplateExportInvalidError`` (legacy rows the format cannot
+         *     carry) is an ``AppError`` and reaches ``app_error_handler`` typed.
+         */
+        get: operations["export_project_template_api_v1_projects__project_id__templates__template_id__export_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1316,23 +1402,6 @@ export interface paths {
         put?: never;
         /** Create Decision */
         post: operations["create_decision_api_v1_runs__run_id__decisions_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/runs/{run_id}/proposals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Proposal */
-        post: operations["create_proposal_api_v1_runs__run_id__proposals_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2216,10 +2285,10 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[ProposalRecordResponse] */
-        ApiResponse_ProposalRecordResponse_: {
+        /** ApiResponse[PortableTemplate] */
+        ApiResponse_PortableTemplate_: {
             /** @description Dados da resposta */
-            data?: components["schemas"]["ProposalRecordResponse"] | null;
+            data?: components["schemas"]["PortableTemplate"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2458,6 +2527,23 @@ export interface components {
         ApiResponse_TemplateConfigStatusRead_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["TemplateConfigStatusRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[TemplateDeleteResponse] */
+        ApiResponse_TemplateDeleteResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["TemplateDeleteResponse"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3156,28 +3242,25 @@ export interface components {
             /** Proposalrunid */
             proposalRunId?: string | null;
         };
-        /** CreateProposalRequest */
-        CreateProposalRequest: {
-            /** Confidence Score */
-            confidence_score?: number | null;
+        /**
+         * CreateProjectTemplateRequest
+         * @description Name a template that starts with no sections; the tree is built after.
+         *
+         *     ``extra="forbid"``: ``is_active``, ``project_id`` and ``created_by`` are
+         *     the server's to set — the invariants in ``template_create_service`` are
+         *     exactly what a client-supplied field set would break.
+         */
+        CreateProjectTemplateRequest: {
+            /** Description */
+            description?: string | null;
             /**
-             * Field Id
-             * Format: uuid
+             * Framework
+             * @default CUSTOM
+             * @enum {string}
              */
-            field_id: string;
-            /**
-             * Instance Id
-             * Format: uuid
-             */
-            instance_id: string;
-            /** Proposed Value */
-            proposed_value: {
-                [key: string]: unknown;
-            };
-            /** Rationale */
-            rationale?: string | null;
-            /** Source */
-            source: string;
+            framework: "CHARMS" | "PICOS" | "CUSTOM";
+            /** Name */
+            name: string;
         };
         /** CreateRunRequest */
         CreateRunRequest: {
@@ -4265,6 +4348,133 @@ export interface components {
              */
             type: "auto" | "standard" | "llamaparse" | "docling";
         };
+        /**
+         * PortableField
+         * @description One ``extraction_fields`` row. ``type``/``required`` are the file keys
+         *     (JSON Schema convention); the attributes keep the column names.
+         */
+        PortableField: {
+            /**
+             * Allow Other
+             * @default false
+             */
+            allow_other: boolean;
+            /** Allowed Units */
+            allowed_units?: string[] | null;
+            /** Allowed Values */
+            allowed_values?: string[] | null;
+            /**
+             * Allows Not Applicable
+             * @default false
+             */
+            allows_not_applicable: boolean;
+            /**
+             * Allows Not Evaluated
+             * @default false
+             */
+            allows_not_evaluated: boolean;
+            /** Description */
+            description?: string | null;
+            /**
+             * Is Entity Key
+             * @default false
+             */
+            is_entity_key: boolean;
+            /** Label */
+            label: string;
+            /** Llm Description */
+            llm_description?: string | null;
+            /** Name */
+            name: string;
+            /** Other Label */
+            other_label?: string | null;
+            /** Other Placeholder */
+            other_placeholder?: string | null;
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "text" | "number" | "date" | "select" | "multiselect" | "boolean";
+            /** Unit */
+            unit?: string | null;
+        };
+        /**
+         * PortableSection
+         * @description One ``extraction_entity_types`` row plus its fields and (for a group)
+         *     its child sections. ``group`` ⇒ ``model_container``; nested ⇒
+         *     ``model_section``; otherwise ``study_section``. ``entry_label`` is only
+         *     legal on a group; the import defaults it to ``"model"`` there.
+         */
+        PortableSection: {
+            /** Description */
+            description?: string | null;
+            /** Entry Label */
+            entry_label?: string | null;
+            /** Fields */
+            fields?: components["schemas"]["PortableField"][];
+            /**
+             * Group
+             * @default false
+             */
+            group: boolean;
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+            /**
+             * Repeats
+             * @default false
+             */
+            repeats: boolean;
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /** Sections */
+            sections?: components["schemas"]["PortableSection"][];
+        };
+        /**
+         * PortableTemplate
+         * @description The document. ``prumo_template`` and ``kind`` have NO default so they
+         *     are always emitted even under ``exclude_defaults``.
+         */
+        PortableTemplate: {
+            /** Description */
+            description?: string | null;
+            /**
+             * Framework
+             * @default CUSTOM
+             * @enum {string}
+             */
+            framework: "CHARMS" | "PICOS" | "CUSTOM";
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "extraction";
+            /** Llm Template Instruction */
+            llm_template_instruction?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Prumo Template
+             * @constant
+             */
+            prumo_template: 1;
+            /** Sections */
+            sections: components["schemas"]["PortableSection"][];
+            /**
+             * Version
+             * @default 1.0.0
+             */
+            version: string;
+        };
         /** ProposalRecordResponse */
         ProposalRecordResponse: {
             /** Confidence Score */
@@ -4609,26 +4819,47 @@ export interface components {
         };
         /**
          * RunViewDerivedInput
-         * @description One domain judgment feeding a computed overall, as the rule consumed it.
+         * @description One input feeding a derived judgment, as the rule consumed it.
          *
-         *     ``value`` is None when that domain is unjudged — which is exactly why the
-         *     overall shows a dash, so the client can name the blocking domain instead of
-         *     leaving the reviewer to hunt for it across ten sections.
+         *     ``value`` is the display value: the judgment for a ``worst_domain`` row,
+         *     the reviewer's RAW answer ("PN", a marker label) for a ``signaling_worst``
+         *     row, None when unjudged/unanswered — which is exactly why the derived
+         *     value shows a dash, so the client can name the blocking input instead of
+         *     leaving the reviewer to hunt for it. ``contribution`` is uniformly the
+         *     Low/High/Unclear the rule consumed from this row (None when it
+         *     contributed nothing) — clients highlight and color by it with zero
+         *     answer-mapping knowledge.
+         *
+         *     ``state`` is set only on a collapse-group row that contributed nothing,
+         *     and is the complement of ``contribution`` (never both). It is
+         *     ``"unreported"`` when the study did not report that performance type — a
+         *     legitimate outcome, not a gap — and ``"in-progress"`` when the group is
+         *     only half-answered. A group has no stored answer, so ``value`` is always
+         *     None there and this is the only thing telling the two apart: render them
+         *     with different copy and tone, or a complete assessment looks unfinished.
          */
         RunViewDerivedInput: {
+            /** Contribution */
+            contribution?: string | null;
             /** Label */
             label: string;
+            /** State */
+            state?: string | null;
             /** Value */
             value?: string | null;
         };
         /**
          * RunViewDerivedJudgment
-         * @description One computed overall judgment (never stored, never entered).
+         * @description One computed judgment (never stored, never entered).
          *
          *     Present only for templates whose ``schema`` JSONB declares a
-         *     ``derived_judgments`` spec (today: PROBAST+AI). ``value`` is None when the
-         *     inputs are incomplete — the client renders that as an em dash, never as the
-         *     most favourable judgment.
+         *     ``derived_judgments`` spec. Entries WITH ``target_field_id`` are
+         *     RECOMMENDATIONS: the derived default for the assessor-owned stored field
+         *     the ids point at (resolved against the run's frozen tree; None when the
+         *     spec coordinate does not resolve). Entries without one are computed
+         *     OVERALLS, whose paired Step-4 narrative field is ``summary_field_id``.
+         *     ``value`` is None when the inputs are incomplete — the client renders
+         *     that as an em dash, never as the most favourable judgment.
          */
         RunViewDerivedJudgment: {
             /** Id */
@@ -4637,6 +4868,14 @@ export interface components {
             inputs?: components["schemas"]["RunViewDerivedInput"][];
             /** Label */
             label: string;
+            /** Rationale Field Id */
+            rationale_field_id?: string | null;
+            /** Summary Field Id */
+            summary_field_id?: string | null;
+            /** Target Entity Type Id */
+            target_entity_type_id?: string | null;
+            /** Target Field Id */
+            target_field_id?: string | null;
             /** Value */
             value?: string | null;
         };
@@ -5287,6 +5526,59 @@ export interface components {
             project_template_id: string;
         };
         /**
+         * TemplateDeleteRefusalCode
+         * @description Why ``DELETE …/templates/{id}`` returned 409 (spec §5.7).
+         * @enum {string}
+         */
+        TemplateDeleteRefusalCode: "TEMPLATE_ACTIVE" | "TEMPLATE_IN_USE";
+        /**
+         * TemplateDeleteRefusalDetails
+         * @description How many runs / instances still reference the template (``TEMPLATE_IN_USE``).
+         */
+        TemplateDeleteRefusalDetails: {
+            /**
+             * Instances
+             * @default 0
+             */
+            instances: number;
+            /**
+             * Runs
+             * @default 0
+             */
+            runs: number;
+        };
+        /** TemplateDeleteRefusalError */
+        TemplateDeleteRefusalError: {
+            code: components["schemas"]["TemplateDeleteRefusalCode"];
+            details?: components["schemas"]["TemplateDeleteRefusalDetails"] | null;
+            /** Message */
+            message: string;
+        };
+        /**
+         * TemplateDeleteRefusalResponse
+         * @description The 409 body, declared so the payload reaches ``schema.d.ts`` typed.
+         */
+        TemplateDeleteRefusalResponse: {
+            error: components["schemas"]["TemplateDeleteRefusalError"];
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /** Trace Id */
+            trace_id?: string | null;
+        };
+        /** TemplateDeleteResponse */
+        TemplateDeleteResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /**
+             * Project Template Id
+             * Format: uuid
+             */
+            project_template_id: string;
+        };
+        /**
          * TemplateDiscardRefusalCode
          * @description Why ``POST .../discard-draft`` returned 409 (B-9c2 D1).
          *
@@ -5433,6 +5725,11 @@ export interface components {
              */
             field_type: "text" | "number" | "date" | "select" | "multiselect" | "boolean";
             /**
+             * Is Entity Key
+             * @default false
+             */
+            is_entity_key: boolean;
+            /**
              * Is Required
              * @default false
              */
@@ -5538,6 +5835,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Is Entity Key
+             * @default false
+             */
+            is_entity_key: boolean;
             /** Is Required */
             is_required: boolean;
             /** Label */
@@ -5615,6 +5917,8 @@ export interface components {
             description?: string | null;
             /** Field Type */
             field_type?: ("text" | "number" | "date" | "select" | "multiselect" | "boolean") | null;
+            /** Is Entity Key */
+            is_entity_key?: boolean | null;
             /** Is Required */
             is_required?: boolean | null;
             /** Label */
@@ -5647,6 +5951,61 @@ export interface components {
              * Format: uuid
              */
             project_template_id: string;
+        };
+        /**
+         * TemplatePortableIssue
+         * @description One validation issue: ``sections[2].fields[5].name`` + Pydantic's message.
+         */
+        TemplatePortableIssue: {
+            /** Message */
+            message: string;
+            /** Path */
+            path: string;
+        };
+        /**
+         * TemplatePortableRefusalCode
+         * @description Why ``POST …/templates/import`` / ``GET …/export`` returned 422.
+         *
+         *     Slice-local like :class:`TemplatePublishRefusalCode` — one feature's
+         *     private outcome, deliberately NOT in ``ApiErrorCode``.
+         * @enum {string}
+         */
+        TemplatePortableRefusalCode: "TEMPLATE_IMPORT_INVALID" | "TEMPLATE_IMPORT_WRONG_KIND" | "TEMPLATE_IMPORT_UNSUPPORTED_VERSION" | "TEMPLATE_EXPORT_INVALID";
+        /**
+         * TemplatePortableRefusalDetails
+         * @description ``error.details`` of a portable refusal: the issue list capped at 20
+         *     entries (what the import pane renders) plus the uncapped total.
+         */
+        TemplatePortableRefusalDetails: {
+            /**
+             * Error Count
+             * @default 0
+             */
+            error_count: number;
+            /** Errors */
+            errors?: components["schemas"]["TemplatePortableIssue"][];
+        };
+        /** TemplatePortableRefusalError */
+        TemplatePortableRefusalError: {
+            code: components["schemas"]["TemplatePortableRefusalCode"];
+            details?: components["schemas"]["TemplatePortableRefusalDetails"] | null;
+            /** Message */
+            message: string;
+        };
+        /**
+         * TemplatePortableRefusalResponse
+         * @description The 422 body, declared so the payload reaches ``schema.d.ts`` typed
+         *     (same rationale as :class:`TemplatePublishRefusalResponse`).
+         */
+        TemplatePortableRefusalResponse: {
+            error: components["schemas"]["TemplatePortableRefusalError"];
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /** Trace Id */
+            trace_id?: string | null;
         };
         /**
          * TemplatePublishRefusalCode
@@ -7109,6 +7468,41 @@ export interface operations {
             };
         };
     };
+    create_project_template_api_v1_projects__project_id__templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProjectTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_CloneTemplateResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     clone_template_into_project_api_v1_projects__project_id__templates_clone_post: {
         parameters: {
             query?: never;
@@ -7140,6 +7534,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_project_template_api_v1_projects__project_id__templates_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_CloneTemplateResponse_"];
+                };
+            };
+            /** @description Refused: not a valid prumo-template@1 document (or template) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplatePortableRefusalResponse"];
                 };
             };
         };
@@ -7231,6 +7662,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_HitlConfigRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_project_template_api_v1_projects__project_id__templates__template_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_TemplateDeleteResponse_"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateDeleteRefusalResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7458,6 +7930,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_project_template_api_v1_projects__project_id__templates__template_id__export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_PortableTemplate_"];
+                };
+            };
+            /** @description Refused: not a valid prumo-template@1 document (or template) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplatePortableRefusalResponse"];
                 };
             };
         };
@@ -8112,41 +8616,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_ReviewerDecisionResponse_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_proposal_api_v1_runs__run_id__proposals_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                run_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateProposalRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_ProposalRecordResponse_"];
                 };
             };
             /** @description Validation Error */

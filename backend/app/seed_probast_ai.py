@@ -1,28 +1,38 @@
-"""PROBAST+AI canonical quality-assessment template (Moons et al., BMJ 2025).
+"""PROBAST+AI 2.0.0 — instrument-exact quality-assessment template.
+
+Moons et al., BMJ 2025 (Suppl. Table 3 fillable tool + E&E Light), mapped
+item-by-item in ``docs/reference/templates/probast-ai-instrument.md``; design
+in ``docs/superpowers/specs/2026-08-22-probast-ai-derived-domain-judgments-design.md``.
 
 Kept in its own module because ``app.seed`` is at its file-size ratchet cap and
 this definition is large. Shares every helper with ``app.seed`` so the field
-shape (and the ADR-0016 identity check on the answer set) cannot drift.
+shape cannot drift.
 
-Structure: a model-development part judged on Quality (16 signaling questions)
-and a model-evaluation part judged on Risk of Bias (18), four domains each,
-with evaluation domain 4 assessed separately per reported performance type
-(apparent / internal / external). 34 instrument questions become 42 field rows
-because the four type-agnostic evaluation-D4 questions are triplicated; the 14
-domain judgments become 16 rows for the same reason.
+Structure — 13 sections, 95 fields, mirroring the form's page order inside
+each domain (describes → signaling questions → judgment → rationale →
+applicability describe → applicability → rationale):
 
-Two structural notes:
+* ``assessment_scope`` — Step 2 study-type classification + the Step-3
+  models/outcome of interest.
+* 4 development domains judged on Quality, 3 evaluation domains judged on
+  Risk of Bias, each with the official describe boxes and per-judgment
+  rationale fields.
+* Evaluation D4 splits its signaling questions across the three performance
+  types (apparent / internal / external) but records ONE domain judgment, in
+  ``eval_d4_judgment`` beside the D4 describe boxes — exactly as the form.
+* ``overall_judgement`` — the four Step-4 summary boxes. The overall VALUES
+  are computed (``worst_domain``), never entered.
 
-* The two parts are SIBLING sections, not a tree. A grouping parent would have
-  to be ``role='model_container'`` (0016 role CHECK) and at most one such node
-  may exist per template (partial unique index).
-* Per-type "not applicable by default" answers (data leakage and resampling in
-  the apparent and external types) are expressed by OMITTING the field from
-  those sections — ``extraction_fields`` has no default-value column.
+Domain judgments get a derived DEFAULT (``signaling_worst`` recommendation
+entries in the ``derived_judgments`` spec); the assessor records the final
+value, with the UI requiring the paired rationale on divergence. Judgments,
+their rationales and the Step-4 summaries are assessor-owned: they carry no
+``llm_description`` and their spec pointers exclude them from every LLM call.
 
-The four overall judgments are NOT seeded as fields: they are computed from the
-domain judgments by ``derived_judgment_service``, configured by the
-``derived_judgments`` spec on this template's ``schema`` JSONB.
+NA is restricted to the instrument's four conditional (asterisked) items —
+six field rows after triplication. Step 1 (the review's PICOTS) lives in the
+project template's ✨ instruction, which reaches every AI call as general
+instructions and is the reference for the applicability judgments.
 """
 
 from __future__ import annotations
@@ -46,444 +56,118 @@ from app.seed import (
     _field,
     _signaling,
 )
+from app.seed_probast_ai_data import (
+    _APP_ASPECT_D1,
+    _APP_ASPECT_D2,
+    _APP_ASPECT_D3,
+    _APP_OFFICIAL_D1,
+    _APP_OFFICIAL_D2,
+    _APP_OFFICIAL_D3,
+    _D1_QUESTIONS,
+    _D2_QUESTIONS,
+    _D3_QUESTIONS,
+    _DESC_DATA_SOURCES,
+    _DESC_OUTCOME,
+    _DESC_OUTCOME_TIMING,
+    _DESC_PREDICTORS,
+    _DESC_SETTING_DATES,
+    _DEV_D4_QUESTIONS,
+    _EVAL_D4_CORE,
+    _EVAL_D4_GATE,
+    _EVAL_D4_INTERNAL_ONLY,
+    _EVAL_D4_PERFORMANCE,
+    _F_APPLICABILITY,
+    _F_QUALITY,
+    _F_ROB,
+    _PAI_DERIVED_JUDGMENTS,
+    _RATIONALE_QUALITY,
+    _RATIONALE_ROB,
+    _S_DEV_D1,
+    _S_DEV_D2,
+    _S_DEV_D3,
+    _S_DEV_D4,
+    _S_EVAL_D1,
+    _S_EVAL_D2,
+    _S_EVAL_D3,
+    _S_EVAL_D4_A,
+    _S_EVAL_D4_E,
+    _S_EVAL_D4_I,
+    _S_EVAL_D4_J,
+    _S_OVERALL,
+    _S_SCOPE,
+    _Question,
+)
 
 # ---------------------------------------------------------------------------
 # Fixed UUIDs — never change (prefix convention: 000c CHARMS, 00b0 PROBAST,
-# 00d0 QUADAS-2, 00ba PROBAST+AI).
+# 00d0 QUADAS-2, 00ba PROBAST+AI). v2 reserves the FINAL group for the
+# version: the v1 ids (…0001 template, …-000000000000 entity types) are
+# unreachable for existing clones (clone dedupe is by (project,
+# global_template)), so the new form ships under new primary keys.
 # ---------------------------------------------------------------------------
 
-_PROBAST_AI_TEMPLATE_ID = UUID("00ba0000-0000-0000-0000-000000000001")
-_ET_DEV_D1 = UUID("00ba0001-0000-0000-0000-000000000000")
-_ET_DEV_D2 = UUID("00ba0002-0000-0000-0000-000000000000")
-_ET_DEV_D3 = UUID("00ba0003-0000-0000-0000-000000000000")
-_ET_DEV_D4 = UUID("00ba0004-0000-0000-0000-000000000000")
-_ET_EVAL_D1 = UUID("00ba0005-0000-0000-0000-000000000000")
-_ET_EVAL_D2 = UUID("00ba0006-0000-0000-0000-000000000000")
-_ET_EVAL_D3 = UUID("00ba0007-0000-0000-0000-000000000000")
-_ET_EVAL_D4_A = UUID("00ba0008-0000-0000-0000-000000000000")
-_ET_EVAL_D4_I = UUID("00ba0009-0000-0000-0000-000000000000")
-_ET_EVAL_D4_E = UUID("00ba000a-0000-0000-0000-000000000000")
+_PROBAST_AI_TEMPLATE_ID = UUID("00ba0000-0000-0000-0000-000000000002")
 
-# Section machine names — referenced by the derivation spec below, so they are
-# declared once and reused on both sides.
-_S_DEV_D1 = "dev_d1_participants"
-_S_DEV_D2 = "dev_d2_predictors"
-_S_DEV_D3 = "dev_d3_outcome"
-_S_DEV_D4 = "dev_d4_analysis"
-_S_EVAL_D1 = "eval_d1_participants"
-_S_EVAL_D2 = "eval_d2_predictors"
-_S_EVAL_D3 = "eval_d3_outcome"
-_S_EVAL_D4_A = "eval_d4_analysis_apparent"
-_S_EVAL_D4_I = "eval_d4_analysis_internal"
-_S_EVAL_D4_E = "eval_d4_analysis_external"
 
-_F_QUALITY = "quality_concern"
-_F_ROB = "risk_of_bias"
-_F_APPLICABILITY = "applicability_concerns"
+def _et_id(n: int) -> UUID:
+    return UUID(f"00ba{n:04x}-0000-0000-0000-000000000002")
 
-_ANSWER_INSTRUCTION = (
+
+# The instrument's answer scale. NA exists on exactly four conditional items
+# (dev 4.4, eval 4.4, 4.5, 4.6 — six rows after triplication), so the
+# instruction comes in two variants and the flag is passed per row.
+_ANSWER_INSTRUCTION = " Answer Y, PY, PN or N; mark no information when the article is silent."
+_ANSWER_INSTRUCTION_NA = (
     " Answer Y, PY, PN or N; mark no information when the article is silent, "
     "and not applicable when the criterion does not apply."
 )
 
-# (machine name, verbatim official text, criterion for the AI prompt)
-_Question = tuple[str, str, str]
-
-# --- Question sets shared by both parts -------------------------------------
-
-_D1_QUESTIONS: tuple[_Question, ...] = (
-    (
-        "q1_appropriate_data_sources",
-        "Were appropriate data sources used?",
-        "Assess whether the data source is appropriate and its provenance is "
-        "traceable — enough detail on how the data were collected and measured. "
-        "Open-repository sources with insufficient collection detail are a "
-        "concern and can hide fairness problems.",
-    ),
-    (
-        "q2_appropriate_study_design",
-        "Was an appropriate study design used?",
-        "Assess whether the study design suits the task: a prospective "
-        "longitudinal cohort is preferred for prognosis; selective sampling "
-        "(case-cohort, nested case-control) must be adjusted for the sampling "
-        "fraction; registry and routine-care data carry more quality problems.",
-    ),
-    (
-        "q3_representative_dataset",
-        "Did the inclusions and exclusions of study participants result in a "
-        "representative dataset?",
-        "Assess whether inclusions and exclusions align with the intended use "
-        "and leave a dataset representative of the target population, with no "
-        "marginalised subgroup improperly excluded.",
-    ),
-)
-
-_D2_QUESTIONS: tuple[_Question, ...] = (
-    (
-        "q1_similar_definition_assessment",
-        "Were predictors defined and assessed in a similar way for all participants?",
-        "Assess whether definitions, thresholds and measurement methods were the "
-        "same across participants. Risk is higher for subjective predictors "
-        "(imaging, electrophysiology, pathology).",
-    ),
-    (
-        "q2_similar_preprocessing",
-        "Was any preprocessing of predictors similar for all participants?",
-        "Assess whether preprocessing — value standardisation, feature "
-        "extraction from unstructured data such as images or signals — was the "
-        "same across participants, centres and subgroups.",
-    ),
-    (
-        "q3_blind_to_outcome",
-        "Were predictor assessments made without knowledge of outcome data?",
-        "Assess whether predictors were measured blind to the outcome. This "
-        "matters most for subjective predictors and is frequently unreported; "
-        "when unreported, mark no information.",
-    ),
-    (
-        "q4_available_at_intended_use",
-        "Were the predictors included in the model available at the time the "
-        "model was intended to be used?",
-        "Assess whether every predictor in the final model is obtainable at the "
-        "moment of intended use (for example, a preoperative model must not use "
-        "an intraoperative or postoperative predictor).",
-    ),
-)
-
-_D3_QUESTIONS: tuple[_Question, ...] = (
-    (
-        "q1_appropriate_definition",
-        "Were outcomes defined and assessed appropriately?",
-        "Assess whether the outcome definition is standard and prespecified and "
-        "the measurement method accurate. Error is larger with non-standard "
-        "definitions, subjective or composite outcomes, and data-driven "
-        "thresholds.",
-    ),
-    (
-        "q2_similar_definition_assessment",
-        "Were outcomes defined and assessed in a similar way for all participants?",
-        "Assess whether the same definition, threshold and method (including "
-        "number of visits) applied to all participants; watch for partial or "
-        "differential verification in diagnostic studies.",
-    ),
-    (
-        "q3_blind_to_predictors",
-        "Were outcome assessments made without use or knowledge of predictor data?",
-        "Assess whether the outcome was determined blind to the predictors. If a "
-        "predictor forms part of the outcome definition, the association is "
-        "spurious and performance is inflated.",
-    ),
-    (
-        "q4_appropriate_time_interval",
-        "Was the time interval between predictor assessment and outcome assessment appropriate?",
-        "Assess whether the predictor-to-outcome interval is neither too short "
-        "nor too long: ideally simultaneous for diagnosis, and consistent with "
-        "the stated horizon for prognosis.",
-    ),
-)
-
-# --- Development domain 4 ---------------------------------------------------
-
-_DEV_D4_QUESTIONS: tuple[_Question, ...] = (
-    (
-        "q1_reasonable_sample_size",
-        "Was there evidence that the sample size was reasonable?",
-        "Assess whether the development sample is large relative to model "
-        "complexity, considering the number of parameters and the event "
-        "fraction. Regularisation does not substitute for an adequate sample; "
-        "when no information is given, lean to no information.",
-    ),
-    (
-        "q2_continuous_categorical_handling",
-        "Were continuous and categorical predictors handled appropriately?",
-        "Assess whether categorisation or dichotomisation discarded information "
-        "or used data-driven thresholds; regression should ideally model "
-        "non-linearity (splines, fractional polynomials).",
-    ),
-    (
-        "q3_missing_censored_handling",
-        "Were participants with missing or censored data handled appropriately in the analysis?",
-        "Assess whether selective exclusion was avoided, whether multiple "
-        "imputation (generally preferred) was used, and whether censoring was "
-        "handled — competing risks where relevant. Silence often means an "
-        "implicit complete-case analysis.",
-    ),
-    (
+_NA_QUESTIONS = frozenset(
+    {
         "q4_imbalance_recalibration",
-        "If methods to address class imbalance were used, was the model or the "
-        "model predictions recalibrated?",
-        "Conditional criterion: if class-imbalance corrections (under- or "
-        "oversampling, SMOTE) were used in development, assess whether the model "
-        "or its predictions were recalibrated — those corrections distort "
-        "estimated probabilities. If no imbalance method was used, mark not "
-        "applicable.",
-    ),
-    (
-        "q5_overfitting_methods",
-        "Were methods used to address potential model overfitting?",
-        "Assess whether overfitting was addressed: sufficient data, avoiding "
-        "data-driven univariable selection (the winner's curse), regularisation "
-        "or shrinkage, and careful hyperparameter tuning for AI models.",
-    ),
-)
-
-# --- Evaluation domain 4, split by performance type -------------------------
-
-_EVAL_D4_GATE: tuple[_Question, ...] = (
-    (
-        "q1_apparent_only_avoided",
-        "Was model evaluation based on only apparent performance avoided?",
-        "Domain gate, answered ONCE for the whole evaluation domain and stored "
-        "in the apparent-performance section. Apparent performance is estimated "
-        "on the same data used for development and is optimistic; the study is "
-        "expected to go beyond it, with internal validation (resampling or "
-        "cross-validation on the development set) and/or external validation "
-        "(participants not used for development). Answer N when only apparent "
-        "performance was reported, in which case the internal and external "
-        "sections are left blank.",
-    ),
-)
-
-# Asked for every reported performance type.
-_EVAL_D4_CORE: tuple[_Question, ...] = (
-    (
-        "q2_reasonable_sample_size",
-        "Was there evidence that the sample size was reasonable?",
-        "For THIS performance type, assess whether the evaluation sample is "
-        "large enough to estimate performance precisely; subgroups may have too "
-        "few participants.",
-    ),
-    (
-        "q3_missing_censored_handling",
-        "Were participants with missing or censored data handled appropriately in the analysis?",
-        "For THIS performance type, assess whether missing or censored data were "
-        "handled appropriately and selective exclusion avoided. In external "
-        "data, beware a systematically absent predictor — its coefficient must "
-        "not simply be zeroed.",
-    ),
-    (
         "q4_uncorrected_imbalance_evaluation",
-        "If methods to address class imbalance were used, was the evaluation "
-        "done in a dataset without correction for imbalance?",
-        "Conditional criterion: if imbalance corrections were used in "
-        "development, the evaluation must run on data WITHOUT that correction, "
-        "which distorts the true prevalence. If no correction was used, mark not "
-        "applicable.",
-    ),
-)
-
-# Internal validation only — NA by definition for apparent and external, so
-# these fields are omitted from those sections entirely.
-_EVAL_D4_INTERNAL_ONLY: tuple[_Question, ...] = (
-    (
         "q5_data_leakage_avoided",
-        "If data splitting was done to create training and test datasets, was "
-        "there evidence that data leakage was avoided?",
-        "Assess whether leakage was avoided: overlap between evaluation and "
-        "training data, or re-tuning parameters on the evaluation data, "
-        "overestimates performance.",
-    ),
-    (
         "q6_resampling_replicates_all_steps",
-        "If resampling methods were used to evaluate model performance, were all "
-        "model development steps replicated in the resampling process?",
-        "Assess whether EVERY development step — imputation, variable selection, "
-        "hyperparameter tuning, fitting — was replicated inside each resampling "
-        "iteration; otherwise optimism is underestimated.",
-    ),
+    }
 )
 
-_EVAL_D4_PERFORMANCE: tuple[_Question, ...] = (
-    (
-        "q7_appropriate_performance_measures",
-        "Was the predictive performance of the model evaluated appropriately, "
-        "for example, calibration, discrimination, and net benefit?",
-        "For THIS performance type, assess whether performance was evaluated "
-        "appropriately: ideally calibration (a curve, not only a goodness-of-fit "
-        "test), discrimination (for example the c-index) and clinical utility "
-        "(net benefit). Omitting calibration or discrimination signals a problem; "
-        "calibration reported only as apparent is weakly informative.",
-    ),
-)
+# --- Row builders -----------------------------------------------------------
 
-# (machine name, short UI label, verbatim official judgment text)
-_Judgment = tuple[str, str, str]
 
-_APPLICABILITY_D1: _Judgment = (
-    _F_APPLICABILITY,
-    "Applicability concerns",
-    "Concern that the data of the included participants do not match the review "
-    "question or the intended use of the prediction model",
-)
-_APPLICABILITY_D2: _Judgment = (
-    _F_APPLICABILITY,
-    "Applicability concerns",
-    "Concern that the definition, preprocessing, assessment, or timing of "
-    "assessment of the predictors in the model do not match the review question "
-    "or the intended use",
-)
-_APPLICABILITY_D3: _Judgment = (
-    _F_APPLICABILITY,
-    "Applicability concerns",
-    "Concern that the outcome, its definition, assessment, or timing of "
-    "assessment do not match the review question or the intended use",
-)
-
-_ROB_ANALYSIS: _Judgment = (
-    _F_ROB,
-    "Risk of bias",
-    "Risk of bias introduced by the analysis",
-)
-
-# (entity id, machine name, label, description, questions, judgments)
-_Section = tuple[UUID, str, str, str, tuple[_Question, ...], tuple[_Judgment, ...]]
-
-_SECTIONS: tuple[_Section, ...] = (
-    (
-        _ET_DEV_D1,
-        _S_DEV_D1,
-        "Development D1: Participants and data sources",
-        "PROBAST+AI model-development domain 1 — quality of participant "
-        "selection and data sources.",
-        _D1_QUESTIONS,
-        (
-            (
-                _F_QUALITY,
-                "Quality",
-                "Concern regarding quality of selection of participants and data sources",
-            ),
-            _APPLICABILITY_D1,
+def _describe(eid: UUID, name: str, prompt: str, sort: int) -> ExtractionField:
+    """One official describe box: optional free text the AI pre-fills."""
+    return _field(
+        eid,
+        name,
+        prompt,
+        prompt,
+        "text",
+        sort,
+        is_required=False,
+        llm=(
+            "Descriptive extraction — summarise from the article, quoting the "
+            f"supporting passages: {prompt}"
         ),
-    ),
-    (
-        _ET_DEV_D2,
-        _S_DEV_D2,
-        "Development D2: Predictors",
-        "PROBAST+AI model-development domain 2 — quality of the predictors and their assessment.",
-        _D2_QUESTIONS,
-        (
-            (
-                _F_QUALITY,
-                "Quality",
-                "Concern regarding the quality of the predictors or their assessment",
-            ),
-            _APPLICABILITY_D2,
-        ),
-    ),
-    (
-        _ET_DEV_D3,
-        _S_DEV_D3,
-        "Development D3: Outcome",
-        "PROBAST+AI model-development domain 3 — quality of the outcome and its determination.",
-        _D3_QUESTIONS,
-        (
-            (
-                _F_QUALITY,
-                "Quality",
-                "Concern regarding quality of the outcome or its determination",
-            ),
-            _APPLICABILITY_D3,
-        ),
-    ),
-    (
-        _ET_DEV_D4,
-        _S_DEV_D4,
-        "Development D4: Analysis",
-        "PROBAST+AI model-development domain 4 — quality of the analysis. "
-        "Applicability is not judged for domain 4.",
-        _DEV_D4_QUESTIONS,
-        ((_F_QUALITY, "Quality", "Concern regarding quality of the analysis"),),
-    ),
-    (
-        _ET_EVAL_D1,
-        _S_EVAL_D1,
-        "Evaluation D1: Participants and data sources",
-        "PROBAST+AI model-evaluation domain 1 — risk of bias from participant "
-        "selection and data sources.",
-        _D1_QUESTIONS,
-        (
-            (
-                _F_ROB,
-                "Risk of bias",
-                "Risk of bias introduced by the selection of participants and data sources",
-            ),
-            _APPLICABILITY_D1,
-        ),
-    ),
-    (
-        _ET_EVAL_D2,
-        _S_EVAL_D2,
-        "Evaluation D2: Predictors",
-        "PROBAST+AI model-evaluation domain 2 — risk of bias from the predictors "
-        "or their assessment.",
-        _D2_QUESTIONS,
-        (
-            (
-                _F_ROB,
-                "Risk of bias",
-                "Risk of bias introduced by the predictors or their assessment",
-            ),
-            _APPLICABILITY_D2,
-        ),
-    ),
-    (
-        _ET_EVAL_D3,
-        _S_EVAL_D3,
-        "Evaluation D3: Outcome",
-        "PROBAST+AI model-evaluation domain 3 — risk of bias from the outcome or "
-        "its determination.",
-        _D3_QUESTIONS,
-        (
-            (
-                _F_ROB,
-                "Risk of bias",
-                "Risk of bias introduced by the outcome or its determination",
-            ),
-            _APPLICABILITY_D3,
-        ),
-    ),
-    (
-        _ET_EVAL_D4_A,
-        _S_EVAL_D4_A,
-        "Evaluation D4: Analysis (apparent performance)",
-        "PROBAST+AI model-evaluation domain 4, judged for APPARENT performance "
-        "(estimated on the same data used for development). Leave blank when the "
-        "study reports no apparent performance.",
-        _EVAL_D4_GATE + _EVAL_D4_CORE + _EVAL_D4_PERFORMANCE,
-        (_ROB_ANALYSIS,),
-    ),
-    (
-        _ET_EVAL_D4_I,
-        _S_EVAL_D4_I,
-        "Evaluation D4: Analysis (internal validation)",
-        "PROBAST+AI model-evaluation domain 4, judged for INTERNAL validation "
-        "(resampling — cross-validation or bootstrap — within the development "
-        "data). Leave blank when the study reports none.",
-        _EVAL_D4_CORE + _EVAL_D4_INTERNAL_ONLY + _EVAL_D4_PERFORMANCE,
-        (_ROB_ANALYSIS,),
-    ),
-    (
-        _ET_EVAL_D4_E,
-        _S_EVAL_D4_E,
-        "Evaluation D4: Analysis (external validation)",
-        "PROBAST+AI model-evaluation domain 4, judged for EXTERNAL validation "
-        "(participants not used for development). Leave blank when the study "
-        "reports none.",
-        _EVAL_D4_CORE + _EVAL_D4_PERFORMANCE,
-        (_ROB_ANALYSIS,),
-    ),
-)
+    )
 
 
-def _judgment_field(eid: UUID, judgment: _Judgment, sort: int) -> ExtractionField:
-    """One PROBAST+AI domain judgment (Low / High / Unclear).
+def _sq(eid: UUID, question: _Question, sort: int) -> ExtractionField:
+    name, text, criterion = question
+    conditional = name in _NA_QUESTIONS
+    return _signaling(
+        eid,
+        name,
+        text,
+        sort,
+        _PROBAST_SIGNALING,
+        allows_not_applicable=conditional,
+        llm=criterion + (_ANSWER_INSTRUCTION_NA if conditional else _ANSWER_INSTRUCTION),
+    )
 
-    Unlike ``_domain_judgment`` (PROBAST / QUADAS-2), the judgment NAME varies by
-    part: the development part judges "Quality", the evaluation part judges
-    "Risk of bias". The QA form detects a judgment by its Low/High/Unclear answer
-    set rather than by name, so honest names cost nothing.
-    """
-    name, label, official_text = judgment
+
+def _judgment(eid: UUID, name: str, label: str, official_text: str, sort: int) -> ExtractionField:
+    """A domain judgment: assessor-owned, so NO llm_description — the derived
+    default (``signaling_worst``) recommends, the assessor records."""
     return _field(
         eid,
         name,
@@ -492,95 +176,450 @@ def _judgment_field(eid: UUID, judgment: _Judgment, sort: int) -> ExtractionFiel
         "select",
         sort,
         allowed=_PROBAST_JUDGMENT,
+        llm=None,
+    )
+
+
+def _rationale(
+    eid: UUID, name: str, label: str, sort: int, *, llm: str | None = None
+) -> ExtractionField:
+    return _field(eid, name, label, label, "text", sort, is_required=False, llm=llm)
+
+
+def _applicability(eid: UUID, official_text: str, aspect: str, sort: int) -> ExtractionField:
+    """Applicability: a direct Low/High/Unclear judgment against the Step-1
+    PICOTS (the project template's ✨ instruction) — AI-proposable."""
+    return _field(
+        eid,
+        _F_APPLICABILITY,
+        "Applicability concerns",
+        official_text,
+        "select",
+        sort,
+        allowed=_PROBAST_JUDGMENT,
         llm=(
-            f"Domain judgment (not a signaling question): {official_text}. "
-            "Aggregate the answers and evidence of this domain's signaling "
-            "questions — N/PN signal a relevant concern; a no-information answer "
-            "that prevents judging leads to Unclear; a legitimate not-applicable "
-            "does not count against the domain; Low when nothing relevant is "
-            "signalled. This is a judgment, not a count: a single serious flaw is "
-            "enough for High. If the article reports more than one eligible "
-            "model, judge the WORST case among them and name that model in your "
-            "reasoning. Answer Low, High or Unclear."
+            "Applicability judgment (not aggregated from signaling questions): "
+            f"judge whether {aspect} match the review question and the "
+            "assessor's intended use of the prediction model, as stated in the "
+            "review's general instructions (the Step-1 PICOTS). Answer Low, "
+            "High or Unclear; mark no information when the article gives too "
+            "little to judge."
         ),
     )
 
 
-# ---------------------------------------------------------------------------
-# Derivation spec — computed overalls (Moons 2025 step 4: worst domain).
-#
-# Seeded onto the template's `schema` JSONB and consumed by
-# `derived_judgment_service`, the single implementation shared by the run-view
-# payload and the xlsx export. `rule` is declared even though `worst_domain` is
-# currently the only supported one, so a future second rule fails loudly rather
-# than being silently treated as worst-domain.
-# ---------------------------------------------------------------------------
+def _applicability_rationale(eid: UUID, aspect: str, sort: int) -> ExtractionField:
+    return _rationale(
+        eid,
+        "applicability_concerns_rationale",
+        "Rationale of applicability rating",
+        sort,
+        llm=(
+            "Rationale for the applicability judgment: summarise, citing the "
+            f"article, how {aspect} match or diverge from the review question "
+            "in the general instructions."
+        ),
+    )
 
-_PAI_DERIVED_JUDGMENTS: list[dict[str, Any]] = [
-    {
-        "id": "dev_overall_quality",
-        "label": "Overall quality (development)",
-        "rule": "worst_domain",
-        "inputs": [
-            {"section": _S_DEV_D1, "field": _F_QUALITY},
-            {"section": _S_DEV_D2, "field": _F_QUALITY},
-            {"section": _S_DEV_D3, "field": _F_QUALITY},
-            {"section": _S_DEV_D4, "field": _F_QUALITY},
-        ],
-    },
-    {
-        "id": "dev_overall_applicability",
-        "label": "Overall applicability (development)",
-        "rule": "worst_domain",
-        "inputs": [
-            {"section": _S_DEV_D1, "field": _F_APPLICABILITY},
-            {"section": _S_DEV_D2, "field": _F_APPLICABILITY},
-            {"section": _S_DEV_D3, "field": _F_APPLICABILITY},
-        ],
-    },
-    {
-        "id": "eval_overall_rob",
-        "label": "Overall risk of bias (evaluation)",
-        "rule": "worst_domain",
-        "inputs": [
-            {"section": _S_EVAL_D1, "field": _F_ROB},
-            {"section": _S_EVAL_D2, "field": _F_ROB},
-            {"section": _S_EVAL_D3, "field": _F_ROB},
-            {
-                # Domain 4 collapses across the reported performance types
-                # before entering the overall: unreported types are ignored.
-                # The label names the DOMAIN (the three sections are one domain
-                # split by performance type), so the client's per-domain
-                # breakdown reads as the instrument does.
-                "collapse": "worst_of",
-                "label": "Evaluation D4: Analysis",
-                "inputs": [
-                    {"section": _S_EVAL_D4_A, "field": _F_ROB},
-                    {"section": _S_EVAL_D4_I, "field": _F_ROB},
-                    {"section": _S_EVAL_D4_E, "field": _F_ROB},
-                ],
-            },
-        ],
-    },
-    {
-        "id": "eval_overall_applicability",
-        "label": "Overall applicability (evaluation)",
-        "rule": "worst_domain",
-        "inputs": [
-            {"section": _S_EVAL_D1, "field": _F_APPLICABILITY},
-            {"section": _S_EVAL_D2, "field": _F_APPLICABILITY},
-            {"section": _S_EVAL_D3, "field": _F_APPLICABILITY},
-        ],
-    },
-]
+
+def _d123_fields(
+    eid: UUID,
+    *,
+    lead_describes: tuple[tuple[str, str], ...],
+    questions: tuple[_Question, ...],
+    judgment_name: str,
+    judgment_label: str,
+    judgment_official: str,
+    rationale_label: str,
+    app_describe: tuple[str, str] | None,
+    app_official: str,
+    app_aspect: str,
+) -> list[ExtractionField]:
+    """One D1–D3 domain in the form's order: describes → SQs → judgment →
+    rationale → (applicability describe →) applicability → rationale."""
+    rows: list[ExtractionField] = []
+    sort = 0
+    for name, prompt in lead_describes:
+        rows.append(_describe(eid, name, prompt, sort))
+        sort += 1
+    for question in questions:
+        rows.append(_sq(eid, question, sort))
+        sort += 1
+    rows.append(_judgment(eid, judgment_name, judgment_label, judgment_official, sort))
+    sort += 1
+    rows.append(_rationale(eid, f"{judgment_name}_rationale", rationale_label, sort))
+    sort += 1
+    if app_describe is not None:
+        rows.append(_describe(eid, app_describe[0], app_describe[1], sort))
+        sort += 1
+    rows.append(_applicability(eid, app_official, app_aspect, sort))
+    sort += 1
+    rows.append(_applicability_rationale(eid, app_aspect, sort))
+    return rows
+
+
+def _scope_fields(eid: UUID) -> list[ExtractionField]:
+    return [
+        _field(
+            eid,
+            "study_type",
+            "Study type",
+            "Step 2: classification of the study — model development only, "
+            "model evaluation only, or a combination.",
+            "select",
+            0,
+            # {value,label} option envelopes: the stored codes stay the
+            # spec-pinned machine values; the UI renders the labels
+            # (FieldValueEditor + optionLabelMap support this natively).
+            allowed=[
+                {"value": "development_only", "label": "Development only"},
+                {"value": "evaluation_only", "label": "Evaluation only"},
+                {"value": "combination", "label": "Combination"},
+            ],
+            llm=(
+                "Step 2 classification: does the publication develop a "
+                "prediction model without evaluation (development_only), "
+                "evaluate one or more existing models (evaluation_only), or "
+                "both (combination)? Base the answer on what the article "
+                "actually reports."
+            ),
+        ),
+        _field(
+            eid,
+            "models_of_interest",
+            "Model(s) of interest",
+            "Step 3: the prediction model(s) of interest this assessment covers.",
+            "text",
+            1,
+            is_required=False,
+            llm=(
+                "Name the prediction model(s) of interest this assessment "
+                "covers, as reported by the article (Step 3 header)."
+            ),
+        ),
+        _field(
+            eid,
+            "outcome_of_interest",
+            "Outcome of interest",
+            "Step 3: the outcome of interest this assessment covers.",
+            "text",
+            2,
+            is_required=False,
+            llm=(
+                "Name the outcome of interest this assessment covers, as "
+                "reported by the article (Step 3 header)."
+            ),
+        ),
+    ]
+
+
+def _dev_d4_fields(eid: UUID) -> list[ExtractionField]:
+    rows: list[ExtractionField] = []
+    sort = 0
+    for name, prompt in (
+        (
+            "desc_sample_numbers",
+            "Describe the number of participants and the number of outcome "
+            "events available for the model development",
+        ),
+        (
+            "desc_model_development",
+            "Describe how the model was developed, including the modelling "
+            "technique, predictor selection, and hyperparameter tuning",
+        ),
+        (
+            "desc_performance_measures",
+            "Describe the performance measures of the model as reported for the development data",
+        ),
+        (
+            "desc_missing_data",
+            "Describe how missing data were handled in the model development",
+        ),
+    ):
+        rows.append(_describe(eid, name, prompt, sort))
+        sort += 1
+    for question in _DEV_D4_QUESTIONS:
+        rows.append(_sq(eid, question, sort))
+        sort += 1
+    rows.append(
+        _judgment(
+            eid,
+            _F_QUALITY,
+            "Quality",
+            "Concern regarding quality of the analysis",
+            sort,
+        )
+    )
+    sort += 1
+    rows.append(_rationale(eid, f"{_F_QUALITY}_rationale", _RATIONALE_QUALITY, sort))
+    return rows
+
+
+def _eval_d4_type_fields(eid: UUID, questions: tuple[_Question, ...]) -> list[ExtractionField]:
+    return [_sq(eid, question, sort) for sort, question in enumerate(questions)]
+
+
+def _eval_d4_judgment_fields(eid: UUID) -> list[ExtractionField]:
+    rows: list[ExtractionField] = []
+    sort = 0
+    for name, prompt in (
+        (
+            "desc_sample_numbers",
+            "Describe the number of participants and outcome events available "
+            "for the model evaluation",
+        ),
+        (
+            "desc_performance_measures",
+            "Describe the performance measures of the model as reported for the evaluation",
+        ),
+        (
+            "desc_excluded_participants",
+            "Describe any participants who were excluded from the evaluation analysis",
+        ),
+        (
+            "desc_missing_data",
+            "Describe how missing data were handled in the evaluation analysis",
+        ),
+    ):
+        rows.append(_describe(eid, name, prompt, sort))
+        sort += 1
+    rows.append(
+        _judgment(
+            eid,
+            _F_ROB,
+            "Risk of bias",
+            "Risk of bias introduced by the analysis",
+            sort,
+        )
+    )
+    sort += 1
+    rows.append(_rationale(eid, f"{_F_ROB}_rationale", _RATIONALE_ROB, sort))
+    return rows
+
+
+def _summary_fields(eid: UUID) -> list[ExtractionField]:
+    rows: list[ExtractionField] = []
+    for sort, (name, label) in enumerate(
+        (
+            ("summary_quality_development", "Summary of quality of the model development"),
+            ("summary_rob_evaluation", "Summary of risk of bias of the model evaluation"),
+            (
+                "summary_applicability_development",
+                "Summary of applicability of the model development",
+            ),
+            (
+                "summary_applicability_evaluation",
+                "Summary of applicability of the model evaluation",
+            ),
+        )
+    ):
+        rows.append(_rationale(eid, name, label, sort))
+    return rows
+
+
+# (entity id, machine name, label, description, field builder)
+_SECTIONS: tuple[tuple[UUID, str, str, str, Any], ...] = (
+    (
+        _et_id(1),
+        _S_SCOPE,
+        "Assessment scope",
+        "Steps 2–3 of the PROBAST+AI assessment: classify the study "
+        "(development / evaluation / combination) and name the model(s) and "
+        "outcome of interest. Informational — blank sections of the unused "
+        "part simply stay blank.",
+        _scope_fields,
+    ),
+    (
+        _et_id(2),
+        _S_DEV_D1,
+        "Development D1: Participants and data sources",
+        "PROBAST+AI model-development domain 1 — quality of participant "
+        "selection and data sources.",
+        lambda eid: _d123_fields(
+            eid,
+            lead_describes=(_DESC_DATA_SOURCES,),
+            questions=_D1_QUESTIONS,
+            judgment_name=_F_QUALITY,
+            judgment_label="Quality",
+            judgment_official=(
+                "Concern regarding quality of selection of participants and data sources"
+            ),
+            rationale_label=_RATIONALE_QUALITY,
+            app_describe=_DESC_SETTING_DATES,
+            app_official=_APP_OFFICIAL_D1,
+            app_aspect=_APP_ASPECT_D1,
+        ),
+    ),
+    (
+        _et_id(3),
+        _S_DEV_D2,
+        "Development D2: Predictors",
+        "PROBAST+AI model-development domain 2 — quality of the predictors and their assessment.",
+        lambda eid: _d123_fields(
+            eid,
+            lead_describes=(_DESC_PREDICTORS,),
+            questions=_D2_QUESTIONS,
+            judgment_name=_F_QUALITY,
+            judgment_label="Quality",
+            judgment_official=(
+                "Concern regarding the quality of the predictors or their assessment"
+            ),
+            rationale_label=_RATIONALE_QUALITY,
+            app_describe=None,
+            app_official=_APP_OFFICIAL_D2,
+            app_aspect=_APP_ASPECT_D2,
+        ),
+    ),
+    (
+        _et_id(4),
+        _S_DEV_D3,
+        "Development D3: Outcome",
+        "PROBAST+AI model-development domain 3 — quality of the outcome and its determination.",
+        lambda eid: _d123_fields(
+            eid,
+            lead_describes=(_DESC_OUTCOME,),
+            questions=_D3_QUESTIONS,
+            judgment_name=_F_QUALITY,
+            judgment_label="Quality",
+            judgment_official="Concern regarding quality of the outcome or its determination",
+            rationale_label=_RATIONALE_QUALITY,
+            app_describe=_DESC_OUTCOME_TIMING,
+            app_official=_APP_OFFICIAL_D3,
+            app_aspect=_APP_ASPECT_D3,
+        ),
+    ),
+    (
+        _et_id(5),
+        _S_DEV_D4,
+        "Development D4: Analysis",
+        "PROBAST+AI model-development domain 4 — quality of the analysis. "
+        "Applicability is not judged for domain 4.",
+        _dev_d4_fields,
+    ),
+    (
+        _et_id(6),
+        _S_EVAL_D1,
+        "Evaluation D1: Participants and data sources",
+        "PROBAST+AI model-evaluation domain 1 — risk of bias from participant "
+        "selection and data sources.",
+        lambda eid: _d123_fields(
+            eid,
+            lead_describes=(_DESC_DATA_SOURCES,),
+            questions=_D1_QUESTIONS,
+            judgment_name=_F_ROB,
+            judgment_label="Risk of bias",
+            judgment_official=(
+                "Risk of bias introduced by the selection of participants and data sources"
+            ),
+            rationale_label=_RATIONALE_ROB,
+            app_describe=_DESC_SETTING_DATES,
+            app_official=_APP_OFFICIAL_D1,
+            app_aspect=_APP_ASPECT_D1,
+        ),
+    ),
+    (
+        _et_id(7),
+        _S_EVAL_D2,
+        "Evaluation D2: Predictors",
+        "PROBAST+AI model-evaluation domain 2 — risk of bias from the "
+        "predictors or their assessment.",
+        lambda eid: _d123_fields(
+            eid,
+            lead_describes=(_DESC_PREDICTORS,),
+            questions=_D2_QUESTIONS,
+            judgment_name=_F_ROB,
+            judgment_label="Risk of bias",
+            judgment_official="Risk of bias introduced by the predictors or their assessment",
+            rationale_label=_RATIONALE_ROB,
+            app_describe=None,
+            app_official=_APP_OFFICIAL_D2,
+            app_aspect=_APP_ASPECT_D2,
+        ),
+    ),
+    (
+        _et_id(8),
+        _S_EVAL_D3,
+        "Evaluation D3: Outcome",
+        "PROBAST+AI model-evaluation domain 3 — risk of bias from the outcome "
+        "or its determination.",
+        lambda eid: _d123_fields(
+            eid,
+            lead_describes=(_DESC_OUTCOME,),
+            questions=_D3_QUESTIONS,
+            judgment_name=_F_ROB,
+            judgment_label="Risk of bias",
+            judgment_official="Risk of bias introduced by the outcome or its determination",
+            rationale_label=_RATIONALE_ROB,
+            app_describe=_DESC_OUTCOME_TIMING,
+            app_official=_APP_OFFICIAL_D3,
+            app_aspect=_APP_ASPECT_D3,
+        ),
+    ),
+    (
+        _et_id(9),
+        _S_EVAL_D4_A,
+        "Evaluation D4: Analysis (apparent performance)",
+        "PROBAST+AI model-evaluation domain 4, signaling questions for "
+        "APPARENT performance (estimated on the same data used for "
+        "development). Item 4.1 — whether the evaluation went beyond apparent "
+        "performance — is answered here ONCE for the whole domain, whatever "
+        "the study reports; only the remaining questions are left blank when "
+        "no apparent performance is reported. The domain judgment is recorded "
+        "once, in the Evaluation D4 judgment section.",
+        lambda eid: _eval_d4_type_fields(eid, _EVAL_D4_GATE + _EVAL_D4_CORE + _EVAL_D4_PERFORMANCE),
+    ),
+    (
+        _et_id(10),
+        _S_EVAL_D4_I,
+        "Evaluation D4: Analysis (internal validation)",
+        "PROBAST+AI model-evaluation domain 4, signaling questions for "
+        "INTERNAL validation (resampling — cross-validation or bootstrap — "
+        "within the development data). Leave blank when the study reports "
+        "none. The domain judgment is recorded once, in the Evaluation D4 "
+        "judgment section.",
+        lambda eid: _eval_d4_type_fields(
+            eid, _EVAL_D4_CORE + _EVAL_D4_INTERNAL_ONLY + _EVAL_D4_PERFORMANCE
+        ),
+    ),
+    (
+        _et_id(11),
+        _S_EVAL_D4_E,
+        "Evaluation D4: Analysis (external validation)",
+        "PROBAST+AI model-evaluation domain 4, signaling questions for "
+        "EXTERNAL validation (participants not used for development). Leave "
+        "blank when the study reports none. The domain judgment is recorded "
+        "once, in the Evaluation D4 judgment section.",
+        lambda eid: _eval_d4_type_fields(eid, _EVAL_D4_CORE + _EVAL_D4_PERFORMANCE),
+    ),
+    (
+        _et_id(12),
+        _S_EVAL_D4_J,
+        "Evaluation D4: Analysis — judgment",
+        "The single risk-of-bias judgment for evaluation domain 4, informed by "
+        "the signaling questions of every reported performance type, beside "
+        "the domain's describe boxes — one judgment per domain, exactly as "
+        "the official form.",
+        _eval_d4_judgment_fields,
+    ),
+    (
+        _et_id(13),
+        _S_OVERALL,
+        "Overall judgement",
+        "The four Step-4 summary boxes. The overall VALUES are computed from "
+        "the recorded domain judgments (worst domain) and never entered; each "
+        "pairs with an assessor summary box here.",
+        _summary_fields,
+    ),
+)
 
 
 async def seed_probast_ai(session: AsyncSession) -> None:
-    """Seeds the PROBAST+AI quality-assessment template (10 sections, 58 fields).
+    """Seeds the PROBAST+AI 2.0.0 quality-assessment template (13 sections,
+    95 fields).
 
     Idempotent by primary key. NOTE: an existing row is left untouched, so a
-    corrected ``derived_judgments`` spec requires ``make db-fresh`` (or a manual
-    UPDATE) — ``make db-seed`` alone will not install it.
+    corrected ``derived_judgments`` spec requires ``make db-fresh`` (or a
+    manual UPDATE) — ``make db-seed`` alone will not install it.
     """
     print("Seeding PROBAST+AI template...")
 
@@ -594,24 +633,27 @@ async def seed_probast_ai(session: AsyncSession) -> None:
             id=_PROBAST_AI_TEMPLATE_ID,
             name="PROBAST+AI",
             description=(
-                "PROBAST+AI — Prediction model Risk Of Bias ASsessment Tool for "
-                "regression- and AI/ML-based prediction models (Moons et al., "
-                "BMJ 2025). Model development is judged on Quality; model "
-                "evaluation is judged on Risk of Bias. Applicability is judged "
-                "on domains 1-3 of each part. Overall judgments are computed "
-                "from the domain judgments (worst domain), never entered."
+                "PROBAST+AI — Prediction model Risk Of Bias ASsessment Tool "
+                "for regression- and AI/ML-based prediction models (Moons et "
+                "al., BMJ 2025), digitizing the official form's flow: describe "
+                "the facts, answer the signaling questions, then record each "
+                "domain judgment — a derived default is computed from the "
+                "signaling answers, and diverging from it asks for the paired "
+                "rationale. Model development is judged on Quality; model "
+                "evaluation on Risk of Bias; applicability on domains 1-3 of "
+                "each part. The four overall judgments are computed from the "
+                "recorded domain judgments (worst domain), never entered, each "
+                "beside its Step-4 summary box."
             ),
             framework="CUSTOM",
-            version="1.0.0",
+            version="2.0.0",
             kind=TemplateKind.QUALITY_ASSESSMENT.value,
             schema_={"derived_judgments": _PAI_DERIVED_JUDGMENTS},
         )
     )
 
-    fields: list[ExtractionField] = []
-    for order, (eid, name, label, description, questions, judgments) in enumerate(
-        _SECTIONS, start=1
-    ):
+    n_fields = 0
+    for order, (eid, name, label, description, build) in enumerate(_SECTIONS, start=1):
         session.add(
             _entity_type_from_spec(
                 _EntitySpec(
@@ -627,21 +669,8 @@ async def seed_probast_ai(session: AsyncSession) -> None:
                 template_id=_PROBAST_AI_TEMPLATE_ID,
             )
         )
-        for sort, (q_name, q_text, criterion) in enumerate(questions):
-            fields.append(
-                _signaling(
-                    eid,
-                    q_name,
-                    q_text,
-                    sort,
-                    _PROBAST_SIGNALING,
-                    llm=criterion + _ANSWER_INSTRUCTION,
-                )
-            )
-        for offset, judgment in enumerate(judgments):
-            fields.append(_judgment_field(eid, judgment, len(questions) + offset))
+        for field in build(eid):
+            session.add(field)
+            n_fields += 1
 
-    for field in fields:
-        session.add(field)
-
-    print(f"  Created PROBAST+AI with {len(_SECTIONS)} entity types and {len(fields)} fields.")
+    print(f"  Created PROBAST+AI with {len(_SECTIONS)} entity types and {n_fields} fields.")

@@ -1,6 +1,6 @@
 import type { ExtractionRunStage } from '@/types/ai-extraction';
 
-export type StageNodeState = 'done' | 'current' | 'future' | 'cancelled';
+type StageNodeState = 'done' | 'current' | 'future' | 'cancelled';
 export type StageKey = 'extract' | 'consensus' | 'finalized';
 export interface StageNode {
   key: StageKey;

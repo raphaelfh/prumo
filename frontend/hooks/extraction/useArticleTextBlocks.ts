@@ -49,9 +49,10 @@ export function useArticleTextBlocks(
   articleFileId: string | null | undefined,
   options: UseArticleTextBlocksOptions = {},
 ) {
-  return useQuery({
+  const enabled = Boolean(articleFileId);
+  const query = useQuery({
     queryKey: articleKeys.textBlocks(articleFileId ?? ''),
-    enabled: Boolean(articleFileId),
+    enabled,
     staleTime: STALE_MS,
     refetchInterval: options.refetchInterval ?? false,
     queryFn: async (): Promise<ArticleTextBlock[]> => {
@@ -61,4 +62,16 @@ export function useArticleTextBlocks(
       return blocks ?? [];
     },
   });
+  // Only the two keys the document model reads (narrow return per
+  // useTemplateConfigDiff — spreading TanStack's tracked proxy would touch
+  // every key and re-render callers on isFetching churn they never display).
+  //
+  // isPending, not isLoading, gated by this hook's own enablement: "no data
+  // yet" must read as pending even while TanStack pauses an offline query
+  // (isLoading false), while a DISABLED query (isPending true forever) must
+  // not read as pending at all.
+  return {
+    data: query.data,
+    isPending: enabled && query.isPending,
+  };
 }

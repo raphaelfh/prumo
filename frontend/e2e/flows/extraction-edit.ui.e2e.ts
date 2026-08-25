@@ -110,16 +110,19 @@ test.describe("Extraction edit + autosave persists through HITL stack", () => {
 
     if (fieldType === "input") {
       await firstField.fill("e2e-edit-probe");
-      // Wait for the 3s debounce + a bit.
-      await page.waitForTimeout(4000);
     } else {
       await firstField.click();
       const option = page.locator("[role='option']").first();
       const optionCount = await option.count();
       test.skip(optionCount === 0, "Combobox opened but no options available");
       await option.click();
-      await page.waitForTimeout(4000);
     }
+
+    // Wait out the 600ms autosave debounce (`useAutoSaveProposals`'s
+    // default `debounceMs`, unoverridden by either run form) plus the POST
+    // round-trip. Deliberately generous — the assertion below is about
+    // persistence, not latency.
+    await page.waitForTimeout(4000);
 
     // Reload and confirm the autosave reached the API: the run detail
     // should now have at least one ReviewerDecision authored by the

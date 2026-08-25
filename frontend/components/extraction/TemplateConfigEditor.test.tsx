@@ -51,6 +51,11 @@ vi.mock('@/services/extractionFieldService', () => ({
   deleteField: vi.fn(),
   insertField: vi.fn(),
 }));
+// Heavy sibling with its own data path (config-status): stubbed as a
+// component, like TemplateConfigPublishControls below.
+vi.mock('@/components/extraction/template-config/TemplateExportButton', () => ({
+  TemplateExportButton: () => null,
+}));
 vi.mock('@/hooks/extraction/useTemplateRepublish', () => ({
   useTemplateConfigCaches: vi.fn(),
 }));
@@ -91,8 +96,12 @@ import {useInsertTemplateField} from '@/hooks/extraction/useInsertTemplateField'
 import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
 import {templateEntityTypesKeys} from '@/lib/query-keys/extraction';
-import {deleteField, insertField, validateFieldImpact} from '@/services/extractionFieldService';
-import type {FieldValidationResult} from '@/types/extraction';
+import {
+  deleteField,
+  insertField,
+  validateFieldImpact,
+  type FieldValidationResult,
+} from '@/services/extractionFieldService';
 
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 

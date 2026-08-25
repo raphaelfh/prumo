@@ -1,0 +1,86 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+
+  // Two gates run off this file (both must stay at zero — see
+  // scripts/verify_all.sh):
+  //   deadcode:knip             `knip`               tests count as consumers
+  //   deadcode:knip:production  `knip --production`  only production code does
+  // Production mode is what catches a whole feature going orphaned while its
+  // unit test keeps it "used" (it found the dead `useCreateRun` hook and the
+  // never-adopted `HeaderChip`). Everything below exists to keep that signal
+  // honest — each entry states which of the two modes it is for.
+
+  // Entry points.
+  // - scripts/*.mjs: Node scripts invoked from bash (verify_all.sh, CI), not
+  //   imported — knip cannot see shell callers.
+  // - frontend/pdf-viewer/index.ts: the `@prumo/pdf-viewer` package boundary
+  //   (aliased in tsconfig.json, tsconfig.app.json, vite.config.ts and
+  //   vitest.config.ts). Its README declares a stable, owned public surface
+  //   (`Viewer`/`CanvasLayer`/`TextLayer`, the UI shell, `useDocumentLoader`,
+  //   `usePageHandle`, `useViewerStore*`) with phases 3b/4/5/6 still pending,
+  //   so those exports are a documented contract, not dead code. The `!`
+  //   suffix keeps it an entry under --production, where the app currently
+  //   imports only 5 of them.
+  "entry": ["scripts/*.mjs", "frontend/pdf-viewer/index.ts!"],
+
+  // Project files. The first pattern must mirror the default knip computes:
+  // DEFAULT_EXTENSIONS (knip/dist/constants.js) PLUS the extensions its
+  // active compilers add — here `css`, from Tailwind/PostCSS. Do not narrow
+  // it. Dropping `css` makes default mode report tailwindcss,
+  // @tailwindcss/typography and tailwindcss-animate as unused
+  // devDependencies: fewer files scanned means fewer consumers found, so a
+  // narrowed pattern fails red, and that phantom trio is the tell.
+  // The rest are --production-only negations: a pattern that both starts and
+  // ends with `!` is dropped in default mode and applied as an exclusion in
+  // production mode. They carve out code that is, by definition, absent from
+  // the production graph, so production mode would otherwise report every
+  // file in them as unused. Default mode still checks all of it.
+  "project": [
+    "**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts,css}!",
+    // Vitest/Playwright infrastructure: fixtures, MSW handlers, setup files
+    // and shared test utilities, reached only from specs.
+    "!frontend/test/**!",
+    "!frontend/e2e/**!",
+    "!**/__tests__/**!",
+    // Documented as "Mock PDF engine for unit tests and Storybook" — it
+    // implements PDFEngine so specs can drive the viewer without pdfjs.
+    "!frontend/pdf-viewer/engines/mock/**!",
+    // Imported by vite.config.ts and vitest.config.ts; build tooling is not
+    // part of the production graph.
+    "!vite.shared-plugins.ts!"
+  ],
+
+  // An export that its own module also calls is live production code — only
+  // the `export` keyword faces the test. Without this, production mode
+  // reports ~32 such seams (`isMac`, called twice in platform.ts to pick
+  // ⌘ vs Ctrl; `normalizeForSearch`, called 3x in templateTree.ts; every
+  // `Params`/`Result` interface naming a live method's signature). "Fixing"
+  // those means either deleting shipping code or rewriting unit tests to
+  // reach helpers through a wider surface, so the gate would tax writing
+  // unit tests — backwards for a repo whose rule is test-first. Default mode
+  // is unaffected: it stays at zero either way.
+  "ignoreExportsUsedInFile": true,
+
+  // Exports a test must reach that production deliberately cannot, marked
+  // `@internal` at the declaration with a reason.
+  "tags": ["-@internal"],
+
+  // Generated files: schema.d.ts by scripts/generate_api_types.sh
+  // (openapi-typescript), supabase types.ts by `supabase gen types`
+  // (scripts/sync-remote-to-local.sh). Their top-level exports are the
+  // generators' fixed contract, not our code.
+  "ignore": [
+    "frontend/types/api/schema.d.ts",
+    "frontend/integrations/supabase/types.ts"
+  ],
+  // Invoked via npx inside scripts/generate_api_types.sh — a shell caller
+  // knip cannot see.
+  "ignoreDependencies": ["openapi-typescript"],
+  // Browser-runtime imports inside page.evaluate(), served by the Vite dev
+  // server at the repo root. Build-time resolution is impossible by design;
+  // both modules are also imported statically elsewhere, so they stay live.
+  "ignoreUnresolved": [
+    "/frontend/lib/extraction/valueUpdates.ts",
+    "/frontend/integrations/supabase/client.ts"
+  ]
+}

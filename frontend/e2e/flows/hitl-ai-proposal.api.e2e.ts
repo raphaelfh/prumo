@@ -1,12 +1,14 @@
 /**
  * AI proposal pipeline E2E.
  *
- * The HITL stack accepts proposals from three sources: `ai`, `human`,
- * and `system`. This test exercises the AI path end-to-end without
- * calling the LLM:
+ * No HTTP route writes proposals: the `/proposals` endpoint was removed once
+ * every source it accepted turned out to be forbidden (ADR-0019). `ai` and
+ * `system` rows are written in-process; `human` values go to /decisions. This
+ * test exercises the AI path end-to-end without calling the LLM:
  *   1. Create a Run for an article+template, advance to PROPOSAL.
- *   2. POST /v1/runs/{id}/proposals with `source='ai'` +
- *      `confidence_score` + `rationale`.
+ *   2. Assert the route is gone, then seed the row the way
+ *      SectionExtractionService writes it, with `confidence_score` +
+ *      `rationale`.
  *   3. Advance to REVIEW; record a `decision='accept_proposal'` keyed
  *      to the proposal_record_id.
  *   4. Advance through CONSENSUS → FINALIZED via manual_override
@@ -14,9 +16,9 @@
  *   5. Verify the published value matches what AI proposed.
  *
  * This is the missing piece that was previously only tested via the
- * `section_extraction_service` unit tests; it ensures the wire format
- * of `source='ai'` proposals + their `confidence_score` round-trip
- * through the API.
+ * `section_extraction_service` unit tests; it ensures a stored
+ * `source='ai'` proposal + its `confidence_score` round-trip through the
+ * read API and the decision/consensus chain.
  */
 
 import { expect, test } from "@playwright/test";
@@ -29,6 +31,7 @@ import {
   adminDelete,
   adminSelect,
   resolveActiveExtractionTemplateId,
+  seedProposals,
 } from "../_fixtures/supabase-admin";
 
 interface RunSummaryResponse {
@@ -158,8 +161,10 @@ test.describe("HITL AI proposal pipeline", () => {
     );
     expect(advRes.ok()).toBeTruthy();
 
-    // 3. Record an AI proposal.
-    const proposalRes = await request.post(
+    // 3a. There is no HTTP route to author a proposal at all (ADR-0019).
+    // Blind peers read AI rows unattributed, so a caller-authored one would be
+    // a forged model suggestion — confidence and rationale included.
+    const forged = await request.post(
       `${env.apiUrl}/api/v1/runs/${runBody.id}/proposals`,
       {
         headers: authHeaders(token, traceId),
@@ -167,17 +172,27 @@ test.describe("HITL AI proposal pipeline", () => {
           instance_id: instance.id,
           field_id: field.id,
           source: "ai",
-          proposed_value: { value: "ai-proposed" },
-          confidence_score: 0.87,
-          rationale: "E2E AI proposal",
+          proposed_value: { value: "forged-ai-suggestion" },
+          confidence_score: 0.99,
+          rationale: "looks authoritative",
         },
         timeout: 15000,
       },
     );
-    expect(proposalRes.ok()).toBeTruthy();
-    const proposal = (await parseEnvelope<ProposalRecordResponse>(proposalRes)).data;
-    expect(proposal.source).toBe("ai");
-    expect(proposal.confidence_score).toBeCloseTo(0.87, 2);
+    expect(forged.status()).toBe(404);
+
+    // 3b. Seed it the way the pipeline does.
+    const [proposalId] = await seedProposals([
+      {
+        runId: runBody.id,
+        instanceId: instance.id,
+        fieldId: field.id,
+        source: "ai",
+        value: "ai-proposed",
+        confidenceScore: 0.87,
+        rationale: "E2E AI proposal",
+      },
+    ]);
 
     // 4. Accept the AI proposal (recorded as a decision in extract).
     const decisionRes = await request.post(
@@ -188,7 +203,7 @@ test.describe("HITL AI proposal pipeline", () => {
           instance_id: instance.id,
           field_id: field.id,
           decision: "accept_proposal",
-          proposal_record_id: proposal.id,
+          proposal_record_id: proposalId,
         },
         timeout: 15000,
       },
@@ -234,10 +249,11 @@ test.describe("HITL AI proposal pipeline", () => {
     );
     const detail = (await parseEnvelope<RunDetailResponse>(detailRes)).data;
     expect(detail.run.stage).toBe("finalized");
-    const ai = detail.proposals.find((p) => p.source === "ai");
-    expect(ai).toBeTruthy();
+    const ai = detail.proposals.find((p) => p.id === proposalId);
+    expect(ai?.source).toBe("ai");
+    expect(ai?.confidence_score).toBeCloseTo(0.87, 2);
     const accept = detail.decisions.find((d) => d.decision === "accept_proposal");
-    expect(accept?.proposal_record_id).toBe(proposal.id);
+    expect(accept?.proposal_record_id).toBe(proposalId);
     const published = detail.published_states.find(
       (p) => p.instance_id === instance.id && p.field_id === field.id,
     );

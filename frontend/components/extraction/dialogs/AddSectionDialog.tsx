@@ -33,6 +33,7 @@ import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Textarea} from '@/components/ui/textarea';
 import {Switch} from '@/components/ui/switch';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/components/ui/select';
 import {Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,} from '@/components/ui/form';
 import {Info, Loader2, Plus} from 'lucide-react';
@@ -78,7 +79,12 @@ const getAddSectionSchema = () => z.object({
     is_required: z.boolean().default(false),
 });
 
-type AddSectionInput = z.infer<ReturnType<typeof getAddSectionSchema>>;
+/* `is_required` carries a `.default()`, so the schema's input and output
+ * types differ (optional before parse, guaranteed after). @hookform/resolvers
+ * v5 types that split faithfully, so useForm must be told both: values are
+ * the INPUT shape, handleSubmit receives the parsed OUTPUT. */
+type AddSectionInput = z.input<ReturnType<typeof getAddSectionSchema>>;
+type AddSectionOutput = z.output<ReturnType<typeof getAddSectionSchema>>;
 
 // =================== INTERFACES ===================
 
@@ -111,7 +117,7 @@ export function AddSectionDialog({
   const [autoGenerateName, setAutoGenerateName] = useState(true);
   const noun = mode.kind === 'perModel' ? mode.entryNoun : 'model';
 
-  const form = useForm<AddSectionInput>({
+  const form = useForm<AddSectionInput, unknown, AddSectionOutput>({
       resolver: zodResolver(getAddSectionSchema()),
     defaultValues: {
       name: '',
@@ -136,7 +142,7 @@ export function AddSectionDialog({
     }
   }, [label, autoGenerateName, form]);
 
-  const handleSubmit = async (data: AddSectionInput) => {
+  const handleSubmit = async (data: AddSectionOutput) => {
     setLoading(true);
 
     const result = await createSection({
@@ -235,11 +241,19 @@ export function AddSectionDialog({
                   <FormLabel className="flex items-center gap-2">
                       Technical name *
                     <div className="flex items-center gap-1">
-                      <Switch
-                        checked={autoGenerateName}
-                        onCheckedChange={setAutoGenerateName}
-                      />
-                      <span className="text-xs text-muted-foreground">Auto</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Switch
+                            aria-label={t('extraction', 'autoNameAriaLabel')}
+                            checked={autoGenerateName}
+                            onCheckedChange={setAutoGenerateName}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent>{t('extraction', 'autoNameTooltip')}</TooltipContent>
+                      </Tooltip>
+                      <span className="text-xs text-muted-foreground">
+                        {t('extraction', 'autoNameLabel')}
+                      </span>
                     </div>
                   </FormLabel>
                   <FormControl>

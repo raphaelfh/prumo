@@ -7,7 +7,7 @@
 /**
  * Base error for AI Extraction
  */
-export class AIExtractionError extends Error {
+class AIExtractionError extends Error {
   constructor(
     message: string,
     public code: string,
@@ -18,35 +18,7 @@ export class AIExtractionError extends Error {
   }
 }
 
-/**
- * Error when suggestion is not found
- */
-export class SuggestionNotFoundError extends AIExtractionError {
-  constructor(instanceId: string, fieldId: string) {
-    super(
-        `Suggestion not found for instance ${instanceId} and field ${fieldId}`,
-      'SUGGESTION_NOT_FOUND',
-      { instanceId, fieldId }
-    );
-    this.name = 'SuggestionNotFoundError';
-  }
-}
 
-/**
- * Error when there are no instances to extract
- */
-export class NoInstancesError extends AIExtractionError {
-  constructor(entityTypeId: string, entityTypeName?: string) {
-    super(
-      entityTypeName
-          ? `No instances found for section "${entityTypeName}". Create at least one instance before extracting.`
-          : `No instances found for this section. Create at least one instance before extracting.`,
-      'NO_INSTANCES',
-      { entityTypeId, entityTypeName }
-    );
-    this.name = 'NoInstancesError';
-  }
-}
 
 /**
  * Error when PDF is not found
@@ -62,27 +34,6 @@ export class PDFNotFoundError extends AIExtractionError {
   }
 }
 
-/**
- * Error when extracted field names do not match expected fields
- */
-export class FieldNameMismatchError extends AIExtractionError {
-  constructor(
-    unmatchedFields: string[],
-    expectedFields: string[],
-    suggestions?: string[]
-  ) {
-    const suggestionText = suggestions && suggestions.length > 0
-        ? ` Suggestions: ${suggestions.join(', ')}`
-      : '';
-    
-    super(
-        `Extracted fields do not match expected fields.${suggestionText} Check that template field names match exactly those returned by the AI.`,
-      'FIELD_NAME_MISMATCH',
-      { unmatchedFields, expectedFields, suggestions }
-    );
-    this.name = 'FieldNameMismatchError';
-  }
-}
 
 /**
  * Authentication error
@@ -97,15 +48,6 @@ export class AuthenticationError extends AIExtractionError {
   }
 }
 
-/**
- * Validation error
- */
-export class ValidationError extends AIExtractionError {
-  constructor(message: string, details?: unknown) {
-    super(message, 'VALIDATION_ERROR', details);
-    this.name = 'ValidationError';
-  }
-}
 
 /**
  * Erro de rede/API
@@ -124,7 +66,7 @@ export class APIError extends AIExtractionError {
 /**
  * Helper to determine if an error is AIExtractionError type
  */
-export function isAIExtractionError(error: unknown): error is AIExtractionError {
+function isAIExtractionError(error: unknown): error is AIExtractionError {
   return error instanceof AIExtractionError;
 }
 

@@ -13,15 +13,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from app.core.logging import get_logger
 from app.schemas.extraction_run import RunViewDerivedInput, RunViewDerivedJudgment
 from app.services.derived_judgment_service import (
     compute_derived_judgments,
     derived_spec,
-    spec_coordinates,
+    is_recommendation,
+    warn_dangling_spec_refs,
 )
-
-logger = get_logger(__name__)
 
 
 def _group_label(sections: tuple[str, ...], label_by_section: dict[str, str]) -> str:
@@ -79,44 +77,82 @@ def build_derived_judgments_payload(
     value_by_ids = {(v.instance_id, v.field_id): v.value for v in values}
 
     values_by_coord: dict[tuple[str, str], Any] = {}
-    known: set[tuple[str, str]] = set()
+    # Coordinate name -> (entity_type_id, field_id) from the frozen tree: the
+    # existence set for the dangling warning AND the resolver for the spec's
+    # target/rationale/summary pointers.
+    ids_by_coord: dict[tuple[str, str], tuple[Any, Any]] = {}
     label_by_section: dict[str, str] = {}
+    label_by_coord: dict[tuple[str, str], str] = {}
     for et in entity_types:
         instance_id = instance_by_entity_type.get(et.id)
         label_by_section[et.name] = getattr(et, "label", "") or et.name
         for field in et.fields:
-            known.add((et.name, field.name))
+            ids_by_coord[(et.name, field.name)] = (et.id, field.id)
+            label_by_coord[(et.name, field.name)] = getattr(field, "label", "") or field.name
             if instance_id is None:
                 continue
             raw = value_by_ids.get((instance_id, field.id))
             if raw is not None:
                 values_by_coord[(et.name, field.name)] = raw
 
-    # A coordinate the template no longer carries is a definition bug that would
-    # otherwise null an overall in silence: the spec is read live off the
-    # template, while the coordinates come from the frozen version snapshot.
-    unresolvable = sorted({c for c in spec_coordinates(spec) if c not in known})
-    if unresolvable:
-        logger.warning("qa_derived_spec_dangling_ref", coordinates=unresolvable)
+    # A coordinate the template no longer carries is a definition bug that
+    # would otherwise null an overall (or unpair a recommendation) in silence.
+    warn_dangling_spec_refs(spec, set(ids_by_coord))
 
-    return [
-        RunViewDerivedJudgment(
-            id=d.id,
-            label=d.label,
-            value=d.value,
-            # The spec's own name for a group wins; otherwise the label is
-            # derived from the sections behind the row, so the breakdown reads
-            # in the same words as the accordion the reviewer scrolls through.
-            inputs=[
-                RunViewDerivedInput(
-                    label=inp.label or _group_label(inp.sections, label_by_section),
-                    value=inp.value,
-                )
-                for inp in d.inputs
-            ],
+    def _pointer_field_ids(entry: Any, key: str) -> tuple[Any, Any]:
+        pointer = entry.get(key) if isinstance(entry, dict) else None
+        if not isinstance(pointer, dict):
+            return None, None
+        coord = (str(pointer.get("section", "")), str(pointer.get("field", "")))
+        return ids_by_coord.get(coord, (None, None))
+
+    # Pointer resolution is keyed by entry id: compute_derived_judgments skips
+    # malformed entries, so positional zipping against the spec would misalign.
+    entry_by_id = {str(e.get("id", "")): e for e in spec if isinstance(e, dict)}
+
+    def _input_label(inp: Any, *, recommendation: bool) -> str:
+        # The spec's own name for a group wins. A RECOMMENDATION's plain rows
+        # are individual signaling questions inside ONE section, so they are
+        # named after the QUESTION (field label) — the section label would
+        # repeat identically on every sibling row and leave the reviewer
+        # unable to tell which answer caused the default. Overalls keep the
+        # section (domain) name, which is the row's identity there.
+        if inp.label:
+            return str(inp.label)
+        if recommendation and inp.field and inp.sections:
+            question = label_by_coord.get((inp.sections[0], inp.field))
+            if question:
+                return question
+        return _group_label(inp.sections, label_by_section)
+
+    payload: list[RunViewDerivedJudgment] = []
+    for d in compute_derived_judgments(spec, values_by_coord):
+        entry = entry_by_id.get(d.id, {})
+        recommendation = is_recommendation(entry)
+        target_et_id, target_field_id = _pointer_field_ids(entry, "target")
+        _, rationale_field_id = _pointer_field_ids(entry, "rationale")
+        _, summary_field_id = _pointer_field_ids(entry, "summary")
+        payload.append(
+            RunViewDerivedJudgment(
+                id=d.id,
+                label=d.label,
+                value=d.value,
+                inputs=[
+                    RunViewDerivedInput(
+                        label=_input_label(inp, recommendation=recommendation),
+                        value=inp.value,
+                        contribution=inp.contribution,
+                        state=inp.state,
+                    )
+                    for inp in d.inputs
+                ],
+                target_entity_type_id=target_et_id,
+                target_field_id=target_field_id,
+                rationale_field_id=rationale_field_id,
+                summary_field_id=summary_field_id,
+            )
         )
-        for d in compute_derived_judgments(spec, values_by_coord)
-    ]
+    return payload
 
 
 def values_for_derivation(

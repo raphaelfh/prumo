@@ -81,16 +81,6 @@ export const MEMBER_ROLES: Record<
 export type Project = Database['public']['Tables']['projects']['Row'];
 
 /**
- * Type for Project insert
- */
-export type ProjectInsert = Database['public']['Tables']['projects']['Insert'];
-
-/**
- * Type for Project update
- */
-export type ProjectUpdate = Partial<Omit<Project, 'id' | 'created_at'>>;
-
-/**
  * Lean type for project lists.
  */
 export type ProjectListItem = Pick<
@@ -106,25 +96,6 @@ export type ProjectSummary = Pick<
     'id' | 'name' | 'description' | 'review_title' | 'condition_studied'
 >;
 
-/**
- * Full Project type with all settings
- * Kept for compatibility with existing code
- */
-export interface ProjectData extends Project {
-  review_rationale: string | null;
-  review_keywords: string[];
-  eligibility_criteria: EligibilityCriteria;
-  study_design: StudyDesign;
-  review_context: string | null;
-  search_strategy: string | null;
-  settings: ProjectSettings;
-}
-
-export interface ProjectSettings {
-  /** Per-kind: may a manager see other reviewers' values? Default (absent) = blind. */
-  managers_see_reviewers?: { extraction?: boolean; quality_assessment?: boolean };
-  [key: string]: Json | undefined;
-}
 
 export interface EligibilityCriteria {
   inclusion?: string[];
@@ -139,10 +110,3 @@ export interface StudyDesign {
   [key: string]: Json | undefined;
 }
 
-export interface ProjectConfigData {
-  description: string | null;
-  review_title: string | null;
-  condition_studied: string | null;
-  eligibility_criteria: EligibilityCriteria;
-  study_design: StudyDesign;
-}

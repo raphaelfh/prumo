@@ -12,10 +12,10 @@ from fastapi import APIRouter, Request, Response, status
 from fastapi.responses import JSONResponse
 from redis import Redis
 
+from app.api.deps.security import is_project_member
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
-from app.core.transactions import UnitOfWork
 from app.schemas.articles_export import (
     ExportCancelResponse,
     ExportRequest,
@@ -135,14 +135,12 @@ async def start_export(
             trace_id=trace_id,
         )
 
-    async with UnitOfWork(db) as uow:
-        is_member = await uow.project_members.is_member(project_id, user.sub)
-        if not is_member:
-            return ApiResponse.failure(
-                code="FORBIDDEN",
-                message="User is not a member of this project.",
-                trace_id=trace_id,
-            )
+    if not await is_project_member(db, project_id, user.sub):
+        return ApiResponse.failure(
+            code="FORBIDDEN",
+            message="User is not a member of this project.",
+            trace_id=trace_id,
+        )
 
     storage = create_storage_adapter(supabase)
     service = ArticlesExportService(

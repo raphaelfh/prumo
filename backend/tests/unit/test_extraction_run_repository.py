@@ -89,7 +89,8 @@ class TestRollbackAndFail:
 class TestCompleteRunMerge:
     """``complete_run`` MERGES results into the run's existing ``results`` JSONB
     (not REPLACE), so the provenance written at the proposal choke-point
-    (``_create_suggestions`` → ``merge_results``) survives completion. A REPLACE
+    (``_create_suggestions`` → ``merge_provenance_section``) survives completion.
+    A REPLACE
     would clobber it — the bug class this guards against.
     """
 

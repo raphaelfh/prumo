@@ -52,7 +52,6 @@ def _wide_layout(*, n_articles: int, n_subcols_each: int) -> ExportLayout:
         label="F",
         type=ExtractionFieldType.TEXT,
         allowed_values=(),
-        parent_section_id=sec_id,
     )
     section = SectionDescriptor(
         entity_type_id=sec_id,
@@ -67,7 +66,6 @@ def _wide_layout(*, n_articles: int, n_subcols_each: int) -> ExportLayout:
             article_id=uuid4(),
             header_label=f"A{i}",
             run_id=uuid4(),
-            run_stage=None,
             version_id=uuid4(),
             model_instances=(),
             section_instances={sec_id: tuple(uuid4() for _ in range(n_subcols_each))},
@@ -86,8 +84,6 @@ def _wide_layout(*, n_articles: int, n_subcols_each: int) -> ExportLayout:
         anonymize_reviewer_names=False,
         notes=ExportNotes(
             omitted_articles_by_stage={},
-            template_version_label="T v1",
-            export_mode_label="consensus",
             generated_at=datetime(2026, 6, 14, tzinfo=UTC),
         ),
         value_map={},

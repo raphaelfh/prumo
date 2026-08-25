@@ -1,7 +1,15 @@
 import * as React from "react";
 import * as LabelPrimitive from "@radix-ui/react-label";
 import {Slot} from "@radix-ui/react-slot";
-import {Controller, ControllerProps, FieldPath, FieldValues, FormProvider, useFormContext} from "react-hook-form";
+import {
+  Controller,
+  ControllerProps,
+  FieldPath,
+  FieldValues,
+  FormProvider,
+  useFormContext,
+  useFormState,
+} from "react-hook-form";
 
 import {cn} from "@/lib/utils";
 import {Label} from "@/components/ui/label";
@@ -33,7 +41,12 @@ const FormField = <
 const useFormField = () => {
   const fieldContext = React.useContext(FormFieldContext);
   const itemContext = React.useContext(FormItemContext);
-  const { getFieldState, formState } = useFormContext();
+  const { getFieldState } = useFormContext();
+  // Must be useFormState, NOT useFormContext().formState: that proxy only
+  // subscribes the component that called useForm, and react-compiler memoizes
+  // the parent's JSX on a stable `form`, so the error never reaches here.
+  // Worked example: components/ui/form.validation.test.tsx.
+  const formState = useFormState({ name: fieldContext.name });
 
   const fieldState = getFieldState(fieldContext.name, formState);
 
@@ -126,4 +139,4 @@ const FormMessage = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<
 );
 FormMessage.displayName = "FormMessage";
 
-export { useFormField, Form, FormItem, FormLabel, FormControl, FormDescription, FormMessage, FormField };
+export {  Form, FormItem, FormLabel, FormControl, FormDescription, FormMessage, FormField };

@@ -7,7 +7,7 @@ import {FilterCategoricalField} from './FilterCategoricalField';
 import {FilterNumericRangeField} from './FilterNumericRangeField';
 import {FilterFacetMultiSelectField} from './FilterFacetMultiSelectField';
 
-export interface FacetedValuesMap {
+interface FacetedValuesMap {
     [fieldId: string]: { value: string; count: number }[];
 }
 

@@ -28,7 +28,7 @@ from app.schemas.common import ApiResponse
 from app.schemas.extraction_run import ArticleRunRef, FormRunsRequest, RunSummaryResponse
 from app.schemas.extraction_suggestion import AISuggestionHistoryItem, AISuggestionsResponse
 from app.services.article_file_service import ArticleFileService
-from app.services.citation_read_service import ArticleNotFoundError, get_article_project_id
+from app.services.article_read_service import ArticleNotFoundError, get_article_project_id
 from app.services.extraction_run_read_service import (
     find_finalized_run,
     resolve_form_runs,

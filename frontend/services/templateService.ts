@@ -2,8 +2,10 @@
  * Template structure CRUD service (entity-types, sections).
  *
  * IO for template configuration: loading entity types, updating labels,
- * adding/removing sections, creating custom templates.  Article-list
- * queries live in articlesService.ts; auth queries in authService.ts.
+ * adding/removing sections.  Creating a template (from scratch, from the
+ * catalogue, or from a file) is server-authoritative and lives in
+ * templateImportService.ts; article-list queries live in articlesService.ts;
+ * auth queries in authService.ts.
  *
  * Section WRITES (create/rename/delete) go through apiClient onto the
  * typed B-7 endpoints; the reads stay PostgREST until the read-path
@@ -32,7 +34,6 @@ export type RepublishTemplateVersionResponse =
 export type RepublishTemplateVersionRequest =
   components['schemas']['RepublishTemplateVersionRequest'];
 
-export type TemplateChangeAck = components['schemas']['TemplateChangeAck'];
 
 export type TemplateConfigStatus =
   components['schemas']['TemplateConfigStatusRead'];
@@ -437,54 +438,6 @@ export async function deleteSection(
       throw error;
     }
   }, 'deleteSection');
-}
-
-// --- Custom template creation ---
-
-export interface CreateCustomTemplateParams {
-  projectId: string;
-  name: string;
-  description?: string | null;
-  framework: 'CUSTOM' | 'CHARMS' | 'PICOS';
-  createdBy: string;
-}
-
-export interface CreatedTemplate {
-  id: string;
-  name: string;
-}
-
-/**
- * Insert a new project_extraction_templates row.
- * NOTE: caller toasts success ("${name}" created) + info (add sections).
- */
-export async function createCustomTemplate(
-  params: CreateCustomTemplateParams,
-): Promise<ErrorResult<CreatedTemplate>> {
-  return toResult(async () => {
-    const {data: template, error} = await supabase
-      .from('project_extraction_templates')
-      .insert({
-        project_id: params.projectId,
-        name: params.name,
-        description: params.description,
-        framework: params.framework,
-        version: '1.0.0',
-        schema: {
-          description: params.description || '',
-          custom: true,
-          created_via_ui: true,
-        },
-        is_active: true,
-        created_by: params.createdBy,
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    return {id: template.id, name: template.name} satisfies CreatedTemplate;
-  }, 'createCustomTemplate');
 }
 
 // --- Global templates ---

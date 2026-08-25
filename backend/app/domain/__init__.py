@@ -1,5 +1,5 @@
 """
 Domain Layer.
 
-Contem domain events, entities and value objects.
+Contem entities and value objects shared across layers.
 """

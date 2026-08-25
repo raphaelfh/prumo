@@ -48,7 +48,7 @@ const LABEL_BY_VALUE: Record<string, string> = Object.fromEntries(
     ZOTERO_ITEM_TYPES.map((t) => [t.value, t.label])
 );
 
-export const ZOTERO_ITEM_TYPE_VALUES = new Set(ZOTERO_ITEM_TYPES.map((t) => t.value));
+const ZOTERO_ITEM_TYPE_VALUES = new Set(ZOTERO_ITEM_TYPES.map((t) => t.value));
 
 /** Sentinel for Select when value is not a known Zotero key (e.g. RIS TY code). */
 export const ITEM_TYPE_CUSTOM_SELECT_VALUE = '__custom_item_type__';

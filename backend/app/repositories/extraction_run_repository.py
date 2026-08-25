@@ -105,9 +105,9 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         """Mark a run COMPLETED, shallow-merging *results* into its ``results`` JSONB.
 
         MERGE (not REPLACE) so run-level data already recorded — notably the
-        ``provenance`` snapshot the proposal choke-point (``_create_suggestions``
-        → ``merge_results``) writes — survives completion. A REPLACE would clobber
-        it. Callers whose run still has empty ``results`` (model extraction, the
+        ``provenance`` snapshot the proposal choke-point
+        (``_create_suggestions`` → ``merge_provenance_section``) writes —
+        survives completion. A REPLACE would clobber it. Callers whose run still has empty ``results`` (model extraction, the
         batch primary run) are unaffected: merging into ``{}`` equals a replace.
 
         Args:
@@ -134,35 +134,6 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         )
         return run
 
-    async def merge_results(
-        self,
-        run_id: UUID,
-        patch: dict[str, Any],
-    ) -> ExtractionRun | None:
-        """Shallow-merge *patch* into the run's ``results`` JSONB; keep status.
-
-        The session-run extraction path (``extract_section`` / ``extract_for_run``
-        on a run the HITL session owns) must keep the run alive in EXTRACT, so it
-        cannot call ``complete_run`` (which marks the run COMPLETED). This lets it
-        still persist run-level data — notably ``provenance`` (how the suggestions
-        were generated) — so the review UI's "How this was generated" disclosure
-        has data to show.
-
-        Args:
-            run_id: the run to update.
-            patch: top-level keys to merge into ``results``.
-
-        Returns:
-            The updated ExtractionRun, or None if the run does not exist.
-        """
-        run = await self.get_by_id(run_id)
-        if run is None:
-            return None
-        # Reassign (not in-place mutate) so SQLAlchemy tracks the JSONB change.
-        run.results = {**(run.results or {}), **patch}
-        await self.db.flush()
-        return run
-
     async def merge_provenance_section(
         self,
         run_id: UUID,
@@ -174,10 +145,10 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
 
         Row-locked read-modify-write: concurrent single-section Celery tasks on
         the same run serialize here instead of last-write-wins clobbering each
-        other's section (``merge_results`` is shallow and the sequential tests
-        cannot cover that race — the lock is the guarantee). Sibling sections and
-        any pre-existing flat legacy keys are preserved. Reassign (not mutate) so
-        SQLAlchemy tracks the JSONB change.
+        other's section (a shallow run-level merge could not, and the
+        sequential tests cannot cover that race — the lock is the guarantee).
+        Sibling sections and any pre-existing flat legacy keys are preserved.
+        Reassign (not mutate) so SQLAlchemy tracks the JSONB change.
 
         Args:
             run_id: the run to update.
@@ -368,57 +339,6 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
             query = query.where(ExtractionRun.status == status.value)
 
         query = query.order_by(ExtractionRun.created_at.desc())
-
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
-
-    async def get_latest_by_article(
-        self,
-        article_id: UUID,
-        stage: ExtractionRunStage,
-    ) -> ExtractionRun | None:
-        """
-        Fetch the most recent run of an article for a stage.
-
-        Args:
-            article_id: article.
-            stage: run stage.
-
-        Returns:
-            The most recent ExtractionRun, or None.
-        """
-        result = await self.db.execute(
-            select(ExtractionRun)
-            .where(ExtractionRun.article_id == article_id)
-            .where(ExtractionRun.stage == stage.value)
-            .order_by(ExtractionRun.created_at.desc())
-            .limit(1)
-        )
-        return result.scalar_one_or_none()
-
-    async def get_by_project(
-        self,
-        project_id: UUID,
-        status: ExtractionRunStatus | None = None,
-        limit: int = 50,
-    ) -> list[ExtractionRun]:
-        """
-        List runs of a project.
-
-        Args:
-            project_id: project.
-            status: filter by status (optional).
-            limit: result limit.
-
-        Returns:
-            List of runs.
-        """
-        query = select(ExtractionRun).where(ExtractionRun.project_id == project_id)
-
-        if status:
-            query = query.where(ExtractionRun.status == status.value)
-
-        query = query.order_by(ExtractionRun.created_at.desc()).limit(limit)
 
         result = await self.db.execute(query)
         return list(result.scalars().all())

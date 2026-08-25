@@ -4,12 +4,10 @@ Project Repository.
 Project and membership persistence layer.
 """
 
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models.project import Project, ProjectMember, ProjectMemberRole
 from app.repositories.base import BaseRepository
@@ -24,32 +22,6 @@ class ProjectRepository(BaseRepository[Project]):
 
     def __init__(self, db: AsyncSession):
         super().__init__(db, Project)
-
-    async def get_by_org(
-        self,
-        org_id: UUID | str,
-        *,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> list[Project]:
-        """
-        List projects for an organization.
-
-        Args:
-            org_id: Organization ID.
-            skip: Pagination offset.
-            limit: Maximum number of results.
-
-        Returns:
-            Project list.
-        """
-        if isinstance(org_id, str):
-            org_id = UUID(org_id)
-
-        result = await self.db.execute(
-            select(Project).where(Project.org_id == org_id).offset(skip).limit(limit)
-        )
-        return list(result.scalars().all())
 
     async def get_by_user(
         self,
@@ -82,47 +54,6 @@ class ProjectRepository(BaseRepository[Project]):
         )
         return list(result.scalars().all())
 
-    async def get_with_members(self, project_id: UUID | str) -> Project | None:
-        """
-        Fetch a project with members loaded.
-
-        Args:
-            project_id: Project ID.
-
-        Returns:
-            Project with members or None.
-        """
-        if isinstance(project_id, str):
-            project_id = UUID(project_id)
-
-        result = await self.db.execute(
-            select(Project).options(selectinload(Project.members)).where(Project.id == project_id)
-        )
-        return result.scalar_one_or_none()
-
-    async def get_summary(self, project_id: UUID | str) -> dict[str, Any]:
-        """
-        Fetch project summary data for AI context.
-
-        Args:
-            project_id: Project ID.
-
-        Returns:
-            Dict with project context fields.
-        """
-        project = await self.get_by_id(project_id)
-
-        if not project:
-            raise ValueError(f"Project not found: {project_id}")
-
-        return {
-            "review_title": project.review_title,
-            "description": project.description,
-            "condition_studied": project.condition_studied,
-            "eligibility_criteria": project.eligibility_criteria,
-            "study_design": project.study_design,
-        }
-
 
 class ProjectMemberRepository(BaseRepository[ProjectMember]):
     """
@@ -133,27 +64,6 @@ class ProjectMemberRepository(BaseRepository[ProjectMember]):
 
     def __init__(self, db: AsyncSession):
         super().__init__(db, ProjectMember)
-
-    async def get_by_project(
-        self,
-        project_id: UUID | str,
-    ) -> list[ProjectMember]:
-        """
-        List members of a project.
-
-        Args:
-            project_id: Project ID.
-
-        Returns:
-            Member list.
-        """
-        if isinstance(project_id, str):
-            project_id = UUID(project_id)
-
-        result = await self.db.execute(
-            select(ProjectMember).where(ProjectMember.project_id == project_id)
-        )
-        return list(result.scalars().all())
 
     async def get_member(
         self,

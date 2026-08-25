@@ -61,6 +61,15 @@ jobs:
       - name: Run MyPy (no-new-errors ratchet)
         run: '{ uv run mypy app --ignore-missing-imports || true; } | uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline'
 
+      # Dead-code ratchet: same shape as the mypy ratchet above. Findings
+      # must be a subset of backend/.vulture_baseline (shrink-only — each
+      # entry is a framework false positive or unaudited debt). Config in
+      # [tool.vulture]; after deleting dead code, tighten in the same PR:
+      #   uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec --update
+      # Frontend counterpart: the knip zero-findings gate in Frontend Lint.
+      - name: Run Vulture (dead-code ratchet)
+        run: uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec
+
   # =================== ARCHITECTURAL FITNESS ===================
   # REQUIRED gate (promoted from advisory on 2026-05-20 after baselines hit
   # zero across every check). Runs every architectural fitness function from
@@ -120,7 +129,6 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres_test
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ENCRYPTION_KEY: test_encryption_key_32_characters
@@ -371,7 +379,6 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres_test
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ENCRYPTION_KEY: test_encryption_key_32_characters
@@ -452,6 +459,24 @@ jobs:
       - name: Type check (frontend)
         run: npm run typecheck
 
+      # Dead-code gate: ZERO knip findings (burned down 2026-08-23: 40 dead
+      # files, 11 unused deps, ~400 unused exports/types deleted). Legitimate
+      # exceptions live in knip.jsonc, each with a reason — extend that file,
+      # never let a finding through. Backend counterpart: the vulture ratchet
+      # in Backend Lint.
+      - name: Knip (dead code)
+        run: npm run deadcode
+
+      # Same config, only production code counts as a consumer. This is the
+      # gate for code a test keeps alive after its last real caller is gone —
+      # it found the orphaned useCreateRun hook, the never-adopted HeaderChip,
+      # and two stale duplicate types the tests were asserting against.
+      # A finding here is NOT automatically "delete it": see knip.jsonc for
+      # which shapes are real (dead feature) and which are configured away
+      # (test infra, package API, in-file test seams).
+      - name: Knip (dead code, production mode)
+        run: npm run deadcode:production
+
       # Manual memoization was removed on the assumption the React Compiler
       # runs (PR enabling it); a config refactor that silently drops the
       # compiler would degrade runtime perf with everything else green.
@@ -494,7 +519,6 @@ jobs:
     env:
       # App import only — stubs, no real services touched.
       SUPABASE_URL: http://localhost:54321
-      SUPABASE_ANON_KEY: stub-anon
       SUPABASE_SERVICE_ROLE_KEY: stub-service-role
       ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       DATABASE_URL: postgresql+asyncpg://stub

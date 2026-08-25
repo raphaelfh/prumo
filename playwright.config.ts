@@ -74,7 +74,6 @@ export default defineConfig({
       testMatch: "**/flows/**/*.e2e.ts",
       testIgnore: [
         "**/*.ui.e2e.ts",
-        "**/remote/**/*.e2e.ts",
         "**/flows/auth.e2e.ts",
         "**/flows/projects.e2e.ts",
         "**/flows/qa-*.e2e.ts",
@@ -120,12 +119,6 @@ export default defineConfig({
       // Cold-start Vite occasionally serves a stale module on the first
       // navigation; one retry covers that without papering over real bugs.
       retries: 1,
-      use: { ...devices["Desktop Chrome"] },
-    },
-    {
-      name: "remote-smoke",
-      testMatch: "**/remote/**/*.e2e.ts",
-      retries: 2,
       use: { ...devices["Desktop Chrome"] },
     },
   ],

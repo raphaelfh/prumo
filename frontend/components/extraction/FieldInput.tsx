@@ -117,6 +117,14 @@ export function FieldInput(props: FieldInputProps) {
     // shown by the disposition control below; typing a real value clears it.
   const activeReason = valueAbsentReason(value);
 
+    // A required field the reviewer has not answered yet. `isEmptyValue` is the
+    // shared oracle `computeRequiredFieldProgress` counts with, so this accent and
+    // the rail's "N required left" can never disagree — and a resolved ADR-0016
+    // marker reads as answered, so recording "No information" quiets the field.
+    // Suppressed on read-only runs: a fill-completion CTA is noise on a published
+    // view (same rule the nav rail footer already applies).
+  const pendingRequired = field.is_required && isEmptyValue(value) && !readOnly;
+
     // Value to display: the form value, and ONLY the form value. Falling back
     // to an accepted suggestion when the form value is empty made a cleared
     // field keep showing its old answer — no feedback that the clear landed,
@@ -200,7 +208,13 @@ export function FieldInput(props: FieldInputProps) {
       value={displayValue}
       onChange={handleChange}
       disabled={inputDisabled}
-      inputClassName={cn(validationError && 'border-destructive')}
+      inputClassName={cn(
+        // The empty box itself carries the accent, so the eye lands on the thing
+        // to type into — not just on the row gutter. A real validation error
+        // outranks it (listed last so tailwind-merge keeps the destructive border).
+        pendingRequired && 'border-warning/70 bg-warning/5',
+        validationError && 'border-destructive',
+      )}
       textAccentClassName={cn(hasAIPending && 'border-ai/60 bg-ai/5')}
     />
   );
@@ -247,12 +261,18 @@ export function FieldInput(props: FieldInputProps) {
       <div
           data-just-updated={justUpdated || undefined}
           data-field-row
+          data-pending-required={pendingRequired || undefined}
           className={cn(
             // Stack label over input on narrow containers; switch to a capped-left
             // two-column grid at @md so the PDF panel width (not the viewport)
             // drives the breakpoint.
             'grid grid-cols-1 @md:grid-cols-[minmax(0,232px)_1fr] items-start',
             'border-b border-border/40 last:border-b-0 transition-colors',
+            // Left gutter reserved on EVERY row (transparent when answered), so
+            // marking a row pending tints the rail instead of shifting the whole
+            // form sideways as fields get filled in.
+            'border-l-2 border-l-transparent pl-2',
+            pendingRequired && 'border-l-warning bg-warning/5',
             justUpdated && "field-just-updated",
             gap,
             containerPadding

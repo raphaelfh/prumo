@@ -24,22 +24,10 @@ import {llmEngine} from './llmEngine';
 
 export {
     common,
-    pages,
     auth,
     extraction,
     qa,
-    articles,
-    project,
     consensus,
-    user,
-    navigation,
-    layout,
-    patterns,
-    ui,
-    shared,
-    pdf,
-    runs,
-    parsing,
     templateConfig,
     llmEngine,
 };
@@ -77,4 +65,13 @@ export function t<N extends CopyNamespace>(ns: N, key: keyof (typeof copy)[N]): 
     return nsObj[key as string] ?? '';
 }
 
+/**
+ * The whole namespace tree. Production reads copy through `t(ns, key)` — this
+ * export exists so `copy-run-vocabulary.test.ts` can sweep *every* namespace
+ * for leaked vocabulary, including namespaces added after the test was
+ * written. Rebuilding the aggregate inside the test would silently stop
+ * covering new namespaces, which is the one thing that test is for.
+ *
+ * @internal
+ */
 export default copy;

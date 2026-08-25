@@ -58,8 +58,15 @@ import {
   useRun,
   useRunReviewers,
 } from "@/hooks/runs";
+// Direct import (not via the barrel): reaches the supabase client through
+// useProjectMembers, which the barrel deliberately keeps out.
+import { useExpectedReviewerCount } from "@/hooks/runs/useExpectedReviewerCount";
 import { ConsensusResolutionPanel } from "@/components/runs/ConsensusResolutionPanel";
-import { toConsensusValueEnvelope } from "@/lib/extraction/valueSemantics";
+import {
+  toConsensusValueEnvelope,
+  unwrapValueEnvelope,
+} from "@/lib/extraction/valueSemantics";
+import { isDomainOutOfScope, resolveStudyType } from "@/lib/qa/studyTypeScope";
 import { RunHeader } from "@/components/runs/header";
 // Imported directly (not via the RunHeader compound) so the shared compound
 // stays free of the supabase-reaching NotificationCenter/feedback deps.
@@ -74,6 +81,7 @@ import { useSidebar } from "@/contexts/SidebarContext";
 import { t } from "@/lib/copy";
 import { isRunEditable } from "@/lib/runs/editability";
 import { useAiLinkMaps } from "@/hooks/runs/useAiLinkMaps";
+import { useRunShortcuts } from "@/hooks/runs/useRunShortcuts";
 import { firstPendingInstanceId, scrollToSectionById } from "@/lib/runs/suggestionLocate";
 import {
   currentValuesToValuesMap,
@@ -186,6 +194,12 @@ export default function QualityAssessmentFullScreen() {
   const approveFinalize = useApproveFinalize(session?.runId ?? "");
   const reopenMutation = useReopenRun();
   const reviewerSummary = useReviewerSummary(runDetail);
+  // Role-derived "N of M reviewers" denominator — same source as the
+  // extraction header (never the run's inert hitl_config_snapshot).
+  const expectedReviewerCount = useExpectedReviewerCount(
+    projectId,
+    reviewerSummary.reviewers.length,
+  );
   const reviewerProfiles = useRunReviewers(session?.runId ?? null, {
     enabled: !!session?.runId,
   });
@@ -193,6 +207,10 @@ export default function QualityAssessmentFullScreen() {
   // Assess vs. compare view. Compare renders the shared, server-blinded
   // RunReviewerComparison (same component the extraction screen uses).
   const [viewMode, setViewMode] = useState<"assess" | "compare">("assess");
+  // ⌘K palette + the status popover it can open (the palette's "View run
+  // status" action drives the controlled RunStatus).
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
   const { userId } = useCurrentUser();
   const permissions = useComparisonPermissions(
     projectId ?? "",
@@ -225,14 +243,27 @@ export default function QualityAssessmentFullScreen() {
   // Hydrate during render when a new Run detail lands (instead of a
   // synchronous setState in an effect).
   const [prevRunDetail, setPrevRunDetail] = useState(runDetail);
+  // The run whose values the form currently holds. The #657/#671 pagers
+  // navigate WITHOUT remounting this page, so hydration must tell "same
+  // run, fresher detail" (merge — local unsaved edits win) from "another
+  // run" (replace — useExtractedValues' hydratedRunIdRef semantics).
+  // Carrying run-A coords into run-B's state made them look dirty against
+  // the new baseline, and autosave POSTed them at the wrong run (spec
+  // 2026-08-22 §7b, Q1). The old run's pending edit is carried by the
+  // autosave hook's run-keyed flush, never by state bleed-through.
+  const [hydratedRunId, setHydratedRunId] = useState<string | null>(null);
   if (runDetail !== prevRunDetail) {
     setPrevRunDetail(runDetail);
     if (runDetail) {
+      const isNewRun = hydratedRunId !== runDetail.run.id;
+      if (isNewRun) setHydratedRunId(runDetail.run.id);
       if (runDetail.run.stage === "finalized") {
         // Published truth replaces any local/proposal state (spec
         // 2026-07-02 D3): the read-only form shows what was published,
         // never the latest decision stream.
         setValues(publishedStatesToValuesMap(runDetail.published_states));
+      } else if (isNewRun) {
+        setValues({ ...loadedValues });
       } else {
         // D8: hydrate from the caller-scoped ``current_values`` resolution
         // (own decisions over own human proposals over system seeds) — the
@@ -370,27 +401,28 @@ export default function QualityAssessmentFullScreen() {
   // collapse the desktop sidebar (lg+); toggleMobile opens the drawer below lg.
   const { sidebarCollapsed, toggleSidebar, toggleMobile } = useSidebar();
 
-  // "\" toggles the source (PDF) panel. No J/K — QA has a single article.
-  // ``usePdfPanel`` returns a fresh object each render, so hold the toggle in a
-  // ref and register the listener ONCE (empty deps) to avoid re-binding every
-  // render. Cleanup via return, NOT try/finally (React Compiler).
-  const togglePdfRef = useRef(pdfPanelState.toggle);
-  useEffect(() => {
-    togglePdfRef.current = pdfPanelState.toggle;
-  }, [pdfPanelState.toggle]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const tgt = e.target as HTMLElement;
-      if (tgt instanceof HTMLInputElement || tgt instanceof HTMLTextAreaElement || tgt.isContentEditable) return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === "\\") {
-        e.preventDefault();
-        togglePdfRef.current();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  // ONE place that knows the QA route shape. The :templateId segment is
+  // carried through verbatim — it may name either a project or a global
+  // template (see resolveQATemplateKind above), so reconstructing it from the
+  // resolved template would silently rewrite the URL the user arrived on.
+  const qaArticleRoute = (targetArticleId: string) =>
+    `/projects/${projectId}/articles/${targetArticleId}/quality-assessment/${templateId}`;
+
+  const goToArticle = (targetArticleId: string) =>
+    navigate(qaArticleRoute(targetArticleId));
+
+  // Every run-screen keyboard binding (J/K, "\", ⌘K, Escape) lives in the one
+  // shared hook, which owns the not-while-typing / no-modifier / end-of-list
+  // guards — never re-stated here. Declared after goToArticle: the handler
+  // object is built during render, so a call above it would hit the TDZ.
+  useRunShortcuts({
+    articles: worklist,
+    currentArticleId: articleId ?? "",
+    onNavigateToArticle: goToArticle,
+    onTogglePanel: pdfPanelState.toggle,
+    onTogglePalette: () => setPaletteOpen((prev) => !prev),
+    onClosePalette: () => setPaletteOpen(false),
+  });
 
   // Reveal (the persistent project-toggle): offered only to a blind manager
   // DURING extract, mirroring the extraction screen. Once the run reaches
@@ -448,14 +480,11 @@ export default function QualityAssessmentFullScreen() {
   // Where a finished form lands: the next article in the worklist, or the
   // project's quality tab at end-of-queue. Shared by the reviewer's mark-ready
   // and the arbitrator's terminal approve-finalize — both mean "done with this
-  // article". The :templateId segment is carried through verbatim (it may name
-  // either a project or a global template — see resolveQATemplateKind above).
+  // article". Routes through the same qaArticleRoute the header pager uses.
   const goToNextArticle = () => {
     const nextId = nextArticleTarget(worklist, articleId ?? "");
     navigate(
-      nextId
-        ? `/projects/${projectId}/articles/${nextId}/quality-assessment/${templateId}`
-        : `/projects/${projectId}?tab=quality`,
+      nextId ? qaArticleRoute(nextId) : `/projects/${projectId}?tab=quality`,
     );
   };
 
@@ -532,6 +561,16 @@ export default function QualityAssessmentFullScreen() {
     setReopening(false);
   };
   const sortedDomains = domains;
+
+  // Step-2 display hint (PROBAST+AI v2): the classified study type labels
+  // the sections of the unused part as out of scope. Never gates input.
+  const studyType = resolveStudyType(
+    sortedDomains,
+    session?.instancesByEntityType,
+    values,
+    (instanceId, fieldId) => keyOf({ instanceId, fieldId }),
+    unwrapValueEnvelope,
+  );
 
   // Compare-view inputs derived from the QA template tree: one instance per
   // domain (session.instancesByEntityType), shaped for the shared
@@ -631,8 +670,46 @@ export default function QualityAssessmentFullScreen() {
 
   const versionLabel = template ? `v${template.version}` : "";
 
+  // ⌘K palette actions — shares the core vocabulary with the extraction
+  // palette (panel toggle, reveal, status, and compare where available) so
+  // one muscle memory mostly covers both run screens. NOT full parity:
+  // extraction's palette also offers reopen actions; QA exposes reopen only
+  // from the kebab menu below (`Utility`), never from this palette. Each
+  // entry here mirrors a control that is actually reachable in the current
+  // stage/role, never a dead one.
+  const paletteActions: { id: string; label: string; run: () => void }[] = [];
+  if (canCompare && !inConsensusStage) {
+    paletteActions.push({
+      id: "compare",
+      label: t("runs", "compareToggleLabel"),
+      run: () => setViewMode((m) => (m === "assess" ? "compare" : "assess")),
+    });
+  }
+  paletteActions.push({
+    id: "panel",
+    label: t("runs", "togglePanel"),
+    run: () => pdfPanelState.toggle(),
+  });
+  if (canReveal) {
+    paletteActions.push({
+      id: "reveal",
+      label: t("runs", "reveal"),
+      run: () => onReveal(),
+    });
+  }
+  if (runStage != null) {
+    paletteActions.push({
+      id: "status",
+      label: t("runs", "viewRunStatus"),
+      run: () => setStatusOpen(true),
+    });
+  }
+
+  // HeaderShell (inside RunHeader) owns the @container/headerbar — no consumer
+  // wrapper. The palette is a SIBLING of the header, not a child: it must
+  // render above it.
   const header = (
-    // HeaderShell (inside RunHeader) owns the @container/headerbar — no consumer wrapper.
+    <>
       <RunHeader
         value={{
           kind: "qa",
@@ -645,7 +722,7 @@ export default function QualityAssessmentFullScreen() {
           progress: { completed: 0, total: 0, pct: 0 },
           reviewers: {
             count: reviewerSummary.reviewers.length,
-            required: reviewerSummary.requiredReviewerCount,
+            required: expectedReviewerCount,
             divergent: reviewerSummary.divergentCoords.size,
           },
           transition: qaTransition,
@@ -692,10 +769,19 @@ export default function QualityAssessmentFullScreen() {
         </RunHeader.Left>
 
         <RunHeader.Center>
-          {runStage != null && <RunHeader.RunStatus />}
+          {/* Worklist self-guards: it renders null below two articles or on an
+              unknown current id, so no length check belongs here. */}
+          <RunHeader.Worklist
+            articles={worklist}
+            currentId={articleId ?? ""}
+            onNavigate={goToArticle}
+          />
         </RunHeader.Center>
 
         <RunHeader.Right>
+          {runStage != null && (
+            <RunHeader.RunStatus open={statusOpen} onOpenChange={setStatusOpen} />
+          )}
           {/* D6: no dead toggle during consensus (the resolve table always renders there). */}
           {canCompare && !inConsensusStage && (
             <RunHeader.CompareToggle
@@ -739,6 +825,15 @@ export default function QualityAssessmentFullScreen() {
           />
         </RunHeader.Right>
       </RunHeader>
+
+      <RunHeader.CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        actions={paletteActions}
+        articles={worklist.length > 1 ? worklist : undefined}
+        onNavigate={worklist.length > 1 ? goToArticle : undefined}
+      />
+    </>
   );
 
   const pdfPanel = (
@@ -878,6 +973,11 @@ export default function QualityAssessmentFullScreen() {
                     onRejectAI={rejectAISuggestion}
                     selectSuggestion={selectAISuggestion}
                     getSuggestionsHistory={getAISuggestionsHistory}
+                    derivedJudgments={runDetail?.derived_judgments}
+                    outOfScope={isDomainOutOfScope(
+                      domain.entityType.name,
+                      studyType,
+                    )}
                   />
                 );
               })}

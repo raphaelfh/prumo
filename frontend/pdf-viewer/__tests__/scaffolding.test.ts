@@ -16,25 +16,28 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
+// Import AFTER the mocks are registered, at module scope: the `vi.mock` factory
+// above closes over `legacyPdfjs`, and the package root pulls the whole viewer
+// graph (pdfjs, react-markdown, katex) — seconds of transform that inside an
+// `it()` is charged against `testTimeout` and flakes under parallelism.
+const mod = await import('@prumo/pdf-viewer');
+
 describe('@prumo/pdf-viewer public API', () => {
-  it('exports the runtime entry points from the package root', async () => {
-    const mod = await import('@prumo/pdf-viewer');
+  it('exports the runtime entry points from the package root', () => {
     expect(typeof mod.createViewerStore).toBe('function');
     expect(typeof mod.ViewerProvider).toBe('function');
     expect(typeof mod.useViewerStore).toBe('function');
     expect(typeof mod.useViewerStoreApi).toBe('function');
   });
 
-  it('createViewerStore returns a store with getState/setState/subscribe', async () => {
-    const {createViewerStore} = await import('@prumo/pdf-viewer');
-    const store = createViewerStore();
+  it('createViewerStore returns a store with getState/setState/subscribe', () => {
+    const store = mod.createViewerStore();
     expect(typeof store.getState).toBe('function');
     expect(typeof store.setState).toBe('function');
     expect(typeof store.subscribe).toBe('function');
   });
 
-  it('exports Phase 2 public API surface', async () => {
-    const mod = await import('@prumo/pdf-viewer');
+  it('exports Phase 2 public API surface', () => {
     // Compound primitives
     expect(typeof mod.Viewer).toBe('object');
     expect(typeof mod.Viewer.Root).toBe('function');

@@ -14,13 +14,12 @@ frontend/e2e/
     qa-*.e2e.ts     -> local-hitl (stateful, single-worker)
     extraction-edit.ui.e2e.ts, extraction-reopen.ui.e2e.ts -> local-hitl
     hitl-*.api.e2e.ts -> local-hitl
-  remote/*.e2e.ts                       # -> remote-smoke
 ```
 
 The four-project split exists because:
 - `local-api` and `local-ui` are stateless and parallelize cleanly.
 - `local-hitl` shares a fixed (project, article, template) triple — running >1 worker causes runs to step on each other. Don't fight this; add new HITL-stateful tests under matching glob patterns.
-- `remote-smoke` runs against deployed env with `retries: 2`.
+- There is no prod-facing project: production is verified by the post-deploy smoke workflow (reachability + deployed-commit), never by a suite that writes to prod.
 
 ## 2. Choosing your project
 
@@ -29,7 +28,6 @@ The four-project split exists because:
 | hits only `/api/v1/...` via `request.fetch`, no UI                              | `flows/<feature>.e2e.ts`           | `.e2e.ts`           |
 | drives the UI but doesn't touch HITL run state                                  | `flows/<feature>.ui.e2e.ts`        | `.ui.e2e.ts`        |
 | mutates HITL runs (qa-*, extraction-edit, extraction-reopen, hitl-* APIs)       | matching glob in `flows/`          | per the config map  |
-| runs against a deployed environment                                             | `remote/<feature>.e2e.ts`          | `.e2e.ts`           |
 
 If you add a new HITL-stateful glob, update `playwright.config.ts` projects map.
 

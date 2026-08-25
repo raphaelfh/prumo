@@ -83,11 +83,3 @@ function findInPage(
   return hits;
 }
 
-/**
- * Drop the text cache for a document. The WeakMap will GC entries
- * automatically when the doc handle is no longer reachable, but this
- * provides explicit control for memory-sensitive flows.
- */
-export function clearSearchCache(doc: PDFDocumentHandle): void {
-  textCache.delete(doc);
-}

@@ -44,7 +44,7 @@ function confirmArticleFileUpload(p: ConfirmUploadParams): Promise<unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// Shared insert payload type (used by addArticle and saveArticle)
+// Shared insert payload type (used by insertArticle and updateArticle)
 // ---------------------------------------------------------------------------
 
 export interface ArticleInsertData {
@@ -82,74 +82,6 @@ export interface ArticleInsertData {
   ingestion_source?: string;
   source_lineage?: string;
   sync_state?: string;
-}
-
-// ---------------------------------------------------------------------------
-// AddArticleDialog: insert article + optional PDF upload with rollback
-// ---------------------------------------------------------------------------
-
-export interface AddArticleResult {
-  articleId: string;
-}
-
-export interface PdfUploadInput {
-  file: File;
-  detectedFormat: string;
-}
-
-/**
- * Inserts an article row and optionally uploads a PDF file.
- * The storage key is built here (after insert) so it embeds the real articleId.
- * On upload failure the article row is rolled back.
- * NOTE: thrown messages surface in caller toasts via result.error.message —
- * keep them terse; user-facing copy belongs to the component's copy keys.
- */
-export function addArticle(
-  articleData: ArticleInsertData,
-  pdfInput: PdfUploadInput | null,
-): Promise<ErrorResult<AddArticleResult>> {
-  return toResult(async () => {
-    const {data: article, error: articleError} = await supabase
-      .from('articles')
-      .insert([articleData])
-      .select()
-      .single();
-
-    if (articleError) throw articleError;
-
-    if (pdfInput && article) {
-      const fileExt = pdfInput.file.name.split('.').pop();
-      const storageKey = `${articleData.project_id}/${article.id}/${Date.now()}.${fileExt}`;
-
-      const {error: uploadError} = await supabase.storage
-        .from('articles')
-        .upload(storageKey, pdfInput.file);
-
-      if (uploadError) {
-        // Rollback: delete the newly created article row
-        await supabase.from('articles').delete().eq('id', article.id);
-        throw new Error('Upload failed: ' + uploadError.message);
-      }
-
-      try {
-        await confirmArticleFileUpload({
-          articleId: article.id,
-          storageKey,
-          originalFilename: pdfInput.file.name,
-          contentType: pdfInput.detectedFormat,
-          bytes: pdfInput.file.size,
-          fileRole: FILE_ROLES.MAIN,
-        });
-      } catch (e) {
-        // Rollback: remove storage object and article row
-        await supabase.storage.from('articles').remove([storageKey]);
-        await supabase.from('articles').delete().eq('id', article.id);
-        throw e instanceof Error ? e : new Error('File registration failed');
-      }
-    }
-
-    return {articleId: article.id};
-  }, 'articlesService.addArticle');
 }
 
 // ---------------------------------------------------------------------------
@@ -378,9 +310,6 @@ export function fetchArticleIdsWithMainFile(
 // ArticlesList: open PDF via signed URL
 // ---------------------------------------------------------------------------
 
-export interface SignedPdfUrl {
-  signedUrl: string;
-}
 
 /** Resolves to null when the article has no MAIN PDF (caller decides messaging). */
 export function fetchArticlePdfSignedUrl(articleId: string): Promise<ErrorResult<string | null>> {
@@ -447,12 +376,6 @@ export function deleteArticle(articleId: string): Promise<ErrorResult<void>> {
  * Enqueues a re-parse job for the given article file.
  * Returns ok:true on success; ok:false with error.message on failure.
  */
-export function reparseArticleFile(articleFileId: string): Promise<ErrorResult<unknown>> {
-  return toResult(
-    () => apiClient(`/api/v1/article-files/${articleFileId}/reparse`, {method: 'POST'}),
-    'articlesService.reparseArticleFile',
-  );
-}
 
 // ---------------------------------------------------------------------------
 // ExtractionInterface: article list for dashboard stats

@@ -1,9 +1,26 @@
 name: Post-deploy Smoke
 
 # The closing gate: everything else proves the application works, this
-# proves it shipped. Catches the documented failure class where the
-# Railway deploy silently sticks on a SKIPPED-CI SHA — CI is green,
-# prod is stale, nobody notices.
+# proves it shipped, in two layers.
+#
+#   1. Reachability — /health, frontend root, CORS preflight. /health also
+#      reports jwks_ready / db_ready / storage_ready, so subsystem readiness
+#      is covered here without any credential.
+#   2. Deployed commit — /health.commit vs the promoted SHA. Reachability
+#      alone cannot tell a fresh deploy from one stuck on an older commit,
+#      which is the documented failure class (CI green, prod stale).
+#      Push-triggered runs POLL and only ever warn: they race the very
+#      deploy they verify, and a red check on the SHA makes Railway skip
+#      that deploy — which would deadlock prod into staleness. The 6-hourly
+#      scheduled run is the blocking alarm; it is not a commit check, so it
+#      cannot wedge anything.
+#
+# There is deliberately NO credentialed probe and no Playwright suite
+# against prod. An authenticated probe would add only the narrow delta
+# between "JWKS loaded at boot" and "a freshly minted token is accepted",
+# at the cost of a permanent prod password living in CI; a writing suite
+# is worse still (the deleted remote-smoke project dispatched a real AI
+# extraction, burning LLM budget and leaving a run behind per execution).
 #
 # Runs after every push to main (deploy trigger) with a delay for
 # Railway's Wait-for-CI + build, plus every 6 hours as a synthetic
@@ -17,6 +34,10 @@ on:
     - cron: "7 */6 * * *"
   workflow_dispatch:
 
+env:
+  API_BASE: https://web-production-48b398.up.railway.app
+  FRONTEND_BASE: https://prumoai.vercel.app
+
 jobs:
   smoke:
     name: Prod reachability
@@ -29,27 +50,69 @@ jobs:
       - name: Backend /health
         run: |
           CODE=$(curl -fsS --max-time 15 -o /tmp/health.json -w "%{http_code}" \
-            https://web-production-48b398.up.railway.app/health) || CODE=000
+            "$API_BASE/health") || CODE=000
           echo "health -> $CODE"
           cat /tmp/health.json 2>/dev/null || true
           [ "$CODE" = "200" ]
 
+      - name: Deployed commit matches this ref
+        env:
+          EXPECTED: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          read_commit() {
+            curl -fsS --max-time 15 "$API_BASE/health" 2>/dev/null | jq -r '.commit // empty' || echo ""
+          }
+          DEPLOYED=$(read_commit)
+          if [ "$EVENT" = "push" ] && [ "$DEPLOYED" != "$EXPECTED" ]; then
+            # This run RACES the deploy it is meant to verify, so it polls
+            # instead of judging on the first read.
+            for _ in $(seq 1 20); do
+              sleep 30
+              DEPLOYED=$(read_commit)
+              [ "$DEPLOYED" = "$EXPECTED" ] && break
+            done
+          fi
+          echo "deployed=${DEPLOYED:-<none>} expected=$EXPECTED"
+          if [ "$DEPLOYED" = "$EXPECTED" ]; then
+            echo "the promoted build is live"
+            exit 0
+          fi
+          if [ -z "$DEPLOYED" ] || [ "$DEPLOYED" = "unknown" ]; then
+            echo "::warning::backend reports no commit (build pre-dates this check, or RAILWAY_GIT_COMMIT_SHA is not injected) — cannot prove which build is live"
+            exit 0
+          fi
+          if [ "$EVENT" != "schedule" ]; then
+            # NEVER fail on a commit-attached event. Railway's wait-for-CI
+            # skips the deploy when a check on the SHA goes red, so failing
+            # here deadlocks: the check is red because the deploy has not
+            # happened, and the deploy will not happen because the check is
+            # red — prod then stays stale forever. Observed 2026-08-24 on
+            # a4dc5b65. The scheduled monitor below is the blocking alarm.
+            echo "::warning::prod still runs $DEPLOYED after waiting — the deploy is queued, stuck or SKIPPED; check the Railway deployment list"
+            exit 0
+          fi
+          echo "::error::prod runs $DEPLOYED but main is $EXPECTED — stale deploy"
+          exit 1
+
       - name: Frontend root
         run: |
           CODE=$(curl -fsSL --max-time 15 -o /dev/null -w "%{http_code}" \
-            https://prumoai.vercel.app) || CODE=000
+            "$FRONTEND_BASE") || CODE=000
           echo "frontend -> $CODE"
           [ "$CODE" = "200" ]
 
       - name: API CORS preflight from prod origin
         run: |
           # Selective CORS breakage (allow-list drift on Railway) is a
-          # documented incident class — probe it synthetically.
+          # documented incident class — probe it synthetically, against a
+          # route that actually exists (the middleware answers OPTIONS
+          # before routing, so a bogus path would pass on a broken build).
           HDR=$(curl -fsS --max-time 15 -o /dev/null -D - \
-            -H "Origin: https://prumoai.vercel.app" \
+            -H "Origin: $FRONTEND_BASE" \
             -H "Access-Control-Request-Method: GET" \
             -X OPTIONS \
-            https://web-production-48b398.up.railway.app/api/v1/projects \
+            "$API_BASE/api/v1/user-api-keys/providers" \
             | grep -i '^access-control-allow-origin' || true)
           echo "cors -> ${HDR:-MISSING}"
           [ -n "$HDR" ]

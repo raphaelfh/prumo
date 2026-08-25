@@ -61,6 +61,12 @@ class ExtractionCardinality(str, PyEnum):
     MANY = "many"
 
 
+# Default entry noun of a model_container when none was authored (B-8 seeded
+# "model"): the AI instance label, the export record stem and the portable
+# importer all fall back to it, so it lives here once.
+DEFAULT_ENTRY_LABEL = "model"
+
+
 class ExtractionEntityRole(str, PyEnum):
     """Structural role of an entity type within a template.
 
@@ -425,6 +431,16 @@ class ExtractionField(BaseModel):
         Boolean, nullable=False, server_default=text("false")
     )
     allows_not_evaluated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
+    # Identity of an instance within its (article, entity_type,
+    # parent_instance) coordinate. Meaningful only on a repeating group
+    # (``cardinality='many'``); at most one per entity type, enforced by
+    # the partial unique index ``uq_extraction_fields_one_entity_key``.
+    # A key on a cardinality='one' type is inert rather than rejected, so
+    # toggling a section between one/many never trips the constraint.
+    is_entity_key: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
 

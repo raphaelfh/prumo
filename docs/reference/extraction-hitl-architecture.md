@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-08-18
+last_reviewed: 2026-08-23
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-08-18 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-08-23 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -135,7 +135,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0056_proposal_provenance` (post-squash numbering; run
+`0058_scope_config_read_rls` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -193,8 +193,8 @@ migration `0039_absent_reason_backfill`. Decision record:
 | `project_extraction_templates` | + `kind`, unique `(id, kind)`; + `llm_template_instruction` TEXT NULL (CHECK ≤ 4000 — copied from the global on clone; snapshot emits the key only when non-NULL); + `config_draft_since` TIMESTAMPTZ NULL (B-4 draft marker — stamped by the `trg_extraction_{entity_types,fields}_mark_draft` AFTER-row triggers on any live config write, cleared only inside `TemplateVersionService.republish`'s locked section; the lazy v1 self-heal on run creation deliberately does NOT clear it and may publish a pending draft under the run creator's identity — logged, least-harm) | 0011 + 0047 + 0048 |
 | `extraction_runs` | + `kind`, `version_id` FK, `hitl_config_snapshot`; composite FK `(template_id, kind)` enforces template-run kind coherence; stage enum reconstructed | 0011 + 0014 |
 | `extraction_evidence` | + `run_id`, `proposal_record_id`, `reviewer_decision_id`, `consensus_decision_id`. Legacy `target_type`/`target_id` columns dropped in 0017; CHECK now requires the workflow path. Target FKs are `ON DELETE CASCADE` — evidence follows its sole workflow target (0044; SET NULL could never satisfy the CHECK). | 0013 + 0017 + 0044 |
-| `extraction_entity_types` | Write RLS manager-gated (B-7): INSERT/UPDATE policies require `is_project_manager` (was member), both with explicit WITH CHECK, plus `template_id IS NULL` — the RLS floor against writing GLOBAL-catalogue sections (cross-tenant prompt injection via cloned `llm_description`; previously only the `template_xor` CHECK stood in the way). SELECT `USING (true)` and manager DELETE unchanged. Residual: manager JWTs can still write via PostgREST (GRANT survives) — follow-up REVOKE recorded in the 0049 docstring. + `entry_label` TEXT NULL (B-8 group entry noun — meaningful only for `role='model_container'`, backfilled `'model'` via a role-only predicate covering BOTH lineages, with the 0048 mark-draft trigger disabled during the backfill; seed stamps `"model"` on the catalogue containers; migration 0026's embedded snapshot SQL intentionally untouched — column post-dates its slot, `llm_template_instruction` precedent). | 0049 + 0051 |
-| `extraction_fields` | + `allows_not_applicable`, `allows_not_evaluated` opt-in disposition flags (ADR-0016; copied into `version.schema_` by the snapshot builder); write RLS manager-gated (B-7): INSERT/UPDATE require `is_project_manager` through the et→pet chain (global lineage never joins), UPDATE gains explicit WITH CHECK; per-section name uniqueness enforced by unique index `uq_extraction_fields_entity_type_name (entity_type_id, name)` — preceded by a deterministic first-free-suffix heal of pre-existing duplicates (both lineages, 0048 trigger left ENABLED so healed templates stamp as real drift; downgrade drops the index only). `template_field_service` remaps a 23505 on this index to the typed duplicate error. Promotion runs the duplicate + hybrid-row audit from the 0050 docstring against prod FIRST. | 0038 + 0049 + 0050 |
+| `extraction_entity_types` | Write RLS manager-gated (B-7): INSERT/UPDATE policies require `is_project_manager` (was member), both with explicit WITH CHECK, plus `template_id IS NULL` — the RLS floor against writing GLOBAL-catalogue sections (cross-tenant prompt injection via cloned `llm_description`; previously only the `template_xor` CHECK stood in the way). SELECT scoped to project members (0058): the policy is `can_read_entity_type(id, auth.uid())` — global-catalogue rows (`project_template_id IS NULL`) stay world-readable so the import dialog can list them, project-lineage rows require `is_project_member`. It was `USING (true)` with no `TO` clause and a baseline SELECT grant to `anon`, so unauthenticated callers could read every project's sections, fields and authored `llm_description`. Manager DELETE unchanged. Residual: manager JWTs can still write via PostgREST (GRANT survives) — follow-up REVOKE recorded in the 0049 docstring. + `entry_label` TEXT NULL (B-8 group entry noun — meaningful only for `role='model_container'`, backfilled `'model'` via a role-only predicate covering BOTH lineages, with the 0048 mark-draft trigger disabled during the backfill; seed stamps `"model"` on the catalogue containers; migration 0026's embedded snapshot SQL intentionally untouched — column post-dates its slot, `llm_template_instruction` precedent). | 0049 + 0051 + 0058 |
+| `extraction_fields` | + `allows_not_applicable`, `allows_not_evaluated` opt-in disposition flags (ADR-0016; copied into `version.schema_` by the snapshot builder); write RLS manager-gated (B-7): INSERT/UPDATE require `is_project_manager` through the et→pet chain (global lineage never joins), UPDATE gains explicit WITH CHECK; per-section name uniqueness enforced by unique index `uq_extraction_fields_entity_type_name (entity_type_id, name)` — preceded by a deterministic first-free-suffix heal of pre-existing duplicates (both lineages, 0048 trigger left ENABLED so healed templates stamp as real drift; downgrade drops the index only). SELECT scoped to project members (0058) through the SAME predicate as its parent — `can_read_entity_type(entity_type_id, auth.uid())`; a field is visible exactly when its entity type is, expressed once so the two policies cannot drift (several frontend reads select fields by `entity_type_id` alone and rely on the id list being pre-filtered). `template_field_service` remaps a 23505 on this index to the typed duplicate error. Promotion runs the duplicate + hybrid-row audit from the 0050 docstring against prod FIRST. | 0038 + 0049 + 0050 + 0058 |
 
 ### Legacy tables — fully removed
 
@@ -386,6 +386,32 @@ The extraction **Import template** dialog reads `extraction_templates_global` th
 | **UI** | Calls `POST /api/v1/projects/{project_id}/templates/clone` with `global_template_id` and `kind=extraction` (JWT via `apiClient`). The UI may still load the global row first to validate that the id exists in the catalogue. |
 | **Service** | `TemplateCloneService.clone` is **idempotent** on `(project_id, global_template_id)`: first call creates the project row, `extraction_entity_types`, `extraction_fields`, and exactly one active version; later calls return the existing clone and current counts. |
 | **Heal** | Drift is measured against the **active version snapshot**, never the global template. Zero-state clones (empty live structure) rebuild from the global. Non-empty drift (e.g. an edit whose republish call was lost) **self-heals by publishing the live structure** as a new version (`TemplateVersionService.republish`) — never wipe-and-rebuild: with user-editable templates a count mismatch is indistinguishable from a deliberate edit, and the historical wipe destroyed customizations. Factory recovery = delete the template and re-import. |
+
+**File import/export (2026-08-23).** The same dialog (now "Switch template")
+also lists the project's own templates — active and inactive — with *Switch
+to* (`PATCH …/templates/{id}`, which since this slice deactivates the
+extraction sibling first) and *Delete* (`DELETE …/templates/{id}`: guards run
+under `SELECT … FOR UPDATE` — 409 `TEMPLATE_ACTIVE` / `TEMPLATE_IN_USE`, else
+DB cascade plus the template-scoped `extraction_hitl_configs` row; the locked
+pre-check is load-bearing because `extraction_runs` also carries a composite
+CASCADE FK to the template). `GET …/templates/{id}/export` serializes the
+**live** structure as a `prumo-template@1` document (`app/schemas/
+template_portable.py`: nested, UUID-free, `role` derived from nesting + a
+`group` flag); `POST …/templates/import` creates a **new** active template
+from one and publishes v1 through `republish`. Design:
+`docs/superpowers/specs/2026-08-23-template-portable-import-export-design.md`.
+
+**Create from scratch (2026-08-23).** `POST …/templates` (manager-gated,
+`template_create_service.create_blank_template`) is the third creation path
+and the one with no source: it inserts the row with **no sections** and
+publishes v1, so the manager lands in the configuration editor on a
+published — not permanently draft — template. It is the same tail as the
+file import (deactivate the extraction sibling via
+`deactivate_sibling_extraction_templates`, then `republish`), minus the
+document parse and tree build. This is the path that replaced a direct
+frontend insert, which could not satisfy either invariant above: it commits
+alone (so the deferred trigger fires with no active version) and it cannot
+deactivate the incumbent (so the partial unique index refuses it).
 
 Configuration flows for QA tools may call the same clone endpoint before sessions; session lifecycle for QA vs extraction is in §5.
 

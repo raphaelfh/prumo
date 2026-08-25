@@ -10,13 +10,14 @@ from pathlib import Path
 
 _APP = Path(__file__).parent.parent.parent / "app"
 
-# Files allowed to create an ArticleFile. Each MUST also enqueue the parse hook
-# (or BE the hook). unit_of_work.py only mentions it in a docstring example.
+# Files allowed to create an ArticleFile. Each MUST also enqueue the parse
+# hook (or BE the hook). The pattern is raw text, so a docstring example that
+# merely mentions ArticleFile( also lands here — prefer rewording the example
+# over widening this set.
 _ALLOWED = {
     "services/zotero_import_service.py",
     "services/article_file_ingest_service.py",
     "services/article_file_service.py",
-    "repositories/unit_of_work.py",
 }
 
 # Negative lookbehind excludes the class *definition* (`class ArticleFile(`)

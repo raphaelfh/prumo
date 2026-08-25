@@ -391,27 +391,7 @@ async def test_manual_model_hierarchy_403_for_non_member(
     assert res.status_code == 403, res.text
 
 
-# =================== #76: POST /runs/{id}/proposals + /decisions + /consensus ===================
-
-
-@pytest.mark.asyncio
-async def test_create_proposal_403_for_non_member(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    outsider_user: UUID,
-) -> None:
-    run_id, _, instance_id, field_id = await _provision_run_for_outsider(db_session, outsider_user)
-
-    res = await db_client.post(
-        f"/api/v1/runs/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": "human",
-            "proposed_value": {"text": "outsider"},
-        },
-    )
-    assert res.status_code == 403, res.text
+# =================== #76: POST /runs/{id}/decisions + /consensus ===================
 
 
 @pytest.mark.asyncio

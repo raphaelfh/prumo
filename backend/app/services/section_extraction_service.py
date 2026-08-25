@@ -49,6 +49,7 @@ from app.repositories import (
 )
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
+from app.services.derived_judgment_service import derived_spec, excluded_field_coordinates
 from app.services.engine_credentials import EngineCredentials, rekey_for_adopted_engine
 from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
@@ -98,8 +99,6 @@ class BatchExtractionResult:
     successful_sections: int
     failed_sections: int
     total_suggestions_created: int
-    total_tokens_used: int
-    duration_ms: float
     sections: list[dict[str, Any]]
 
 
@@ -371,6 +370,7 @@ class SectionExtractionService(LoggerMixin):
                 entity_type=entity_type,
                 fields_override=fields_override,
                 general_instructions=general_instructions,
+                excluded_coordinates=await self._excluded_field_names(run.template_id),
             )
             # 6. Verify pass (mode + kind checks inside the glue) + snapshot.
             verdicts, llm_usage = await self._maybe_verify(
@@ -626,8 +626,6 @@ class SectionExtractionService(LoggerMixin):
                 successful_sections=successful,
                 failed_sections=failed,
                 total_suggestions_created=total_suggestions,
-                total_tokens_used=total_tokens,
-                duration_ms=duration_ms,
                 sections=section_results,
             )
         except Exception as e:
@@ -710,6 +708,7 @@ class SectionExtractionService(LoggerMixin):
             framework=framework,
             fields_override=fields_override,
             general_instructions=general_instructions,
+            excluded_coordinates=await self._excluded_field_names(run.template_id),
         )
         verdicts, llm_usage = await self._maybe_verify(
             run.id, entity_type.id, kind, pdf_text, extracted_data, llm_usage
@@ -763,6 +762,21 @@ class SectionExtractionService(LoggerMixin):
                 field = field.model_copy(update={"name": live_field.name})
             result.append(field)
         return result
+
+    async def _excluded_field_names(self, template_id: UUID | None) -> set[tuple[str, str]]:
+        """Assessor-owned ``(section, field)`` names the model must never see.
+
+        Declared data on the template's live ``schema_`` (the derived spec's
+        target/rationale/summary pointers) — template-data-driven and
+        kind-agnostic. A template without a spec yields an empty set, so
+        every other template's field list passes through untouched. The
+        session's identity map makes the repeated per-section ``get`` free.
+        """
+        if template_id is None:
+            return set()
+        template = await self.db.get(ProjectExtractionTemplate, template_id)
+        schema = getattr(template, "schema_", None) if template is not None else None
+        return excluded_field_coordinates(derived_spec(schema))
 
     async def _find_instance_for_entity_type(
         self,
@@ -1086,8 +1100,6 @@ class SectionExtractionService(LoggerMixin):
                 successful_sections=successful,
                 failed_sections=failed,
                 total_suggestions_created=total_suggestions,
-                total_tokens_used=total_tokens,
-                duration_ms=duration,
                 sections=section_results,
             )
 
@@ -1154,6 +1166,7 @@ class SectionExtractionService(LoggerMixin):
             memory_context=memory_history,
             fields_override=pinned_fields,
             general_instructions=general_instructions,
+            excluded_coordinates=await self._excluded_field_names(run.template_id),
         )
         verdicts, llm_usage = await self._maybe_verify(
             run.id, entity_type.id, run.kind, pdf_text, extracted_data, llm_usage
@@ -1306,6 +1319,7 @@ class SectionExtractionService(LoggerMixin):
         framework: str | None = None,
         fields_override: list[Any] | None = None,
         general_instructions: str | None = None,
+        excluded_coordinates: set[tuple[str, str]] | None = None,
     ) -> tuple[dict[str, Any], LlmUsage]:
         """Run extraction using the typed LLM call layer.
 
@@ -1313,11 +1327,16 @@ class SectionExtractionService(LoggerMixin):
         'quality_assessment', ``framework`` naming the instrument);
         ``fields_override`` is the exact field list to send (never mutate
         ``entity_type.fields``); ``general_instructions`` comes from the
-        run-pinned snapshot, never the live column. Returns ({field_name:
-        {value, confidence, reasoning, evidence}}, usage) — oversized
-        templates are split into multiple calls and merged transparently.
-        Side effect: stashes the section-snapshot INPUTS on
-        ``self._snapshot_inputs`` for ``_maybe_verify``'s post-verify build.
+        run-pinned snapshot, never the live column.
+        ``excluded_coordinates`` are the template spec's assessor-owned
+        ``(section, field)`` names — subtracted HERE, the one seam every
+        extraction path funnels through (including the re-pin fallback that
+        carries no override), so those fields never reach the model.
+        Returns ({field_name: {value, confidence, reasoning, evidence}},
+        usage) — oversized templates are split into multiple calls and
+        merged transparently. Side effect: stashes the section-snapshot
+        INPUTS on ``self._snapshot_inputs`` for ``_maybe_verify``'s
+        post-verify build.
         """
         entity_name = entity_type.name if hasattr(entity_type, "name") else "data"
         entity_description = entity_type.description if hasattr(entity_type, "description") else ""
@@ -1336,7 +1355,33 @@ class SectionExtractionService(LoggerMixin):
             )
         )
 
-        output_models = build_output_models(entity_type, fields=fields_override)
+        # The exact list sent to the model. Without exclusions this is the
+        # override (or the entity's own fields) UNTOUCHED — same object, so a
+        # template without a derived spec is byte-identical to before.
+        effective: list[Any] = (
+            fields_override
+            if fields_override is not None
+            else (getattr(entity_type, "fields", None) or [])
+        )
+        if excluded_coordinates:
+            excluded_names = {f for s, f in excluded_coordinates if s == str(entity_name)}
+            if excluded_names:
+                present = {str(getattr(f, "name", "")) for f in effective}
+                dangling = excluded_names - present
+                if dangling:
+                    # A live rename that orphans an exclusion coordinate would
+                    # quietly re-open an assessor-owned field to the model —
+                    # fail open (the spec is advisory data) but never silently.
+                    self.logger.warning(
+                        "qa_derived_spec_dangling_ref",
+                        trace_id=self.trace_id,
+                        coordinates=sorted((str(entity_name), name) for name in dangling),
+                    )
+                effective = [
+                    f for f in effective if str(getattr(f, "name", "")) not in excluded_names
+                ]
+
+        output_models = build_output_models(entity_type, fields=effective)
         if not output_models:
             self.logger.info(
                 "extraction_skipped_no_fields",
@@ -1372,12 +1417,9 @@ class SectionExtractionService(LoggerMixin):
             system_prompt=system_prompt,
             section_instruction=section_instruction,
             # The fields actually SENT to the LLM: the human-settled
-            # override (#481) when a QA re-run filtered, else the full set.
-            fields=(
-                fields_override
-                if fields_override is not None
-                else (getattr(entity_type, "fields", None) or [])
-            ),
+            # override (#481) and the spec-excluded assessor-owned fields
+            # both already subtracted above.
+            fields=effective,
             llm_calls=len(output_models),
         )
         return extracted_data, usage

@@ -39,8 +39,6 @@ const summary: ReviewerSummary = {
   currentDecisions: new Map([['inst-1::field-1', conflict[1]]]),
   decisionsByCoord: new Map([['inst-1::field-1', conflict]]),
   divergentCoords: new Set(['inst-1::field-1']),
-  requiredReviewerCount: 2,
-  completionRatio: 1,
   filledCoords: new Set(['inst-1::field-1']),
   touchedCoords: new Set(['inst-1::field-1']),
 };

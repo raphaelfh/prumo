@@ -4,15 +4,8 @@ import { KbdBadge } from '@/components/ui/kbd-badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { t } from '@/lib/copy';
+import { RUN_SHORTCUTS } from '@/lib/runs/shortcuts';
 import { useRunHeader } from './RunHeaderContext';
-
-const SHORTCUTS: { combo: string; key: 'shortcutPalette' | 'shortcutNextPrev' | 'shortcutTogglePdf' | 'shortcutSidebar' | 'shortcutEsc' }[] = [
-  { combo: '⌘K', key: 'shortcutPalette' },
-  { combo: 'J / K', key: 'shortcutNextPrev' },
-  { combo: '\\', key: 'shortcutTogglePdf' },
-  { combo: '⌘B', key: 'shortcutSidebar' },
-  { combo: 'Esc', key: 'shortcutEsc' },
-];
 
 const GLOSSARY: ('glossaryExtract' | 'glossaryAssessment' | 'glossaryConsensus' | 'glossaryFinalize' | 'glossaryBlind' | 'glossaryDiffer')[] = [
   'glossaryExtract',
@@ -27,7 +20,7 @@ const GLOSSARY: ('glossaryExtract' | 'glossaryAssessment' | 'glossaryConsensus' 
  * content renders inside the inline Popover (wide header) AND the kebab-triggered
  * Dialog (narrow header, where Help has folded into the "three dots").
  */
-export function HelpContent() {
+function HelpContent() {
   // Kind-aware glossary: QA runs call the extract stage "Assessment" (the
   // chip does the same), so the Help text never contradicts the header.
   const { kind } = useRunHeader();
@@ -38,9 +31,9 @@ export function HelpContent() {
     <>
       <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t('runs', 'shortcutsHeading')}</p>
       <ul className="mb-3 space-y-1">
-        {SHORTCUTS.map((s) => (
-          <li key={s.key} className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">{t('runs', s.key)}</span>
+        {RUN_SHORTCUTS.map((s) => (
+          <li key={s.id} className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">{t('runs', s.copyKey)}</span>
             <KbdBadge keys={[s.combo]} />
           </li>
         ))}

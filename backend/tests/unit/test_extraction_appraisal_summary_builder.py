@@ -96,10 +96,6 @@ def _layout_with_appraisal(appraisal, *, mode_name="consensus", reviewers=()):
 
     notes = ExportNotes(
         omitted_articles_by_stage={},
-        template_version_label="QA v1",
-        export_mode_label=mode_name,
-        anonymize_reviewer_names=False,
-        include_ai_metadata=False,
         generated_at=datetime.now(UTC),
     )
     return ExportLayout(

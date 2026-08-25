@@ -30,7 +30,7 @@ import type {components} from '@/types/api/schema';
 type ExtractionJobResult = components['schemas']['ExtractionJobResult'];
 
 // Expose the param type so callers don't need to import from the service.
-export type {AsyncSectionExtractionParams as SectionExtractionAsyncParams};
+;
 
 export interface UseSectionExtractionReturn {
   extractSection: (params: AsyncSectionExtractionParams) => Promise<void>;

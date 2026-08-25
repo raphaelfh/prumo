@@ -26,9 +26,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { qa } from "@/lib/copy/qa";
 import { cn } from "@/lib/utils";
 
-export interface DerivedJudgmentInputView {
+interface DerivedJudgmentInputView {
   label: string;
   value: string | null;
+  /** The Low/High/Unclear the rule consumed from this row (null = nothing). */
+  contribution?: string | null;
 }
 
 export interface DerivedJudgmentView {
@@ -36,13 +38,23 @@ export interface DerivedJudgmentView {
   label: string;
   value: string | null;
   inputs?: DerivedJudgmentInputView[];
+  /**
+   * Present on RECOMMENDATION entries (the derived default for a stored
+   * judgment field). The banner renders OVERALLS only — entries whose
+   * target is null or absent (loose check: older payloads omit the key).
+   */
+  target_field_id?: string | null;
 }
 
 interface OverallJudgmentBannerProps {
   judgments: DerivedJudgmentView[];
 }
 
-function toneFor(value: string | null): string {
+/**
+ * The ONE color mapping for the Low/High/Unclear judgment vocabulary —
+ * shared with the derived-default chip so the two surfaces cannot drift.
+ */
+export function toneFor(value: string | null | undefined): string {
   switch (value?.toLowerCase()) {
     case "high":
       return "border-destructive/40 bg-destructive/10 text-destructive";
@@ -85,8 +97,11 @@ function InputBreakdown({ judgment }: { judgment: DerivedJudgmentView }) {
   );
 }
 
-export function OverallJudgmentBanner({ judgments }: OverallJudgmentBannerProps) {
+export function OverallJudgmentBanner({ judgments: allJudgments }: OverallJudgmentBannerProps) {
   const [open, setOpen] = useState(false);
+
+  // Overalls only: recommendation entries live on the domain judgment cards.
+  const judgments = allJudgments.filter((judgment) => judgment.target_field_id == null);
 
   if (judgments.length === 0) return null;
 

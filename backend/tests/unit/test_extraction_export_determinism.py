@@ -77,7 +77,6 @@ def _fixed_layout() -> ExportLayout:
         label="1.1 Source of data",
         type=ExtractionFieldType.TEXT,
         allowed_values=(),
-        parent_section_id=_SECTION_ID,
     )
     section = SectionDescriptor(
         entity_type_id=_SECTION_ID,
@@ -90,7 +89,6 @@ def _fixed_layout() -> ExportLayout:
         article_id=_ARTICLE_ID,
         header_label="Gaca, 2011",
         run_id=_RUN_ID,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={_SECTION_ID: (_INST_ID,)},
@@ -159,8 +157,6 @@ def _fixed_layout() -> ExportLayout:
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
         notes=ExportNotes(
-            template_version_label="CHARMS v1",
-            export_mode_label="Consensus",
             generated_at=_GENERATED_AT,
         ),
         value_map={(_RUN_ID, _INST_ID, _FIELD_ID): "Existing registry"},
@@ -269,7 +265,6 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
         label="1.1 Source",
         type=ExtractionFieldType.TEXT,
         allowed_values=(),
-        parent_section_id=entity_type_id,
     )
     section = SectionDescriptor(
         entity_type_id=entity_type_id,
@@ -282,7 +277,6 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
         article_id=article_id,
         header_label="Gaca, 2011",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={entity_type_id: (inst_id,)},
@@ -391,7 +385,6 @@ def test_column_guard_boundary() -> None:
             label="F",
             type=ExtractionFieldType.TEXT,
             allowed_values=(),
-            parent_section_id=sec_id,
         )
         section = SectionDescriptor(
             entity_type_id=sec_id,
@@ -405,7 +398,6 @@ def test_column_guard_boundary() -> None:
                 article_id=uuid4(),
                 header_label=f"a{i}",
                 run_id=uuid4(),
-                run_stage=None,
                 version_id=None,
                 model_instances=(),
                 # One cardinality=one study section ⇒ a single data column
@@ -497,7 +489,6 @@ def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayou
         label="F",
         type=ExtractionFieldType.TEXT,
         allowed_values=(),
-        parent_section_id=sec_id,
     )
     section = SectionDescriptor(
         entity_type_id=sec_id,
@@ -512,7 +503,6 @@ def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayou
             article_id=uuid4(),
             header_label=f"A{i}",
             run_id=uuid4(),
-            run_stage=None,
             version_id=uuid4(),
             model_instances=(),
             section_instances={sec_id: tuple(uuid4() for _ in range(subcols_each))},
@@ -591,8 +581,6 @@ def _appraisal_layout(
         include_ai_metadata=False,
         anonymize_reviewer_names=False,
         notes=ExportNotes(
-            template_version_label="PROBAST v1",
-            export_mode_label="All users",
             generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
         ),
         value_map=value_map,
@@ -627,18 +615,17 @@ def _tied_appraisal_inputs():
 
     risk_labels = ("Low", "Unclear", "High")
 
-    def _verdict_field(parent):
+    def _verdict_field():
         return FieldDescriptor(
             field_id=uuid4(),
             label="Risk of bias",
             type=ExtractionFieldType.SELECT,
             allowed_values=risk_labels,
-            parent_section_id=parent,
         )
 
     sid1, sid2 = uuid4(), uuid4()
-    f1 = _verdict_field(sid1)
-    f2 = _verdict_field(sid2)
+    f1 = _verdict_field()
+    f2 = _verdict_field()
     d1 = SectionDescriptor(
         entity_type_id=sid1,
         label="Participants",
@@ -664,7 +651,6 @@ def _tied_appraisal_inputs():
         article_id=uuid4(),
         header_label="Gaca, 2011",
         run_id=run_id,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={sid1: (inst1,), sid2: (inst2,)},

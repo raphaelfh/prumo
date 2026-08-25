@@ -41,7 +41,7 @@ export interface TemplateEntityTypeWithFields {
   fields: ExtractionField[];
 }
 
-export { templateEntityTypesKeys };
+;
 
 export function useTemplateEntityTypes(templateId: string | null | undefined) {
   const query = useQuery({
@@ -85,7 +85,9 @@ export function useTemplateEntityTypes(templateId: string | null | undefined) {
     // TanStack has PAUSED (networkMode 'online' + a refused connection ends
     // in status pending / fetchStatus paused, where isLoading is false).
     // Callers that must never render an empty tree as a real result — the
-    // config editor's three-branch render — gate on this one.
+    // config editor's three-branch render — gate on this one. Deliberately
+    // NOT gated by enablement: while disabled (no templateId) the editor
+    // must keep its placeholder, never show the empty tree as loaded.
     isPending: query.isPending,
     isError: query.isError,
     error: query.error,

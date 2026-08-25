@@ -22,6 +22,7 @@ import {toast} from "sonner";
 import {Loader2} from "lucide-react";
 import {t} from "@/lib/copy";
 import type {ArticlesCopy} from "@/lib/copy/articles";
+import {triggerDownload} from "@/lib/download";
 import {
     startExport,
     type ExportFormat,
@@ -55,15 +56,6 @@ interface ArticlesExportDialogProps {
     selectedIds: string[];
     /** Default article scope when dialog opens. */
     defaultArticleScope?: ArticleScope;
-}
-
-function triggerDownload(blob: Blob, filename: string) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
 }
 
 export function ArticlesExportDialog({

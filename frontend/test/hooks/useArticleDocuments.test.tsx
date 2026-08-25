@@ -5,11 +5,13 @@
  *  - defaults the selection to MAIN (the API returns it first)
  *  - switching documents updates the selected file + source
  *  - polls the selected file's text blocks while it is still `pending`
+ *  - readerLoading spans the files-fetch window (the blocks query is disabled
+ *    until a file is selected, and a disabled query reports isLoading false)
  */
-import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
+import {QueryClient, QueryClientProvider, onlineManager} from '@tanstack/react-query';
 import {act, renderHook, waitFor} from '@testing-library/react';
 import type {ReactElement, ReactNode} from 'react';
-import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/services/articleFilesService', () => ({
   listArticleFiles: vi.fn(),
@@ -67,7 +69,7 @@ function createWrapper() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  blocksMock.mockReturnValue({data: [], isLoading: false});
+  blocksMock.mockReturnValue({data: [], isPending: false});
   listMock.mockResolvedValue(FILES);
 });
 
@@ -109,8 +111,79 @@ describe('useArticleDocuments', () => {
 
   it('is disabled (no fetch) when articleId is null', async () => {
     const {wrapper} = createWrapper();
-    renderHook(() => useArticleDocuments(null), {wrapper});
+    const {result} = renderHook(() => useArticleDocuments(null), {wrapper});
     await new Promise((r) => setTimeout(r, 0));
     expect(listMock).not.toHaveBeenCalled();
+    // Disabled ≠ loading: no eternal spinner for a viewer without an article.
+    expect(result.current.readerLoading).toBe(false);
+  });
+
+  describe('readerLoading across the files-fetch window', () => {
+    afterEach(() => {
+      onlineManager.setOnline(true);
+    });
+
+    it('is true while the files list is still resolving (reader must not flash empty)', async () => {
+      // Files fetch in flight → no selection yet → blocks query disabled, whose
+      // isLoading is false. readerLoading must still be true, or the reader
+      // shows "requires the document to be indexed" for a transient load.
+      let resolveFiles!: (files: ArticleFileListItem[]) => void;
+      listMock.mockReturnValue(
+        new Promise<ArticleFileListItem[]>((r) => {
+          resolveFiles = r;
+        }),
+      );
+      blocksMock.mockReturnValue({data: undefined, isPending: false});
+
+      const {wrapper} = createWrapper();
+      const {result, rerender} = renderHook(() => useArticleDocuments('art-1'), {wrapper});
+
+      expect(result.current.selectedFileId).toBeNull();
+      expect(result.current.readerBlocks).toEqual([]);
+      expect(result.current.readerLoading).toBe(true);
+
+      // Files land → a selection exists → the blocks fetch owns the flag.
+      blocksMock.mockReturnValue({data: undefined, isPending: true});
+      resolveFiles(FILES);
+      await waitFor(() => expect(result.current.selectedFileId).toBe('main-1'));
+      expect(result.current.readerLoading).toBe(true);
+
+      // Blocks land → loading clears.
+      blocksMock.mockReturnValue({data: [], isPending: false});
+      rerender();
+      expect(result.current.readerLoading).toBe(false);
+    });
+
+    it('settles false for an article whose files list is empty (no eternal spinner)', async () => {
+      listMock.mockResolvedValue([]);
+      const {wrapper} = createWrapper();
+      const {result} = renderHook(() => useArticleDocuments('art-1'), {wrapper});
+
+      await waitFor(() => expect(result.current.readerLoading).toBe(false));
+      expect(result.current.selectedFileId).toBeNull();
+    });
+
+    it('treats a PAUSED files query (offline networkMode) as loading, not empty', async () => {
+      // networkMode 'online' + no connection parks the query at status pending /
+      // fetchStatus paused, where isLoading is FALSE — the trap that motivates
+      // isPending here (same as useActiveTemplateStructure). The reader must
+      // show loading, not "requires the document to be indexed".
+      onlineManager.setOnline(false);
+      listMock.mockResolvedValue(FILES); // never dispatched while offline
+
+      const {wrapper} = createWrapper();
+      const {result} = renderHook(() => useArticleDocuments('art-1'), {wrapper});
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(result.current.readerLoading).toBe(true); // isPending survives the pause
+    });
+
+    it('settles false when the files fetch errors (empty state, not a spinner)', async () => {
+      listMock.mockRejectedValue(new Error('boom'));
+      const {wrapper} = createWrapper();
+      const {result} = renderHook(() => useArticleDocuments('art-1'), {wrapper});
+
+      await waitFor(() => expect(result.current.readerLoading).toBe(false));
+    });
   });
 });

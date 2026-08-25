@@ -135,6 +135,16 @@ Design rationale (the *why*):
 - **Seeding is not done in migrations**: `cd backend && uv run python
   -m app.seed` (idempotent). `make reset-db` wipes local data — prefer
   `make db-fresh` (chains migrate + seed).
+- **No dead code ships — CI gates it.** Frontend: knip at **zero**
+  findings in **two modes** — `npx knip` (tests count as consumers) and
+  `npx knip --production` (only production code does; catches a feature
+  orphaned behind a still-green test). Legitimate exceptions go in
+  `knip.jsonc`, each with a reason. A `--production` finding is not
+  automatically "delete it" — triage per `.claude/rules/frontend.md`.
+  Backend: vulture shrink-only ratchet
+  (`backend/.vulture_baseline` + `scripts/vulture_baseline.py`; config
+  in `[tool.vulture]`). Delete dead code in files you touch and tighten
+  the baseline in the same PR — never park a finding behind an ignore.
 - PRs target `dev` and are squash-merged. Conventional commits.
 
 Path-scoped conventions live in `.claude/rules/` (`backend.md`,

@@ -1,6 +1,5 @@
 import * as React from "react";
 
-const MOBILE_BREAKPOINT = 768;
 /** Below Tailwind sm (640px): use card list instead of table */
 const NARROW_BREAKPOINT = 640;
 
@@ -21,9 +20,6 @@ function useMediaQuery(query: string): boolean {
   return React.useSyncExternalStore(subscribe, () => window.matchMedia(query).matches);
 }
 
-export function useIsMobile() {
-  return useMediaQuery(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
-}
 
 /**
  * True when viewport is below Tailwind sm (640px).

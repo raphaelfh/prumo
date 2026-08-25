@@ -14,7 +14,7 @@ import {Check, ChevronDown} from 'lucide-react';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 
-export interface FacetOption {
+interface FacetOption {
     value: string;
     count: number;
 }

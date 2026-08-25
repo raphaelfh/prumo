@@ -8,11 +8,10 @@
  */
 
 import {z} from 'zod';
-import type {AISuggestion} from './ai-extraction';
 
 // =================== ENUMS ===================
 
-export type ExtractionFramework = 'CHARMS' | 'PICOS' | 'CUSTOM';
+type ExtractionFramework = 'CHARMS' | 'PICOS' | 'CUSTOM';
 export type ExtractionFieldType = 'text' | 'number' | 'date' | 'select' | 'multiselect' | 'boolean';
 export type ExtractionCardinality = 'one' | 'many';
 /**
@@ -23,7 +22,6 @@ export type ExtractionCardinality = 'one' | 'many';
  * identifying the model container by ``name === 'prediction_models'``.
  */
 export type ExtractionEntityRole = 'study_section' | 'model_container' | 'model_section';
-export type ExtractionSource = 'human' | 'ai' | 'rule';
 
 /**
  * Extraction value type by field type
@@ -36,15 +34,6 @@ export type ExtractionValue =
   | string[]    // multiselect
   | boolean     // boolean
     | null;       // unfilled values
-
-// Values with "Other (specify)" support
-export type SelectSingleValue = 
-  | string
-  | { selected: 'other'; other_text: string };
-
-export type SelectMultiValue = 
-  | string[]
-  | { selected: string[]; other_texts: string[] };
 
 // =================== TEMPLATES ===================
 
@@ -63,9 +52,6 @@ export interface GlobalExtractionTemplate {
   created_at: string;
   updated_at: string;
 }
-
-// Alias for compatibility (deprecated, use GlobalExtractionTemplate)
-export type ExtractionTemplate = GlobalExtractionTemplate;
 
 export interface ProjectExtractionTemplate {
   id: string;
@@ -159,170 +145,6 @@ export interface ExtractionInstance {
   updated_at: string;
 }
 
-/**
- * Presentation shape used by the extraction UI to render the user's
- * current value for a `(instance, field)`. It originally mapped 1:1 to
- * the dropped `extracted_values` table; today's reads come from the
- * HITL stack via `ExtractionValueService`. Fields that no longer have a
- * persistent store (`source`, `is_consensus`, `confidence_score`) are
- * derived for display only.
- */
-export interface ExtractionValueDisplay {
-  id: string;
-  project_id: string;
-  article_id: string;
-  instance_id: string;
-  field_id: string;
-  value: any;
-  unit?: string | null;
-  source: ExtractionSource;
-  confidence_score: number | null;
-  evidence: any[];
-  reviewer_id: string | null;
-  is_consensus: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-// =================== EVIDÊNCIAS ===================
-
-export interface ExtractionEvidence {
-  id: string;
-  project_id: string;
-  article_id: string;
-  run_id: string;
-  proposal_record_id: string | null;
-  reviewer_decision_id: string | null;
-  consensus_decision_id: string | null;
-  article_file_id: string | null;
-  page_number: number | null;
-  position: any;
-  text_content: string | null;
-  created_by: string;
-  created_at: string;
-}
-
-// =================== IA E EXECUÇÕES ===================
-
-// Presentation shape for AI proposals; sourced from `extraction_proposal_records`
-// via `aiSuggestionService` (no underlying ai_suggestions table).
-export type { AISuggestion } from '@/types/ai-extraction';
-
-// Re-export related types for convenience
-export type { SuggestionStatus, ExtractionRunStatus, ExtractionRunStage } from '@/types/ai-extraction';
-
-// =================== INSERT TYPES ===================
-
-export interface ExtractionInstanceInsert {
-  project_id: string;
-  article_id: string;
-  template_id: string;
-  entity_type_id: string;
-  parent_instance_id?: string;
-  label: string;
-  sort_order?: number;
-  metadata?: any;
-  created_by: string;
-}
-
-export interface ExtractionEvidenceInsert {
-  project_id: string;
-  article_id: string;
-  run_id: string;
-  proposal_record_id?: string | null;
-  reviewer_decision_id?: string | null;
-  consensus_decision_id?: string | null;
-  article_file_id?: string;
-  page_number?: number;
-  position?: any;
-  text_content?: string;
-  created_by: string;
-}
-
-// =================== FORM TYPES ===================
-
-export interface ExtractionFormData {
-  [instanceId: string]: {
-    [fieldId: string]: any;
-  };
-}
-
-export interface ExtractionFormState {
-  instances: ExtractionInstance[];
-  values: ExtractionValueDisplay[];
-  evidence: ExtractionEvidence[];
-  suggestions: AISuggestion[];
-  loading: boolean;
-  saving: boolean;
-  error: string | null;
-}
-
-// =================== UI TYPES ===================
-
-export interface ExtractionTemplateOption {
-  id: string;
-  name: string;
-  description: string;
-  framework: ExtractionFramework;
-  version: string;
-}
-
-export interface ExtractionEntityDisplay {
-  entityType: ExtractionEntityType;
-  fields: ExtractionField[];
-  instances: ExtractionInstance[];
-  values: ExtractionValueDisplay[];
-}
-
-export interface ExtractionFieldDisplay {
-  field: ExtractionField;
-  value: ExtractionValueDisplay | null;
-  suggestions: AISuggestion[];
-  evidence: ExtractionEvidence[];
-}
-
-// =================== EXPORT TYPES ===================
-
-export interface ExtractionExportData {
-  template: ProjectExtractionTemplate;
-  instances: ExtractionInstance[];
-  values: ExtractionValueDisplay[];
-  evidence: ExtractionEvidence[];
-  metadata: {
-    exported_at: string;
-    exported_by: string;
-    article_count: number;
-    instance_count: number;
-    value_count: number;
-  };
-}
-
-export interface ExtractionSummaryData {
-  article_id: string;
-  template_id: string;
-  entity_type_id: string;
-  entity_label: string;
-  instance_count: number;
-  completed_fields: number;
-  total_fields: number;
-  completion_percentage: number;
-}
-
-// =================== VALIDATION TYPES ===================
-
-export interface ExtractionValidationError {
-  field_id: string;
-  field_name: string;
-  error_type: 'required' | 'format' | 'range' | 'custom';
-  message: string;
-  value: any;
-}
-
-export interface ExtractionValidationResult {
-  valid: boolean;
-  errors: ExtractionValidationError[];
-  warnings: ExtractionValidationError[];
-}
 
 // =================== ZOD SCHEMAS (Runtime validation) ===================
 
@@ -406,6 +228,12 @@ export const ExtractionFieldSchema = z.object({
   allows_not_applicable: z.boolean().default(false).optional(),
   allows_not_evaluated: z.boolean().default(false).optional(),
 
+  // 0059: this field's value identifies an instance of a repeating
+  // section. At most one per section — the API refuses a second with a
+  // 409, so the UI offers it as a single choice rather than a checkbox
+  // per field.
+  is_entity_key: z.boolean().default(false).optional(),
+
   validation_schema: z.record(z.any())
     .optional()
     .nullable(),
@@ -419,13 +247,12 @@ export const ExtractionFieldSchema = z.object({
 /**
  * Inferred type from Zod schema
  */
-export type ExtractionFieldInput = z.infer<typeof ExtractionFieldSchema>;
+type ExtractionFieldInput = z.infer<typeof ExtractionFieldSchema>;
 
 /**
- * Partial schema for update (all fields optional)
+ * Partial type for update (all fields optional)
  */
-export const ExtractionFieldUpdateSchema = ExtractionFieldSchema.partial();
-export type ExtractionFieldUpdate = z.infer<typeof ExtractionFieldUpdateSchema>;
+export type ExtractionFieldUpdate = Partial<ExtractionFieldInput>;
 
 /**
  * Type for DB insert (adds entity_type_id)
@@ -438,26 +265,10 @@ export interface ExtractionFieldInsert extends Omit<ExtractionFieldInput, 'sort_
 
 // =================== FIELD MANAGEMENT TYPES ===================
 
-/**
- * Result of field validation before operations
- */
-export interface FieldValidationResult {
-  canDelete: boolean;
-  canUpdate: boolean;
-  canChangeType: boolean;
-  extractedValuesCount: number;
-  affectedArticles: string[];
-  message?: string;
-}
+// FieldValidationResult lives in services/extractionFieldService.ts, next to
+// the call that produces it. The copy that used to sit here was a stale
+// duplicate (message optional instead of required) that only tests reached.
 
-/**
- * Result of field operations
- */
-export interface FieldOperationResult {
-  success: boolean;
-  field?: ExtractionField;
-  error?: string;
-}
 
 /**
  * User role in the project (for permission control)
@@ -476,35 +287,3 @@ export interface PermissionCheckResult {
   message?: string;
 }
 
-// =================== HIERARCHY TYPES ===================
-
-/**
- * Node in the hierarchy tree of entities and instances
- * Used for recursive UI rendering
- */
-export interface EntityNode {
-  entityType: ExtractionEntityType;
-  instances: ExtractionInstance[];
-  children: EntityNode[];
-}
-
-/**
- * Full extraction hierarchy context
- * Includes tree and helper maps for fast lookups
- */
-export interface ExtractionHierarchyContext {
-  tree: EntityNode[];
-  flatMap: Map<string, ExtractionInstance>;
-  parentMap: Map<string, string>; // instance_id → parent_instance_id
-  childrenMap: Map<string, ExtractionInstance[]>; // parent_id → children[]
-}
-
-/**
- * Result of recursive children query
- */
-export interface InstanceChild {
-  id: string;
-  label: string;
-  entity_type_id: string;
-  level: number;
-}

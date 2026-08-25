@@ -86,20 +86,14 @@ async def test_sync_export_surfaces_skipped_files_header(
         )
     )
 
-    # Mock the membership check used inside the endpoint.
-    mock_uow = MagicMock()
-    mock_uow.__aenter__ = AsyncMock(return_value=mock_uow)
-    mock_uow.__aexit__ = AsyncMock(return_value=None)
-    mock_uow.project_members.is_member = AsyncMock(return_value=True)
-
     with (
         patch(
             "app.api.v1.endpoints.articles_export.ArticlesExportService",
             return_value=mock_service,
         ),
         patch(
-            "app.api.v1.endpoints.articles_export.UnitOfWork",
-            return_value=mock_uow,
+            "app.api.v1.endpoints.articles_export.is_project_member",
+            AsyncMock(return_value=True),
         ),
         patch(
             "app.api.v1.endpoints.articles_export.create_storage_adapter",

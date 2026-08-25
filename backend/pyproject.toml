@@ -77,6 +77,8 @@ dev = [
     # `--cov-fail-under=62` — diff coverage catches "PR drops new code without
     # tests" before the global gate notices the dip.
     "diff-cover>=10.0",
+    # Dead-code ratchet (see [tool.vulture] and scripts/vulture_baseline.py).
+    "vulture>=2.14",
 ]
 
 [build-system]
@@ -169,3 +171,37 @@ paths_to_mutate = "app/services/extraction_consensus_service.py,app/services/ext
 runner = "uv run pytest -x -q"
 tests_dir = "tests/unit"
 backup = false
+
+[tool.vulture]
+# Dead-code gate (backend half of the repo's dead-code rule; the frontend
+# half is knip, which gates at zero findings). min_confidence stays at 60
+# because that is the only tier where vulture sees unused functions,
+# methods and classes — the findings that matter. The cost of 60 is
+# framework noise, contained three ways:
+#   * ignore_decorators — FastAPI routes, Celery tasks/signals and Pydantic
+#     validators are invoked by their framework, never by name.
+#   * exclude app/schemas + app/models — Pydantic/SQLAlchemy field
+#     declarations are written-not-read by design (serialization reads
+#     them); scanning them would make every new schema field a finding.
+#   * scripts/vulture_baseline.py — line-stable ratchet over what remains;
+#     see backend/.vulture_baseline.
+paths = ["app"]
+exclude = ["app/schemas/", "app/models/"]
+ignore_decorators = [
+    "@*router.*",
+    "@app.*",
+    "@celery_app.task",
+    "@shared_task",
+    "@field_validator",
+    "@model_validator",
+    "@validator",
+    "@validates",
+    "@event.listens_for",
+    "@*.connect",
+]
+# `cls` is the classmethod receiver Pydantic's @field_validator mandates —
+# a validator that ignores it still cannot drop the parameter, so the
+# finding is never actionable. `model_config` is the same story for the
+# Pydantic settings/schema declaration.
+ignore_names = ["model_config", "cls"]
+min_confidence = 60

@@ -1,5 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {createViewerStore} from '../core/store';
+import {subscribeReaderLocate} from '../core/subscribeReaderLocate';
 
 describe('createViewerStore', () => {
   it('returns a store with the expected initial state', () => {
@@ -324,5 +325,31 @@ describe('reader search navigation', () => {
     actions.setReaderMatchCount(3);
     actions.goToPrevMatch();
     expect(store.getState().search.activeIndex).toBe(2);
+  });
+});
+
+describe('reader-locate nonce lifecycle', () => {
+  it('never reuses a nonce after clearReaderLocate (document switch)', () => {
+    const store = createViewerStore();
+    const {actions} = store.getState();
+    actions.locateInReader('quote A', 1);
+    const first = store.getState().readerLocate!.nonce;
+    actions.clearReaderLocate();
+    actions.locateInReader('quote B', 1);
+    // A reused nonce collides with every subscriber's last-seen nonce, so the
+    // first locate after a document switch would be silently dropped.
+    expect(store.getState().readerLocate!.nonce).not.toBe(first);
+  });
+
+  it('delivers the first locate after a clear to an already-mounted subscriber', () => {
+    const store = createViewerStore();
+    const seen: string[] = [];
+    subscribeReaderLocate(store, (req) => seen.push(req.quote));
+
+    store.getState().actions.locateInReader('quote A', 1);
+    store.getState().actions.clearReaderLocate();
+    store.getState().actions.locateInReader('quote B', 1);
+
+    expect(seen).toEqual(['quote A', 'quote B']);
   });
 });

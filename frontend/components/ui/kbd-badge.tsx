@@ -44,4 +44,3 @@ export const KbdBadge: React.FC<KbdBadgeProps> = ({keys, variant = 'chord', clas
   );
 };
 
-export default KbdBadge;

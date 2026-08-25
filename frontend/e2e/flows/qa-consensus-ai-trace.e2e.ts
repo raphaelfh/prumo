@@ -36,10 +36,10 @@ import {
 import { prepareCleanQaRun } from "../_fixtures/hitl";
 import {
   adminDelete,
-  adminInsert,
   adminSelect,
   adminUpdate,
   resolveActiveExtractionTemplateId,
+  seedProposals,
 } from "../_fixtures/supabase-admin";
 
 interface RunViewResponse {
@@ -252,30 +252,29 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     test.skip(coords.length < 3, "CHARMS clone exposes fewer than 3 text fields");
     const [coord1, coord2, coord3] = coords;
 
-    // --- Seed AI proposals (owner is reviewer-capable; viewers now 403 here)
-    // + run provenance so the popover's ran-by header has an identity to
-    // reveal (proposal POSTs alone don't write results.provenance).
-    for (const [coord, value] of [
-      [coord1, AI_COORD1],
-      [coord2, A_TYPED_COORD2],
-    ] as const) {
-      const res = await request.post(
-        `${env.apiUrl}/api/v1/runs/${runId}/proposals`,
-        {
-          headers: authHeaders(ownerToken, traceId),
-          data: {
-            instance_id: coord.instanceId,
-            field_id: coord.fieldId,
-            source: "ai",
-            proposed_value: { value },
-            confidence_score: 0.9,
-            rationale: "e2e seeded",
-          },
-          timeout: 15_000,
-        },
-      );
-      expect(res.ok(), await res.text()).toBeTruthy();
-    }
+    // --- Seed AI proposals directly in the table + run provenance so the
+    // popover's ran-by header has an identity to reveal (proposal rows alone
+    // don't write results.provenance).
+    await seedProposals([
+      {
+        runId,
+        instanceId: coord1.instanceId,
+        fieldId: coord1.fieldId,
+        source: "ai",
+        value: AI_COORD1,
+        confidenceScore: 0.9,
+        rationale: "e2e seeded",
+      },
+      {
+        runId,
+        instanceId: coord2.instanceId,
+        fieldId: coord2.fieldId,
+        source: "ai",
+        value: A_TYPED_COORD2,
+        confidenceScore: 0.9,
+        rationale: "e2e seeded",
+      },
+    ]);
     await adminUpdate("extraction_runs", `id=eq.${runId}`, {
       results: { provenance: { model: "e2e-seed", ran_by_user_id: ownerId } },
     });
@@ -593,8 +592,8 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
       await parseEnvelope<{ reviewer_id: string }>(divergent)
     ).data!.reviewer_id;
 
-    // The human-proposal write path is closed for QA too (post-drain gate):
-    // an API client replaying the pre-D8 write gets 400 → /decisions.
+    // The human-proposal write path is closed for QA too: the route itself is
+    // gone (ADR-0019), so an API client replaying the pre-D8 write gets a 404.
     const rejectedProposal = await request.post(
       `${env.apiUrl}/api/v1/runs/${runId}/proposals`,
       {
@@ -608,21 +607,19 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
         timeout: 15_000,
       },
     );
-    expect(rejectedProposal.status()).toBe(400);
-    expect(await rejectedProposal.text()).toContain("/decisions");
+    expect(rejectedProposal.status()).toBe(404);
 
     // Pre-D8 mid-flight shape: a bare human proposal with no decision.
     // Legacy rows now exist only as stored data, so seed one the way it
     // actually exists in a pre-D8 database — directly in the table.
-    await adminInsert("extraction_proposal_records", [
+    await seedProposals([
       {
-        id: crypto.randomUUID(),
-        run_id: runId,
-        instance_id: fixture.firstInstanceId,
-        field_id: untouchedField!.id,
+        runId,
+        instanceId: fixture.firstInstanceId,
+        fieldId: untouchedField!.id,
         source: "human",
-        source_user_id: reviewerBId,
-        proposed_value: { value: "PY-materialized" },
+        sourceUserId: reviewerBId,
+        value: "PY-materialized",
       },
     ]);
 

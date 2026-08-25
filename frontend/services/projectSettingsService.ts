@@ -268,53 +268,9 @@ export function getProjectMemberRole(
 // useNavigation: search and profile
 // ---------------------------------------------------------------------------
 
-export interface SearchProjectResult {
-  id: string;
-  name: string;
-  description: string | null;
-}
 
-export interface SearchArticleResult {
-  id: string;
-  title: string;
-  abstract: string | null;
-}
 
-/**
- * Search projects by name (ilike).
- *
- * NOTE: errors are silently ignored by the caller (returns []).
- */
-export function searchProjects(
-  query: string,
-): Promise<ErrorResult<SearchProjectResult[]>> {
-  return toResult(async () => {
-    const {data} = await supabase
-      .from('projects')
-      .select('id, name, description')
-      .ilike('name', `%${query}%`)
-      .limit(5);
-    return (data ?? []) as SearchProjectResult[];
-  }, 'projectSettingsService.searchProjects');
-}
 
-/**
- * Search articles by title (ilike).
- *
- * NOTE: errors are silently ignored by the caller (returns []).
- */
-export function searchArticles(
-  query: string,
-): Promise<ErrorResult<SearchArticleResult[]>> {
-  return toResult(async () => {
-    const {data} = await supabase
-      .from('articles')
-      .select('id, title, abstract')
-      .ilike('title', `%${query}%`)
-      .limit(5);
-    return (data ?? []) as SearchArticleResult[];
-  }, 'projectSettingsService.searchArticles');
-}
 
 // ---------------------------------------------------------------------------
 // useNavigation: user profile
