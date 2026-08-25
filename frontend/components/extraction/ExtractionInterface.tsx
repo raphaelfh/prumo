@@ -11,7 +11,7 @@ import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/compo
 import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {Skeleton} from '@/components/ui/skeleton';
-import {AlertCircle, Download, PlusCircle, Settings} from 'lucide-react';
+import {AlertCircle, FileUp, Import, PlusCircle, Settings} from 'lucide-react';
 import {useHITLProjectTemplates} from '@/hooks/hitl/useHITLProjectTemplates';
 import {useInvalidateProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
@@ -321,7 +321,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                       data-testid="extraction-export-button"
                       aria-label={t('extraction', 'exportButton')}
                     >
-                      <Download className="h-4 w-4" strokeWidth={1.5}/>
+                      <FileUp className="h-4 w-4" strokeWidth={1.5}/>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>{t('extraction', 'exportButton')}</TooltipContent>
@@ -508,7 +508,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                                                             setShowImportDialog(true);
                                                         }}
                                                     >
-                                                        <Download className="h-4 w-4 mr-1.5" strokeWidth={1.5}/>
+                                                        <Import className="h-4 w-4 mr-1.5" strokeWidth={1.5}/>
                                                         {t('extraction', 'configImportThisTemplate')}
                                                     </Button>
                                                 </td>

@@ -27,6 +27,7 @@ import {
     ChevronRight,
     Download,
     FolderOpen,
+    Import,
     Info,
     Loader2,
     Minimize2,
@@ -516,7 +517,7 @@ export function ZoteroImportDialog({
                   </>
                 ) : (
                   <>
-                    <Download className="mr-2 h-4 w-4" />
+                    <Import className="mr-2 h-4 w-4" />
                       {t('articles', 'zoteroStartImport')}
                   </>
                 )}

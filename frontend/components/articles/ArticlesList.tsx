@@ -6,6 +6,7 @@ import {Badge} from "@/components/ui/badge";
 import {Checkbox} from "@/components/ui/checkbox";
 import {
     FileText,
+    Import,
     MoreHorizontal,
     Plus,
     Search,
@@ -737,7 +738,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                             }
                             className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
                         >
-                            <Upload className="mr-2 h-4 w-4"/>
+                            <Import className="mr-2 h-4 w-4"/>
                             {onOpenRisDialog ? t('articles', 'listFromZotero') : t('articles', 'listImportArticles')}
                         </Button>
                     </>
@@ -748,7 +749,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                             onClick={() => setZoteroImportOpen(true)}
                             className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
                         >
-                            <Upload className="mr-2 h-4 w-4"/>
+                            <Import className="mr-2 h-4 w-4"/>
                             {t('articles', 'listImportArticles')}
                         </Button>
                     ) : (
@@ -757,7 +758,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                             onClick={() => navigate("/settings?tab=integrations")}
                             className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
                         >
-                            <Upload className="mr-2 h-4 w-4"/>
+                            <Import className="mr-2 h-4 w-4"/>
                             {t('articles', 'listImportArticles')}
                         </Button>
                     )

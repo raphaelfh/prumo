@@ -7,7 +7,7 @@
  */
 
 import {useState} from 'react';
-import {FileDown} from 'lucide-react';
+import {FileUp} from 'lucide-react';
 import {toast} from 'sonner';
 
 import {
@@ -68,7 +68,7 @@ export function TemplateExportButton({projectId, templateId}: TemplateExportButt
             onClick={handleClick}
             className="h-8 text-muted-foreground hover:text-foreground"
           >
-            <FileDown className="h-4 w-4 @6xl/configbar:mr-2" />
+            <FileUp className="h-4 w-4 @6xl/configbar:mr-2" />
             {/* The command bar (a @container) is full at ~920px — its title
                 truncated once this button joined it — so the label earns its
                 room only when the BAR is wide, not the viewport. */}

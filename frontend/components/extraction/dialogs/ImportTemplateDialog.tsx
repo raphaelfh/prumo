@@ -21,7 +21,7 @@ import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/compo
 import {RadioGroup, RadioGroupItem} from '@/components/ui/radio-group';
 import {Label} from '@/components/ui/label';
 import {Alert, AlertDescription} from '@/components/ui/alert';
-import {AlertTriangle, CheckCircle2, FileText, Layers, Loader2, Upload} from 'lucide-react';
+import {AlertTriangle, CheckCircle2, FileText, Import, Layers, Loader2} from 'lucide-react';
 import {useGlobalTemplates} from '@/hooks/extraction/useGlobalTemplates';
 import {useInvalidateProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
 import {importGlobalTemplate} from '@/services/templateImportService';
@@ -144,7 +144,7 @@ export function ImportTemplateDialog({
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Upload className="h-5 w-5" />
+            <Import className="h-5 w-5" />
               {t('templateConfig', 'importTitle')}
           </DialogTitle>
           <DialogDescription>
@@ -266,7 +266,7 @@ export function ImportTemplateDialog({
               </>
             ) : (
               <>
-                <Upload className="h-4 w-4 mr-2" />
+                <Import className="h-4 w-4 mr-2" />
                   {t('templateConfig', 'importImportButton')}
               </>
             )}
