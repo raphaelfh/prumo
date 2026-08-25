@@ -321,6 +321,15 @@ describe('Zod layer (a body that cannot succeed is never sent)', () => {
     expect(
       await screen.findByText(copy.endpointValidationLabelRequired),
     ).toBeInTheDocument();
+    // `aria-invalid` can only come from the shared `useFormField`, so it is
+    // the one assertion here a `<FormMessage>{children}</FormMessage>`
+    // fallback could not fake — see components/ui/form.validation.test.tsx.
+    await vi.waitFor(() =>
+      expect(screen.getByLabelText(copy.endpointLabelLabel)).toHaveAttribute(
+        'aria-invalid',
+        'true',
+      ),
+    );
     expect(createMutate).not.toHaveBeenCalled();
   });
 
