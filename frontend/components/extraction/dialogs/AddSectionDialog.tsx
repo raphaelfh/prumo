@@ -79,7 +79,12 @@ const getAddSectionSchema = () => z.object({
     is_required: z.boolean().default(false),
 });
 
-type AddSectionInput = z.infer<ReturnType<typeof getAddSectionSchema>>;
+/* `is_required` carries a `.default()`, so the schema's input and output
+ * types differ (optional before parse, guaranteed after). @hookform/resolvers
+ * v5 types that split faithfully, so useForm must be told both: values are
+ * the INPUT shape, handleSubmit receives the parsed OUTPUT. */
+type AddSectionInput = z.input<ReturnType<typeof getAddSectionSchema>>;
+type AddSectionOutput = z.output<ReturnType<typeof getAddSectionSchema>>;
 
 // =================== INTERFACES ===================
 
@@ -112,7 +117,7 @@ export function AddSectionDialog({
   const [autoGenerateName, setAutoGenerateName] = useState(true);
   const noun = mode.kind === 'perModel' ? mode.entryNoun : 'model';
 
-  const form = useForm<AddSectionInput>({
+  const form = useForm<AddSectionInput, unknown, AddSectionOutput>({
       resolver: zodResolver(getAddSectionSchema()),
     defaultValues: {
       name: '',
@@ -137,7 +142,7 @@ export function AddSectionDialog({
     }
   }, [label, autoGenerateName, form]);
 
-  const handleSubmit = async (data: AddSectionInput) => {
+  const handleSubmit = async (data: AddSectionOutput) => {
     setLoading(true);
 
     const result = await createSection({
