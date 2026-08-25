@@ -656,16 +656,16 @@ async def make_ai_proposal(
     proposed_value: dict | None = None,
     confidence_score: float | None = None,
     rationale: str | None = None,
-):
+) -> UUID:
     """Seed one AI proposal for ``(run, instance, field)``.
 
-    ``source='ai'`` cannot be authored over HTTP — the API rejects it as
-    server-generated, because blind peers read AI rows unattributed and a
-    caller-authored one would be a forged model suggestion. The real writer
-    is ``SectionExtractionService``, which calls
-    ``ExtractionProposalService.record_proposal`` in-process. Tests seed the
-    row directly (sibling of :func:`make_proposal`) so fixture setup stays
-    orthogonal to the run's stage.
+    No HTTP route writes proposals — the pipeline's
+    ``SectionExtractionService`` calls
+    ``ExtractionProposalService.record_proposal`` in-process, and the
+    ``/proposals`` endpoint was removed once every source it accepted turned
+    out to be forbidden (ADR-0019). Tests seed the row directly (sibling of
+    :func:`make_proposal`) so fixture setup stays orthogonal to the run's
+    stage.
     """
     from app.models.extraction_workflow import (
         ExtractionProposalRecord,
@@ -684,4 +684,4 @@ async def make_ai_proposal(
     )
     db.add(record)
     await db.flush()
-    return record
+    return record.id

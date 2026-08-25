@@ -1694,54 +1694,6 @@
         "title": "ApiResponse[PortableTemplate]",
         "type": "object"
       },
-      "ApiResponse_ProposalRecordResponse_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ProposalRecordResponse"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[ProposalRecordResponse]",
-        "type": "object"
-      },
       "ApiResponse_RepublishTemplateVersionResponse_": {
         "properties": {
           "data": {
@@ -4127,61 +4079,6 @@
           "name"
         ],
         "title": "CreateProjectTemplateRequest",
-        "type": "object"
-      },
-      "CreateProposalRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "confidence_score": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Confidence Score"
-          },
-          "field_id": {
-            "format": "uuid",
-            "title": "Field Id",
-            "type": "string"
-          },
-          "instance_id": {
-            "format": "uuid",
-            "title": "Instance Id",
-            "type": "string"
-          },
-          "proposed_value": {
-            "additionalProperties": true,
-            "title": "Proposed Value",
-            "type": "object"
-          },
-          "rationale": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rationale"
-          },
-          "source": {
-            "pattern": "^(ai|human|system)$",
-            "title": "Source",
-            "type": "string"
-          }
-        },
-        "required": [
-          "instance_id",
-          "field_id",
-          "source",
-          "proposed_value"
-        ],
-        "title": "CreateProposalRequest",
         "type": "object"
       },
       "CreateRunRequest": {
@@ -14616,64 +14513,6 @@
           }
         ],
         "summary": "Create Decision",
-        "tags": [
-          "extraction-runs"
-        ]
-      }
-    },
-    "/api/v1/runs/{run_id}/proposals": {
-      "post": {
-        "operationId": "create_proposal_api_v1_runs__run_id__proposals_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Run Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateProposalRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ProposalRecordResponse_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Create Proposal",
         "tags": [
           "extraction-runs"
         ]

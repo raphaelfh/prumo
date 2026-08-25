@@ -33,10 +33,8 @@ from app.schemas.extraction_run import (
     ConsensusResultResponse,
     CreateConsensusRequest,
     CreateDecisionRequest,
-    CreateProposalRequest,
     CreateRunRequest,
     MarkReadyRequest,
-    ProposalRecordResponse,
     PublishedStateResponse,
     ReviewerDecisionResponse,
     RunDetailResponse,
@@ -50,10 +48,6 @@ from app.services.extraction_consensus_service import (
     ExtractionConsensusService,
     InvalidConsensusError,
     OptimisticConcurrencyError,
-)
-from app.services.extraction_proposal_service import (
-    ExtractionProposalService,
-    InvalidProposalError,
 )
 from app.services.extraction_review_service import (
     ExtractionReviewService,
@@ -242,89 +236,6 @@ async def get_run_view(
         caller_is_arbitrator=is_arbitrator,
     )
     return ApiResponse.success(view, trace_id=_trace(request))
-
-
-@router.post("/{run_id}/proposals", status_code=status.HTTP_201_CREATED)
-async def create_proposal(
-    run_id: UUID,
-    body: CreateProposalRequest,
-    request: Request,
-    db: DbSession,
-    current_user_sub: UUID = Depends(get_current_user_sub),
-) -> ApiResponse[ProposalRecordResponse]:
-    run = await _load_run_and_check_member(db, run_id, current_user_sub)
-    # Writes are reviewer-role-gated (mirrors mark_ready): a read-only viewer
-    # is a member but must not author proposals.
-    await ensure_project_reviewer(db, run.project_id, current_user_sub)
-    # Both non-human sources are server-generated and carry no attribution,
-    # so neither may be authored by a caller:
-    #
-    # * 'system' — reopen seeding (run_lifecycle_service); for QA runs these
-    #   hydrate into EVERY caller's form baseline via current_values Layer-1.
-    # * 'ai' — the extraction pipeline (SectionExtractionService calls
-    #   ExtractionProposalService.record_proposal in-process; it never crosses
-    #   this endpoint). Blind peers read AI proposals unattributed
-    #   (extraction_run_read_service), so a caller-authored 'ai' row is a
-    #   forged model suggestion — complete with confidence_score and
-    #   rationale — that reviewers cannot tell from real pipeline output.
-    #
-    # Human writes are rejected one layer down, in record_proposal: they must
-    # go through /decisions so the blind-review contract holds. That leaves
-    # this endpoint with no accepted source; it is kept as a loud 400 rather
-    # than removed so existing clients fail visibly instead of on a 404.
-    if body.source in ("ai", "system"):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"source='{body.source}' proposals are server-generated "
-                "and cannot be created via the API"
-            ),
-        )
-    service = ExtractionProposalService(db)
-    trace_id = _trace(request)
-    # source='human' is attributed server-side to the authenticated caller;
-    # the request schema carries no attribution field, so forged attribution
-    # is unrepresentable at the API boundary. (D8-c materialization reads this
-    # persisted source_user_id as decision attribution at consensus entry —
-    # now always the caller for human rows; ai/system carry no attribution.)
-    source_user_id = current_user_sub if body.source == "human" else None
-    try:
-        record = await service.record_proposal(
-            run_id=run_id,
-            instance_id=body.instance_id,
-            field_id=body.field_id,
-            source=body.source,
-            proposed_value=body.proposed_value,
-            source_user_id=source_user_id,
-            confidence_score=body.confidence_score,
-            rationale=body.rationale,
-        )
-    except CoordinateMismatchError as e:
-        logger.warning(
-            "hitl_proposal_coord_mismatch",
-            trace_id=trace_id,
-            run_id=str(run_id),
-            instance_id=str(body.instance_id),
-            field_id=str(body.field_id),
-            error=str(e),
-        )
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    except InvalidProposalError as e:
-        logger.warning(
-            "hitl_proposal_rejected",
-            trace_id=trace_id,
-            run_id=str(run_id),
-            instance_id=str(body.instance_id),
-            field_id=str(body.field_id),
-            source=str(body.source),
-            error=str(e),
-        )
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    await db.commit()
-    return ApiResponse.success(
-        ProposalRecordResponse.model_validate(record),
-        trace_id=trace_id,
-    )
 
 
 @router.post("/{run_id}/decisions", status_code=status.HTTP_201_CREATED)

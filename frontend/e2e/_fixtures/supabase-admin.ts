@@ -1,4 +1,5 @@
 import { loadE2EEnv } from "./env";
+import type { Database } from "../../integrations/supabase/types";
 
 type AdminInit = { url: string; key: string };
 
@@ -138,4 +139,43 @@ export async function resolveStudySectionEntityTypeId(templateId: string): Promi
     );
   }
   return rows[0].id;
+}
+
+type ProposalInsert = Database["public"]["Tables"]["extraction_proposal_records"]["Insert"];
+
+export interface ProposalSeed {
+  runId: string;
+  instanceId: string;
+  fieldId: string;
+  source: Database["public"]["Enums"]["extraction_proposal_source"];
+  /** Inner value; stored wrapped as `{ value }`, matching the write path. */
+  value: ProposalInsert["proposed_value"];
+  /** Only human rows carry attribution; ai/system are unattributed. */
+  sourceUserId?: string;
+  confidenceScore?: number;
+  rationale?: string;
+}
+
+/**
+ * Insert proposal rows directly, the way the pipeline (ai/system) and pre-D8
+ * data (human) really land — no HTTP route writes them (ADR-0019). Returns the
+ * new ids in seed order.
+ */
+export async function seedProposals(seeds: ProposalSeed[]): Promise<string[]> {
+  // Every key on every row, because a PostgREST bulk insert rejects a
+  // heterogeneous array with PGRST102 "All object keys must match". Both
+  // optional columns are nullable with no default, so null == omitted.
+  const rows: Array<ProposalInsert & { id: string }> = seeds.map((seed) => ({
+    id: crypto.randomUUID(),
+    run_id: seed.runId,
+    instance_id: seed.instanceId,
+    field_id: seed.fieldId,
+    source: seed.source,
+    source_user_id: seed.sourceUserId ?? null,
+    proposed_value: { value: seed.value },
+    confidence_score: seed.confidenceScore ?? null,
+    rationale: seed.rationale ?? null,
+  }));
+  await adminInsert("extraction_proposal_records", rows);
+  return rows.map((row) => row.id);
 }
