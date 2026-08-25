@@ -29,7 +29,6 @@ from app.models.extraction import (
     ExtractionEntityRole,
     ExtractionFieldType,
     ExtractionRun,
-    ExtractionRunStage,
     TemplateKind,
 )
 from app.models.extraction_workflow import (
@@ -183,7 +182,6 @@ async def test_ai_superseded_outcome_is_deterministic_on_equal_created_at(
         article_id=article_id,
         header_label="Article",
         run_id=run.id,
-        run_stage=ExtractionRunStage(run.stage),
         version_id=None,
         model_instances=(),
         section_instances={entity_type_id: (instance_id,)},
@@ -199,7 +197,6 @@ async def test_ai_superseded_outcome_is_deterministic_on_equal_created_at(
                 label="Field",
                 type=ExtractionFieldType.TEXT,
                 allowed_values=(),
-                parent_section_id=entity_type_id,
             ),
         ),
     )

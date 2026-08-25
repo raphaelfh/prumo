@@ -278,6 +278,13 @@ export const templateConfig = {
   inspectorInsideGroup: 'Inside {{group}}',
   inspectorPlacementLabel: 'Placement',
   inspectorRepeatsLabel: 'Repeats',
+  // 0059: which field identifies one entry of a repeating section, so an
+  // AI re-run recognizes an entry it already extracted instead of adding
+  // a second one for the same thing.
+  inspectorEntryKeyLabel: 'Entry key',
+  inspectorEntryKeyNone: 'Not set — AI re-runs are blocked',
+  inspectorEntryKeyHint:
+    'The field whose value tells one entry apart from another. Without it, running AI extraction again would add a duplicate entry instead of updating this one.',
   menuMoveDown: 'Move down',
   menuMoveToSection: 'Move to section…',
   menuMoveUp: 'Move up',

@@ -3,7 +3,8 @@
 Walks through the canonical sequence:
   POST /v1/runs                  → create
   POST /v1/runs/{id}/advance     → pending → proposal
-  POST /v1/runs/{id}/proposals   → AI proposal recorded
+  (AI proposal seeded in-process — the pipeline's own write path; there is
+   no HTTP route for it, see ADR-0019)
   POST /v1/runs/{id}/advance     → proposal → review
   POST /v1/runs/{id}/decisions   → accept_proposal
   POST /v1/runs/{id}/advance     → review → consensus
@@ -26,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, make_ai_proposal
 
 
 @pytest_asyncio.fixture
@@ -106,20 +107,17 @@ async def test_full_hitl_lifecycle(
     assert advance_res.status_code == 200, advance_res.text
     assert advance_res.json()["data"]["stage"] == "extract"
 
-    # 3) Record AI proposal
-    proposal_res = await db_client.post(
-        f"/api/v1/runs/{run_id}/proposals",
-        json={
-            "instance_id": instance_id,
-            "field_id": field_id,
-            "source": "ai",
-            "proposed_value": {"text": "lifecycle E2E"},
-            "confidence_score": 0.88,
-        },
+    # 3) Record AI proposal — seeded the way the pipeline writes it.
+    proposal_id = str(
+        await make_ai_proposal(
+            db_session,
+            run_id=UUID(run_id),
+            instance_id=UUID(instance_id),
+            field_id=UUID(field_id),
+            proposed_value={"text": "lifecycle E2E"},
+            confidence_score=0.88,
+        )
     )
-    assert proposal_res.status_code == 201, proposal_res.text
-    proposal_id = proposal_res.json()["data"]["id"]
-    assert UUID(proposal_id)
 
     # 4) Reviewer accepts the proposal (run stays in extract; no review stage)
     decision_res = await db_client.post(
@@ -202,40 +200,6 @@ async def test_invalid_stage_transition_returns_400(
 
     # pending → consensus (not allowed; must go pending → extract first)
     bad = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": "consensus"})
-    assert bad.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_proposal_outside_proposal_stage_returns_400(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    fx = await _pick_fixtures(db_session)
-    if fx is None:
-        pytest.skip("Need fixtures.")
-    project_id, article_id, template_id, instance_id, field_id = fx
-
-    create_res = await db_client.post(
-        "/api/v1/runs",
-        json={
-            "project_id": project_id,
-            "article_id": article_id,
-            "project_template_id": template_id,
-        },
-    )
-    run_id = create_res.json()["data"]["id"]
-
-    # Run is in pending stage; proposal requires proposal stage
-    bad = await db_client.post(
-        f"/api/v1/runs/{run_id}/proposals",
-        json={
-            "instance_id": instance_id,
-            "field_id": field_id,
-            "source": "ai",
-            "proposed_value": {"v": "x"},
-        },
-    )
     assert bad.status_code == 400
 
 

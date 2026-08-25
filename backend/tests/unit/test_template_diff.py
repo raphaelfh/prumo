@@ -629,7 +629,8 @@ def test_tier_map_is_exhaustive_over_the_snapshot_key_set() -> None:
         set(template_diff.ENTITY_ATTRIBUTE_DEFAULTS)
         | set(template_diff.FIELD_ATTRIBUTE_DEFAULTS)
         | {template_diff.OPTION_KEY}
-        | set(template_diff.STRUCTURAL_KEYS)
+        # Structural keys carry nesting/identity, never an attribute change.
+        | {template_diff.IDENTITY_KEY, template_diff.ORDER_KEY, template_diff.NESTING_KEY}
     )
     assert covered == _snapshot_sql_keys()
     assert set(template_diff.ATTRIBUTE_TIERS) == (

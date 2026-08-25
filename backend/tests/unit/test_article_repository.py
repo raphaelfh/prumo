@@ -79,82 +79,6 @@ def make_db() -> AsyncMock:
 
 
 # ---------------------------------------------------------------------------
-# ArticleRepository.get_by_project
-# ---------------------------------------------------------------------------
-
-
-class TestGetByProject:
-    @pytest.mark.asyncio
-    async def test_returns_articles(self) -> None:
-        db = make_db()
-        arts = [make_article(), make_article()]
-        db.execute = AsyncMock(return_value=make_scalars_result(arts))
-        repo = ArticleRepository(db)
-
-        result = await repo.get_by_project(PROJECT_ID)
-
-        assert result == arts
-
-    @pytest.mark.asyncio
-    async def test_accepts_string_project_id(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalars_result([]))
-        repo = ArticleRepository(db)
-
-        result = await repo.get_by_project(str(PROJECT_ID))
-
-        assert result == []
-
-    @pytest.mark.asyncio
-    async def test_passes_pagination_params(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalars_result([]))
-        repo = ArticleRepository(db)
-
-        await repo.get_by_project(PROJECT_ID, skip=10, limit=5)
-
-        db.execute.assert_awaited_once()
-
-
-# ---------------------------------------------------------------------------
-# ArticleRepository.get_with_files
-# ---------------------------------------------------------------------------
-
-
-class TestGetWithFiles:
-    @pytest.mark.asyncio
-    async def test_returns_article_when_found(self) -> None:
-        db = make_db()
-        art = make_article()
-        db.execute = AsyncMock(return_value=make_scalar_one_or_none(art))
-        repo = ArticleRepository(db)
-
-        result = await repo.get_with_files(ARTICLE_ID)
-
-        assert result is art
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_not_found(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalar_one_or_none(None))
-        repo = ArticleRepository(db)
-
-        result = await repo.get_with_files(ARTICLE_ID)
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_accepts_string_id(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalar_one_or_none(None))
-        repo = ArticleRepository(db)
-
-        result = await repo.get_with_files(str(ARTICLE_ID))
-
-        assert result is None
-
-
-# ---------------------------------------------------------------------------
 # ArticleRepository.get_by_ids
 # ---------------------------------------------------------------------------
 
@@ -240,33 +164,6 @@ class TestGetByZoteroItemKey:
         result = await repo.get_by_zotero_item_key(PROJECT_ID, "NOPE")
 
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# ArticleRepository.count_by_project
-# ---------------------------------------------------------------------------
-
-
-class TestCountByProject:
-    @pytest.mark.asyncio
-    async def test_returns_count(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalar_one(7))
-        repo = ArticleRepository(db)
-
-        result = await repo.count_by_project(PROJECT_ID)
-
-        assert result == 7
-
-    @pytest.mark.asyncio
-    async def test_accepts_string_project_id(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalar_one(0))
-        repo = ArticleRepository(db)
-
-        result = await repo.count_by_project(str(PROJECT_ID))
-
-        assert result == 0
 
 
 # ---------------------------------------------------------------------------
@@ -561,17 +458,6 @@ class TestArticleFileRepository:
         result = await repo.get_latest_pdf(ARTICLE_ID)
 
         assert result is None
-
-    @pytest.mark.asyncio
-    async def test_get_by_storage_key_returns_file(self) -> None:
-        db = make_db()
-        f = MagicMock(spec=ArticleFile)
-        db.execute = AsyncMock(return_value=make_scalar_one_or_none(f))
-        repo = ArticleFileRepository(db)
-
-        result = await repo.get_by_storage_key("articles/file.pdf")
-
-        assert result is f
 
     @pytest.mark.asyncio
     async def test_get_by_article_accepts_string_id(self) -> None:

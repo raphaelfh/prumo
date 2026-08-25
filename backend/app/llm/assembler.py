@@ -64,16 +64,10 @@ class DroppedSection:
     Attributes:
         title: The heading text (or ``"<preamble>"`` for content before the
             first heading).
-        char_count: Approximate character count of the dropped section's
-            serialised text (including the heading marker).
-        rank: The priority rank assigned to this section (lower = higher
-            priority, i.e. kept sections have lower rank numbers).
         block_count: Number of blocks in the dropped section.
     """
 
     title: str
-    char_count: int
-    rank: int
     block_count: int
 
 
@@ -304,8 +298,6 @@ def assemble(
             dropped.append(
                 DroppedSection(
                     title=sec.title or "<preamble>",
-                    char_count=len(text),
-                    rank=sec.rank,
                     block_count=len(sec.blocks),
                 )
             )

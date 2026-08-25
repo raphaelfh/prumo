@@ -12,9 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 def _reject_client_verification(field_name: str, v: dict[str, Any] | None) -> dict[str, Any] | None:
     # The Verified-mode verdict is server-written provenance (the
     # ``source_user_id`` precedent): a client-sent copy is a loud 422,
-    # never a silently-stored forgery. Guarded on ALL three write bags
-    # (proposal / decision / consensus) so the key cannot be smuggled into
-    # the agreement mechanism from any side. Known residual: a reviewer can
+    # never a silently-stored forgery. Guarded on BOTH remaining write bags
+    # (decision / consensus) so the key cannot be smuggled into the agreement
+    # mechanism from any side; the proposal bag went with the /proposals route
+    # (ADR-0019). Known residual: a reviewer can
     # still UPDATE a stored row's value bag directly via PostgREST under the
     # baseline RLS policies — tracked as a follow-up; this gate covers the
     # API surface.
@@ -30,26 +31,6 @@ class CreateRunRequest(BaseModel):
     article_id: UUID
     project_template_id: UUID
     parameters: dict[str, Any] | None = None
-
-
-class CreateProposalRequest(BaseModel):
-    # No attribution field: human proposals are attributed server-side to the
-    # authenticated caller. extra="forbid" makes a client-sent
-    # ``source_user_id`` a loud 422 instead of a silently-dropped forgery.
-    model_config = ConfigDict(extra="forbid")
-
-    instance_id: UUID
-    field_id: UUID
-    source: str = Field(pattern="^(ai|human|system)$")
-    proposed_value: dict[str, Any]
-    confidence_score: float | None = None
-    rationale: str | None = None
-
-    @field_validator("proposed_value")
-    @classmethod
-    def _reject_server_owned_verification(cls, v: dict[str, Any]) -> dict[str, Any]:
-        _reject_client_verification("proposed_value", v)
-        return v
 
 
 class CreateDecisionRequest(BaseModel):
@@ -307,11 +288,20 @@ class RunViewDerivedInput(BaseModel):
     Low/High/Unclear the rule consumed from this row (None when it
     contributed nothing) — clients highlight and color by it with zero
     answer-mapping knowledge.
+
+    ``state`` is set only on a collapse-group row that contributed nothing,
+    and is the complement of ``contribution`` (never both). It is
+    ``"unreported"`` when the study did not report that performance type — a
+    legitimate outcome, not a gap — and ``"in-progress"`` when the group is
+    only half-answered. A group has no stored answer, so ``value`` is always
+    None there and this is the only thing telling the two apart: render them
+    with different copy and tone, or a complete assessment looks unfinished.
     """
 
     label: str
     value: str | None = None
     contribution: str | None = None
+    state: str | None = None
 
 
 class RunViewDerivedJudgment(BaseModel):

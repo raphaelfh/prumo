@@ -61,6 +61,8 @@ def _pdf_pipeline_options() -> PdfPipelineOptions:
         TableStructureOptions,
     )
 
+    # Written-only here by design: docling reads these off the options
+    # object when it builds the pipeline, so vulture sees no reader.
     options = PdfPipelineOptions()
     options.do_ocr = False
     options.do_table_structure = True

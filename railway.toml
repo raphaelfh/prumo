@@ -57,8 +57,13 @@ dockerfilePath = "Dockerfile"   # relative to source.rootDirectory (/backend)
 #     Healthcheck:           /health (set per-service via Railway dashboard)
 #     Restart policy:        ON_FAILURE, max 3 retries (set per-service)
 #     Start command:         Dockerfile CMD
-#                            (alembic upgrade head && gunicorn -k UvicornWorker
-#                             -w 1 -t 120 -b 0.0.0.0:${PORT:-8000} app.main:app)
+#                            (alembic upgrade head && python -m app.seed &&
+#                             gunicorn -k UvicornWorker -w 1 -t 120
+#                             -b 0.0.0.0:${PORT:-8000} app.main:app)
+#                            The seed is idempotent (early-returns on existing
+#                            templates), so every deploy converges the global
+#                            template catalogue; a seed failure fails the
+#                            deploy and keeps the previous build live.
 #     Public domain:         https://web-production-48b398.up.railway.app
 #     Variables override:    CORS_ORIGINS=https://prumoai.vercel.app
 #                            (live value as of 2026-08-09; the retired
@@ -86,7 +91,7 @@ dockerfilePath = "Dockerfile"   # relative to source.rootDirectory (/backend)
 #
 # Project-level shared variables (set on each service — Railway has no
 # project-level shared variables in the way some platforms do):
-#   ENCRYPTION_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
+#   ENCRYPTION_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
 #   DATABASE_URL, DIRECT_DATABASE_URL, OPENAI_API_KEY, OPENAI_DEFAULT_MODEL,
 #   DEBUG=false, RATE_LIMIT_PER_MINUTE=60, PROJECT_NAME="Prumo API",
 #   API_V1_PREFIX=/api/v1, SUPABASE_ENV=production.

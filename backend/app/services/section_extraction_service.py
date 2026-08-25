@@ -99,8 +99,6 @@ class BatchExtractionResult:
     successful_sections: int
     failed_sections: int
     total_suggestions_created: int
-    total_tokens_used: int
-    duration_ms: float
     sections: list[dict[str, Any]]
 
 
@@ -628,8 +626,6 @@ class SectionExtractionService(LoggerMixin):
                 successful_sections=successful,
                 failed_sections=failed,
                 total_suggestions_created=total_suggestions,
-                total_tokens_used=total_tokens,
-                duration_ms=duration_ms,
                 sections=section_results,
             )
         except Exception as e:
@@ -1104,8 +1100,6 @@ class SectionExtractionService(LoggerMixin):
                 successful_sections=successful,
                 failed_sections=failed,
                 total_suggestions_created=total_suggestions,
-                total_tokens_used=total_tokens,
-                duration_ms=duration,
                 sections=section_results,
             )
 
