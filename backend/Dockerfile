@@ -74,5 +74,15 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD python -c "import httpx, os; httpx.get(f'http://localhost:{os.environ.get(\"PORT\", \"8000\")}/health')" || exit 1
 
-# Run migrations then start application
-CMD ["sh", "-c", "alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker -w 1 -t 120 -b 0.0.0.0:${PORT:-8000} app.main:app"]
+# Run migrations, converge the seed catalogue, then start the application.
+#
+# `python -m app.seed` is idempotent end to end (every template seeder
+# early-returns on an existing row; the instruction backfill is
+# fill-if-null), so running it on every boot makes a deploy converge the
+# global template catalogue instead of relying on a human remembering to
+# seed after promoting. A seed failure aborts the boot LOUDLY: Railway
+# marks the deploy failed and keeps the previous build live, which is the
+# correct failure mode — never serve code whose catalogue is missing.
+# The worker overrides this CMD (Celery start command), so the seed runs
+# exactly once per deploy, after Alembic and before gunicorn.
+CMD ["sh", "-c", "alembic upgrade head && python -m app.seed && gunicorn -k uvicorn.workers.UvicornWorker -w 1 -t 120 -b 0.0.0.0:${PORT:-8000} app.main:app"]

@@ -35,7 +35,7 @@ All three Railway services + the Redis plugin live in the same project, region *
 
 | Service | Builder | Start | Public | Healthcheck |
 | --- | --- | --- | --- | --- |
-| `web` | `backend/Dockerfile` | `alembic upgrade head && gunicorn -k UvicornWorker -w 1 -t 120 -b 0.0.0.0:${PORT:-8000}` (Dockerfile CMD) | yes — <https://web-production-48b398.up.railway.app> | `/health` |
+| `web` | `backend/Dockerfile` | `alembic upgrade head && python -m app.seed && gunicorn -k UvicornWorker -w 1 -t 120 -b 0.0.0.0:${PORT:-8000}` (Dockerfile CMD) | yes — <https://web-production-48b398.up.railway.app> | `/health` |
 | `worker` | `backend/Dockerfile` | `celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,exports,celery` (Railway custom start command — overrides Dockerfile CMD) | no | none |
 | `Redis` | Railway managed plugin | n/a | private network only (`redis.railway.internal`) | n/a |
 
@@ -169,13 +169,22 @@ keep them only on Railway.
 
 ## Migrations
 
-Alembic runs automatically as part of the web service's Dockerfile `CMD`:
+Alembic runs automatically as part of the web service's Dockerfile `CMD`,
+followed by the seed, which converges the global template catalogue on
+every deploy:
 
 ```text
-alembic upgrade head && gunicorn ...
+alembic upgrade head && python -m app.seed && gunicorn ...
 ```
 
-The worker does NOT run Alembic — it boots after the web service via Celery startup. To add a migration:
+The seed is idempotent end to end — every template seeder early-returns on
+an existing row and the instruction backfill is fill-if-null — so a deploy
+installs newly added global templates without a manual step and never
+touches existing rows. A seed failure aborts the boot: Railway marks the
+deploy failed and keeps the previous build live.
+
+The worker does NOT run Alembic or the seed — it boots after the web
+service via Celery startup. To add a migration:
 
 1. Create it locally: `cd backend && alembic revision --autogenerate -m "description"`.
 2. Test locally: `alembic upgrade head` against the local stack.
